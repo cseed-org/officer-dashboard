@@ -303,6 +303,8 @@
   border-bottom: var(--rule-hairline) solid var(--rule);
 }
 .dt-caption {
+  display: block;
+  width: 100%;
   caption-side: top;
   text-align: left;
   font-family: var(--font-display);
