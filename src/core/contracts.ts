@@ -179,7 +179,7 @@ export const OverviewResponse = z.object({
     avgCheckInRate: Rate,
     avgReflectionRate: Rate,
     budgetCents: NonNegCents,
-    spentCents: NonNegCents,
+    spentCents: Cents,
     /** Approved but not yet posted (encumbered). */
     committedCents: NonNegCents,
     /** budget − spent − committed; may be negative when over budget. */
@@ -214,7 +214,7 @@ export const EventDetailResponse = z.object({
   }),
   /** Purchase requests linked to this event. */
   requests: z.array(z.lazy(() => PurchaseRequestListItem)),
-  spentCents: NonNegCents,
+  spentCents: Cents,
 });
 export type EventDetailResponse = z.infer<typeof EventDetailResponse>;
 
@@ -390,7 +390,11 @@ export const PurchaseRequestCreateRequest = PurchaseRequestFields.extend({
 export type PurchaseRequestCreateRequest = z.infer<typeof PurchaseRequestCreateRequest>;
 
 /** PATCH /api/requests/:id — drafts only (409 otherwise). */
-export const PurchaseRequestUpdateRequest = PurchaseRequestFields.partial();
+export const PurchaseRequestUpdateRequest = PurchaseRequestFields.partial().extend({
+  // Zod 4 applies defaults inside optional fields; PATCH must preserve omitted values.
+  taxShipCents: NonNegCents.optional(),
+  functionalClass: FunctionalClass.optional(),
+});
 export type PurchaseRequestUpdateRequest = z.infer<typeof PurchaseRequestUpdateRequest>;
 
 export const PurchaseRequestDetail = PurchaseRequestListItem.extend({
@@ -494,7 +498,7 @@ export const FinanceSummaryResponse = z.object({
   asOf: IsoDate,
   totals: z.object({
     budgetCents: NonNegCents,
-    spentCents: NonNegCents,
+    spentCents: Cents,
     committedCents: NonNegCents,
     remainingCents: Cents,
   }),
@@ -502,7 +506,7 @@ export const FinanceSummaryResponse = z.object({
     z.object({
       account: AccountOption.pick({ id: true, code: true, name: true }),
       budgetCents: NonNegCents,
-      spentCents: NonNegCents,
+      spentCents: Cents,
       committedCents: NonNegCents,
       remainingCents: Cents,
     }),
@@ -566,17 +570,17 @@ export const StatementOfFunctionalExpensesReport = ReportMeta.extend({
   rows: z.array(
     z.object({
       account: AccountRef,
-      programCents: NonNegCents,
-      mgmtGeneralCents: NonNegCents,
-      fundraisingCents: NonNegCents,
-      totalCents: NonNegCents,
+      programCents: Cents,
+      mgmtGeneralCents: Cents,
+      fundraisingCents: Cents,
+      totalCents: Cents,
     }),
   ),
   totals: z.object({
-    programCents: NonNegCents,
-    mgmtGeneralCents: NonNegCents,
-    fundraisingCents: NonNegCents,
-    totalCents: NonNegCents,
+    programCents: Cents,
+    mgmtGeneralCents: Cents,
+    fundraisingCents: Cents,
+    totalCents: Cents,
   }),
 });
 
@@ -603,10 +607,12 @@ export const FundBalancesReport = ReportMeta.extend({
     z.object({
       fund: FundOption,
       beginningCents: Cents,
-      additionsCents: NonNegCents,
-      releasesCents: NonNegCents,
-      expensesCents: NonNegCents,
+      additionsCents: Cents,
+      releasesCents: Cents,
+      expensesCents: Cents,
       endingCents: Cents,
+      restrictedEndingCents: Cents,
+      unrestrictedEndingCents: Cents,
     }),
   ),
 });
@@ -618,6 +624,11 @@ export const FundBalancesReport = ReportMeta.extend({
 export const FinanceReportQuery = FinanceQuery.extend({ format: z.enum(['json', 'csv']).default('json') });
 export type FinanceReportQuery = z.infer<typeof FinanceReportQuery>;
 
+export const Form990Report = ReportMeta.extend({
+  report: z.literal('form-990'),
+  rows: z.array(z.object({ part: z.enum(['VIII', 'IX']), line: z.string(), totalCents: Cents, programCents: Cents, mgmtGeneralCents: Cents, fundraisingCents: Cents })),
+});
+
 export const FinanceReportResponse = z.discriminatedUnion('report', [
   TrialBalanceReport,
   StatementOfActivitiesReport,
@@ -625,6 +636,7 @@ export const FinanceReportResponse = z.discriminatedUnion('report', [
   StatementOfFunctionalExpensesReport,
   BudgetVsActualReport,
   FundBalancesReport,
+  Form990Report,
 ]);
 export type FinanceReportResponse = z.infer<typeof FinanceReportResponse>;
 
@@ -831,7 +843,7 @@ interface EndpointSpec {
   auth: Auth;
   query?: z.ZodType;
   body?: z.ZodType | 'multipart';
-  response: z.ZodType | 'csv' | 'redirect';
+  response: z.ZodType | 'csv' | 'redirect' | 'binary';
 }
 
 /**
@@ -862,6 +874,8 @@ export const ENDPOINTS = {
   requestDeny: { method: 'POST', path: '/api/requests/:id/deny', auth: 'director', body: PurchaseDenyRequest, response: PurchaseRequestResponse },
   requestTransition: { method: 'POST', path: '/api/requests/:id/transition', auth: 'director', body: PurchaseTransitionRequest, response: PurchaseRequestResponse },
   requestAttach: { method: 'POST', path: '/api/requests/:id/attachments', auth: 'officer', body: 'multipart', response: AttachmentUploadResponse },
+
+  attachmentDownload: { method: 'GET', path: '/api/attachments/:id', auth: 'officer', response: 'binary' },
 
   financeSummary: { method: 'GET', path: '/api/finance/summary', auth: 'officer', query: FinanceQuery, response: FinanceSummaryResponse },
   financeReport: { method: 'GET', path: '/api/finance/reports/:report', auth: 'officer', query: FinanceReportQuery, response: FinanceReportResponse },

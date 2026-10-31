@@ -10,6 +10,7 @@ import {
   PurchaseTransitionRequest,
   AgentJobCompleteRequest,
   PurchaseRequestDetail,
+  PurchaseRequestUpdateRequest,
 } from '../../src/core/contracts';
 
 describe('docs/api.md', () => {
@@ -43,6 +44,10 @@ describe('contract parsing', () => {
       expenseAccountId: 'a', fundId: 'f', justification: 'z',
     });
     expect(r.success).toBe(false);
+  });
+
+  it('preserves omitted cost and functional class fields on a draft patch', () => {
+    expect(PurchaseRequestUpdateRequest.parse({ title: 'New title' })).toEqual({ title: 'New title' });
   });
 
   it('coerces query-string numbers and applies list defaults', () => {

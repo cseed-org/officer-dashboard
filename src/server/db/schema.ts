@@ -12,6 +12,7 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import {
+  blob,
   check,
   index,
   integer,
@@ -247,6 +248,7 @@ export const journalEntries = sqliteTable(
     source: text('source', { enum: JOURNAL_SOURCES }).notNull().default('manual'),
     purchaseRequestId: text('purchase_request_id').references(() => purchaseRequests.id),
     contributionId: text('contribution_id'),
+    settlementKey: text('settlement_key'),
     /** Set on a reversing entry; corrections never edit a posted entry. */
     reversesEntryId: text('reverses_entry_id').references((): AnySQLiteColumn => journalEntries.id),
     createdBy: text('created_by').references(() => users.id),
@@ -552,6 +554,7 @@ export const fulfillmentJobs = sqliteTable(
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
     resultJson: text('result_json'),
+    payloadJson: text('payload_json'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -564,3 +567,13 @@ export const fulfillmentJobs = sqliteTable(
 
 export type UserRow = typeof users.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
+
+/** Internal assertion used only inside atomic D1 batches; never retained. */
+export const mutationGuards = sqliteTable('mutation_guards', {
+ id: text('id').primaryKey(), ok: integer('ok').notNull(),
+}, t => [check('mutation_guard_ok', sql`${t.ok} = 1`)]);
+
+/** Development receipt bytes, persisted inside local D1's filesystem-backed SQLite DB. */
+export const localReceiptFiles = sqliteTable('local_receipt_files', {
+ id: text('id').primaryKey(), mimeType: text('mime_type').notNull(), body: blob('body', { mode: 'buffer' }).notNull(),
+});

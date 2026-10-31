@@ -92,6 +92,7 @@ export const FINANCE_REPORTS = [
   'statement-of-functional-expenses',
   'budget-vs-actual',
   'fund-balances',
+  'form-990',
 ] as const;
 export type FinanceReport = (typeof FINANCE_REPORTS)[number];
 

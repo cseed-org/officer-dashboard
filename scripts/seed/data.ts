@@ -170,6 +170,10 @@ export const journal: SeedEntry[] = [
     { account: '5100', fund: 'fund-buildspace', debit: 18_640, fc: 'program' },
     { account: '1000', fund: 'fund-buildspace', credit: 18_640 },
   ] },
+  { id: 'je-0009', date: '2026-09-24', memo: 'Release Buildspace restriction for Arduino kits', source: 'release', request: 'req-0002', lines: [
+    { account: '3100', fund: 'fund-buildspace', debit: 18_640 },
+    { account: '3000', fund: 'fund-buildspace', credit: 18_640 },
+  ] },
   { id: 'je-0008', date: '2026-10-01', memo: 'BuildHer grant awarded, payment pending', source: 'contribution', lines: [
     { account: '1150', fund: 'fund-buildher', debit: 250_000 },
     { account: '4100', fund: 'fund-buildher', credit: 250_000 },

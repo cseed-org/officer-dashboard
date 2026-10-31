@@ -23,10 +23,11 @@ export interface FileStore {
   get(key: string): Promise<{ body: ArrayBuffer; mimeType: string } | null>;
 }
 
-export type NotificationEvent =
+export type NotificationEvent = (
   | { type: 'request.submitted'; requestId: string; number: string; title: string; totalCents: number; requester: string }
   | { type: 'request.approved' | 'request.denied'; requestId: string; number: string; title: string; director: string; comment?: string }
-  | { type: 'request.status'; requestId: string; number: string; title: string; status: PurchaseStatus };
+  | { type: 'request.status'; requestId: string; number: string; title: string; status: PurchaseStatus }
+) & { totalCents?: number; requester?: string };
 
 export interface Notifier {
   /** Best effort: implementations must not throw for delivery failures (log instead). */
