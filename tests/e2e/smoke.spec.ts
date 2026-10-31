@@ -96,8 +96,19 @@ test('signed-out visitors are sent to the login page', async ({ page }) => {
 });
 
 // Review finding 2: Chromium strips the tab and followed /<TAB>/example.com off-site.
+// Re-review: '/.//example.com' normalised to a protocol-relative Location.
 test('a crafted next= cannot send a signed-in user off-site', async ({ page, baseURL }) => {
-  for (const next of ['%2F%09%2Fexample.com', '%2F%5Cexample.com', '%2F%2Fexample.com', '%2F%0A%2Fexample.com']) {
+  for (const next of [
+    '%2F%09%2Fexample.com',
+    '%2F%5Cexample.com',
+    '%2F%2Fexample.com',
+    '%2F%0A%2Fexample.com',
+    // re-review: dot segments that normalise to //example.com
+    '%2F.%2F%2Fexample.com',
+    '%2Fa%2F..%2F%2Fexample.com',
+    '%2F%252e%2F%2Fexample.com',
+    '%2F%2Fapp.invalid%2F%2Fexample.com',
+  ]) {
     await page.goto(`/auth/dev?as=officer&next=${next}`);
     expect(new URL(page.url()).origin).toBe(new URL(baseURL!).origin);
     await expect(page).toHaveURL('/');

@@ -29,6 +29,37 @@ describe('safeNext (post-login redirect target)', () => {
     expect(safeNext(input)).toBe('/');
   });
 
+  // Re-review: normalisation turned these into '//example.com' (protocol-relative).
+  it.each([
+    ['dot segment', '/.//example.com'],
+    ['parent segment', '/a/..//example.com'],
+    ['encoded dot', '/%2e//example.com'],
+    ['encoded dot, upper case', '/%2E//example.com'],
+    ['encoded dot-dot', '/a/%2e%2e//example.com'],
+    ['placeholder origin', '//app.invalid//example.com'],
+    ['placeholder origin, https', 'https://app.invalid//example.com'],
+  ])('falls back to / when normalising would leave the site: %s', (_name, input) => {
+    expect(safeNext(input)).toBe('/');
+  });
+
+  it.each([
+    ['unknown section', '/evil'],
+    ['api route', '/api/admin/users'],
+    ['auth route', '/auth/dev?as=director'],
+    ['lookalike prefix', '/eventsfoo'],
+  ])('only allows the app\'s own pages: %s', (_name, input) => {
+    expect(safeNext(input)).toBe('/');
+  });
+
+  it('never returns anything a browser would read as another host', () => {
+    const tricky = ['/.//x.com', '/./\\x.com', '/..//x.com', '/%2f/x.com', '/%2F%2Fx.com', '/.%2f/x.com', '///x.com'];
+    for (const input of tricky) {
+      const out = safeNext(input);
+      expect(new URL(out, 'https://officers.cseed.co').host, `${input} → ${out}`).toBe('officers.cseed.co');
+      expect(out.startsWith('//') || out.startsWith('/\\')).toBe(false);
+    }
+  });
+
   it('falls back to / for null and undefined', () => {
     expect(safeNext(null)).toBe('/');
     expect(safeNext(undefined)).toBe('/');
