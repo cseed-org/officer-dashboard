@@ -16,6 +16,10 @@ declare namespace Cloudflare {
     /** Shared drive folder that receipts are filed under. */
     GOOGLE_DRIVE_FOLDER_ID?: string;
     DRIVE_ROOT_FOLDER_ID?: string;
+    /** Agent settlements above the estimate by more than max(percent, cents) are held for a director. Default 10. */
+    AGENT_SETTLEMENT_TOLERANCE_PERCENT?: string;
+    /** Flat allowance in cents for the same check. Default 2500 ($25). */
+    AGENT_SETTLEMENT_TOLERANCE_CENTS?: string;
     /** "1" enables /auth/dev in `astro dev` only. Ignored by production builds. */
     DEV_AUTH?: string;
   }

@@ -12,6 +12,12 @@ import {
 import { requestDetail } from './read-model';
 import { settlementWrites, unchanged } from './purchases';
 import { getNotifier } from '../services';
+import { getEnv } from '../env';
+import {
+  maxAgentSettlementCents,
+  settlementToleranceFromEnv,
+} from '../../core/settlement';
+import { formatCents } from '../../core/money';
 async function jobView(
   c: ApiContext,
   j: typeof s.fulfillmentJobs.$inferSelect,
@@ -96,6 +102,39 @@ export async function jobs(
         'Only the token holding this active claim may complete it',
       );
     const b = C.AgentJobCompleteRequest.parse(body);
+    if (b.outcome === 'done') {
+      // N2: automation may not book more than the approved estimate plus tolerance.
+      // Record the attempt on the still-claimed job and leave the request
+      // `fulfilling` so a director settles it via /transition.
+      const ceiling = maxAgentSettlementCents(
+        r.totalCents,
+        settlementToleranceFromEnv(getEnv()),
+      );
+      if (b.actualTotalCents > ceiling) {
+        const message = `Actual ${formatCents(b.actualTotalCents)} exceeds the approved ${formatCents(r.totalCents)} plus tolerance (max ${formatCents(ceiling)}); held for director review`;
+        const held = {
+          lastError: message,
+          resultJson: JSON.stringify(b),
+          updatedAt: now(),
+        };
+        await mutate(
+          c,
+          sql`${unchanged(r)} AND EXISTS (SELECT 1 FROM fulfillment_jobs WHERE id = ${j.id} AND status = ${j.status} AND updated_at = ${j.updatedAt.getTime()})`,
+          [
+            c.db
+              .update(s.fulfillmentJobs)
+              .set(held)
+              .where(eq(s.fulfillmentJobs.id, j.id)),
+          ],
+          'job.held_for_review',
+          'fulfillment_job',
+          j.id,
+          j,
+          held,
+        );
+        fail(409, 'conflict', message);
+      }
+    }
     change = {
       status: b.outcome === 'failed' && j.attempts < 3 ? 'queued' : b.outcome,
       ...(b.outcome === 'failed' ? { claimedByTokenId: null, claimedAt: null } : {}),
