@@ -1,11 +1,10 @@
 ---
 import AppLayout from '../../layouts/AppLayout.astro';
-import Placeholder from '../../components/Placeholder.astro';
-const { id } = Astro.params;
+import EventDetailView from '../../ui/islands/EventDetailView';
+
+const id = Astro.params.id!;
 ---
 
 <AppLayout title="event">
-  <Placeholder title="event" uses={['EventDetailResponse', 'EventMetricsResponse']}>
-    <p class="mono">id: {id}</p>
-  </Placeholder>
+  <EventDetailView client:load id={id} />
 </AppLayout>

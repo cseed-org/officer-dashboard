@@ -1,8 +1,12 @@
 ---
 import AppLayout from '../../layouts/AppLayout.astro';
-import Placeholder from '../../components/Placeholder.astro';
+import PageTitle from '../../components/PageTitle.astro';
+import { CsvImportForm } from '../../ui/components/CsvImportForm';
 ---
 
 <AppLayout title="import from luma">
-  <Placeholder title="import from luma" uses={['CsvImportFields', 'CsvImportResponse']} />
+  <PageTitle title="import from luma" eyebrow="events" sub="Upload a Luma guest export or the reflection survey export. Check the file first; nothing is saved until you import." />
+  <div style="max-width: 760px">
+    <CsvImportForm client:load />
+  </div>
 </AppLayout>

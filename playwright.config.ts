@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
-const PORT = 4322;
+/** 4321 is the UI's dev port; the backend Pane uses 4322. Override with E2E_PORT. */
+const PORT = Number(process.env.E2E_PORT ?? 4321);
 
 /**
  * Three viewports from the CSEED brief (mirrors cseed.co's scripts/check-mobile.mjs):
@@ -18,6 +19,15 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
+    // CSEED is in Washington: US date formats (incl. native date inputs) and Pacific time.
+    locale: 'en-US',
+    timezoneId: 'America/Los_Angeles',
+    // Native <input type="date"> follows the browser process locale, not `locale` above,
+    // and this Pi runs en_GB. Launch Chromium as en_US so date fields read mm/dd/yyyy.
+    launchOptions: {
+      args: ['--lang=en-US'],
+      env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
+    },
   },
   projects: [
     {

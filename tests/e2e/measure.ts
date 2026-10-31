@@ -28,6 +28,15 @@ export function measure(): Measurement {
     if (!node.data.trim() || !el) continue;
     if (el.closest('astro-dev-toolbar, script, style, noscript, [hidden], [aria-hidden="true"], .visually-hidden')) continue;
     if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    // Screen-reader-only text hidden by clipping (table headers on phones, captions on desktop).
+    let srOnly = false;
+    for (let a: Element | null = el; a && a !== document.body; a = a.parentElement) {
+      if (getComputedStyle(a).clipPath === 'inset(50%)') {
+        srOnly = true;
+        break;
+      }
+    }
+    if (srOnly) continue;
     const range = document.createRange();
     range.selectNodeContents(node);
     for (const r of range.getClientRects()) {

@@ -1,0 +1,18 @@
+---
+/* Page heading rendered on the server so every page has its h1 before islands load. */
+interface Props {
+  title: string;
+  eyebrow?: string;
+  sub?: string;
+}
+const { title, eyebrow, sub } = Astro.props;
+---
+
+<header class="page-title">
+  <div>
+    {eyebrow && <span class="eyebrow">{eyebrow}</span>}
+    <h1>{title}</h1>
+    {sub && <p class="page-sub">{sub}</p>}
+  </div>
+  {Astro.slots.has('default') && <div class="page-title-actions"><slot /></div>}
+</header>

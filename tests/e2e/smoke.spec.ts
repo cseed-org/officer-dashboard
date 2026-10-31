@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { layoutFailures, measure } from './measure';
+import { devLogin, settle, shot } from './helpers';
 
 /** Every route in the plan. Dynamic ids come from the seed (scripts/seed/data.ts). */
 const ROUTES = [
   '/',
+  '/events?when=past',
   '/events',
   '/events/event-kickoff',
   '/events/import',
@@ -11,55 +13,75 @@ const ROUTES = [
   '/requests/new',
   '/requests/req-0001',
   '/finance',
+  '/finance?tab=budget-vs-actual',
+  '/finance?tab=fund-balances',
+  '/finance?tab=statement-of-activities',
+  '/finance?tab=statement-of-financial-position',
+  '/finance?tab=statement-of-functional-expenses',
+  '/finance?tab=trial-balance',
+  '/finance?tab=form-990',
+  '/requests?scope=all',
+  '/requests/req-0004',
   '/admin/users',
   '/admin/tokens',
 ];
 const SCHEMES = ['light', 'dark'] as const;
 
-const shotName = (route: string) => (route === '/' ? 'overview' : route.slice(1).replaceAll('/', '_'));
-
-async function devLogin(page: Page, as: 'director' | 'officer') {
-  const res = await page.goto(`/auth/dev?as=${as}`);
-  expect(res?.status(), 'dev login failed; is DEV_AUTH=1 in .dev.vars?').toBe(200);
-  await expect(page).toHaveURL('/');
-}
-
 async function checkPage(page: Page, route: string, errors: string[]) {
   const res = await page.goto(route, { waitUntil: 'load' });
   expect(res?.status(), `${route} status`).toBe(200);
-  await page.evaluate(() => document.fonts.ready);
-  await page.addStyleTag({ content: 'astro-dev-toolbar { display: none !important; }' });
+  await settle(page);
+  // Every page's data loaded: no error state, no skeleton left.
+  await expect(page.locator('[data-state="error"]'), `${route} shows an error state`).toHaveCount(0);
   const failures = layoutFailures(await page.evaluate(measure));
   if (errors.length) failures.push(`script error: ${errors.join(' | ')}`);
   return failures;
 }
 
-test('director can reach every route without layout problems, light and dark', async ({ page }, info) => {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message.split('\n')[0]!));
-  await devLogin(page, 'director');
-
-  const problems: string[] = [];
-  for (const scheme of SCHEMES) {
-    await page.emulateMedia({ colorScheme: scheme });
-    for (const route of ROUTES) {
+// One test per route (both themes) so a slow machine doesn't time out the whole sweep.
+for (const route of ROUTES) {
+  test(`director: ${route} renders without layout problems, light and dark`, async ({ page }, info) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message.split('\n')[0]!));
+    await devLogin(page, 'director');
+    const problems: string[] = [];
+    for (const scheme of SCHEMES) {
+      await page.emulateMedia({ colorScheme: scheme });
       errors.length = 0;
       const failures = await checkPage(page, route, errors);
       await expect(page.locator('h1')).toBeVisible();
-      await page.screenshot({
-        path: `tmp/e2e-shots/${info.project.name}/${scheme}/${shotName(route)}.png`,
-        fullPage: true,
-      });
+      await shot(page, info.project.name, scheme, route);
       problems.push(...failures.map((f) => `${scheme} ${route}: ${f}`));
     }
-  }
-  expect(problems, problems.join('\n')).toEqual([]);
-});
+    expect(problems, problems.join('\n')).toEqual([]);
+  });
+}
+
+// Officers see the summary-only finance page and their own requests.
+for (const route of ['/', '/requests', '/finance', '/finance?tab=fund-balances']) {
+  test(`officer: ${route} renders without layout problems`, async ({ page }, info) => {
+    await devLogin(page, 'officer');
+    const problems: string[] = [];
+    for (const scheme of SCHEMES) {
+      await page.emulateMedia({ colorScheme: scheme });
+      problems.push(...(await checkPage(page, route, [])).map((f) => `${scheme} ${route}: ${f}`));
+      await shot(page, info.project.name, scheme, `officer/${route}`);
+    }
+    if (route === '/finance') {
+      await expect(page.getByRole('tab', { name: 'trial balance' })).toHaveCount(0);
+      await expect(page.getByRole('tab', { name: 'fund balances' })).toBeVisible();
+    }
+    expect(problems, problems.join('\n')).toEqual([]);
+  });
+}
 
 test('the nav reaches every section', async ({ page }, info) => {
   await devLogin(page, 'director');
   const nav = page.getByRole('navigation', { name: info.project.name === 'phone' ? 'Main (mobile)' : 'Main', exact: true });
   await expect(nav).toBeVisible();
+  // Labels stay whole: one line box each, nothing broken inside a word.
+  const lines = await nav.locator('a').evaluateAll((links) => links.map((l) => [l.textContent!.trim(), l.querySelector('span')?.getClientRects().length ?? 1] as const));
+  for (const [label, n] of lines) expect(n, `"${label}" wraps`).toBe(1);
   for (const [label, path] of [
     ['events', '/events'],
     ['requests', '/requests'],
@@ -92,7 +114,9 @@ test('signed-out visitors are sent to the login page', async ({ page }) => {
   await expect(page).toHaveURL(/\/login\?next=%2Frequests$/);
   const failures = layoutFailures(await page.evaluate(measure));
   expect(failures).toEqual([]);
-  await page.screenshot({ path: `tmp/e2e-shots/${test.info().project.name}/light/login.png` });
+  await shot(page, test.info().project.name, 'light', 'login');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await shot(page, test.info().project.name, 'dark', 'login');
 });
 
 // Review finding 2: Chromium strips the tab and followed /<TAB>/example.com off-site.

@@ -1,8 +1,14 @@
 ---
 import AppLayout from '../layouts/AppLayout.astro';
-import Placeholder from '../components/Placeholder.astro';
+import PageTitle from '../components/PageTitle.astro';
+import OverviewView from '../ui/islands/OverviewView';
+
+const name = Astro.locals.user?.name.split(' ')[0];
 ---
 
 <AppLayout title="overview">
-  <Placeholder title="overview" uses={['OverviewResponse']} />
+  <PageTitle title="overview" eyebrow={name ? `hi, ${name}` : undefined}>
+    <a class="btn btn--highlight" href="/requests/new">new purchase request</a>
+  </PageTitle>
+  <OverviewView client:load />
 </AppLayout>
