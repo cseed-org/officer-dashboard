@@ -1,7 +1,7 @@
 /**
  * Turns scripts/seed/data.ts into idempotent SQL for D1 (`wrangler d1 execute --file`).
  *
- * Re-running is safe: rows use INSERT OR IGNORE, and journal entries go through the real
+ * Re-running is safe: rows are inserted only when their id is missing, and journal entries go through the real
  * draft → lines → post path guarded by "only while still draft", so the integrity
  * triggers check the seed's balances and never fire on a second run.
  */
@@ -20,8 +20,13 @@ const lit = (v: V): string => {
   }
   return `'${v.replaceAll("'", "''")}'`;
 };
+/**
+ * Insert unless a row with this id exists. Not INSERT OR IGNORE: the integrity triggers
+ * (rightly) refuse any insert that collides with a posted entry, closed period or audit row.
+ */
 const insert = (table: string, row: Record<string, V>) =>
-  `INSERT OR IGNORE INTO ${table} (${Object.keys(row).join(', ')}) VALUES (${Object.values(row).map(lit).join(', ')});`;
+  `INSERT INTO ${table} (${Object.keys(row).join(', ')}) SELECT ${Object.values(row).map(lit).join(', ')} ` +
+  `WHERE NOT EXISTS (SELECT 1 FROM ${table} WHERE id = ${lit(row.id)});`;
 
 /** Fixed clock so the seed is deterministic: 2026-10-30T12:00:00Z. */
 const NOW = Date.UTC(2026, 9, 30, 12);
@@ -128,8 +133,9 @@ export function buildSeedSql(): string {
         functional_class: l.fc ?? null, debit_cents: l.debit ?? 0, credit_cents: l.credit ?? 0, memo: null,
       };
       out.push(
-        `INSERT OR IGNORE INTO journal_lines (${Object.keys(row).join(', ')}) SELECT ${Object.values(row).map(lit).join(', ')} ` +
-          `WHERE (SELECT status FROM journal_entries WHERE id = ${lit(e.id)}) = 'draft';`,
+        `INSERT INTO journal_lines (${Object.keys(row).join(', ')}) SELECT ${Object.values(row).map(lit).join(', ')} ` +
+          `WHERE (SELECT status FROM journal_entries WHERE id = ${lit(e.id)}) = 'draft' ` +
+          `AND NOT EXISTS (SELECT 1 FROM journal_lines WHERE id = ${lit(row.id as string)});`,
       );
     });
     out.push(`UPDATE journal_entries SET status = 'posted', posted_at = ${NOW}, posted_by = 'user-director' WHERE id = ${lit(e.id)} AND status = 'draft';`);

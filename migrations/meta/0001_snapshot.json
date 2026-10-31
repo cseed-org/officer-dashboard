@@ -1,6 +1,6 @@
 {
-  "id": "536b080c-e22d-4484-9543-08d7f87807e5",
-  "prevId": "e0cf566a-24d7-4e4e-926e-e5108b7ca720",
+  "id": "70faabae-219b-46cb-8fff-f4caff22ccf7",
+  "prevId": "87d2ffb2-34c4-4bfb-a499-0c1003aa4311",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -405,6 +405,10 @@
           "name": "attachments_size_nonneg",
           "value": "\"attachments\".\"size_bytes\" >= 0"
         },
+        "attachments_size_int": {
+          "name": "attachments_size_int",
+          "value": "typeof(\"attachments\".\"size_bytes\") = 'integer'"
+        },
         "attachments_owner": {
           "name": "attachments_owner",
           "value": "\"attachments\".\"request_id\" IS NOT NULL OR \"attachments\".\"journal_entry_id\" IS NOT NULL"
@@ -633,6 +637,10 @@
         "budgets_amount_nonneg": {
           "name": "budgets_amount_nonneg",
           "value": "\"budgets\".\"amount_cents\" >= 0"
+        },
+        "budgets_amount_int": {
+          "name": "budgets_amount_int",
+          "value": "typeof(\"budgets\".\"amount_cents\") = 'integer'"
         }
       }
     },
@@ -794,6 +802,14 @@
         "contributions_amount_pos": {
           "name": "contributions_amount_pos",
           "value": "\"contributions\".\"amount_cents\" > 0"
+        },
+        "contributions_amount_int": {
+          "name": "contributions_amount_int",
+          "value": "typeof(\"contributions\".\"amount_cents\") = 'integer'"
+        },
+        "contributions_qpq_int": {
+          "name": "contributions_qpq_int",
+          "value": "typeof(\"contributions\".\"quid_pro_quo_cents\") = 'integer'"
         },
         "contributions_qpq_range": {
           "name": "contributions_qpq_range",
@@ -1454,6 +1470,10 @@
           "name": "funds_amount_nonneg",
           "value": "\"funds\".\"amount_awarded_cents\" IS NULL OR \"funds\".\"amount_awarded_cents\" >= 0"
         },
+        "funds_amount_int": {
+          "name": "funds_amount_int",
+          "value": "\"funds\".\"amount_awarded_cents\" IS NULL OR typeof(\"funds\".\"amount_awarded_cents\") = 'integer'"
+        },
         "funds_dates": {
           "name": "funds_dates",
           "value": "\"funds\".\"end_date\" IS NULL OR \"funds\".\"start_date\" IS NULL OR \"funds\".\"end_date\" >= \"funds\".\"start_date\""
@@ -1779,6 +1799,14 @@
           "name": "journal_lines_debit_nonneg",
           "value": "\"journal_lines\".\"debit_cents\" >= 0"
         },
+        "journal_lines_debit_int": {
+          "name": "journal_lines_debit_int",
+          "value": "typeof(\"journal_lines\".\"debit_cents\") = 'integer'"
+        },
+        "journal_lines_credit_int": {
+          "name": "journal_lines_credit_int",
+          "value": "typeof(\"journal_lines\".\"credit_cents\") = 'integer'"
+        },
         "journal_lines_credit_nonneg": {
           "name": "journal_lines_credit_nonneg",
           "value": "\"journal_lines\".\"credit_cents\" >= 0"
@@ -1873,6 +1901,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "actual_total_cents": {
+          "name": "actual_total_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "expense_account_id": {
@@ -2052,6 +2087,30 @@
         "purchase_requests_qty_pos": {
           "name": "purchase_requests_qty_pos",
           "value": "\"purchase_requests\".\"quantity\" > 0"
+        },
+        "purchase_requests_qty_int": {
+          "name": "purchase_requests_qty_int",
+          "value": "typeof(\"purchase_requests\".\"quantity\") = 'integer'"
+        },
+        "purchase_requests_unit_int": {
+          "name": "purchase_requests_unit_int",
+          "value": "typeof(\"purchase_requests\".\"unit_cost_cents\") = 'integer'"
+        },
+        "purchase_requests_taxship_int": {
+          "name": "purchase_requests_taxship_int",
+          "value": "typeof(\"purchase_requests\".\"tax_ship_cents\") = 'integer'"
+        },
+        "purchase_requests_total_int": {
+          "name": "purchase_requests_total_int",
+          "value": "typeof(\"purchase_requests\".\"total_cents\") = 'integer'"
+        },
+        "purchase_requests_actual_int": {
+          "name": "purchase_requests_actual_int",
+          "value": "\"purchase_requests\".\"actual_total_cents\" IS NULL OR typeof(\"purchase_requests\".\"actual_total_cents\") = 'integer'"
+        },
+        "purchase_requests_actual_nonneg": {
+          "name": "purchase_requests_actual_nonneg",
+          "value": "\"purchase_requests\".\"actual_total_cents\" IS NULL OR \"purchase_requests\".\"actual_total_cents\" >= 0"
         },
         "purchase_requests_unit_nonneg": {
           "name": "purchase_requests_unit_nonneg",

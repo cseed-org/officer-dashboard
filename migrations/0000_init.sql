@@ -54,6 +54,7 @@ CREATE TABLE `attachments` (
 	CONSTRAINT "attachments_kind_check" CHECK("attachments"."kind" IN ('receipt', 'invoice', 'quote', 'other')),
 	CONSTRAINT "attachments_storage_check" CHECK("attachments"."storage" IN ('drive', 'local')),
 	CONSTRAINT "attachments_size_nonneg" CHECK("attachments"."size_bytes" >= 0),
+	CONSTRAINT "attachments_size_int" CHECK(typeof("attachments"."size_bytes") = 'integer'),
 	CONSTRAINT "attachments_owner" CHECK("attachments"."request_id" IS NOT NULL OR "attachments"."journal_entry_id" IS NOT NULL)
 );
 --> statement-breakpoint
@@ -85,7 +86,8 @@ CREATE TABLE `budgets` (
 	`updated_at` integer DEFAULT (unixepoch('subsec') * 1000) NOT NULL,
 	FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`fund_id`) REFERENCES `funds`(`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "budgets_amount_nonneg" CHECK("budgets"."amount_cents" >= 0)
+	CONSTRAINT "budgets_amount_nonneg" CHECK("budgets"."amount_cents" >= 0),
+	CONSTRAINT "budgets_amount_int" CHECK(typeof("budgets"."amount_cents") = 'integer')
 );
 --> statement-breakpoint
 CREATE INDEX `budgets_fy_idx` ON `budgets` (`fiscal_year`);--> statement-breakpoint
@@ -108,6 +110,8 @@ CREATE TABLE `contributions` (
 	FOREIGN KEY (`journal_entry_id`) REFERENCES `journal_entries`(`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "contributions_kind_check" CHECK("contributions"."kind" IN ('cash', 'check', 'online', 'in_kind', 'stock', 'other')),
 	CONSTRAINT "contributions_amount_pos" CHECK("contributions"."amount_cents" > 0),
+	CONSTRAINT "contributions_amount_int" CHECK(typeof("contributions"."amount_cents") = 'integer'),
+	CONSTRAINT "contributions_qpq_int" CHECK(typeof("contributions"."quid_pro_quo_cents") = 'integer'),
 	CONSTRAINT "contributions_qpq_range" CHECK("contributions"."quid_pro_quo_cents" >= 0 AND "contributions"."quid_pro_quo_cents" <= "contributions"."amount_cents"),
 	CONSTRAINT "contributions_in_kind_desc" CHECK("contributions"."kind" <> 'in_kind' OR "contributions"."in_kind_description" IS NOT NULL)
 );
@@ -207,6 +211,7 @@ CREATE TABLE `funds` (
 	CONSTRAINT "funds_kind_check" CHECK("funds"."kind" IN ('general', 'grant', 'sponsor', 'other')),
 	CONSTRAINT "funds_restriction_check" CHECK("funds"."restriction" IN ('without_donor', 'with_donor')),
 	CONSTRAINT "funds_amount_nonneg" CHECK("funds"."amount_awarded_cents" IS NULL OR "funds"."amount_awarded_cents" >= 0),
+	CONSTRAINT "funds_amount_int" CHECK("funds"."amount_awarded_cents" IS NULL OR typeof("funds"."amount_awarded_cents") = 'integer'),
 	CONSTRAINT "funds_dates" CHECK("funds"."end_date" IS NULL OR "funds"."start_date" IS NULL OR "funds"."end_date" >= "funds"."start_date")
 );
 --> statement-breakpoint
@@ -249,6 +254,8 @@ CREATE TABLE `journal_lines` (
 	FOREIGN KEY (`account_id`) REFERENCES `accounts`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`fund_id`) REFERENCES `funds`(`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "journal_lines_debit_nonneg" CHECK("journal_lines"."debit_cents" >= 0),
+	CONSTRAINT "journal_lines_debit_int" CHECK(typeof("journal_lines"."debit_cents") = 'integer'),
+	CONSTRAINT "journal_lines_credit_int" CHECK(typeof("journal_lines"."credit_cents") = 'integer'),
 	CONSTRAINT "journal_lines_credit_nonneg" CHECK("journal_lines"."credit_cents" >= 0),
 	CONSTRAINT "journal_lines_one_side" CHECK(("journal_lines"."debit_cents" = 0) <> ("journal_lines"."credit_cents" = 0)),
 	CONSTRAINT "journal_lines_functional_class_check" CHECK("journal_lines"."functional_class" IS NULL OR "journal_lines"."functional_class" IN ('program', 'mgmt_general', 'fundraising'))
@@ -269,6 +276,7 @@ CREATE TABLE `purchase_requests` (
 	`unit_cost_cents` integer NOT NULL,
 	`tax_ship_cents` integer DEFAULT 0 NOT NULL,
 	`total_cents` integer NOT NULL,
+	`actual_total_cents` integer,
 	`expense_account_id` text NOT NULL,
 	`fund_id` text NOT NULL,
 	`event_id` text,
@@ -288,6 +296,12 @@ CREATE TABLE `purchase_requests` (
 	CONSTRAINT "purchase_requests_status_check" CHECK("purchase_requests"."status" IN ('draft', 'submitted', 'approved', 'denied', 'fulfilling', 'fulfilled', 'reimbursed', 'closed', 'cancelled')),
 	CONSTRAINT "purchase_requests_fc_check" CHECK("purchase_requests"."functional_class" IN ('program', 'mgmt_general', 'fundraising')),
 	CONSTRAINT "purchase_requests_qty_pos" CHECK("purchase_requests"."quantity" > 0),
+	CONSTRAINT "purchase_requests_qty_int" CHECK(typeof("purchase_requests"."quantity") = 'integer'),
+	CONSTRAINT "purchase_requests_unit_int" CHECK(typeof("purchase_requests"."unit_cost_cents") = 'integer'),
+	CONSTRAINT "purchase_requests_taxship_int" CHECK(typeof("purchase_requests"."tax_ship_cents") = 'integer'),
+	CONSTRAINT "purchase_requests_total_int" CHECK(typeof("purchase_requests"."total_cents") = 'integer'),
+	CONSTRAINT "purchase_requests_actual_int" CHECK("purchase_requests"."actual_total_cents" IS NULL OR typeof("purchase_requests"."actual_total_cents") = 'integer'),
+	CONSTRAINT "purchase_requests_actual_nonneg" CHECK("purchase_requests"."actual_total_cents" IS NULL OR "purchase_requests"."actual_total_cents" >= 0),
 	CONSTRAINT "purchase_requests_unit_nonneg" CHECK("purchase_requests"."unit_cost_cents" >= 0),
 	CONSTRAINT "purchase_requests_taxship_nonneg" CHECK("purchase_requests"."tax_ship_cents" >= 0),
 	CONSTRAINT "purchase_requests_total" CHECK("purchase_requests"."total_cents" = "purchase_requests"."quantity" * "purchase_requests"."unit_cost_cents" + "purchase_requests"."tax_ship_cents")

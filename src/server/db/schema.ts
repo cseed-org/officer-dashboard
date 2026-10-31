@@ -45,6 +45,13 @@ import {
 const oneOf = (column: AnySQLiteColumn, values: readonly string[]): SQL =>
   sql`${column} IN (${sql.raw(values.map((v) => `'${v}'`).join(', '))})`;
 
+/**
+ * Whole cents only. INTEGER affinity alone stores 0.5 as REAL, so every money (and count)
+ * column also checks the storage class. Nullable columns pass when NULL.
+ */
+const isInteger = (column: AnySQLiteColumn): SQL => sql`typeof(${column}) = 'integer'`;
+const isIntegerOrNull = (column: AnySQLiteColumn): SQL => sql`${column} IS NULL OR typeof(${column}) = 'integer'`;
+
 const id = () => text('id').primaryKey();
 const createdAt = () =>
   integer('created_at', { mode: 'timestamp_ms' })
@@ -205,6 +212,7 @@ export const funds = sqliteTable(
     check('funds_kind_check', oneOf(t.kind, FUND_KINDS)),
     check('funds_restriction_check', oneOf(t.restriction, RESTRICTIONS)),
     check('funds_amount_nonneg', sql`${t.amountAwardedCents} IS NULL OR ${t.amountAwardedCents} >= 0`),
+    check('funds_amount_int', isIntegerOrNull(t.amountAwardedCents)),
     check('funds_dates', sql`${t.endDate} IS NULL OR ${t.startDate} IS NULL OR ${t.endDate} >= ${t.startDate}`),
   ],
 );
@@ -277,6 +285,8 @@ export const journalLines = sqliteTable(
   },
   (t) => [
     check('journal_lines_debit_nonneg', sql`${t.debitCents} >= 0`),
+    check('journal_lines_debit_int', isInteger(t.debitCents)),
+    check('journal_lines_credit_int', isInteger(t.creditCents)),
     check('journal_lines_credit_nonneg', sql`${t.creditCents} >= 0`),
     check('journal_lines_one_side', sql`(${t.debitCents} = 0) <> (${t.creditCents} = 0)`),
     check(
@@ -316,6 +326,8 @@ export const contributions = sqliteTable(
   (t) => [
     check('contributions_kind_check', oneOf(t.kind, CONTRIBUTION_KINDS)),
     check('contributions_amount_pos', sql`${t.amountCents} > 0`),
+    check('contributions_amount_int', isInteger(t.amountCents)),
+    check('contributions_qpq_int', isInteger(t.quidProQuoCents)),
     check(
       'contributions_qpq_range',
       sql`${t.quidProQuoCents} >= 0 AND ${t.quidProQuoCents} <= ${t.amountCents}`,
@@ -345,6 +357,7 @@ export const budgets = sqliteTable(
   },
   (t) => [
     check('budgets_amount_nonneg', sql`${t.amountCents} >= 0`),
+    check('budgets_amount_int', isInteger(t.amountCents)),
     // Unique (fiscal_year, account_id, coalesce(fund_id, '')) is an expression index in
     // migrations/0001_integrity_triggers.sql (drizzle-kit can't emit it for SQLite).
     index('budgets_fy_idx').on(t.fiscalYear),
@@ -431,7 +444,13 @@ export const purchaseRequests = sqliteTable(
     quantity: integer('quantity').notNull().default(1),
     unitCostCents: integer('unit_cost_cents').notNull(),
     taxShipCents: integer('tax_ship_cents').notNull().default(0),
+    /** Approved estimate: quantity × unit cost + tax/shipping. Encumbered while approved. */
     totalCents: integer('total_cents').notNull(),
+    /**
+     * What was actually paid, recorded at settlement (fulfilled / reimbursed). The posting
+     * engine books this amount, not totalCents, and releases the encumbrance.
+     */
+    actualTotalCents: integer('actual_total_cents'),
     /** Expense account (budget category) the purchase will be charged to. */
     expenseAccountId: text('expense_account_id')
       .notNull()
@@ -454,6 +473,12 @@ export const purchaseRequests = sqliteTable(
     check('purchase_requests_status_check', oneOf(t.status, PURCHASE_STATUSES)),
     check('purchase_requests_fc_check', oneOf(t.functionalClass, FUNCTIONAL_CLASSES)),
     check('purchase_requests_qty_pos', sql`${t.quantity} > 0`),
+    check('purchase_requests_qty_int', isInteger(t.quantity)),
+    check('purchase_requests_unit_int', isInteger(t.unitCostCents)),
+    check('purchase_requests_taxship_int', isInteger(t.taxShipCents)),
+    check('purchase_requests_total_int', isInteger(t.totalCents)),
+    check('purchase_requests_actual_int', isIntegerOrNull(t.actualTotalCents)),
+    check('purchase_requests_actual_nonneg', sql`${t.actualTotalCents} IS NULL OR ${t.actualTotalCents} >= 0`),
     check('purchase_requests_unit_nonneg', sql`${t.unitCostCents} >= 0`),
     check('purchase_requests_taxship_nonneg', sql`${t.taxShipCents} >= 0`),
     check(
@@ -508,6 +533,7 @@ export const attachments = sqliteTable(
     check('attachments_kind_check', oneOf(t.kind, ATTACHMENT_KINDS)),
     check('attachments_storage_check', oneOf(t.storage, STORAGE_BACKENDS)),
     check('attachments_size_nonneg', sql`${t.sizeBytes} >= 0`),
+    check('attachments_size_int', isInteger(t.sizeBytes)),
     check('attachments_owner', sql`${t.requestId} IS NOT NULL OR ${t.journalEntryId} IS NOT NULL`),
     index('attachments_request_idx').on(t.requestId),
   ],

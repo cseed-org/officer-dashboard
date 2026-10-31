@@ -31,7 +31,8 @@ the **dev login**: open <http://localhost:4321/login> and choose *director* or *
 > When Astro detects a coding agent it starts the dev server in the background
 > (`astro dev stop|status|logs`). Add `--ignore-lock` to keep it in the foreground.
 
-Reset the local database: `npm run db:reset:local`.
+Reset the local database: `npm run db:reset:local`. Do this after pulling a change
+that rewrites existing migrations (as PR #1's review fixes did, before anything was deployed).
 
 ## Scripts
 
@@ -121,13 +122,19 @@ without touching domain code.
 
 ### Data integrity
 
-- Money is stored as integer cents everywhere.
+- Money is stored as integer cents everywhere. CHECK `typeof(col) = 'integer'` rejects
+  fractional values, which SQLite's INTEGER affinity would otherwise store as REAL.
 - Enum columns have CHECK constraints; journal lines must be non-negative with exactly one
   of debit or credit; purchase totals must equal quantity × unit cost + tax/shipping.
 - Triggers (`migrations/0001_integrity_triggers.sql`): journal entries are created as
   drafts and can only be posted when balanced, with ≥ 2 lines, outside closed fiscal
   periods. **Posted entries and their lines can't be updated or deleted**; corrections
   are reversing entries. `audit_log` is append-only.
+- D1 runs with `recursive_triggers` off, so `INSERT OR REPLACE` / `UPDATE OR REPLACE`
+  delete conflicting rows without firing DELETE triggers. Extra guards therefore refuse any
+  insert or key change that collides with a posted entry or line, an audit row, or a
+  closed fiscal period. `tests/db/integrity-triggers.test.ts` runs every rule against both
+  `node:sqlite` and real local D1 (workerd via `getPlatformProxy`).
 - Sessions store only a SHA-256 of the cookie token. Service tokens likewise.
 
 ### Accounting note
