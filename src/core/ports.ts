@@ -27,6 +27,7 @@ export type NotificationEvent = (
   | { type: 'request.submitted'; requestId: string; number: string; title: string; totalCents: number; requester: string }
   | { type: 'request.approved' | 'request.denied'; requestId: string; number: string; title: string; director: string; comment?: string }
   | { type: 'request.status'; requestId: string; number: string; title: string; status: PurchaseStatus }
+  | { type: 'request.held'; requestId: string; number: string; title: string; attemptedCents: number; approvedCents: number; reason: string }
 ) & { totalCents?: number; requester?: string };
 
 export interface Notifier {

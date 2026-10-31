@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fiscalYearFor, fiscalYearRange } from '../../src/core/fiscal';
+import { fiscalYearFor, fiscalYearRange, monthlyPeriods } from '../../src/core/fiscal';
 
 describe('fiscal year (July–June, named by the year it ends)', () => {
   it('puts July 2026 in FY2027', () => {
@@ -25,5 +25,15 @@ describe('fiscal year (July–June, named by the year it ends)', () => {
 
   it('rejects malformed dates', () => {
     expect(() => fiscalYearFor('7/1/2026')).toThrow();
+  });
+});
+
+describe('monthlyPeriods', () => {
+  it('builds the 12 calendar-month periods of a fiscal year, July to June', () => {
+    const periods = monthlyPeriods(2028);
+    expect(periods).toHaveLength(12);
+    expect(periods[0]).toEqual({ name: 'Jul 2027', startDate: '2027-07-01', endDate: '2027-07-31' });
+    expect(periods[7]).toEqual({ name: 'Feb 2028', startDate: '2028-02-01', endDate: '2028-02-29' });
+    expect(periods[11]).toEqual({ name: 'Jun 2028', startDate: '2028-06-01', endDate: '2028-06-30' });
   });
 });

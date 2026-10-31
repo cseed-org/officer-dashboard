@@ -6,7 +6,7 @@
  * triggers check the seed's balances and never fire on a second run.
  */
 import { contributionObligations } from '../../src/core/contributions';
-import { fiscalYearRange } from '../../src/core/fiscal';
+import { monthlyPeriods } from '../../src/core/fiscal';
 import { purchaseTotalCents } from '../../src/core/money';
 import * as d from './data';
 
@@ -151,18 +151,12 @@ export function buildSeedSql(): string {
 
   // Monthly fiscal periods; July–September closed. Inserted after the journal so the
   // sample July–September entries could still post.
-  const { start } = fiscalYearRange(d.FISCAL_YEAR);
-  const [y0, m0] = start.split('-').map(Number) as [number, number];
-  for (let i = 0; i < 12; i++) {
-    const first = new Date(Date.UTC(y0, m0 - 1 + i, 1));
-    const last = new Date(Date.UTC(y0, m0 + i, 0));
-    const iso = (dt: Date) => dt.toISOString().slice(0, 10);
-    const name = first.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  monthlyPeriods(d.FISCAL_YEAR).forEach((p, i) => {
     out.push(insert('fiscal_periods', {
-      id: `period-${iso(first).slice(0, 7)}`, fiscal_year: d.FISCAL_YEAR, name, start_date: iso(first), end_date: iso(last),
+      id: `period-${p.startDate.slice(0, 7)}`, fiscal_year: d.FISCAL_YEAR, name: p.name, start_date: p.startDate, end_date: p.endDate,
       status: i < 3 ? 'closed' : 'open', closed_at: i < 3 ? NOW : null, closed_by: i < 3 ? 'user-director' : null, created_at: NOW,
     }));
-  }
+  });
 
   return `${out.join('\n')}\n`;
 }

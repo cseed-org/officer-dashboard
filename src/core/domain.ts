@@ -52,7 +52,8 @@ export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 export const STORAGE_BACKENDS = ['drive', 'local'] as const;
 export type StorageBackend = (typeof STORAGE_BACKENDS)[number];
 
-export const FULFILLMENT_JOB_STATUSES = ['queued', 'claimed', 'done', 'failed', 'cancelled'] as const;
+/** `held`: the agent reported an over-tolerance settlement; terminal for the agent, a director settles the request. */
+export const FULFILLMENT_JOB_STATUSES = ['queued', 'claimed', 'held', 'done', 'failed', 'cancelled'] as const;
 export type FulfillmentJobStatus = (typeof FULFILLMENT_JOB_STATUSES)[number];
 
 export const JOURNAL_STATUSES = ['draft', 'posted'] as const;

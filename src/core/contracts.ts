@@ -418,6 +418,14 @@ export const PurchaseRequestDetail = PurchaseRequestListItem.extend({
   allowedTransitions: z.array(PurchaseStatus),
   /** Whether the current user may edit (draft + requester). */
   canEdit: z.boolean(),
+  /**
+   * Set while the purchasing agent's settlement is held for director review (it
+   * reported more than the approved estimate plus tolerance). A director clears it
+   * by settling the request with POST /transition.
+   */
+  settlementHold: z
+    .object({ attemptedCents: NonNegCents, approvedCents: NonNegCents, reason: z.string(), heldAt: IsoDateTime })
+    .nullable(),
 });
 export type PurchaseRequestDetail = z.infer<typeof PurchaseRequestDetail>;
 
@@ -627,7 +635,17 @@ export type FinanceReportQuery = z.infer<typeof FinanceReportQuery>;
 export const Form990Report = ReportMeta.extend({
   report: z.literal('form-990'),
   rows: z.array(z.object({ part: z.enum(['VIII', 'IX']), line: z.string(), totalCents: Cents, programCents: Cents, mgmtGeneralCents: Cents, fundraisingCents: Cents })),
+  /** Totals over mapped lines: Part VIII line 12 (total revenue) and Part IX line 25 (total functional expenses). */
+  totals: z.object({
+    partVIIILine12Cents: Cents,
+    partIXLine25: z.object({ totalCents: Cents, programCents: Cents, mgmtGeneralCents: Cents, fundraisingCents: Cents }),
+  }),
+  /** Line 1g memo: noncash (in-kind, stock) contributions already included in lines 1a–1f. */
+  line1gNoncashCents: Cents,
+  /** Revenue/expense accounts with no 990 mapping; their amounts are NOT in the totals above. */
+  unmappedAccounts: z.array(z.object({ account: AccountRef, totalCents: Cents })),
 });
+export type Form990Report = z.infer<typeof Form990Report>;
 
 export const FinanceReportResponse = z.discriminatedUnion('report', [
   TrialBalanceReport,
@@ -683,6 +701,18 @@ export const FiscalPeriodsResponse = z.object({
   ),
 });
 export type FiscalPeriodsResponse = z.infer<typeof FiscalPeriodsResponse>;
+export type FinancePeriod = FiscalPeriodsResponse['periods'][number];
+
+/** POST /api/finance/periods (director) — creates the 12 monthly periods of a fiscal year that has none. */
+export const FiscalYearPeriodsCreateRequest = z.object({ fiscalYear: FiscalYear });
+export type FiscalYearPeriodsCreateRequest = z.infer<typeof FiscalYearPeriodsCreateRequest>;
+
+/**
+ * POST /api/finance/periods/:id/close (director) — open → closed or locked, closed → locked.
+ * Closed and locked periods reject new entries; neither can reopen.
+ */
+export const FiscalPeriodCloseRequest = z.object({ to: z.enum(['closed', 'locked']) });
+export type FiscalPeriodCloseRequest = z.infer<typeof FiscalPeriodCloseRequest>;
 
 /** GET /api/finance/accounts (director) — chart of accounts with 990 mapping. */
 export const ChartOfAccountsResponse = z.object({
@@ -882,6 +912,8 @@ export const ENDPOINTS = {
   budgetsGet: { method: 'GET', path: '/api/finance/budgets', auth: 'officer', query: FinanceQuery, response: BudgetsResponse },
   budgetsPut: { method: 'PUT', path: '/api/finance/budgets', auth: 'director', body: BudgetsUpsertRequest, response: BudgetsResponse },
   periods: { method: 'GET', path: '/api/finance/periods', auth: 'director', response: FiscalPeriodsResponse },
+  periodsCreate: { method: 'POST', path: '/api/finance/periods', auth: 'director', body: FiscalYearPeriodsCreateRequest, response: FiscalPeriodsResponse },
+  periodClose: { method: 'POST', path: '/api/finance/periods/:id/close', auth: 'director', body: FiscalPeriodCloseRequest, response: FiscalPeriodsResponse },
   accounts: { method: 'GET', path: '/api/finance/accounts', auth: 'director', response: ChartOfAccountsResponse },
 
   adminUsers: { method: 'GET', path: '/api/admin/users', auth: 'director', response: AdminUsersResponse },

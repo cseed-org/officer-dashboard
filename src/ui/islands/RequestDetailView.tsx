@@ -8,6 +8,7 @@ import { describe, Field, Section, StatusBadge } from '../components/kit';
 import { Empty, ErrorState, errorMessage, Loading, Notice } from '../components/states';
 import { bytes, safeUrl, dollarsToCents, fmtDate, fmtDateTime, formatCents, FUNCTIONAL_LABEL, TYPE_LABEL } from '../format';
 import { Dropzone } from './RequestFormView';
+import { SettlementHoldNotice } from '../components/SettlementHoldNotice';
 
 function Title({ r, children }: { r?: PurchaseRequestDetail; children?: ComponentChildren }) {
   return (
@@ -83,6 +84,7 @@ export default function RequestDetailView({
       </Title>
 
       <div class="stack">
+        <SettlementHoldNotice hold={r.settlementHold} />
         {(flash.created || flash.failed > 0 || notice) && (
           <div style={{ display: 'grid', gap: 'var(--space-3)' }} ref={statusRef} tabIndex={-1} data-status-region>
             {flash.created === 'submitted' && <Notice tone="positive">Submitted. A director has been notified and will review it.</Notice>}

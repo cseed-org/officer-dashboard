@@ -434,7 +434,7 @@ export const purchaseRequests = sqliteTable(
   'purchase_requests',
   {
     id: id(),
-    /** Human-friendly number shown in the UI, e.g. 2026-0007. */
+    /** Human-friendly number shown in the UI: fiscal year + 4-digit sequence, e.g. 2027-0007 (allocated in requestCreate). */
     number: text('number').notNull().unique(),
     requesterId: text('requester_id')
       .notNull()

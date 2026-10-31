@@ -1,5 +1,5 @@
 import { isRegistered } from '../../core/luma/status';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import * as s from '../db/schema';
 import type { Db } from '../db/client';
 import type { CurrentUser } from '../../core/contracts';
@@ -83,13 +83,23 @@ export async function requestDetail(
       .get(),
   );
   const cat = await catalog(db);
-  const [approvals, attachments, entries] = await Promise.all([
+  const [approvals, attachments, entries, held] = await Promise.all([
     db.select().from(s.approvals).where(eq(s.approvals.requestId, id)),
     db.select().from(s.attachments).where(eq(s.attachments.requestId, id)),
     db
       .select()
       .from(s.journalEntries)
       .where(eq(s.journalEntries.purchaseRequestId, id)),
+    db
+      .select()
+      .from(s.fulfillmentJobs)
+      .where(
+        and(
+          eq(s.fulfillmentJobs.requestId, id),
+          eq(s.fulfillmentJobs.status, 'held'),
+        ),
+      )
+      .get(),
   ]);
   const canEdit = user?.id === r.requesterId && r.status === 'draft';
   const allowedTransitions = nextStatuses(r.type, r.status).filter((to) => {
@@ -119,5 +129,13 @@ export async function requestDetail(
       .map((e) => e.id),
     allowedTransitions,
     canEdit,
+    settlementHold: held
+      ? {
+          attemptedCents: (JSON.parse(held.resultJson ?? '{}') as { actualTotalCents?: number }).actualTotalCents ?? 0,
+          approvedCents: r.totalCents,
+          reason: held.lastError ?? 'Held for director review',
+          heldAt: held.updatedAt.toISOString(),
+        }
+      : null,
   };
 }

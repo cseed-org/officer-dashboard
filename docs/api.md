@@ -65,6 +65,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | GET | `/api/finance/budgets` | officer | `FinanceQuery` | — | `BudgetsResponse` |
 | PUT | `/api/finance/budgets` | director | — | `BudgetsUpsertRequest` | `BudgetsResponse` |
 | GET | `/api/finance/periods` | director | — | — | `FiscalPeriodsResponse` |
+| POST | `/api/finance/periods` | director | — | `FiscalYearPeriodsCreateRequest` | `FiscalPeriodsResponse` |
+| POST | `/api/finance/periods/:id/close` | director | — | `FiscalPeriodCloseRequest` | `FiscalPeriodsResponse` |
 | GET | `/api/finance/accounts` | director | — | — | `ChartOfAccountsResponse` |
 | GET | `/api/admin/users` | director | — | — | `AdminUsersResponse` |
 | POST | `/api/admin/users` | director | — | `AdminUserCreateRequest` | `AdminUserResponse` |
@@ -132,6 +134,14 @@ other reports return 403 for officers.
 - `FINANCE_REPORTS` additionally includes director-only `form-990` → `Form990Report`.
   It groups Part VIII/IX account mappings and functional expense columns; every report
   supports tabular `?format=csv` with metadata, section names and integer cents.
+  `totals.partVIIILine12Cents` and `totals.partIXLine25` sum the mapped lines;
+  `line1gNoncashCents` is the memo for in-kind/stock contributions (already inside
+  lines 1a–1f); `unmappedAccounts` lists revenue/expense accounts with no 990 line,
+  whose amounts are **not** in the totals.
+- Opening-balance entries (`source = 'opening_balance'`) count toward net assets at the
+  beginning of the year whatever their date, so the statement of activities foots:
+  revenue − expenses + releases = change in unrestricted net assets, and
+  revenue − releases = change in restricted net assets.
 - Net expense/release fields are signed cents so correcting entries/refunds validate.
   Fund-balance rows additionally expose `restrictedEndingCents` and
   `unrestrictedEndingCents`; `releasesCents` is informational and is not subtracted a
@@ -147,5 +157,13 @@ other reports return 403 for officers.
   imports preserve prior fields.
 - `GET /api/admin/audit` and other lists use opaque date/id cursors in descending date
   order. List adapters currently load their filtered datasets in memory (v1 scale).
-- Fiscal period creation/close and manual/contribution postings are core operations;
-  no corresponding write endpoints were part of the v1 endpoint contract.
+- Fiscal periods: `POST /api/finance/periods` creates the 12 monthly periods of a fiscal
+  year that has none (409 otherwise). `POST /api/finance/periods/:id/close` moves
+  open → closed/locked or closed → locked; nothing reopens (409). A period whose
+  `endDate` is today or later (Pacific) can't be closed or locked (409), and the UI
+  shows it as "in progress". The `/finance`
+  "periods" tab (directors) drives both. Manual/contribution postings remain core-only.
+- Agent settlements above max(estimate × 1.10, estimate + $25) return 409 and move the
+  job to `held` (terminal for the agent: claim cleared, never re-queued). The request
+  detail's `settlementHold` carries the attempted and approved amounts until a director
+  settles it; a `request.held` notification fires (see README, "Agent settlement tolerance").

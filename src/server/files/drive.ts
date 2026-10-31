@@ -49,7 +49,9 @@ export class GoogleDriveFileStore implements FileStore {
   constructor(
     json: string,
     private rootId: string,
-    private fetcher: typeof fetch = fetch,
+    // Wrapped: calling the global fetch as a method (this.fetcher) throws
+    // "Illegal invocation" on Workers.
+    private fetcher: typeof fetch = (input, init) => fetch(input, init),
   ) {
     this.account = JSON.parse(json);
   }
@@ -86,19 +88,58 @@ export class GoogleDriveFileStore implements FileStore {
       throw new Error(`Drive operation failed (${response.status})`);
     return response;
   }
-  private async folder(name: string, parent: string) {
+  private corpus?: Promise<Record<string, string>>;
+  /**
+   * List queries must search the shared drive that holds the root folder: the
+   * default `user` corpus can miss shared-drive children (N4). Looked up once.
+   */
+  private listCorpus() {
+    return (this.corpus ??= this.call(
+      `/drive/v3/files/${encodeURIComponent(this.rootId)}?fields=id,driveId&supportsAllDrives=true`,
+    )
+      .then((r) => r.json() as Promise<{ driveId?: string }>)
+      .then(
+        (f): Record<string, string> =>
+          f.driveId
+            ? { corpora: 'drive', driveId: f.driveId }
+            : { corpora: 'allDrives' },
+      )
+      .catch((e) => {
+        this.corpus = undefined;
+        throw e;
+      }));
+  }
+  private async findFolders(name: string, parent: string) {
     const escape = (s: string) =>
       s.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
     const query = new URLSearchParams({
       q: `'${escape(parent)}' in parents and name = '${escape(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-      fields: 'files(id)',
+      fields: 'files(id,createdTime)',
+      orderBy: 'createdTime',
       supportsAllDrives: 'true',
       includeItemsFromAllDrives: 'true',
+      ...(await this.listCorpus()),
     });
     const data = (await (
       await this.call(`/drive/v3/files?${query}`)
-    ).json()) as { files: { id: string }[] };
-    if (data.files[0]) return data.files[0].id;
+    ).json()) as { files: { id: string; createdTime?: string }[] };
+    // Tie-break equal createdTime by id so concurrent uploaders agree on the oldest.
+    return data.files
+      .sort(
+        (a, b) =>
+          (a.createdTime ?? '').localeCompare(b.createdTime ?? '') ||
+          a.id.localeCompare(b.id),
+      )
+      .map((f) => f.id);
+  }
+  /**
+   * Find or create a folder. Concurrent first uploads can both create it, so
+   * after creating we re-list and every uploader keeps the oldest; a losing
+   * duplicate (ours, still empty) is trashed.
+   */
+  private async folder(name: string, parent: string) {
+    const existing = await this.findFolders(name, parent);
+    if (existing[0]) return existing[0];
     const created = (await (
       await this.call('/drive/v3/files?supportsAllDrives=true&fields=id', {
         method: 'POST',
@@ -110,7 +151,17 @@ export class GoogleDriveFileStore implements FileStore {
         }),
       })
     ).json()) as { id: string };
-    return created.id;
+    const oldest = (await this.findFolders(name, parent))[0] ?? created.id;
+    if (oldest !== created.id)
+      await this.call(
+        `/drive/v3/files/${encodeURIComponent(created.id)}?supportsAllDrives=true`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trashed: true }),
+        },
+      ).catch(() => undefined);
+    return oldest;
   }
   async put(input: Parameters<FileStore['put']>[0]): Promise<StoredFile> {
     validateUpload(input.mimeType, input.body.byteLength);

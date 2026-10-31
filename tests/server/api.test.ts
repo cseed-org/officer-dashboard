@@ -4,9 +4,11 @@ import { build } from 'esbuild';
 import { migrationStatements } from '../db/engines';
 import { buildSeedSql } from '../../scripts/seed/sql';
 import { ENDPOINTS, type CurrentUser } from '../../src/core/contracts';
+import { fiscalYearFor } from '../../src/core/fiscal';
 vi.setConfig({ testTimeout: 60000 });
 const state = { db: null as D1Database | null };
 let worker: Miniflare;
+const webhooks: any[] = [];
 const director: CurrentUser = {
   id: 'user-director',
   name: 'Jordan Lee',
@@ -94,6 +96,13 @@ beforeAll(async () => {
       compatibilityDate: '2026-10-01',
       compatibilityFlags: ['nodejs_compat'],
       d1Databases: { DB: 'api-test' },
+      bindings: { DISCORD_WEBHOOK_URL: 'https://discord.test/webhook' },
+      // Capture outbound Discord webhook posts instead of sending them.
+      outboundService: async (req: Request) => {
+        if (new URL(req.url).host === 'discord.test')
+          webhooks.push(await req.json());
+        return new Response(null, { status: 204 });
+      },
     }),
   );
   state.db = (await worker.getD1Database('DB')) as unknown as D1Database;
@@ -336,6 +345,28 @@ describe('real D1 API', () => {
     );
     expect(activities.body.netAssetsEnding.totalCents).toBe(
       position.body.totals.netAssetsCents,
+    );
+    // Statement of activities foots per class on the seeded books (N1).
+    const sumBy = (rows: any[], key: string) =>
+      rows.reduce((a: number, r: any) => a + r[key], 0);
+    const a = activities.body;
+    expect(
+      sumBy(a.revenue, 'withoutDonorCents') -
+        sumBy(a.expenses, 'withoutDonorCents') +
+        a.releasesCents,
+    ).toBe(a.changeInNetAssets.withoutDonorCents);
+    expect(
+      sumBy(a.revenue, 'withDonorCents') -
+        sumBy(a.expenses, 'withDonorCents') -
+        a.releasesCents,
+    ).toBe(a.changeInNetAssets.withDonorCents);
+    const f990 = await call('/api/finance/reports/form-990', 'GET', undefined, director);
+    expect(f990.body.unmappedAccounts).toEqual([]);
+    expect(f990.body.totals.partVIIILine12Cents).toBe(
+      sumBy(a.revenue, 'totalCents'),
+    );
+    expect(f990.body.totals.partIXLine25.totalCents).toBe(
+      sumBy(a.expenses, 'totalCents'),
     );
     for (const name of [
       'statement-of-functional-expenses',
@@ -633,6 +664,108 @@ describe('real D1 API', () => {
       expect((await call(`/api/agent/jobs/${jobId}/complete`,'POST',{ outcome: 'failed',error: 'stale claim' },null,token)).status).toBe(409);
     }
     expect((await call(`/api/agent/jobs/${jobId}/claim`,'POST',undefined,null,token)).status).toBe(409);
+  });
+
+  it('holds an agent settlement above the approved estimate + tolerance for director review', async () => {
+    const issued = await call('/api/admin/tokens', 'POST', { name: 'tolerance', scopes: ['agent:jobs'] }, director);
+    const token = issued.body.plaintext;
+    // Estimate $100.00 → default ceiling is max($110.00, $125.00) = $125.00.
+    const made = await call('/api/requests', 'POST', { ...purchase, submit: true });
+    const id = made.body.request.id;
+    await call(`/api/requests/${id}/approve`, 'POST', {}, director);
+    const listed = await call('/api/agent/jobs', 'GET', undefined, null, token);
+    const jobId = listed.body.jobs.find((j: { request: { id: string } }) => j.request.id === id).id;
+    await call(`/api/agent/jobs/${jobId}/claim`, 'POST', undefined, null, token);
+    const over = await call(`/api/agent/jobs/${jobId}/complete`, 'POST', { outcome: 'done', actualTotalCents: 12_501 }, null, token);
+    expect(over.status).toBe(409);
+    expect(over.body.error.message).toMatch(/director review/);
+    const held = await call(`/api/requests/${id}`, 'GET', undefined, director);
+    expect(held.body.request.status).toBe('fulfilling');
+    expect(held.body.request.journalEntryIds).toHaveLength(0);
+    // M1: the hold is visible on the request and terminal for the agent.
+    expect(held.body.request.settlementHold).toMatchObject({ attemptedCents: 12_501, approvedCents: 10_000 });
+    expect(held.body.request.settlementHold.reason).toMatch(/director review/);
+    const job = await state.db!.prepare('SELECT status, claimed_by_token_id, last_error FROM fulfillment_jobs WHERE id = ?').bind(jobId).first();
+    expect(job?.status).toBe('held');
+    expect(job?.claimed_by_token_id).toBeNull();
+    expect(String(job?.last_error)).toMatch(/\$125\.01/);
+    // A later 'failed' (or another 'done') from the agent can't undo the hold or re-queue the job.
+    expect((await call(`/api/agent/jobs/${jobId}/complete`, 'POST', { outcome: 'failed', error: 'complete rejected' }, null, token)).status).toBe(409);
+    expect((await call(`/api/agent/jobs/${jobId}/complete`, 'POST', { outcome: 'done', actualTotalCents: 9_000 }, null, token)).status).toBe(409);
+    expect((await call(`/api/agent/jobs/${jobId}/claim`, 'POST', undefined, null, token)).status).toBe(409);
+    const queued = await call('/api/agent/jobs', 'GET', undefined, null, token);
+    expect(queued.body.jobs.some((j: { id: string }) => j.id === jobId)).toBe(false);
+    expect((await call(`/api/requests/${id}`, 'GET', undefined, director)).body.request.status).toBe('fulfilling');
+    // Directors are notified with the attempted vs approved amount.
+    const note = webhooks.find((w) => w.embeds?.[0]?.description === 'request.held' && w.embeds[0].title.startsWith(made.body.request.number));
+    expect(note).toBeDefined();
+    const fields = Object.fromEntries(note.embeds[0].fields.map((f: { name: string; value: string }) => [f.name, f.value]));
+    expect(fields).toMatchObject({ 'Agent reported': '$125.01', Approved: '$100.00' });
+    // The director settles the held request at the real amount, which clears the hold.
+    const settled = await call(`/api/requests/${id}/transition`, 'POST', { to: 'fulfilled', actualTotalCents: 12_501 }, director);
+    expect(settled.status).toBe(200);
+    expect(settled.body.request.actualTotalCents).toBe(12_501);
+    expect(settled.body.request.settlementHold).toBeNull();
+    const after = await state.db!.prepare('SELECT status FROM fulfillment_jobs WHERE id = ?').bind(jobId).first();
+    expect(after?.status).toBe('done');
+    // At the ceiling, the agent may settle on its own.
+    const made2 = await call('/api/requests', 'POST', { ...purchase, submit: true });
+    await call(`/api/requests/${made2.body.request.id}/approve`, 'POST', {}, director);
+    const job2 = (await call('/api/agent/jobs', 'GET', undefined, null, token)).body.jobs.find(
+      (j: { request: { id: string } }) => j.request.id === made2.body.request.id,
+    ).id;
+    await call(`/api/agent/jobs/${job2}/claim`, 'POST', undefined, null, token);
+    expect((await call(`/api/agent/jobs/${job2}/complete`, 'POST', { outcome: 'done', actualTotalCents: 12_500 }, null, token)).status).toBe(200);
+  });
+
+  it('lets a director create the next fiscal year of periods and close, then lock, a period', async () => {
+    expect((await call('/api/finance/periods', 'POST', { fiscalYear: 2028 })).status).toBe(403);
+    const made = await call('/api/finance/periods', 'POST', { fiscalYear: 2028 }, director);
+    expect(made.status).toBe(200);
+    const fy28 = made.body.periods.filter((p: { fiscalYear: number }) => p.fiscalYear === 2028);
+    expect(fy28).toHaveLength(12);
+    expect(fy28[0]).toMatchObject({ name: 'Jul 2027', startDate: '2027-07-01', endDate: '2027-07-31', status: 'open' });
+    expect(fy28.at(-1)).toMatchObject({ startDate: '2028-06-01', endDate: '2028-06-30' });
+    // A year that already has periods cannot be created twice.
+    expect((await call('/api/finance/periods', 'POST', { fiscalYear: 2028 }, director)).status).toBe(409);
+    expect((await call('/api/finance/periods', 'POST', { fiscalYear: 2027 }, director)).status).toBe(409);
+    // M2: a period that hasn't ended (Pacific) can't be closed or locked.
+    const futureJuly = fy28[0].id;
+    const notEnded = await call(`/api/finance/periods/${futureJuly}/close`, 'POST', { to: 'closed' }, director);
+    expect(notEnded.status).toBe(409);
+    expect(notEnded.body.error.message).toMatch(/hasn.t ended/);
+    expect((await call(`/api/finance/periods/${futureJuly}/close`, 'POST', { to: 'locked' }, director)).status).toBe(409);
+    // A past year closes, then locks.
+    const past = await call('/api/finance/periods', 'POST', { fiscalYear: 2026 }, director);
+    const july = past.body.periods.find((p: { startDate: string }) => p.startDate === '2025-07-01').id;
+    expect((await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'closed' })).status).toBe(403);
+    const closed = await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'closed' }, director);
+    expect(closed.status).toBe(200);
+    expect(closed.body.periods.find((p: { id: string }) => p.id === july).status).toBe('closed');
+    // Closing again is a conflict; locking is allowed; nothing reopens.
+    expect((await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'closed' }, director)).status).toBe(409);
+    const locked = await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'locked' }, director);
+    expect(locked.body.periods.find((p: { id: string }) => p.id === july).status).toBe('locked');
+    expect((await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'closed' }, director)).status).toBe(409);
+    const audit = await state.db!.prepare("SELECT count(*) n FROM audit_log WHERE entity_type = 'fiscal_period'").first();
+    expect(audit?.n).toBeGreaterThanOrEqual(3);
+  });
+
+  it('numbers requests FY-NNNN, sequentially and without collisions under concurrent creates', async () => {
+    const fy = fiscalYearFor(new Date().toISOString().slice(0, 10));
+    const made = await Promise.all(
+      Array.from({ length: 5 }, () => call('/api/requests', 'POST', { ...purchase, submit: false })),
+    );
+    expect(made.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+    const numbers = made.map((r) => r.body.request.number as string);
+    for (const n of numbers) expect(n).toMatch(new RegExp(`^${fy}-\\d{4}$`));
+    const seq = numbers.map((n) => Number(n.slice(5))).sort((a, b) => a - b);
+    expect(new Set(seq).size).toBe(5);
+    expect(seq.at(-1)! - seq[0]!).toBe(4);
+    // Continues after the seeded FY2027 numbers (2027-0001 … 2027-0006).
+    if (fy === 2027) expect(seq[0]).toBeGreaterThan(6);
+    const next = await call('/api/requests', 'POST', { ...purchase, submit: false });
+    expect(next.body.request.number).toBe(`${fy}-${String(seq.at(-1)! + 1).padStart(4, '0')}`);
   });
 
 });

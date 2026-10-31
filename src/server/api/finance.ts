@@ -6,7 +6,9 @@ import {
   reportCsv,
   type ReportData,
 } from '../../core/accounting/reports';
-import { fiscalYearFor, fiscalYearRange } from '../../core/fiscal';
+import { fiscalYearFor, fiscalYearRange, monthlyPeriods } from '../../core/fiscal';
+import { closePeriod } from '../../core/accounting/engine';
+import { pacificDate } from '../../core/luma/time';
 import { OFFICER_FINANCE_REPORTS } from '../../core/domain';
 import { averageRate } from '../../core/metrics';
 import {
@@ -39,6 +41,8 @@ export async function reportData(
         debitCents: s.journalLines.debitCents,
         creditCents: s.journalLines.creditCents,
         functionalClass: s.journalLines.functionalClass,
+        // In-kind/stock gifts (and their reversals) feed Form 990 line 1g.
+        noncash: sql<number>`EXISTS (SELECT 1 FROM contributions c WHERE c.kind IN ('in_kind', 'stock') AND c.journal_entry_id IN (${s.journalEntries.id}, ${s.journalEntries.reversesEntryId}))`,
       })
       .from(s.journalLines)
       .innerJoin(
@@ -171,9 +175,80 @@ export async function finance(
   body: unknown,
   query: unknown,
 ): Promise<unknown> {
-  if (name === 'periods') {
+  if (name === 'periodsCreate') {
     director(c);
-    return { periods: await c.db.select().from(s.fiscalPeriods) };
+    const b = C.FiscalYearPeriodsCreateRequest.parse(body);
+    const existing = await c.db
+      .select()
+      .from(s.fiscalPeriods)
+      .where(eq(s.fiscalPeriods.fiscalYear, b.fiscalYear));
+    if (existing.length)
+      fail(409, 'conflict', `FY${b.fiscalYear} already has fiscal periods`);
+    const periods = monthlyPeriods(b.fiscalYear).map((p) => ({
+      id: `period-${p.startDate.slice(0, 7)}`,
+      fiscalYear: b.fiscalYear,
+      ...p,
+    }));
+    await mutate(
+      c,
+      sql`NOT EXISTS (SELECT 1 FROM fiscal_periods WHERE fiscal_year = ${b.fiscalYear})`,
+      [c.db.insert(s.fiscalPeriods).values(periods)],
+      'fiscal_year.periods_created',
+      'fiscal_period',
+      `FY${b.fiscalYear}`,
+      null,
+      periods,
+    );
+  }
+  if (name === 'periodClose') {
+    director(c);
+    const b = C.FiscalPeriodCloseRequest.parse(body);
+    const p = await c.db
+      .select()
+      .from(s.fiscalPeriods)
+      .where(eq(s.fiscalPeriods.id, id!))
+      .get();
+    if (!p) fail(404, 'not_found', 'Fiscal period not found');
+    // M2: closing never reopens, so a period still in progress (Pacific date) would
+    // block every settlement and payout dated today until the month ends.
+    if (p.endDate >= pacificDate(now()))
+      fail(409, 'conflict', `${p.name} hasn't ended yet; close it after ${p.endDate}`);
+    let next;
+    try {
+      next = closePeriod(p, b.to);
+    } catch {
+      fail(409, 'conflict', `A ${p.status} period cannot become ${b.to}`);
+    }
+    if (next.status === p.status)
+      fail(409, 'conflict', `Period is already ${p.status}`);
+    const change = {
+      status: next.status,
+      closedAt: p.closedAt ?? now(),
+      closedBy: p.closedBy ?? c.user!.id,
+    };
+    await mutate(
+      c,
+      sql`EXISTS (SELECT 1 FROM fiscal_periods WHERE id = ${p.id} AND status = ${p.status})`,
+      [
+        c.db
+          .update(s.fiscalPeriods)
+          .set(change)
+          .where(eq(s.fiscalPeriods.id, p.id)),
+      ],
+      `fiscal_period.${next.status}`,
+      'fiscal_period',
+      p.id,
+      p,
+      change,
+    );
+  }
+  if (name === 'periods' || name === 'periodsCreate' || name === 'periodClose') {
+    director(c);
+    return {
+      periods: (await c.db.select().from(s.fiscalPeriods)).sort((a, b) =>
+        a.startDate.localeCompare(b.startDate),
+      ),
+    };
   }
   if (name === 'accounts') {
     director(c);

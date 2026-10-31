@@ -70,6 +70,8 @@ Local values go in `.dev.vars` (git-ignored). In production, set secrets with
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | secret | Receipt uploads to Google Drive (service-account key JSON) |
 | `DRIVE_ROOT_FOLDER_ID` | secret/var | Shared-drive folder receipts are filed under |
 | `DISCORD_WEBHOOK_URL` | secret | Request notifications to a Discord channel |
+| `AGENT_SETTLEMENT_TOLERANCE_PERCENT` | var | Optional, default `10`. See "Agent settlement tolerance" |
+| `AGENT_SETTLEMENT_TOLERANCE_CENTS` | var | Optional, default `2500` ($25) |
 | `DEV_AUTH` | `.dev.vars` only | `1` enables `/auth/dev` in `astro dev`. Production builds compile it out |
 
 ### Discord app
@@ -247,6 +249,17 @@ for a director to resolve manually. Only the current claiming token may complete
 prevents future use; deactivating a user ends sessions but does not revoke independently
 issued service tokens (revoke those separately).
 
+**Agent settlement tolerance.** The purchasing agent's `POST /api/agent/jobs/:id/complete`
+may post an `actualTotalCents` of up to the larger of the estimate + 10% and the
+estimate + $25 (set by `AGENT_SETTLEMENT_TOLERANCE_PERCENT` / `_CENTS`). Above that it
+gets a 409 and the job becomes `held`: its claim is cleared, so later complete, failed or
+claim calls from the agent return 409 and can never re-queue it (no second purchase).
+Directors get a `request.held` notification with the attempted vs approved amount, and
+the request page shows a "held for director review" banner (`settlementHold`). A
+director settles it with `POST /api/requests/:id/transition` (`to: 'fulfilled'`), which
+clears the hold; sending it back to `approved` cancels the held job instead. The
+director's own settlement has no limit.
+
 Receipts allow PDF, PNG, JPEG, HEIC and WebP, up to 10 MB. Configure
 `GOOGLE_SERVICE_ACCOUNT_JSON` and `DRIVE_ROOT_FOLDER_ID` (the older
 `GOOGLE_DRIVE_FOLDER_ID` is accepted as an alias). Share the Drive folder with the
@@ -256,6 +269,18 @@ multipart uploads and shared-drive flags, following Google's
 and [upload API](https://developers.google.com/workspace/drive/api/guides/manage-uploads).
 The token requests the full `https://www.googleapis.com/auth/drive` scope to access the pre-existing shared folder. Files are
 stored under `FY<year>/<request-id>/`, and officers need Drive access to open its links.
+Folder lookups search the shared drive that holds the root folder (`corpora=drive` +
+`driveId`, or `corpora=allDrives` if the root isn't in a shared drive). When two first
+uploads race to create the same folder, both re-list after creating, keep the oldest,
+and the loser's empty duplicate is trashed. Trashing needs the service account to be a
+**Content manager** of the shared drive; as a Contributor the empty duplicate just stays.
+
+**Lock down the service account.** Because the scope is the full `drive` scope, the key
+reaches every file shared with that account. Make the service account a member of the
+receipts shared drive **only** (don't share other folders or drives with it), and keep
+its key **only** in Worker secrets (`wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON`):
+never in `wrangler.jsonc`, the repo, CI variables or chat. Rotate the key if it leaks.
+
 Production receipt operations return HTTP 503 if Drive credentials or the root folder
 are missing. Development selects `LocalFileStore`: Node/Pi uses the filesystem directly;
 Workerd uses its local D1 SQLite-file backing because its virtual filesystem is request-scoped.

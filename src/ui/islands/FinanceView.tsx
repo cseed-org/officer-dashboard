@@ -1,19 +1,20 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import type { FinanceReportResponse, FinanceSummaryResponse } from '../../core/contracts';
+import type { FinancePeriod, FinanceReportResponse, FinanceSummaryResponse } from '../../core/contracts';
 import { FINANCE_REPORTS, OFFICER_FINANCE_REPORTS, type FinanceReport } from '../../core/domain';
-import { endpointUrl } from '../api/client';
+import { api, endpointUrl } from '../api/client';
+import { pacificDate } from '../../core/luma/time';
 import { useApi } from '../api/useApi';
 import { BudgetBars } from '../components/charts';
-import { DataTable, Kpi, Section, Tabs } from '../components/kit';
-import { Async, Empty, Loading } from '../components/states';
+import { Badge, DataTable, Kpi, Section, Tabs } from '../components/kit';
+import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
 import { dollars, fmtDate, fmtDateTime, formatCents, FUND_KIND_LABEL, pct, REPORT_LABEL, RESTRICTION_LABEL } from '../format';
 
-type TabKey = 'summary' | FinanceReport;
+type TabKey = 'summary' | FinanceReport | 'periods';
 
 export default function FinanceView({ isDirector, fiscalYear, initialTab }: { isDirector: boolean; fiscalYear: number; initialTab?: string | null }) {
   const allowed: FinanceReport[] = isDirector ? [...FINANCE_REPORTS].sort((a, b) => order(a) - order(b)) : [...OFFICER_FINANCE_REPORTS];
-  const tabs: TabKey[] = ['summary', ...allowed];
+  const tabs: TabKey[] = ['summary', ...allowed, ...(isDirector ? (['periods'] as const) : [])];
   const [tab, setTab] = useState<TabKey>(() => (initialTab && (tabs as string[]).includes(initialTab) ? (initialTab as TabKey) : 'summary'));
   const [fy, setFy] = useState(fiscalYear);
   const [fundId, setFundId] = useState('');
@@ -58,9 +59,9 @@ export default function FinanceView({ isDirector, fiscalYear, initialTab }: { is
         </div>
       </div>
 
-      <Tabs label="Finance views" idPrefix="fin" active={tab} onChange={setTab} tabs={tabs.map((k) => ({ key: k, label: k === 'summary' ? 'summary' : REPORT_LABEL[k] }))} />
+      <Tabs label="Finance views" idPrefix="fin" active={tab} onChange={setTab} tabs={tabs.map((k) => ({ key: k, label: k === 'summary' || k === 'periods' ? k : REPORT_LABEL[k] }))} />
       <div id="fin-panel" role="tabpanel" aria-labelledby={`fin-tab-${tab}`} style={{ paddingTop: 'var(--space-6)' }}>
-        {tab === 'summary' ? <Summary query={query} isDirector={isDirector} onOpen={setTab} /> : <Report name={tab} query={query} key={tab} />}
+        {tab === 'summary' ? <Summary query={query} isDirector={isDirector} onOpen={setTab} /> : tab === 'periods' ? <Periods fiscalYear={fy} /> : <Report name={tab} query={query} key={tab} />}
       </div>
       {!isDirector && (
         <p class="muted small" style={{ marginTop: 'var(--space-6)' }}>
@@ -154,6 +155,103 @@ function Summary({ query, onOpen }: { query: Q; isDirector: boolean; onOpen: (t:
   );
 }
 
+const PERIOD_TONE = { open: 'positive', closed: 'neutral', locked: 'attention' } as const;
+
+/** Director-only: create a fiscal year's monthly periods and close or lock them. */
+function Periods({ fiscalYear }: { fiscalYear: number }) {
+  const state = useApi('periods');
+  const today = pacificDate(new Date());
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(null);
+  const run = async (key: string, fn: () => Promise<{ periods: FinancePeriod[] }>, done: string) => {
+    setBusy(key);
+    try {
+      state.set(await fn());
+      setNotice({ tone: 'positive', text: done });
+    } catch (e) {
+      setNotice({ tone: 'negative', text: errorMessage(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Async state={state} loading={<Loading rows={6} label="Loading fiscal periods" />}>
+      {(d) => {
+        const years = d.periods.map((p) => p.fiscalYear);
+        const next = years.length ? Math.max(...years) + 1 : fiscalYear;
+        const rowsFor = (fy: number) => d.periods.filter((p) => p.fiscalYear === fy);
+        const fys = [...new Set([fiscalYear, ...years])].sort((a, b) => b - a);
+        const create = (
+          <button
+            type="button"
+            class="btn btn--small"
+            disabled={busy !== null}
+            data-create-periods={next}
+            onClick={() => {
+              if (!confirm(`Create the 12 monthly periods for FY${next} (Jul ${next - 1} – Jun ${next})?`)) return;
+              void run('create', () => api('periodsCreate', { body: { fiscalYear: next } }), `FY${next} periods created.`);
+            }}
+          >
+            {busy === 'create' ? 'creating…' : `create FY${next} periods`}
+          </button>
+        );
+        return (
+          <div class="stack">
+            {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+            <Section title="fiscal periods" id="periods-h" actions={create}>
+              <p class="small muted" style={{ margin: '0 0 var(--space-4)' }}>
+                Entries post only into open periods. Closing a month stops new entries; locking makes it final. Neither can be undone.
+              </p>
+              {fys.map((fy) => (
+                <div key={fy} style={{ marginBottom: 'var(--space-6)' }}>
+                  {rowsFor(fy).length === 0 ? (
+                    <Empty title={`No periods for FY${fy}`}>Nothing can post to this year until its periods exist.</Empty>
+                  ) : (
+                    <DataTable
+                      showCaption caption={`FY${fy} (Jul ${fy - 1} – Jun ${fy})`}
+                      rows={rowsFor(fy)}
+                      rowKey={(p) => p.id}
+                      columns={[
+                        { key: 'n', label: 'period', primary: true, render: (p) => <><span class="cell-title">{p.name}</span><span class="cell-sub">{fmtDate(p.startDate)} – {fmtDate(p.endDate)}</span></> },
+                        { key: 's', label: 'status', render: (p) => <Badge tone={PERIOD_TONE[p.status]}>{p.status}</Badge> },
+                        {
+                          key: 'a',
+                          label: 'action',
+                          render: (p) =>
+                            p.status === 'locked' ? (
+                              <span class="muted small">final</span>
+                            ) : p.endDate >= today ? (
+                              <span class="muted small">in progress</span>
+                            ) : (
+                              <button
+                                type="button"
+                                class="btn btn--small"
+                                disabled={busy !== null}
+                                data-period-action={p.status === 'open' ? 'close' : 'lock'}
+                                onClick={() => {
+                                  const to = p.status === 'open' ? 'closed' : 'locked';
+                                  const warn = to === 'closed' ? `Close ${p.name}? No new entries can post to it, and it can’t reopen.` : `Lock ${p.name}? This is final.`;
+                                  if (!confirm(warn)) return;
+                                  void run(p.id, () => api('periodClose', { params: { id: p.id }, body: { to } }), `${p.name} is ${to}.`);
+                                }}
+                              >
+                                {busy === p.id ? 'saving…' : p.status === 'open' ? 'close' : 'lock'}
+                              </button>
+                            ),
+                        },
+                      ]}
+                    />
+                  )}
+                </div>
+              ))}
+            </Section>
+          </div>
+        );
+      }}
+    </Async>
+  );
+}
+
 function Signed({ cents: raw }: { cents: number }) {
   const cents = raw === 0 ? 0 : raw; // no "-$0.00"
   return <span class={cents < 0 ? 'check-bad' : undefined}>{cents < 0 ? `(${formatCents(-cents)})` : formatCents(cents)}</span>;
@@ -211,19 +309,37 @@ function Rows({ children }: { children: ComponentChildren }) {
   return <>{children}</>;
 }
 
-type Form990Row = Extract<FinanceReportResponse, { report: 'form-990' }>['rows'][number];
+type Form990 = Extract<FinanceReportResponse, { report: 'form-990' }>;
+type Form990Row = Form990['rows'][number];
 
-function Form990Body({ rows }: { rows: Form990Row[] }) {
-  if (!rows.length) return <Empty title="Nothing to map yet">No revenue or expenses posted for this period.</Empty>;
+function Form990Body({ r }: { r: Form990 }) {
+  const { rows, totals, line1gNoncashCents, unmappedAccounts } = r;
+  if (!rows.length && !unmappedAccounts.length)
+    return <Empty title="Nothing to map yet">No revenue or expenses posted for this period.</Empty>;
   const byLine = (a: Form990Row, b: Form990Row) => a.line.localeCompare(b.line, 'en', { numeric: true });
   const viii = rows.filter((x) => x.part === 'VIII').sort(byLine);
   const ix = rows.filter((x) => x.part === 'IX').sort(byLine);
-  const sum = (rs: Form990Row[], k: keyof Omit<Form990Row, 'part' | 'line'>) => rs.reduce((s, x) => s + x[k], 0);
+  const l25 = totals.partIXLine25;
   return (
     <div class="stack" style={{ gap: 'var(--space-6)' }}>
       <p class="small muted" style={{ margin: 0 }}>
         Ledger totals grouped by Form 990 line, to hand to the CPA. Not a filing and not tax advice.
       </p>
+      {unmappedAccounts.length > 0 && (
+        <div class="notice notice--attention" role="status" data-990-unmapped>
+          <strong>
+            {unmappedAccounts.length === 1 ? '1 account has' : `${unmappedAccounts.length} accounts have`} no Form 990 line
+          </strong>{' '}
+          and {unmappedAccounts.length === 1 ? 'is' : 'are'} left out of the totals below:{' '}
+          {unmappedAccounts.map((u, i) => (
+            <span key={u.account.id}>
+              {i > 0 && ', '}
+              <span class="mono">{u.account.code}</span> {u.account.name} ({formatCents(u.totalCents)})
+            </span>
+          ))}
+          . Map them in the chart of accounts.
+        </div>
+      )}
       <DataTable
         showCaption caption="Part VIII revenue"
         rows={viii}
@@ -232,7 +348,20 @@ function Form990Body({ rows }: { rows: Form990Row[] }) {
           { key: 'l', label: 'Part VIII line', primary: true, render: (x) => <span class="mono">VIII {x.line}</span> },
           { key: 't', label: 'total revenue', num: true, render: (x) => money(x.totalCents) },
         ]}
-        foot={<tr><td class="dt-primary">total revenue</td><td class="num" data-label="total revenue">{money(sum(viii, 'totalCents'))}</td></tr>}
+        foot={
+          <>
+            <tr data-990-line="1g">
+              <td class="dt-primary">
+                <span class="mono">VIII 1g</span> <span class="muted">noncash contributions (memo, included in 1a–1f)</span>
+              </td>
+              <td class="num" data-label="total revenue">{money(line1gNoncashCents)}</td>
+            </tr>
+            <tr data-990-line="12">
+              <td class="dt-primary"><span class="mono">VIII 12</span> total revenue</td>
+              <td class="num" data-label="total revenue">{money(totals.partVIIILine12Cents)}</td>
+            </tr>
+          </>
+        }
       />
       <DataTable
         showCaption caption="Part IX functional expenses"
@@ -246,12 +375,12 @@ function Form990Body({ rows }: { rows: Form990Row[] }) {
           { key: 'f', label: '(D) fundraising', num: true, render: (x) => money(x.fundraisingCents) },
         ]}
         foot={
-          <tr>
-            <td class="dt-primary">total functional expenses</td>
-            <td class="num" data-label="(A) total">{money(sum(ix, 'totalCents'))}</td>
-            <td class="num" data-label="(B) program">{money(sum(ix, 'programCents'))}</td>
-            <td class="num" data-label="(C) mgmt & general">{money(sum(ix, 'mgmtGeneralCents'))}</td>
-            <td class="num" data-label="(D) fundraising">{money(sum(ix, 'fundraisingCents'))}</td>
+          <tr data-990-line="25">
+            <td class="dt-primary"><span class="mono">IX 25</span> total functional expenses</td>
+            <td class="num" data-label="(A) total">{money(l25.totalCents)}</td>
+            <td class="num" data-label="(B) program">{money(l25.programCents)}</td>
+            <td class="num" data-label="(C) mgmt & general">{money(l25.mgmtGeneralCents)}</td>
+            <td class="num" data-label="(D) fundraising">{money(l25.fundraisingCents)}</td>
           </tr>
         }
       />
@@ -262,7 +391,7 @@ function Form990Body({ rows }: { rows: Form990Row[] }) {
 function ReportBody({ r }: { r: FinanceReportResponse }) {
   switch (r.report) {
     case 'form-990':
-      return <Form990Body rows={r.rows} />;
+      return <Form990Body r={r} />;
     case 'budget-vs-actual':
       if (!r.rows.length) return <Empty title="No budget lines">There is no budget for this year or fund yet.</Empty>;
       return (
