@@ -59,6 +59,7 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/api/requests/:id/deny` | director | — | `PurchaseDenyRequest` | `PurchaseRequestResponse` |
 | POST | `/api/requests/:id/transition` | director | — | `PurchaseTransitionRequest` | `PurchaseRequestResponse` |
 | POST | `/api/requests/:id/attachments` | officer | — | multipart: `AttachmentUploadFields` + `file` | `AttachmentUploadResponse` |
+| GET | `/api/attachments/:id` | officer | — | — | receipt bytes or Drive redirect |
 | GET | `/api/finance/summary` | officer | `FinanceQuery` | — | `FinanceSummaryResponse` |
 | GET | `/api/finance/reports/:report` | officer | `FinanceReportQuery` | — | `FinanceReportResponse` or CSV ¹ |
 | GET | `/api/finance/budgets` | officer | `FinanceQuery` | — | `BudgetsResponse` |
@@ -124,3 +125,25 @@ other reports return 403 for officers.
 | `/requests`, `/requests/new`, `/requests/:id` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
 | `/admin/users`, `/admin/tokens` | director | 403 for officers |
+
+
+## Backend implementation notes
+
+- `FINANCE_REPORTS` additionally includes director-only `form-990` → `Form990Report`.
+  It groups Part VIII/IX account mappings and functional expense columns; every report
+  supports tabular `?format=csv` with metadata, section names and integer cents.
+- Net expense/release fields are signed cents so correcting entries/refunds validate.
+  Fund-balance rows additionally expose `restrictedEndingCents` and
+  `unrestrictedEndingCents`; `releasesCents` is informational and is not subtracted a
+  second time from the combined fund roll-forward.
+- `GET /api/attachments/:id` is an officer-only download for local files or a redirect
+  to a Drive link. Production uploads require Drive configuration.
+- A restricted-fund settlement posts its expense plus an atomic restriction release.
+  Expenses appear without donor restriction; grant attribution stays on the original fund.
+- Reimbursement `reimbursed→closed` records payment (debit payable, credit checking).
+  The director must only close after confirming the officer was paid.
+- Failed purchasing jobs may be claimed again; sparse guest imports preserve prior fields.
+- `GET /api/admin/audit` and other lists use opaque date/id cursors in descending date
+  order. List adapters currently load their filtered datasets in memory (v1 scale).
+- Fiscal period creation/close and manual/contribution postings are core operations;
+  no corresponding write endpoints were part of the v1 endpoint contract.
