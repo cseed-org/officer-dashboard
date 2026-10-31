@@ -194,11 +194,13 @@ function Timeline({ r }: { r: PurchaseRequestDetail }) {
   if (r.submittedAt) items.push({ key: 'submitted', title: 'submitted for approval', when: r.submittedAt, by: r.requester.name, tone: 'attention' });
   for (const a of r.approvals)
     items.push({ key: a.id, title: a.decision === 'approved' ? 'approved' : 'denied', when: a.createdAt, by: a.director.name, comment: a.comment, tone: a.decision === 'approved' ? 'positive' : 'negative' });
+  // Past-tense history labels, separate from STATUS_LABEL: the badge says where the request
+  // is now ("awaiting payment"), the timeline says what already happened.
   const later: Partial<Record<PurchaseStatus, string>> = {
-    fulfilling: 'being purchased',
-    fulfilled: 'purchased',
-    reimbursed: 'approved for payout — awaiting payment',
-    closed: r.type === 'reimbursement' ? 'reimbursement paid · closed' : 'closed',
+    fulfilling: 'purchase started',
+    fulfilled: 'bought',
+    reimbursed: 'payout approved',
+    closed: r.type === 'reimbursement' ? 'reimbursement paid' : 'closed',
     cancelled: 'cancelled',
   };
   const order: PurchaseStatus[] = ['fulfilling', 'fulfilled', 'reimbursed', 'closed'];

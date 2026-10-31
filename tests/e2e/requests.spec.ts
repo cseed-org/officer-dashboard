@@ -111,6 +111,10 @@ test('a director records a reimbursement and confirms the payout', async ({ page
   page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'confirm reimbursement paid' }).click();
   await expect(page.locator('.page-title .badge')).toHaveText('closed');
-  await expect(page.getByText('reimbursement paid · closed')).toBeVisible();
+  // The timeline is history in the past tense; the badge's "awaiting payment" never shows there.
+  const timeline = page.locator('ol.timeline');
+  await expect(timeline).toContainText('payout approved · $16.40');
+  await expect(timeline).toContainText('reimbursement paid');
+  await expect(timeline).not.toContainText('awaiting');
   await shot(page, info.project.name, 'light', 'requests_detail_closed');
 });
