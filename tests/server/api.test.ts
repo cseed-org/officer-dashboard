@@ -1,14 +1,12 @@
 import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
-import { getPlatformProxy } from 'wrangler';
+import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
+import { build } from 'esbuild';
 import { migrationStatements } from '../db/engines';
 import { buildSeedSql } from '../../scripts/seed/sql';
-import { createDb } from '../../src/server/db/client';
-import { handleApi } from '../../src/server/api/handler';
-import type { APIContext } from 'astro';
 import { ENDPOINTS, type CurrentUser } from '../../src/core/contracts';
 vi.setConfig({ testTimeout: 60000 });
-const state = vi.hoisted(() => ({ db: null as D1Database | null }));
-vi.mock('../../src/server/env', () => ({ getEnv: () => ({ DB: state.db }) }));
+const state = { db: null as D1Database | null };
+let worker: Miniflare;
 const director: CurrentUser = {
   id: 'user-director',
   name: 'Jordan Lee',
@@ -39,16 +37,17 @@ async function call(
         ? { 'Content-Type': 'application/json' }
         : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-Test-User': JSON.stringify(user),
     },
     ...(body
       ? { body: body instanceof FormData ? body : JSON.stringify(body) }
       : {}),
   });
-  const response = await handleApi({
-    request,
-    url: new URL(request.url),
-    locals: { user, sessionId: null },
-  } as unknown as APIContext);
+  const response = await worker.dispatchFetch(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body ? await request.arrayBuffer() : undefined,
+  });
   // Parsed response shapes are validated separately against the endpoint contracts.
   const result: any = await response.json();
   if (response.status >= 500) console.error(path, result);
@@ -67,9 +66,38 @@ const purchase = {
   justification: 'Testing lifecycle',
 };
 beforeAll(async () => {
-  const proxy = await getPlatformProxy<{ DB: D1Database }>({ persist: false });
-  state.db = proxy.env.DB;
-  dispose = proxy.dispose;
+  // Run the API inside workerd, as production does. Pulling thousands of D1 rows
+  // through getPlatformProxy's lazy host RPC creates a TCP call per property access.
+  const bundled = await build({
+    stdin: {
+      contents: `
+    import { handleApi } from './src/server/api/handler';
+    export default { async fetch(request) {
+      return handleApi({ request,url: new URL(request.url),locals: { user: JSON.parse(request.headers.get('X-Test-User') ?? 'null'),sessionId: null } });
+    } };
+  `,
+      resolveDir: process.cwd(),
+      sourcefile: 'api-test-worker.ts',
+    },
+    bundle: true,
+    write: false,
+    format: 'esm',
+    platform: 'browser',
+    target: 'es2022',
+    external: ['cloudflare:workers'],
+    define: { 'import.meta.env.DEV': 'true' },
+  });
+  worker = new Miniflare(
+    convertV4MiniflareOptions({
+      modules: true,
+      script: bundled.outputFiles[0]!.text,
+      compatibilityDate: '2026-10-01',
+      compatibilityFlags: ['nodejs_compat'],
+      d1Databases: { DB: 'api-test' },
+    }),
+  );
+  state.db = (await worker.getD1Database('DB')) as unknown as D1Database;
+  dispose = () => worker.dispose();
   for (const statement of migrationStatements())
     await state.db.prepare(statement).run();
   // Seed SQL is generated without triggers and has no semicolons inside values.
@@ -320,8 +348,6 @@ describe('real D1 API', () => {
           .status,
         name,
       ).toBe(200);
-    const db = createDb(state.db!);
-    expect(db).toBeDefined();
   });
   it('releases restricted purchases, pays reimbursements on close, and serializes approvals', async () => {
     const made = await call('/api/requests', 'POST', {
