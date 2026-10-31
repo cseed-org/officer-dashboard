@@ -221,7 +221,11 @@ const isActive = (href: string) => {
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme='light']) .nav-bar-logo--ink { display: none; }
     :root:not([data-theme='light']) .nav-bar-logo--white { display: block; }
+    :root:not([data-theme='light']) .nav-bar-link.is-active { background: var(--highlight); }
   }
   :root[data-theme='dark'] .nav-bar-logo--ink { display: none; }
+  /* Dark: the half-height marker would leave the top of the ink letters on the dark ground
+     (unreadable), so the yellow fills the whole link instead. */
+  :root[data-theme='dark'] .nav-bar-link.is-active { background: var(--highlight); }
   :root[data-theme='dark'] .nav-bar-logo--white { display: block; }
 </style>

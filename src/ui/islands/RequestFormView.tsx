@@ -8,7 +8,7 @@ import {
   type LookupsResponse,
 } from '../../core/contracts';
 import { FUNCTIONAL_CLASSES, type FunctionalClass, type PurchaseType } from '../../core/domain';
-import { api, fieldErrors as apiFieldErrors } from '../api/client';
+import { api, fieldErrors as apiFieldErrors, isStorageUnavailable } from '../api/client';
 import { useApi } from '../api/useApi';
 import { describe, Field } from '../components/kit';
 import { Async, errorMessage, Loading, Notice } from '../components/states';
@@ -171,6 +171,7 @@ function RequestForm({ lookups, initialEventId }: { lookups: LookupsResponse; in
     try {
       const { request } = await api('requestCreate', { body: parsed.data });
       let failed = 0;
+      let storageOff = false;
       for (const [i, file] of files.entries()) {
         setBusy(`uploading ${i + 1} of ${files.length}…`);
         const form = new FormData();
@@ -178,12 +179,18 @@ function RequestForm({ lookups, initialEventId }: { lookups: LookupsResponse; in
         form.set('file', file);
         try {
           await api('requestAttach', { params: { id: request.id }, body: form });
-        } catch {
+        } catch (err) {
           failed++;
+          if (isStorageUnavailable(err)) {
+            storageOff = true;
+            failed = files.length - i; // the rest would fail the same way
+            break;
+          }
         }
       }
       const qs = new URLSearchParams({ created: submit ? 'submitted' : 'draft' });
       if (failed) qs.set('uploadFailed', String(failed));
+      if (storageOff) qs.set('storage', 'off');
       location.assign(`/requests/${encodeURIComponent(request.id)}?${qs}`);
     } catch (err) {
       setBusy(null);

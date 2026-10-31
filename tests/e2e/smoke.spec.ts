@@ -19,6 +19,7 @@ const ROUTES = [
   '/finance?tab=statement-of-financial-position',
   '/finance?tab=statement-of-functional-expenses',
   '/finance?tab=trial-balance',
+  '/finance?tab=form-990',
   '/requests?scope=all',
   '/requests/req-0004',
   '/admin/users',

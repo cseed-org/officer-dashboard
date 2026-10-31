@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME_TYPES, type PurchaseRequestDetail } from '../../core/contracts';
 import type { PurchaseStatus } from '../../core/domain';
-import { api } from '../api/client';
+import { api, endpointUrl, isStorageUnavailable, STORAGE_UNAVAILABLE_MESSAGE } from '../api/client';
 import { useApi } from '../api/useApi';
 import { describe, Field, Section, StatusBadge } from '../components/kit';
 import { Empty, ErrorState, errorMessage, Loading, Notice } from '../components/states';
@@ -26,7 +26,19 @@ function Title({ r, children }: { r?: PurchaseRequestDetail; children?: Componen
   );
 }
 
-export default function RequestDetailView({ id, meId, created, uploadFailed = 0 }: { id: string; meId: string; created?: string | null; uploadFailed?: number }) {
+export default function RequestDetailView({
+  id,
+  meId,
+  created,
+  uploadFailed = 0,
+  storageOff = false,
+}: {
+  id: string;
+  meId: string;
+  created?: string | null;
+  uploadFailed?: number;
+  storageOff?: boolean;
+}) {
   const state = useApi('requestDetail', { params: { id } });
   const flash = { created, failed: uploadFailed };
   useEffect(() => {
@@ -68,7 +80,12 @@ export default function RequestDetailView({ id, meId, created, uploadFailed = 0 
           <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
             {flash.created === 'submitted' && <Notice tone="positive">Submitted. A director has been notified and will review it.</Notice>}
             {flash.created === 'draft' && <Notice tone="positive">Saved as a draft. Submit it when you are ready.</Notice>}
-            {flash.failed > 0 && <Notice tone="negative">{flash.failed} file{flash.failed === 1 ? '' : 's'} didn't upload. Add {flash.failed === 1 ? 'it' : 'them'} again below.</Notice>}
+            {flash.failed > 0 && (
+              <Notice tone="negative">
+                {flash.failed} file{flash.failed === 1 ? '' : 's'} didn't upload.{' '}
+                {storageOff ? STORAGE_UNAVAILABLE_MESSAGE : `Add ${flash.failed === 1 ? 'it' : 'them'} again below.`}
+              </Notice>
+            )}
             {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
           </div>
         )}
@@ -144,9 +161,8 @@ export default function RequestDetailView({ id, meId, created, uploadFailed = 0 
   );
 }
 
-/** Drive files carry a webViewLink; local-stub files download from GET /api/attachments/:id. */
-const attachmentHref = (a: { id: string; url: string | null; storage: string }) =>
-  a.url ?? (a.storage === 'local' ? `/api/attachments/${encodeURIComponent(a.id)}` : null);
+/** GET /api/attachments/:id serves local files and redirects Drive files to their webViewLink. */
+const attachmentHref = (a: { id: string; url: string | null }) => a.url ?? endpointUrl('attachmentDownload', { params: { id: a.id } });
 
 const hostOf = (u: string) => {
   try {
@@ -367,7 +383,11 @@ function Actions({
                 type="button"
                 class="btn btn--primary"
                 disabled={!!busy}
-                onClick={() => run('close', () => api('requestTransition', { params: { id: r.id }, body: { to: 'closed' } }), `Payout to ${r.requester.name} recorded. Request closed.`)}
+                onClick={() => {
+                  const amount = formatCents(r.actualTotalCents ?? r.totalCents);
+                  if (!confirm(`Confirm ${r.requester.name} has been paid ${amount}? This records the payout in the books and closes the request.`)) return;
+                  void run('close', () => api('requestTransition', { params: { id: r.id }, body: { to: 'closed' } }), `Payout of ${amount} to ${r.requester.name} recorded. Request closed.`);
+                }}
               >
                 {busy === 'close' ? 'saving…' : 'confirm reimbursement paid'}
               </button>
@@ -439,6 +459,11 @@ function Attachments({ r, onUploaded }: { r: PurchaseRequestDetail; onUploaded: 
       try {
         added.push((await api('requestAttach', { params: { id: r.id }, body: form })).attachment);
       } catch (e) {
+        if (isStorageUnavailable(e)) {
+          problems.length = 0;
+          problems.push(STORAGE_UNAVAILABLE_MESSAGE);
+          break;
+        }
         problems.push(`${file.name}: ${errorMessage(e)}`);
       }
     }
@@ -449,6 +474,10 @@ function Attachments({ r, onUploaded }: { r: PurchaseRequestDetail; onUploaded: 
 
   return (
     <Section title="receipts & files" id="files">
+      <p class="small muted" style={{ margin: 0 }}>
+        Receipts are filed in CSEED’s shared Google Drive, and the links open there. You need access to that drive to view them; ask a
+        director if Drive says you don’t have permission.
+      </p>
       {r.attachments.length === 0 ? (
         <Empty title="No files yet">{r.type === 'reimbursement' ? 'Attach the receipt so the reimbursement can be paid.' : 'Attach the quote or the receipt once it is bought.'}</Empty>
       ) : (

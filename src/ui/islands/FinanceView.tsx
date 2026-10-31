@@ -7,9 +7,7 @@ import { useApi } from '../api/useApi';
 import { BudgetBars } from '../components/charts';
 import { DataTable, Kpi, Section, Tabs } from '../components/kit';
 import { Async, Empty, Loading } from '../components/states';
-import { UI_MOCKS } from '../mocks/switch';
 import { dollars, fmtDate, fmtDateTime, formatCents, FUND_KIND_LABEL, pct, REPORT_LABEL, RESTRICTION_LABEL } from '../format';
-import { reportToCsv } from './finance-csv';
 
 type TabKey = 'summary' | FinanceReport;
 
@@ -60,7 +58,7 @@ export default function FinanceView({ isDirector, fiscalYear, initialTab }: { is
         </div>
       </div>
 
-      <Tabs label="Finance views" idPrefix="fin" active={tab} onChange={setTab} tabs={tabs.map((k) => ({ key: k, label: k === 'summary' ? 'summary' : (REPORT_LABEL[k] ?? k) }))} />
+      <Tabs label="Finance views" idPrefix="fin" active={tab} onChange={setTab} tabs={tabs.map((k) => ({ key: k, label: k === 'summary' ? 'summary' : REPORT_LABEL[k] }))} />
       <div id="fin-panel" role="tabpanel" aria-labelledby={`fin-tab-${tab}`} style={{ paddingTop: 'var(--space-6)' }}>
         {tab === 'summary' ? <Summary query={query} isDirector={isDirector} onOpen={setTab} /> : <Report name={tab} query={query} key={tab} />}
       </div>
@@ -73,9 +71,8 @@ export default function FinanceView({ isDirector, fiscalYear, initialTab }: { is
   );
 }
 
-const ORDER = ['budget-vs-actual', 'fund-balances', 'statement-of-activities', 'statement-of-financial-position', 'statement-of-functional-expenses', 'form-990', 'trial-balance'];
-/** Unknown (newer) reports sort to the end. */
-const order = (r: string) => (ORDER.indexOf(r) + ORDER.length + 1) % (ORDER.length + 1);
+const ORDER: FinanceReport[] = ['budget-vs-actual', 'fund-balances', 'statement-of-activities', 'statement-of-financial-position', 'statement-of-functional-expenses', 'form-990', 'trial-balance'];
+const order = (r: FinanceReport) => ORDER.indexOf(r);
 
 type Q = { fiscalYear: number; fundId?: string };
 
@@ -167,21 +164,15 @@ function Report({ name, query }: { name: FinanceReport; query: Q }) {
   const csvHref = endpointUrl('financeReport', { params: { report: name }, query: { ...query, format: 'csv' } });
   const filename = `cseed-${name}-FY${query.fiscalYear}.csv`;
   return (
-    <Async state={state} loading={<Loading rows={8} label={`Loading ${REPORT_LABEL[name] ?? name}`} />}>
+    <Async state={state} loading={<Loading rows={8} label={`Loading ${REPORT_LABEL[name]}`} />}>
       {(r: FinanceReportResponse) => (
         <section class="section" aria-labelledby="report-h">
           <div class="section-head">
-            <h2 id="report-h">{REPORT_TITLE[name] ?? REPORT_LABEL[name] ?? name}</h2>
+            <h2 id="report-h">{REPORT_TITLE[name]}</h2>
             <div class="section-actions">
-              {UI_MOCKS ? (
-                <button type="button" class="btn btn--small" onClick={() => download(filename, reportToCsv(r))}>
-                  export CSV
-                </button>
-              ) : (
-                <a class="btn btn--small" href={csvHref} download={filename}>
-                  export CSV
-                </a>
-              )}
+              <a class="btn btn--small" href={csvHref} download={filename}>
+                export CSV
+              </a>
             </div>
           </div>
           <p class="report-meta">
@@ -198,16 +189,7 @@ function Report({ name, query }: { name: FinanceReport; query: Q }) {
   );
 }
 
-function download(filename: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
-  const a = Object.assign(document.createElement('a'), { href: url, download: filename });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-const REPORT_TITLE: Record<string, string | undefined> = {
+const REPORT_TITLE: Record<FinanceReport, string> = {
   'form-990': 'form 990 lines (draft)',
   'budget-vs-actual': 'budget vs actual',
   'fund-balances': 'fund balances',
@@ -229,20 +211,7 @@ function Rows({ children }: { children: ComponentChildren }) {
   return <>{children}</>;
 }
 
-/**
- * Form990Report from the backend contract update (rows by Part VIII / IX line). Typed here
- * structurally so this page renders it as soon as the backend's contracts.ts lands, without
- * copying that file early.
- */
-export interface Form990Row {
-  part: 'VIII' | 'IX';
-  line: string;
-  totalCents: number;
-  programCents: number;
-  mgmtGeneralCents: number;
-  fundraisingCents: number;
-}
-export const isForm990 = (r: { report: string }): r is { report: 'form-990'; rows: Form990Row[] } => r.report === 'form-990';
+type Form990Row = Extract<FinanceReportResponse, { report: 'form-990' }>['rows'][number];
 
 function Form990Body({ rows }: { rows: Form990Row[] }) {
   if (!rows.length) return <Empty title="Nothing to map yet">No revenue or expenses posted for this period.</Empty>;
@@ -291,9 +260,9 @@ function Form990Body({ rows }: { rows: Form990Row[] }) {
 }
 
 function ReportBody({ r }: { r: FinanceReportResponse }) {
-  const loose = r as unknown as { report: string; rows?: unknown };
-  if (isForm990(loose)) return <Form990Body rows={loose.rows} />;
   switch (r.report) {
+    case 'form-990':
+      return <Form990Body rows={r.rows} />;
     case 'budget-vs-actual':
       if (!r.rows.length) return <Empty title="No budget lines">There is no budget for this year or fund yet.</Empty>;
       return (
@@ -323,12 +292,10 @@ function ReportBody({ r }: { r: FinanceReportResponse }) {
       );
     case 'fund-balances': {
       if (!r.rows.length) return <Empty title="No funds">Nothing to show for this selection.</Empty>;
-      // Backend contract update adds restrictedEndingCents / unrestrictedEndingCents; show them once present.
-      type Split = { restrictedEndingCents?: number; unrestrictedEndingCents?: number };
-      const split = r.rows.some((x) => typeof (x as Split).restrictedEndingCents === 'number');
       return (
         <>
         <DataTable
+          wide
           caption="Fund balances"
           rows={r.rows}
           rowKey={(x) => x.fund.id}
@@ -339,12 +306,8 @@ function ReportBody({ r }: { r: FinanceReportResponse }) {
             { key: 'r', label: 'released (reclass)', cardLabel: 'released', num: true, render: (x) => money(x.releasesCents) },
             { key: 'e', label: 'expenses', num: true, render: (x) => money(x.expensesCents) },
             { key: 'n', label: 'ending', num: true, render: (x) => money(x.endingCents) },
-            ...(split
-              ? [
-                  { key: 'ur', label: 'ending, unrestricted', cardLabel: 'unrestricted', num: true, render: (x: (typeof r.rows)[number]) => money((x as Split).unrestrictedEndingCents ?? 0) },
-                  { key: 'rr', label: 'ending, restricted', cardLabel: 'restricted', num: true, render: (x: (typeof r.rows)[number]) => money((x as Split).restrictedEndingCents ?? 0) },
-                ]
-              : []),
+            { key: 'ur', label: 'ending, unrestricted', cardLabel: 'unrestricted', num: true, render: (x) => money(x.unrestrictedEndingCents) },
+            { key: 'rr', label: 'ending, restricted', cardLabel: 'restricted', num: true, render: (x) => money(x.restrictedEndingCents) },
           ]}
         />
         <p class="muted small">
@@ -486,7 +449,5 @@ function ReportBody({ r }: { r: FinanceReportResponse }) {
           }
         />
       );
-    default:
-      return <Empty title="This report has no view yet">Use “export CSV” to get the numbers.</Empty>;
   }
 }

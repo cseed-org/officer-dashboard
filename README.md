@@ -52,7 +52,8 @@ that rewrites existing migrations (as PR #1's review fixes did, before anything 
 Playwright needs a browser once: `npx playwright install chromium`. The e2e run reuses a dev
 server on port 4321 or starts one (migrating and seeding first; set `E2E_PORT` to change it)
 and saves a screenshot of every page, light and dark, to `tmp/screenshots/<viewport>/<scheme>/`,
-plus empty / error / loading states under `states_*`.
+plus empty / error / loading states under `states_*`. It creates purchase requests in the
+local D1 (titles marked `agent-e2e-…`); `npm run db:reset:local` clears them.
 
 ## Environment and secrets
 
@@ -113,7 +114,6 @@ src/
     api/client.ts  api('overview', …): typed by ENDPOINTS, responses validated by the contract schema
     islands/       one interactive island per page (OverviewView, RequestFormView, FinanceView, …)
     components/    states (loading/empty/error), tables that become cards on phones, SVG charts, forms
-    mocks/         seed-shaped mock API behind ONE switch (mocks/switch.ts) while the backend lands
   styles/tokens/   CSEED colour (light + dark), type and layout tokens
 migrations/        SQL migrations applied by wrangler (0001 = integrity triggers)
 scripts/seed/      seed data and SQL generator
@@ -149,18 +149,14 @@ fiscal year, and the donor-acknowledgment rules in `src/core/contributions.ts` a
 reasonable starting point for a small 501(c)(3), **not tax or accounting advice. Have
 CSEED's CPA review them** before real books are kept or filings are prepared.
 
-## UI data flow and mocks
+## UI data flow
 
 Pages render the app shell and heading on the server; each page body is a Preact island that
 calls `/api/*` through `src/ui/api/client.ts` (`api(name, { params, query, body })`). Names,
 paths, bodies and responses all come from `ENDPOINTS` in `src/core/contracts.ts`, and every
-response is checked against its zod schema, so a contract drift shows as an error state.
-
-While Phase 1 runs in parallel, endpoints without a backend yet are answered in the browser by
-`src/ui/mocks/` (built from the same seed, so `event-kickoff`, `req-0001` … match). The single
-switch is `src/ui/mocks/switch.ts`: set `PUBLIC_UI_MOCKS=off` to use only the real API, and
-delete the folder once the backend is merged. With the mocks on, add `?mock=empty`,
-`?mock=error` or `?mock=loading` to any page to see those states.
+response is checked against its zod schema, so contract drift shows as an error state instead
+of wrong numbers. The e2e suite runs against the real API on the seeded local D1; empty, error
+and loading states are produced by intercepting the API in Playwright (`tests/e2e/states.spec.ts`).
 
 ## Design
 

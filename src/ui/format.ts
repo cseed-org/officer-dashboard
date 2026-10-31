@@ -69,8 +69,7 @@ export const FUNCTIONAL_LABEL: Record<FunctionalClass, string> = {
 };
 export const RESTRICTION_LABEL: Record<Restriction, string> = { without_donor: 'unrestricted', with_donor: 'donor-restricted' };
 export const FUND_KIND_LABEL: Record<FundKind, string> = { general: 'general', grant: 'grant', sponsor: 'sponsor', other: 'other' };
-/** Keyed by string so reports the backend adds (e.g. form-990) still get a label. */
-export const REPORT_LABEL: Record<FinanceReport, string> & Record<string, string | undefined> = {
+export const REPORT_LABEL: Record<FinanceReport, string> = {
   'budget-vs-actual': 'budget vs actual',
   'fund-balances': 'fund balances',
   'trial-balance': 'trial balance',

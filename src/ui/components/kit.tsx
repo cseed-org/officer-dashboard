@@ -64,6 +64,7 @@ export function DataTable<T>({
   foot,
   dense,
   showCaption,
+  wide,
 }: {
   rows: T[];
   columns: Column<T>[];
@@ -73,10 +74,12 @@ export function DataTable<T>({
   dense?: boolean;
   /** Show the caption as a heading (statements with several tables). */
   showCaption?: boolean;
+  /** Many columns: use stacked cards below desktop width, not only on phones. */
+  wide?: boolean;
 }) {
   return (
     <div class="table-wrap">
-      <table class={`dt${dense ? ' dt--dense' : ''}`}>
+      <table class={`dt${dense ? ' dt--dense' : ''}${wide ? ' dt--wide' : ''}`}>
         {caption && <caption class={showCaption ? 'dt-caption' : 'visually-hidden'}>{caption}</caption>}
         <thead>
           <tr>

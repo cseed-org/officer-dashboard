@@ -5,8 +5,8 @@ import { devLogin, settle, shot } from './helpers';
 /**
  * The purchase-request journey in dev-auth mode: an officer fills in /requests/new with a
  * receipt and submits, then a director approves it on /requests/:id.
- * While src/ui/mocks is on, the request lives in the tab's sessionStorage; once the backend
- * lands the same steps exercise the real API.
+ * Runs against the real API and the seeded local D1; each run creates new requests
+ * (titles carry an agent-e2e marker).
  */
 test('an officer submits a purchase request with receipts and a director approves it', async ({ page }, info) => {
   const errors: string[] = [];
@@ -86,7 +86,7 @@ test('a director records a reimbursement and confirms the payout', async ({ page
   await devLogin(page, 'officer');
   await page.goto('/requests/new');
   await settle(page);
-  await page.getByLabel('what is it?').fill('Workshop markers');
+  await page.getByLabel('what is it?').fill(`Workshop markers agent-e2e-${Date.now()}`);
   await page.getByLabel('vendor').fill('Target');
   await page.getByLabel('unit cost').fill('18');
   await page.getByLabel('budget category').selectOption({ label: '5100 · Program supplies' });
@@ -103,6 +103,7 @@ test('a director records a reimbursement and confirms the payout', async ({ page
   await page.getByLabel('actual total').fill('16.40');
   await page.getByRole('button', { name: 'mark reimbursed' }).click();
   await expect(page.getByText('posted $16.40 to the ledger')).toBeVisible();
+  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'confirm reimbursement paid' }).click();
   await expect(page.locator('.page-title .badge')).toHaveText('closed');
   await expect(page.getByText('reimbursement paid · closed')).toBeVisible();

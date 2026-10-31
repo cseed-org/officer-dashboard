@@ -6,7 +6,6 @@
  */
 import type { z } from 'zod';
 import { ApiError, ENDPOINTS, type EndpointName } from '../../core/contracts';
-import { UI_MOCKS } from '../mocks/switch';
 
 type Spec<N extends EndpointName> = (typeof ENDPOINTS)[N];
 
@@ -90,12 +89,6 @@ function validate<N extends EndpointName>(name: N, data: unknown): ResponseOf<N>
 }
 
 export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> = {}): Promise<ResponseOf<N>> {
-  if (UI_MOCKS) {
-    const { mockCall } = await import('../mocks/handlers');
-    const mocked = await mockCall(name, opts as CallOptions<EndpointName>);
-    if (mocked.handled) return validate(name, mocked.data);
-  }
-
   const spec = ENDPOINTS[name];
   const url = endpointUrl(name, opts);
   const init: RequestInit = { method: spec.method, credentials: 'same-origin', headers: { accept: 'application/json' }, signal: opts.signal };
@@ -113,6 +106,7 @@ export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> 
     throw new ApiCallError(0, 'internal', 'Could not reach the server. Check your connection and try again.');
   }
   if (!res.ok) throw await toApiError(res);
+  if (res.status === 204) return validate(name, { ok: true });
   const ct = res.headers.get('content-type') ?? '';
   if (!ct.includes('json')) throw new ApiCallError(res.status, 'internal', `Unexpected ${ct || 'empty'} response from ${spec.path}`);
   return validate(name, await res.json());
@@ -139,3 +133,9 @@ export function fieldErrors(err: unknown): Record<string, string> {
   for (const [k, v] of Object.entries(d?.fieldErrors ?? {})) if (v?.[0]) out[k] = v[0];
   return out;
 }
+
+/** Receipt storage (Google Drive) is not configured on the server: uploads answer 503. */
+export const isStorageUnavailable = (err: unknown) => err instanceof ApiCallError && err.status === 503;
+
+export const STORAGE_UNAVAILABLE_MESSAGE =
+  "Receipt storage isn't connected (Google Drive is not configured on the server), so files can't be uploaded right now. Nothing else was lost: ask a director to set up Drive, then add the files from the request page.";

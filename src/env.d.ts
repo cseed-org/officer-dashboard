@@ -29,8 +29,3 @@ declare namespace App {
     sessionId: string | null;
   }
 }
-
-interface ImportMetaEnv {
-  /** "off" turns off the UI mocks (src/ui/mocks/switch.ts). */
-  readonly PUBLIC_UI_MOCKS?: string;
-}
