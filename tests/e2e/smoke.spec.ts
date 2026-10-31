@@ -94,3 +94,14 @@ test('signed-out visitors are sent to the login page', async ({ page }) => {
   expect(failures).toEqual([]);
   await page.screenshot({ path: `tmp/e2e-shots/${test.info().project.name}/light/login.png` });
 });
+
+// Review finding 2: Chromium strips the tab and followed /<TAB>/example.com off-site.
+test('a crafted next= cannot send a signed-in user off-site', async ({ page, baseURL }) => {
+  for (const next of ['%2F%09%2Fexample.com', '%2F%5Cexample.com', '%2F%2Fexample.com', '%2F%0A%2Fexample.com']) {
+    await page.goto(`/auth/dev?as=officer&next=${next}`);
+    expect(new URL(page.url()).origin).toBe(new URL(baseURL!).origin);
+    await expect(page).toHaveURL('/');
+  }
+  await page.goto('/auth/dev?as=officer&next=%2Frequests%3Fscope%3Dall');
+  await expect(page).toHaveURL('/requests?scope=all');
+});
