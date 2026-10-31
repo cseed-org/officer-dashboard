@@ -159,7 +159,11 @@ other reports return 403 for officers.
   order. List adapters currently load their filtered datasets in memory (v1 scale).
 - Fiscal periods: `POST /api/finance/periods` creates the 12 monthly periods of a fiscal
   year that has none (409 otherwise). `POST /api/finance/periods/:id/close` moves
-  open → closed/locked or closed → locked; nothing reopens (409). The `/finance`
+  open → closed/locked or closed → locked; nothing reopens (409). A period whose
+  `endDate` is today or later (Pacific) can't be closed or locked (409), and the UI
+  shows it as "in progress". The `/finance`
   "periods" tab (directors) drives both. Manual/contribution postings remain core-only.
-- Agent settlements above max(estimate × 1.10, estimate + $25) return 409 and are held
-  for a director (see README, "Agent settlement tolerance").
+- Agent settlements above max(estimate × 1.10, estimate + $25) return 409 and move the
+  job to `held` (terminal for the agent: claim cleared, never re-queued). The request
+  detail's `settlementHold` carries the attempted and approved amounts until a director
+  settles it; a `request.held` notification fires (see README, "Agent settlement tolerance").

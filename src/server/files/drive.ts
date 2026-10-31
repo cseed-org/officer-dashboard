@@ -49,7 +49,9 @@ export class GoogleDriveFileStore implements FileStore {
   constructor(
     json: string,
     private rootId: string,
-    private fetcher: typeof fetch = fetch,
+    // Wrapped: calling the global fetch as a method (this.fetcher) throws
+    // "Illegal invocation" on Workers.
+    private fetcher: typeof fetch = (input, init) => fetch(input, init),
   ) {
     this.account = JSON.parse(json);
   }
@@ -112,7 +114,7 @@ export class GoogleDriveFileStore implements FileStore {
       s.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
     const query = new URLSearchParams({
       q: `'${escape(parent)}' in parents and name = '${escape(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-      fields: 'files(id)',
+      fields: 'files(id,createdTime)',
       orderBy: 'createdTime',
       supportsAllDrives: 'true',
       includeItemsFromAllDrives: 'true',
@@ -120,8 +122,15 @@ export class GoogleDriveFileStore implements FileStore {
     });
     const data = (await (
       await this.call(`/drive/v3/files?${query}`)
-    ).json()) as { files: { id: string }[] };
-    return data.files.map((f) => f.id);
+    ).json()) as { files: { id: string; createdTime?: string }[] };
+    // Tie-break equal createdTime by id so concurrent uploaders agree on the oldest.
+    return data.files
+      .sort(
+        (a, b) =>
+          (a.createdTime ?? '').localeCompare(b.createdTime ?? '') ||
+          a.id.localeCompare(b.id),
+      )
+      .map((f) => f.id);
   }
   /**
    * Find or create a folder. Concurrent first uploads can both create it, so

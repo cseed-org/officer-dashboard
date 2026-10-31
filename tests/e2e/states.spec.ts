@@ -96,3 +96,16 @@ test('a request id that does not exist shows not found', async ({ page }) => {
   await page.goto('/events/event-nope');
   await expect(page.locator('[data-state="error"]')).toContainText('Not found');
 });
+
+test('a held agent settlement shows the attempted vs approved amounts', async ({ page }) => {
+  await devLogin(page, 'director');
+  await page.route(/\/api\/requests\/req-0004$/, async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    body.request.status = 'fulfilling';
+    body.request.settlementHold = { attemptedCents: 22_000, approvedCents: 20_350, reason: 'held for director review', heldAt: '2026-10-30T18:00:00.000Z' };
+    await route.fulfill({ response: res, json: body });
+  });
+  await page.goto('/requests/req-0004');
+  await expect(page.locator('[data-settlement-hold]')).toContainText('agent reported $220.00 vs $203.50 approved');
+});

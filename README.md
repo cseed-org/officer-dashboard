@@ -252,9 +252,13 @@ issued service tokens (revoke those separately).
 **Agent settlement tolerance.** The purchasing agent's `POST /api/agent/jobs/:id/complete`
 may post an `actualTotalCents` of up to the larger of the estimate + 10% and the
 estimate + $25 (set by `AGENT_SETTLEMENT_TOLERANCE_PERCENT` / `_CENTS`). Above that it
-gets a 409: the job stays claimed with the attempted amount in `lastError`, the request
-stays `fulfilling`, and a director settles it with `POST /api/requests/:id/transition`.
-The director's own settlement has no limit.
+gets a 409 and the job becomes `held`: its claim is cleared, so later complete, failed or
+claim calls from the agent return 409 and can never re-queue it (no second purchase).
+Directors get a `request.held` notification with the attempted vs approved amount, and
+the request page shows a "held for director review" banner (`settlementHold`). A
+director settles it with `POST /api/requests/:id/transition` (`to: 'fulfilled'`), which
+clears the hold; sending it back to `approved` cancels the held job instead. The
+director's own settlement has no limit.
 
 Receipts allow PDF, PNG, JPEG, HEIC and WebP, up to 10 MB. Configure
 `GOOGLE_SERVICE_ACCOUNT_JSON` and `DRIVE_ROOT_FOLDER_ID` (the older
@@ -268,7 +272,8 @@ stored under `FY<year>/<request-id>/`, and officers need Drive access to open it
 Folder lookups search the shared drive that holds the root folder (`corpora=drive` +
 `driveId`, or `corpora=allDrives` if the root isn't in a shared drive). When two first
 uploads race to create the same folder, both re-list after creating, keep the oldest,
-and the loser's empty duplicate is trashed.
+and the loser's empty duplicate is trashed. Trashing needs the service account to be a
+**Content manager** of the shared drive; as a Contributor the empty duplicate just stays.
 
 **Lock down the service account.** Because the scope is the full `drive` scope, the key
 reaches every file shared with that account. Make the service account a member of the

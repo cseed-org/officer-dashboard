@@ -83,7 +83,9 @@ export function makeReport(
   // Opening balances are beginning net assets whatever their date (N1): an
   // opening entry dated inside the year must not show up as unexplained change.
   const opening = (l: ReportLine) =>
-    l.entryDate < from || l.source === 'opening_balance';
+    l.entryDate < from ||
+    l.source === 'opening_balance' ||
+    l.reversesSource === 'opening_balance';
   const current = all.filter((l) => !opening(l));
   const account = (id: string) => data.accounts.find((a) => a.id === id)!;
   const donor = (id: string) =>

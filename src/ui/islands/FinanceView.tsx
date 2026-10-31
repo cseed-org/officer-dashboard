@@ -3,6 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { FinancePeriod, FinanceReportResponse, FinanceSummaryResponse } from '../../core/contracts';
 import { FINANCE_REPORTS, OFFICER_FINANCE_REPORTS, type FinanceReport } from '../../core/domain';
 import { api, endpointUrl } from '../api/client';
+import { pacificDate } from '../../core/luma/time';
 import { useApi } from '../api/useApi';
 import { BudgetBars } from '../components/charts';
 import { Badge, DataTable, Kpi, Section, Tabs } from '../components/kit';
@@ -159,6 +160,7 @@ const PERIOD_TONE = { open: 'positive', closed: 'neutral', locked: 'attention' }
 /** Director-only: create a fiscal year's monthly periods and close or lock them. */
 function Periods({ fiscalYear }: { fiscalYear: number }) {
   const state = useApi('periods');
+  const today = pacificDate(new Date());
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(null);
   const run = async (key: string, fn: () => Promise<{ periods: FinancePeriod[] }>, done: string) => {
@@ -218,6 +220,8 @@ function Periods({ fiscalYear }: { fiscalYear: number }) {
                           render: (p) =>
                             p.status === 'locked' ? (
                               <span class="muted small">final</span>
+                            ) : p.endDate >= today ? (
+                              <span class="muted small">in progress</span>
                             ) : (
                               <button
                                 type="button"

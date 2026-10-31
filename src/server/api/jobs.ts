@@ -112,7 +112,13 @@ export async function jobs(
       );
       if (b.actualTotalCents > ceiling) {
         const message = `Actual ${formatCents(b.actualTotalCents)} exceeds the approved ${formatCents(r.totalCents)} plus tolerance (max ${formatCents(ceiling)}); held for director review`;
+        // Terminal for the agent (M1): the claim is cleared and the job is out of
+        // `queued`, so neither a later complete/failed nor a claim can re-queue it
+        // and trigger a second purchase.
         const held = {
+          status: 'held' as const,
+          claimedByTokenId: null,
+          claimedAt: null,
           lastError: message,
           resultJson: JSON.stringify(b),
           updatedAt: now(),
@@ -131,6 +137,18 @@ export async function jobs(
           j.id,
           j,
           held,
+        );
+        await getNotifier().notify(
+          {
+            type: 'request.held',
+            requestId: r.id,
+            number: r.number,
+            title: r.title,
+            attemptedCents: b.actualTotalCents,
+            approvedCents: r.totalCents,
+            reason: message,
+          },
+          `${c.url.origin}/requests/${r.id}`,
         );
         fail(409, 'conflict', message);
       }

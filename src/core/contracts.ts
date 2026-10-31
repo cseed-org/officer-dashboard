@@ -418,6 +418,14 @@ export const PurchaseRequestDetail = PurchaseRequestListItem.extend({
   allowedTransitions: z.array(PurchaseStatus),
   /** Whether the current user may edit (draft + requester). */
   canEdit: z.boolean(),
+  /**
+   * Set while the purchasing agent's settlement is held for director review (it
+   * reported more than the approved estimate plus tolerance). A director clears it
+   * by settling the request with POST /transition.
+   */
+  settlementHold: z
+    .object({ attemptedCents: NonNegCents, approvedCents: NonNegCents, reason: z.string(), heldAt: IsoDateTime })
+    .nullable(),
 });
 export type PurchaseRequestDetail = z.infer<typeof PurchaseRequestDetail>;
 

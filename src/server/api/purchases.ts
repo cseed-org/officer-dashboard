@@ -6,6 +6,7 @@ import { canTransition } from '../../core/purchase-lifecycle';
 import { postEntry, releaseRestriction } from '../../core/accounting/engine';
 import { journalWrites } from './accounting';
 import { fiscalYearFor } from '../../core/fiscal';
+import { pacificDate } from '../../core/luma/time';
 import { getFileStore, getNotifier } from '../services';
 import { validateUpload } from '../files/drive';
 import {
@@ -274,7 +275,7 @@ export async function purchases(
     // number is computed inside the INSERT itself, so D1's serialized writes make the
     // allocation atomic; the unique index on `number` backstops it. Legacy non-numeric
     // suffixes (e.g. 2026-C2552D9F) are ignored by the GLOB filters.
-    const fy = fiscalYearFor(now().toISOString().slice(0, 10));
+    const fy = fiscalYearFor(pacificDate(now()));
     const number = sql`(SELECT printf('%d-%04d', ${fy}, coalesce(max(CAST(substr(number, 6) AS INTEGER)), 0) + 1) FROM purchase_requests WHERE number GLOB ${`${fy}-[0-9]*`} AND substr(number, 6) NOT GLOB '*[^0-9]*')`;
     await mutate(
       c,
@@ -503,7 +504,21 @@ export async function purchases(
           .where(
             and(
               eq(s.fulfillmentJobs.requestId, r.id),
-              inArray(s.fulfillmentJobs.status, ['queued', 'claimed']),
+              inArray(s.fulfillmentJobs.status, ['queued', 'claimed', 'held']),
+            ),
+          ),
+      );
+    // Settling clears an agent hold; sending a held request back to `approved`
+    // cancels the held job (it is never re-queued, so nothing is bought twice).
+    if (to === 'approved' && r.status === 'fulfilling')
+      writes.push(
+        c.db
+          .update(s.fulfillmentJobs)
+          .set({ status: 'cancelled', updatedAt: now() })
+          .where(
+            and(
+              eq(s.fulfillmentJobs.requestId, r.id),
+              eq(s.fulfillmentJobs.status, 'held'),
             ),
           ),
       );
@@ -515,7 +530,7 @@ export async function purchases(
           .where(
             and(
               eq(s.fulfillmentJobs.requestId, r.id),
-              inArray(s.fulfillmentJobs.status, ['queued', 'claimed']),
+              inArray(s.fulfillmentJobs.status, ['queued', 'claimed', 'held']),
             ),
           ),
       );

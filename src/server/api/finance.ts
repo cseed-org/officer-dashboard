@@ -8,6 +8,7 @@ import {
 } from '../../core/accounting/reports';
 import { fiscalYearFor, fiscalYearRange, monthlyPeriods } from '../../core/fiscal';
 import { closePeriod } from '../../core/accounting/engine';
+import { pacificDate } from '../../core/luma/time';
 import { OFFICER_FINANCE_REPORTS } from '../../core/domain';
 import { averageRate } from '../../core/metrics';
 import {
@@ -208,6 +209,10 @@ export async function finance(
       .where(eq(s.fiscalPeriods.id, id!))
       .get();
     if (!p) fail(404, 'not_found', 'Fiscal period not found');
+    // M2: closing never reopens, so a period still in progress (Pacific date) would
+    // block every settlement and payout dated today until the month ends.
+    if (p.endDate >= pacificDate(now()))
+      fail(409, 'conflict', `${p.name} hasn't ended yet; close it after ${p.endDate}`);
     let next;
     try {
       next = closePeriod(p, b.to);

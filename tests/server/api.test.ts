@@ -8,6 +8,7 @@ import { fiscalYearFor } from '../../src/core/fiscal';
 vi.setConfig({ testTimeout: 60000 });
 const state = { db: null as D1Database | null };
 let worker: Miniflare;
+const webhooks: any[] = [];
 const director: CurrentUser = {
   id: 'user-director',
   name: 'Jordan Lee',
@@ -95,6 +96,13 @@ beforeAll(async () => {
       compatibilityDate: '2026-10-01',
       compatibilityFlags: ['nodejs_compat'],
       d1Databases: { DB: 'api-test' },
+      bindings: { DISCORD_WEBHOOK_URL: 'https://discord.test/webhook' },
+      // Capture outbound Discord webhook posts instead of sending them.
+      outboundService: async (req: Request) => {
+        if (new URL(req.url).host === 'discord.test')
+          webhooks.push(await req.json());
+        return new Response(null, { status: 204 });
+      },
     }),
   );
   state.db = (await worker.getD1Database('DB')) as unknown as D1Database;
@@ -674,13 +682,32 @@ describe('real D1 API', () => {
     const held = await call(`/api/requests/${id}`, 'GET', undefined, director);
     expect(held.body.request.status).toBe('fulfilling');
     expect(held.body.request.journalEntryIds).toHaveLength(0);
-    const job = await state.db!.prepare('SELECT status, last_error FROM fulfillment_jobs WHERE id = ?').bind(jobId).first();
-    expect(job?.status).toBe('claimed');
-    expect(String(job?.last_error)).toMatch(/12501|\$125\.01/);
-    // The director settles the held request at the real amount.
+    // M1: the hold is visible on the request and terminal for the agent.
+    expect(held.body.request.settlementHold).toMatchObject({ attemptedCents: 12_501, approvedCents: 10_000 });
+    expect(held.body.request.settlementHold.reason).toMatch(/director review/);
+    const job = await state.db!.prepare('SELECT status, claimed_by_token_id, last_error FROM fulfillment_jobs WHERE id = ?').bind(jobId).first();
+    expect(job?.status).toBe('held');
+    expect(job?.claimed_by_token_id).toBeNull();
+    expect(String(job?.last_error)).toMatch(/\$125\.01/);
+    // A later 'failed' (or another 'done') from the agent can't undo the hold or re-queue the job.
+    expect((await call(`/api/agent/jobs/${jobId}/complete`, 'POST', { outcome: 'failed', error: 'complete rejected' }, null, token)).status).toBe(409);
+    expect((await call(`/api/agent/jobs/${jobId}/complete`, 'POST', { outcome: 'done', actualTotalCents: 9_000 }, null, token)).status).toBe(409);
+    expect((await call(`/api/agent/jobs/${jobId}/claim`, 'POST', undefined, null, token)).status).toBe(409);
+    const queued = await call('/api/agent/jobs', 'GET', undefined, null, token);
+    expect(queued.body.jobs.some((j: { id: string }) => j.id === jobId)).toBe(false);
+    expect((await call(`/api/requests/${id}`, 'GET', undefined, director)).body.request.status).toBe('fulfilling');
+    // Directors are notified with the attempted vs approved amount.
+    const note = webhooks.find((w) => w.embeds?.[0]?.description === 'request.held' && w.embeds[0].title.startsWith(made.body.request.number));
+    expect(note).toBeDefined();
+    const fields = Object.fromEntries(note.embeds[0].fields.map((f: { name: string; value: string }) => [f.name, f.value]));
+    expect(fields).toMatchObject({ 'Agent reported': '$125.01', Approved: '$100.00' });
+    // The director settles the held request at the real amount, which clears the hold.
     const settled = await call(`/api/requests/${id}/transition`, 'POST', { to: 'fulfilled', actualTotalCents: 12_501 }, director);
     expect(settled.status).toBe(200);
     expect(settled.body.request.actualTotalCents).toBe(12_501);
+    expect(settled.body.request.settlementHold).toBeNull();
+    const after = await state.db!.prepare('SELECT status FROM fulfillment_jobs WHERE id = ?').bind(jobId).first();
+    expect(after?.status).toBe('done');
     // At the ceiling, the agent may settle on its own.
     const made2 = await call('/api/requests', 'POST', { ...purchase, submit: true });
     await call(`/api/requests/${made2.body.request.id}/approve`, 'POST', {}, director);
@@ -702,12 +729,20 @@ describe('real D1 API', () => {
     // A year that already has periods cannot be created twice.
     expect((await call('/api/finance/periods', 'POST', { fiscalYear: 2028 }, director)).status).toBe(409);
     expect((await call('/api/finance/periods', 'POST', { fiscalYear: 2027 }, director)).status).toBe(409);
-    const july = fy28[0].id;
+    // M2: a period that hasn't ended (Pacific) can't be closed or locked.
+    const futureJuly = fy28[0].id;
+    const notEnded = await call(`/api/finance/periods/${futureJuly}/close`, 'POST', { to: 'closed' }, director);
+    expect(notEnded.status).toBe(409);
+    expect(notEnded.body.error.message).toMatch(/hasn.t ended/);
+    expect((await call(`/api/finance/periods/${futureJuly}/close`, 'POST', { to: 'locked' }, director)).status).toBe(409);
+    // A past year closes, then locks.
+    const past = await call('/api/finance/periods', 'POST', { fiscalYear: 2026 }, director);
+    const july = past.body.periods.find((p: { startDate: string }) => p.startDate === '2025-07-01').id;
     expect((await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'closed' })).status).toBe(403);
     const closed = await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'closed' }, director);
     expect(closed.status).toBe(200);
     expect(closed.body.periods.find((p: { id: string }) => p.id === july).status).toBe('closed');
-    // Closing again is a no-op conflict; locking is allowed; nothing reopens.
+    // Closing again is a conflict; locking is allowed; nothing reopens.
     expect((await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'closed' }, director)).status).toBe(409);
     const locked = await call(`/api/finance/periods/${july}/close`, 'POST', { to: 'locked' }, director);
     expect(locked.body.periods.find((p: { id: string }) => p.id === july).status).toBe('locked');

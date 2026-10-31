@@ -102,7 +102,7 @@ function fakeDrive(opts: { driveId?: string; raceWith?: string } = {}) {
         files: folders
           .filter((f) => f.parent === parent && f.name === name)
           .sort((a, b) => a.created - b.created)
-          .map(({ id }) => ({ id })),
+          .map(({ id, created }) => ({ id, createdTime: new Date(Date.UTC(2026, 9, 31, 12, 0, created)).toISOString() })),
       });
     }
     if (method === 'POST' && url.pathname === '/drive/v3/files') {
@@ -178,4 +178,18 @@ it('converges on the oldest folder when a concurrent first upload created the sa
   // The list after create asks for oldest first.
   const relist = drive.calls.filter((c) => c.method === 'GET' && c.url.pathname === '/drive/v3/files')[1]!;
   expect(relist.url.searchParams.get('orderBy')).toBe('createdTime');
+});
+
+it('breaks createdTime ties by id so racing uploaders agree on one folder', async () => {
+  const fetcher = vi.fn<typeof fetch>(async (input) => {
+    const url = new URL(String(input));
+    if (url.host === 'oauth2.googleapis.com') return Response.json({ access_token: 'a', expires_in: 3600 });
+    if (url.pathname === '/drive/v3/files/root') return Response.json({ id: 'root', driveId: 'd' });
+    if (url.pathname === '/drive/v3/files')
+      return Response.json({ files: [{ id: 'zzz', createdTime: '2026-10-31T12:00:00.000Z' }, { id: 'aaa', createdTime: '2026-10-31T12:00:00.000Z' }] });
+    return Response.json({ id: 'file' });
+  });
+  await upload(new GoogleDriveFileStore(await serviceAccount(), 'root', fetcher));
+  const meta = await ((fetcher.mock.calls.at(-1)![1]!.body as Blob).text());
+  expect(meta).toContain('"parents":["aaa"]');
 });

@@ -269,3 +269,17 @@ it('Form 990 rollup totals Part VIII line 12 and Part IX line 25, memos noncash 
     { account: expect.objectContaining({ code: '5990' }), totalCents: 50 },
   ]);
 });
+
+it('treats a reversal of an opening balance as beginning net assets too', () => {
+  const d: ReportData = { ...data, lines: [] };
+  const l = (accountId: string, dr: number, cr: number, source: string, reversesSource: string | null = null) =>
+    d.lines.push({ entryDate: '2026-07-02', source, reversesSource, accountId, fundId: 'g', debitCents: dr, creditCents: cr, functionalClass: null });
+  l('cash', 3200, 0, 'opening_balance');
+  l('net', 0, 3200, 'opening_balance');
+  l('cash', 0, 200, 'reversal', 'opening_balance');
+  l('net', 200, 0, 'reversal', 'opening_balance');
+  const a = makeReport('statement-of-activities', d, q);
+  if (a.report !== 'statement-of-activities') throw new Error();
+  expect(a.netAssetsBeginning.totalCents).toBe(3000);
+  expect(a.changeInNetAssets.totalCents).toBe(0);
+});

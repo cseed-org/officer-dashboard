@@ -151,7 +151,11 @@ test('director sees fiscal periods with close/lock actions and the 990 totals', 
   await expect(fy27.locator('tbody tr')).toHaveCount(12);
   // Seed: July–September closed, the rest open.
   await expect(fy27.locator('[data-period-action="lock"]')).toHaveCount(3);
-  await expect(fy27.locator('[data-period-action="close"]')).toHaveCount(9);
+  // Open months that haven't ended (Pacific) show "in progress" instead of a close button.
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
+  const ended = Array.from({ length: 9 }, (_, i) => new Date(Date.UTC(2026, 10 + i, 0)).toISOString().slice(0, 10)).filter((end) => end < today).length;
+  await expect(fy27.locator('[data-period-action="close"]')).toHaveCount(ended);
+  await expect(fy27.getByText('in progress')).toHaveCount(9 - ended);
   await expect(page.locator('[data-create-periods]')).toBeVisible();
   await page.goto('/finance?tab=form-990');
   await settle(page);
