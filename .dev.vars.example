@@ -1,0 +1,17 @@
+# Copy to .dev.vars for local development (`npm run dev` does this if it's missing).
+# Production values are set with `wrangler secret put <NAME>`.
+
+# Dev-only login bypass at /auth/dev?as=director|officer. Ignored by production builds.
+DEV_AUTH=1
+
+# Discord OAuth2 app (https://discord.com/developers/applications), redirect URI:
+#   http://localhost:4321/auth/callback (dev) and https://<your domain>/auth/callback (prod)
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+# Your Discord user id (Developer Mode → right-click yourself → Copy User ID).
+BOOTSTRAP_DIRECTOR_DISCORD_ID=
+
+# Phase 1 adapters (stubs are used while these are empty)
+DISCORD_WEBHOOK_URL=
+GOOGLE_SERVICE_ACCOUNT_JSON=
+GOOGLE_DRIVE_FOLDER_ID=

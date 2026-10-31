@@ -1,0 +1,18 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+---
+
+<AppLayout title="not found">
+  <section class="err">
+    <h1>not found</h1>
+    <hr />
+    <p>Nothing lives at this address. <a href="/">Back to the overview →</a></p>
+  </section>
+</AppLayout>
+
+<style>
+  .err {
+    display: grid;
+    gap: var(--space-4);
+  }
+</style>

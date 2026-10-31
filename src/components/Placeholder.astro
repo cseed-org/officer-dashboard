@@ -1,0 +1,37 @@
+---
+/* Phase 0 placeholder. The UI agent replaces each page body in Phase 1. */
+interface Props {
+  title: string;
+  /** Contract schemas the real page will use (docs/api.md). */
+  uses?: string[];
+}
+const { title, uses = [] } = Astro.props;
+---
+
+<section class="placeholder" data-placeholder>
+  <h1>{title}</h1>
+  <hr />
+  <p class="todo">TODO</p>
+  {uses.length > 0 && <p class="uses">Data: {uses.map((u, i) => <><code>{u}</code>{i < uses.length - 1 ? ', ' : ''}</>)}</p>}
+  <slot />
+</section>
+
+<style>
+  .placeholder {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .placeholder h1 {
+    padding-bottom: var(--space-2);
+  }
+  .todo {
+    font: var(--type-kpi);
+    margin: var(--space-4) 0 0;
+  }
+  .uses {
+    color: var(--text-muted);
+    font-size: var(--size-sm);
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+</style>
