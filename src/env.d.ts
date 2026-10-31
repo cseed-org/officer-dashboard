@@ -15,6 +15,7 @@ declare namespace Cloudflare {
     GOOGLE_SERVICE_ACCOUNT_JSON?: string;
     /** Shared drive folder that receipts are filed under. */
     GOOGLE_DRIVE_FOLDER_ID?: string;
+    DRIVE_ROOT_FOLDER_ID?: string;
     /** "1" enables /auth/dev in `astro dev` only. Ignored by production builds. */
     DEV_AUTH?: string;
   }
