@@ -3,7 +3,7 @@ import type { CsvImportResponse } from '../../core/contracts';
 import { CSV_MAX_BYTES } from '../../core/contracts';
 import { api, fieldErrors } from '../api/client';
 import { useApi } from '../api/useApi';
-import { bytes, fmtDate, pacificIso, pct } from '../format';
+import { bytes, fmtDate, pacificIso, pct, plural } from '../format';
 import { describe, Field } from './kit';
 import { errorMessage, Notice } from './states';
 
@@ -168,11 +168,12 @@ function ImportResult({ r }: { r: CsvImportResponse }) {
   return (
     <div class={`notice ${r.errors.length ? 'notice--attention' : 'notice--positive'}`} role="status" data-import-result>
       <strong>{r.dryRun ? 'Checked — nothing saved yet. ' : 'Imported. '}</strong>
-      {r.rows} rows: {r.created} new, {r.updated} updated, {r.skipped} skipped.{' '}
+      {plural(r.rows, 'row')}: {r.created} new, {r.updated} updated, {r.skipped} skipped.{' '}
       {r.kind === 'luma_guests'
         ? `${m.registered} registered, ${m.checkedIn} checked in (${pct(m.checkInRate)}).`
         : `${m.matchedReflections} of ${m.checkedIn} checked-in guests reflected (${pct(m.reflectionRate)}).`}
-      {m.unmatchedReflections > 0 && ` ${m.unmatchedReflections} responses don't match a checked-in email.`}
+      {m.unmatchedReflections > 0 &&
+        ` ${plural(m.unmatchedReflections, 'response')} ${m.unmatchedReflections === 1 ? "doesn't" : "don't"} match a checked-in email.`}
       {!r.dryRun && (
         <>
           {' '}

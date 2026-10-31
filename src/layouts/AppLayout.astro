@@ -40,8 +40,9 @@ const showNav = !bare && user;
     </script>
   </head>
   <body class:list={{ 'has-nav': showNav }}>
+    <a class="skip-link" href="#main">skip to content</a>
     {showNav && <AppNav user={user} />}
-    <main class="page" id="main">
+    <main class="page" id="main" tabindex="-1">
       <slot />
     </main>
   </body>

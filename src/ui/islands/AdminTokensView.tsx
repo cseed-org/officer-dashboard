@@ -18,7 +18,7 @@ const tokenState = (t: ServiceToken) =>
 
 export default function AdminTokensView() {
   const state = useApi('adminTokens');
-  const [created, setCreated] = useState<{ name: string; plaintext: string } | null>(null);
+  const [created, setCreated] = useState<{ id: string; name: string; plaintext: string } | null>(null);
   const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(null);
 
   const revoke = async (t: ServiceToken) => {
@@ -26,6 +26,8 @@ export default function AdminTokensView() {
     try {
       await api('adminTokenRevoke', { params: { id: t.id } });
       if (state.status === 'ready') state.set({ tokens: state.data.tokens.map((x) => (x.id === t.id ? { ...x, revokedAt: new Date().toISOString() } : x)) });
+      // A revoked token's secret must not stay on screen.
+      if (created?.id === t.id) setCreated(null);
       setNotice({ tone: 'positive', text: `“${t.name}” is revoked.` });
     } catch (e) {
       setNotice({ tone: 'negative', text: errorMessage(e) });
@@ -34,7 +36,7 @@ export default function AdminTokensView() {
 
   return (
     <div class="stack">
-      {created && <NewSecret {...created} onDone={() => setCreated(null)} />}
+      {created && <NewSecret name={created.name} plaintext={created.plaintext} onDone={() => setCreated(null)} />}
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
       <Section title="tokens" id="tokens">
         <Async state={state} loading={<Loading rows={3} label="Loading tokens" />}>
@@ -85,7 +87,7 @@ export default function AdminTokensView() {
         <CreateToken
           onCreated={(t, plaintext) => {
             if (state.status === 'ready') state.set({ tokens: [t, ...state.data.tokens] });
-            setCreated({ name: t.name, plaintext });
+            setCreated({ id: t.id, name: t.name, plaintext });
             setNotice(null);
             scrollTo({ top: 0, behavior: 'smooth' });
           }}

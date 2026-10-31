@@ -53,7 +53,7 @@ export const STATUS_LABEL: Record<PurchaseStatus, string> = {
   denied: 'denied',
   fulfilling: 'buying',
   fulfilled: 'bought',
-  reimbursed: 'reimbursed',
+  reimbursed: 'approved for payout — awaiting payment',
   closed: 'closed',
   cancelled: 'cancelled',
 };
@@ -134,3 +134,10 @@ export function pacificIso(date: string, time = '18:00'): string {
   const pad = (n: number) => String(Math.abs(n)).padStart(2, '0');
   return `${date}T${pad(hh)}:${pad(mm)}:00${sign}${pad(Math.trunc(Math.abs(mins) / 60))}:${pad(Math.abs(mins) % 60)}`;
 }
+
+/** "1 row", "2 rows"; pass the plural when it isn't just +s. */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** Luma's host page for an event id (evt-…), for events imported without a public URL. */
+export const lumaManageUrl = (lumaId: string | null | undefined) =>
+  lumaId && /^evt-[\w-]+$/.test(lumaId) ? `https://lu.ma/event/manage/${lumaId}` : null;
