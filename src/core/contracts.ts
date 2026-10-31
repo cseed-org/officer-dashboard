@@ -121,13 +121,23 @@ export const FundOption = z.object({
 });
 export type FundOption = z.infer<typeof FundOption>;
 
+/**
+ * Event health counts (see src/core/metrics.ts). reflectionRate counts only reflections
+ * matched to a checked-in guest by normalized email, so it stays within 0..1; the rest
+ * are reported as unmatchedReflections so the UI can flag the data problem.
+ */
 export const EventCounts = z.object({
   registered: z.number().int().nonnegative(),
   checkedIn: z.number().int().nonnegative(),
+  /** All reflections received (distinct respondents). */
   reflections: z.number().int().nonnegative(),
+  /** Reflections from guests who checked in (matched by normalized email). */
+  matchedReflections: z.number().int().nonnegative(),
+  /** Reflections with no matching check-in (reflections − matchedReflections). */
+  unmatchedReflections: z.number().int().nonnegative(),
   /** checkedIn / registered */
   checkInRate: Rate,
-  /** reflections / checkedIn */
+  /** matchedReflections / checkedIn */
   reflectionRate: Rate,
 });
 export type EventCounts = z.infer<typeof EventCounts>;
@@ -388,6 +398,8 @@ export const PurchaseRequestDetail = PurchaseRequestListItem.extend({
   quantity: z.number().int().positive(),
   unitCostCents: NonNegCents,
   taxShipCents: NonNegCents,
+  /** Set at settlement (fulfilled / reimbursed); the amount actually posted. totalCents stays the approved estimate. */
+  actualTotalCents: NonNegCents.nullable(),
   functionalClass: FunctionalClass,
   justification: z.string(),
   neededBy: IsoDate.nullable(),
@@ -417,11 +429,37 @@ export type PurchaseDecisionRequest = z.infer<typeof PurchaseDecisionRequest>;
 export const PurchaseDenyRequest = z.object({ comment: z.string().trim().min(1).max(2000) });
 export type PurchaseDenyRequest = z.infer<typeof PurchaseDenyRequest>;
 
-/** POST /api/requests/:id/transition — later lifecycle moves (fulfilled, reimbursed, closed, cancelled). */
-export const PurchaseTransitionRequest = z.object({
-  to: z.enum(['fulfilling', 'fulfilled', 'reimbursed', 'closed', 'cancelled']),
-  comment: z.string().trim().max(2000).optional(),
+const TransitionComment = z.string().trim().max(2000).optional();
+
+/**
+ * Settlement: what was actually paid. Moving to `fulfilled` (club purchase) or
+ * `reimbursed` (reimbursement) posts the journal entry for **actualTotalCents**, not the
+ * approved estimate (`totalCents`); the encumbrance for the estimate is released at the
+ * same time. The actual amount may be lower or higher than the estimate (discounts,
+ * shipping); both are kept on the request so the difference stays visible.
+ */
+export const PurchaseSettlement = z.object({
+  actualTotalCents: NonNegCents,
+  /** Receipts already uploaded via POST /api/requests/:id/attachments. */
+  attachmentIds: z.array(Id).max(20).default([]),
+  /** e.g. order number from the vendor. */
+  orderReference: z.string().trim().max(200).optional(),
+  comment: TransitionComment,
 });
+export type PurchaseSettlement = z.infer<typeof PurchaseSettlement>;
+
+/**
+ * POST /api/requests/:id/transition — later lifecycle moves (director). The body is
+ * discriminated on `to`: the two posting moves (`fulfilled`, `reimbursed`) require a
+ * PurchaseSettlement; the others take an optional comment.
+ */
+export const PurchaseTransitionRequest = z.discriminatedUnion('to', [
+  z.object({ to: z.literal('fulfilling'), comment: TransitionComment }),
+  PurchaseSettlement.extend({ to: z.literal('fulfilled') }),
+  PurchaseSettlement.extend({ to: z.literal('reimbursed') }),
+  z.object({ to: z.literal('closed'), comment: TransitionComment }),
+  z.object({ to: z.literal('cancelled'), comment: TransitionComment }),
+]);
 export type PurchaseTransitionRequest = z.infer<typeof PurchaseTransitionRequest>;
 
 /** POST /api/requests/:id/attachments — multipart: `file` (≤ 10 MB; pdf/png/jpeg/heic/webp) + these fields. */
@@ -768,8 +806,9 @@ export type AgentJobResponse = z.infer<typeof AgentJobResponse>;
 export const AgentJobCompleteRequest = z.discriminatedUnion('outcome', [
   z.object({
     outcome: z.literal('done'),
-    /** What was actually paid, for the journal entry. */
+    /** What was actually paid; posted instead of the estimate, as in PurchaseSettlement. */
     actualTotalCents: NonNegCents,
+    attachmentIds: z.array(Id).max(20).default([]),
     orderReference: z.string().max(200).optional(),
     notes: z.string().max(2000).optional(),
   }),

@@ -10,6 +10,13 @@ and response is a zod schema there with its TypeScript type inferred under the s
 - JSON in and out. File uploads (CSV import, receipts) are `multipart/form-data`.
 - **Money is integer cents** (`*Cents`). Format it in the UI with `formatCents` from `src/core/money.ts`.
 - **Rates** are fractions 0–1, or `null` when the denominator is zero ("no data", not 0%).
+- **Event metrics** (`EventCounts`, computed by `src/core/metrics.ts`):
+  - `checkInRate` = checkedIn ÷ registered.
+  - `reflectionRate` = `matchedReflections` ÷ checkedIn, where a reflection is matched when
+    its email, trimmed and lower-cased, belongs to a checked-in guest.
+  - Reflections without a matching check-in are counted in `unmatchedReflections` and left
+    out of the rate. The UI should flag a non-zero value as a data problem, such as a missed
+    door scan or a typo'd email.
 - Dates are `YYYY-MM-DD`; datetimes are ISO 8601 with an offset.
 - Lists take `?cursor=&limit=` (`PageQuery`) and return `{ items, nextCursor }`.
 - Every error is an `ApiError` body: `{ error: { code, message, details? } }`, with status
@@ -85,6 +92,20 @@ other reports return 403 for officers.
   A director cannot approve their own request (403). `totalCents` is always computed
   server-side. `PurchaseRequestDetail.allowedTransitions` and `canEdit` tell the UI which
   buttons to show for the current user.
+- **Settlement: the actual amount replaces the estimate.** `totalCents` is the approved
+  estimate (quantity × unit cost + tax/shipping). While a request is `approved` or
+  `fulfilling`, that estimate counts as *committed* (encumbered) in budget figures. Moving
+  to `fulfilled` or `reimbursed` (`POST /api/requests/:id/transition` with a
+  `PurchaseSettlement` body, or the agent's `POST /api/agent/jobs/:id/complete`) requires
+  `actualTotalCents`. The backend then:
+  1. stores it on the request (`PurchaseRequestDetail.actualTotalCents`);
+  2. posts the journal entry for **`actualTotalCents`**, not `totalCents`;
+  3. releases the commitment for the estimate.
+
+  Example: a $100.00 approved request bought for $95.00 shows $100.00 committed until
+  settlement, then $95.00 spent and $0 committed. The actual amount may be higher or lower
+  than the estimate; both stay on the request. `attachmentIds` links receipts already
+  uploaded to the request.
 - **Approve** enqueues a `fulfillment_jobs` row for club purchases and sends a Discord
   notification; submit / deny / fulfilled also notify.
 - **Admin users.** Deactivating a user deletes their sessions. The last active director can't
