@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSeedSql } from '../../scripts/seed/sql';
 import { migratedDb } from './sqlite';
+import { fiscalYearFor } from '../../src/core/fiscal';
 
 function seeded() {
   const db = migratedDb();
@@ -38,6 +39,18 @@ describe('seed', () => {
     // Worked example: cash 3,200 + 5,000 + 1,500 + 300 − 405 − 186.40 = 9,408.60,
     // plus the 2,500 grant receivable = 11,908.60.
     expect(assets).toBe(1_190_860);
+  });
+
+  it('numbers requests <fiscal year>-<4-digit sequence>, matching the API scheme', () => {
+    const db = seeded();
+    const rows = db.prepare(`SELECT number, submitted_at, created_at FROM purchase_requests ORDER BY number`).all() as { number: string; submitted_at: number | null; created_at: number }[];
+    expect(rows.length).toBeGreaterThan(0);
+    rows.forEach((r, i) => {
+      expect(r.number).toMatch(/^\d{4}-\d{4}$/);
+      expect(Number(r.number.slice(5))).toBe(i + 1);
+      const date = new Date(r.submitted_at ?? r.created_at).toISOString().slice(0, 10);
+      expect(r.number.slice(0, 4)).toBe(String(fiscalYearFor(date)));
+    });
   });
 
   it('maps every revenue and expense account to a Form 990 line', () => {
