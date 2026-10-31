@@ -693,6 +693,18 @@ export const FiscalPeriodsResponse = z.object({
   ),
 });
 export type FiscalPeriodsResponse = z.infer<typeof FiscalPeriodsResponse>;
+export type FinancePeriod = FiscalPeriodsResponse['periods'][number];
+
+/** POST /api/finance/periods (director) — creates the 12 monthly periods of a fiscal year that has none. */
+export const FiscalYearPeriodsCreateRequest = z.object({ fiscalYear: FiscalYear });
+export type FiscalYearPeriodsCreateRequest = z.infer<typeof FiscalYearPeriodsCreateRequest>;
+
+/**
+ * POST /api/finance/periods/:id/close (director) — open → closed or locked, closed → locked.
+ * Closed and locked periods reject new entries; neither can reopen.
+ */
+export const FiscalPeriodCloseRequest = z.object({ to: z.enum(['closed', 'locked']) });
+export type FiscalPeriodCloseRequest = z.infer<typeof FiscalPeriodCloseRequest>;
 
 /** GET /api/finance/accounts (director) — chart of accounts with 990 mapping. */
 export const ChartOfAccountsResponse = z.object({
@@ -892,6 +904,8 @@ export const ENDPOINTS = {
   budgetsGet: { method: 'GET', path: '/api/finance/budgets', auth: 'officer', query: FinanceQuery, response: BudgetsResponse },
   budgetsPut: { method: 'PUT', path: '/api/finance/budgets', auth: 'director', body: BudgetsUpsertRequest, response: BudgetsResponse },
   periods: { method: 'GET', path: '/api/finance/periods', auth: 'director', response: FiscalPeriodsResponse },
+  periodsCreate: { method: 'POST', path: '/api/finance/periods', auth: 'director', body: FiscalYearPeriodsCreateRequest, response: FiscalPeriodsResponse },
+  periodClose: { method: 'POST', path: '/api/finance/periods/:id/close', auth: 'director', body: FiscalPeriodCloseRequest, response: FiscalPeriodsResponse },
   accounts: { method: 'GET', path: '/api/finance/accounts', auth: 'director', response: ChartOfAccountsResponse },
 
   adminUsers: { method: 'GET', path: '/api/admin/users', auth: 'director', response: AdminUsersResponse },

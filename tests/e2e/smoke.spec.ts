@@ -20,6 +20,7 @@ const ROUTES = [
   '/finance?tab=statement-of-functional-expenses',
   '/finance?tab=trial-balance',
   '/finance?tab=form-990',
+  '/finance?tab=periods',
   '/requests?scope=all',
   '/requests/req-0004',
   '/admin/users',
@@ -69,6 +70,7 @@ for (const route of ['/', '/requests', '/finance', '/finance?tab=fund-balances']
     }
     if (route === '/finance') {
       await expect(page.getByRole('tab', { name: 'trial balance' })).toHaveCount(0);
+      await expect(page.getByRole('tab', { name: 'periods' })).toHaveCount(0);
       await expect(page.getByRole('tab', { name: 'fund balances' })).toBeVisible();
     }
     expect(problems, problems.join('\n')).toEqual([]);
@@ -139,4 +141,20 @@ test('a crafted next= cannot send a signed-in user off-site', async ({ page, bas
   }
   await page.goto('/auth/dev?as=officer&next=%2Frequests%3Fscope%3Dall');
   await expect(page).toHaveURL('/requests?scope=all');
+});
+
+test('director sees fiscal periods with close/lock actions and the 990 totals', async ({ page }) => {
+  await devLogin(page, 'director');
+  await page.goto('/finance?tab=periods');
+  await settle(page);
+  const fy27 = page.getByRole('table', { name: /FY2027/ });
+  await expect(fy27.locator('tbody tr')).toHaveCount(12);
+  // Seed: July–September closed, the rest open.
+  await expect(fy27.locator('[data-period-action="lock"]')).toHaveCount(3);
+  await expect(fy27.locator('[data-period-action="close"]')).toHaveCount(9);
+  await expect(page.locator('[data-create-periods]')).toBeVisible();
+  await page.goto('/finance?tab=form-990');
+  await settle(page);
+  for (const line of ['1g', '12', '25']) await expect(page.locator(`[data-990-line="${line}"]`)).toBeVisible();
+  await expect(page.locator('[data-990-unmapped]')).toHaveCount(0);
 });

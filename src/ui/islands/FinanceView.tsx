@@ -1,19 +1,19 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import type { FinanceReportResponse, FinanceSummaryResponse } from '../../core/contracts';
+import type { FinancePeriod, FinanceReportResponse, FinanceSummaryResponse } from '../../core/contracts';
 import { FINANCE_REPORTS, OFFICER_FINANCE_REPORTS, type FinanceReport } from '../../core/domain';
-import { endpointUrl } from '../api/client';
+import { api, endpointUrl } from '../api/client';
 import { useApi } from '../api/useApi';
 import { BudgetBars } from '../components/charts';
-import { DataTable, Kpi, Section, Tabs } from '../components/kit';
-import { Async, Empty, Loading } from '../components/states';
+import { Badge, DataTable, Kpi, Section, Tabs } from '../components/kit';
+import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
 import { dollars, fmtDate, fmtDateTime, formatCents, FUND_KIND_LABEL, pct, REPORT_LABEL, RESTRICTION_LABEL } from '../format';
 
-type TabKey = 'summary' | FinanceReport;
+type TabKey = 'summary' | FinanceReport | 'periods';
 
 export default function FinanceView({ isDirector, fiscalYear, initialTab }: { isDirector: boolean; fiscalYear: number; initialTab?: string | null }) {
   const allowed: FinanceReport[] = isDirector ? [...FINANCE_REPORTS].sort((a, b) => order(a) - order(b)) : [...OFFICER_FINANCE_REPORTS];
-  const tabs: TabKey[] = ['summary', ...allowed];
+  const tabs: TabKey[] = ['summary', ...allowed, ...(isDirector ? (['periods'] as const) : [])];
   const [tab, setTab] = useState<TabKey>(() => (initialTab && (tabs as string[]).includes(initialTab) ? (initialTab as TabKey) : 'summary'));
   const [fy, setFy] = useState(fiscalYear);
   const [fundId, setFundId] = useState('');
@@ -58,9 +58,9 @@ export default function FinanceView({ isDirector, fiscalYear, initialTab }: { is
         </div>
       </div>
 
-      <Tabs label="Finance views" idPrefix="fin" active={tab} onChange={setTab} tabs={tabs.map((k) => ({ key: k, label: k === 'summary' ? 'summary' : REPORT_LABEL[k] }))} />
+      <Tabs label="Finance views" idPrefix="fin" active={tab} onChange={setTab} tabs={tabs.map((k) => ({ key: k, label: k === 'summary' || k === 'periods' ? k : REPORT_LABEL[k] }))} />
       <div id="fin-panel" role="tabpanel" aria-labelledby={`fin-tab-${tab}`} style={{ paddingTop: 'var(--space-6)' }}>
-        {tab === 'summary' ? <Summary query={query} isDirector={isDirector} onOpen={setTab} /> : <Report name={tab} query={query} key={tab} />}
+        {tab === 'summary' ? <Summary query={query} isDirector={isDirector} onOpen={setTab} /> : tab === 'periods' ? <Periods fiscalYear={fy} /> : <Report name={tab} query={query} key={tab} />}
       </div>
       {!isDirector && (
         <p class="muted small" style={{ marginTop: 'var(--space-6)' }}>
@@ -147,6 +147,100 @@ function Summary({ query, onOpen }: { query: Q; isDirector: boolean; onOpen: (t:
                 )}
               </Section>
             </div>
+          </div>
+        );
+      }}
+    </Async>
+  );
+}
+
+const PERIOD_TONE = { open: 'positive', closed: 'neutral', locked: 'attention' } as const;
+
+/** Director-only: create a fiscal year's monthly periods and close or lock them. */
+function Periods({ fiscalYear }: { fiscalYear: number }) {
+  const state = useApi('periods');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(null);
+  const run = async (key: string, fn: () => Promise<{ periods: FinancePeriod[] }>, done: string) => {
+    setBusy(key);
+    try {
+      state.set(await fn());
+      setNotice({ tone: 'positive', text: done });
+    } catch (e) {
+      setNotice({ tone: 'negative', text: errorMessage(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Async state={state} loading={<Loading rows={6} label="Loading fiscal periods" />}>
+      {(d) => {
+        const years = d.periods.map((p) => p.fiscalYear);
+        const next = years.length ? Math.max(...years) + 1 : fiscalYear;
+        const rowsFor = (fy: number) => d.periods.filter((p) => p.fiscalYear === fy);
+        const fys = [...new Set([fiscalYear, ...years])].sort((a, b) => b - a);
+        const create = (
+          <button
+            type="button"
+            class="btn btn--small"
+            disabled={busy !== null}
+            data-create-periods={next}
+            onClick={() => {
+              if (!confirm(`Create the 12 monthly periods for FY${next} (Jul ${next - 1} – Jun ${next})?`)) return;
+              void run('create', () => api('periodsCreate', { body: { fiscalYear: next } }), `FY${next} periods created.`);
+            }}
+          >
+            {busy === 'create' ? 'creating…' : `create FY${next} periods`}
+          </button>
+        );
+        return (
+          <div class="stack">
+            {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+            <Section title="fiscal periods" id="periods-h" actions={create}>
+              <p class="small muted" style={{ margin: '0 0 var(--space-4)' }}>
+                Entries post only into open periods. Closing a month stops new entries; locking makes it final. Neither can be undone.
+              </p>
+              {fys.map((fy) => (
+                <div key={fy} style={{ marginBottom: 'var(--space-6)' }}>
+                  {rowsFor(fy).length === 0 ? (
+                    <Empty title={`No periods for FY${fy}`}>Nothing can post to this year until its periods exist.</Empty>
+                  ) : (
+                    <DataTable
+                      showCaption caption={`FY${fy} (Jul ${fy - 1} – Jun ${fy})`}
+                      rows={rowsFor(fy)}
+                      rowKey={(p) => p.id}
+                      columns={[
+                        { key: 'n', label: 'period', primary: true, render: (p) => <><span class="cell-title">{p.name}</span><span class="cell-sub">{fmtDate(p.startDate)} – {fmtDate(p.endDate)}</span></> },
+                        { key: 's', label: 'status', render: (p) => <Badge tone={PERIOD_TONE[p.status]}>{p.status}</Badge> },
+                        {
+                          key: 'a',
+                          label: 'action',
+                          render: (p) =>
+                            p.status === 'locked' ? (
+                              <span class="muted small">final</span>
+                            ) : (
+                              <button
+                                type="button"
+                                class="btn btn--small"
+                                disabled={busy !== null}
+                                data-period-action={p.status === 'open' ? 'close' : 'lock'}
+                                onClick={() => {
+                                  const to = p.status === 'open' ? 'closed' : 'locked';
+                                  const warn = to === 'closed' ? `Close ${p.name}? No new entries can post to it, and it can’t reopen.` : `Lock ${p.name}? This is final.`;
+                                  if (!confirm(warn)) return;
+                                  void run(p.id, () => api('periodClose', { params: { id: p.id }, body: { to } }), `${p.name} is ${to}.`);
+                                }}
+                              >
+                                {busy === p.id ? 'saving…' : p.status === 'open' ? 'close' : 'lock'}
+                              </button>
+                            ),
+                        },
+                      ]}
+                    />
+                  )}
+                </div>
+              ))}
+            </Section>
           </div>
         );
       }}

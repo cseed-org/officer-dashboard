@@ -65,6 +65,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | GET | `/api/finance/budgets` | officer | `FinanceQuery` | — | `BudgetsResponse` |
 | PUT | `/api/finance/budgets` | director | — | `BudgetsUpsertRequest` | `BudgetsResponse` |
 | GET | `/api/finance/periods` | director | — | — | `FiscalPeriodsResponse` |
+| POST | `/api/finance/periods` | director | — | `FiscalYearPeriodsCreateRequest` | `FiscalPeriodsResponse` |
+| POST | `/api/finance/periods/:id/close` | director | — | `FiscalPeriodCloseRequest` | `FiscalPeriodsResponse` |
 | GET | `/api/finance/accounts` | director | — | — | `ChartOfAccountsResponse` |
 | GET | `/api/admin/users` | director | — | — | `AdminUsersResponse` |
 | POST | `/api/admin/users` | director | — | `AdminUserCreateRequest` | `AdminUserResponse` |
@@ -155,5 +157,9 @@ other reports return 403 for officers.
   imports preserve prior fields.
 - `GET /api/admin/audit` and other lists use opaque date/id cursors in descending date
   order. List adapters currently load their filtered datasets in memory (v1 scale).
-- Fiscal period creation/close and manual/contribution postings are core operations;
-  no corresponding write endpoints were part of the v1 endpoint contract.
+- Fiscal periods: `POST /api/finance/periods` creates the 12 monthly periods of a fiscal
+  year that has none (409 otherwise). `POST /api/finance/periods/:id/close` moves
+  open → closed/locked or closed → locked; nothing reopens (409). The `/finance`
+  "periods" tab (directors) drives both. Manual/contribution postings remain core-only.
+- Agent settlements above max(estimate × 1.10, estimate + $25) return 409 and are held
+  for a director (see README, "Agent settlement tolerance").

@@ -25,3 +25,21 @@ export function fiscalYearRange(fy: number, startMonth = DEFAULT_FY_START_MONTH)
   const end = endDate.toISOString().slice(0, 10);
   return { start, end };
 }
+
+/** The calendar-month accounting periods of a fiscal year, in order. */
+export function monthlyPeriods(
+  fy: number,
+  startMonth = DEFAULT_FY_START_MONTH,
+): { name: string; startDate: string; endDate: string }[] {
+  const [y0, m0] = fiscalYearRange(fy, startMonth).start.split('-').map(Number) as [number, number];
+  const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  return Array.from({ length: 12 }, (_, i) => {
+    const first = new Date(Date.UTC(y0, m0 - 1 + i, 1));
+    const last = new Date(Date.UTC(y0, m0 + i, 0));
+    return {
+      name: first.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+      startDate: iso(first),
+      endDate: iso(last),
+    };
+  });
+}
