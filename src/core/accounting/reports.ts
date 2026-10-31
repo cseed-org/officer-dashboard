@@ -31,6 +31,8 @@ export interface ReportLine {
   debitCents: number;
   creditCents: number;
   functionalClass: FunctionalClass | null;
+  /** Part of a noncash (in-kind or stock) contribution; feeds Form 990 line 1g. */
+  noncash?: boolean | number | null;
 }
 export interface ReportData {
   accounts: ReportAccount[];
@@ -78,7 +80,11 @@ export function makeReport(
     (l) =>
       l.entryDate <= query.asOf && (!query.fundId || l.fundId === query.fundId),
   );
-  const current = all.filter((l) => l.entryDate >= from);
+  // Opening balances are beginning net assets whatever their date (N1): an
+  // opening entry dated inside the year must not show up as unexplained change.
+  const opening = (l: ReportLine) =>
+    l.entryDate < from || l.source === 'opening_balance';
+  const current = all.filter((l) => !opening(l));
   const account = (id: string) => data.accounts.find((a) => a.id === id)!;
   const donor = (id: string) =>
     data.funds.find((f) => f.id === id)!.restriction === 'with_donor';
@@ -110,7 +116,7 @@ export function makeReport(
     return result;
   };
   if (report === 'form-990')
-    return { ...meta, report, rows: form990Rollup(data, query) };
+    return { ...meta, report, ...form990Rollup(data, query) };
   if (report === 'trial-balance') {
     const rows = data.accounts.map((account) => {
       const n = balance(all, account.id);
@@ -173,7 +179,7 @@ export function makeReport(
             ),
           };
         });
-    const beginning = netAssets(all.filter((l) => l.entryDate < from));
+    const beginning = netAssets(all.filter(opening));
     const ending = netAssets(all);
     return {
       ...meta,
@@ -234,11 +240,10 @@ export function makeReport(
         .filter((f) => !query.fundId || f.id === query.fundId)
         .map((fund) => {
           const lines = all.filter((l) => l.fundId === fund.id);
-          const period = lines.filter((l) => l.entryDate >= from);
+          const period = lines.filter((l) => !opening(l));
           return {
             fund,
-            beginningCents: netAssets(lines.filter((l) => l.entryDate < from))
-              .totalCents,
+            beginningCents: netAssets(lines.filter(opening)).totalCents,
             additionsCents: sum(
               period
                 .filter(
@@ -360,39 +365,55 @@ export function makeReport(
     },
   };
 }
-/** 990 rollup groups mapped revenue/expense accounts; functional columns mirror Part IX. */
+/**
+ * 990 rollup groups mapped revenue/expense accounts; functional columns mirror Part IX.
+ * Totals cover mapped lines only; unmapped revenue/expense accounts are listed so the
+ * gap is visible instead of silently understating line 12 or line 25.
+ */
 export function form990Rollup(data: ReportData, query: ReportQuery) {
   const from = fiscalYearRange(query.fiscalYear).start;
-  const groups = new Map<
-    string,
-    {
-      part: 'VIII' | 'IX';
-      line: string;
-      totalCents: number;
-      programCents: number;
-      mgmtGeneralCents: number;
-      fundraisingCents: number;
-    }
-  >();
+  type Row = {
+    part: 'VIII' | 'IX';
+    line: string;
+    totalCents: number;
+    programCents: number;
+    mgmtGeneralCents: number;
+    fundraisingCents: number;
+  };
+  const groups = new Map<string, Row>();
+  const unmapped = new Map<string, number>();
+  let line1gNoncashCents = 0;
+  const mapped = (a: ReportAccount) =>
+    (a.type === 'revenue' && a.form990Part === 'VIII' && !!a.form990Line) ||
+    (a.type === 'expense' && a.form990Part === 'IX' && !!a.form990Line);
+  for (const a of data.accounts)
+    if ((a.type === 'revenue' || a.type === 'expense') && !mapped(a))
+      unmapped.set(a.id, 0);
   for (const l of data.lines.filter(
     (l) =>
       l.entryDate >= from &&
       l.entryDate <= query.asOf &&
+      l.source !== 'opening_balance' &&
       (!query.fundId || l.fundId === query.fundId),
   )) {
     const a = data.accounts.find((a) => a.id === l.accountId)!;
-    if (!['VIII', 'IX'].includes(a.form990Part ?? '') || !a.form990Line)
+    if (a.type !== 'revenue' && a.type !== 'expense') continue;
+    const n = amount(l) * (a.type === 'revenue' ? -1 : 1);
+    if (!mapped(a)) {
+      unmapped.set(a.id, (unmapped.get(a.id) ?? 0) + n);
       continue;
+    }
+    if (a.type === 'revenue' && l.noncash && /^1[a-f]$/.test(a.form990Line!))
+      line1gNoncashCents += n;
     const key = `${a.form990Part}:${a.form990Line}`;
     const row = groups.get(key) ?? {
       part: a.form990Part as 'VIII' | 'IX',
-      line: a.form990Line,
+      line: a.form990Line!,
       totalCents: 0,
       programCents: 0,
       mgmtGeneralCents: 0,
       fundraisingCents: 0,
     };
-    const n = amount(l) * (a.type === 'revenue' ? -1 : 1);
     row.totalCents += n;
     if (a.type === 'expense' && l.functionalClass)
       row[
@@ -404,7 +425,29 @@ export function form990Rollup(data: ReportData, query: ReportQuery) {
       ] += n;
     groups.set(key, row);
   }
-  return [...groups.values()];
+  const rows = [...groups.values()];
+  const ix = rows.filter((r) => r.part === 'IX');
+  const total = (k: keyof Omit<Row, 'part' | 'line'>) =>
+    sum(ix.map((r) => r[k]));
+  return {
+    rows,
+    totals: {
+      partVIIILine12Cents: sum(
+        rows.filter((r) => r.part === 'VIII').map((r) => r.totalCents),
+      ),
+      partIXLine25: {
+        totalCents: total('totalCents'),
+        programCents: total('programCents'),
+        mgmtGeneralCents: total('mgmtGeneralCents'),
+        fundraisingCents: total('fundraisingCents'),
+      },
+    },
+    line1gNoncashCents,
+    unmappedAccounts: data.accounts
+      .filter((a) => unmapped.has(a.id))
+      .sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }))
+      .map((account) => ({ account, totalCents: unmapped.get(account.id)! })),
+  };
 }
 /** Tabular sections share metadata; negative numeric amounts remain numeric in spreadsheets. */
 export function reportCsv(value: unknown): string {

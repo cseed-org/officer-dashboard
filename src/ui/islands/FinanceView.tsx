@@ -211,19 +211,37 @@ function Rows({ children }: { children: ComponentChildren }) {
   return <>{children}</>;
 }
 
-type Form990Row = Extract<FinanceReportResponse, { report: 'form-990' }>['rows'][number];
+type Form990 = Extract<FinanceReportResponse, { report: 'form-990' }>;
+type Form990Row = Form990['rows'][number];
 
-function Form990Body({ rows }: { rows: Form990Row[] }) {
-  if (!rows.length) return <Empty title="Nothing to map yet">No revenue or expenses posted for this period.</Empty>;
+function Form990Body({ r }: { r: Form990 }) {
+  const { rows, totals, line1gNoncashCents, unmappedAccounts } = r;
+  if (!rows.length && !unmappedAccounts.length)
+    return <Empty title="Nothing to map yet">No revenue or expenses posted for this period.</Empty>;
   const byLine = (a: Form990Row, b: Form990Row) => a.line.localeCompare(b.line, 'en', { numeric: true });
   const viii = rows.filter((x) => x.part === 'VIII').sort(byLine);
   const ix = rows.filter((x) => x.part === 'IX').sort(byLine);
-  const sum = (rs: Form990Row[], k: keyof Omit<Form990Row, 'part' | 'line'>) => rs.reduce((s, x) => s + x[k], 0);
+  const l25 = totals.partIXLine25;
   return (
     <div class="stack" style={{ gap: 'var(--space-6)' }}>
       <p class="small muted" style={{ margin: 0 }}>
         Ledger totals grouped by Form 990 line, to hand to the CPA. Not a filing and not tax advice.
       </p>
+      {unmappedAccounts.length > 0 && (
+        <div class="notice notice--attention" role="status" data-990-unmapped>
+          <strong>
+            {unmappedAccounts.length === 1 ? '1 account has' : `${unmappedAccounts.length} accounts have`} no Form 990 line
+          </strong>{' '}
+          and {unmappedAccounts.length === 1 ? 'is' : 'are'} left out of the totals below:{' '}
+          {unmappedAccounts.map((u, i) => (
+            <span key={u.account.id}>
+              {i > 0 && ', '}
+              <span class="mono">{u.account.code}</span> {u.account.name} ({formatCents(u.totalCents)})
+            </span>
+          ))}
+          . Map them in the chart of accounts.
+        </div>
+      )}
       <DataTable
         showCaption caption="Part VIII revenue"
         rows={viii}
@@ -232,7 +250,20 @@ function Form990Body({ rows }: { rows: Form990Row[] }) {
           { key: 'l', label: 'Part VIII line', primary: true, render: (x) => <span class="mono">VIII {x.line}</span> },
           { key: 't', label: 'total revenue', num: true, render: (x) => money(x.totalCents) },
         ]}
-        foot={<tr><td class="dt-primary">total revenue</td><td class="num" data-label="total revenue">{money(sum(viii, 'totalCents'))}</td></tr>}
+        foot={
+          <>
+            <tr data-990-line="1g">
+              <td class="dt-primary">
+                <span class="mono">VIII 1g</span> <span class="muted">noncash contributions (memo, included in 1a–1f)</span>
+              </td>
+              <td class="num" data-label="total revenue">{money(line1gNoncashCents)}</td>
+            </tr>
+            <tr data-990-line="12">
+              <td class="dt-primary"><span class="mono">VIII 12</span> total revenue</td>
+              <td class="num" data-label="total revenue">{money(totals.partVIIILine12Cents)}</td>
+            </tr>
+          </>
+        }
       />
       <DataTable
         showCaption caption="Part IX functional expenses"
@@ -246,12 +277,12 @@ function Form990Body({ rows }: { rows: Form990Row[] }) {
           { key: 'f', label: '(D) fundraising', num: true, render: (x) => money(x.fundraisingCents) },
         ]}
         foot={
-          <tr>
-            <td class="dt-primary">total functional expenses</td>
-            <td class="num" data-label="(A) total">{money(sum(ix, 'totalCents'))}</td>
-            <td class="num" data-label="(B) program">{money(sum(ix, 'programCents'))}</td>
-            <td class="num" data-label="(C) mgmt & general">{money(sum(ix, 'mgmtGeneralCents'))}</td>
-            <td class="num" data-label="(D) fundraising">{money(sum(ix, 'fundraisingCents'))}</td>
+          <tr data-990-line="25">
+            <td class="dt-primary"><span class="mono">IX 25</span> total functional expenses</td>
+            <td class="num" data-label="(A) total">{money(l25.totalCents)}</td>
+            <td class="num" data-label="(B) program">{money(l25.programCents)}</td>
+            <td class="num" data-label="(C) mgmt & general">{money(l25.mgmtGeneralCents)}</td>
+            <td class="num" data-label="(D) fundraising">{money(l25.fundraisingCents)}</td>
           </tr>
         }
       />
@@ -262,7 +293,7 @@ function Form990Body({ rows }: { rows: Form990Row[] }) {
 function ReportBody({ r }: { r: FinanceReportResponse }) {
   switch (r.report) {
     case 'form-990':
-      return <Form990Body rows={r.rows} />;
+      return <Form990Body r={r} />;
     case 'budget-vs-actual':
       if (!r.rows.length) return <Empty title="No budget lines">There is no budget for this year or fund yet.</Empty>;
       return (

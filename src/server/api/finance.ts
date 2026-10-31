@@ -39,6 +39,8 @@ export async function reportData(
         debitCents: s.journalLines.debitCents,
         creditCents: s.journalLines.creditCents,
         functionalClass: s.journalLines.functionalClass,
+        // In-kind/stock gifts (and their reversals) feed Form 990 line 1g.
+        noncash: sql<number>`EXISTS (SELECT 1 FROM contributions c WHERE c.kind IN ('in_kind', 'stock') AND c.journal_entry_id IN (${s.journalEntries.id}, ${s.journalEntries.reversesEntryId}))`,
       })
       .from(s.journalLines)
       .innerJoin(

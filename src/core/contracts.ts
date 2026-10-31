@@ -627,7 +627,17 @@ export type FinanceReportQuery = z.infer<typeof FinanceReportQuery>;
 export const Form990Report = ReportMeta.extend({
   report: z.literal('form-990'),
   rows: z.array(z.object({ part: z.enum(['VIII', 'IX']), line: z.string(), totalCents: Cents, programCents: Cents, mgmtGeneralCents: Cents, fundraisingCents: Cents })),
+  /** Totals over mapped lines: Part VIII line 12 (total revenue) and Part IX line 25 (total functional expenses). */
+  totals: z.object({
+    partVIIILine12Cents: Cents,
+    partIXLine25: z.object({ totalCents: Cents, programCents: Cents, mgmtGeneralCents: Cents, fundraisingCents: Cents }),
+  }),
+  /** Line 1g memo: noncash (in-kind, stock) contributions already included in lines 1a–1f. */
+  line1gNoncashCents: Cents,
+  /** Revenue/expense accounts with no 990 mapping; their amounts are NOT in the totals above. */
+  unmappedAccounts: z.array(z.object({ account: AccountRef, totalCents: Cents })),
 });
+export type Form990Report = z.infer<typeof Form990Report>;
 
 export const FinanceReportResponse = z.discriminatedUnion('report', [
   TrialBalanceReport,

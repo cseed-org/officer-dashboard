@@ -132,6 +132,14 @@ other reports return 403 for officers.
 - `FINANCE_REPORTS` additionally includes director-only `form-990` → `Form990Report`.
   It groups Part VIII/IX account mappings and functional expense columns; every report
   supports tabular `?format=csv` with metadata, section names and integer cents.
+  `totals.partVIIILine12Cents` and `totals.partIXLine25` sum the mapped lines;
+  `line1gNoncashCents` is the memo for in-kind/stock contributions (already inside
+  lines 1a–1f); `unmappedAccounts` lists revenue/expense accounts with no 990 line,
+  whose amounts are **not** in the totals.
+- Opening-balance entries (`source = 'opening_balance'`) count toward net assets at the
+  beginning of the year whatever their date, so the statement of activities foots:
+  revenue − expenses + releases = change in unrestricted net assets, and
+  revenue − releases = change in restricted net assets.
 - Net expense/release fields are signed cents so correcting entries/refunds validate.
   Fund-balance rows additionally expose `restrictedEndingCents` and
   `unrestrictedEndingCents`; `releasesCents` is informational and is not subtracted a
