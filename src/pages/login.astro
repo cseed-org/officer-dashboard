@@ -24,8 +24,12 @@ const q = next === '/' ? '' : `&next=${encodeURIComponent(next)}`;
     <img class="login-logo login-logo--white" src="/images/cseed-logo-white.png" alt="" width="640" height="147" />
     <h1>officers</h1>
     <hr />
-    {error && <p class="login-error" role="alert">{messages[error] ?? 'Sign-in failed.'}</p>}
-    <a class="login-cta" href={`/auth/login${next === '/' ? '' : `?next=${encodeURIComponent(next)}`}`}>sign in with Discord <span aria-hidden="true">↗</span></a>
+    {error && <p class="notice notice--negative login-error" role="alert">{messages[error] ?? 'Sign-in failed.'}</p>}
+    <p class="login-lede">The CSEED officer dashboard: events, purchase requests and the books. Officers sign in with the Discord account a director added.</p>
+    <a class="btn btn--primary login-cta" href={`/auth/login${next === '/' ? '' : `?next=${encodeURIComponent(next)}`}`}>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M20.3 4.4A19.6 19.6 0 0 0 15.4 3l-.6 1.3a18 18 0 0 0-5.6 0L8.6 3a19.5 19.5 0 0 0-4.9 1.5C.6 9.1-.3 13.6.1 18.1a19.8 19.8 0 0 0 6 3l1.3-2a12.7 12.7 0 0 1-2-1l.5-.4a14 14 0 0 0 12.2 0l.5.4c-.6.4-1.3.7-2 1l1.3 2a19.7 19.7 0 0 0 6-3c.5-5.2-.9-9.7-3.6-13.7ZM8 15.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 10.6 8 10.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg>
+      sign in with Discord
+    </a>
     {
       devAuth && (
         <p class="login-dev">
@@ -52,9 +56,14 @@ const q = next === '/' ? '' : `&next=${encodeURIComponent(next)}`;
     display: none;
   }
   .login-cta {
-    font-size: var(--size-body-lg);
     justify-self: start;
-    padding: var(--space-2) 0;
+    font-size: var(--size-body-lg);
+    min-height: 48px;
+    padding: 0 var(--space-5);
+  }
+  .login-lede {
+    margin: 0;
+    color: var(--text-muted);
   }
   .login-error {
     margin: 0;

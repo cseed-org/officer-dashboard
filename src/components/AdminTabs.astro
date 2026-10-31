@@ -1,0 +1,25 @@
+---
+/* Sub-navigation between the two director pages. */
+const path = Astro.url.pathname;
+const items = [
+  { href: '/admin/users', label: 'officers' },
+  { href: '/admin/tokens', label: 'service tokens' },
+];
+---
+
+<nav class="tabs" aria-label="Admin" style="margin-bottom: var(--space-6)">
+  {
+    items.map((i) => (
+      <a class="tab" href={i.href} aria-current={path === i.href ? 'page' : undefined} style="text-decoration: none">
+        {i.label}
+      </a>
+    ))
+  }
+</nav>
+
+<style>
+  .tab[aria-current='page'] {
+    color: var(--text-body);
+    border-bottom-color: var(--highlight);
+  }
+</style>

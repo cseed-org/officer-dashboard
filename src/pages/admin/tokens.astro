@@ -1,8 +1,12 @@
 ---
 import AppLayout from '../../layouts/AppLayout.astro';
-import Placeholder from '../../components/Placeholder.astro';
+import PageTitle from '../../components/PageTitle.astro';
+import AdminTabs from '../../components/AdminTabs.astro';
+import AdminTokensView from '../../ui/islands/AdminTokensView';
 ---
 
 <AppLayout title="service tokens">
-  <Placeholder title="service tokens" uses={['ServiceTokensResponse', 'ServiceTokenCreateRequest']} />
+  <PageTitle title="admin" eyebrow="directors only" sub="Tokens let automations (the Luma scraper, the purchasing agent) call the API without a person signed in." />
+  <AdminTabs />
+  <AdminTokensView client:load />
 </AppLayout>

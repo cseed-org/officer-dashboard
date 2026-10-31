@@ -9,8 +9,8 @@ One Astro app (SSR) on Cloudflare Workers with D1 (SQLite) through Drizzle ORM. 
 is Discord OAuth, limited to an allowlist of officers. The design follows
 [cseed.co](https://cseed.co): paper and ink, Playfair Display, Poppins, Anonymous Pro.
 
-> **Status: Phase 1 backend.** API handlers, accounting, CSV ingest, Drive storage and
-> Discord notifications are implemented. The UI is developed on a separate branch.
+> **Status: Phase 1.** API handlers, accounting, CSV ingest, Drive storage, Discord
+> notifications and every page (overview, events, requests, finance, admin) are implemented.
 
 ## Quick start
 
@@ -49,9 +49,10 @@ that rewrites existing migrations (as PR #1's review fixes did, before anything 
 | `db:reset:local` | Delete local D1, migrate, seed |
 | `deploy` | Build, migrate remote D1, `wrangler deploy` |
 
-Playwright needs a browser once: `npx playwright install chromium`. The e2e run starts
-its own dev server on port 4322 (migrating and seeding first) and saves a screenshot of
-every page, light and dark, to `tmp/e2e-shots/<viewport>/<scheme>/`.
+Playwright needs a browser once: `npx playwright install chromium`. The e2e run reuses a dev
+server on port 4321 or starts one (migrating and seeding first; set `E2E_PORT` to change it)
+and saves a screenshot of every page, light and dark, to `tmp/screenshots/<viewport>/<scheme>/`,
+plus empty / error / loading states under `states_*`.
 
 ## Environment and secrets
 
@@ -107,7 +108,12 @@ src/
     env.ts         the one place that reads Worker bindings
   middleware.ts    attaches locals.user, enforces roles per path (403 for officers on /admin/*)
   pages/api/       thin JSON handlers (parse with contracts → call core → respond)
-  pages/           UI routes (Phase 0: placeholders + app shell)
+  pages/           UI routes: server-rendered shell + h1, body is a Preact island
+  ui/              the UI layer (Phase 1)
+    api/client.ts  api('overview', …): typed by ENDPOINTS, responses validated by the contract schema
+    islands/       one interactive island per page (OverviewView, RequestFormView, FinanceView, …)
+    components/    states (loading/empty/error), tables that become cards on phones, SVG charts, forms
+    mocks/         seed-shaped mock API behind ONE switch (mocks/switch.ts) while the backend lands
   styles/tokens/   CSEED colour (light + dark), type and layout tokens
 migrations/        SQL migrations applied by wrangler (0001 = integrity triggers)
 scripts/seed/      seed data and SQL generator
@@ -142,6 +148,19 @@ The seeded chart of accounts, its Form 990 Part VIII/IX/X line mapping, the July
 fiscal year, and the donor-acknowledgment rules in `src/core/contributions.ts` are a
 reasonable starting point for a small 501(c)(3), **not tax or accounting advice. Have
 CSEED's CPA review them** before real books are kept or filings are prepared.
+
+## UI data flow and mocks
+
+Pages render the app shell and heading on the server; each page body is a Preact island that
+calls `/api/*` through `src/ui/api/client.ts` (`api(name, { params, query, body })`). Names,
+paths, bodies and responses all come from `ENDPOINTS` in `src/core/contracts.ts`, and every
+response is checked against its zod schema, so a contract drift shows as an error state.
+
+While Phase 1 runs in parallel, endpoints without a backend yet are answered in the browser by
+`src/ui/mocks/` (built from the same seed, so `event-kickoff`, `req-0001` … match). The single
+switch is `src/ui/mocks/switch.ts`: set `PUBLIC_UI_MOCKS=off` to use only the real API, and
+delete the folder once the backend is merged. With the mocks on, add `?mock=empty`,
+`?mock=error` or `?mock=loading` to any page to see those states.
 
 ## Design
 

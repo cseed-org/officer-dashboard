@@ -1,8 +1,14 @@
 ---
 import AppLayout from '../../layouts/AppLayout.astro';
-import Placeholder from '../../components/Placeholder.astro';
+import PageTitle from '../../components/PageTitle.astro';
+import RequestFormView from '../../ui/islands/RequestFormView';
+
+const eventId = Astro.url.searchParams.get('eventId') ?? undefined;
 ---
 
 <AppLayout title="new request">
-  <Placeholder title="new request" uses={['LookupsResponse', 'PurchaseRequestCreateRequest', 'AttachmentUploadResponse']} />
+  <PageTitle title="new purchase request" eyebrow="requests" sub="Fill in what you need and why. Directors are notified on Discord when you submit." />
+  <div style="max-width: 820px">
+    <RequestFormView client:load initialEventId={eventId} />
+  </div>
 </AppLayout>

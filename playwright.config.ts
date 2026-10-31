@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
-const PORT = 4322;
+/** 4321 is the UI's dev port; the backend Pane uses 4322. Override with E2E_PORT. */
+const PORT = Number(process.env.E2E_PORT ?? 4321);
 
 /**
  * Three viewports from the CSEED brief (mirrors cseed.co's scripts/check-mobile.mjs):
