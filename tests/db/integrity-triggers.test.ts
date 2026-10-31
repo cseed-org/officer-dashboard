@@ -224,7 +224,7 @@ describe.each(ENGINES)('integrity rules on $name', (engine) => {
       ).rejects.toThrow(/closed fiscal period/);
       await expect(
         db.run(`UPDATE fiscal_periods SET status = 'open' WHERE id = ?`, k),
-      ).resolves.toBeUndefined(); // reopening by UPDATE is an explicit, audited admin action
+      ).rejects.toThrow(/cannot reopen/); // Phase 1 period close is irreversible; use correcting entries.
     });
   });
 

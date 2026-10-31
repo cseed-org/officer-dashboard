@@ -48,7 +48,7 @@ describe('seed', () => {
   it('can be run twice without errors or duplicates', () => {
     const db = seeded();
     db.exec(buildSeedSql());
-    expect(one(db, `SELECT count(*) AS n FROM journal_lines`).n).toBe(16);
+    expect(one(db, `SELECT count(*) AS n FROM journal_lines`).n).toBe(18);
     expect(one(db, `SELECT count(*) AS n FROM users`).n).toBe(4);
   });
 });

@@ -11,7 +11,8 @@ DISCORD_CLIENT_SECRET=
 # Your Discord user id (Developer Mode → right-click yourself → Copy User ID).
 BOOTSTRAP_DIRECTOR_DISCORD_ID=
 
-# Phase 1 adapters (stubs are used while these are empty)
+# Receipt uploads use local D1 in dev; production requires Drive credentials.
+# Notifications log when the webhook is empty.
 DISCORD_WEBHOOK_URL=
 GOOGLE_SERVICE_ACCOUNT_JSON=
-GOOGLE_DRIVE_FOLDER_ID=
+DRIVE_ROOT_FOLDER_ID=
