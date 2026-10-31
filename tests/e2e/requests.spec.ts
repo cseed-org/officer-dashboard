@@ -52,6 +52,8 @@ test('an officer submits a purchase request with receipts and a director approve
   await expect(page).toHaveURL(/\/requests\/(?!new)[^/?]+$/);
   await settle(page);
   await expect(page.getByText('Submitted. A director has been notified')).toBeVisible();
+  // F4: arriving from the form, focus is on the confirmation, not <body>.
+  await expect(page.locator('[data-status-region]')).toBeFocused();
   await expect(page.locator('h1')).toHaveText(`Hack Night pizza ${marker}`);
   await expect(page.locator('.page-title .badge')).toHaveText('pending');
   await expect(page.getByText('quote.pdf')).toBeVisible();
@@ -73,6 +75,7 @@ test('an officer submits a purchase request with receipts and a director approve
   await page.getByRole('button', { name: 'deny' }).click();
   await expect(page.getByText('Say why it is denied')).toBeVisible();
   await page.getByLabel(/comment/).fill('Approved for Hack Night.');
+  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'approve $159.30' }).click();
   await expect(page.getByText('Approved. The requester has been notified.')).toBeVisible();
   await expect(page.locator('.page-title .badge')).toHaveText('approved');
@@ -98,11 +101,13 @@ test('a director records a reimbursement and confirms the payout', async ({ page
   await devLogin(page, 'director');
   await page.goto(url);
   await settle(page);
+  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: /^approve/ }).click();
   await expect(page.locator('.page-title .badge')).toHaveText('approved');
   await page.getByLabel('actual total').fill('16.40');
-  await page.getByRole('button', { name: 'mark reimbursed' }).click();
-  await expect(page.getByText('posted $16.40 to the ledger')).toBeVisible();
+  await page.getByRole('button', { name: 'approve payout' }).click();
+  await expect(page.getByText('Payout of $16.40')).toBeVisible();
+  await expect(page.locator('.page-title .badge')).toHaveText('approved for payout — awaiting payment');
   page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'confirm reimbursement paid' }).click();
   await expect(page.locator('.page-title .badge')).toHaveText('closed');

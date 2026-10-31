@@ -5,7 +5,7 @@ import { ColumnChart, FunnelChart, LineChart } from '../components/charts';
 import { CsvImportForm } from '../components/CsvImportForm';
 import { DataTable, Kpi, Section, StatusBadge, type Column } from '../components/kit';
 import { Async, Empty, ErrorState, Loading, Notice } from '../components/states';
-import { dollars, safeUrl, fmtDate, fmtTime, fmtWeekday, formatCents, pct, TYPE_LABEL } from '../format';
+import { dollars, lumaManageUrl, plural, safeUrl, fmtDate, fmtTime, fmtWeekday, formatCents, pct, TYPE_LABEL } from '../format';
 
 export const requestColumns = (opts: { showRequester?: boolean } = {}): Column<PurchaseRequestListItem>[] => [
   {
@@ -72,8 +72,8 @@ export default function EventDetailView({ id }: { id: string }) {
         eyebrow={`${upcoming ? 'upcoming' : 'past'} event · ${fmtWeekday(e.startsAt)} ${fmtDate(e.startsAt)}, ${fmtTime(e.startsAt)}`}
         sub={[e.location, e.host ? `hosted by ${e.host.name}` : null].filter(Boolean).join(' · ') || undefined}
       >
-        {safeUrl(e.url) && (
-          <a class="btn" href={safeUrl(e.url)!} target="_blank" rel="noopener noreferrer">
+        {(safeUrl(e.url) ?? lumaManageUrl(e.lumaId)) && (
+          <a class="btn" href={(safeUrl(e.url) ?? lumaManageUrl(e.lumaId))!} target="_blank" rel="noopener noreferrer">
             Luma page <span aria-hidden="true">↗</span>
           </a>
         )}
@@ -130,6 +130,12 @@ export default function EventDetailView({ id }: { id: string }) {
                         <h3 class="small muted" style={{ fontFamily: 'var(--font-body)', letterSpacing: 0 }}>
                           reflections received per day after the event
                         </h3>
+                        {m.unmatchedReflections > 0 && (
+                          <p class="small muted" style={{ margin: 0 }} data-unmatched-note>
+                            All responses, including {plural(m.unmatchedReflections, 'response')} that didn’t match a check-in. The
+                            reflection KPI counts only the {m.matchedReflections} matched.
+                          </p>
+                        )}
                         <ColumnChart
                           label="Reflections per day"
                           valueLabel="reflections"

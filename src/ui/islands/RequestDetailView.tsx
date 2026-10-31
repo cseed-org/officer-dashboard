@@ -1,12 +1,12 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME_TYPES, type PurchaseRequestDetail } from '../../core/contracts';
 import type { PurchaseStatus } from '../../core/domain';
 import { api, endpointUrl, isStorageUnavailable, STORAGE_UNAVAILABLE_MESSAGE } from '../api/client';
 import { useApi } from '../api/useApi';
 import { describe, Field, Section, StatusBadge } from '../components/kit';
 import { Empty, ErrorState, errorMessage, Loading, Notice } from '../components/states';
-import { bytes, safeUrl, dollarsToCents, fmtDate, fmtDateTime, formatCents, FUNCTIONAL_LABEL, STATUS_LABEL, TYPE_LABEL } from '../format';
+import { bytes, safeUrl, dollarsToCents, fmtDate, fmtDateTime, formatCents, FUNCTIONAL_LABEL, TYPE_LABEL } from '../format';
 import { Dropzone } from './RequestFormView';
 
 function Title({ r, children }: { r?: PurchaseRequestDetail; children?: ComponentChildren }) {
@@ -45,7 +45,14 @@ export default function RequestDetailView({
     // Drop ?created= so a reload doesn't repeat the confirmation.
     if (created) history.replaceState(null, '', location.pathname);
   }, [created]);
-  const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string; n: number } | null>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
+  // Keyboard and screen-reader users land on the outcome: after a decision or other action,
+  // and on arrival from the new-request form (?created=).
+  const ready = state.status === 'ready';
+  useEffect(() => {
+    if (ready && (notice || created || uploadFailed)) statusRef.current?.focus();
+  }, [notice?.n, ready]);
 
   if (state.status === 'loading')
     return (
@@ -65,9 +72,9 @@ export default function RequestDetailView({
   const r = state.data.request;
   const update = (next: PurchaseRequestDetail, text: string) => {
     state.set({ request: next });
-    setNotice({ tone: 'positive', text });
+    setNotice({ tone: 'positive', text, n: Date.now() });
   };
-  const onError = (err: unknown) => setNotice({ tone: 'negative', text: errorMessage(err) });
+  const onError = (err: unknown) => setNotice({ tone: 'negative', text: errorMessage(err), n: Date.now() });
 
   return (
     <div data-state="ready">
@@ -77,7 +84,7 @@ export default function RequestDetailView({
 
       <div class="stack">
         {(flash.created || flash.failed > 0 || notice) && (
-          <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+          <div style={{ display: 'grid', gap: 'var(--space-3)' }} ref={statusRef} tabIndex={-1} data-status-region>
             {flash.created === 'submitted' && <Notice tone="positive">Submitted. A director has been notified and will review it.</Notice>}
             {flash.created === 'draft' && <Notice tone="positive">Saved as a draft. Submit it when you are ready.</Notice>}
             {flash.failed > 0 && (
@@ -190,7 +197,7 @@ function Timeline({ r }: { r: PurchaseRequestDetail }) {
   const later: Partial<Record<PurchaseStatus, string>> = {
     fulfilling: 'being purchased',
     fulfilled: 'purchased',
-    reimbursed: 'reimbursement approved for payout',
+    reimbursed: 'approved for payout — awaiting payment',
     closed: r.type === 'reimbursement' ? 'reimbursement paid · closed' : 'closed',
     cancelled: 'cancelled',
   };
@@ -256,7 +263,12 @@ function Actions({
   const [orderRef, setOrderRef] = useState('');
   const [actualError, setActualError] = useState<string | undefined>();
   const t = new Set(r.allowedTransitions);
-  const canDecide = t.has('approved') || t.has('denied');
+  // Decisions only happen on a submitted request. (A request being bought also lists
+  // `approved` — the agent's revert when buying fails — which is not a director decision.)
+  const deciding = r.status === 'submitted';
+  const canApprove = deciding && t.has('approved');
+  const canDeny = deciding && t.has('denied');
+  const canDecide = canApprove || canDeny;
   const settleTo = t.has('fulfilled') ? 'fulfilled' : t.has('reimbursed') ? 'reimbursed' : null;
   const mine = r.requester.id === meId;
 
@@ -273,7 +285,8 @@ function Actions({
     }
   };
 
-  if (!t.size && !r.canEdit) {
+  const visible = [...t].filter((s) => s !== 'approved' && s !== 'denied');
+  if (!canDecide && !visible.length && !r.canEdit) {
     if (r.status === 'submitted' && mine) return <Notice tone="attention">Waiting for a director. You'll get a Discord ping when it's decided.</Notice>;
     return null;
   }
@@ -282,22 +295,30 @@ function Actions({
     <div class="stack" style={{ gap: 'var(--space-4)' }}>
       {canDecide && (
         <section class="action-panel" aria-labelledby="decide-h">
-          <h2 id="decide-h">your decision</h2>
+          <h2 id="decide-h" tabIndex={-1}>your decision</h2>
+          {mine && !canApprove && (
+            <p class="small" style={{ margin: 0 }} data-self-approval>
+              Another director must approve your own requests. You can still deny or cancel it.
+            </p>
+          )}
           <Field id="decision-comment" label="comment" optional={!commentError} error={commentError} hint="Required to deny. The requester sees it.">
             <textarea class="textarea" {...describe('decision-comment', commentError, true)} value={comment} maxLength={2000} onInput={(e) => setComment(e.currentTarget.value)} style={{ minHeight: '80px' }} />
           </Field>
           <div class="action-row">
-            {t.has('approved') && (
+            {canApprove && (
               <button
                 type="button"
                 class="btn btn--primary"
                 disabled={!!busy}
-                onClick={() => run('approve', () => api('requestApprove', { params: { id: r.id }, body: { comment: comment.trim() || undefined } }), 'Approved. The requester has been notified.')}
+                onClick={() => {
+                  if (!confirm(`Approve ${formatCents(r.totalCents)} for “${r.title}” from ${r.requester.name}? This commits the money in the budget.`)) return;
+                  void run('approve', () => api('requestApprove', { params: { id: r.id }, body: { comment: comment.trim() || undefined } }), 'Approved. The requester has been notified.');
+                }}
               >
                 {busy === 'approve' ? 'approving…' : `approve ${formatCents(r.totalCents)}`}
               </button>
             )}
-            {t.has('denied') && (
+            {canDeny && (
               <button
                 type="button"
                 class="btn btn--danger"
@@ -317,6 +338,12 @@ function Actions({
             )}
           </div>
         </section>
+      )}
+
+      {r.status === 'fulfilling' && (
+        <p class="small muted" style={{ margin: 0 }}>
+          Being bought. If the purchase fails, the purchasing agent puts the request back to approved; it doesn’t need approving again.
+        </p>
       )}
 
       {settleTo && (
@@ -354,11 +381,13 @@ function Actions({
                       params: { id: r.id },
                       body: { to: settleTo, actualTotalCents: cents, attachmentIds: r.attachments.map((a) => a.id), orderReference: orderRef.trim() || undefined },
                     }),
-                  `Marked ${STATUS_LABEL[settleTo]} and posted ${formatCents(cents)} to the ledger.`,
+                  settleTo === 'reimbursed'
+                    ? `Payout of ${formatCents(cents)} to ${r.requester.name} approved and posted to the ledger; it is awaiting payment.`
+                    : `Marked bought and posted ${formatCents(cents)} to the ledger.`,
                 );
               }}
             >
-              {busy === 'settle' ? 'saving…' : `mark ${STATUS_LABEL[settleTo]}`}
+              {busy === 'settle' ? 'saving…' : settleTo === 'reimbursed' ? 'approve payout' : 'mark bought'}
             </button>
           </div>
         </section>

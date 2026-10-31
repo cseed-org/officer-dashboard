@@ -18,7 +18,7 @@ const FILTERS: { key: StatusFilter; label: string; statuses: PurchaseStatus[] }[
   { key: 'approved', label: 'approved', statuses: ['approved'] },
   { key: 'fulfilling', label: STATUS_LABEL.fulfilling, statuses: ['fulfilling'] },
   { key: 'fulfilled', label: STATUS_LABEL.fulfilled, statuses: ['fulfilled'] },
-  { key: 'reimbursed', label: 'reimbursed', statuses: ['reimbursed'] },
+  { key: 'reimbursed', label: 'awaiting payment', statuses: ['reimbursed'] },
   { key: 'denied', label: 'denied', statuses: ['denied'] },
   { key: 'closed', label: 'closed', statuses: ['closed'] },
   { key: 'cancelled', label: 'cancelled', statuses: ['cancelled'] },
