@@ -1,0 +1,11 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import Placeholder from '../../components/Placeholder.astro';
+const { id } = Astro.params;
+---
+
+<AppLayout title="request">
+  <Placeholder title="request" uses={['PurchaseRequestResponse', 'PurchaseDecisionRequest', 'PurchaseDenyRequest']}>
+    <p class="mono">id: {id}</p>
+  </Placeholder>
+</AppLayout>

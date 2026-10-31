@@ -1,0 +1,121 @@
+/*
+ * CSEED colour tokens. The base palette is verbatim from cseed.co
+ * (cseed-landing-page src/styles/colors.css); everything the UI uses is a semantic
+ * token defined from it, so the palette lives in this one file.
+ *
+ * Light is the default. Dark follows the system preference, or a manual choice via
+ * <html data-theme="light|dark"> (see src/components/ThemeToggle.astro).
+ *
+ * Contrast (WCAG AA, computed): ink on paper 16.4:1, ink-soft on paper 8.5:1, ink on
+ * seed 16.1:1 and on sun 14.1:1, sky-ink on paper 5.0:1, sage-ink 5.0:1, brick-ink 5.4:1.
+ * The raw accents (sky 3.5:1, brick 4.2:1, sage) are for large text, bars, dots and
+ * rules only; use the *-text tokens for small text. Dark: paper on #111 14.7:1, muted
+ * #a9a8a6 on #111 8.0:1, sky-soft 9.1:1. Never put paper/white text on yellow.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* base palette — verbatim from the landing site */
+  --cseed-paper: #e4e3e1;
+  --cseed-mist: #f4f4f4;
+  --cseed-ink: #000000;
+  --cseed-ink-soft: #3d3d3d;
+  --cseed-white: #ffffff;
+  --cseed-seed: #f5e530;
+  --cseed-sun: #f5d140;
+  --cseed-sky: #4f78b5;
+  --cseed-sky-soft: #9db6d6;
+  --cseed-sage: #6a9a51;
+  /* dashboard additions (the landing site has no red and no dark ground) */
+  --cseed-brick: #b5473a;
+  --cseed-night: #111111;
+  --cseed-night-raised: #1a1a1a;
+  --cseed-sky-ink: #3a5f96; /* sky darkened for small text on paper, 5.0:1 */
+  --cseed-sage-ink: #3f6a2c; /* sage darkened for small text on paper, 5.0:1 */
+  --cseed-brick-ink: #9c3a2e; /* 5.4:1 on paper */
+
+  /* surfaces */
+  --surface-page: var(--cseed-paper);
+  --surface-raised: var(--cseed-mist);
+  --surface-inverse: var(--cseed-ink);
+  /* text */
+  --text-body: var(--cseed-ink);
+  --text-muted: var(--cseed-ink-soft);
+  --text-inverse: var(--cseed-paper);
+  --text-wordmark: var(--cseed-ink);
+  --text-link: var(--cseed-ink);
+  --text-link-data: var(--cseed-sky-ink);
+  /* rules (hairlines instead of boxes and shadows) */
+  --rule: var(--cseed-ink);
+  --rule-soft: rgb(0 0 0 / 0.18);
+  /* interaction */
+  --focus-ring: var(--cseed-sky);
+  --highlight: var(--cseed-sun); /* the yellow marker behind the active nav item */
+  --text-on-highlight: var(--cseed-ink);
+
+  /* status — sage approved, sun pending (ink text), sky info, brick denied / over budget */
+  --status-positive: var(--cseed-sage);
+  --status-positive-text: var(--cseed-sage-ink);
+  --status-attention: var(--cseed-sun);
+  --status-attention-text: var(--cseed-ink);
+  --status-info: var(--cseed-sky);
+  --status-info-text: var(--cseed-sky-ink);
+  --status-negative: var(--cseed-brick);
+  --status-negative-text: var(--cseed-brick-ink);
+  --status-neutral: var(--cseed-ink-soft);
+
+  /* charts: ink, sky, sage, sun */
+  --chart-1: var(--cseed-ink);
+  --chart-2: var(--cseed-sky);
+  --chart-3: var(--cseed-sage);
+  --chart-4: var(--cseed-sun);
+  --chart-grid: var(--rule-soft);
+}
+
+/* Dark: ink ground, paper text, same accents, #3d3d3d hairlines. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface-page: var(--cseed-night);
+    --surface-raised: var(--cseed-night-raised);
+    --surface-inverse: var(--cseed-paper);
+    --text-body: var(--cseed-paper);
+    --text-muted: #a9a8a6;
+    --text-inverse: var(--cseed-ink);
+    --text-wordmark: var(--cseed-paper);
+    --text-link: var(--cseed-paper);
+    --text-link-data: var(--cseed-sky-soft);
+    --rule: var(--cseed-ink-soft);
+    --rule-soft: rgb(255 255 255 / 0.12);
+    --focus-ring: var(--cseed-sky-soft);
+    --status-positive-text: #8fbf74;
+    --status-info-text: var(--cseed-sky-soft);
+    --status-negative-text: #e07b6e;
+    --status-neutral: #a9a8a6;
+    --chart-1: var(--cseed-paper);
+  }
+}
+:root[data-theme='dark'] {
+  --surface-page: var(--cseed-night);
+  --surface-raised: var(--cseed-night-raised);
+  --surface-inverse: var(--cseed-paper);
+  --text-body: var(--cseed-paper);
+  --text-muted: #a9a8a6;
+  --text-inverse: var(--cseed-ink);
+  --text-wordmark: var(--cseed-paper);
+  --text-link: var(--cseed-paper);
+  --text-link-data: var(--cseed-sky-soft);
+  --rule: var(--cseed-ink-soft);
+  --rule-soft: rgb(255 255 255 / 0.12);
+  --focus-ring: var(--cseed-sky-soft);
+  --status-positive-text: #8fbf74;
+  --status-info-text: var(--cseed-sky-soft);
+  --status-negative-text: #e07b6e;
+  --status-neutral: #a9a8a6;
+  --chart-1: var(--cseed-paper);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}

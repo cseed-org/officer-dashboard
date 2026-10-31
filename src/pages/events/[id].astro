@@ -1,0 +1,11 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import Placeholder from '../../components/Placeholder.astro';
+const { id } = Astro.params;
+---
+
+<AppLayout title="event">
+  <Placeholder title="event" uses={['EventDetailResponse', 'EventMetricsResponse']}>
+    <p class="mono">id: {id}</p>
+  </Placeholder>
+</AppLayout>

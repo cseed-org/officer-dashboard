@@ -1,0 +1,77 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+import { isDevAuthEnabled } from '../core/auth';
+import { safeNext } from '../server/auth/next';
+import { getEnv } from '../server/env';
+
+if (Astro.locals.user) return Astro.redirect('/');
+
+const next = safeNext(Astro.url.searchParams.get('next'));
+const error = Astro.url.searchParams.get('error');
+const messages: Record<string, string> = {
+  not_allowlisted: 'That Discord account is not on the officer list. Ask a director to add you.',
+  inactive: 'Your officer account is deactivated. Ask a director to restore it.',
+  state: 'The sign-in link expired. Try again.',
+  discord: 'Discord sign-in failed. Try again.',
+};
+const devAuth = import.meta.env.DEV && isDevAuthEnabled({ devBuild: import.meta.env.DEV, flag: getEnv().DEV_AUTH });
+const q = next === '/' ? '' : `&next=${encodeURIComponent(next)}`;
+---
+
+<AppLayout title="sign in" bare>
+  <section class="login">
+    <img class="login-logo login-logo--ink" src="/images/cseed-logo.png" alt="cseed" width="640" height="147" />
+    <img class="login-logo login-logo--white" src="/images/cseed-logo-white.png" alt="" width="640" height="147" />
+    <h1>officers</h1>
+    <hr />
+    {error && <p class="login-error" role="alert">{messages[error] ?? 'Sign-in failed.'}</p>}
+    <a class="login-cta" href={`/auth/login${next === '/' ? '' : `?next=${encodeURIComponent(next)}`}`}>sign in with Discord <span aria-hidden="true">↗</span></a>
+    {
+      devAuth && (
+        <p class="login-dev">
+          dev login: <a href={`/auth/dev?as=director${q}`} data-dev-login="director">director</a> ·{' '}
+          <a href={`/auth/dev?as=officer${q}`} data-dev-login="officer">officer</a>
+        </p>
+      )
+    }
+  </section>
+</AppLayout>
+
+<style>
+  .login {
+    display: grid;
+    gap: var(--space-5);
+    max-width: 420px;
+    margin: 12vh auto 0;
+  }
+  .login-logo {
+    width: 160px;
+    height: auto;
+  }
+  .login-logo--white {
+    display: none;
+  }
+  .login-cta {
+    font-size: var(--size-body-lg);
+    justify-self: start;
+    padding: var(--space-2) 0;
+  }
+  .login-error {
+    margin: 0;
+    color: var(--status-negative-text);
+  }
+  .login-dev {
+    margin: 0;
+    font-size: var(--size-sm);
+    color: var(--text-muted);
+  }
+</style>
+
+<style is:global>
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .login-logo--ink { display: none; }
+    :root:not([data-theme='light']) .login-logo--white { display: block; }
+  }
+  :root[data-theme='dark'] .login-logo--ink { display: none; }
+  :root[data-theme='dark'] .login-logo--white { display: block; }
+</style>
