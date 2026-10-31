@@ -4,9 +4,10 @@ import type { FileStore } from '../../core/ports';
 import { validateUpload } from './drive';
 /** Persistent development adapter; use Drive for production Workers. */
 export class LocalFileStore implements FileStore {
-  constructor(private root = '.local/receipts') {}
+  constructor(private root = '.local/receipts', private backing?: FileStore) {}
   async put(input: Parameters<FileStore['put']>[0]) {
     validateUpload(input.mimeType, input.body.byteLength);
+    if (this.backing) return this.backing.put(input);
     const key = crypto.randomUUID();
     await mkdir(this.root, { recursive: true });
     await writeFile(resolve(this.root, key), new Uint8Array(input.body));
@@ -22,6 +23,7 @@ export class LocalFileStore implements FileStore {
     };
   }
   async get(key: string) {
+    if (this.backing) return this.backing.get(key);
     if (!/^[a-f0-9-]{36}$/.test(key)) return null;
     try {
       const bytes = await readFile(resolve(this.root, key));

@@ -84,7 +84,7 @@ beforeAll(async () => {
     format: 'esm',
     platform: 'browser',
     target: 'es2022',
-    external: ['cloudflare:workers'],
+    external: ['cloudflare:workers', 'node:*'],
     define: { 'import.meta.env.DEV': 'true' },
   });
   worker = new Miniflare(
@@ -501,7 +501,7 @@ describe('real D1 API', () => {
       .first();
     expect(JSON.parse(String(audit?.before_json)).attachments).toHaveLength(1);
   });
-  it('denies and cancels requests, retries failed jobs, and invalidates deactivated sessions', async () => {
+  it('denies and cancels requests and invalidates deactivated sessions', async () => {
     const submitted = await call('/api/requests', 'POST', {
       ...purchase,
       submit: true,
@@ -614,4 +614,25 @@ describe('real D1 API', () => {
     expect(again.body.updated).toBe(5000);
     expect(again.body.metrics.registered).toBe(5000);
   });
+  it('requeues failed jobs through three total attempts, then leaves them for a director', async () => {
+    const issued = await call('/api/admin/tokens','POST',{ name: 'retry worker',scopes: ['agent:jobs'] },director);
+    const token = issued.body.plaintext;
+    const made = await call('/api/requests','POST',{ ...purchase,submit: true });
+    const id = made.body.request.id;
+    await call(`/api/requests/${id}/approve`,'POST',{},director);
+    const listed = await call('/api/agent/jobs','GET',undefined,null,token);
+    const jobId = listed.body.jobs.find((j: { request: { id: string } }) => j.request.id === id).id;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const claimed = await call(`/api/agent/jobs/${jobId}/claim`,'POST',undefined,null,token);
+      expect(claimed.status).toBe(200); expect(claimed.body.job.attempts).toBe(attempt);
+      const failed = await call(`/api/agent/jobs/${jobId}/complete`,'POST',{ outcome: 'failed',error: 'Vendor unavailable' },null,token);
+      expect(failed.status).toBe(200); expect(failed.body.job.status).toBe(attempt < 3 ? 'queued' : 'failed');
+      expect(failed.body.job.request.status).toBe('approved'); expect(failed.body.job.claimedAt).toBeNull();
+      const queued = await call('/api/agent/jobs','GET',undefined,null,token);
+      expect(queued.body.jobs.some((j: { id: string }) => j.id === jobId)).toBe(attempt < 3);
+      expect((await call(`/api/agent/jobs/${jobId}/complete`,'POST',{ outcome: 'failed',error: 'stale claim' },null,token)).status).toBe(409);
+    }
+    expect((await call(`/api/agent/jobs/${jobId}/claim`,'POST',undefined,null,token)).status).toBe(409);
+  });
+
 });

@@ -137,12 +137,14 @@ other reports return 403 for officers.
   `unrestrictedEndingCents`; `releasesCents` is informational and is not subtracted a
   second time from the combined fund roll-forward.
 - `GET /api/attachments/:id` is an officer-only download for local files or a redirect
-  to a Drive link. Production uploads require Drive configuration.
+  to a Drive link. Production uploads return 503 when Drive is unconfigured.
 - A restricted-fund settlement posts its expense plus an atomic restriction release.
   Expenses appear without donor restriction; grant attribution stays on the original fund.
 - Reimbursement `reimbursed→closed` records payment (debit payable, credit checking).
   The director must only close after confirming the officer was paid.
-- Failed purchasing jobs may be claimed again; sparse guest imports preserve prior fields.
+- Failed purchasing jobs automatically re-queue and clear ownership until the third
+  total attempt. After that they remain failed for director intervention. Sparse guest
+  imports preserve prior fields.
 - `GET /api/admin/audit` and other lists use opaque date/id cursors in descending date
   order. List adapters currently load their filtered datasets in memory (v1 scale).
 - Fiscal period creation/close and manual/contribution postings are core operations;

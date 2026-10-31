@@ -61,7 +61,7 @@ export async function jobs(
   let change: Partial<typeof s.fulfillmentJobs.$inferInsert>;
   if (name === 'agentJobClaim') {
     if (
-      !(['queued', 'failed'] as string[]).includes(j.status) ||
+      j.status !== 'queued' ||
       r.status !== 'approved'
     )
       fail(409, 'conflict', 'Job is not available to claim');
@@ -97,7 +97,8 @@ export async function jobs(
       );
     const b = C.AgentJobCompleteRequest.parse(body);
     change = {
-      status: b.outcome,
+      status: b.outcome === 'failed' && j.attempts < 3 ? 'queued' : b.outcome,
+      ...(b.outcome === 'failed' ? { claimedByTokenId: null, claimedAt: null } : {}),
       lastError: b.outcome === 'failed' ? b.error : null,
       resultJson: JSON.stringify(b),
       updatedAt: now(),

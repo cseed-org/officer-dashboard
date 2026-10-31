@@ -225,9 +225,10 @@ ingest is limited to 5,000 guests by contract.
 
 Directors issue service tokens once, store only SHA-256 hashes, and may revoke them.
 `ingest:luma` permits `/api/ingest/luma`; `agent:jobs` permits jobs list/claim/complete.
-A failed job returns its request to approved; an agent may claim the failed job again,
-which increments attempts (maximum three). Poll `status=failed` to discover retries;
-permanent failures need a director to resolve the request. Only its claiming token may complete it. Revoking a token
+A failed job returns its request to approved, clears its token claim and re-queues
+automatically while fewer than three total claims have been attempted. The default
+queued-job poll discovers retries. After the third failed attempt the job stays failed
+for a director to resolve manually. Only the current claiming token may complete it. Revoking a token
 prevents future use; deactivating a user ends sessions but does not revoke independently
 issued service tokens (revoke those separately).
 
@@ -238,10 +239,11 @@ service-account identity. The adapter uses WebCrypto RS256 JWT exchange, Drive v
 multipart uploads and shared-drive flags, following Google's
 [service-account protocol](https://developers.google.com/identity/protocols/oauth2/service-account)
 and [upload API](https://developers.google.com/workspace/drive/api/guides/manage-uploads).
-The token requests Drive scope to access the pre-existing shared folder. Files are
+The token requests the full `https://www.googleapis.com/auth/drive` scope to access the pre-existing shared folder. Files are
 stored under `FY<year>/<request-id>/`, and officers need Drive access to open its links.
-Production receipt operations fail if Drive is unconfigured. Dev Workers store bytes in
-the local D1 SQLite file; `LocalFileStore` provides a filesystem adapter for Node/Pi.
+Production receipt operations return HTTP 503 if Drive credentials or the root folder
+are missing. Development selects `LocalFileStore`: Node/Pi uses the filesystem directly;
+Workerd uses its local D1 SQLite-file backing because its virtual filesystem is request-scoped.
 Uploads precede the attachment metadata transaction, so a failed metadata commit may
 leave an unreferenced file for later cleanup. MIME validation checks the declared type;
 there is no virus scan or content classification.

@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { ENDPOINTS } from '../../core/contracts';
 import { getDb } from '../db/client';
 import { apiError, HttpError } from '../auth/guard';
-import { getFileStore } from '../services';
+import { getFileStore, ReceiptStorageUnavailable } from '../services';
 import { attachments } from '../db/schema';
 import {
   type ApiContext,
@@ -118,6 +118,7 @@ export async function handleApi(context: APIContext): Promise<Response> {
     return Response.json(parsed, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
     if (e instanceof HttpError) return e.response;
+    if (e instanceof ReceiptStorageUnavailable) return apiError(503, 'internal', e.message);
     if (e instanceof ZodError)
       return apiError(
         400,
