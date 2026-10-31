@@ -206,9 +206,16 @@ const isActive = (href: string) => {
       align-items: center;
       justify-content: center;
       gap: 2px;
-      font-size: 0.6875rem;
       color: var(--text-muted);
       text-decoration: none;
+    }
+    /* Labels stay whole at 390px: one line, no hyphenation, slightly tighter tracking.
+       (The "reques ts" gap was glyph hinting; see text-rendering in global.css.) */
+    .tab-bar-link span {
+      font-size: 0.6875rem;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      hyphens: none;
     }
     .tab-bar-link.is-active {
       color: var(--text-body);

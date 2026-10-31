@@ -3,7 +3,7 @@ import type { CsvImportResponse } from '../../core/contracts';
 import { CSV_MAX_BYTES } from '../../core/contracts';
 import { api, fieldErrors } from '../api/client';
 import { useApi } from '../api/useApi';
-import { bytes, fmtDate, pct } from '../format';
+import { bytes, fmtDate, pacificIso, pct } from '../format';
 import { describe, Field } from './kit';
 import { errorMessage, Notice } from './states';
 
@@ -35,6 +35,8 @@ export function CsvImportForm({ eventId, compact, onImported }: { eventId?: stri
     else if (!/\.csv$/i.test(file.name) && file.type !== 'text/csv') e.file = 'That is not a .csv file.';
     if (!eventId && !target) e.eventId = 'Pick the event this export belongs to.';
     if (creating && !newName.trim()) e.eventName = 'Name the new event.';
+    if (creating && !newLuma.trim()) e.lumaEventId = 'Enter the Luma event id (from the event URL).';
+    if (creating && !/^\d{4}-\d{2}-\d{2}$/.test(newDate)) e.eventStartsAt = 'Pick the event date.';
     return e;
   };
 
@@ -48,8 +50,9 @@ export function CsvImportForm({ eventId, compact, onImported }: { eventId?: stri
     form.set('dryRun', String(dryRun));
     if (creating) {
       form.set('eventName', newName.trim());
-      if (newLuma.trim()) form.set('lumaEventId', newLuma.trim());
-      if (newDate) form.set('eventStartsAt', new Date(`${newDate}T18:00:00`).toISOString().replace('Z', '+00:00'));
+      form.set('lumaEventId', newLuma.trim());
+      // The date is a Pacific wall time (6 pm), not the browser's zone.
+      form.set('eventStartsAt', pacificIso(newDate, '18:00'));
     } else form.set('eventId', eventId ?? target);
     form.set('file', file!);
     setBusy(dryRun ? 'check' : 'import');
@@ -115,11 +118,11 @@ export function CsvImportForm({ eventId, compact, onImported }: { eventId?: stri
               <Field id={`${idp}-name`} label="event name" error={errors.eventName}>
                 <input class="input" {...describe(`${idp}-name`, errors.eventName)} value={newName} onInput={(e) => setNewName(e.currentTarget.value)} />
               </Field>
-              <Field id={`${idp}-luma`} label="Luma event id" optional hint="from the event URL, e.g. evt-abc123">
-                <input class="input" {...describe(`${idp}-luma`, undefined, true)} value={newLuma} onInput={(e) => setNewLuma(e.currentTarget.value)} />
+              <Field id={`${idp}-luma`} label="Luma event id" error={errors.lumaEventId} hint="from the event URL, e.g. evt-abc123">
+                <input class="input" {...describe(`${idp}-luma`, errors.lumaEventId, true)} value={newLuma} onInput={(e) => setNewLuma(e.currentTarget.value)} />
               </Field>
-              <Field id={`${idp}-date`} label="date" optional>
-                <input class="input" type="date" id={`${idp}-date`} value={newDate} onInput={(e) => setNewDate(e.currentTarget.value)} />
+              <Field id={`${idp}-date`} label="date" error={errors.eventStartsAt} hint="Pacific time; imported as 6 pm that day">
+                <input class="input" type="date" {...describe(`${idp}-date`, errors.eventStartsAt, true)} value={newDate} onInput={(e) => setNewDate(e.currentTarget.value)} />
               </Field>
             </>
           )}

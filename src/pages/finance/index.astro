@@ -3,10 +3,11 @@ import AppLayout from '../../layouts/AppLayout.astro';
 import PageTitle from '../../components/PageTitle.astro';
 import FinanceView from '../../ui/islands/FinanceView';
 import { fiscalYearFor } from '../../core/fiscal';
+import { todayPacific } from '../../ui/format';
 
 const user = Astro.locals.user!;
 const isDirector = user.role === 'director';
-const fy = fiscalYearFor(new Date().toISOString().slice(0, 10));
+const fy = fiscalYearFor(todayPacific());
 ---
 
 <AppLayout title="finance">

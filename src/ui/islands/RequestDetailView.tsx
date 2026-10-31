@@ -6,7 +6,7 @@ import { api, endpointUrl, isStorageUnavailable, STORAGE_UNAVAILABLE_MESSAGE } f
 import { useApi } from '../api/useApi';
 import { describe, Field, Section, StatusBadge } from '../components/kit';
 import { Empty, ErrorState, errorMessage, Loading, Notice } from '../components/states';
-import { bytes, dollarsToCents, fmtDate, fmtDateTime, formatCents, FUNCTIONAL_LABEL, STATUS_LABEL, TYPE_LABEL } from '../format';
+import { bytes, safeUrl, dollarsToCents, fmtDate, fmtDateTime, formatCents, FUNCTIONAL_LABEL, STATUS_LABEL, TYPE_LABEL } from '../format';
 import { Dropzone } from './RequestFormView';
 
 function Title({ r, children }: { r?: PurchaseRequestDetail; children?: ComponentChildren }) {
@@ -98,9 +98,9 @@ export default function RequestDetailView({
               <dl class="facts">
                 <Fact label="vendor">{r.vendor}</Fact>
                 <Fact label="item link">
-                  {r.itemUrl ? (
-                    <a class="data-link" href={r.itemUrl} target="_blank" rel="noopener noreferrer">
-                      {hostOf(r.itemUrl)} <span aria-hidden="true">↗</span>
+                  {safeUrl(r.itemUrl) ? (
+                    <a class="data-link" href={safeUrl(r.itemUrl)!} target="_blank" rel="noopener noreferrer">
+                      {hostOf(r.itemUrl!)} <span aria-hidden="true">↗</span>
                     </a>
                   ) : (
                     '—'
@@ -162,7 +162,7 @@ export default function RequestDetailView({
 }
 
 /** GET /api/attachments/:id serves local files and redirects Drive files to their webViewLink. */
-const attachmentHref = (a: { id: string; url: string | null }) => a.url ?? endpointUrl('attachmentDownload', { params: { id: a.id } });
+const attachmentHref = (a: { id: string; url: string | null }) => safeUrl(a.url ?? endpointUrl('attachmentDownload', { params: { id: a.id } }));
 
 const hostOf = (u: string) => {
   try {

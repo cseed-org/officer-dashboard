@@ -19,6 +19,15 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
+    // CSEED is in Washington: US date formats (incl. native date inputs) and Pacific time.
+    locale: 'en-US',
+    timezoneId: 'America/Los_Angeles',
+    // Native <input type="date"> follows the browser process locale, not `locale` above,
+    // and this Pi runs en_GB. Launch Chromium as en_US so date fields read mm/dd/yyyy.
+    launchOptions: {
+      args: ['--lang=en-US'],
+      env: { ...process.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
+    },
   },
   projects: [
     {

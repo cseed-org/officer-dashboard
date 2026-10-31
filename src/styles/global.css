@@ -17,6 +17,9 @@ body {
   color: var(--text-body);
   font: var(--type-body);
   -webkit-font-smoothing: antialiased;
+  /* Hinted glyph advances left gaps inside small Poppins words ("reques ts") in Chromium;
+     unhinted positioning keeps words whole at 11–13px. */
+  text-rendering: geometricPrecision;
 }
 h1,
 h2,

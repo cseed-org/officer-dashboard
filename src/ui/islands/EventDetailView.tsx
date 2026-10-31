@@ -5,7 +5,7 @@ import { ColumnChart, FunnelChart, LineChart } from '../components/charts';
 import { CsvImportForm } from '../components/CsvImportForm';
 import { DataTable, Kpi, Section, StatusBadge, type Column } from '../components/kit';
 import { Async, Empty, ErrorState, Loading, Notice } from '../components/states';
-import { dollars, fmtDate, fmtTime, fmtWeekday, formatCents, pct, TYPE_LABEL } from '../format';
+import { dollars, safeUrl, fmtDate, fmtTime, fmtWeekday, formatCents, pct, TYPE_LABEL } from '../format';
 
 export const requestColumns = (opts: { showRequester?: boolean } = {}): Column<PurchaseRequestListItem>[] => [
   {
@@ -72,8 +72,8 @@ export default function EventDetailView({ id }: { id: string }) {
         eyebrow={`${upcoming ? 'upcoming' : 'past'} event · ${fmtWeekday(e.startsAt)} ${fmtDate(e.startsAt)}, ${fmtTime(e.startsAt)}`}
         sub={[e.location, e.host ? `hosted by ${e.host.name}` : null].filter(Boolean).join(' · ') || undefined}
       >
-        {e.url && (
-          <a class="btn" href={e.url} target="_blank" rel="noopener noreferrer">
+        {safeUrl(e.url) && (
+          <a class="btn" href={safeUrl(e.url)!} target="_blank" rel="noopener noreferrer">
             Luma page <span aria-hidden="true">↗</span>
           </a>
         )}

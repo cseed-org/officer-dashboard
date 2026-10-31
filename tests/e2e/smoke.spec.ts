@@ -79,6 +79,9 @@ test('the nav reaches every section', async ({ page }, info) => {
   await devLogin(page, 'director');
   const nav = page.getByRole('navigation', { name: info.project.name === 'phone' ? 'Main (mobile)' : 'Main', exact: true });
   await expect(nav).toBeVisible();
+  // Labels stay whole: one line box each, nothing broken inside a word.
+  const lines = await nav.locator('a').evaluateAll((links) => links.map((l) => [l.textContent!.trim(), l.querySelector('span')?.getClientRects().length ?? 1] as const));
+  for (const [label, n] of lines) expect(n, `"${label}" wraps`).toBe(1);
   for (const [label, path] of [
     ['events', '/events'],
     ['requests', '/requests'],

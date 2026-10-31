@@ -148,6 +148,16 @@
     padding-left: 0;
     border-left: 0;
   }
+  /* An odd last tile takes the whole row instead of sitting alone at half width. */
+  .kpi:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 640px) and (max-width: 1023px) {
+  /* 3 columns on tablet: 5 tiles leave two in the last row; let the last one fill it. */
+  .kpi:nth-child(5):last-child {
+    grid-column: 2 / -1;
+  }
 }
 .kpi--link:hover .kpi-label {
   text-decoration: underline;
