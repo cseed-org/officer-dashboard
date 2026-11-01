@@ -3,7 +3,7 @@
  * Framework-free: no Astro, Cloudflare or Drizzle imports in src/core.
  */
 
-export const ROLES = ['director', 'officer'] as const;
+export const ROLES = ['leadership', 'director', 'officer'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ACCOUNT_TYPES = ['asset', 'liability', 'net_asset', 'revenue', 'expense'] as const;

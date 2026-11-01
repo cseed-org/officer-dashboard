@@ -43,11 +43,11 @@ func TestSeedMigrateAndServeWiring(t *testing.T) {
 	if code := run([]string{"seed", "-reset"}, e, &out, &errb); code != 0 {
 		t.Fatalf("seed → %d %s", code, errb.String())
 	}
-	if !strings.Contains(out.String(), "4 users, 6 events, 6 requests, 18 journal lines (FY2027)") {
+	if !strings.Contains(out.String(), "5 users, 6 events, 6 requests, 18 journal lines (FY2027)") {
 		t.Errorf("seed output %q", out.String())
 	}
 	out.Reset()
-	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), "5 migrations applied") {
+	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), "6 migrations applied") {
 		t.Errorf("migrate → %d %q", code, out.String())
 	}
 	out.Reset()

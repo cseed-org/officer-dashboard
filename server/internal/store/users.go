@@ -48,6 +48,7 @@ type User struct {
 	Name        string
 	Email       *string
 	AvatarURL   *string
+	IsOwner     bool
 	Role        string
 	Active      bool
 	Title       *string
@@ -56,12 +57,12 @@ type User struct {
 	UpdatedAt   Ms
 }
 
-const userCols = `id, discord_id, name, email, avatar_url, role, active, title, last_login_at, created_at, updated_at`
+const userCols = `id, discord_id, name, email, avatar_url, role, is_owner, active, title, last_login_at, created_at, updated_at`
 
 func scanUser(s interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var last *Ms
-	if err := s.Scan(&u.ID, &u.DiscordID, &u.Name, &u.Email, &u.AvatarURL, &u.Role, &u.Active, &u.Title, &last, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	if err := s.Scan(&u.ID, &u.DiscordID, &u.Name, &u.Email, &u.AvatarURL, &u.Role, &u.IsOwner, &u.Active, &u.Title, &last, &u.CreatedAt, &u.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if last != nil {
@@ -109,8 +110,8 @@ func (q *Queries) FirstActiveUserWithRole(ctx context.Context, role string) (*Us
 
 // InsertUser adds a user.
 func (q *Queries) InsertUser(ctx context.Context, u User) error {
-	_, err := q.q.ExecContext(ctx, `INSERT INTO users (id, discord_id, name, email, avatar_url, role, active, title, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		u.ID, u.DiscordID, u.Name, u.Email, u.AvatarURL, u.Role, u.Active, u.Title, int64(u.CreatedAt), int64(u.UpdatedAt))
+	_, err := q.q.ExecContext(ctx, `INSERT INTO users (id, discord_id, name, email, avatar_url, role, is_owner, active, title, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		u.ID, u.DiscordID, u.Name, u.Email, u.AvatarURL, u.Role, u.IsOwner, u.Active, u.Title, int64(u.CreatedAt), int64(u.UpdatedAt))
 	return err
 }
 
@@ -173,12 +174,12 @@ func (q *Queries) InsertSession(ctx context.Context, idHash, userID string, expi
 
 // SessionByHash returns the live session and its active user, or ErrNotFound.
 func (q *Queries) SessionByHash(ctx context.Context, idHash string, now int64) (*Session, error) {
-	row := q.q.QueryRowContext(ctx, `SELECT s.id, s.expires_at, u.id, u.discord_id, u.name, u.email, u.avatar_url, u.role, u.active, u.title, u.last_login_at, u.created_at, u.updated_at
+	row := q.q.QueryRowContext(ctx, `SELECT s.id, s.expires_at, u.id, u.discord_id, u.name, u.email, u.avatar_url, u.role, u.is_owner, u.active, u.title, u.last_login_at, u.created_at, u.updated_at
 		FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > ? AND u.active = 1`, idHash, now)
 	var s Session
 	var last *Ms
 	var exp Ms
-	err := row.Scan(&s.ID, &exp, &s.User.ID, &s.User.DiscordID, &s.User.Name, &s.User.Email, &s.User.AvatarURL, &s.User.Role, &s.User.Active, &s.User.Title, &last, &s.User.CreatedAt, &s.User.UpdatedAt)
+	err := row.Scan(&s.ID, &exp, &s.User.ID, &s.User.DiscordID, &s.User.Name, &s.User.Email, &s.User.AvatarURL, &s.User.Role, &s.User.IsOwner, &s.User.Active, &s.User.Title, &last, &s.User.CreatedAt, &s.User.UpdatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}

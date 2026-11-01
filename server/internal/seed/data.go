@@ -11,6 +11,7 @@ const FiscalYear = 2027 // Jul 2026 – Jun 2027
 type User struct{ ID, DiscordID, Name, Role, Title, Email string }
 
 var Users = []User{
+	{"user-leadership", "100000000000000005", "Sam Rivera", "leadership", "President", "sam@example.org"},
 	{"user-director", "100000000000000001", "Jordan Lee", "director", "Executive Director", "jordan@example.org"},
 	{"user-priya", "100000000000000002", "Priya Shah", "officer", "VP Events", "priya@example.org"},
 	{"user-marcus", "100000000000000003", "Marcus Chen", "officer", "Treasurer", "marcus@example.org"},

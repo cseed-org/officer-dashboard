@@ -13,14 +13,19 @@ import (
 )
 
 const (
-	RoleDirector = "director"
-	RoleOfficer  = "officer"
+	RoleLeadership = "leadership"
+	RoleDirector   = "director"
+	RoleOfficer    = "officer"
 )
 
-var rank = map[string]int{RoleOfficer: 1, RoleDirector: 2}
+var rank = map[string]int{RoleOfficer: 1, RoleDirector: 2, RoleLeadership: 3}
 
-// HasRole: directors can do everything officers can.
-func HasRole(actual, required string) bool { return rank[actual] >= rank[required] }
+// HasRole ranks leadership above directors above officers; unknown roles are denied.
+func HasRole(actual, required string) bool {
+	a, ok := rank[actual]
+	r, valid := rank[required]
+	return ok && valid && a >= r
+}
 
 func under(path, prefix string) bool { return path == prefix || strings.HasPrefix(path, prefix+"/") }
 
@@ -52,7 +57,6 @@ type LoginKind int
 
 const (
 	SignIn LoginKind = iota
-	CreateDirector
 	Deny
 )
 
@@ -70,24 +74,19 @@ type KnownUser struct {
 	Active bool
 }
 
-// DecideLogin: only users already allowlisted by a director may sign in. The one exception
-// is BOOTSTRAP_DIRECTOR_DISCORD_ID, created as a director on first login so a fresh
-// deployment has someone to allowlist everybody else.
-func DecideLogin(discordID string, user *KnownUser, bootstrapDirectorID string) Decision {
+// DecideLogin only permits existing active accounts. Startup provisioning creates the owner.
+func DecideLogin(user *KnownUser) Decision {
 	if user != nil {
 		if user.Active {
 			return Decision{Kind: SignIn, UserID: user.ID}
 		}
 		return Decision{Kind: Deny, Reason: "inactive"}
 	}
-	if b := strings.TrimSpace(bootstrapDirectorID); b != "" && discordID == b {
-		return Decision{Kind: CreateDirector}
-	}
 	return Decision{Kind: Deny, Reason: "not_allowlisted"}
 }
 
 // RedirectSections are the top-level page sections a post-login redirect may land in (besides "/").
-var RedirectSections = []string{"events", "requests", "finance", "admin"}
+var RedirectSections = []string{"events", "requests", "finance", "admin", "settings", "officers", "members", "speakers", "design"}
 
 // SafeNext returns the post-login redirect target, or "/" unless it is one of the app's own
 // pages. Layers, each enough on its own for the cases it covers:
