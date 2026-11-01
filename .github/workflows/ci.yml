@@ -37,7 +37,7 @@ jobs:
       - name: go vet (dev build tag)
         run: go vet -tags dev ./...
       - run: go test ./...
-      - name: go test (dev build tag: /auth/dev exists only here)
+      - name: go test (dev build tag, where /auth/dev exists)
         run: go test -tags dev ./internal/api
       - name: build (release flags)
         run: CGO_ENABLED=1 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::7}" -o /tmp/dashboard ./cmd/dashboard
