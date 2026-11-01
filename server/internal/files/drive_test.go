@@ -324,3 +324,38 @@ func TestLocalStoreRoundTripAndKeyHygiene(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestLooksLikeItsType(t *testing.T) {
+	good := map[string]string{
+		"application/pdf": "%PDF-1.4", "image/png": "\x89PNG\r\n\x1a\n", "image/jpeg": "\xff\xd8\xff\xdb",
+		"image/webp": "RIFF\x01\x02\x03\x04WEBP", "image/heic": "\x00\x00\x00\x20ftypheix",
+	}
+	for mime, body := range good {
+		if err := CheckContent(mime, []byte(body)); err != nil {
+			t.Errorf("%s: %v", mime, err)
+		}
+	}
+	bad := map[string]string{"application/pdf": "<html>", "image/png": "GIF89a", "image/jpeg": "%PDF-", "image/webp": "RIFFxxxxWAVE", "image/heic": "\x00\x00\x00\x20ftypmp42"}
+	for mime, body := range bad {
+		if err := CheckContent(mime, []byte(body)); err == nil || !errors.Is(err, ErrInvalidUpload) {
+			t.Errorf("%s with %q should be refused (%v)", mime, body, err)
+		}
+	}
+}
+
+func TestLocalDeleteRemovesBlobAndIsIdempotent(t *testing.T) {
+	l := Local{Root: t.TempDir()}
+	s, err := l.Put(context.Background(), PutInput{MimeType: "application/pdf", Body: []byte("%PDF-1.4")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Delete(context.Background(), s.Key); err != nil {
+		t.Fatal(err)
+	}
+	if f, _ := l.Get(context.Background(), s.Key); f != nil {
+		t.Error("blob still readable after delete")
+	}
+	if err := l.Delete(context.Background(), s.Key); err != nil || l.Delete(context.Background(), "../x") != nil {
+		t.Error("deleting an unknown key must not fail")
+	}
+}

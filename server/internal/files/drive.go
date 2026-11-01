@@ -96,10 +96,13 @@ func NewDrive(serviceAccountJSON, rootFolderID string, client Doer) (*Drive, err
 
 func (d *Drive) accessToken(ctx context.Context) (string, error) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if d.token != "" && time.Until(d.expiry) > time.Minute {
-		return d.token, nil
+		t := d.token
+		d.mu.Unlock()
+		return t, nil
 	}
+	d.mu.Unlock()
+	// The lock is not held across the HTTP call; concurrent callers may both refresh, which is harmless.
 	jwt, err := SignJWT(d.account, time.Now().Unix())
 	if err != nil {
 		return "", err
@@ -119,11 +122,13 @@ func (d *Drive) accessToken(ctx context.Context) (string, error) {
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int    `json:"expires_in"`
 	}
-	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<16)).Decode(&out); err != nil {
 		return "", err
 	}
+	d.mu.Lock()
 	d.token, d.expiry = out.AccessToken, time.Now().Add(time.Duration(out.ExpiresIn)*time.Second)
-	return d.token, nil
+	d.mu.Unlock()
+	return out.AccessToken, nil
 }
 
 func (d *Drive) call(ctx context.Context, method, path string, header http.Header, body io.Reader) (*http.Response, error) {
@@ -335,4 +340,9 @@ func (d *Drive) Get(ctx context.Context, key string) (*File, error) {
 		mt = "application/octet-stream"
 	}
 	return &File{Body: body, MimeType: mt}, nil
+}
+
+// Delete trashes a file (Drive keeps trashed files recoverable for 30 days).
+func (d *Drive) Delete(ctx context.Context, key string) error {
+	return d.callJSON(ctx, http.MethodPatch, "/drive/v3/files/"+url.PathEscape(key)+"?supportsAllDrives=true", map[string]any{"trashed": true}, nil)
 }

@@ -148,7 +148,9 @@ func (q *Queries) EventCounts(ctx context.Context, eventID string) (map[string]*
 			c.CheckedIn += n
 		}
 	}
-	rows.Close()
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
 	rrows, err := q.q.QueryContext(ctx, `SELECT r.event_id, count(*), coalesce(sum(EXISTS (SELECT 1 FROM event_guests g WHERE g.event_id = r.event_id AND g.email = r.email AND g.checked_in_at IS NOT NULL)), 0)
 		FROM reflections r`+strings.Replace(where, "event_id", "r.event_id", 1)+` GROUP BY r.event_id`, args...)
 	if err != nil {

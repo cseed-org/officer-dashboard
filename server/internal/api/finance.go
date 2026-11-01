@@ -51,7 +51,7 @@ func (s *Server) loadReportData(ctx context.Context, q *store.Queries, asOf stri
 	for _, b := range budgetRows {
 		data.Budgets = append(data.Budgets, accounting.Budget{AccountID: b.AccountID, FundID: b.FundID, FiscalYear: b.FiscalYear, AmountCents: b.AmountCents})
 	}
-	today := fiscal.UTCDate(s.now())
+	today := fiscal.PacificDate(s.now())
 	cutoff, _ := time.Parse(time.RFC3339Nano, asOf+"T23:59:59.999Z")
 	var history []store.AuditEntry
 	if asOf < today {
@@ -69,7 +69,7 @@ func (s *Server) loadReportData(ctx context.Context, q *store.Queries, asOf stri
 			at = *r.SubmittedAt
 		}
 		data.Commitments = append(data.Commitments, accounting.Commitment{
-			ExpenseAccountID: r.ExpenseAccountID, FundID: r.FundID, TotalCents: r.TotalCents, SubmittedDate: isoMs(at)[:10],
+			ExpenseAccountID: r.ExpenseAccountID, FundID: r.FundID, TotalCents: r.TotalCents, SubmittedDate: fiscal.PacificDate(time.UnixMilli(at)),
 		})
 	}
 	return data, nil
@@ -127,7 +127,7 @@ type financeParams struct {
 }
 
 func (s *Server) resolveFinance(fiscalYear *int, asOf, fundID string) (financeParams, error) {
-	today := fiscal.UTCDate(s.now())
+	today := fiscal.PacificDate(s.now())
 	a := asOf
 	if a == "" {
 		a = today
@@ -654,7 +654,7 @@ func (c *Ctx) lookups() error {
 	for i, e := range cat.events {
 		events[i] = ev{e.ID, e.Name, e.StartsAt}
 	}
-	fy, _ := fiscal.YearFor(fiscal.UTCDate(c.S.now()), fiscal.DefaultStartMonth)
+	fy, _ := fiscal.YearFor(fiscal.PacificDate(c.S.now()), fiscal.DefaultStartMonth)
 	writeJSON(c.W, 200, map[string]any{"expenseAccounts": expense, "funds": funds, "events": events, "currentFiscalYear": fy})
 	return nil
 }

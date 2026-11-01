@@ -67,9 +67,21 @@ type Tolerance struct {
 
 var DefaultTolerance = Tolerance{Percent: 10, Cents: 2_500}
 
-// MaxAgentSettlementCents is the largest actual total an agent may post: whichever allowance is larger.
+// Limits on the tolerance settings: a typo like 1e20 must not turn the ceiling into "unlimited".
+const (
+	maxPercent = 100
+	maxCents   = 1_000_000_000_000 // $10 billion
+)
+
+// MaxAgentSettlementCents is the largest actual total an agent may post: whichever allowance
+// is larger. The percentage is applied in integer basis points, floored, without overflow.
 func MaxAgentSettlementCents(estimate int64, t Tolerance) int64 {
-	pct := int64(math.Floor(float64(estimate) * (100 + t.Percent) / 100))
+	bp := int64(math.Round(t.Percent * 100))
+	if bp < 0 {
+		bp = 0
+	}
+	// estimate × bp / 10000 without overflowing int64 for estimates up to 2^53.
+	pct := estimate + estimate/10_000*bp + (estimate%10_000)*bp/10_000
 	flat := estimate + t.Cents
 	if pct > flat {
 		return pct
@@ -77,21 +89,22 @@ func MaxAgentSettlementCents(estimate int64, t Tolerance) int64 {
 	return flat
 }
 
-// ToleranceFromEnv reads AGENT_SETTLEMENT_TOLERANCE_PERCENT / _CENTS, ignoring invalid values.
+// ToleranceFromEnv reads AGENT_SETTLEMENT_TOLERANCE_PERCENT (0–100) and _CENTS (0–1e12),
+// falling back to the defaults for anything missing, malformed or out of range.
 func ToleranceFromEnv(percent, cents string) Tolerance {
-	read := func(v string, fallback float64) float64 {
+	read := func(v string, fallback, max float64) float64 {
 		v = strings.TrimSpace(v)
 		if v == "" {
 			return fallback
 		}
 		n, err := strconv.ParseFloat(v, 64)
-		if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n < 0 {
+		if err != nil || math.IsNaN(n) || math.IsInf(n, 0) || n < 0 || n > max {
 			return fallback
 		}
 		return n
 	}
 	return Tolerance{
-		Percent: read(percent, DefaultTolerance.Percent),
-		Cents:   int64(math.Round(read(cents, float64(DefaultTolerance.Cents)))),
+		Percent: read(percent, DefaultTolerance.Percent, maxPercent),
+		Cents:   int64(math.Round(read(cents, float64(DefaultTolerance.Cents), maxCents))),
 	}
 }

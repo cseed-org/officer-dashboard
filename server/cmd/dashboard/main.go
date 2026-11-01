@@ -17,6 +17,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -199,6 +200,9 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if err := validateAppURL(s.AppURL); err != nil {
+		return err
+	}
 	db, err := openDB(s.DBPath)
 	if err != nil {
 		return err
@@ -332,4 +336,24 @@ func healthcheck(args []string, getenv func(string) string) error {
 		return fmt.Errorf("unhealthy: %d %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+// validateAppURL refuses to serve unless APP_URL is https (localhost excepted). The Secure
+// cookie flag, the __Host- prefix and HSTS all follow the URL scheme, so an http:// URL in
+// production would silently drop them.
+func validateAppURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("APP_URL %q is not a URL", raw)
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		if u.Scheme == "http" {
+			return nil
+		}
+	}
+	return fmt.Errorf("APP_URL %q must be https (plain http is allowed only for localhost): cookies would lose Secure, __Host- and HSTS", raw)
 }

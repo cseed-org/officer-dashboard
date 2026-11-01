@@ -77,6 +77,3 @@ func MonthlyPeriods(fy, startMonth int) []Period {
 
 // PacificDate is the calendar date of an instant in the organisation's time zone.
 func PacificDate(t time.Time) string { return t.In(Pacific).Format("2006-01-02") }
-
-// UTCDate is the UTC calendar date; v1 posts journal entries and defaults report dates on it.
-func UTCDate(t time.Time) string { return t.UTC().Format("2006-01-02") }

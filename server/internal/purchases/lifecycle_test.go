@@ -59,3 +59,32 @@ func TestMaxAgentSettlement(t *testing.T) {
 		t.Errorf("invalid values should fall back, got %+v", got)
 	}
 }
+
+// #2: absurd tolerance settings must not turn the ceiling into "unlimited".
+func TestToleranceIsValidatedAndUsesIntegerMath(t *testing.T) {
+	d := DefaultTolerance
+	for _, bad := range []string{"1e20", "101", "-1", "NaN", "Inf", "1e400"} {
+		if got := ToleranceFromEnv(bad, ""); got != d {
+			t.Errorf("percent %q should fall back to the default, got %+v", bad, got)
+		}
+	}
+	for _, bad := range []string{"1e20", "9999999999999", "-5"} {
+		if got := ToleranceFromEnv("", bad); got != d {
+			t.Errorf("cents %q should fall back to the default, got %+v", bad, got)
+		}
+	}
+	if got := ToleranceFromEnv("100", "0"); got.Percent != 100 || got.Cents != 0 {
+		t.Errorf("100%% and $0 are valid: %+v", got)
+	}
+	huge := int64(1 << 53)
+	if got := MaxAgentSettlementCents(huge, Tolerance{Percent: 100, Cents: 2_500}); got != 2*huge {
+		t.Errorf("no overflow or float drift near 2^53: %d", got)
+	}
+	// 7.5 % of $1,000.00 is $75.00, floored in integer cents.
+	if got := MaxAgentSettlementCents(100_000, Tolerance{Percent: 7.5, Cents: 0}); got != 107_500 {
+		t.Errorf("fractional percent: %d", got)
+	}
+	if got := MaxAgentSettlementCents(333, Tolerance{Percent: 10, Cents: 0}); got != 366 { // floor(36.3)
+		t.Errorf("flooring: %d", got)
+	}
+}

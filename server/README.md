@@ -9,7 +9,7 @@ in a Cloudflare Container.
 server/
   cmd/dashboard        main: serve | seed | migrate | healthcheck | version
   internal/api         HTTP handlers, middleware, sessions, routes
-  internal/store       every SQL statement; embedded migrations 0000–0003
+  internal/store       every SQL statement; embedded migrations 0000–0004
   internal/accounting  posting engine, journal validation, financial reports, CSV export
   internal/purchases   request lifecycle, agent settlement tolerance
   internal/luma        Luma/survey CSV parsing, Pacific-time handling
@@ -88,7 +88,7 @@ about 100 lines (`internal/auth/discord.go`) rather than an OAuth library.
 One file, opened twice: a **single writer connection** (all writes are transactions on it, so
 they serialise without `SQLITE_BUSY` storms) and a **read pool** of read-only connections.
 `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL`. Statements use
-placeholders throughout. The v1 schema and triggers are unchanged (`internal/store/migrations`,
+placeholders throughout. The v1 schema and triggers are unchanged, plus migration 0004 (a per-year request counter) (`internal/store/migrations`,
 applied by an embedded runner into `schema_migrations`), so the same integrity rules hold:
 posted journal entries immutable, balanced posting, closed periods, append-only audit log,
 last-director guard, one approval and one settlement per request.

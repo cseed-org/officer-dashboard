@@ -86,8 +86,8 @@ func (f RequestFilter) where(withStatus bool) (string, []any) {
 		args = append(args, f.EventID)
 	}
 	if f.Q != "" {
-		conds = append(conds, `lower(title || ' ' || vendor || ' ' || number) LIKE ? ESCAPE '\'`)
-		args = append(args, "%"+likeEscape(strings.ToLower(f.Q))+"%")
+		conds = append(conds, `fold(title || ' ' || vendor || ' ' || number) LIKE ? ESCAPE '\'`)
+		args = append(args, "%"+likeEscape(Fold(f.Q))+"%")
 	}
 	if withStatus && f.Status != "" {
 		conds = append(conds, "status = ?")
@@ -166,23 +166,35 @@ func (q *Queries) RequestByID(ctx context.Context, id string) (*Request, error) 
 	return r, notFound(err)
 }
 
-// InsertRequest adds a request and allocates its number. Numbers are `<FY>-<NNNN>`,
-// sequential within the fiscal year; the next one is computed inside the INSERT itself and
-// the write transaction serialises allocation. Legacy non-numeric suffixes (e.g.
-// 2026-C2552D9F) are ignored by the GLOB filters. The stored number is returned.
+// InsertRequest adds a request and allocates its number: `<FY>-<NNNN>`, sequential within
+// the fiscal year. The number comes from request_counters (never decremented, so deleting a
+// draft cannot free a number) or one past the largest existing numeric number, whichever is
+// higher, which also covers rows inserted outside this code (the seed). The write
+// transaction serialises allocation. Legacy non-numeric suffixes (e.g. 2026-C2552D9F) are
+// ignored. The stored number is returned.
 func (q *Queries) InsertRequest(ctx context.Context, r Request, fiscalYear int) (string, error) {
-	_, err := q.q.ExecContext(ctx, `INSERT INTO purchase_requests (id, number, requester_id, type, title, vendor, item_url, quantity, unit_cost_cents, tax_ship_cents, total_cents,
-		expense_account_id, fund_id, event_id, functional_class, justification, needed_by, status, submitted_at, created_at, updated_at)
-		VALUES (?, (SELECT printf('%d-%04d', ?, coalesce(max(CAST(substr(number, 6) AS INTEGER)), 0) + 1) FROM purchase_requests WHERE number GLOB ? AND substr(number, 6) NOT GLOB '*[^0-9]*'),
-		?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		r.ID, fiscalYear, fmt.Sprintf("%d-[0-9]*", fiscalYear),
-		r.RequesterID, r.Type, r.Title, r.Vendor, r.ItemURL, r.Quantity, r.UnitCostCents, r.TaxShipCents, r.TotalCents,
-		r.ExpenseAccountID, r.FundID, r.EventID, r.FunctionalClass, r.Justification, r.NeededBy, r.Status, r.SubmittedAt, int64(r.CreatedAt), int64(r.UpdatedAt))
-	if err != nil {
+	var counter, existing int64
+	if err := q.q.QueryRowContext(ctx, `SELECT coalesce((SELECT last FROM request_counters WHERE fiscal_year = ?), 0)`, fiscalYear).Scan(&counter); err != nil {
 		return "", err
 	}
-	var number string
-	err = q.q.QueryRowContext(ctx, `SELECT number FROM purchase_requests WHERE id = ?`, r.ID).Scan(&number)
+	if err := q.q.QueryRowContext(ctx, `SELECT coalesce(max(CAST(substr(number, 6) AS INTEGER)), 0) FROM purchase_requests WHERE number GLOB ? AND substr(number, 6) NOT GLOB '*[^0-9]*'`,
+		fmt.Sprintf("%d-[0-9]*", fiscalYear)).Scan(&existing); err != nil {
+		return "", err
+	}
+	next := counter
+	if existing > next {
+		next = existing
+	}
+	next++
+	if _, err := q.q.ExecContext(ctx, `INSERT INTO request_counters (fiscal_year, last) VALUES (?, ?) ON CONFLICT (fiscal_year) DO UPDATE SET last = excluded.last`, fiscalYear, next); err != nil {
+		return "", err
+	}
+	number := fmt.Sprintf("%d-%04d", fiscalYear, next)
+	_, err := q.q.ExecContext(ctx, `INSERT INTO purchase_requests (id, number, requester_id, type, title, vendor, item_url, quantity, unit_cost_cents, tax_ship_cents, total_cents,
+		expense_account_id, fund_id, event_id, functional_class, justification, needed_by, status, submitted_at, created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		r.ID, number, r.RequesterID, r.Type, r.Title, r.Vendor, r.ItemURL, r.Quantity, r.UnitCostCents, r.TaxShipCents, r.TotalCents,
+		r.ExpenseAccountID, r.FundID, r.EventID, r.FunctionalClass, r.Justification, r.NeededBy, r.Status, r.SubmittedAt, int64(r.CreatedAt), int64(r.UpdatedAt))
 	return number, err
 }
 

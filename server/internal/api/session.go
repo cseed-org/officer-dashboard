@@ -113,6 +113,9 @@ func (s *Server) originOK(r *http.Request) bool {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return true
 	}
+	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		return false
+	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true

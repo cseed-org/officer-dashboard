@@ -16,8 +16,21 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3" // SQLite via cgo: the faster option for a single box
+	"github.com/mattn/go-sqlite3" // SQLite via cgo: the faster option for a single box
 )
+
+// Fold lower-cases text for case-insensitive matching. SQLite's own lower() folds only
+// ASCII, so searches use this Unicode-aware function (registered as fold()) and fold the
+// needle with the same code.
+func Fold(s string) string { return strings.ToLower(s) }
+
+const driverName = "sqlite3_fold"
+
+func init() {
+	sql.Register(driverName, &sqlite3.SQLiteDriver{ConnectHook: func(c *sqlite3.SQLiteConn) error {
+		return c.RegisterFunc("fold", func(s string) string { return Fold(s) }, true)
+	}})
+}
 
 //go:embed migrations/*.sql
 var migrationFS embed.FS
@@ -46,7 +59,7 @@ func Open(path string) (*DB, error) {
 	wp.Set("_journal_mode", "WAL")
 	wp.Set("_synchronous", "NORMAL")
 	wp.Set("_txlock", "immediate")
-	w, err := sql.Open("sqlite3", dsn(path, wp))
+	w, err := sql.Open(driverName, dsn(path, wp))
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +75,7 @@ func Open(path string) (*DB, error) {
 	}
 	rp := common(url.Values{})
 	rp.Set("mode", "ro")
-	r, err := sql.Open("sqlite3", dsn(path, rp))
+	r, err := sql.Open(driverName, dsn(path, rp))
 	if err != nil {
 		w.Close()
 		return nil, err

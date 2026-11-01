@@ -185,3 +185,9 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   job to `held` (terminal for the agent: claim cleared, never re-queued). The request
   detail's `settlementHold` carries the attempted and approved amounts until a director
   settles it; a `request.held` notification fires (see README, "Agent settlement tolerance").
+- Request numbers (`<FY>-<NNNN>`) come from a per-fiscal-year counter (migration 0004 in the Go
+  server), so deleting a draft never frees its number. Journal entries are dated by the
+  organisation's Pacific calendar day, not UTC.
+- Receipt uploads must carry the magic bytes of their declared type (PDF, PNG, JPEG, WebP, HEIC).
+- Known v1 parity: a director may move `approved → fulfilling` through `/transition` without the
+  agent claiming a job; no purchasing job exists for that request, so a director settles it by hand.

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"officerdashboard/internal/accounting"
 	"officerdashboard/internal/auth"
@@ -435,11 +436,14 @@ func (c *Ctx) requestAttach() error {
 	if err != nil {
 		return badRequest("File required")
 	}
+	if err := files.CheckContent(mime, body); err != nil {
+		return err
+	}
 	at := int64(r.CreatedAt)
 	if r.SubmittedAt != nil {
 		at = *r.SubmittedAt
 	}
-	fy, _ := fiscal.YearFor(isoMs(at)[:10], fiscal.DefaultStartMonth)
+	fy, _ := fiscal.YearFor(fiscal.PacificDate(time.UnixMilli(at)), fiscal.DefaultStartMonth)
 	stored, err := c.S.cfg.Files.Put(ctx, files.PutInput{Folder: []string{fmt.Sprintf("FY%d", fy), r.ID}, Filename: fh.Filename, MimeType: mime, Body: body})
 	if err != nil {
 		return err
@@ -473,6 +477,10 @@ func (c *Ctx) requestAttach() error {
 		return err
 	})
 	if err != nil {
+		// The row was not stored; do not leave the blob behind.
+		if derr := c.S.cfg.Files.Delete(context.WithoutCancel(ctx), stored.Key); derr != nil {
+			c.S.log.Error("could not remove an orphaned upload", "key", stored.Key, "error", derr)
+		}
 		return err
 	}
 	writeJSON(c.W, 200, map[string]any{"attachment": dto})
@@ -590,7 +598,7 @@ func (c *Ctx) settleWrites(ctx context.Context, w *store.Queries, r *store.Reque
 	if fund == nil {
 		return notFoundErr("Record not found")
 	}
-	today := fiscal.UTCDate(c.S.now())
+	today := fiscal.PacificDate(c.S.now())
 	if fund.Restriction == "with_donor" &&
 		((fund.StartDate != nil && today < *fund.StartDate) || (fund.EndDate != nil && today > *fund.EndDate)) {
 		return conflict("Restricted fund is outside its spending dates; review the fund allocation")
@@ -958,7 +966,7 @@ func (c *Ctx) payout(ctx context.Context, w *store.Queries, r *store.Request) er
 	}
 	amount := *r.ActualTotalCents
 	entry, err := accounting.PostEntry(accounting.Entry{
-		ID: auth.UUID(), EntryDate: fiscal.UTCDate(c.S.now()), Memo: "Reimbursement paid: " + r.Number, Source: "purchase_request",
+		ID: auth.UUID(), EntryDate: fiscal.PacificDate(c.S.now()), Memo: "Reimbursement paid: " + r.Number, Source: "purchase_request",
 		Lines: []accounting.Line{
 			{AccountID: payable.ID, FundID: r.FundID, DebitCents: amount},
 			{AccountID: cash.ID, FundID: r.FundID, CreditCents: amount},

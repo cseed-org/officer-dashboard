@@ -47,7 +47,7 @@ func TestSeedMigrateAndServeWiring(t *testing.T) {
 		t.Errorf("seed output %q", out.String())
 	}
 	out.Reset()
-	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), "4 migrations applied") {
+	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), "5 migrations applied") {
 		t.Errorf("migrate → %d %q", code, out.String())
 	}
 	out.Reset()
@@ -135,5 +135,26 @@ func TestHealthcheckCommand(t *testing.T) {
 	errb.Reset()
 	if code := run([]string{"healthcheck", "-addr", addr}, e, &out, &errb); code != 1 {
 		t.Errorf("a dead server should fail the check, got %d", code)
+	}
+}
+
+// #4: production must be https, or the Secure flag, __Host- prefix and HSTS silently vanish.
+func TestAppURLMustBeHTTPSExceptOnLocalhost(t *testing.T) {
+	ok := []string{"https://officers.cseed.co", "http://localhost:8090", "http://127.0.0.1:9000", "http://[::1]:8090", "http://localhost"}
+	bad := []string{"http://officers.cseed.co", "http://192.168.1.20:8090", "ftp://x", "officers.cseed.co", "http://localhost.evil.example"}
+	for _, u := range ok {
+		if err := validateAppURL(u); err != nil {
+			t.Errorf("%s should be allowed: %v", u, err)
+		}
+	}
+	for _, u := range bad {
+		if err := validateAppURL(u); err == nil {
+			t.Errorf("%s should be refused", u)
+		}
+	}
+	var out, errb bytes.Buffer
+	e := env(map[string]string{"DB_PATH": filepath.Join(t.TempDir(), "d.db"), "APP_URL": "http://officers.cseed.co", "ADDR": "127.0.0.1:0"})
+	if code := run([]string{"serve"}, e, &out, &errb); code != 1 || !strings.Contains(errb.String(), "https") {
+		t.Errorf("serve with an http APP_URL → %d %s", code, errb.String())
 	}
 }
