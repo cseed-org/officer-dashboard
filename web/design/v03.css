@@ -409,3 +409,17 @@
 .state-photos .polaroid {width:96px;height:110px;padding:6px 6px 18px;}
 .state-photos .polaroid:first-child {left:12px;top:4px;}
 .state-photos .polaroid:last-child {right:12px;top:0;}
+
+/* D3 directory composition */
+/* Directory-only composition; shared components and color tokens remain authoritative. */
+.people-group{gap:12px}.people-group .section-head{margin-bottom:0}
+.toolbar-main>.field{flex:1;min-width:150px}.toolbar-main{align-items:end}.main{min-width:0}
+.drawer-body,.dialog-body{overflow-wrap:anywhere}.invite-link{flex-wrap:wrap}.invite-link code{overflow-wrap:anywhere;white-space:normal}
+body:has(dialog[open]){overflow:hidden}
+@media(max-width:640px){.toolbar-main{width:100%}.toolbar-main>.field{min-width:100%}.toolbar-actions{flex-wrap:wrap}.toolbar-actions .btn{flex:1}.btn,.select,.input,summary{min-height:44px}.facts dd{overflow-wrap:anywhere}.invite-delivery{grid-template-columns:1fr}}
+.people-cell{display:block;min-width:0}
+@media(max-width:640px){.dt td::before{flex:0 0 90px}.people-cell{flex:1;overflow-wrap:anywhere}.dt-primary .people-cell{text-align:left}.dt td:not(.dt-primary) .cell-sub{margin-top:2px}.dt td{padding:5px 0}}
+/* Row names are .linkish buttons (every row opens its record); prototype-only toggles sit apart from real actions. */
+.dt-primary .linkish{text-align:left}.prototype-toggle{display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px dashed var(--line)}
+@media(max-width:640px){.dt-primary .linkish{min-height:44px;display:inline-flex;align-items:center}.dt .action-row .btn{min-height:44px}}
+@media(min-width:641px){.people-group .dt{table-layout:fixed}.people-group .dt th:first-child{width:46%}.people-group .dt th:nth-child(2){width:30%}}
