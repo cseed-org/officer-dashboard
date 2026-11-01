@@ -152,9 +152,8 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 
 	cfg := api.Config{
 		DB: db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
-		BootstrapDirectorDiscordID: "",
-		Tolerance:                  purchases.ToleranceFromEnv(s.TolerancePercent, s.ToleranceCents),
-		DevAuth:                    s.DevAuth,
+		Tolerance: purchases.ToleranceFromEnv(s.TolerancePercent, s.ToleranceCents),
+		DevAuth:   s.DevAuth,
 	}
 	if s.DevAuth && !api.DevBuild {
 		log.Warn("DEV_AUTH=1 is ignored: this binary was not built with -tags dev, so /auth/dev does not exist")

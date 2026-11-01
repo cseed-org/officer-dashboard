@@ -267,3 +267,8 @@ owner before startup or explicitly recover an active account with `dashboard
 provision-leadership --owner --db /path/dashboard.db --discord-id 123456789012345678`.
 This is idempotent, ends changed accounts' sessions and audit-logs the change. Without
 `--owner`, it grants leadership only. Seed data includes a fictional owner for local QA.
+
+The bootstrap environment cannot reclaim ownership after transfer. Explicit operator
+recovery with `provision-leadership --owner` remains available even when owners already
+exist: shell/database administrators can intentionally add an owner, and this action
+is audited. Discord login itself never creates users or grants leadership/ownership.

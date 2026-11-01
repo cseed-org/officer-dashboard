@@ -26,9 +26,7 @@ type Config struct {
 	Now       func() time.Time
 	Tolerance purchases.Tolerance
 	Discord   *auth.Discord // nil when Discord sign-in is not configured
-	// BootstrapDirectorDiscordID is created as leadership on first login.
-	BootstrapDirectorDiscordID string
-	AppURL                     string
+	AppURL    string
 	// DevAuth enables /auth/dev, but only in binaries built with the `dev` tag.
 	DevAuth bool
 	// Static serves the front end for every non-API path; nil answers 404 JSON.
@@ -175,6 +173,22 @@ func (c *Ctx) requireLeadership() (*store.User, error) {
 		return nil, err
 	}
 	if !auth.HasRole(u.Role, auth.RoleLeadership) {
+		return nil, forbidden("Requires leadership role")
+	}
+	return u, nil
+}
+
+// requireLeadershipIn re-reads the caller inside the write transaction, so a
+// role change committed while this request was in flight is honoured.
+func (c *Ctx) requireLeadershipIn(q *store.Queries) (*store.User, error) {
+	if _, err := c.requireLeadership(); err != nil {
+		return nil, err
+	}
+	u, err := q.UserByID(c.Context(), c.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !u.Active || !auth.HasRole(u.Role, auth.RoleLeadership) {
 		return nil, forbidden("Requires leadership role")
 	}
 	return u, nil

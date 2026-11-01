@@ -58,7 +58,7 @@ func leadershipCmd(args []string, getenv func(string) string, stdout io.Writer) 
 		if err := q.DeleteUserSessions(ctx, user.ID); err != nil {
 			return err
 		}
-		before, _ := json.Marshal(map[string]any{"role": user.Role, "isOwner": user.IsOwner})
+		before, _ := json.Marshal(map[string]any{"role": user.Role, "isOwner": user.IsOwner, "active": user.Active})
 		afterRaw, _ := json.Marshal(map[string]any{"role": "leadership", "isOwner": owner || user.IsOwner, "source": "operator CLI"})
 		after := string(afterRaw)
 		prior := string(before)

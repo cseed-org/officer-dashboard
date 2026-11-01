@@ -43,20 +43,14 @@ func TestRequiredRoleForPath(t *testing.T) {
 
 func TestDecideLogin(t *testing.T) {
 	officer := &KnownUser{ID: "u1", Role: "officer", Active: true}
-	if d := DecideLogin("42", officer, ""); d.Kind != SignIn || d.UserID != "u1" {
+	if d := DecideLogin(officer); d.Kind != SignIn || d.UserID != "u1" {
 		t.Errorf("active user: %+v", d)
 	}
-	if d := DecideLogin("42", &KnownUser{ID: "u1", Active: false}, "42"); d.Kind != Deny || d.Reason != "inactive" {
+	if d := DecideLogin(&KnownUser{ID: "u1", Active: false}); d.Kind != Deny || d.Reason != "inactive" {
 		t.Errorf("inactive: %+v", d)
 	}
-	if d := DecideLogin("42", nil, "7"); d.Kind != Deny || d.Reason != "not_allowlisted" {
+	if d := DecideLogin(nil); d.Kind != Deny || d.Reason != "not_allowlisted" {
 		t.Errorf("unknown: %+v", d)
-	}
-	if d := DecideLogin("7", nil, "7"); d.Kind != CreateLeadership {
-		t.Errorf("bootstrap: %+v", d)
-	}
-	if d := DecideLogin("", nil, ""); d.Kind != Deny || d.Reason != "not_allowlisted" {
-		t.Errorf("empty bootstrap: %+v", d)
 	}
 }
 

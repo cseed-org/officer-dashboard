@@ -47,7 +47,7 @@ export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, 
   const ownership = async (u: AdminUser, action: 'add' | 'remove' | 'transfer') => {
     const message = action === 'transfer'
       ? `Transfer ownership to ${u.name}? They become an owner and you remain leadership without owner access. Other co-owners keep their access.`
-      : action === 'add' ? `Make ${u.name} a co-owner? Owners can transfer ownership and manage other owners.` : `Remove owner access from ${u.name}? They remain leadership. The last owner cannot be removed.`;
+      : action === 'add' ? `Make ${u.name} a co-owner? Owners can transfer ownership and manage other owners.${u.role !== 'leadership' ? ' This also promotes them to leadership and signs them out of existing sessions.' : ''}` : `Remove owner access from ${u.name}? They remain leadership. The last owner cannot be removed.`;
     if (!confirm(message)) return;
     setBusyId(u.id); setNotice(null);
     try {

@@ -53,6 +53,11 @@ func (c *Ctx) adminUserCreate() error {
 	id := auth.UUID()
 	var out AdminUser
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		if role != auth.RoleOfficer {
+			if _, err := c.requireLeadershipIn(w); err != nil {
+				return err
+			}
+		}
 		now := store.Ms(c.S.nowMs())
 		u := store.User{ID: id, DiscordID: discordID, Name: name, Role: role, Active: true, Title: ptrIf(title), Email: ptrIf(email), CreatedAt: now, UpdatedAt: now}
 		if err := w.InsertUser(ctx, u); err != nil {
@@ -109,7 +114,7 @@ func (c *Ctx) adminUserUpdate() error {
 			}
 		}
 		if before.Role == auth.RoleLeadership || (role.Set && role.V != before.Role) {
-			if _, err := c.requireLeadership(); err != nil {
+			if _, err := c.requireLeadershipIn(w); err != nil {
 				return err
 			}
 		}

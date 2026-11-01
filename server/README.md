@@ -250,3 +250,8 @@ as an owner, run `dashboard provision-leadership --owner --db /path/dashboard.db
 only. Both operations are idempotent, end the target's sessions when changed, and write
 an audit entry. Seed data includes a fictional leadership owner; no real deployment
 identity is checked in.
+
+The bootstrap environment cannot reclaim ownership after transfer. Explicit operator
+recovery with `provision-leadership --owner` remains available even when owners already
+exist: shell/database administrators can intentionally add an owner, and this action
+is audited. Discord login itself never creates users or grants leadership/ownership.
