@@ -51,8 +51,8 @@ export default function AdminTokensView({ creating, onCloseCreate }: { creating:
           if (d.tokens.length === 0) return <Empty title="No service tokens">Create one when you set up the Luma scraper or the purchasing agent.</Empty>;
           const live = d.tokens.filter((t) => tokenState(t).label === 'active').length;
           return (
-            <>
-              <div class="toolbar">
+            <div class="list-block">
+              <div class="toolbar list-toolbar">
                 <span class="toolbar-count">
                   {live} active token{live === 1 ? '' : 's'}
                   {d.tokens.length > live && <span class="muted"> · {d.tokens.length - live} revoked or expired</span>}
@@ -115,7 +115,7 @@ export default function AdminTokensView({ creating, onCloseCreate }: { creating:
                   </tbody>
                 </table>
               </div>
-            </>
+            </div>
           );
         }}
       </Async>

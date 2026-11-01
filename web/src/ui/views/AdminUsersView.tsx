@@ -52,6 +52,7 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
       )}
       <Async state={state} loading={<Loading rows={5} label="Loading officers" />}>
         {(d) => (
+          <div class="list-block">
           <UserList
             users={d.users}
             meId={meId}
@@ -62,6 +63,7 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
             showInactive={showInactive}
             setShowInactive={setShowInactive}
           />
+          </div>
         )}
       </Async>
 
@@ -112,12 +114,18 @@ function UserList({
 
   return (
     <>
-      <div class="toolbar">
-        <div class="toolbar-main">
-          <span class="toolbar-count" data-officer-count>
-            {active} active officer{active === 1 ? '' : 's'}
-            {inactive > 0 && <span class="muted"> · {inactive} deactivated</span>}
-          </span>
+      <div class="toolbar list-toolbar">
+        <span class="toolbar-count" data-officer-count>
+          {active} active officer{active === 1 ? '' : 's'}
+          {inactive > 0 && <span class="muted"> · {inactive} deactivated</span>}
+        </span>
+        <div class="toolbar-actions">
+          {inactive > 0 && (
+            <label class="toggle">
+              <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.currentTarget.checked)} />
+              show deactivated
+            </label>
+          )}
           <div class="toolbar-search">
             <label class="visually-hidden" for="officer-search">
               Search officers
@@ -125,12 +133,6 @@ function UserList({
             <input id="officer-search" class="input" type="search" placeholder="search name, title or id" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
           </div>
         </div>
-        {inactive > 0 && (
-          <label class="toggle">
-            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.currentTarget.checked)} />
-            show deactivated
-          </label>
-        )}
       </div>
 
       {users.length <= 1 && <Empty title="Only you so far">Add officers by their Discord user id. They can sign in with Discord right away.</Empty>}
@@ -164,7 +166,7 @@ function UserList({
                           {!u.active && <span class="tag">deactivated</span>}
                         </span>
                         <span class="cell-sub">
-                          {u.title && <span>{u.title} · </span>}
+                          {u.title && <span class="people-title">{u.title}</span>}
                           <CopyText text={u.discordId} label="Discord id" />
                         </span>
                       </span>

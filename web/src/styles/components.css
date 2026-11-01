@@ -576,3 +576,10 @@ td.people-who-cell {min-width:0;}
 .table-wrap, .block .table-wrap {border-radius:8px 8px 0 0;}
 /* People tables never scroll sideways (cards on phone), so row menus can overflow the wrapper. */
 .table-wrap:has(> .dt--people) {overflow:visible;max-height:none;}
+/* Admin lists: toolbar (count left; filters + search right, flush with the table edge), 12px above the table. */
+.list-block {display:grid;gap:12px;}
+.list-toolbar {flex-wrap:wrap;}
+.list-toolbar .toolbar-actions {justify-content:flex-end;}
+.list-toolbar .toolbar-search {flex:0 1 320px;width:320px;max-width:100%;}
+@media (max-width:639px) {.list-toolbar .toolbar-actions, .list-toolbar .toolbar-search {width:100%;flex:1 1 100%;}}
+.people-title + .copy-text::before {content:"·";margin-right:4px;color:var(--muted);}
