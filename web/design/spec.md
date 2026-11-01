@@ -143,3 +143,7 @@ Yellow's role widens slightly. It stays decorative everywhere except where ink t
 - Photos come from cseed.co (`web/design/img/` holds three for mockups). The build uses real club photos with `alt=""` when they are decorative. Never use stock imagery.
 - Both themes, 1440 and 390, with no page-level horizontal scroll: `node web/design/capture.mjs <page>` captures just your page and fails on overflow.
 - Phone principal controls stay at least 44px. The widget handle and remove button grow to 40 and 36px on phone, and the size buttons sit in the same 44px row.
+
+### D2 onboarding page additions
+
+Reference: [mockups/onboarding-v03.html](mockups/onboarding-v03.html), interaction and state details in [onboarding-notes.md](onboarding-notes.md). Reuses `.onb-*`, `.polaroid`, form, choice, role and feedback contracts above. Page-local `.onb-review` is a wrapping design-preview strip for step/state/role examples and is omitted from production. Page-scoped overrides keep the existing shell at four rows only to accommodate this review strip, stack the optional profile fields on phones, lay read-only invitation facts out as a labelled definition grid, and size the two polaroids. No new shared tokens or components. Native `.select` is used for this onboarding email picker so its keyboard behavior comes from the browser; the custom listbox contract remains available for the Officers page.
