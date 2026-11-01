@@ -143,3 +143,15 @@ Yellow's role widens slightly. It stays decorative everywhere except where ink t
 - Photos come from cseed.co (`web/design/img/` holds three for mockups). The build uses real club photos with `alt=""` when they are decorative. Never use stock imagery.
 - Both themes, 1440 and 390, with no page-level horizontal scroll: `node web/design/capture.mjs <page>` captures just your page and fails on overflow.
 - Phone principal controls stay at least 44px. The widget handle and remove button grow to 40 and 36px on phone, and the size buttons sit in the same 44px row.
+
+### D5 page fixtures
+
+`build-speakers-design.py` reuses the shell/helpers from `build-mockups.py` without regenerating the existing pages. It builds `mockups/speakers-v03.html` and `mockups/design-requests-v03.html`; both load `v03.css` after production CSS. No new component classes or tokens are needed. Work pages retain system sans; first-run empty states use `.state--brand`.
+
+Preview controls expose Ready / Empty / Loading / Error and officer / director / leadership / owner. All ranks can edit contacts and log outreach. Ownership is an additional designation, not a new permission tier for these pages. Design assignment follows design-team membership; requester identity controls review approval independently of rank. The detail's “Acting as” selector demonstrates that distinction. Designer actions use a native dialog and stage select, providing the touch/keyboard alternative to dragging. Comments, creation and saving announce prototype confirmation without writing to an API. Delivered filenames are illustrative, not downloadable artifacts.
+
+Contacts show dated outreach independently from general notes and linked past events. “Last reached out by” derives from the latest dated log entry, not the latest profile edit. Reserved `.example` addresses prevent sample contacts being mistaken for real contact information. The board uses all five contracted stages, written urgency, formats and linked events; the List toggle exposes the same requests as labelled phone records. Native dialogs close the previous drawer when opening a nested flow, support Escape and preserve native focus handling. Production must retain drafts across network failure and restore origin focus after nested flows.
+
+Review: `node web/design/capture.mjs speakers-v03 design-requests-v03` captures both themes at 1440/390 and checks 820 as well. Use each page's preview controls and buttons to inspect the remaining states. Open design questions: none; the build should confirm membership in the design team and current requester from authenticated data.
+
+`node web/design/verify-speakers-design.mjs` exercises the role and data-state selectors, contact/add/outreach drawers, request form, requester-only approval and phone list in both themes at 1440/390 (92 checks). It also captures each flow in `shots/`. All label controls include explicit accessible names, including selects whose option text would otherwise obscure the label in automation.
