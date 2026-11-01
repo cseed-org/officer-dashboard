@@ -1,0 +1,627 @@
+{
+  "contrast": {
+    "method": "Computed colour of every visible text node and form value/placeholder vs. composited ancestor background, per captured state; 4.5:1 normal, 3:1 large; disabled controls exempt",
+    "states": [
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "list",
+        "checked": 34,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "month",
+        "checked": 31,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "week",
+        "checked": 32,
+        "min": 4.85
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "editor",
+        "checked": 10,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "handoff",
+        "checked": 12,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "handoff-invalid",
+        "checked": 13,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "linked",
+        "checked": 13,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "design",
+        "checked": 7,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "design-created",
+        "checked": 7,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "import",
+        "checked": 10,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "delete",
+        "checked": 4,
+        "min": 5.78
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "empty",
+        "checked": 22,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "loading",
+        "checked": 21,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "error",
+        "checked": 22,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 1440,
+        "label": "deleted",
+        "checked": 33,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "list",
+        "checked": 25,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "month",
+        "checked": 24,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "week",
+        "checked": 21,
+        "min": 5.23
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "editor",
+        "checked": 10,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "handoff",
+        "checked": 12,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "handoff-invalid",
+        "checked": 13,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "linked",
+        "checked": 13,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "design",
+        "checked": 7,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "design-created",
+        "checked": 7,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "import",
+        "checked": 9,
+        "min": 15.88
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "delete",
+        "checked": 4,
+        "min": 5.78
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "empty",
+        "checked": 14,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "loading",
+        "checked": 13,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "error",
+        "checked": 13,
+        "min": 5.61
+      },
+      {
+        "theme": "light",
+        "width": 390,
+        "label": "deleted",
+        "checked": 28,
+        "min": 5.23
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "list",
+        "checked": 36,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "month",
+        "checked": 33,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "week",
+        "checked": 34,
+        "min": 5.77
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "editor",
+        "checked": 10,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "handoff",
+        "checked": 12,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "handoff-invalid",
+        "checked": 13,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "linked",
+        "checked": 13,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "design",
+        "checked": 7,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "design-created",
+        "checked": 7,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "import",
+        "checked": 10,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "delete",
+        "checked": 4,
+        "min": 6.54
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "empty",
+        "checked": 24,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "loading",
+        "checked": 23,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "error",
+        "checked": 24,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 1440,
+        "label": "deleted",
+        "checked": 35,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "list",
+        "checked": 27,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "month",
+        "checked": 26,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "week",
+        "checked": 23,
+        "min": 6.92
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "editor",
+        "checked": 10,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "handoff",
+        "checked": 12,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "handoff-invalid",
+        "checked": 13,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "linked",
+        "checked": 13,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "design",
+        "checked": 7,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "design-created",
+        "checked": 7,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "import",
+        "checked": 9,
+        "min": 14.41
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "delete",
+        "checked": 4,
+        "min": 6.54
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "empty",
+        "checked": 16,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "loading",
+        "checked": 15,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "error",
+        "checked": 15,
+        "min": 7.34
+      },
+      {
+        "theme": "dark",
+        "width": 390,
+        "label": "deleted",
+        "checked": 30,
+        "min": 6.92
+      }
+    ],
+    "failures": []
+  },
+  "behaviour": [
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "copy button keeps field name",
+      "text": "Copied name ✓"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "focus after design request",
+      "focus": "design-status"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "empty hides health",
+      "healthHidden": true,
+      "period": "No events"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "loading hides health",
+      "healthHidden": true,
+      "period": "Loading events…"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "error hides health",
+      "healthHidden": true,
+      "period": "Events unavailable"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "empty CTA opens blank editor",
+      "name": "",
+      "deleteHidden": true
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "delete",
+      "focus": "period",
+      "visibleDraft": 0,
+      "period": "Fall term · 3 events"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "copy button keeps field name",
+      "text": "Copy name"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "focus after design request",
+      "focus": "design-status"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "empty hides health",
+      "healthHidden": true,
+      "period": "No events"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "loading hides health",
+      "healthHidden": true,
+      "period": "Loading events…"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "error hides health",
+      "healthHidden": true,
+      "period": "Events unavailable"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "empty CTA opens blank editor",
+      "name": "",
+      "deleteHidden": true
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "delete",
+      "focus": "period",
+      "visibleDraft": 0,
+      "period": "Fall term · 3 events"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "check": "copy button keeps field name",
+      "text": "Copy name"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "check": "focus after design request",
+      "focus": "design-status"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "check": "empty hides health",
+      "healthHidden": true,
+      "period": "No events"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "check": "loading hides health",
+      "healthHidden": true,
+      "period": "Loading events…"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "check": "error hides health",
+      "healthHidden": true,
+      "period": "Events unavailable"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "check": "empty CTA opens blank editor",
+      "name": "",
+      "deleteHidden": true
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "check": "delete",
+      "focus": "period",
+      "visibleDraft": 0,
+      "period": "Fall term · 3 events"
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "check": "copy button keeps field name",
+      "text": "Copy name"
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "check": "focus after design request",
+      "focus": "design-status"
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "check": "empty hides health",
+      "healthHidden": true,
+      "period": "No events"
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "check": "loading hides health",
+      "healthHidden": true,
+      "period": "Loading events…"
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "check": "error hides health",
+      "healthHidden": true,
+      "period": "Events unavailable"
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "check": "empty CTA opens blank editor",
+      "name": "",
+      "deleteHidden": true
+    },
+    {
+      "theme": "dark",
+      "width": 390,
+      "check": "delete",
+      "focus": "period",
+      "visibleDraft": 0,
+      "period": "Fall term · 3 events"
+    }
+  ],
+  "checks": [
+    "Calendar and dialog overflow",
+    "No page script errors",
+    "Calendar, editor, handoff, linked URL, request, CSV, delete, deleted and states captured in both themes and sizes"
+  ]
+}
