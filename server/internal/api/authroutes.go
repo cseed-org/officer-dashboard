@@ -34,7 +34,7 @@ func (c *Ctx) authLogin() error {
 	}
 	state, verifier := auth.RandomToken(32), auth.RandomToken(32)
 	for name, value := range map[string]string{oauthStateName: state, oauthVerifier: verifier, nextCookieName: auth.SafeNext(c.R.URL.Query().Get("next"))} {
-		c.S.setCookie(c.W, name, value, c.S.now().Add(10*60e9), 600)
+		c.S.setCookie(c.W, c.S.hostPrefixed(name), value, c.S.now().Add(10*60e9), 600)
 	}
 	http.Redirect(c.W, c.R, d.AuthURL(state, verifier), http.StatusFound)
 	return nil
@@ -57,10 +57,10 @@ func (c *Ctx) loginRedirect(reason string) error {
 func (c *Ctx) authCallback() error {
 	q := c.R.URL.Query()
 	code, state := q.Get("code"), q.Get("state")
-	storedState, verifier := c.cookie(oauthStateName), c.cookie(oauthVerifier)
-	next := auth.SafeNext(c.cookie(nextCookieName))
+	storedState, verifier := c.cookie(c.S.hostPrefixed(oauthStateName)), c.cookie(c.S.hostPrefixed(oauthVerifier))
+	next := auth.SafeNext(c.cookie(c.S.hostPrefixed(nextCookieName)))
 	for _, n := range []string{oauthStateName, oauthVerifier, nextCookieName} {
-		c.S.clearCookie(c.W, n)
+		c.S.clearCookie(c.W, c.S.hostPrefixed(n))
 	}
 	if code == "" || state == "" || storedState == "" || verifier == "" || state != storedState {
 		return c.loginRedirect("state")
