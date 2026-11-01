@@ -409,3 +409,13 @@
 .state-photos .polaroid {width:96px;height:110px;padding:6px 6px 18px;}
 .state-photos .polaroid:first-child {left:12px;top:4px;}
 .state-photos .polaroid:last-child {right:12px;top:0;}
+
+/* Events handoff: readable copy rows and a bounded cover preview. */
+.event-copy {display:flex;align-items:start;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--line);}
+.event-copy > div {min-width:0;overflow-wrap:anywhere;}
+.event-copy p {margin:4px 0 0;}
+.event-copy .btn {flex:none;}
+.event-cover {display:block;width:100%;max-height:240px;object-fit:cover;border-radius:var(--radius-control);}
+body:has(dialog[open]) {overflow:hidden;}
+[hidden] {display:none !important;}
+@media(max-width:767px) {.event-copy {flex-direction:column;gap:8px;} .cal-day .cal-date {min-height:24px;} .cal-block {text-align:left;} }

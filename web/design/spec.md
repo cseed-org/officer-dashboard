@@ -143,3 +143,11 @@ Yellow's role widens slightly. It stays decorative everywhere except where ink t
 - Photos come from cseed.co (`web/design/img/` holds three for mockups). The build uses real club photos with `alt=""` when they are decorative. Never use stock imagery.
 - Both themes, 1440 and 390, with no page-level horizontal scroll: `node web/design/capture.mjs <page>` captures just your page and fails on overflow.
 - Phone principal controls stay at least 44px. The widget handle and remove button grow to 40 and 36px on phone, and the size buttons sit in the same 44px row.
+
+### Events V0.3 page contract
+
+Reference: `mockups/events-v03.html`, generated with `python3 web/design/build-events-v03.py` using the v2 builder helpers. The work register applies throughout. `.event-copy` lays out a field/value and its copy button (stacked on phone); `.event-cover` bounds the cover preview to 240px. Both live in `v03.css`. Native dialogs lock background scroll and retain Escape/focus return. Month and week use the shared calendar contract; phone week uses its agenda. The month phone agenda lists the month's scheduled events rather than requiring precision taps on small date cells.
+
+Every officer can create/edit/delete events, import CSV, and request design; directors, leadership and leadership with owner status share those event actions. Ownership adds no event-specific power. The role selector demonstrates that equivalence. Luma publication is manual: field copies, cover download, external create link, and validated HTTPS lu.ma/luma.com URL entry. Linked means URL saved, never attendee sync. Notion is disabled and labelled Coming soon. Event health distinguishes registrations, check-ins and reflections and gives CSV freshness. CSV preview includes a blocking row error; correction precedes import. The design request starts with the event title, formats, due date and brief prefilled. Delete requires confirmation and explains the separate Luma step.
+
+Preview controls are illustrative and have no persistence. Current sample cover is an existing CSEED photo, explicitly awaiting approved event artwork. No Luma or Notion API is called. Calendar navigation is fixed to November 2026 in this fixture. Empty/loading/error examples and role selection are under Preview states, outside the intended production layout.
