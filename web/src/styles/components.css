@@ -305,3 +305,12 @@ a.cell-title:hover {text-decoration:underline;}
  .profile {flex-wrap:wrap;} .feed-time {white-space:normal;text-align:right;}
  .drawer-head, .dialog-head {padding-top:24px;} .dialog {width:calc(100vw - 24px);}
 }
+/* Integration details; structural hooks inherit their parent component. */
+.block-body,.budget-label,.palette-option-title {min-width:0;overflow-wrap:anywhere;}
+.block-action,.section-actions,.state-action {display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+.data-link {overflow-wrap:anywhere;text-underline-offset:3px;}
+.funnel-value {font-variant-numeric:tabular-nums;white-space:nowrap;}
+.is-future,.user-chip--loading {color:var(--muted);}
+.palette-esc {flex:none;}
+.state--error {border-color:var(--negative);border-style:solid;}
+@media (min-width:1100px) {.kpis--4 {grid-template-columns:repeat(4,minmax(0,1fr));}}

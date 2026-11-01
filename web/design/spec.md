@@ -68,3 +68,9 @@ Admin: Users, Tokens, Audit log tabs, searchable tables. Tokens reveal their sec
 Rejected warm beige canvas (insufficiently white), serif display titles (less coherent with utilitarian rows), coloured status fills (too much visual weight), floating rounded cards/shadows (ornamental), external fonts (network cost without a clear benefit), and a saturated yellow primary button (weak contrast and excessive brand area). Open aesthetic question for a later iteration: preserve the compact system typography or adopt a self-hosted sans after viewing the real content. No choice blocks implementation.
 
 Mockups are local HTML documents referencing exactly the three production stylesheets. They show representative content, not live data or a claim of implemented backend behavior. Their small script only supports preview theme/density, tab examples and menu/dialog controls.
+
+### Integration hooks
+
+`.block-action`, `.section-actions`, `.state-action` wrap action groups; `.block-body`, `.budget-label`, `.palette-option-title` permit long content to wrap. `.data-link` wraps external URLs; `.funnel-value` keeps tabular totals together. `.is-future` and `.user-chip--loading` use muted text; `.palette-esc` does not shrink; `.state--error` has an error boundary. `.kpis--4` fixes four equal columns at desktop widths, retaining auto-fit and the two-column phone layout below that.
+
+Intentional structural hooks without separate rules: `.budget-bars` and `.line-chart` inherit `.chart`; `.swatch--spent` inherits `.swatch` (the first series colour); `.toolbar--wrap` inherits the wrapping `.toolbar`; `.state--empty` inherits `.state`. These hooks do not need empty CSS declarations.
