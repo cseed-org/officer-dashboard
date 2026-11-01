@@ -1,0 +1,57 @@
+/* Home-only fixture: shared widgets, gallery, tokens and shell come from v03.css. */
+.home-preview {padding:12px;border:1px dashed var(--control);border-radius:var(--radius-card);justify-content:flex-start;gap:16px;}
+.home-preview label {display:flex;align-items:center;gap:8px;font-size:12px;}
+.home-preview .select {width:auto;}
+.home-widgets .widget--s .widget-foot {display:none;}
+.home-widgets .widget--s .widget-title {white-space:normal;line-height:1.2;}
+.home-widgets .widget--s .widget-state-body {display:none;}
+.home-widgets .widget--s .home-details {display:none;}
+.home-widgets .widget--m .home-details {display:none;}
+.home-widgets .widget--l .home-detail-hint {display:none;}
+.home-widgets .widget-foot {flex-wrap:wrap;gap:2px;}
+.home-widgets .widget-list li {font-size:12px;padding:5px 0;}
+.home-widgets .widget-sub {line-height:1.4;}
+.home-widgets .widget-state {gap:3px;}
+.home-widgets .widget-state-body {line-height:1.35;}
+.home-widgets .widget-state a {font-size:12px;}
+.home-widgets .widget-head {flex-shrink:0;}
+.home-widgets .widget--s .widget-link {display:none;}
+.home-widgets .widget-handle,.home-widgets .widget-remove {min-width:36px;min-height:36px;}
+.home-widgets .widget-size,.gallery .widget-size {min-height:36px;min-width:36px;}
+.home-widgets .widget-label {left:52px;}
+.home-widgets .widget-add {width:100%;height:100%;}
+.home-widgets .home-add-slot {list-style:none;}
+.home-metrics {display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.home-metrics strong {display:block;font-size:20px;font-weight:500;font-variant-numeric:tabular-nums;}
+.home-metrics span {font-size:12px;color:var(--muted);}
+.home-metrics p {margin:0;}
+html:has(dialog[open]) {overflow:hidden;}
+@media(max-width:767px) {.home-preview {gap:12px;}.home-preview label {width:100%;justify-content:space-between;}.home-metrics {gap:4px 12px;}.home-metrics strong {font-size:18px;}.home-widgets .widget-label {left:56px;}.home-widgets .widget--s {padding:12px;}.home-widgets .widget--s .widget-icon {display:none;}.home-widgets .widget--s .widget-figure {font-size:24px;}}
+.gallery-cats .chip {min-height:36px;padding:6px 12px;flex-shrink:0;}
+.home-analytics {display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px;}
+.home-analytics h3 {font-size:12px;font-weight:600;margin:0 0 4px;}
+.home-widgets .home-analytics li {display:flex;flex-direction:column;gap:0;padding:4px 0;}
+.home-analytics li span:last-child {color:var(--muted);font-variant-numeric:tabular-nums;}
+.gallery-head,.gallery-cats {flex-shrink:0;}
+.gallery-body {min-height:0;}
+.home-analytics--2 {grid-template-columns:1fr 1fr;}
+.home-metrics--3 {grid-template-columns:1fr 1fr 1fr;}
+.home-sub-head {font-size:12px;font-weight:600;margin:6px 0 2px;}
+.home-bars {display:block;width:100%;height:40px;}
+.home-role-note {flex-basis:100%;margin:0;color:var(--text);}
+.home-connect summary {font-size:12px;cursor:pointer;text-decoration:underline;color:var(--accent);}
+.home-connect p {margin:4px 0 0;font-size:12px;color:var(--muted);line-height:1.35;}
+.home-ghost {border-top:1px dashed var(--line);padding-top:8px;}
+.home-ghost-list {display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:6px 0 0;padding:0;}
+.home-ghost-list li {font-size:12px;color:var(--muted);padding:2px 8px;border:1px dashed var(--control);border-radius:999px;}
+.home-widgets .widget-state .badge {margin-right:4px;}
+/* Edit mode: footers never sit under the size pill. */
+.home-widgets.is-editing .widget-foot {visibility:hidden;}
+@media(max-width:767px) {
+ .home-widgets.is-editing .widget--s .widget-label {white-space:normal;line-height:1.2;top:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+ .home-widgets.is-editing .widget--s .widget-body {padding-top:22px;}
+ .home-metrics--3 strong {font-size:16px;}
+}
+.home-widgets.is-editing .widget--s .home-connect, .home-widgets.is-editing .widget--s .widget-state > .linkish {display:none;}
+.gallery-preview .home-details, .gallery-preview .home-detail-hint {display:none;}
+.home-widgets .widget.state--error {border-color:var(--negative);}
