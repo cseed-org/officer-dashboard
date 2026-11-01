@@ -29,6 +29,8 @@ document.querySelectorAll('[data-approve]').forEach(b=>b.onclick=()=>{b.textCont
 </script>'''
 def write(key,heading,sub,body,dialogs,copy,cta):
  s=shell(key,heading,sub,preview+'<p id="result" role="status"></p><div id="ready" class="stack">'+body+'</div>'+states.replace('LABEL',heading.lower()).replace('STARTCOPY',copy).replace('STARTBUTTON',cta),dialogs)
+ import re
+ s=re.sub(r'(<td[^>]*>)(.*?)(</td>)',r'\1<div class="list-main">\2</div>\3',s)
  s=s.replace('document.getElementById(e.dataset.open).showModal()', '(()=>{document.querySelectorAll("dialog[open]").forEach(d=>d.close());document.getElementById(e.dataset.open).showModal()})()')
  s=s.replace('</head>','<link rel="stylesheet" href="../v03.css"></head>').replace('</body>',js+'</body>')
  (root/'mockups'/f'{key}.html').write_text(s)
