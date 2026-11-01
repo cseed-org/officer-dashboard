@@ -12,6 +12,9 @@ const PATHS: Record<string, string> = {
   upload: 'M12 16V4M7 9l5-5 5 5M4 20h16',
   user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
   file: 'M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8zM14 3v5h5',
+  check: 'M20 6 9 17l-5-5',
+  message: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
+  inbox: 'M3 13h5l1.5 3h5L16 13h5M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z',
   ledger: 'M4 4h16v16H4zM4 9h16M9 9v11',
 };
 

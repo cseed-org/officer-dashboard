@@ -6,7 +6,8 @@ import type { FinanceReport } from '../../lib/domain';
 import { api, endpointUrl } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import { BudgetBars } from '../components/charts';
-import { Badge, DataTable, Kpi, Section } from '../components/kit';
+import { usageHue } from '../../lib/colors';
+import { Badge, CategoryDot, DataTable, Kpi, Section } from '../components/kit';
 import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
 import { dollars, fmtDate, fmtDateTime, formatCents, FUND_KIND_LABEL, pacificDate, pct, REPORT_LABEL, RESTRICTION_LABEL } from '../../lib/format';
 
@@ -24,10 +25,10 @@ export function BudgetSummary({ query, onOpen }: { query: Q; onOpen: (report: Fi
         return (
           <div class="stack">
             <div class="kpis kpis--4">
-              <Kpi label="budget" value={dollars(t.budgetCents)} sub={`FY${d.fiscalYear} · as of ${fmtDate(d.asOf)}`} />
-              <Kpi label="spent" value={dollars(t.spentCents)} sub="posted to the ledger" />
-              <Kpi label="committed" value={dollars(t.committedCents)} sub="approved, not yet paid" />
-              <Kpi label="remaining" value={dollars(t.remainingCents)} tone={t.remainingCents < 0 ? 'negative' : undefined} sub={`${pct(used)} used or committed`} />
+              <Kpi label="budget" icon="ledger" hue="blue" value={dollars(t.budgetCents)} sub={`FY${d.fiscalYear} · as of ${fmtDate(d.asOf)}`} />
+              <Kpi label="spent" icon="wallet" hue="teal" value={dollars(t.spentCents)} sub="posted to the ledger" />
+              <Kpi label="committed" icon="file" hue="violet" value={dollars(t.committedCents)} sub="approved, not yet paid" />
+              <Kpi label="remaining" icon="check" hue={usageHue(used)} value={dollars(t.remainingCents)} tone={t.remainingCents < 0 ? 'negative' : undefined} sub={`${pct(used)} used or committed`} />
             </div>
             <div class="cols cols--2">
               <Section title="by category" id="by-category" actions={<button type="button" class="linkish" onClick={() => onOpen('budget-vs-actual')}>full report →</button>}>
@@ -37,7 +38,7 @@ export function BudgetSummary({ query, onOpen }: { query: Q; onOpen: (report: Fi
                   <>
                     <BudgetBars
                       label="Spending against budget by category"
-                      rows={d.byCategory.map((c) => ({ key: c.account.id, label: c.account.name, budgetCents: c.budgetCents, spentCents: c.spentCents, committedCents: c.committedCents }))}
+                      rows={d.byCategory.map((c) => ({ key: c.account.id, code: c.account.code, label: c.account.name, budgetCents: c.budgetCents, spentCents: c.spentCents, committedCents: c.committedCents }))}
                     />
                     <DataTable
                       dense
@@ -45,7 +46,7 @@ export function BudgetSummary({ query, onOpen }: { query: Q; onOpen: (report: Fi
                       rows={d.byCategory}
                       rowKey={(c) => c.account.id}
                       columns={[
-                        { key: 'a', label: 'category', primary: true, render: (c) => <><span class="mono muted">{c.account.code}</span> {c.account.name}</> },
+                        { key: 'a', label: 'category', primary: true, render: (c) => <span class="cat-name"><CategoryDot code={c.account.code} /><span class="mono muted">{c.account.code}</span> {c.account.name}</span> },
                         { key: 'b', label: 'budget', num: true, render: (c) => formatCents(c.budgetCents) },
                         { key: 's', label: 'spent', num: true, render: (c) => <Signed cents={c.spentCents} /> },
                         { key: 'c', label: 'committed', num: true, render: (c) => formatCents(c.committedCents) },
@@ -337,7 +338,7 @@ function ReportBody({ r }: { r: FinanceReportResponse }) {
           rows={r.rows}
           rowKey={(x) => `${x.account.id}-${x.fund?.id ?? 'all'}`}
           columns={[
-            { key: 'a', label: 'category', primary: true, render: (x) => <>{acctCell(x.account)}<span class="cell-sub">{x.fund?.name ?? 'all funds'}</span></> },
+            { key: 'a', label: 'category', primary: true, render: (x) => <><span class="cat-name"><CategoryDot code={x.account.code} />{acctCell(x.account)}</span><span class="cell-sub">{x.fund?.name ?? 'all funds'}</span></> },
             { key: 'b', label: 'budget', num: true, render: (x) => formatCents(x.budgetCents) },
             { key: 'ac', label: 'actual', num: true, render: (x) => money(x.actualCents) },
             { key: 'c', label: 'committed', num: true, render: (x) => formatCents(x.committedCents) },

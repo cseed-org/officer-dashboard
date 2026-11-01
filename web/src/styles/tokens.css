@@ -14,9 +14,9 @@
   --negative: #a33732;
   --attention: #805b20;
   --info: #485f73;
-  --chart-1: #485f73;
+  --chart-1: #2f6fc4;
   --chart-2: #737b71;
-  --chart-3: #326247;
+  --chart-3: #0a948a;
   --hover: #eeefec;
   --brand: #f5d140;
   --font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -29,6 +29,24 @@
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px;
   --motion: 140ms;
+  /* Categorical palette (fixed order; validated: lightness band, chroma, CVD ΔE ≥ 9.6,
+     normal-vision ΔE ≥ 19, ≥ 3:1 on white). Marks only; text stays in text tokens. */
+  --c-blue: #2f6fc4;
+  --c-amber: #b47c0c;
+  --c-teal: #0a948a;
+  --c-coral: #d9634a;
+  --c-violet: #7a5bd0;
+  --c-green: #3d8f3f;
+  --tint: 11%;
+  /* Shape */
+  --radius-card: 12px;
+  --radius-control: 8px;
+  --radius-overlay: 14px;
+  /* Motion: transform + opacity only; prefers-reduced-motion turns all of it off (base.css). */
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 240ms;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -45,10 +63,17 @@
   --negative: #f0a09a;
   --attention: #dbc38e;
   --info: #a8bfd2;
-  --chart-1: #a8bfd2;
+  --chart-1: #4f8ad8;
   --chart-2: #a8aea5;
-  --chart-3: #94c6a5;
+  --chart-3: #1f9d92;
   --hover: #2b302a;
+  --c-blue: #4f8ad8;
+  --c-amber: #b98428;
+  --c-teal: #1f9d92;
+  --c-coral: #d96d52;
+  --c-violet: #8f78e0;
+  --c-green: #4fa156;
+  --tint: 18%;
 }
 @media (prefers-color-scheme: dark) {
  :root[data-theme="system"] {
@@ -66,10 +91,17 @@
   --negative: #f0a09a;
   --attention: #dbc38e;
   --info: #a8bfd2;
-  --chart-1: #a8bfd2;
+  --chart-1: #4f8ad8;
   --chart-2: #a8aea5;
-  --chart-3: #94c6a5;
+  --chart-3: #1f9d92;
   --hover: #2b302a;
+   --c-blue: #4f8ad8;
+   --c-amber: #b98428;
+   --c-teal: #1f9d92;
+   --c-coral: #d96d52;
+   --c-violet: #8f78e0;
+   --c-green: #4fa156;
+   --tint: 18%;
  }
 }
 :root[data-density="compact"] { --pad: 16px; --gap: 16px; --row: 8px; }

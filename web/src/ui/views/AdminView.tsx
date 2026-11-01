@@ -36,7 +36,7 @@ export default function AdminView({ me }: { me: CurrentUser }) {
   return (
     <div class="stack">
       <Tabs label="Admin" idPrefix="adm" active={tab} onChange={(k) => setParams({ tab: k === 'users' ? null : k }, { replace: true })} tabs={TABS} />
-      <div id="adm-panel" role="tabpanel" aria-labelledby={`adm-tab-${tab}`} class="tab-panel">
+      <div key={tab} id="adm-panel" role="tabpanel" aria-labelledby={`adm-tab-${tab}`} class="tab-panel">
         {tab === 'users' ? <AdminUsersView meId={me.id} /> : tab === 'tokens' ? <AdminTokensView /> : <AuditLog />}
       </div>
     </div>

@@ -23,7 +23,7 @@ for (const theme of THEMES) {
     for (const [name, path] of PAGES) {
       await page.goto(path);
       await settle(page);
-      await page.waitForTimeout(250); // drawer slide-in
+      await page.waitForTimeout(900); // entry motion: count-up ≤600ms, bars 560ms
       const dialog = await page.locator('dialog[open]').count();
       await page.screenshot({ path: `tmp/shots/${info.project.name}-${theme}-${name}.png`, fullPage: !dialog });
     }

@@ -153,10 +153,10 @@ export function EventDetail({ id, onChanged, onTitle }: { id: string; onChanged?
 
       <section aria-label="Turnout figures">
         <div class="kpis kpis--4">
-          <Kpi label="registered" value={m.registered} sub={e.lumaId ? <span class="mono">{e.lumaId}</span> : 'no Luma id'} />
-          <Kpi label="checked in" value={upcoming && m.checkedIn === 0 ? '—' : m.checkedIn} sub={upcoming && m.checkedIn === 0 ? 'after the event' : `${pct(m.checkInRate)} of registered`} />
-          <Kpi label="reflections" value={m.matchedReflections} sub={m.checkedIn ? `${pct(m.reflectionRate)} of checked in` : 'none yet'} />
-          <Kpi label="spent" value={dollars(spentCents)} sub={plural(requests.length, 'request')} />
+          <Kpi label="registered" icon="user" hue="blue" value={m.registered} sub={e.lumaId ? <span class="mono">{e.lumaId}</span> : 'no Luma id'} />
+          <Kpi label="checked in" icon="check" hue="teal" value={upcoming && m.checkedIn === 0 ? '—' : m.checkedIn} sub={upcoming && m.checkedIn === 0 ? 'after the event' : `${pct(m.checkInRate)} of registered`} />
+          <Kpi label="reflections" icon="message" hue="violet" value={m.matchedReflections} sub={m.checkedIn ? `${pct(m.reflectionRate)} of checked in` : 'none yet'} />
+          <Kpi label="spent" icon="wallet" hue="green" value={dollars(spentCents)} sub={plural(requests.length, 'request')} />
         </div>
       </section>
 
@@ -173,9 +173,9 @@ export function EventDetail({ id, onChanged, onTitle }: { id: string; onChanged?
         <FunnelChart
           label={`Turnout for ${e.name}`}
           steps={[
-            { label: 'registered', value: m.registered },
-            { label: 'checked in', value: m.checkedIn, rate: m.checkInRate },
-            { label: 'reflected', value: m.matchedReflections, rate: m.reflectionRate },
+            { label: 'registered', value: m.registered, hue: 'blue' },
+            { label: 'checked in', value: m.checkedIn, rate: m.checkInRate, hue: 'teal' },
+            { label: 'reflected', value: m.matchedReflections, rate: m.reflectionRate, hue: 'violet' },
           ]}
         />
         <p class="muted small">Rates: checked in ÷ registered, then reflections from checked-in guests ÷ checked in.</p>

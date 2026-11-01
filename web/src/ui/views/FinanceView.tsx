@@ -50,7 +50,7 @@ export default function FinanceView({ me }: { me: CurrentUser }) {
         </div>
       </div>
 
-      <div id="fin-panel" role="tabpanel" aria-labelledby={`fin-tab-${tab}`} class="tab-panel">
+      <div key={tab} id="fin-panel" role="tabpanel" aria-labelledby={`fin-tab-${tab}`} class="tab-panel">
         {tab === 'requests' && <RequestsPanel director={director} tick={listTick} />}
         {tab !== 'requests' && (
           <>

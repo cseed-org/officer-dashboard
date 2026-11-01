@@ -4,7 +4,8 @@ import type { PurchaseStatus } from '../../lib/domain';
 import { useApi } from '../../lib/api/useApi';
 import { dollars, formatCents, pct, relative } from '../../lib/format';
 import { href } from '../../lib/routes';
-import { DataTable, Kpi, StatusBadge } from '../components/kit';
+import { usageHue } from '../../lib/colors';
+import { CategoryDot, DataTable, Kpi, Progress, Sparkline, StatusBadge } from '../components/kit';
 import { Async, Empty, Loading } from '../components/states';
 import { eventColumns } from './columns';
 
@@ -34,20 +35,43 @@ export default function HomeView({ me }: { me: CurrentUser }) {
         <Async state={overview} loading={<Loading tiles={5} rows={0} label="Loading key figures" />}>
           {(d) => {
             const k = d.kpis;
+            const now = Date.now();
+            // Past events oldest → newest, for the rate sparklines.
+            const past = d.recentEvents.filter((e) => new Date(e.startsAt).getTime() <= now).reverse();
+            const used = k.budgetCents ? (k.spentCents + k.committedCents) / k.budgetCents : null;
             return (
               <div class="kpis">
-                <Kpi label="upcoming events" value={k.upcomingEvents} href={href.events({ when: 'upcoming' })} sub="on the calendar" />
-                <Kpi label="avg check-in rate" value={pct(k.avgCheckInRate)} sub={`past events, FY${d.fiscalYear}`} />
-                <Kpi label="reflection rate" value={pct(k.avgReflectionRate)} sub="of checked-in guests" />
+                <Kpi label="upcoming events" icon="calendar" hue="blue" value={k.upcomingEvents} href={href.events({ when: 'upcoming' })} sub="on the calendar" />
+                <Kpi
+                  label="avg check-in rate"
+                  icon="check"
+                  hue="teal"
+                  value={pct(k.avgCheckInRate)}
+                  trend={<Sparkline values={past.map((e) => e.metrics.checkInRate)} hue="teal" />}
+                  sub={`past events, FY${d.fiscalYear}`}
+                />
+                <Kpi
+                  label="reflection rate"
+                  icon="message"
+                  hue="violet"
+                  value={pct(k.avgReflectionRate)}
+                  trend={<Sparkline values={past.map((e) => e.metrics.reflectionRate)} hue="violet" />}
+                  sub="of checked-in guests"
+                />
                 <Kpi
                   label="budget remaining"
+                  icon="wallet"
+                  hue="green"
                   value={dollars(k.remainingCents)}
                   tone={k.remainingCents < 0 ? 'negative' : undefined}
                   href={href.finance('budgets')}
+                  trend={<Progress value={used} hue={usageHue(used)} label={`${pct(used)} of the budget used or committed`} />}
                   sub={`${dollars(k.spentCents)} spent · ${dollars(k.committedCents)} committed of ${dollars(k.budgetCents)}`}
                 />
                 <Kpi
                   label="pending requests"
+                  icon="inbox"
+                  hue="amber"
                   value={k.pendingRequests}
                   href={href.requests({ scope: 'all', status: 'pending' })}
                   sub={k.pendingRequests ? `${dollars(k.pendingRequestsCents)} awaiting a director` : 'nothing waiting'}
@@ -164,7 +188,26 @@ function BudgetMini({ fiscalYear }: { fiscalYear: number }) {
             rows={rows}
             rowKey={(c) => c.account.id}
             columns={[
-              { key: 'a', label: 'category', primary: true, render: (c) => c.account.name },
+              {
+                key: 'a',
+                label: 'category',
+                primary: true,
+                render: (c) => (
+                  <span class="cat-name">
+                    <CategoryDot code={c.account.code} />
+                    {c.account.name}
+                  </span>
+                ),
+              },
+              {
+                key: 'u',
+                label: 'used',
+                hideOnPhone: true,
+                render: (c) => {
+                  const rate = c.budgetCents ? (c.spentCents + c.committedCents) / c.budgetCents : null;
+                  return <Progress value={rate} hue={usageHue(rate)} label={`${c.account.name}: ${pct(rate)} used`} />;
+                },
+              },
               { key: 'b', label: 'budget', num: true, render: (c) => dollars(c.budgetCents) },
               { key: 's', label: 'actual', num: true, render: (c) => dollars(c.spentCents + c.committedCents) },
               {
@@ -177,6 +220,7 @@ function BudgetMini({ fiscalYear }: { fiscalYear: number }) {
             foot={
               <tr>
                 <td class="dt-primary">all categories</td>
+                <td class="dt-hide-phone" data-label="used" />
                 <td class="num" data-label="budget">{dollars(d.totals.budgetCents)}</td>
                 <td class="num" data-label="actual">{dollars(d.totals.spentCents + d.totals.committedCents)}</td>
                 <td class="num" data-label="left">{dollars(d.totals.remainingCents)}</td>

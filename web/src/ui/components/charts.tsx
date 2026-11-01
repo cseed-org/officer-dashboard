@@ -6,10 +6,11 @@
  */
 import type { TargetedPointerEvent } from 'preact';
 import { useMemo, useRef, useState } from 'preact/hooks';
+import { categoryHue, type Hue, usageHue } from '../../lib/colors';
 import { dollars, fmtShort, formatCents, pct } from '../../lib/format';
 
 /** Horizontal bars for the event funnel: registered → checked in → reflected. */
-export function FunnelChart({ steps, label }: { steps: { label: string; value: number; rate?: number | null; note?: string }[]; label: string }) {
+export function FunnelChart({ steps, label }: { steps: { label: string; value: number; rate?: number | null; note?: string; hue?: Hue }[]; label: string }) {
   const max = Math.max(1, ...steps.map((s) => s.value));
   return (
     <figure class="chart funnel" aria-label={label}>
@@ -18,7 +19,7 @@ export function FunnelChart({ steps, label }: { steps: { label: string; value: n
           <li class="funnel-row" key={s.label}>
             <span class="funnel-label">{s.label}</span>
             <span class="funnel-track" aria-hidden="true">
-              <span class="funnel-bar" style={{ width: `${(s.value / max) * 100}%` }} title={`${s.label}: ${s.value}`} />
+              <span class="funnel-bar" data-hue={s.hue} style={{ width: `${(s.value / max) * 100}%` }} title={`${s.label}: ${s.value}`} />
             </span>
             <span class="funnel-value num">
               {s.value}
@@ -126,7 +127,7 @@ export function ColumnChart({ points, label, valueLabel }: { points: { date: str
   const y = (v: number) => pad.t + (1 - v / max) * (H - pad.t - pad.b);
   const peak = points.reduce((m, p, i) => (p.value > (points[m]?.value ?? -1) ? i : m), 0);
   return (
-    <figure class="chart">
+    <figure class="chart column-chart">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${label}: ${points.map((p) => `${fmtShort(p.date)} ${p.value}`).join(', ')}`}>
         <line x1={pad.l} x2={W - pad.r} y1={y(0)} y2={y(0)} class="chart-grid" />
         {points.map((p, i) => {
@@ -160,14 +161,16 @@ export function ColumnChart({ points, label, valueLabel }: { points: { date: str
 }
 
 /**
- * Budget bars: one row per category, spent (sky) + committed (sage) stacked inside a
- * budget track. Over budget is called out in text with a marker, not by colour alone.
+ * Budget bars: one row per category, spent + committed (lighter) stacked inside a budget
+ * track and coloured by use: green under 80%, amber 80–100%, coral over. Over budget is
+ * also called out in text with a marker, not by colour alone. The category's own colour is
+ * the dot by its name.
  */
 export function BudgetBars({
   rows,
   label,
 }: {
-  rows: { key: string; label: string; budgetCents: number; spentCents: number; committedCents: number }[];
+  rows: { key: string; code?: string; label: string; budgetCents: number; spentCents: number; committedCents: number }[];
   label: string;
 }) {
   const max = Math.max(1, ...rows.map((r) => Math.max(r.budgetCents, r.spentCents + r.committedCents)));
@@ -192,9 +195,13 @@ export function BudgetBars({
           const used = r.spentCents + r.committedCents;
           const over = used > r.budgetCents;
           const w = (c: number) => `${(c / max) * 100}%`;
+          const hue = usageHue(r.budgetCents ? used / r.budgetCents : used > 0 ? 2 : 0);
           return (
-            <li class="budget-row" key={r.key}>
-              <span class="budget-label">{r.label}</span>
+            <li class="budget-row" key={r.key} data-hue={hue}>
+              <span class="budget-label cat-name">
+                {r.code && <span class="cat-dot" data-hue={categoryHue(r.code)} aria-hidden="true" />}
+                {r.label}
+              </span>
               <span class="budget-track" style={{ width: w(r.budgetCents) }} title={`${r.label}: ${formatCents(r.spentCents)} spent, ${formatCents(r.committedCents)} committed of ${formatCents(r.budgetCents)}`}>
                 <span class="budget-spent" style={{ width: `${(r.spentCents / Math.max(r.budgetCents, used, 1)) * 100}%` }} />
                 <span class="budget-committed" style={{ width: `${(r.committedCents / Math.max(r.budgetCents, used, 1)) * 100}%` }} />

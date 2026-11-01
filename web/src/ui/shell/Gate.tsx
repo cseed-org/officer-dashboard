@@ -11,5 +11,5 @@ export function Gate({ children, label }: { children: (me: CurrentUser) => Compo
   useEffect(() => interceptSamePageLinks(), []);
   if (me.status === 'loading') return <Loading rows={6} label={`Loading ${label}`} />;
   if (me.status === 'error') return <ErrorState error={me.error} onRetry={me.retry} />;
-  return <>{children(me.user)}</>;
+  return <div class="page-enter">{children(me.user)}</div>;
 }
