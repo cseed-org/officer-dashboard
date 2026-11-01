@@ -40,10 +40,18 @@ test('the theme setting persists across a reload with no flash', async ({ page }
   await page.getByLabel('Light').check();
 });
 
-test('signed-out visitors are sent to /login, which links to Discord and dev sign-in', async ({ page }) => {
+test('signed-out visitors are sent to /login, which links to Discord and back to where they were', async ({ page }) => {
   await page.goto('/finance?id=req-0005');
   await expect(page).toHaveURL(/\/login\?next=/);
   await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toHaveAttribute('href', /^\/auth\/login\?next=%2Ffinance/);
-  await page.locator('[data-dev-login="officer"]').click();
+  // Dev builds also show dev sign-in links carrying the same next=; production builds (Go)
+  // don't, so sign in through /auth/dev directly there.
+  const devLink = page.locator('[data-dev-login="officer"]');
+  if (await devLink.count()) {
+    await expect(devLink).toHaveAttribute('href', /next=%2Ffinance%3Fid%3Dreq-0005/);
+    await devLink.click();
+  } else {
+    await page.goto(`/auth/dev?as=officer&next=${encodeURIComponent('/finance?id=req-0005')}`);
+  }
   await expect(page).toHaveURL(/\/finance\?id=req-0005/);
 });

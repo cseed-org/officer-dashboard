@@ -6,6 +6,8 @@ import { defineConfig } from '@playwright/test';
  * there. Phone, tablet and desktop; light and dark are covered inside the tests.
  */
 const PORT = Number(process.env.WEB_PORT ?? 4340);
+/** Where the UI under test is served: the dev server by default, or e.g. the Go server (WEB_ORIGIN=http://127.0.0.1:8090). */
+const ORIGIN = process.env.WEB_ORIGIN ?? `http://localhost:${PORT}`;
 
 export default defineConfig({
   testDir: 'tests',
@@ -17,7 +19,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: [['list']],
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: ORIGIN,
     trace: 'retain-on-failure',
     locale: 'en-US',
     timezoneId: 'America/Los_Angeles',
@@ -28,9 +30,10 @@ export default defineConfig({
     { name: 'tablet', use: { browserName: 'chromium', viewport: { width: 820, height: 1180 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } },
     { name: 'desktop', use: { browserName: 'chromium', viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 } },
   ],
-  webServer: {
+  // With WEB_ORIGIN set, something else serves the UI: don't start the dev server.
+  webServer: process.env.WEB_ORIGIN ? undefined : {
     command: `npx astro dev --port ${PORT} --ignore-lock`,
-    url: `http://localhost:${PORT}/login`,
+    url: `${ORIGIN}/login`,
     reuseExistingServer: true,
     timeout: 120_000,
     stdout: 'ignore',

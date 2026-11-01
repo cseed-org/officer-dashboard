@@ -5,17 +5,25 @@ test('P2-1: a 401 from any API call during a session goes to /login', async ({ p
   await devLogin(page, 'director');
   await page.goto('/events');
   await settle(page);
-  // The session "expires": the next data call answers 401.
-  await page.route(/\/api\/events\/[^/?]+$/, (r) => r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unauthenticated', message: 'Sign in first' } }) }));
+  // The session "expires": the next data call answers 401, and so does /api/me (as it would
+  // for a real expired session), so /login doesn't bounce straight back to `next`.
+  const expired = (r: import('@playwright/test').Route) =>
+    r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unauthenticated', message: 'Sign in first' } }) });
+  await page.route(/\/api\/events\/[^/?]+$/, expired);
+  await page.route(/\/api\/me$/, expired);
   await page.locator('[data-event-link]').first().click();
   await expect(page).toHaveURL(/\/login\?next=%2Fevents%3Fid%3D/);
+  await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/login');
 });
 
 test('P2-2: /login?next= never leaves the site', async ({ page }) => {
   await devLogin(page, 'director');
   for (const next of ['/%5Cevil.example', '//evil.example', '%5C%5Cevil.example', 'https://evil.example/']) {
     await page.goto(`/login?next=${next}`);
-    await expect(page).toHaveURL(/^http:\/\/localhost:\d+\/$/);
+    // Whatever the origin under test (WEB_ORIGIN), we stay on it and land on home.
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/');
+    expect(new URL(page.url()).origin).toBe(new URL(test.info().project.use.baseURL!).origin);
   }
   await page.goto('/login?next=%2Fsettings');
   await expect(page).toHaveURL(/\/settings$/);
