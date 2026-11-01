@@ -3,9 +3,8 @@
  * 401 sends the browser to /login?next=<here>.
  */
 import { useEffect, useState } from 'preact/hooks';
-import { api, ApiCallError } from './api/client';
+import { api, ApiCallError, redirectToLogin } from './api/client';
 import type { CurrentUser } from './contracts';
-import { href } from './routes';
 
 const ROLE_KEY = 'cseed-role';
 let mePromise: Promise<CurrentUser> | null = null;
@@ -32,7 +31,7 @@ export function loadMe(): Promise<CurrentUser> {
     .catch((err) => {
       if (err instanceof ApiCallError && err.status === 401) {
         applyRole(null);
-        location.replace(href.login(location.pathname + location.search));
+        redirectToLogin();
         return new Promise<CurrentUser>(() => {}); // the page is going away
       }
       mePromise = null;
@@ -63,6 +62,11 @@ export function useMe(): MeState {
     };
   }, [tick]);
   return state;
+}
+
+/** Forget the role cached for the pre-paint script (sign-out). */
+export function clearCachedRole() {
+  applyRole(null);
 }
 
 export const isDirector = (u: CurrentUser | null | undefined) => u?.role === 'director';

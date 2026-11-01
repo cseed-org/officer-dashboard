@@ -956,6 +956,7 @@ export const ENDPOINTS = {
   authLogin: { method: 'GET', path: '/auth/login', auth: 'public', response: 'redirect' },
   authCallback: { method: 'GET', path: '/auth/callback', auth: 'public', response: 'redirect' },
   authLogout: { method: 'POST', path: '/auth/logout', auth: 'officer', response: 'redirect' },
-  authDev: { method: 'GET', path: '/auth/dev', auth: 'public', response: 'redirect' },
+  // authDev (GET /auth/dev) is deliberately left out of the web copy: dev-only, never called
+  // through api(), and its path shouldn't ship in the production bundle.
 } as const satisfies Record<string, EndpointSpec>;
 export type EndpointName = keyof typeof ENDPOINTS;

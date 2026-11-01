@@ -1,8 +1,9 @@
 import { useState } from 'preact/hooks';
 import type { CurrentUser } from '../../lib/contracts';
 import { type Density, getDensity, getTheme, setDensity, setTheme, type ThemePref } from '../../lib/prefs';
-import { initials } from '../../lib/session';
+import { clearCachedRole, initials } from '../../lib/session';
 import { Section } from '../components/kit';
+import { safeImageUrl } from '../../lib/url';
 
 const THEMES: { key: ThemePref; label: string; sub: string }[] = [
   { key: 'light', label: 'Light', sub: 'the default' },
@@ -68,7 +69,7 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
 
       <Section title="your profile" id="profile">
         <div class="profile">
-          {me.avatarUrl ? <img class="avatar avatar--lg" src={me.avatarUrl} alt="" width={56} height={56} /> : <span class="avatar avatar--lg" aria-hidden="true">{initials(me.name)}</span>}
+          {safeImageUrl(me.avatarUrl) ? <img class="avatar avatar--lg" src={safeImageUrl(me.avatarUrl)!} alt="" width={56} height={56} /> : <span class="avatar avatar--lg" aria-hidden="true">{initials(me.name)}</span>}
           <dl class="facts">
             <div>
               <dt>name</dt>
@@ -92,7 +93,14 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
       </Section>
 
       <Section title="session" id="session">
-        <form method="post" action="/auth/logout">
+        <form
+          method="post"
+          action="/auth/logout"
+          onSubmit={() => {
+            // The next person on this browser must not inherit a cached director role.
+            clearCachedRole();
+          }}
+        >
           <button type="submit" class="btn btn--danger" data-sign-out>
             sign out
           </button>

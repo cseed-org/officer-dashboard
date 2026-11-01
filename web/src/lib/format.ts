@@ -100,18 +100,8 @@ export function dollarsToCents(input: string): number | null {
   return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
 }
 
-/** Only http(s) URLs or same-origin paths become links; anything else (javascript:, data:) is dropped. */
-export function safeUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  const s = url.trim();
-  if (s.startsWith('/') && !s.startsWith('//')) return s;
-  try {
-    const u = new URL(s);
-    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
-  } catch {
-    return null;
-  }
-}
+/** Link safety lives in ./url (same-origin check via new URL); re-exported for existing callers. */
+export { safeUrl } from './url';
 
 /**
  * A Pacific wall time ("2026-10-31", "18:00") as an ISO datetime with its offset

@@ -1,6 +1,7 @@
 import { initials, useMe } from '../../lib/session';
 import { watchSystemTheme } from '../../lib/prefs';
 import { useEffect } from 'preact/hooks';
+import { safeImageUrl } from '../../lib/url';
 
 /** Sidebar footer: who is signed in, linking to Settings. */
 export default function UserChip() {
@@ -15,7 +16,7 @@ export default function UserChip() {
   const u = me.user;
   return (
     <a class="user-chip" href="/settings" data-user-chip={u.role}>
-      {u.avatarUrl ? <img class="avatar" src={u.avatarUrl} alt="" width={28} height={28} /> : <span class="avatar" aria-hidden="true">{initials(u.name)}</span>}
+      {safeImageUrl(u.avatarUrl) ? <img class="avatar" src={safeImageUrl(u.avatarUrl)!} alt="" width={28} height={28} /> : <span class="avatar" aria-hidden="true">{initials(u.name)}</span>}
       <span class="user-chip-text">
         <span class="user-chip-name">{u.name}</span>
         <span class="user-chip-role">{u.role}</span>

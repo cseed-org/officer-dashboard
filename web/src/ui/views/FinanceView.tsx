@@ -9,7 +9,7 @@ import type { FinanceTab } from '../../lib/routes';
 import { Drawer } from '../components/Drawer';
 import { Icon } from '../components/Icon';
 import { DataTable, Section, Tabs } from '../components/kit';
-import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
+import { Async, Empty, ErrorState, errorMessage, Loading, Notice } from '../components/states';
 import { requestColumns } from './columns';
 import { BudgetSummary, ORDER, Periods, Report, type Q } from './finance-parts';
 import RequestDetail, { type Flash } from './RequestDetail';
@@ -55,7 +55,10 @@ export default function FinanceView({ me }: { me: CurrentUser }) {
         {tab !== 'requests' && (
           <>
             {tab !== 'periods' && <YearFundFilters lookups={lookups.status === 'ready' ? lookups.data : null} fy={fy} fundId={fundId} />}
-            {!query ? (
+            {lookups.status === 'error' && !query ? (
+              // Without lookups there is no current fiscal year to report on: say so and offer a retry.
+              <ErrorState error={lookups.error} onRetry={lookups.reload} title="Couldn't load the fiscal year" />
+            ) : !query ? (
               <Loading rows={6} label="Loading" />
             ) : tab === 'budgets' ? (
               <BudgetsPanel query={query} director={director} lookups={lookups.status === 'ready' ? lookups.data : null} />

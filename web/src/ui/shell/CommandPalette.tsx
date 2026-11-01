@@ -3,7 +3,8 @@ import { api, ApiCallError } from '../../lib/api/client';
 import type { CurrentUser, SearchResult } from '../../lib/contracts';
 import { fmtDate, formatCents, STATUS_LABEL } from '../../lib/format';
 import { navigate } from '../../lib/nav';
-import { href, normalizeHref } from '../../lib/routes';
+import { href } from '../../lib/routes';
+import { sanitizeResults } from '../../lib/search';
 import { loadMe } from '../../lib/session';
 import { Icon } from '../components/Icon';
 
@@ -108,7 +109,7 @@ export default function CommandPalette() {
       searchApi(term, ctrl.signal).then(
         (r) => {
           if (ctrl.signal.aborted) return;
-          setResults(r.map((x) => ({ ...x, href: normalizeHref(x.href) })));
+          setResults(sanitizeResults(r));
           setStatus('idle');
         },
         () => !ctrl.signal.aborted && setStatus('error'),
@@ -134,6 +135,7 @@ export default function CommandPalette() {
     navigate(item.href);
   };
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.isComposing || e.keyCode === 229) return; // IME candidate selection, not a command
     if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) {
       e.preventDefault();
       setActive((a) => (items.length ? (a + 1) % items.length : 0));

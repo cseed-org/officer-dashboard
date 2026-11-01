@@ -7,8 +7,9 @@ const MESSAGES = {
   state: 'The sign-in link expired. Try again.',
   discord: 'Discord sign-in failed. Try again.',
 };
-// ?next= and ?error= are read in the browser: the page is static.
-const SCRIPT = `(function(){var p=new URLSearchParams(location.search),n=p.get('next')||'/';if(!/^\\/(?!\\/)/.test(n))n='/';var q=n==='/'?'':'next='+encodeURIComponent(n);document.querySelectorAll('[data-auth-link]').forEach(function(a){var u=new URL(a.getAttribute('href'),location.href);if(q)u.searchParams.set('next',n);a.setAttribute('href',u.pathname+u.search)});var e=p.get('error'),m=${JSON.stringify(MESSAGES)},el=document.querySelector('[data-login-error]');if(e&&el){el.textContent=m[e]||'Sign-in failed.';el.hidden=false}fetch('/api/me',{credentials:'same-origin'}).then(function(r){if(r.ok)location.replace(n)}).catch(function(){})})();`;
+// ?next= and ?error= are read in the browser: the page is static. `next` must resolve to
+// this origin (new URL check; "//x" and backslash forms are refused), as in src/lib/url.ts.
+const SCRIPT = `(function(){function safe(r){if(!r||r.charAt(0)!=='/'||r.charAt(1)==='/'||r.indexOf('\\\\')>=0)return'/';try{var u=new URL(r,location.origin);return u.origin===location.origin?u.pathname+u.search+u.hash:'/'}catch(e){return'/'}}var p=new URLSearchParams(location.search),n=safe(p.get('next'));var q=n==='/'?'':'next='+encodeURIComponent(n);document.querySelectorAll('[data-auth-link]').forEach(function(a){var u=new URL(a.getAttribute('href'),location.href);if(q)u.searchParams.set('next',n);a.setAttribute('href',u.pathname+u.search)});var e=p.get('error'),m=${JSON.stringify(MESSAGES)},el=document.querySelector('[data-login-error]');if(e&&el){el.textContent=m[e]||'Sign-in failed.';el.hidden=false}fetch('/api/me',{credentials:'same-origin'}).then(function(r){if(r.ok)location.replace(n);else try{localStorage.removeItem('cseed-role')}catch(e){}}).catch(function(){})})();`;
 ---
 
 <AppLayout title="Sign in" bare>

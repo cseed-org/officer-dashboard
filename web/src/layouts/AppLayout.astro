@@ -27,7 +27,46 @@ const NAV: { key: PageKey; label: string; href: string; icon: IconName; director
   { key: 'admin', label: 'Admin', href: '/admin', icon: 'shield', directorOnly: true },
 ];
 const PREPAINT = `(function(){var d=document.documentElement,t,n,r;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role')}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r})();`;
-const NAVSCRIPT = `(function(){var h=document.documentElement,b=document.querySelector('[data-nav-toggle]'),s=document.getElementById('sidebar');if(!b||!s)return;function set(o){h.classList.toggle('nav-open',o);b.setAttribute('aria-expanded',String(o));if(o){var f=s.querySelector('a,button');f&&f.focus()}}b.addEventListener('click',function(){set(!h.classList.contains('nav-open'))});document.addEventListener('keydown',function(e){if(e.key==='Escape'&&h.classList.contains('nav-open')){set(false);b.focus()}});s.addEventListener('click',function(e){if(e.target.closest('a,[data-open-search]'))set(false)});var sc=document.querySelector('[data-nav-scrim]');sc&&sc.addEventListener('click',function(){set(false)});matchMedia('(min-width: 768px)').addEventListener('change',function(){set(false)})})();`;
+/**
+ * Phone menu sheet as a modal: dialog semantics while open, focus moved in and trapped
+ * (Tab cycles inside), the rest of the page inert, Escape / scrim / close button close it and
+ * focus returns to the menu button. Desktop and tablet never open it.
+ */
+const NAVSCRIPT = `(function () {
+  var h = document.documentElement, btn = document.querySelector('[data-nav-toggle]'), s = document.getElementById('sidebar');
+  if (!btn || !s) return;
+  var others = [document.querySelector('.topbar'), document.getElementById('main')];
+  var focusables = function () {
+    return Array.prototype.filter.call(s.querySelectorAll('a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])'), function (el) { return el.offsetParent !== null; });
+  };
+  function set(open, restore) {
+    if (open === h.classList.contains('nav-open')) return;
+    h.classList.toggle('nav-open', open);
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) { s.setAttribute('role', 'dialog'); s.setAttribute('aria-modal', 'true'); s.setAttribute('aria-label', 'Menu'); }
+    else { s.removeAttribute('role'); s.removeAttribute('aria-modal'); s.removeAttribute('aria-label'); }
+    others.forEach(function (el) { if (el) el.inert = open; });
+    if (open) { var f = focusables(); if (f[0]) f[0].focus(); }
+    else if (restore) btn.focus();
+  }
+  btn.addEventListener('click', function () { set(!h.classList.contains('nav-open'), false); });
+  document.addEventListener('keydown', function (e) {
+    if (!h.classList.contains('nav-open')) return;
+    if (e.key === 'Escape') { e.preventDefault(); set(false, true); return; }
+    if (e.key !== 'Tab') return;
+    var f = focusables(); if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !s.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !s.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+  });
+  s.addEventListener('click', function (e) {
+    if (e.target.closest('[data-nav-close]')) set(false, true);
+    else if (e.target.closest('a,[data-open-search]')) set(false, false);
+  });
+  var sc = document.querySelector('[data-nav-scrim]');
+  if (sc) sc.addEventListener('click', function () { set(false, true); });
+  matchMedia('(min-width: 768px)').addEventListener('change', function () { set(false, false); });
+})();`;
 ---
 
 <!doctype html>
@@ -66,6 +105,9 @@ const NAVSCRIPT = `(function(){var h=document.documentElement,b=document.querySe
           </header>
           <div class="nav-scrim" data-nav-scrim aria-hidden="true" />
           <nav class="sidebar" id="sidebar" aria-label="Main">
+            <button type="button" class="icon-btn sheet-close" data-nav-close aria-label="Close menu">
+              <Icon name="close" />
+            </button>
             <a class="wordmark" href="/" aria-label="CSEED officers, home">
               <span class="wordmark-mark" aria-hidden="true">C</span>
               <span class="wordmark-text">

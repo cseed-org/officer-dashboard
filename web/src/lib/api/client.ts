@@ -6,6 +6,7 @@
  */
 import type { z } from 'zod';
 import { ApiError, ENDPOINTS, type EndpointName } from '../contracts';
+import { href } from '../routes';
 
 type Spec<N extends EndpointName> = (typeof ENDPOINTS)[N];
 
@@ -105,11 +106,28 @@ export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> 
     if ((e as Error).name === 'AbortError') throw e;
     throw new ApiCallError(0, 'internal', 'Could not reach the server. Check your connection and try again.');
   }
-  if (!res.ok) throw await toApiError(res);
+  if (!res.ok) {
+    const err = await toApiError(res);
+    if (res.status === 401) redirectToLogin();
+    throw err;
+  }
   if (res.status === 204) return validate(name, { ok: true });
   const ct = res.headers.get('content-type') ?? '';
   if (!ct.includes('json')) throw new ApiCallError(res.status, 'internal', `Unexpected ${ct || 'empty'} response from ${spec.path}`);
   return validate(name, await res.json());
+}
+
+let redirecting = false;
+/** The session is gone (any endpoint answered 401): go to /login and come back here after. */
+export function redirectToLogin() {
+  if (redirecting || typeof location === 'undefined') return;
+  redirecting = true;
+  try {
+    localStorage.removeItem('cseed-role');
+  } catch {
+    /* storage blocked */
+  }
+  location.replace(href.login(location.pathname + location.search));
 }
 
 async function toApiError(res: Response): Promise<ApiCallError> {
