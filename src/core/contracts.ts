@@ -172,7 +172,7 @@ export const SearchQuery = z.object({
 });
 export type SearchQuery = z.infer<typeof SearchQuery>;
 
-/** `href` is an app path: /events/:id, /requests/:id, /admin/users or /finance?tab=accounts. */
+/** `href` is an app path: /events?id=<id>, /finance?id=<id>, /admin or /finance?tab=reports&report=trial-balance. */
 export const SearchResult = z.object({
   kind: SearchKind,
   id: Id,

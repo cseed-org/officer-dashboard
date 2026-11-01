@@ -28,10 +28,10 @@ func TestSearchFindsEventsAndRequestsForOfficers(t *testing.T) {
 			rq = m
 		}
 	}
-	if ev["id"] != "event-buildspace-demo" || ev["title"] != "Buildspace Demo Night" || ev["href"] != "/events/event-buildspace-demo" || ev["subtitle"] != "2026-10-09 · Engineering Atrium" {
+	if ev["id"] != "event-buildspace-demo" || ev["title"] != "Buildspace Demo Night" || ev["href"] != "/events?id=event-buildspace-demo" || ev["subtitle"] != "2026-10-09 · Engineering Atrium" {
 		t.Errorf("event hit %v", ev)
 	}
-	if rq["id"] != "req-0005" || rq["title"] != "Demo night banner printing" || rq["href"] != "/requests/req-0005" || rq["subtitle"] != "2027-0005 · FedEx Office · submitted" {
+	if rq["id"] != "req-0005" || rq["title"] != "Demo night banner printing" || rq["href"] != "/finance?id=req-0005" || rq["subtitle"] != "2027-0005 · FedEx Office · submitted" {
 		t.Errorf("request hit %v", rq)
 	}
 	for _, key := range []string{"kind", "id", "title", "subtitle", "href"} {
@@ -79,7 +79,7 @@ func TestSearchShowsUsersAndAccountsOnlyToDirectors(t *testing.T) {
 			user = m
 		}
 	}
-	if user["title"] != "Priya Shah" || user["subtitle"] != "VP Events · officer · priya@example.org" || user["href"] != "/admin/users" {
+	if user["title"] != "Priya Shah" || user["subtitle"] != "VP Events · officer · priya@example.org" || user["href"] != "/admin" {
 		t.Errorf("user hit %v", user)
 	}
 	// By email, case-insensitively.
@@ -87,7 +87,7 @@ func TestSearchShowsUsersAndAccountsOnlyToDirectors(t *testing.T) {
 		t.Errorf("by email: %s", r.Raw)
 	}
 	acc := e.mustOK(e.get("/api/search?q=checking", e.director()))
-	if acc.str("results", 0, "kind") != "account" || acc.str("results", 0, "title") != "1000 Checking" || acc.str("results", 0, "subtitle") != "asset" || acc.str("results", 0, "href") != "/finance?tab=accounts" {
+	if acc.str("results", 0, "kind") != "account" || acc.str("results", 0, "title") != "1000 Checking" || acc.str("results", 0, "subtitle") != "asset" || acc.str("results", 0, "href") != "/finance?tab=reports&report=trial-balance" {
 		t.Errorf("account hit: %s", acc.Raw)
 	}
 	if r := e.mustOK(e.get("/api/search?q=1000", e.director())); r.str("results", 0, "id") != "acct-1000" {

@@ -60,16 +60,16 @@ func (c *Ctx) search() error {
 		r := searchResult{Kind: h.Kind, ID: h.ID}
 		switch h.Kind {
 		case "event":
-			r.Title, r.Href = h.Primary, "/events/"+h.ID
+			r.Title, r.Href = h.Primary, "/events?id="+h.ID
 			r.Subtitle = joinNonEmpty(" · ", eventDay(h.A), h.B)
 		case "request":
-			r.Title, r.Href = h.Primary, "/requests/"+h.ID
+			r.Title, r.Href = h.Primary, "/finance?id="+h.ID
 			r.Subtitle = joinNonEmpty(" · ", h.A, h.B, h.C)
 		case "user":
-			r.Title, r.Href = h.Primary, "/admin/users"
+			r.Title, r.Href = h.Primary, "/admin"
 			r.Subtitle = joinNonEmpty(" · ", h.A, h.B, h.C)
 		case "account":
-			r.Title, r.Href = fmt.Sprintf("%s %s", h.A, h.Primary), "/finance?tab=accounts"
+			r.Title, r.Href = fmt.Sprintf("%s %s", h.A, h.Primary), "/finance?tab=reports&report=trial-balance"
 			r.Subtitle = strings.ReplaceAll(h.B, "_", " ")
 		}
 		out = append(out, r)

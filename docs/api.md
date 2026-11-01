@@ -96,10 +96,10 @@ literal) against:
 
 | Kind | Who sees it | Matched on | `title` / `subtitle` | `href` |
 | --- | --- | --- | --- | --- |
-| `event` | officers, directors | name, location, Luma id | name / `<Pacific date> · <location>` | `/events/:id` |
-| `request` | officers, directors | number, title, vendor | title / `<number> · <vendor> · <status>` | `/requests/:id` |
-| `user` | directors only | name, email, title | name / `<title> · <role> · <email>` | `/admin/users` |
-| `account` | directors only | code, name | `<code> <name>` / account type | `/finance?tab=accounts` |
+| `event` | officers, directors | name, location, Luma id | name / `<Pacific date> · <location>` | `/events?id=<id>` |
+| `request` | officers, directors | number, title, vendor | title / `<number> · <vendor> · <status>` | `/finance?id=<id>` |
+| `user` | directors only | name, email, title | name / `<title> · <role> · <email>` | `/admin` |
+| `account` | directors only | code, name | `<code> <name>` / account type | `/finance?tab=reports&report=trial-balance` |
 
 Results are ordered best match first (the primary field starts with the query, then contains
 it, then another field matches), ties broken by kind and recency, and cut to `limit`. No match
@@ -141,8 +141,8 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 | --- | --- | --- |
 | `/login` | public | "Sign in with Discord" |
 | `/` | officer | Overview KPIs + recent events (`OverviewResponse`) |
-| `/events`, `/events/:id` | officer | Event ratios + chart; CSV import on `/events/import` |
-| `/requests`, `/requests/new`, `/requests/:id` | officer | Approve / deny buttons for directors |
+| `/events`, `/events?id=<id>` | officer | Event ratios + chart; CSV import on `/events/import` |
+| `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
 | `/admin/users`, `/admin/tokens` | director | 403 for officers |
 
