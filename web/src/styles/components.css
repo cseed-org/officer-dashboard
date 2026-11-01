@@ -314,3 +314,25 @@ a.cell-title:hover {text-decoration:underline;}
 .palette-esc {flex:none;}
 .state--error {border-color:var(--negative);border-style:solid;}
 @media (min-width:1100px) {.kpis--4 {grid-template-columns:repeat(4,minmax(0,1fr));}}
+
+/* Sidebar rail spans the full page height: the sticky sidebar is one viewport tall, so the
+   grid column behind it carries the background and rule on long pages (tablet + desktop). */
+@media (min-width: 768px) {
+  .app::before {content:'';grid-column:1;grid-row:1;background:var(--sunken);border-right:1px solid var(--line);}
+  .app > .sidebar {grid-column:1;grid-row:1;align-self:start;}
+  .app > .main {grid-column:2;grid-row:1;}
+}
+
+/* Builder follow-ups (owned by the builder tab after the design handoff). */
+.rate-cell {white-space:nowrap;}
+.detail-sub {display:block;}
+.detail-sub .badge {margin-left:4px;}
+/* Programmatic focus targets (headings, status regions): no decorative ring or accent. */
+[tabindex="-1"]:focus {outline:none;box-shadow:none;}
+/* Brand artwork: ink logo on light, white logo on dark; the rail keeps the C mark. */
+.wordmark-logo {display:block;height:18px;width:auto;}
+.wordmark-logo--white {display:none;}
+:root[data-theme="dark"] .wordmark-logo--ink {display:none;}
+:root[data-theme="dark"] .wordmark-logo--white {display:block;}
+@media (min-width: 1100px), (max-width: 767px) { .sidebar .wordmark-mark {display:none;} }
+.wordmark--top .wordmark-logo {height:16px;}
