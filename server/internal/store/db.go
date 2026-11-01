@@ -186,3 +186,10 @@ func notFound(err error) error {
 	}
 	return err
 }
+
+// Exec runs a raw statement. It exists for the seed command, which loads fixtures;
+// application code uses the typed methods.
+func (q *Queries) Exec(ctx context.Context, query string, args ...any) error {
+	_, err := q.q.ExecContext(ctx, query, args...)
+	return err
+}
