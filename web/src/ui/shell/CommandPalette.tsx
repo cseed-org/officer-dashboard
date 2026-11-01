@@ -123,7 +123,7 @@ export default function CommandPalette() {
 
   const items = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const pageHits = pages(me?.role === 'director').filter((p) => !term || p.title.toLowerCase().includes(term) || p.subtitle.includes(term));
+    const pageHits = pages(!!me && me.role !== 'officer').filter((p) => !term || p.title.toLowerCase().includes(term) || p.subtitle.includes(term));
     const all = [...results, ...pageHits];
     return GROUP_ORDER.flatMap((k) => all.filter((i) => i.kind === k));
   }, [results, q, me]);

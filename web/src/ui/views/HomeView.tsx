@@ -1,3 +1,4 @@
+import WidgetGrid from '../widgets/WidgetGrid';
 import type { ComponentChildren } from 'preact';
 import type { AuditLogEntry, CurrentUser, PurchaseRequestListItem } from '../../lib/contracts';
 import type { PurchaseStatus } from '../../lib/domain';
@@ -25,89 +26,97 @@ function Block({ id, title, action, span, children }: { id: string; title: strin
 }
 
 export default function HomeView({ me }: { me: CurrentUser }) {
-  const director = me.role === 'director';
+  const director = me.role !== 'officer';
   const overview = useApi('overview');
   const fy = overview.status === 'ready' ? overview.data.fiscalYear : undefined;
 
   return (
-    <div class="home-grid">
-      <section class="block block--full block--bare" aria-label="Key figures" data-block="kpis">
-        <Async state={overview} loading={<Loading tiles={5} rows={0} label="Loading key figures" />}>
-          {(d) => {
-            const k = d.kpis;
-            const now = Date.now();
-            // Past events oldest → newest, for the rate sparklines.
-            const past = d.recentEvents.filter((e) => new Date(e.startsAt).getTime() <= now).reverse();
-            const used = k.budgetCents ? (k.spentCents + k.committedCents) / k.budgetCents : null;
-            return (
-              <div class="kpis">
-                <Kpi label="upcoming events" icon="calendar" hue="blue" value={k.upcomingEvents} href={href.events({ when: 'upcoming' })} sub="on the calendar" />
-                <Kpi
-                  label="avg check-in rate"
-                  icon="check"
-                  hue="teal"
-                  value={pct(k.avgCheckInRate)}
-                  trend={<Sparkline values={past.map((e) => e.metrics.checkInRate)} hue="teal" />}
-                  sub={`past events, FY${d.fiscalYear}`}
-                />
-                <Kpi
-                  label="reflection rate"
-                  icon="message"
-                  hue="violet"
-                  value={pct(k.avgReflectionRate)}
-                  trend={<Sparkline values={past.map((e) => e.metrics.reflectionRate)} hue="violet" />}
-                  sub="of checked-in guests"
-                />
-                <Kpi
-                  label="budget remaining"
-                  icon="wallet"
-                  hue="green"
-                  value={dollars(k.remainingCents)}
-                  tone={k.remainingCents < 0 ? 'negative' : undefined}
-                  href={href.finance('budgets')}
-                  trend={<Progress value={used} hue={usageHue(used)} label={`${pct(used)} of the budget used or committed`} />}
-                  sub={`${dollars(k.spentCents)} spent · ${dollars(k.committedCents)} committed of ${dollars(k.budgetCents)}`}
-                />
-                <Kpi
-                  label="pending requests"
-                  icon="inbox"
-                  hue="amber"
-                  value={k.pendingRequests}
-                  href={href.requests({ scope: 'all', status: 'pending' })}
-                  sub={k.pendingRequests ? `${dollars(k.pendingRequestsCents)} awaiting a director` : 'nothing waiting'}
-                />
-              </div>
-            );
-          }}
-        </Async>
-      </section>
-
-      <Block id="my-action" title={director ? 'awaiting your approval' : 'my open requests'} action={<a href={href.newRequest()}>new request →</a>}>
-        <MyAction me={me} />
-      </Block>
-
-      <Block id="recent-events" title="recent events" action={<a href={href.events()}>all events →</a>}>
-        <Async state={overview} loading={<Loading rows={4} label="Loading events" />}>
-          {(d) =>
-            d.recentEvents.length === 0 ? (
-              <Empty title="No events yet" action={<a href={href.eventImport()}>import a Luma guest export →</a>}>
-                Events appear here once a Luma guest list is imported.
-              </Empty>
-            ) : (
-              <DataTable rows={d.recentEvents.slice(0, 5)} columns={eventColumns(Date.now(), { compact: true })} rowKey={(e) => e.id} caption="Recent events" dense />
-            )
-          }
-        </Async>
-      </Block>
-
-      <Block id="budget" title="budget vs actual" action={<a href={href.finance('budgets')}>budgets →</a>}>
-        {fy === undefined ? <Loading rows={4} label="Loading the budget" /> : <BudgetMini fiscalYear={fy} />}
-      </Block>
-
-      <Block id="activity" title={director ? 'recent activity' : 'latest requests'} action={director ? <a href={href.admin('audit')}>audit log →</a> : <a href={href.requests({ scope: 'all' })}>all requests →</a>}>
-        {director ? <AuditFeed /> : <RequestFeed />}
-      </Block>
-    </div>
+    <WidgetGrid>
+      {(id) => ({
+        'kpis': (
+          <section class="block block--full block--bare" aria-label="Key figures" data-block="kpis">
+            <Async state={overview} loading={<Loading tiles={5} rows={0} label="Loading key figures" />}>
+              {(d) => {
+                const k = d.kpis;
+                const now = Date.now();
+                // Past events oldest → newest, for the rate sparklines.
+                const past = d.recentEvents.filter((e) => new Date(e.startsAt).getTime() <= now).reverse();
+                const used = k.budgetCents ? (k.spentCents + k.committedCents) / k.budgetCents : null;
+                return (
+                  <div class="kpis">
+                    <Kpi label="upcoming events" icon="calendar" hue="blue" value={k.upcomingEvents} href={href.events({ when: 'upcoming' })} sub="on the calendar" />
+                    <Kpi
+                      label="avg check-in rate"
+                      icon="check"
+                      hue="teal"
+                      value={pct(k.avgCheckInRate)}
+                      trend={<Sparkline values={past.map((e) => e.metrics.checkInRate)} hue="teal" />}
+                      sub={`past events, FY${d.fiscalYear}`}
+                    />
+                    <Kpi
+                      label="reflection rate"
+                      icon="message"
+                      hue="violet"
+                      value={pct(k.avgReflectionRate)}
+                      trend={<Sparkline values={past.map((e) => e.metrics.reflectionRate)} hue="violet" />}
+                      sub="of checked-in guests"
+                    />
+                    <Kpi
+                      label="budget remaining"
+                      icon="wallet"
+                      hue="green"
+                      value={dollars(k.remainingCents)}
+                      tone={k.remainingCents < 0 ? 'negative' : undefined}
+                      href={href.finance('budgets')}
+                      trend={<Progress value={used} hue={usageHue(used)} label={`${pct(used)} of the budget used or committed`} />}
+                      sub={`${dollars(k.spentCents)} spent · ${dollars(k.committedCents)} committed of ${dollars(k.budgetCents)}`}
+                    />
+                    <Kpi
+                      label="pending requests"
+                      icon="inbox"
+                      hue="amber"
+                      value={k.pendingRequests}
+                      href={href.requests({ scope: 'all', status: 'pending' })}
+                      sub={k.pendingRequests ? `${dollars(k.pendingRequestsCents)} awaiting a director` : 'nothing waiting'}
+                    />
+                  </div>
+                );
+              }}
+            </Async>
+          </section>
+        ),
+        'my-action': (
+          <Block id="my-action" title={director ? 'awaiting your approval' : 'my open requests'} action={<a href={href.newRequest()}>new request →</a>}>
+            <MyAction me={me} />
+          </Block>
+        ),
+        'recent-events': (
+          <Block id="recent-events" title="recent events" action={<a href={href.events()}>all events →</a>}>
+            <Async state={overview} loading={<Loading rows={4} label="Loading events" />}>
+              {(d) =>
+                d.recentEvents.length === 0 ? (
+                  <Empty title="No events yet" action={<a href={href.eventImport()}>import a Luma guest export →</a>}>
+                    Events appear here once a Luma guest list is imported.
+                  </Empty>
+                ) : (
+                  <DataTable rows={d.recentEvents.slice(0, 5)} columns={eventColumns(Date.now(), { compact: true })} rowKey={(e) => e.id} caption="Recent events" dense />
+                )
+              }
+            </Async>
+          </Block>
+        ),
+        'budget': (
+          <Block id="budget" title="budget vs actual" action={<a href={href.finance('budgets')}>budgets →</a>}>
+            {fy === undefined ? <Loading rows={4} label="Loading the budget" /> : <BudgetMini fiscalYear={fy} />}
+          </Block>
+        ),
+        'activity': (
+          <Block id="activity" title={director ? 'recent activity' : 'latest requests'} action={director ? <a href={href.admin('audit')}>audit log →</a> : <a href={href.requests({ scope: 'all' })}>all requests →</a>}>
+            {director ? <AuditFeed /> : <RequestFeed />}
+          </Block>
+        )
+      } as Record<string, ComponentChildren>)[id]}
+    </WidgetGrid>
   );
 }
 
@@ -136,7 +145,7 @@ function RequestList({ items, showRequester }: { items: PurchaseRequestListItem[
 }
 
 function MyAction({ me }: { me: CurrentUser }) {
-  const director = me.role === 'director';
+  const director = me.role !== 'officer';
   const state = useApi('requestsList', { query: director ? { scope: 'all', status: 'pending', limit: 6 } : { scope: 'mine', limit: 50 } });
   return (
     <Async state={state} loading={<Loading rows={3} label="Loading requests" />}>

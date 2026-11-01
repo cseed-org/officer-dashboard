@@ -32,13 +32,12 @@ func fakeDiscord(t *testing.T, profileJSON string, gotVerifier *string) *httptes
 	return s
 }
 
-func discordEnv(t *testing.T, profileJSON string, bootstrap string, verifier *string) *testEnv {
+func discordEnv(t *testing.T, profileJSON string, verifier *string) *testEnv {
 	d := fakeDiscord(t, profileJSON, verifier)
 	return newEnv(t, func(c *Config) {
 		cl := auth.NewDiscord("cid", "secret", "http://localhost:8090/auth/callback")
 		cl.TokenURL, cl.ProfileURL = d.URL+"/token", d.URL+"/me"
 		c.Discord = cl
-		c.BootstrapDirectorDiscordID = bootstrap
 	})
 }
 
@@ -82,7 +81,7 @@ func startLogin(t *testing.T, e *testEnv, next string) ([]*http.Cookie, string) 
 
 func TestDiscordSignInForAnAllowlistedUser(t *testing.T) {
 	var verifier string
-	e := discordEnv(t, `{"id":"100000000000000002","username":"priya","global_name":"Priya S.","avatar":"abc123"}`, "", &verifier)
+	e := discordEnv(t, `{"id":"100000000000000002","username":"priya","global_name":"Priya S.","avatar":"abc123"}`, &verifier)
 	cs, state := startLogin(t, e, "/requests/new?event=e1")
 	cb := e.get("/auth/callback?code=good-code&state="+state, actor{cookies: cs})
 	if cb.Status != 302 || cb.Header.Get("Location") != "/requests/new?event=e1" {
@@ -120,7 +119,7 @@ func TestDiscordSignInForAnAllowlistedUser(t *testing.T) {
 }
 
 func TestDiscordSignInRefusals(t *testing.T) {
-	e := discordEnv(t, `{"id":"999999999999999999","username":"stranger"}`, "", nil)
+	e := discordEnv(t, `{"id":"999999999999999999","username":"stranger"}`, nil)
 	cs, state := startLogin(t, e, "/")
 	cb := e.get("/auth/callback?code=good-code&state="+state, actor{cookies: cs})
 	if cb.Status != 302 || cb.Header.Get("Location") != "/login?error=not_allowlisted" {
@@ -142,7 +141,7 @@ func TestDiscordSignInRefusals(t *testing.T) {
 		t.Errorf("bad code → %s", cb.Header.Get("Location"))
 	}
 	// A deactivated user is refused as such.
-	e2 := discordEnv(t, `{"id":"100000000000000004","username":"ava"}`, "", nil)
+	e2 := discordEnv(t, `{"id":"100000000000000004","username":"ava"}`, nil)
 	if err := e2.db.Write(context.Background(), func(w *store.Queries) error {
 		return w.Exec(context.Background(), `UPDATE users SET active = 0 WHERE id = 'user-ava'`)
 	}); err != nil {
@@ -154,8 +153,13 @@ func TestDiscordSignInRefusals(t *testing.T) {
 	}
 }
 
-func TestBootstrapDirectorIsCreatedOnFirstLogin(t *testing.T) {
-	e := discordEnv(t, `{"id":"123456789012345678","username":"boss","global_name":null}`, "123456789012345678", nil)
+func TestProvisionedOwnerCanSignInWithoutLoginTimeBootstrap(t *testing.T) {
+	e := discordEnv(t, `{"id":"123456789012345678","username":"boss","global_name":null}`, nil)
+	if err := e.db.Write(context.Background(), func(q *store.Queries) error {
+		return q.InsertUser(context.Background(), store.User{ID: "provisioned", DiscordID: "123456789012345678", Name: "Configured owner", Role: "leadership", Active: true, IsOwner: true})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	cs, state := startLogin(t, e, "/admin/users")
 	cb := e.get("/auth/callback?code=good-code&state="+state, actor{cookies: cs})
 	if cb.Status != 302 || cb.Header.Get("Location") != "/admin/users" {
@@ -163,11 +167,8 @@ func TestBootstrapDirectorIsCreatedOnFirstLogin(t *testing.T) {
 	}
 	session := cookieNamed(setCookies(cb), e.srv.sessionCookieName())
 	me := e.get("/api/me", actor{cookie: session})
-	if me.str("user", "role") != "director" || me.str("user", "name") != "boss" {
-		t.Errorf("bootstrap director %s", me.Raw)
-	}
-	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'user.bootstrap_director'`); n != int64(1) {
-		t.Errorf("bootstrap audit rows %v", n)
+	if me.str("user", "role") != "leadership" || me.str("user", "name") != "Configured owner" || me.at("user", "isOwner") != true {
+		t.Errorf("provisioned owner %s", me.Raw)
 	}
 }
 

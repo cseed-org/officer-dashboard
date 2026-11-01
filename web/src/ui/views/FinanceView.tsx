@@ -18,7 +18,7 @@ import RequestFormView from './RequestForm';
 const TAB_LABEL: Record<FinanceTab, string> = { requests: 'requests', budgets: 'budgets', reports: 'reports', periods: 'fiscal periods' };
 
 export default function FinanceView({ me }: { me: CurrentUser }) {
-  const director = me.role === 'director';
+  const director = me.role !== 'officer';
   const search = useSearch();
   const tabs: FinanceTab[] = ['requests', 'budgets', 'reports', ...(director ? (['periods'] as const) : [])];
   const t = search.get('tab') as FinanceTab | null;

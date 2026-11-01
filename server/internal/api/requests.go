@@ -403,7 +403,7 @@ func (c *Ctx) requestAttach() error {
 	if err != nil {
 		return notFoundErr("Record not found")
 	}
-	if u.ID != r.RequesterID && u.Role != auth.RoleDirector {
+	if u.ID != r.RequesterID && !auth.HasRole(u.Role, auth.RoleDirector) {
 		return forbidden("Only requester or director may upload")
 	}
 	if r.Status == "closed" || r.Status == "cancelled" || r.Status == "denied" {
