@@ -423,3 +423,9 @@
 
 /* Placeholder text meets 4.5:1 in both themes (browser default fails on dark surface). Adopt in src/styles. */
 .input::placeholder, .textarea::placeholder {color:var(--muted);opacity:1;}
+
+/* D2 onboarding form composition, readable hints on paper, and photo placement. */
+.onb-step{padding:20px 0}.onb-form .grid-fields{gap:16px}.onb-form details{border-top:1px solid var(--brand-control);padding-top:12px}.onb-form summary{cursor:pointer;min-height:44px}.onb-form .choice{background:var(--paper-raised);color:var(--brand-ink);border-color:var(--brand-control);min-height:64px}.onb-form .choice-sub{color:var(--brand-ink-soft)}.onb-form .choice-row{display:grid;grid-template-columns:1fr 1fr}.onb-form .btn{min-height:44px}.onb-form .field-error{margin:0}.onb-prefill{display:grid;grid-template-columns:100px minmax(0,1fr)}.onb-prefill dd{overflow-wrap:anywhere}.onb-art .polaroid:first-child{width:300px;height:340px;left:15px;top:30px}.onb-art .polaroid:last-child{width:270px;height:290px;right:0;bottom:20px}.onb .notice{font-family:var(--font)}.onb .field-hint{color:var(--brand-ink-soft)}
+
+@media(max-width:767px){.onb-form .choice-row{grid-template-columns:1fr}.onb-title.display--xl{font-size:36px}.onb-step{gap:16px}.onb-form .grid-fields{grid-template-columns:1fr}}
+.onb-art[hidden],.onb-foot[hidden],.onb-progress[hidden],.onb-count[hidden]{display:none}

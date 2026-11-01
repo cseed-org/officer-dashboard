@@ -574,7 +574,7 @@
       "theme": "dark",
       "width": 390,
       "check": "copy button keeps field name",
-      "text": "Copied name ✓"
+      "text": "Copy name"
     },
     {
       "theme": "dark",
