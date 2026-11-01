@@ -69,6 +69,19 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/api/requests/:id/transition` | director | — | `PurchaseTransitionRequest` | `PurchaseRequestResponse` |
 | POST | `/api/requests/:id/attachments` | officer | — | multipart: `AttachmentUploadFields` + `file` | `AttachmentUploadResponse` |
 | GET | `/api/attachments/:id` | officer | — | — | receipt bytes or Drive redirect |
+| GET | `/api/design-requests` | officer | — | — | `DesignRequestsListResponse` |
+| POST | `/api/design-requests` | officer | — | `DesignRequestCreateRequest` | `DesignRequestResponse` |
+| GET | `/api/design-requests/:id` | officer | — | — | `DesignRequestResponse` |
+| PATCH | `/api/design-requests/:id` | officer | — | `DesignRequestUpdateRequest` | `DesignRequestResponse` |
+| DELETE | `/api/design-requests/:id` | officer | — | — | `OkResponse` |
+| POST | `/api/design-requests/:id/assign` | officer | — | `DesignAssignRequest` | `DesignRequestResponse` |
+| POST | `/api/design-requests/:id/move` | officer | — | `DesignMoveRequest` | `DesignRequestResponse` |
+| POST | `/api/design-requests/:id/approve` | officer | — | — | `DesignRequestResponse` |
+| POST | `/api/design-requests/:id/comments` | officer | — | `DesignCommentRequest` | `DesignRequestResponse` |
+| POST | `/api/design-requests/:id/files` | officer | — | multipart: `DesignFileUploadFields` + `file` | `DesignRequestResponse` |
+| GET | `/api/design-files/:id` | officer | — | — | file bytes or Drive redirect |
+| GET | `/api/events/:id/design-request-draft` | officer | — | — | `DesignRequestDraftResponse` |
+| POST | `/api/events/:id/design-requests` | officer | — | `DesignRequestFromEventRequest` (optional) | `DesignRequestResponse` |
 | GET | `/api/finance/summary` | officer | `FinanceQuery` | — | `FinanceSummaryResponse` |
 | GET | `/api/finance/reports/:report` | officer | `FinanceReportQuery` | — | `FinanceReportResponse` or CSV ¹ |
 | GET | `/api/finance/budgets` | officer | `FinanceQuery` | — | `BudgetsResponse` |
@@ -140,6 +153,30 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   uploaded to the request.
 - **Approve** enqueues a `fulfillment_jobs` row for club purchases and sends a Discord
   notification; submit / deny / fulfilled also notify.
+- **Design requests.** Every officer sees the whole board (`GET /api/design-requests`) and
+  can create a request, comment, and attach reference files. The design team is the active
+  users whose officer profile is on the subteam named **Design** (migration 0006 creates it).
+  - Designers assign any designer (themselves included) and move cards between New,
+    Accepted, In progress and In review. Moving an unassigned card past New assigns the
+    designer who moved it. Past New a card always has an assignee, so unassigning requires
+    moving it back to New first (409). Directors and leadership have the same assign and
+    move powers as an administrative override, but can only assign designers (400).
+  - **Delivered is reached only by `POST /approve`**, and only by the requester while the
+    card is In review. Rank gives no shortcut: a director, leadership or the designer gets
+    403. The requester can instead send it back with `move` → `in-progress` ("Request
+    changes"). Designers can reopen a delivered card to In progress, which clears the approval.
+  - The requester (or a director) edits the fields until delivery (409 after). The requester
+    can withdraw (`DELETE`) while the card is New; directors can delete any time.
+  - Files: `reference` from the requester or the design team; `review` and `delivered` from
+    the design team. Same storage, size and type rules as receipts (PDF, PNG, JPEG, WebP,
+    HEIC; up to 10 MB; content sniffed). Downloads are officer-only.
+  - `DesignRequestDetail.permissions` tells the UI which actions the viewer has.
+  - **From an event.** `GET /api/events/:id/design-request-draft` proposes a request for
+    the event: title "<event> promo", type social, a brief with the date, place and RSVP
+    link, and a due date a week before the event (Vancouver time), never before today, or
+    null for a past event. `POST /api/events/:id/design-requests` creates it directly; any
+    supplied field overrides the draft, and the event link is fixed. The Design page also
+    opens the prefilled form at `/design?new=1&eventId=<id>`.
 - **Admin users.** Deactivating a user deletes their sessions. The last active director can't
   be demoted or deactivated (409).
 - **Service tokens.** The plaintext is returned once by `POST /api/admin/tokens`; only a
@@ -156,6 +193,7 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 | `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
 | `/admin/users`, `/admin/tokens` | director | 403 for officers |
+| `/design`, `/design?id=<id>`, `/design?new=1&eventId=<id>` | officer | Design request board (list view on phones); opens a request or the prefilled form |
 
 
 ## Backend implementation notes

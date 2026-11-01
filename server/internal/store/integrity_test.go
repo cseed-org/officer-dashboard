@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"regexp"
 	"testing"
 )
@@ -337,7 +338,9 @@ func TestMigrationsAreIdempotentAndReaderSeesWriterCommits(t *testing.T) {
 	}
 	var applied int
 	_ = d.W.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied)
-	if applied != 6 {
-		t.Errorf("applied migrations = %d (want 6)", applied)
+	// Every embedded migration is recorded once, however many feature branches add.
+	entries, _ := fs.Glob(migrationFS, "migrations/*.sql")
+	if applied != len(entries) || applied < 7 {
+		t.Errorf("applied migrations = %d (want %d)", applied, len(entries))
 	}
 }

@@ -16,6 +16,18 @@ var Users = []User{
 	{"user-priya", "100000000000000002", "Priya Shah", "officer", "VP Events", "priya@example.org"},
 	{"user-marcus", "100000000000000003", "Marcus Chen", "officer", "Treasurer", "marcus@example.org"},
 	{"user-ava", "100000000000000004", "Ava Romero", "officer", "BuildHer Lead", "ava@example.org"},
+	{"user-riley", "100000000000000006", "Riley Park", "officer", "Design Lead", "riley@example.org"},
+}
+
+// DesignRequest is a sample card on the Design Requests board.
+type DesignRequest struct {
+	ID, Title, Type, Formats, Due, Urgency, Brief, Event, Program, Stage, Requester, Assignee string
+}
+
+var DesignRequests = []DesignRequest{
+	{"design-hack-poster", "Hack Night poster", "poster", "A3 print PDF; 1080 × 1350 PNG", "2026-11-06", "high", "Invite students to Hack Night. Lead with Nov 13, 6 PM, Engineering Atrium, and include the RSVP QR code.", "event-hack-night", "", "new", "user-ava", ""},
+	{"design-mentor-social", "Mentor coffee social", "social", "1080 × 1350 PNG", "2026-11-09", "normal", "An Instagram post for the mentor coffee social. Friendly, warm, room for three mentor headshots.", "", "Mentorship program", "accepted", "user-priya", "user-riley"},
+	{"design-kickoff-recap", "Fall Kickoff recap slides", "slides", "16:9 PPTX + PDF", "2026-11-04", "normal", "Five slides recapping Fall Kickoff turnout and photos for the general meeting.", "event-kickoff", "", "in-review", "user-priya", "user-riley"},
 }
 
 type Account struct {

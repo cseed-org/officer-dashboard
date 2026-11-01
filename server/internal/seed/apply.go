@@ -86,7 +86,7 @@ func apply(ctx context.Context, w *store.Queries) error {
 	if err := w.Exec(ctx, `UPDATE users SET is_owner=1 WHERE id='user-leadership' AND NOT EXISTS(SELECT 1 FROM users WHERE is_owner=1)`); err != nil {
 		return err
 	}
-	for _, team := range []struct{ id, name string }{{"team-operations", "Operations"}, {"team-events", "Events"}, {"team-build", "Build"}} {
+	for _, team := range []struct{ id, name string }{{"team-operations", "Operations"}, {"team-events", "Events"}, {"team-build", "Build"}, {"team-design", "Design"}} {
 		if err := insert(ctx, w, "subteams", "id,name", team.id, team.name); err != nil {
 			return err
 		}
@@ -98,6 +98,9 @@ func apply(ctx context.Context, w *store.Queries) error {
 		}
 		if u.ID == "user-ava" {
 			team = "team-build"
+		}
+		if u.ID == "user-riley" {
+			team = "team-design"
 		}
 		if err := w.Exec(ctx, `INSERT INTO officer_profiles(user_id,subteam_id,phone,birthday,title,personal_email,start_term) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM officer_profiles WHERE user_id=?)`, u.ID, team, fmt.Sprintf("+120655501%02d", i), "2004-01-15", u.Title, u.Email, "Fall 2026", u.ID); err != nil {
 			return err
@@ -233,6 +236,17 @@ func apply(ctx context.Context, w *store.Queries) error {
 			"period-"+p.StartDate[:7], FiscalYear, p.Name, p.StartDate, p.EndDate, status, closedAt, closedBy, now); err != nil {
 			return err
 		}
+	}
+	for i, d := range DesignRequests {
+		at := now + int64(i)*60_000
+		if err := insert(ctx, w, "design_requests", "id, title, type, formats, due_date, urgency, brief, refs, event_id, program, stage, requester_id, assignee_id, created_at, updated_at",
+			d.ID, d.Title, d.Type, d.Formats, nullable(d.Due), d.Urgency, d.Brief, "", nullable(d.Event), nullable(d.Program), d.Stage, d.Requester, nullable(d.Assignee), at, at); err != nil {
+			return err
+		}
+	}
+	if err := insert(ctx, w, "design_request_comments", "id, request_id, author_id, body, created_at",
+		"design-comment-1", "design-kickoff-recap", "user-riley", "Draft is up. Ready for your review.", now+300_000); err != nil {
+		return err
 	}
 	return nil
 }
