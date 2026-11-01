@@ -27,7 +27,7 @@ import (
 var testNow = time.Date(2026, 10, 31, 18, 0, 0, 0, time.UTC)
 
 type testEnv struct {
-	t        *testing.T
+	t        testing.TB
 	db       *store.DB
 	srv      *Server
 	h        http.Handler
@@ -48,7 +48,7 @@ func (w *webhookLog) all() []map[string]any {
 	return append([]map[string]any(nil), w.list...)
 }
 
-func newEnv(t *testing.T, mutate ...func(*Config)) *testEnv {
+func newEnv(t testing.TB, mutate ...func(*Config)) *testEnv {
 	t.Helper()
 	db, err := store.Open(t.TempDir() + "/api.db")
 	if err != nil {

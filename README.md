@@ -12,6 +12,12 @@ is Discord OAuth, limited to an allowlist of officers. The design follows
 > **Status: Phase 1.** API handlers, accounting, CSV ingest, Drive storage, Discord
 > notifications and every page (overview, events, requests, finance, admin) are implemented.
 
+> **v2: Go backend.** `server/` holds a Go replacement for the TypeScript backend (same JSON API,
+> same schema, one SQLite file; runs on a Raspberry Pi or in a Cloudflare Container) and serves the
+> static front end in `web/dist`. See [server/README.md](server/README.md). The TypeScript app below
+> stays until a cleanup PR removes it. `node scripts/contract-check.mjs` proves the Go server matches
+> `src/core/contracts.ts`.
+
 ## Quick start
 
 Needs Node ≥ 22.23 (tested on Node 26, Raspberry Pi 5 / linux arm64).
