@@ -22,7 +22,7 @@ for(const theme of ['light','dark']) for(const width of [1440,390]) {
   const overflow=await page.locator('#'+id).evaluate(d=>d.scrollWidth>d.clientWidth);
   if(overflow) throw Error(id+' dialog overflow');
   await page.screenshot({path:path.join(dir,`shots/events-v03-${id}-${width}-${theme}.png`)});
-  if(id==='handoff'){await page.locator('#luma-url').fill('https://lu.ma/cseed-founders');await page.locator('#luma-form button').click();await page.screenshot({path:path.join(dir,`shots/events-v03-linked-${width}-${theme}.png`)});}
+  if(id==='handoff'){await page.locator('#luma-url').fill('https://lu.ma/cseed-founders');await page.locator('#luma-form button[type=submit]').click();await page.screenshot({path:path.join(dir,`shots/events-v03-linked-${width}-${theme}.png`)});}
   await page.keyboard.press('Escape');
   if(['design','delete'].includes(id)) await page.keyboard.press('Escape');
  }
