@@ -120,7 +120,9 @@ func csvRows(text string, positions *[]int) ([][]string, error) {
 
 var nonAlnum = regexp.MustCompile(`[^a-z0-9]`)
 
-func headerKey(s string) string { return nonAlnum.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "") }
+func headerKey(s string) string {
+	return nonAlnum.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "")
+}
 
 var aliases = map[string][]string{
 	"email":          {"email", "emailaddress", "guestemail", "youremail"},
