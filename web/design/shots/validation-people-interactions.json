@@ -1,0 +1,86 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "checks": [
+      "role gating (officer, director, leadership, owner)",
+      "profile focus return and Escape",
+      "background scroll lock",
+      "role confirm with preselected role",
+      "last-owner protection",
+      "invite sent and DM failure",
+      "calendar limit and inline remove",
+      "subteam, status and empty filters",
+      "members search keeps filters",
+      "CSV export director+",
+      "D1 diff lists only changed fields, write failure keeps edits",
+      "pagination",
+      "sync failed keeps mirror",
+      "state and overlay overflow",
+      "no script errors"
+    ]
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "checks": [
+      "role gating (officer, director, leadership, owner)",
+      "profile focus return and Escape",
+      "background scroll lock",
+      "role confirm with preselected role",
+      "last-owner protection",
+      "invite sent and DM failure",
+      "calendar limit and inline remove",
+      "subteam, status and empty filters",
+      "members search keeps filters",
+      "CSV export director+",
+      "D1 diff lists only changed fields, write failure keeps edits",
+      "pagination",
+      "sync failed keeps mirror",
+      "state and overlay overflow",
+      "no script errors"
+    ]
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "checks": [
+      "role gating (officer, director, leadership, owner)",
+      "profile focus return and Escape",
+      "background scroll lock",
+      "role confirm with preselected role",
+      "last-owner protection",
+      "invite sent and DM failure",
+      "calendar limit and inline remove",
+      "subteam, status and empty filters",
+      "members search keeps filters",
+      "CSV export director+",
+      "D1 diff lists only changed fields, write failure keeps edits",
+      "pagination",
+      "sync failed keeps mirror",
+      "state and overlay overflow",
+      "no script errors"
+    ]
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "checks": [
+      "role gating (officer, director, leadership, owner)",
+      "profile focus return and Escape",
+      "background scroll lock",
+      "role confirm with preselected role",
+      "last-owner protection",
+      "invite sent and DM failure",
+      "calendar limit and inline remove",
+      "subteam, status and empty filters",
+      "members search keeps filters",
+      "CSV export director+",
+      "D1 diff lists only changed fields, write failure keeps edits",
+      "pagination",
+      "sync failed keeps mirror",
+      "state and overlay overflow",
+      "no script errors"
+    ]
+  }
+]

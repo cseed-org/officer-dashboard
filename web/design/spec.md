@@ -159,3 +159,48 @@ Contacts show dated outreach independently from general notes and linked past ev
 Review: `node web/design/capture.mjs speakers-v03 design-requests-v03` captures both themes at 1440/390 and checks 820 as well. Use each page's preview controls and buttons to inspect the remaining states. Open design questions: none; the build should confirm membership in the design team and current requester from authenticated data.
 
 `node web/design/verify-speakers-design.mjs` exercises the role and data-state selectors, contact/add/outreach drawers, request form, requester-only approval and phone list in both themes at 1440/390 (92 checks). It also captures each flow in `shots/`. All label controls include explicit accessible names, including selects whose option text would otherwise obscure the label in automation.
+
+### D3 · Officers and Members fixtures
+
+`mockups/officers-v03.html` and `mockups/members-v03.html` are generated with
+`python3 web/design/build-people.py`, which reuses the `build-mockups.py` shell. Rows render
+in `people-preview.js` from one embedded JSON sample, so the directory, drawers, filters and
+confirm steps always agree. `node web/design/check-people.mjs` (from the repo root) asserts the
+contract below at 1440 and 390 in both themes and captures the overlay screenshots.
+No new color tokens or fonts. Brand typography and imagery stay off these work pages.
+
+**Classes added in `v03.css`.** `.people-group` (a subteam section with a fixed column grid at
+desktop widths). `.people-cell` wraps each cell's value and secondary text; on phones it sits
+beside a fixed 90px label. `.prototype-toggle` sets prototype-only switches (such as "make the DM
+fail") apart from real actions with a dashed rule. Row names reuse `.linkish.cell-title`: every
+row opens its record, and on phones the name is a 44px target.
+
+**Roles.** Officer: directory and profiles without phone. Director+: phone, invites, invite list,
+member edit and CSV export. Leadership: role change, deactivate and reactivate, never on their own
+record. An owner's role can only be changed by an owner. Owner: make co-owner (which grants
+leadership), transfer ownership and remove owner status; the last owner cannot be removed. The
+server enforces all of this and omits phone from officer responses.
+
+**Overlays.** Profiles and records are `.drawer`s. Invites and every confirm step are centred
+`.dialog`s with a normal `.action-row`, never a drawer on a drawer. Dialogs are labelled by their
+`h2` (`aria-labelledby`), focus the first useful control, close on Escape, return focus to the
+trigger and lock background scroll. A result is announced once: in the open dialog's
+`[data-result]` status, otherwise in the page notice.
+
+**Officers.** States: ready, no officers yet (only the bootstrap owner, with an Invite CTA for
+director+), loading, error, and filtered to nothing. Filters: text, subteam, role (including Owner)
+and status (Active, Deactivated). The role picker preselects the current role; Review stays
+disabled until it changes. The invite list shows sent time and expiry (7 days), delivery, status
+(Awaiting sign-in, DM failed, Expired, Accepted, Revoked) and Resend, Retry DM, Copy link,
+Revoke or Remove. My profile holds the calendar picker (native select, five-address limit) with the
+saved-address list and its Remove buttons beside it, outside the picker.
+
+**Members.** A 25-row server pagination contract (1,086 in the sample; 8 drawn). Search and
+filters run on the server; CSV covers all matching records and is recorded in the audit log.
+Edit needs a changed field and an audit note. The confirm dialog lists only the changed fields
+(current → new), the write target, the note and the actor. A failed write keeps the dialog
+and the edits, with an alert. A successful write refreshes the mirror. States: ready, empty
+(no matches), loading, page error (table hidden, filters kept), **sync failed** (the last mirror
+stays visible with its date, the banner uses `notice--attention`, and edits pause) and **not
+connected** (no credentials and no mirror: say so, never show a zero count). Never replace a
+failed sync with an empty directory.
