@@ -94,8 +94,10 @@ func (e *testEnv) login(userID string) *http.Cookie {
 }
 
 type actor struct {
-	cookie *http.Cookie
-	token  string
+	cookie  *http.Cookie
+	token   string
+	cookies []*http.Cookie
+	headers map[string]string
 }
 
 func (e *testEnv) as(userID string) actor { return actor{cookie: e.login(userID)} }
@@ -184,6 +186,12 @@ func (e *testEnv) do(method, path string, body any, who actor) reply {
 	}
 	if who.cookie != nil {
 		req.AddCookie(who.cookie)
+	}
+	for _, c := range who.cookies {
+		req.AddCookie(c)
+	}
+	for k, v := range who.headers {
+		req.Header.Set(k, v)
 	}
 	if who.token != "" {
 		req.Header.Set("Authorization", "Bearer "+who.token)
