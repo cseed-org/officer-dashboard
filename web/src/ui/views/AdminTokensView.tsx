@@ -4,9 +4,12 @@ import { ServiceTokenCreateRequest, type ServiceToken } from '../../lib/contract
 import { SERVICE_TOKEN_SCOPES, type ServiceTokenScope } from '../../lib/domain';
 import { api } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
-import { Badge, DataTable, describe, Field, Section } from '../components/kit';
+import { SCOPE_HUE } from '../../lib/colors';
+import { fmtDate, fmtDateTime, relative } from '../../lib/format';
+import { Drawer } from '../components/Drawer';
+import { Badge, describe, Field } from '../components/kit';
+import { DotLabel, RowMenu } from '../components/people';
 import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
-import { fmtDate, relative } from '../../lib/format';
 
 const SCOPE_INFO: Record<ServiceTokenScope, string> = {
   'ingest:luma': 'push Luma events and guests (scraper)',
@@ -14,9 +17,14 @@ const SCOPE_INFO: Record<ServiceTokenScope, string> = {
 };
 
 const tokenState = (t: ServiceToken) =>
-  t.revokedAt ? { tone: 'neutral' as const, label: 'revoked' } : t.expiresAt && new Date(t.expiresAt) < new Date() ? { tone: 'negative' as const, label: 'expired' } : { tone: 'positive' as const, label: 'active' };
+  t.revokedAt
+    ? { tone: 'neutral' as const, label: 'revoked' }
+    : t.expiresAt && new Date(t.expiresAt) < new Date()
+      ? { tone: 'negative' as const, label: 'expired' }
+      : { tone: 'positive' as const, label: 'active' };
 
-export default function AdminTokensView() {
+/** Service tokens: list with scope dot-labels and a ⋯ menu; create in a drawer; the secret once, in a copy panel. */
+export default function AdminTokensView({ creating, onCloseCreate }: { creating: boolean; onCloseCreate: () => void }) {
   const state = useApi('adminTokens');
   const [created, setCreated] = useState<{ id: string; name: string; plaintext: string } | null>(null);
   const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(null);
@@ -35,64 +43,96 @@ export default function AdminTokensView() {
   };
 
   return (
-    <div class="stack">
+    <div class="stack stack--tight">
       {created && <NewSecret name={created.name} plaintext={created.plaintext} onDone={() => setCreated(null)} />}
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-      <Section title="tokens" id="tokens">
-        <Async state={state} loading={<Loading rows={3} label="Loading tokens" />}>
-          {(d) =>
-            d.tokens.length === 0 ? (
-              <Empty title="No service tokens">Create one when you set up the Luma scraper or the purchasing agent.</Empty>
-            ) : (
-              <DataTable
-                caption="Service tokens"
-                rows={d.tokens}
-                rowKey={(t) => t.id}
-                columns={[
-                  {
-                    key: 'n',
-                    label: 'name',
-                    primary: true,
-                    render: (t) => (
-                      <>
-                        <span class="cell-title">{t.name}</span>
-                        <span class="cell-sub">
-                          <span class="mono">{t.prefix}…</span> · by {t.createdBy.name} {fmtDate(t.createdAt)}
-                        </span>
-                      </>
-                    ),
-                  },
-                  { key: 's', label: 'scopes', render: (t) => <span class="mono small">{t.scopes.join(', ')}</span> },
-                  { key: 'st', label: 'status', render: (t) => <Badge tone={tokenState(t).tone}>{tokenState(t).label}</Badge> },
-                  { key: 'u', label: 'last used', hideOnPhone: true, render: (t) => <span class="small">{relative(t.lastUsedAt)}</span> },
-                  { key: 'e', label: 'expires', render: (t) => <span class="small">{t.expiresAt ? fmtDate(t.expiresAt) : 'never'}</span> },
-                  {
-                    key: 'a',
-                    label: '',
-                    cardLabel: '',
-                    render: (t) =>
-                      t.revokedAt ? null : (
-                        <button type="button" class="linkish linkish--danger" onClick={() => void revoke(t)}>
-                          revoke
-                        </button>
-                      ),
-                  },
-                ]}
-              />
-            )
-          }
-        </Async>
-      </Section>
-      <Section title="create a token" id="create-token">
+      <Async state={state} loading={<Loading rows={3} label="Loading tokens" />}>
+        {(d) => {
+          if (d.tokens.length === 0) return <Empty title="No service tokens">Create one when you set up the Luma scraper or the purchasing agent.</Empty>;
+          const live = d.tokens.filter((t) => tokenState(t).label === 'active').length;
+          return (
+            <div class="list-block">
+              <div class="toolbar list-toolbar">
+                <span class="toolbar-count">
+                  {live} active token{live === 1 ? '' : 's'}
+                  {d.tokens.length > live && <span class="muted"> · {d.tokens.length - live} revoked or expired</span>}
+                </span>
+              </div>
+              <div class="table-wrap">
+                <table class="dt dt--people" data-tokens>
+                  <caption class="visually-hidden">Service tokens</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">token</th>
+                      <th scope="col">permissions</th>
+                      <th scope="col" class="people-seen">last used</th>
+                      <th scope="col" class="people-seen">expires</th>
+                      <th scope="col" class="people-menu">
+                        <span class="visually-hidden">actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.tokens.map((t) => {
+                      const st = tokenState(t);
+                      return (
+                        <tr key={t.id} class={st.label === 'active' ? undefined : 'is-inactive'} data-token={t.name}>
+                          <td class="people-who-cell">
+                            <span class="people-who">
+                            <span class="people-text">
+                              <span class="cell-title">
+                                {t.name} <Badge tone={st.tone}>{st.label}</Badge>
+                              </span>
+                              <span class="cell-sub">
+                                <span class="mono">{t.prefix}…</span> · by {t.createdBy.name}, {fmtDate(t.createdAt)}
+                              </span>
+                            </span>
+                            </span>
+                          </td>
+                          <td class="people-role">
+                            <span class="dot-labels">
+                              {t.scopes.map((s) => (
+                                <DotLabel hue={SCOPE_HUE[s] ?? 'blue'} key={s}>
+                                  <span class="mono">{s}</span>
+                                </DotLabel>
+                              ))}
+                            </span>
+                          </td>
+                          <td class="people-seen">
+                            <span class="small muted" title={t.lastUsedAt ? fmtDateTime(t.lastUsedAt) : undefined}>
+                              {t.lastUsedAt ? relative(t.lastUsedAt) : 'never used'}
+                            </span>
+                          </td>
+                          <td class="people-seen">
+                            <span class="small muted">{t.expiresAt ? fmtDate(t.expiresAt) : 'never'}</span>
+                          </td>
+                          <td class="people-menu">
+                            <RowMenu label={`Actions for ${t.name}`} items={t.revokedAt ? [] : [{ label: 'revoke', danger: true, onSelect: () => void revoke(t) }]} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        }}
+      </Async>
+
+      <Drawer id="create-token" open={creating} onClose={onCloseCreate} title="create a service token">
         <CreateToken
+          onCancel={onCloseCreate}
           onCreated={(t, plaintext) => {
             if (state.status === 'ready') state.set({ tokens: [t, ...state.data.tokens] });
             setCreated({ id: t.id, name: t.name, plaintext });
             setNotice(null);
-            requestAnimationFrame(() => document.getElementById('secret-h')?.focus());
+            onCloseCreate();
+            // After the drawer returns focus, move it to the one-time secret.
+            setTimeout(() => document.getElementById('secret-h')?.focus(), 50);
           }}
         />
-      </Section>
+      </Drawer>
     </div>
   );
 }
@@ -100,11 +140,13 @@ export default function AdminTokensView() {
 function NewSecret({ name, plaintext, onDone }: { name: string; plaintext: string; onDone: () => void }) {
   const [copied, setCopied] = useState(false);
   return (
-    <section class="action-panel" aria-labelledby="secret-h" role="alert">
-      <h2 id="secret-h" tabIndex={-1}>copy “{name}” now</h2>
-      <p class="small flush">
-        This is the only time the token is shown. Store it in the agent’s secrets; CSEED keeps only a hash.
-      </p>
+    <section class="secret-panel" aria-labelledby="secret-h" role="alert">
+      <div class="secret-panel-head">
+        <h2 id="secret-h" tabIndex={-1}>
+          copy “{name}” now
+        </h2>
+        <p class="small muted flush">This is the only time the token is shown. Store it in the agent’s secrets; CSEED keeps only a hash.</p>
+      </div>
       <div class="secret">
         <code data-secret>{plaintext}</code>
         <button
@@ -129,7 +171,7 @@ function NewSecret({ name, plaintext, onDone }: { name: string; plaintext: strin
   );
 }
 
-function CreateToken({ onCreated }: { onCreated: (t: ServiceToken, plaintext: string) => void }) {
+function CreateToken({ onCreated, onCancel }: { onCreated: (t: ServiceToken, plaintext: string) => void; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<ServiceTokenScope[]>([]);
   const [expires, setExpires] = useState('90');
@@ -138,7 +180,7 @@ function CreateToken({ onCreated }: { onCreated: (t: ServiceToken, plaintext: st
   const [busy, setBusy] = useState(false);
   return (
     <form
-      class="form"
+      class="form form--stack"
       noValidate
       onSubmit={async (e) => {
         e.preventDefault();
@@ -150,6 +192,7 @@ function CreateToken({ onCreated }: { onCreated: (t: ServiceToken, plaintext: st
             ...(fe.name ? { name: 'Name it after what will use it.' } : {}),
             ...(fe.scopes ? { scopes: 'Pick at least one permission.' } : {}),
           });
+          if (fe.name) document.getElementById('tk-name')?.focus();
           return;
         }
         setErrors({});
@@ -166,28 +209,19 @@ function CreateToken({ onCreated }: { onCreated: (t: ServiceToken, plaintext: st
         }
       }}
     >
-      <div class="grid-fields">
-        <Field id="tk-name" label="name" error={errors.name} hint="e.g. Luma scraper (Pi)">
-          <input class="input" {...describe('tk-name', errors.name, true)} value={name} maxLength={100} onInput={(e) => setName(e.currentTarget.value)} />
-        </Field>
-        <Field id="tk-exp" label="expires">
-          <select class="select" id="tk-exp" value={expires} onChange={(e) => setExpires(e.currentTarget.value)}>
-            <option value="30">in 30 days</option>
-            <option value="90">in 90 days</option>
-            <option value="365">in a year</option>
-            <option value="never">never</option>
-          </select>
-        </Field>
-      </div>
-      <fieldset class={`fieldset field${errors.scopes ? ' field--error' : ''}`} aria-describedby={errors.scopes ? 'tk-scopes-error' : undefined}>
-        <legend class="field-label">
-          permissions
-        </legend>
+      <Field id="tk-name" label="name" error={errors.name} hint="What will use it, e.g. Luma scraper (Pi).">
+        <input class="input" {...describe('tk-name', errors.name, true)} value={name} maxLength={100} onInput={(e) => setName(e.currentTarget.value)} />
+      </Field>
+      <fieldset class={`fieldset${errors.scopes ? ' field--error' : ''}`} aria-describedby={errors.scopes ? 'tk-scopes-error' : undefined}>
+        <legend class="field-label">permissions</legend>
         {SERVICE_TOKEN_SCOPES.map((s) => (
           <label class="check" key={s}>
             <input type="checkbox" checked={scopes.includes(s)} onChange={(e) => setScopes(e.currentTarget.checked ? [...scopes, s] : scopes.filter((x) => x !== s))} />
             <span>
-              <span class="mono">{s}</span> <span class="muted small">— {SCOPE_INFO[s]}</span>
+              <DotLabel hue={SCOPE_HUE[s] ?? 'blue'}>
+                <span class="mono">{s}</span>
+              </DotLabel>
+              <span class="muted small check-sub">{SCOPE_INFO[s]}</span>
             </span>
           </label>
         ))}
@@ -197,12 +231,24 @@ function CreateToken({ onCreated }: { onCreated: (t: ServiceToken, plaintext: st
           </p>
         )}
       </fieldset>
+      <Field id="tk-exp" label="expires">
+        <select class="select" id="tk-exp" value={expires} onChange={(e) => setExpires(e.currentTarget.value)}>
+          <option value="30">in 30 days</option>
+          <option value="90">in 90 days</option>
+          <option value="365">in a year</option>
+          <option value="never">never</option>
+        </select>
+      </Field>
       {error && <Notice tone="negative">{error}</Notice>}
       <div class="form-actions">
         <button type="submit" class="btn btn--primary" disabled={busy}>
           {busy ? 'creating…' : 'create token'}
         </button>
+        <button type="button" class="btn btn--text" onClick={onCancel}>
+          cancel
+        </button>
       </div>
     </form>
   );
 }
+

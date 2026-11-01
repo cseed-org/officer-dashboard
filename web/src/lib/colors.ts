@@ -43,3 +43,15 @@ export function usageHue(rate: number | null): Hue {
   if (rate === null || rate < 0.8) return 'green';
   return rate <= 1 ? 'amber' : 'coral';
 }
+
+/** A person's avatar colour: stable for their id (or name), from the palette. */
+export function personHue(key: string): Hue {
+  let h = 0;
+  for (const ch of key) h = (h * 33 + ch.charCodeAt(0)) >>> 0;
+  return HUES[h % HUES.length]!;
+}
+
+export const ROLE_HUE = { director: 'violet', officer: 'blue' } as const satisfies Record<string, Hue>;
+
+/** Service-token scopes as small coloured dot-labels. */
+export const SCOPE_HUE: Record<string, Hue> = { 'ingest:luma': 'teal', 'agent:jobs': 'amber' };
