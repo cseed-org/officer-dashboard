@@ -103,7 +103,7 @@ func (c *Ctx) director() (*store.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	if u.Role != auth.RoleDirector {
+	if !auth.HasRole(u.Role, auth.RoleDirector) {
 		return nil, forbidden("Requires director role")
 	}
 	return u, nil
@@ -166,4 +166,16 @@ func (s *Server) withAPIHygiene(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// requireLeadership protects role assignment, including promotions to leadership.
+func (c *Ctx) requireLeadership() (*store.User, error) {
+	u, err := c.officer()
+	if err != nil {
+		return nil, err
+	}
+	if !auth.HasRole(u.Role, auth.RoleLeadership) {
+		return nil, forbidden("Requires leadership role")
+	}
+	return u, nil
 }

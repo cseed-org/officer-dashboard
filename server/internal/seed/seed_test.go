@@ -36,6 +36,9 @@ func one(t *testing.T, db *store.DB, q string) int64 {
 func TestAppliesCleanlyOnTopOfTheMigrations(t *testing.T) {
 	db := seeded(t)
 	for q, want := range map[string]int64{
+		`SELECT count(*) FROM users WHERE role = 'leadership'`:                                       1,
+		`SELECT count(*) FROM subteams`:                                                              3,
+		`SELECT count(*) FROM officer_profiles`:                                                      5,
 		`SELECT count(*) FROM users WHERE role = 'director'`:                                         1,
 		`SELECT count(*) FROM users WHERE role = 'officer'`:                                          3,
 		`SELECT count(*) FROM events`:                                                                6,
@@ -108,7 +111,7 @@ func TestIsIdempotent(t *testing.T) {
 	if got := one(t, db, `SELECT count(*) FROM journal_lines`); got != 18 {
 		t.Errorf("journal lines %d", got)
 	}
-	if got := one(t, db, `SELECT count(*) FROM users`); got != 4 {
+	if got := one(t, db, `SELECT count(*) FROM users`); got != 5 {
 		t.Errorf("users %d", got)
 	}
 }

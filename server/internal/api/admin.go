@@ -38,11 +38,16 @@ func (c *Ctx) adminUserCreate() error {
 	if err := c.jsonBody(func(r *validate.Reader) {
 		discordID = r.Str("discordId", validate.S{Req: true, Format: "discord"}).V
 		name = r.Str("name", validate.S{Req: true, Trim: true, Min: 1, Max: 100}).V
-		role = r.Str("role", validate.S{Enum: []string{"director", "officer"}, HasDef: true, Default: "officer"}).V
+		role = r.Str("role", validate.S{Enum: []string{"leadership", "director", "officer"}, HasDef: true, Default: "officer"}).V
 		title = r.Str("title", validate.S{Null: true, Trim: true, Max: 100})
 		email = r.Str("email", validate.S{Null: true, Format: "email"})
 	}); err != nil {
 		return err
+	}
+	if role != auth.RoleOfficer {
+		if _, err := c.requireLeadership(); err != nil {
+			return err
+		}
 	}
 	ctx := c.Context()
 	id := auth.UUID()
@@ -79,12 +84,17 @@ func (c *Ctx) adminUserUpdate() error {
 	var title, email validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		name = r.Str("name", validate.S{Trim: true, Min: 1, Max: 100})
-		role = r.Str("role", validate.S{Enum: []string{"director", "officer"}})
+		role = r.Str("role", validate.S{Enum: []string{"leadership", "director", "officer"}})
 		active = r.BoolField("active")
 		title = r.Str("title", validate.S{Null: true, Trim: true, Max: 100})
 		email = r.Str("email", validate.S{Null: true, Format: "email"})
 	}); err != nil {
 		return err
+	}
+	if role.Set {
+		if _, err := c.requireLeadership(); err != nil {
+			return err
+		}
 	}
 	ctx := c.Context()
 	var out AdminUser
@@ -92,6 +102,11 @@ func (c *Ctx) adminUserUpdate() error {
 		before, err := w.UserByID(ctx, c.R.PathValue("id"))
 		if err != nil {
 			return notFoundErr("Record not found")
+		}
+		if before.Role == auth.RoleLeadership {
+			if _, err := c.requireLeadership(); err != nil {
+				return err
+			}
 		}
 		patch := store.UserPatch{Name: optOf(name), Role: optOf(role), Active: optOf(active), Title: optOf(title), Email: optOf(email)}
 		// The users_last_director trigger refuses to demote or deactivate the last director.

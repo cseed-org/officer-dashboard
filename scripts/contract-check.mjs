@@ -92,6 +92,7 @@ function sessionFor(userId) {
 const anon = {};
 const directorA = sessionFor('user-director');
 const officer = sessionFor('user-priya');
+const leadership = sessionFor('user-leadership');
 
 // ───────────── the caller ─────────────
 const covered = new Set();
@@ -234,7 +235,7 @@ await call('lookups', { expect: 401 });
 }
 
 // ───────────── 3. purchase lifecycle: club purchase settled below the estimate ─────────────
-const createdB = await call('adminUserCreate', { who: directorA, body: { discordId: '100000000000000077', name: 'Second Director', role: 'director', title: 'Treasurer', email: 'second@example.org' } });
+const createdB = await call('adminUserCreate', { who: leadership, body: { discordId: '100000000000000077', name: 'Second Director', role: 'director', title: 'Treasurer', email: 'second@example.org' } });
 const directorB = sessionFor(createdB.json.user.id);
 await call('adminUserUpdate', { who: directorA, params: { id: createdB.json.user.id }, body: { title: 'Co-director' } });
 
@@ -354,6 +355,23 @@ must(audit.json.items.some((a) => a.action === 'request.fulfilled'), 'the audit 
 await call('requestDetail', { who: officer, params: { id: 'nope' }, expect: 404 });
 await call('eventCreate', { who: officer, body: {}, expect: 400 });
 await call('search', { who: officer, query: {}, expect: 400 });
+
+// V0.3 foundation endpoints, ownership and calendar limits.
+await call('prefsGet', { who: officer });
+const layout = { widgetLayout: [{ id: 'budget', size: 'L' }] };
+await call('prefsPut', { who: officer, body: layout });
+must(JSON.stringify((await call('prefsGet', { who: officer })).json) === JSON.stringify(layout), 'layout persists');
+await call('calendarEmailsList', { who: officer });
+const savedEmail = await call('calendarEmailCreate', { who: officer, body: { email: 'one@example.org' } });
+await call('calendarEmailUpdate', { who: officer, params: { id: savedEmail.json.email.id }, body: { email: 'changed@example.org' } });
+await call('calendarEmailUpdate', { who: directorA, params: { id: savedEmail.json.email.id }, body: { active: true }, expect: 404 });
+for (let i=0;i<4;i++) await call('calendarEmailCreate', { who: officer, body: { email: `calendar${i}@example.org` } });
+await call('calendarEmailCreate', { who: officer, body: { email: 'six@example.org' }, expect: 409 });
+await call('calendarEmailDelete', { who: officer, params: { id: savedEmail.json.email.id } });
+await call('inviteCreate', { who: officer, body: {}, expect: 403 });
+await call('inviteCreate', { who: directorA, body: { name:'New officer',discordId:'100000000000000088',subteamId:'team-events',method:'link' } });
+await call('adminUserUpdate', { who: directorA, params:{id:'user-priya'}, body:{role:'leadership'}, expect:403 });
+await call('adminUserUpdate', { who: leadership, params:{id:createdB.json.user.id}, body:{role:'leadership'} });
 
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev']); // redirects: covered by the Go tests

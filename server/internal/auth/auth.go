@@ -13,14 +13,19 @@ import (
 )
 
 const (
-	RoleDirector = "director"
-	RoleOfficer  = "officer"
+	RoleLeadership = "leadership"
+	RoleDirector   = "director"
+	RoleOfficer    = "officer"
 )
 
-var rank = map[string]int{RoleOfficer: 1, RoleDirector: 2}
+var rank = map[string]int{RoleOfficer: 1, RoleDirector: 2, RoleLeadership: 3}
 
-// HasRole: directors can do everything officers can.
-func HasRole(actual, required string) bool { return rank[actual] >= rank[required] }
+// HasRole ranks leadership above directors above officers; unknown roles are denied.
+func HasRole(actual, required string) bool {
+	a, ok := rank[actual]
+	r, valid := rank[required]
+	return ok && valid && a >= r
+}
 
 func under(path, prefix string) bool { return path == prefix || strings.HasPrefix(path, prefix+"/") }
 
@@ -87,7 +92,7 @@ func DecideLogin(discordID string, user *KnownUser, bootstrapDirectorID string) 
 }
 
 // RedirectSections are the top-level page sections a post-login redirect may land in (besides "/").
-var RedirectSections = []string{"events", "requests", "finance", "admin"}
+var RedirectSections = []string{"events", "requests", "finance", "admin", "settings", "officers", "members", "speakers", "design"}
 
 // SafeNext returns the post-login redirect target, or "/" unless it is one of the app's own
 // pages. Layers, each enough on its own for the cases it covers:

@@ -69,7 +69,7 @@ export function clearCachedRole() {
   applyRole(null);
 }
 
-export const isDirector = (u: CurrentUser | null | undefined) => u?.role === 'director';
+export const isDirector = (u: CurrentUser | null | undefined) => !!u && u.role !== 'officer';
 
 export const initials = (name: string) =>
   name

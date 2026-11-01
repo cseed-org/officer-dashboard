@@ -129,6 +129,12 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		if err != nil {
 			return err
 		}
+		// Table rebuilds must disable FK enforcement outside the transaction. The
+		// single writer connection prevents another operation from borrowing it.
+		if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
+			return err
+		}
+		defer db.ExecContext(context.Background(), `PRAGMA foreign_keys=ON`)
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return err
@@ -142,6 +148,18 @@ func migrate(ctx context.Context, db *sql.DB) error {
 				return fmt.Errorf("migration %s statement %d: %w", name, i+1, err)
 			}
 		}
+		check, err := tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
+		if err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		broken := check.Next()
+		checkErr := check.Err()
+		check.Close()
+		if broken || checkErr != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("migration %s: foreign_key_check failed: %v", name, checkErr)
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?)`, name, time.Now().UnixMilli()); err != nil {
 			_ = tx.Rollback()
 			return err
@@ -149,6 +167,9 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+	}
+	if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys=ON`); err != nil {
+		return err
 	}
 	// 0003 rebuilds a table with foreign_keys=OFF, which SQLite ignores inside a transaction;
 	// verify nothing was left dangling.

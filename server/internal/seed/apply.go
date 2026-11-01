@@ -83,6 +83,23 @@ func apply(ctx context.Context, w *store.Queries) error {
 			return err
 		}
 	}
+	for _, team := range []struct{ id, name string }{{"team-operations", "Operations"}, {"team-events", "Events"}, {"team-build", "Build"}} {
+		if err := insert(ctx, w, "subteams", "id,name", team.id, team.name); err != nil {
+			return err
+		}
+	}
+	for i, u := range Users {
+		team := "team-operations"
+		if i == 2 {
+			team = "team-events"
+		}
+		if i == 4 {
+			team = "team-build"
+		}
+		if err := w.Exec(ctx, `INSERT INTO officer_profiles(user_id,subteam_id,phone,birthday,title,personal_email,start_term) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM officer_profiles WHERE user_id=?)`, u.ID, team, fmt.Sprintf("+120655501%02d", i), "2004-01-15", u.Title, u.Email, "Fall 2026", u.ID); err != nil {
+			return err
+		}
+	}
 	for _, a := range Accounts {
 		if err := insert(ctx, w, "accounts", "id, code, name, type, normal_balance, restriction, form990_part, form990_line, form990_label, budgetable, active, description, created_at",
 			AccountID(a.Code), a.Code, a.Name, a.Type, a.Normal, nullable(a.Restriction), nullable(a.Part), nullable(a.Line), nullable(a.Label), b2i(a.Budgetable), 1, nullable(a.Description), now); err != nil {

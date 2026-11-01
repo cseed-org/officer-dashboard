@@ -38,7 +38,7 @@ func (c *Ctx) search() error {
 	}); err != nil {
 		return err
 	}
-	hits, err := c.S.db.Read().Search(c.Context(), text, int(limit), u.Role == auth.RoleDirector)
+	hits, err := c.S.db.Read().Search(c.Context(), text, int(limit), auth.HasRole(u.Role, auth.RoleDirector))
 	if err != nil {
 		return err
 	}

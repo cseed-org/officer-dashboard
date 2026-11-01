@@ -7,6 +7,18 @@ import (
 )
 
 func TestHasRole(t *testing.T) {
+	for _, tc := range []struct {
+		actual, required string
+		want             bool
+	}{
+		{"leadership", "director", true}, {"leadership", "leadership", true}, {"leadership", "officer", true},
+		{"director", "leadership", false}, {"officer", "leadership", false}, {"bogus", "bogus", false}, {"leadership", "bogus", false},
+	} {
+		if got := HasRole(tc.actual, tc.required); got != tc.want {
+			t.Errorf("HasRole(%q,%q)=%v", tc.actual, tc.required, got)
+		}
+	}
+
 	if !HasRole("director", "officer") || !HasRole("director", "director") || !HasRole("officer", "officer") {
 		t.Error("directors do everything officers can")
 	}

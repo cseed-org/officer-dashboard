@@ -11,7 +11,7 @@
 .nav-link {display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:4px;color:var(--text);text-decoration:none;}
 .nav-link:hover {background:var(--hover);}
 .nav-link[aria-current='page'] {background:var(--surface);font-weight:600;box-shadow:inset 2px 0 0 var(--brand);}
-html:not([data-role='director']) [data-director-only] {display:none;}
+html:not([data-role='director']):not([data-role='leadership']) [data-director-only] {display:none;}
 .sidebar-foot {margin-top:auto;display:grid;gap:4px;}
 .user-chip {display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;color:var(--text);text-decoration:none;min-height:40px;}
 .user-chip-text {display:grid;line-height:1.2;min-width:0;}
@@ -583,3 +583,12 @@ td.people-who-cell {min-width:0;}
 .list-toolbar .toolbar-search {flex:0 1 320px;width:320px;max-width:100%;}
 @media (max-width:639px) {.list-toolbar .toolbar-actions, .list-toolbar .toolbar-search {width:100%;flex:1 1 100%;}}
 .people-title + .copy-text::before {content:"·";margin-right:4px;color:var(--muted);}
+
+/* Foundation widget shell; page design continues to use existing block styles. */
+.widget-toolbar,.widget-gallery,.widget-controls { display:flex; gap:var(--space-2, 8px); flex-wrap:wrap; align-items:center; margin-bottom:16px; }
+.widget-slot { min-width:0; }
+.widget-slot > .block { height:100%; }
+.widget-slot--L { grid-column:1 / -1; }
+.widget-slot--S { max-height:360px; overflow:auto; }
+.widget-controls { border:1px solid var(--line, #ccc); padding:8px; }
+.widget-controls + .block { height:auto; }

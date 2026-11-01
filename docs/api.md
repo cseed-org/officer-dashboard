@@ -30,8 +30,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | Value | Meaning |
 | --- | --- |
 | public | No session needed. |
-| officer | Any signed-in, active user (officers and directors). Enforced by `src/middleware.ts`. |
-| director | Directors only; officers get 403. `/admin/*` and `/api/admin/*` are enforced by the middleware, the rest by `requireRole(locals, 'director')` in the handler. |
+| officer | Any signed-in, active officer, director, or leadership user. |
+| director | Director or leadership; officers get 403. `/admin/*` and `/api/admin/*` are enforced by the middleware, the rest by `requireRole(locals, 'director')` in the handler. |
 | token:&lt;scope&gt; | `Authorization: Bearer <service token>` with that scope (issued on `/admin/tokens`). No session. |
 
 ## Endpoints
@@ -40,6 +40,13 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | --- | --- | --- | --- | --- | --- |
 | GET | `/api/health` | public | — | — | `HealthResponse` |
 | GET | `/api/me` | officer | — | — | `MeResponse` |
+| GET | `/api/me/prefs` | officer | — | — | `WidgetPrefs` |
+| PUT | `/api/me/prefs` | officer | — | `WidgetPrefs` | `WidgetPrefs` |
+| GET | `/api/me/calendar-emails` | officer | — | — | `CalendarEmailsResponse` |
+| POST | `/api/me/calendar-emails` | officer | — | `CalendarEmailCreateRequest` | `CalendarEmailResponse` |
+| PATCH | `/api/me/calendar-emails/:id` | officer | — | `CalendarEmailUpdateRequest` | `CalendarEmailResponse` |
+| DELETE | `/api/me/calendar-emails/:id` | officer | — | — | `OkResponse` |
+| POST | `/api/invites` | director | — | `InviteCreateRequest` | `InviteResponse` |
 | GET | `/api/lookups` | officer | — | — | `LookupsResponse` |
 | GET | `/api/overview` | officer | — | — | `OverviewResponse` |
 | GET | `/api/search` | officer | `SearchQuery` | — | `SearchResponse` |
@@ -191,3 +198,45 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 - Receipt uploads must carry the magic bytes of their declared type (PDF, PNG, JPEG, WebP, HEIC).
 - Known v1 parity: a director may move `approved → fulfilling` through `/transition` without the
   agent claiming a job; no purchasing job exists for that request, so a director settles it by hand.
+
+## V0.3 foundation
+
+Roles rank `leadership > director > officer`. Only leadership may supply `role` in
+PATCH `/api/admin/users/:id` or create a user with a role other than officer.
+Directors may create officers and invites; modifying an existing leadership user also
+requires leadership. Role changes invalidate the affected user's sessions. The last
+active director-or-leadership account cannot be deactivated or demoted to officer.
+
+`GET/PUT /api/me/prefs` returns/replaces `{widgetLayout: [{id, size}]}`. Array order is
+widget order, IDs are unique (1–64 characters), sizes are `S`, `M`, `L`, maximum 50
+widgets. An empty array is intentional. Missing prefs return the default Home cards.
+Unknown IDs survive round trips for forward compatibility. Theme and density remain
+in localStorage. All preference writes are audit logged.
+
+Calendar email routes operate only on the signed-in user's collection. Up to five
+addresses are allowed; the sixth returns 409 with “You can save at most 5 calendar
+emails”. SQLite enforces the same limit on inserts and user reassignment. Addresses
+are trimmed, lowercased and unique per user. The first is active automatically;
+selecting another switches atomically, and deleting the active address selects the
+oldest remaining one. A partial unique index prevents multiple active addresses.
+Mutations audit the entire before/after collection. Calendar delivery mode is stored
+on `officer_profiles` as `ics` (default) or `google`; delivery and OAuth belong to the
+officers/onboarding feature.
+
+POST `/api/invites` currently accepts copy-link invitations (`method: "link"`). It
+returns a plaintext token once and stores only its SHA-256 hash. The token is omitted
+from audit records. Schema supports `dm` and `both`, `dm_sent_at`, and `accepted_at`;
+Discord delivery, accepting invitations, and onboarding are added by the officers
+feature. This endpoint does not send a DM or allow the invitee to sign in yet.
+
+Officer profiles require phone, birthday, and subteam; name and Discord ID remain on
+`users`. Optional profile fields are preferred name, pronouns, personal/school email,
+grad date, title, start term, and LinkedIn. No profile read endpoint is exposed here;
+future profile endpoints must restrict phone visibility to director+.
+
+Deployment provisioning: the migration preserves existing user roles, and the existing
+`BOOTSTRAP_DIRECTOR_DISCORD_ID` behavior still creates a director. Before using role
+management on an upgraded deployment, the database operator must explicitly promote
+the intended owner to leadership (`UPDATE users SET role='leadership' WHERE discord_id=?`).
+The development seed includes `user-leadership`; dev builds also accept
+`/auth/dev?as=leadership`. No existing director is silently promoted by this migration.

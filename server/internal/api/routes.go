@@ -7,6 +7,12 @@ func (s *Server) routes(mux *http.ServeMux) {
 
 	h("GET /api/health", (*Ctx).health)
 	h("GET /api/me", (*Ctx).me)
+	h("GET /api/me/prefs", (*Ctx).prefsGet)
+	h("PUT /api/me/prefs", (*Ctx).prefsPut)
+	h("GET /api/me/calendar-emails", (*Ctx).calendarEmailsList)
+	h("POST /api/me/calendar-emails", (*Ctx).calendarEmailCreate)
+	h("PATCH /api/me/calendar-emails/{id}", (*Ctx).calendarEmailUpdate)
+	h("DELETE /api/me/calendar-emails/{id}", (*Ctx).calendarEmailDelete)
 	h("GET /api/lookups", (*Ctx).lookups)
 	h("GET /api/overview", (*Ctx).overview)
 	h("GET /api/search", (*Ctx).search)
@@ -40,6 +46,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("POST /api/finance/periods/{id}/close", (*Ctx).periodClose)
 	h("GET /api/finance/accounts", (*Ctx).accounts)
 
+	h("POST /api/invites", (*Ctx).inviteCreate)
 	h("GET /api/admin/users", (*Ctx).adminUsers)
 	h("POST /api/admin/users", (*Ctx).adminUserCreate)
 	h("PATCH /api/admin/users/{id}", (*Ctx).adminUserUpdate)

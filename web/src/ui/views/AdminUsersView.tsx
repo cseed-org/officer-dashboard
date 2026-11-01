@@ -13,6 +13,7 @@ import { Async, Empty, errorMessage, Loading, Notice } from '../components/state
 
 const ROLE_OPTIONS = [
   { key: 'officer' as const, label: 'officer', hue: ROLE_HUE.officer },
+  { key: 'leadership' as const, label: 'leadership', hue: ROLE_HUE.leadership },
   { key: 'director' as const, label: 'director', hue: ROLE_HUE.director },
 ];
 
@@ -21,7 +22,7 @@ const ROLE_OPTIONS = [
  * role toggle (confirmed), a ⋯ menu for deactivate/reactivate (confirmed) and the add form
  * in a drawer opened from the tab's "+ add officer" button.
  */
-export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: string; adding: boolean; onCloseAdd: () => void }) {
+export default function AdminUsersView({ meId, canChangeRoles, adding, onCloseAdd }: { meId: string; canChangeRoles: boolean; adding: boolean; onCloseAdd: () => void }) {
   const state = useApi('adminUsers');
   const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string; n: number } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -56,6 +57,7 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
           <UserList
             users={d.users}
             meId={meId}
+            canChangeRoles={canChangeRoles}
             busyId={busyId}
             patch={patch}
             q={q}
@@ -69,6 +71,7 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
 
       <Drawer id="add-officer" open={adding} onClose={onCloseAdd} title="add an officer">
         <AddUser
+          canChangeRoles={canChangeRoles}
           onCancel={onCloseAdd}
           onAdded={(u) => {
             if (state.status === 'ready') state.set({ users: [...state.data.users, u] });
@@ -84,6 +87,7 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
 function UserList({
   users,
   meId,
+  canChangeRoles,
   busyId,
   patch,
   q,
@@ -93,6 +97,7 @@ function UserList({
 }: {
   users: AdminUser[];
   meId: string;
+  canChangeRoles: boolean;
   busyId: string | null;
   patch: (u: AdminUser, body: { role?: Role; active?: boolean }, msg: string) => void;
   q: string;
@@ -177,14 +182,10 @@ function UserList({
                         label={`Role for ${u.name}`}
                         value={u.role}
                         options={ROLE_OPTIONS}
-                        disabled={busyId === u.id || !u.active}
+                        disabled={!canChangeRoles || busyId === u.id || !u.active}
                         onChange={(role) => {
-                          const msg =
-                            role === 'director'
-                              ? `Make ${u.name} a director? Directors approve requests, see every report and manage officers.`
-                              : `Make ${u.name} an officer? They lose director access${u.id === meId ? ', including this page' : ''}.`;
-                          if (!confirm(msg)) return;
-                          patch(u, { role }, `${u.name} is now ${role === 'director' ? 'a director' : 'an officer'}.`);
+                          if (!confirm(`Make ${u.name} ${role}? Only leadership can change roles.`)) return;
+                          patch(u, { role }, `${u.name} is now ${role}.`);
                         }}
                       />
                     </td>
@@ -231,7 +232,7 @@ function UserList({
   );
 }
 
-function AddUser({ onAdded, onCancel }: { onAdded: (u: AdminUser) => void; onCancel: () => void }) {
+function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolean; onAdded: (u: AdminUser) => void; onCancel: () => void }) {
   const empty = { discordId: '', name: '', role: 'officer' as Role, title: '', email: '' };
   const [f, setF] = useState(empty);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -290,13 +291,13 @@ function AddUser({ onAdded, onCancel }: { onAdded: (u: AdminUser) => void; onCan
       <fieldset class="fieldset">
         <legend class="field-label">role</legend>
         <div class="choice-row choice-row--compact">
-          {ROLE_OPTIONS.map((o) => (
+          {ROLE_OPTIONS.filter((o) => canChangeRoles || o.key === 'officer').map((o) => (
             <label class="choice" key={o.key}>
               <input type="radio" name="au-role" value={o.key} checked={f.role === o.key} onChange={() => set('role', o.key)} />
               <span class="choice-title dot-label" data-hue={o.hue}>
                 {o.label}
               </span>
-              <span class="choice-sub">{o.key === 'director' ? 'approves requests, sees every report, manages officers' : 'requests purchases, runs events'}</span>
+              <span class="choice-sub">{o.key === 'leadership' ? 'owns all access and role changes' : o.key === 'director' ? 'approves requests, sees every report, manages officers' : 'requests purchases, runs events'}</span>
             </label>
           ))}
         </div>

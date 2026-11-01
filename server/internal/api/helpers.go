@@ -302,9 +302,9 @@ func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store
 		case to == "submitted":
 			ok = viewer.ID == r.RequesterID
 		case to == "approved":
-			ok = viewer.Role == auth.RoleDirector && viewer.ID != r.RequesterID
+			ok = auth.HasRole(viewer.Role, auth.RoleDirector) && viewer.ID != r.RequesterID
 		default:
-			ok = viewer.Role == auth.RoleDirector
+			ok = auth.HasRole(viewer.Role, auth.RoleDirector)
 		}
 		if ok {
 			d.AllowedTransitions = append(d.AllowedTransitions, to)

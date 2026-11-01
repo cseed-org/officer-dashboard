@@ -27,7 +27,7 @@ export default function AdminView({ me }: { me: CurrentUser }) {
   const creating = search.get('new') === '1';
   const closeCreate = () => creating && setParams({ new: null });
 
-  if (me.role !== 'director')
+  if (me.role === 'officer')
     return (
       <div class="state state--error" role="alert" data-state="forbidden">
         <p class="state-title">Directors only</p>
@@ -54,7 +54,7 @@ export default function AdminView({ me }: { me: CurrentUser }) {
       </div>
       <div key={tab} id="adm-panel" role="tabpanel" aria-labelledby={`adm-tab-${tab}`} class="tab-panel">
         {tab === 'users' ? (
-          <AdminUsersView meId={me.id} adding={creating} onCloseAdd={closeCreate} />
+          <AdminUsersView canChangeRoles={me.role === 'leadership'} meId={me.id} adding={creating} onCloseAdd={closeCreate} />
         ) : tab === 'tokens' ? (
           <AdminTokensView creating={creating} onCloseCreate={closeCreate} />
         ) : (
