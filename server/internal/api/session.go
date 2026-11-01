@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -30,10 +31,16 @@ type principal struct {
 // sessionCookieName: `__Host-` pins the cookie to this origin over HTTPS; the plain name
 // is used on http://localhost.
 func (s *Server) sessionCookieName() string {
+	return s.hostPrefixed("cseed_session")
+}
+
+// hostPrefixed adds the `__Host-` prefix over HTTPS so a sibling subdomain or a plain-http
+// attacker cannot plant or shadow the cookie. Plain names are kept on http://localhost.
+func (s *Server) hostPrefixed(name string) string {
 	if s.secure {
-		return "__Host-cseed_session"
+		return "__Host-" + name
 	}
-	return "cseed_session"
+	return name
 }
 
 func (s *Server) setCookie(w http.ResponseWriter, name, value string, expires time.Time, maxAge int) {
@@ -87,7 +94,11 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 				s.log.Error("session lookup failed", "error", err)
 			}
 		}
+		// Decide the role on the canonical path so "//" and dot segments cannot dodge a prefix.
 		path := r.URL.Path
+		if strings.HasPrefix(path, "/api") {
+			path = cleanPath(path)
+		}
 		if strings.HasPrefix(path, "/api/") {
 			if required := auth.RequiredRoleForPath(path); required != "" {
 				if p.user == nil {
@@ -128,4 +139,9 @@ func (s *Server) originOK(r *http.Request) bool {
 		return false
 	}
 	return strings.EqualFold(u.Host, r.Host) || (s.host != "" && strings.EqualFold(u.Host, s.host))
+}
+
+// cleanPath collapses repeated slashes and resolves dot segments, keeping a rooted path.
+func cleanPath(p string) string {
+	return path.Clean("/" + p)
 }
