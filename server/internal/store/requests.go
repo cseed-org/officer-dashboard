@@ -174,7 +174,7 @@ func (q *Queries) InsertRequest(ctx context.Context, r Request, fiscalYear int) 
 	_, err := q.q.ExecContext(ctx, `INSERT INTO purchase_requests (id, number, requester_id, type, title, vendor, item_url, quantity, unit_cost_cents, tax_ship_cents, total_cents,
 		expense_account_id, fund_id, event_id, functional_class, justification, needed_by, status, submitted_at, created_at, updated_at)
 		VALUES (?, (SELECT printf('%d-%04d', ?, coalesce(max(CAST(substr(number, 6) AS INTEGER)), 0) + 1) FROM purchase_requests WHERE number GLOB ? AND substr(number, 6) NOT GLOB '*[^0-9]*'),
-		?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, fiscalYear, fmt.Sprintf("%d-[0-9]*", fiscalYear),
 		r.RequesterID, r.Type, r.Title, r.Vendor, r.ItemURL, r.Quantity, r.UnitCostCents, r.TaxShipCents, r.TotalCents,
 		r.ExpenseAccountID, r.FundID, r.EventID, r.FunctionalClass, r.Justification, r.NeededBy, r.Status, r.SubmittedAt, int64(r.CreatedAt), int64(r.UpdatedAt))
@@ -276,8 +276,10 @@ const attachmentCols = `id, request_id, journal_entry_id, kind, filename, mime_t
 
 func scanAttachment(s interface{ Scan(...any) error }) (*Attachment, error) {
 	var a Attachment
-	err := s.Scan(&a.ID, &a.RequestID, &a.JournalEntry, &a.Kind, &a.Filename, &a.MimeType, &a.SizeBytes, &a.Storage, &a.StorageKey, &a.WebViewLink, &a.UploadedBy, &a.CreatedAt)
-	return &a, err
+	if err := s.Scan(&a.ID, &a.RequestID, &a.JournalEntry, &a.Kind, &a.Filename, &a.MimeType, &a.SizeBytes, &a.Storage, &a.StorageKey, &a.WebViewLink, &a.UploadedBy, &a.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
 
 // InsertAttachment records an uploaded file.

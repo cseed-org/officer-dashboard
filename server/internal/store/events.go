@@ -25,8 +25,10 @@ const eventCols = `id, luma_id, name, starts_at, ends_at, location, url, host_us
 
 func scanEvent(s interface{ Scan(...any) error }) (*Event, error) {
 	var e Event
-	err := s.Scan(&e.ID, &e.LumaID, &e.Name, &e.StartsAt, &e.EndsAt, &e.Location, &e.URL, &e.HostUserID, &e.CreatedAt, &e.UpdatedAt)
-	return &e, err
+	if err := s.Scan(&e.ID, &e.LumaID, &e.Name, &e.StartsAt, &e.EndsAt, &e.Location, &e.URL, &e.HostUserID, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		return nil, err
+	}
+	return &e, nil
 }
 
 // Events lists every event (callers filter and page: there are tens per year).
