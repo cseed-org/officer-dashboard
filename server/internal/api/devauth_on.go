@@ -12,7 +12,7 @@ import (
 // DevBuild is true in binaries built with `-tags dev`.
 const DevBuild = true
 
-// registerDev adds /auth/dev?as=director|officer, which signs in as the oldest active user
+// registerDev adds /auth/dev?as=leadership|director|officer, which signs in as the oldest active user
 // with that role (creating a placeholder on an empty database). It needs DEV_AUTH=1 as well.
 func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 	h("GET /auth/dev", func(c *Ctx) error {
@@ -21,8 +21,8 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 			return nil
 		}
 		as := c.R.URL.Query().Get("as")
-		if as != auth.RoleDirector && as != auth.RoleOfficer {
-			http.Error(c.W, "as must be director or officer", http.StatusBadRequest)
+		if as != auth.RoleDirector && as != auth.RoleOfficer && as != auth.RoleLeadership {
+			http.Error(c.W, "as must be leadership, director or officer", http.StatusBadRequest)
 			return nil
 		}
 		ctx := c.Context()
@@ -37,6 +37,9 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 			discord := "000000000000000002"
 			if as == auth.RoleDirector {
 				discord = "000000000000000001"
+			}
+			if as == auth.RoleLeadership {
+				discord = "000000000000000003"
 			}
 			now := store.Ms(c.S.nowMs())
 			return w.InsertUser(ctx, store.User{ID: userID, DiscordID: discord, Name: "Dev " + as, Role: as, Active: true, CreatedAt: now, UpdatedAt: now})

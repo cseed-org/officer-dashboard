@@ -20,6 +20,7 @@ type UserSummary struct {
 
 type CurrentUser struct {
 	UserSummary
+	IsOwner   bool    `json:"isOwner"`
 	DiscordID string  `json:"discordId"`
 	Role      string  `json:"role"`
 	Title     *string `json:"title"`
@@ -192,7 +193,7 @@ func userSummary(u *store.User) UserSummary {
 }
 
 func currentUser(u *store.User) CurrentUser {
-	return CurrentUser{UserSummary: userSummary(u), DiscordID: u.DiscordID, Role: u.Role, Title: u.Title}
+	return CurrentUser{UserSummary: userSummary(u), DiscordID: u.DiscordID, Role: u.Role, IsOwner: u.IsOwner, Title: u.Title}
 }
 
 func adminUser(u *store.User) AdminUser {

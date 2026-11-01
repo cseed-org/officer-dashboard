@@ -20,7 +20,7 @@ func TestRT_OAuthTempCookiesNotHostPrefixed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			e := discordEnv(t, `{"id":"100000000000000002","username":"priya"}`, "", nil)
+			e := discordEnv(t, `{"id":"100000000000000002","username":"priya"}`, nil)
 			e.srv.secure = tc.secure
 			r := e.get("/auth/login?next=/finance", anon)
 			cs := setCookies(r)
@@ -42,7 +42,7 @@ func TestRT_OAuthTempCookiesNotHostPrefixed(t *testing.T) {
 
 // F1: the callback reads and clears the prefixed names, and ignores a planted plain-named state.
 func TestRT_CallbackUsesHostPrefixedTempCookies(t *testing.T) {
-	e := discordEnv(t, `{"id":"100000000000000002","username":"priya"}`, "", nil)
+	e := discordEnv(t, `{"id":"100000000000000002","username":"priya"}`, nil)
 	e.srv.secure = true
 	cs, state := startLogin2(t, e)
 	// Planted plain-named cookies alone must not satisfy the callback.

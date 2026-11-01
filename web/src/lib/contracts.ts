@@ -101,6 +101,7 @@ export const UserSummary = z.object({
 export type UserSummary = z.infer<typeof UserSummary>;
 
 export const CurrentUser = UserSummary.extend({
+  isOwner: z.boolean(),
   discordId: z.string(),
   role: Role,
   title: z.string().nullable(),
@@ -889,7 +890,22 @@ export type SearchResponse = z.infer<typeof SearchResponse>;
 
 // ───────────────────────────── Endpoint index ─────────────────────────────
 
-type Auth = 'public' | 'officer' | 'director' | `token:${(typeof SERVICE_TOKEN_SCOPES)[number]}`;
+// V0.3: server-backed Home layout and private calendar addresses.
+export const WidgetPlacement = z.object({ id: Id, size: z.enum(['S', 'M', 'L']) });
+export type WidgetPlacement = z.infer<typeof WidgetPlacement>;
+export const WidgetPrefs = z.object({ widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
+export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
+export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
+export const CalendarEmailsResponse = z.object({ emails: z.array(CalendarEmail).max(5) });
+export const CalendarEmailResponse = z.object({ email: CalendarEmail });
+export const CalendarEmailCreateRequest = z.object({ email: z.email().max(254), active: z.boolean().optional() });
+export const CalendarEmailUpdateRequest = CalendarEmailCreateRequest.partial();
+export const InviteCreateRequest = z.object({ name: z.string().trim().min(1).max(100), discordId: DiscordId, subteamId: Id, method: z.literal('link').default('link') });
+export const InviteResponse = z.object({ invite: z.object({ id: Id, name: z.string(), discordId: DiscordId, subteamId: Id, invitedBy: Id, method: z.enum(['dm','link','both']) }), token: z.string() });
+
+export const OwnerTransferRequest = z.object({ toUserId: Id });
+
+type Auth = 'owner' | 'leadership' | 'public' | 'officer' | 'director' | `token:${(typeof SERVICE_TOKEN_SCOPES)[number]}`;
 interface EndpointSpec {
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   path: string;
@@ -904,6 +920,17 @@ interface EndpointSpec {
  * keeps the two in sync.
  */
 export const ENDPOINTS = {
+  ownerAdd: { method: 'POST', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
+  ownerRemove: { method: 'DELETE', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
+  ownerTransfer: { method: 'POST', path: '/api/admin/owners/transfer', auth: 'owner', body: OwnerTransferRequest, response: AdminUsersResponse },
+  prefsGet: { method: 'GET', path: '/api/me/prefs', auth: 'officer', response: WidgetPrefs },
+  prefsPut: { method: 'PUT', path: '/api/me/prefs', auth: 'officer', body: WidgetPrefs, response: WidgetPrefs },
+  calendarEmailsList: { method: 'GET', path: '/api/me/calendar-emails', auth: 'officer', response: CalendarEmailsResponse },
+  calendarEmailCreate: { method: 'POST', path: '/api/me/calendar-emails', auth: 'officer', body: CalendarEmailCreateRequest, response: CalendarEmailResponse },
+  calendarEmailUpdate: { method: 'PATCH', path: '/api/me/calendar-emails/:id', auth: 'officer', body: CalendarEmailUpdateRequest, response: CalendarEmailResponse },
+  calendarEmailDelete: { method: 'DELETE', path: '/api/me/calendar-emails/:id', auth: 'officer', response: OkResponse },
+  inviteCreate: { method: 'POST', path: '/api/invites', auth: 'director', body: InviteCreateRequest, response: InviteResponse },
+
   health: { method: 'GET', path: '/api/health', auth: 'public', response: HealthResponse },
   me: { method: 'GET', path: '/api/me', auth: 'officer', response: MeResponse },
   lookups: { method: 'GET', path: '/api/lookups', auth: 'officer', response: LookupsResponse },

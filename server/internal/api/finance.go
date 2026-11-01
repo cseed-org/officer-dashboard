@@ -294,7 +294,7 @@ func (c *Ctx) financeReport() error {
 		iss.AddForm("Invalid option: expected one of " + strings.Join(financeReports, "|"))
 		return validationError(iss)
 	}
-	if user.Role != auth.RoleDirector && !officerReports[name] {
+	if !auth.HasRole(user.Role, auth.RoleDirector) && !officerReports[name] {
 		return forbidden("This report requires director role")
 	}
 	data, err := c.S.loadReportData(c.Context(), c.S.db.Read(), p.AsOf)

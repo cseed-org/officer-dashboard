@@ -55,7 +55,9 @@ Environment variables (flags override where shown):
 | `STATIC_DIR` (`-static`) | embedded build | serve the front end from this directory instead |
 | `STATIC_FALLBACK`, `STATIC_FALLBACK_STATUS` | `404.html`, `404` | page for unknown non-API paths. The `redesign` front end can set an SPA shell (`200.html`, `200`) |
 | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | – | Discord OAuth2 app; redirect URI `${APP_URL}/auth/callback` |
-| `BOOTSTRAP_DIRECTOR_DISCORD_ID` | – | created as a director on first sign-in |
+| `BOOTSTRAP_OWNER_DISCORD_ID` | – | initial owner Discord ID; provisioned on server startup only when no owner exists |
+| `BOOTSTRAP_OWNER_NAME` | – | initial owner display name; existing name retained if blank, otherwise “Dashboard owner” for a new user |
+| `BOOTSTRAP_DIRECTOR_DISCORD_ID` | – | deprecated ID alias; `BOOTSTRAP_OWNER_DISCORD_ID` takes precedence |
 | `DISCORD_WEBHOOK_URL` | – | notifications; with none they are logged |
 | `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID` | – | receipts in a Google shared drive |
 | `RECEIPTS_DIR` | – | receipts on local disk (single box, no Drive). With neither set, uploads answer 503 |
@@ -119,7 +121,7 @@ Ported from v1: `tests/core/*` (money, fiscal, settlement, Luma CSV, metrics, li
 contributions, journal, accounting engine and reports, safe redirects), `tests/db/*` (integrity
 triggers, seed), `tests/server/api.test.ts` (every scenario, against a real seeded SQLite file with
 a fixed clock) and `tests/server/drive.test.ts` (JWT, shared-drive corpus, folder races). New:
-search, Discord sign-in against a fake Discord (PKCE, allowlist, bootstrap director), session
+search, Discord sign-in against a fake Discord (PKCE, allowlist, bootstrap leadership), session
 sliding, the Origin check, static serving, `healthcheck`.
 
 `scripts/contract-check.mjs` bundles `src/core/contracts.ts`, starts the server on a seeded temp
@@ -226,3 +228,30 @@ be wiped). Run **one** instance: SQLite plus Litestream is single-writer.
 > The Dockerfile and Litestream wiring were written against the documented interfaces but not built
 > or run in this branch: the Pi had no `web/dist` to embed (the front end is the `redesign` Pane's work).
 > First run of `docker buildx build` is the check.
+
+### Dashboard ownership and recovery
+
+Set `BOOTSTRAP_OWNER_DISCORD_ID` and `BOOTSTRAP_OWNER_NAME` in the deployment
+environment (see `deploy/dashboard.env.example`). At startup, if no owner exists,
+the server creates or updates that Discord account as active leadership with owner
+access and records an audit entry. Provisioning is idempotent. Once an owner exists,
+configuration no longer changes ownership or names; a different configured ID logs a
+warning. An ownership transfer therefore survives restarts even with the old env values.
+The deprecated `BOOTSTRAP_DIRECTOR_DISCORD_ID` remains an alias for the ID.
+
+Owners can add co-owners, remove owner access, or transfer their own ownership from
+Admin. Non-owner leadership cannot manage ownership or demote/deactivate an owner.
+Every owner must be active leadership, and the last owner cannot be removed. Transfer
+keeps the caller active leadership and keeps any other co-owners.
+
+Existing roles are preserved by migration. To explicitly recover an active account
+as an owner, run `dashboard provision-leadership --owner --db /path/dashboard.db
+--discord-id 123456789012345678`. Without `--owner`, the command grants leadership
+only. Both operations are idempotent, end the target's sessions when changed, and write
+an audit entry. Seed data includes a fictional leadership owner; no real deployment
+identity is checked in.
+
+The bootstrap environment cannot reclaim ownership after transfer. Explicit operator
+recovery with `provision-leadership --owner` remains available even when owners already
+exist: shell/database administrators can intentionally add an owner, and this action
+is audited. Discord login itself never creates users or grants leadership/ownership.
