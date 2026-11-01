@@ -11,6 +11,8 @@ import {
   AgentJobCompleteRequest,
   PurchaseRequestDetail,
   PurchaseRequestUpdateRequest,
+  SearchQuery,
+  SearchResponse,
 } from '../../src/core/contracts';
 
 describe('docs/api.md', () => {
@@ -104,5 +106,25 @@ describe('settling a purchase request', () => {
   it('exposes the actual amount next to the approved estimate on a request', () => {
     expect(PurchaseRequestDetail.shape.actualTotalCents.safeParse(null).success).toBe(true);
     expect(PurchaseRequestDetail.shape.actualTotalCents.safeParse(9500).success).toBe(true);
+  });
+});
+
+describe('search', () => {
+  it('trims the query and defaults the limit to 20', () => {
+    expect(SearchQuery.parse({ q: '  pizza ' })).toEqual({ q: 'pizza', limit: 20 });
+    expect(SearchQuery.parse({ q: 'x', limit: '50' }).limit).toBe(50);
+  });
+
+  it('rejects a blank query and a limit outside 1..50', () => {
+    expect(SearchQuery.safeParse({ q: '   ' }).success).toBe(false);
+    expect(SearchQuery.safeParse({}).success).toBe(false);
+    expect(SearchQuery.safeParse({ q: 'x', limit: '0' }).success).toBe(false);
+    expect(SearchQuery.safeParse({ q: 'x', limit: '51' }).success).toBe(false);
+  });
+
+  it('describes a result as kind, id, title, subtitle and href', () => {
+    const result = { kind: 'event', id: 'e1', title: 'Hack Night', subtitle: '2026-11-13 · Atrium', href: '/events/e1' };
+    expect(SearchResponse.parse({ results: [result] }).results[0]).toEqual(result);
+    expect(SearchResponse.safeParse({ results: [{ ...result, kind: 'fund' }] }).success).toBe(false);
   });
 });

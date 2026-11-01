@@ -1,0 +1,50 @@
+# Raspberry Pi 5 (or any systemd Linux box).
+#
+#   sudo useradd --system --home /var/lib/officer-dashboard --shell /usr/sbin/nologin dashboard
+#   sudo install -m 0755 bin/dashboard /opt/officer-dashboard/dashboard
+#   sudo install -d -m 0750 -o root -g dashboard /etc/officer-dashboard
+#   sudo install -m 0640 -g dashboard deploy/dashboard.env.example /etc/officer-dashboard/env   # then edit it
+#   sudo install -m 0644 deploy/dashboard.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now dashboard
+#   journalctl -u dashboard -f
+[Unit]
+Description=CSEED officer dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dashboard
+Group=dashboard
+EnvironmentFile=/etc/officer-dashboard/env
+Environment=ADDR=127.0.0.1:8090
+Environment=DB_PATH=/var/lib/officer-dashboard/dashboard.db
+ExecStart=/opt/officer-dashboard/dashboard serve
+Restart=on-failure
+RestartSec=2s
+# SIGTERM drains in-flight requests (15 s) and checkpoints the WAL.
+TimeoutStopSec=20s
+
+# State lives under /var/lib/officer-dashboard (created, owned and writable by the unit).
+StateDirectory=officer-dashboard
+StateDirectoryMode=0750
+
+# Hardening: the server needs the network and its own state directory, nothing else.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

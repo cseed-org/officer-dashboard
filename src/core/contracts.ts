@@ -157,6 +157,35 @@ export const LookupsResponse = z.object({
 });
 export type LookupsResponse = z.infer<typeof LookupsResponse>;
 
+// ───────────────────────────── Search ─────────────────────────────
+
+export const SearchKind = z.enum(['event', 'request', 'user', 'account']);
+
+/**
+ * GET /api/search?q=<text>&limit=<1..50, default 20> — the sidebar search. Matches
+ * case-insensitively on event names and locations, request numbers, titles and vendors, user
+ * names and emails, and account names and codes.
+ */
+export const SearchQuery = z.object({
+  q: z.string().trim().min(1).max(100),
+  limit: QueryInt.min(1).max(50).default(20),
+});
+export type SearchQuery = z.infer<typeof SearchQuery>;
+
+/** `href` is an app path: /events?id=<id>, /finance?id=<id>, /admin or /finance?tab=reports&report=trial-balance. */
+export const SearchResult = z.object({
+  kind: SearchKind,
+  id: Id,
+  title: z.string(),
+  subtitle: z.string(),
+  href: z.string(),
+});
+export type SearchResult = z.infer<typeof SearchResult>;
+
+/** Users and accounts appear only for directors. Best matches first, at most `limit` results. */
+export const SearchResponse = z.object({ results: z.array(SearchResult) });
+export type SearchResponse = z.infer<typeof SearchResponse>;
+
 // ───────────────────────────── Overview ─────────────────────────────
 
 export const EventListItem = z.object({
@@ -885,6 +914,7 @@ export const ENDPOINTS = {
   me: { method: 'GET', path: '/api/me', auth: 'officer', response: MeResponse },
   lookups: { method: 'GET', path: '/api/lookups', auth: 'officer', response: LookupsResponse },
   overview: { method: 'GET', path: '/api/overview', auth: 'officer', response: OverviewResponse },
+  search: { method: 'GET', path: '/api/search', auth: 'officer', query: SearchQuery, response: SearchResponse },
 
   eventsList: { method: 'GET', path: '/api/events', auth: 'officer', query: EventsListQuery, response: EventsListResponse },
   eventCreate: { method: 'POST', path: '/api/events', auth: 'officer', body: EventUpsertRequest, response: EventUpsertResponse },

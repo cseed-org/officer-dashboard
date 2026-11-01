@@ -42,6 +42,7 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | GET | `/api/me` | officer | — | — | `MeResponse` |
 | GET | `/api/lookups` | officer | — | — | `LookupsResponse` |
 | GET | `/api/overview` | officer | — | — | `OverviewResponse` |
+| GET | `/api/search` | officer | `SearchQuery` | — | `SearchResponse` |
 | GET | `/api/events` | officer | `EventsListQuery` | — | `EventsListResponse` |
 | POST | `/api/events` | officer | — | `EventUpsertRequest` | `EventUpsertResponse` |
 | GET | `/api/events/:id` | officer | — | — | `EventDetailResponse` |
@@ -87,6 +88,23 @@ and response is a zod schema there with its TypeScript type inferred under the s
 Officers may read `budget-vs-actual` and `fund-balances` (`OFFICER_FINANCE_REPORTS`); the
 other reports return 403 for officers.
 
+## Search
+
+`GET /api/search?q=<text>&limit=<1..50, default 20>` powers the sidebar search. `q` is trimmed,
+1–100 characters, matched case-insensitively as a substring (LIKE wildcards in the text are
+literal) against:
+
+| Kind | Who sees it | Matched on | `title` / `subtitle` | `href` |
+| --- | --- | --- | --- | --- |
+| `event` | officers, directors | name, location, Luma id | name / `<Pacific date> · <location>` | `/events?id=<id>` |
+| `request` | officers, directors | number, title, vendor | title / `<number> · <vendor> · <status>` | `/finance?id=<id>` |
+| `user` | directors only | name, email, title | name / `<title> · <role> · <email>` | `/admin` |
+| `account` | directors only | code, name | `<code> <name>` / account type | `/finance?tab=reports&report=trial-balance` |
+
+Results are ordered best match first (the primary field starts with the query, then contains
+it, then another field matches), ties broken by kind and recency, and cut to `limit`. No match
+is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is a 400.
+
 ## Rules the backend enforces
 
 - **Requests.** Every officer can read every request. Only the requester edits or deletes a
@@ -123,8 +141,8 @@ other reports return 403 for officers.
 | --- | --- | --- |
 | `/login` | public | "Sign in with Discord" |
 | `/` | officer | Overview KPIs + recent events (`OverviewResponse`) |
-| `/events`, `/events/:id` | officer | Event ratios + chart; CSV import on `/events/import` |
-| `/requests`, `/requests/new`, `/requests/:id` | officer | Approve / deny buttons for directors |
+| `/events`, `/events?id=<id>` | officer | Event ratios + chart; CSV import on `/events/import` |
+| `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
 | `/admin/users`, `/admin/tokens` | director | 403 for officers |
 
@@ -167,3 +185,9 @@ other reports return 403 for officers.
   job to `held` (terminal for the agent: claim cleared, never re-queued). The request
   detail's `settlementHold` carries the attempted and approved amounts until a director
   settles it; a `request.held` notification fires (see README, "Agent settlement tolerance").
+- Request numbers (`<FY>-<NNNN>`) come from a per-fiscal-year counter (migration 0004 in the Go
+  server), so deleting a draft never frees its number. Journal entries are dated by the
+  organisation's Pacific calendar day, not UTC.
+- Receipt uploads must carry the magic bytes of their declared type (PDF, PNG, JPEG, WebP, HEIC).
+- Known v1 parity: a director may move `approved → fulfilling` through `/transition` without the
+  agent claiming a job; no purchasing job exists for that request, so a director settles it by hand.

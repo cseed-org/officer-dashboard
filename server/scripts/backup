@@ -1,0 +1,50 @@
+#!/bin/sh
+# Consistent online backup of the dashboard's SQLite database.
+#
+#   DB_PATH=/var/lib/officer-dashboard/dashboard.db BACKUP_DIR=/mnt/usb/dashboard scripts/backup
+#
+# `sqlite3 .backup` copies a live WAL-mode database through SQLite's own backup API, so it is
+# safe while the server is running (never `cp` the .db file by itself: you would miss the -wal).
+# The copy is verified with PRAGMA integrity_check, gzipped, and old ones are pruned.
+#
+# Settings (environment):
+#   DB_PATH       database file                      (default ./data/dashboard.db)
+#   BACKUP_DIR    where backups go                   (default ./backups)
+#   KEEP          how many backups to keep           (default 30)
+#   BACKUP_REMOTE optional destination for an off-box copy, a command that receives the file:
+#                   BACKUP_REMOTE='rclone copyto {} r2:cseed-backups/$(basename {})'
+#                   BACKUP_REMOTE='aws s3 cp {} s3://cseed-backups/'
+#
+# Restore: stop the server, then
+#   gunzip -c backups/dashboard-YYYYMMDD-HHMMSS.db.gz > /var/lib/officer-dashboard/dashboard.db
+#   rm -f dashboard.db-wal dashboard.db-shm; start the server (it re-applies migrations).
+# Receipts are not in the database: they are in Google Drive (or RECEIPTS_DIR, back that up too).
+# In a container with Litestream, use `litestream restore` instead (see server/README.md).
+set -eu
+
+DB_PATH="${DB_PATH:-./data/dashboard.db}"
+BACKUP_DIR="${BACKUP_DIR:-./backups}"
+KEEP="${KEEP:-30}"
+
+command -v sqlite3 >/dev/null 2>&1 || { echo "sqlite3 is required (apt install sqlite3)" >&2; exit 1; }
+[ -f "$DB_PATH" ] || { echo "no database at $DB_PATH" >&2; exit 1; }
+
+mkdir -p "$BACKUP_DIR"
+stamp="$(date -u +%Y%m%d-%H%M%S)"
+tmp="$BACKUP_DIR/.dashboard-$stamp.db"
+out="$BACKUP_DIR/dashboard-$stamp.db.gz"
+trap 'rm -f "$tmp"' EXIT
+
+sqlite3 "$DB_PATH" ".timeout 10000" ".backup '$tmp'"
+check="$(sqlite3 "$tmp" 'PRAGMA integrity_check;')"
+[ "$check" = "ok" ] || { echo "integrity_check failed: $check" >&2; exit 1; }
+gzip -c "$tmp" > "$out"
+echo "backup written: $out ($(wc -c < "$out") bytes)"
+
+if [ -n "${BACKUP_REMOTE:-}" ]; then
+  cmd="$(printf '%s' "$BACKUP_REMOTE" | sed "s|{}|$out|g")"
+  sh -c "$cmd"
+fi
+
+# Prune: keep the newest $KEEP.
+ls -1t "$BACKUP_DIR"/dashboard-*.db.gz 2>/dev/null | tail -n +"$((KEEP + 1))" | while read -r old; do rm -f "$old"; done

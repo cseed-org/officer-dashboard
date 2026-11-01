@@ -18,3 +18,43 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # The Go server (server/): vet, test, build. cgo is on because go-sqlite3 needs it.
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
+      - run: go vet ./...
+      - name: go vet (dev build tag)
+        run: go vet -tags dev ./...
+      - run: go test ./...
+      - name: go test (dev build tag, where /auth/dev exists)
+        run: go test -tags dev ./internal/api
+      - name: build (release flags)
+        run: CGO_ENABLED=1 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::7}" -o /tmp/dashboard ./cmd/dashboard
+
+  # Starts the Go server on a seeded temp database and validates every response against the
+  # zod schemas in src/core/contracts.ts. Fails on any schema error.
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - run: npm ci
+      - run: node scripts/contract-check.mjs
