@@ -54,12 +54,14 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		err = seedCmd(args, getenv, stdout, log)
 	case "migrate":
 		err = migrateCmd(args, getenv, stdout)
+	case "provision-leadership":
+		err = leadershipCmd(args, getenv, stdout)
 	case "healthcheck":
 		err = healthcheck(args, getenv)
 	case "version":
 		fmt.Fprintln(stdout, version)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|version]\n", cmd)
+		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|version]\n", cmd)
 		return 2
 	}
 	if err != nil {

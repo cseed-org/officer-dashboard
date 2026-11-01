@@ -13,8 +13,8 @@ import { Async, Empty, errorMessage, Loading, Notice } from '../components/state
 
 const ROLE_OPTIONS = [
   { key: 'officer' as const, label: 'officer', hue: ROLE_HUE.officer },
-  { key: 'leadership' as const, label: 'leadership', hue: ROLE_HUE.leadership },
   { key: 'director' as const, label: 'director', hue: ROLE_HUE.director },
+  { key: 'leadership' as const, label: 'leadership', hue: ROLE_HUE.leadership },
 ];
 
 /**
@@ -198,7 +198,7 @@ function UserList({
                       <RowMenu
                         label={`Actions for ${u.name}`}
                         items={
-                          u.id === meId
+                          (u.id === meId || (u.role === 'leadership' && !canChangeRoles))
                             ? []
                             : [
                                 u.active

@@ -82,3 +82,11 @@ func TestV03CalendarLimitOwnershipAndActiveSelection(t *testing.T) {
 		t.Fatalf("rows=%d active=%d", len(rows), active)
 	}
 }
+
+func TestV03LeadershipCannotBeStrandedAndNoopRolePatch(t *testing.T) {
+	e := newEnv(t)
+	expectStatus(t, "last leadership demotion", e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"role": "director"}, e.as("user-leadership")), 409)
+	expectStatus(t, "last leadership deactivation", e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"active": false}, e.as("user-leadership")), 409)
+	expectStatus(t, "director echo existing role", e.do("PATCH", "/api/admin/users/user-priya", map[string]any{"role": "officer", "title": "Events"}, e.director()), 200)
+	expectStatus(t, "unknown subteam", e.post("/api/invites", map[string]any{"name": "Unknown", "discordId": "100000000000000099", "subteamId": "missing"}, e.director()), 400)
+}

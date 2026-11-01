@@ -26,6 +26,15 @@ func (c *Ctx) inviteCreate() error {
 	i.TokenHash = auth.SHA256Hex(token)
 	ctx := c.Context()
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
+		exists, err := q.SubteamExists(ctx, i.SubteamID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			issues := &validate.Issues{}
+			issues.Add("subteamId", "Subteam not found")
+			return validationError(issues)
+		}
 		if err := q.InsertInvite(ctx, i, c.S.nowMs()); err != nil {
 			return err
 		}

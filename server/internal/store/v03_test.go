@@ -16,6 +16,7 @@ func TestV03CalendarDatabaseGuards(t *testing.T) {
 	x.rejects("at most 5", `INSERT INTO calendar_emails(id,user_id,email) VALUES('six','u1','six@example.org')`)
 	x.rejects("UNIQUE", `UPDATE calendar_emails SET active=1 WHERE id='1'`)
 	x.must(`INSERT INTO users(id,discord_id,name) VALUES('u2','100000000000000002','Other')`)
+	x.rejects("CHECK", `INSERT INTO calendar_emails(id,user_id,email) VALUES('upper','u2','UPPER@example.org')`)
 	x.must(`INSERT INTO calendar_emails(id,user_id,email) VALUES('other','u2','other@example.org')`)
 	x.rejects("at most 5", `UPDATE calendar_emails SET user_id='u1' WHERE id='other'`)
 }

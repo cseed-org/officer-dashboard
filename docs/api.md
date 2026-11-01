@@ -201,7 +201,7 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 
 ## V0.3 foundation
 
-Roles rank `leadership > director > officer`. Only leadership may supply `role` in
+Roles rank `leadership > director > officer`. Only leadership may change `role` in
 PATCH `/api/admin/users/:id` or create a user with a role other than officer.
 Directors may create officers and invites; modifying an existing leadership user also
 requires leadership. Role changes invalidate the affected user's sessions. The last
@@ -234,9 +234,12 @@ Officer profiles require phone, birthday, and subteam; name and Discord ID remai
 grad date, title, start term, and LinkedIn. No profile read endpoint is exposed here;
 future profile endpoints must restrict phone visibility to director+.
 
-Deployment provisioning: the migration preserves existing user roles, and the existing
-`BOOTSTRAP_DIRECTOR_DISCORD_ID` behavior still creates a director. Before using role
-management on an upgraded deployment, the database operator must explicitly promote
-the intended owner to leadership (`UPDATE users SET role='leadership' WHERE discord_id=?`).
-The development seed includes `user-leadership`; dev builds also accept
-`/auth/dev?as=leadership`. No existing director is silently promoted by this migration.
+Deployment provisioning: fresh `BOOTSTRAP_DIRECTOR_DISCORD_ID` logins create a
+leadership user (the environment variable retains its existing name). The migration
+preserves existing roles. For an upgraded deployment, the database operator explicitly
+selects the owner with `dashboard provision-leadership --db /path/dashboard.db
+--discord-id 123456789012345678`. Run it before enabling role management. This command
+requires an existing active account, ends its sessions, and audit-logs the promotion;
+repeating it is safe. No existing director is silently promoted. The last active
+leadership user cannot be demoted or deactivated. The development seed includes
+`user-leadership`, and dev builds accept `/auth/dev?as=leadership`.

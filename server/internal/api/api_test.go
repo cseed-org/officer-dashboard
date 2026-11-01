@@ -17,10 +17,7 @@ func TestEnforcesRolesValidatesInputsAndProtectsTheLastDirector(t *testing.T) {
 	expectStatus(t, "officer on admin API", e.get("/api/admin/users", e.officer()), 403)
 	expectStatus(t, "officer approving", e.post("/api/requests/nope/approve", map[string]any{}, e.officer()), 403)
 	expectStatus(t, "empty event body", e.post("/api/events", map[string]any{}, e.officer()), 400)
-	if _, err := e.db.W.Exec(`UPDATE users SET active=0 WHERE id='user-leadership'`); err != nil {
-		t.Fatal(err)
-	}
-	expectStatus(t, "deactivate the last director", e.do("PATCH", "/api/admin/users/user-director", map[string]any{"active": false}, e.director()), 409)
+	expectStatus(t, "deactivate the last leadership", e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"active": false}, e.as("user-leadership")), 409)
 	expectStatus(t, "demote the last director", e.do("PATCH", "/api/admin/users/user-director", map[string]any{"role": "officer"}, e.director()), 403)
 	expectStatus(t, "anonymous", e.get("/api/lookups", anon), 401)
 	expectStatus(t, "unknown API path", e.get("/api/nope", e.officer()), 404)

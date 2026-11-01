@@ -91,11 +91,6 @@ func (c *Ctx) adminUserUpdate() error {
 	}); err != nil {
 		return err
 	}
-	if role.Set {
-		if _, err := c.requireLeadership(); err != nil {
-			return err
-		}
-	}
 	ctx := c.Context()
 	var out AdminUser
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
@@ -103,7 +98,7 @@ func (c *Ctx) adminUserUpdate() error {
 		if err != nil {
 			return notFoundErr("Record not found")
 		}
-		if before.Role == auth.RoleLeadership {
+		if before.Role == auth.RoleLeadership || (role.Set && role.V != before.Role) {
 			if _, err := c.requireLeadership(); err != nil {
 				return err
 			}

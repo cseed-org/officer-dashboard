@@ -95,14 +95,14 @@ func (c *Ctx) authCallback() error {
 		case auth.Deny:
 			denied = decision.Reason
 			return nil
-		case auth.CreateDirector:
+		case auth.CreateLeadership:
 			userID = auth.UUID()
 			now := store.Ms(c.S.nowMs())
-			if err := w.InsertUser(ctx, store.User{ID: userID, DiscordID: profile.ID, Name: profile.DisplayName(), AvatarURL: avatar, Role: auth.RoleDirector, Active: true, CreatedAt: now, UpdatedAt: now}); err != nil {
+			if err := w.InsertUser(ctx, store.User{ID: userID, DiscordID: profile.ID, Name: profile.DisplayName(), AvatarURL: avatar, Role: auth.RoleLeadership, Active: true, CreatedAt: now, UpdatedAt: now}); err != nil {
 				return err
 			}
-			return w.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), ActorUserID: &userID, Action: "user.bootstrap_director", EntityType: "user", EntityID: &userID,
-				AfterJSON: snapshot(map[string]any{"discordId": profile.ID, "role": "director"}), CreatedAt: now})
+			return w.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), ActorUserID: &userID, Action: "user.bootstrap_leadership", EntityType: "user", EntityID: &userID,
+				AfterJSON: snapshot(map[string]any{"discordId": profile.ID, "role": "leadership"}), CreatedAt: now})
 		default:
 			userID = decision.UserID
 			return w.SetAvatar(ctx, userID, avatar)

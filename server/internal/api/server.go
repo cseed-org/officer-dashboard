@@ -26,7 +26,7 @@ type Config struct {
 	Now       func() time.Time
 	Tolerance purchases.Tolerance
 	Discord   *auth.Discord // nil when Discord sign-in is not configured
-	// BootstrapDirectorDiscordID is created as a director on first login.
+	// BootstrapDirectorDiscordID is created as leadership on first login.
 	BootstrapDirectorDiscordID string
 	AppURL                     string
 	// DevAuth enables /auth/dev, but only in binaries built with the `dev` tag.

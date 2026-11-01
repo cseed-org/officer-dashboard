@@ -163,10 +163,10 @@ func TestBootstrapDirectorIsCreatedOnFirstLogin(t *testing.T) {
 	}
 	session := cookieNamed(setCookies(cb), e.srv.sessionCookieName())
 	me := e.get("/api/me", actor{cookie: session})
-	if me.str("user", "role") != "director" || me.str("user", "name") != "boss" {
+	if me.str("user", "role") != "leadership" || me.str("user", "name") != "boss" {
 		t.Errorf("bootstrap director %s", me.Raw)
 	}
-	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'user.bootstrap_director'`); n != int64(1) {
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'user.bootstrap_leadership'`); n != int64(1) {
 		t.Errorf("bootstrap audit rows %v", n)
 	}
 }

@@ -85,6 +85,12 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 		return notFoundErr("Record not found")
 	}
 	msg := err.Error()
+	if strings.Contains(msg, "last active leadership") {
+		return conflict("Cannot remove the last active leadership user")
+	}
+	if strings.Contains(msg, "invites.discord_id") {
+		return conflict("An invite for this Discord ID is already pending")
+	}
 	if strings.Contains(msg, "at most 5 calendar emails") {
 		return conflict("You can save at most 5 calendar emails")
 	}

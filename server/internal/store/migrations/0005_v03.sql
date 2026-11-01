@@ -49,7 +49,7 @@ CREATE TABLE officer_profiles (
 CREATE TABLE calendar_emails (
  id TEXT PRIMARY KEY NOT NULL,
  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
- email TEXT NOT NULL COLLATE NOCASE CHECK(length(trim(email)) > 0 AND email = lower(trim(email))),
+ email TEXT NOT NULL COLLATE NOCASE CHECK(length(trim(email)) > 0 AND email = lower(trim(email)) COLLATE BINARY),
  active INTEGER NOT NULL DEFAULT 0 CHECK(active IN (0,1)),
  UNIQUE(user_id,email)
 );
@@ -84,3 +84,15 @@ CREATE TABLE user_prefs (
  widget_layout TEXT NOT NULL CHECK(json_valid(widget_layout) AND json_type(widget_layout) = 'array'),
  updated_at INTEGER NOT NULL
 );
+
+--> statement-breakpoint
+CREATE TRIGGER users_last_leadership BEFORE UPDATE OF active, role ON users
+WHEN OLD.active = 1 AND OLD.role = 'leadership'
+ AND (NEW.active = 0 OR NEW.role <> 'leadership')
+ AND NOT EXISTS (SELECT 1 FROM users WHERE id <> OLD.id AND active = 1 AND role = 'leadership')
+BEGIN SELECT RAISE(ABORT, 'cannot remove last active leadership user'); END;
+--> statement-breakpoint
+CREATE TRIGGER users_last_leadership_delete BEFORE DELETE ON users
+WHEN OLD.active = 1 AND OLD.role = 'leadership'
+ AND NOT EXISTS (SELECT 1 FROM users WHERE id <> OLD.id AND active = 1 AND role = 'leadership')
+BEGIN SELECT RAISE(ABORT, 'cannot remove last active leadership user'); END;

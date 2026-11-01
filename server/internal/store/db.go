@@ -117,6 +117,8 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	sort.Strings(names)
+	// Restore enforcement even if a migration fails. Open uses one writer connection.
+	defer db.ExecContext(context.Background(), `PRAGMA foreign_keys=ON`)
 	for _, name := range names {
 		var done int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations WHERE name = ?`, name).Scan(&done); err != nil {
@@ -134,7 +136,6 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		if _, err := db.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
 			return err
 		}
-		defer db.ExecContext(context.Background(), `PRAGMA foreign_keys=ON`)
 		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			return err

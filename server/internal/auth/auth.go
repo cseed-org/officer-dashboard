@@ -57,7 +57,7 @@ type LoginKind int
 
 const (
 	SignIn LoginKind = iota
-	CreateDirector
+	CreateLeadership
 	Deny
 )
 
@@ -76,7 +76,7 @@ type KnownUser struct {
 }
 
 // DecideLogin: only users already allowlisted by a director may sign in. The one exception
-// is BOOTSTRAP_DIRECTOR_DISCORD_ID, created as a director on first login so a fresh
+// is BOOTSTRAP_DIRECTOR_DISCORD_ID, created as leadership on first login so a fresh
 // deployment has someone to allowlist everybody else.
 func DecideLogin(discordID string, user *KnownUser, bootstrapDirectorID string) Decision {
 	if user != nil {
@@ -86,7 +86,7 @@ func DecideLogin(discordID string, user *KnownUser, bootstrapDirectorID string) 
 		return Decision{Kind: Deny, Reason: "inactive"}
 	}
 	if b := strings.TrimSpace(bootstrapDirectorID); b != "" && discordID == b {
-		return Decision{Kind: CreateDirector}
+		return Decision{Kind: CreateLeadership}
 	}
 	return Decision{Kind: Deny, Reason: "not_allowlisted"}
 }

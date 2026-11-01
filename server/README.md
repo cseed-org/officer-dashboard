@@ -55,7 +55,7 @@ Environment variables (flags override where shown):
 | `STATIC_DIR` (`-static`) | embedded build | serve the front end from this directory instead |
 | `STATIC_FALLBACK`, `STATIC_FALLBACK_STATUS` | `404.html`, `404` | page for unknown non-API paths. The `redesign` front end can set an SPA shell (`200.html`, `200`) |
 | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | – | Discord OAuth2 app; redirect URI `${APP_URL}/auth/callback` |
-| `BOOTSTRAP_DIRECTOR_DISCORD_ID` | – | created as a director on first sign-in |
+| `BOOTSTRAP_DIRECTOR_DISCORD_ID` | – | created as leadership on first sign-in (legacy variable name) |
 | `DISCORD_WEBHOOK_URL` | – | notifications; with none they are logged |
 | `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID` | – | receipts in a Google shared drive |
 | `RECEIPTS_DIR` | – | receipts on local disk (single box, no Drive). With neither set, uploads answer 503 |
@@ -119,7 +119,7 @@ Ported from v1: `tests/core/*` (money, fiscal, settlement, Luma CSV, metrics, li
 contributions, journal, accounting engine and reports, safe redirects), `tests/db/*` (integrity
 triggers, seed), `tests/server/api.test.ts` (every scenario, against a real seeded SQLite file with
 a fixed clock) and `tests/server/drive.test.ts` (JWT, shared-drive corpus, folder races). New:
-search, Discord sign-in against a fake Discord (PKCE, allowlist, bootstrap director), session
+search, Discord sign-in against a fake Discord (PKCE, allowlist, bootstrap leadership), session
 sliding, the Origin check, static serving, `healthcheck`.
 
 `scripts/contract-check.mjs` bundles `src/core/contracts.ts`, starts the server on a seeded temp
@@ -226,3 +226,11 @@ be wiped). Run **one** instance: SQLite plus Litestream is single-writer.
 > The Dockerfile and Litestream wiring were written against the documented interfaces but not built
 > or run in this branch: the Pi had no `web/dist` to embed (the front end is the `redesign` Pane's work).
 > First run of `docker buildx build` is the check.
+
+### Provisioning leadership after a V0.3 upgrade
+
+Existing roles remain unchanged by migration. An operator selects an existing active
+owner with `dashboard provision-leadership --db /path/dashboard.db --discord-id
+123456789012345678`. This idempotent command promotes that account, ends its sessions,
+and writes an audit entry. New bootstrap logins already create leadership. Role changes
+require leadership; the last active leadership account is protected from removal.

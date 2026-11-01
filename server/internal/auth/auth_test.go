@@ -52,7 +52,7 @@ func TestDecideLogin(t *testing.T) {
 	if d := DecideLogin("42", nil, "7"); d.Kind != Deny || d.Reason != "not_allowlisted" {
 		t.Errorf("unknown: %+v", d)
 	}
-	if d := DecideLogin("7", nil, "7"); d.Kind != CreateDirector {
+	if d := DecideLogin("7", nil, "7"); d.Kind != CreateLeadership {
 		t.Errorf("bootstrap: %+v", d)
 	}
 	if d := DecideLogin("", nil, ""); d.Kind != Deny || d.Reason != "not_allowlisted" {

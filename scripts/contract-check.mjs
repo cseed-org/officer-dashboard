@@ -46,6 +46,9 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130)
 const bundle = join(work, 'contracts.mjs');
 await build({ entryPoints: [join(root, 'src/core/contracts.ts')], bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'error' });
 const { ENDPOINTS, ApiError } = await import(pathToFileURL(bundle).href);
+const registryBundle = join(work, 'widget-registry.mjs');
+await build({ entryPoints: [join(root, 'web/src/ui/widgets/registry.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
+const { defaultWidgetLayout } = await import(pathToFileURL(registryBundle).href);
 
 // ───────────── binary, database, server ─────────────
 let bin = option('--bin');
@@ -357,7 +360,7 @@ await call('eventCreate', { who: officer, body: {}, expect: 400 });
 await call('search', { who: officer, query: {}, expect: 400 });
 
 // V0.3 foundation endpoints, ownership and calendar limits.
-await call('prefsGet', { who: officer });
+must(JSON.stringify((await call('prefsGet', { who: officer })).json.widgetLayout) === JSON.stringify(defaultWidgetLayout), 'server defaults match the web registry');
 const layout = { widgetLayout: [{ id: 'budget', size: 'L' }] };
 await call('prefsPut', { who: officer, body: layout });
 must(JSON.stringify((await call('prefsGet', { who: officer })).json) === JSON.stringify(layout), 'layout persists');
