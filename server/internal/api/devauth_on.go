@@ -14,6 +14,7 @@ const DevBuild = true
 
 // registerDev adds /auth/dev?as=leadership|director|officer, which signs in as the oldest active user
 // with that role (creating a placeholder on an empty database). It needs DEV_AUTH=1 as well.
+// &user=<id> picks a specific active user with that role instead (e.g. the seeded designer).
 func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 	h("GET /auth/dev", func(c *Ctx) error {
 		if !c.S.cfg.DevAuth {
@@ -28,6 +29,14 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 		ctx := c.Context()
 		var userID string
 		err := c.S.db.Write(ctx, func(w *store.Queries) error {
+			if id := c.R.URL.Query().Get("user"); id != "" {
+				u, err := w.UserByID(ctx, id)
+				if err != nil || !u.Active || u.Role != as {
+					return badRequest("user must be an active " + as)
+				}
+				userID = u.ID
+				return nil
+			}
 			u, err := w.FirstActiveUserWithRole(ctx, as)
 			if err == nil {
 				userID = u.ID

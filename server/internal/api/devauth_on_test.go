@@ -29,4 +29,9 @@ func TestDevLoginNeedsTheDevBuildAndDEV_AUTH(t *testing.T) {
 	if r.Header.Get("Location") != "/" {
 		t.Errorf("open redirect: %s", r.Header.Get("Location"))
 	}
+	r = e.get("/auth/dev?as=officer&user=user-riley", anon)
+	if me := e.get("/api/me", actor{cookie: cookieNamed(setCookies(r), e.srv.sessionCookieName())}); me.str("user", "id") != "user-riley" {
+		t.Errorf("dev login as a chosen user: %s", me.Raw)
+	}
+	expectStatus(t, "chosen user with another role", e.get("/auth/dev?as=director&user=user-riley", anon), 400)
 }
