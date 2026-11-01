@@ -416,6 +416,6 @@
 .event-copy p {margin:4px 0 0;}
 .event-copy .btn {flex:none;}
 .event-cover {display:block;width:100%;max-height:240px;object-fit:cover;border-radius:var(--radius-control);}
-body:has(dialog[open]) {overflow:hidden;}
-[hidden] {display:none !important;}
+.events-v03 body:has(dialog[open]) {overflow:hidden;}
+.events-v03 [hidden] {display:none !important;}
 @media(max-width:767px) {.event-copy {flex-direction:column;gap:8px;} .cal-day .cal-date {min-height:24px;} .cal-block {text-align:left;} }
