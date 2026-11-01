@@ -154,6 +154,9 @@ export const LookupsResponse = z.object({
   expenseAccounts: z.array(AccountOption),
   funds: z.array(FundOption),
   events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+  subteams: z.array(z.object({ id: Id, name: z.string() })),
+  /** Active officers, by name: the event host picker. */
+  hosts: z.array(UserSummary),
   currentFiscalYear: FiscalYear,
 });
 export type LookupsResponse = z.infer<typeof LookupsResponse>;
@@ -189,13 +192,56 @@ export type SearchResponse = z.infer<typeof SearchResponse>;
 
 // ───────────────────────────── Overview ─────────────────────────────
 
+/** draft until published by hand in Luma; imports from Luma arrive as published. */
+export const EventStatus = z.enum(['draft', 'published', 'completed', 'cancelled']);
+export type EventStatus = z.infer<typeof EventStatus>;
+export const SubteamBrief = z.object({ id: Id, name: z.string() });
+export type SubteamBrief = z.infer<typeof SubteamBrief>;
+
+const LUMA_HOSTS = ['lu.ma', 'www.lu.ma', 'luma.com', 'www.luma.com'];
+const LUMA_RESERVED = new Set(
+  'create discover calendar calendars home signin signup login logout settings explore user u event events pricing help about terms privacy map search dashboard check-in checkin manage embed api ios android download careers blog changelog features community library pay'.split(' '),
+);
+/**
+ * The public Luma event page pasted back after publishing by hand: https on lu.ma or
+ * luma.com, path /<slug> or /event/evt-<id>. Luma's own pages (/create, /discover,
+ * /calendar, the home page…) are refused. The server applies the same rule and stores the
+ * link without query, fragment or trailing slash.
+ */
+export function lumaEventUrlProblem(raw: string): string | null {
+  const msg = 'Use the HTTPS link to a Luma event page, like https://lu.ma/your-event';
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return msg;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port || !LUMA_HOSTS.includes(u.hostname.toLowerCase())) return msg;
+  const parts = u.pathname.replace(/\/$/, '').replace(/^\//, '').split('/');
+  if (parts.length === 1 && /^[A-Za-z0-9][A-Za-z0-9-]{1,99}$/.test(parts[0]) && !LUMA_RESERVED.has(parts[0].toLowerCase())) return null;
+  if (parts.length === 2 && parts[0] === 'event' && /^evt-[A-Za-z0-9]{4,64}$/.test(parts[1])) return null;
+  return msg;
+}
+export const LumaEventUrl = z
+  .string()
+  .max(300)
+  .refine((v) => lumaEventUrlProblem(v) === null, { message: 'Use the HTTPS link to a Luma event page, like https://lu.ma/your-event' });
+
 export const EventListItem = z.object({
   id: Id,
   lumaId: z.string().nullable(),
   name: z.string(),
   startsAt: IsoDateTime,
+  endsAt: IsoDateTime.nullable(),
   location: z.string().nullable(),
   host: UserSummary.nullable(),
+  hostSubteam: SubteamBrief.nullable(),
+  status: EventStatus,
+  capacity: z.number().int().positive().nullable(),
+  /** The Luma event page saved after the manual handoff; never synced. */
+  lumaUrl: z.string().nullable(),
+  /** App path of the cover image (GET, officer session), cache-busted by `v`. */
+  coverUrl: z.string().nullable(),
   metrics: EventCounts,
 });
 export type EventListItem = z.infer<typeof EventListItem>;
@@ -238,8 +284,12 @@ export type EventsListResponse = z.infer<typeof EventsListResponse>;
 /** GET /api/events/:id */
 export const EventDetailResponse = z.object({
   event: EventListItem.extend({
-    endsAt: IsoDateTime.nullable(),
     url: z.string().nullable(),
+    description: z.string().nullable(),
+    /** TODO(notion): placeholder is true while the NotionSync stub is in use (no page exists). */
+    notion: z.object({ url: z.string().nullable(), placeholder: z.boolean() }),
+    /** The design request made from this event (design_requests is built separately). */
+    designRequestId: Id.nullable(),
     updatedAt: IsoDateTime,
   }),
   /** Purchase requests linked to this event. */
@@ -268,6 +318,13 @@ export const EventUpsertRequest = z.object({
   url: z.url().nullable().optional(),
   lumaId: z.string().max(100).nullable().optional(),
   hostUserId: Id.nullable().optional(),
+  /** Defaults to draft on create. */
+  status: EventStatus.optional(),
+  description: z.string().max(5000).nullable().optional(),
+  capacity: z.number().int().min(1).max(100000).nullable().optional(),
+  hostSubteamId: Id.nullable().optional(),
+  lumaUrl: LumaEventUrl.nullable().optional(),
+  designRequestId: Id.nullable().optional(),
 });
 export type EventUpsertRequest = z.infer<typeof EventUpsertRequest>;
 export const EventPatchRequest = EventUpsertRequest.partial();
@@ -947,6 +1004,10 @@ export const ENDPOINTS = {
   eventCreate: { method: 'POST', path: '/api/events', auth: 'officer', body: EventUpsertRequest, response: EventUpsertResponse },
   eventDetail: { method: 'GET', path: '/api/events/:id', auth: 'officer', response: EventDetailResponse },
   eventUpdate: { method: 'PATCH', path: '/api/events/:id', auth: 'officer', body: EventPatchRequest, response: EventUpsertResponse },
+  eventDelete: { method: 'DELETE', path: '/api/events/:id', auth: 'officer', response: OkResponse },
+  eventCoverGet: { method: 'GET', path: '/api/events/:id/cover', auth: 'officer', response: 'binary' },
+  eventCoverPut: { method: 'PUT', path: '/api/events/:id/cover', auth: 'officer', body: 'multipart', response: EventUpsertResponse },
+  eventCoverDelete: { method: 'DELETE', path: '/api/events/:id/cover', auth: 'officer', response: EventUpsertResponse },
   eventMetrics: { method: 'GET', path: '/api/events/:id/metrics', auth: 'officer', response: EventMetricsResponse },
   eventsImport: { method: 'POST', path: '/api/events/import', auth: 'officer', body: 'multipart', response: CsvImportResponse },
   ingestLuma: { method: 'POST', path: '/api/ingest/luma', auth: 'token:ingest:luma', body: LumaIngestRequest, response: LumaIngestResponse },

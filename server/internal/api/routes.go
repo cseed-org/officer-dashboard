@@ -22,6 +22,10 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("POST /api/events/import", (*Ctx).eventsImport)
 	h("GET /api/events/{id}", (*Ctx).eventDetail)
 	h("PATCH /api/events/{id}", (*Ctx).eventUpdate)
+	h("DELETE /api/events/{id}", (*Ctx).eventDelete)
+	h("GET /api/events/{id}/cover", (*Ctx).eventCoverGet)
+	h("PUT /api/events/{id}/cover", (*Ctx).eventCoverPut)
+	h("DELETE /api/events/{id}/cover", (*Ctx).eventCoverDelete)
 	h("GET /api/events/{id}/metrics", (*Ctx).eventMetrics)
 	h("POST /api/ingest/luma", (*Ctx).ingestLuma)
 

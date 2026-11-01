@@ -13,6 +13,7 @@ import (
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/notify"
+	"officerdashboard/internal/notion"
 	"officerdashboard/internal/purchases"
 	"officerdashboard/internal/store"
 )
@@ -22,6 +23,8 @@ type Config struct {
 	DB       *store.DB
 	Files    files.Store
 	Notifier notify.Notifier
+	// Notion drafts each event's Notion page. TODO(notion): only the stub exists so far.
+	Notion notion.NotionSync
 	// Now is the clock; tests fix it.
 	Now       func() time.Time
 	Tolerance purchases.Tolerance
@@ -54,6 +57,9 @@ func New(cfg Config) *Server {
 	}
 	if cfg.Notifier == nil {
 		cfg.Notifier = notify.Console{Log: cfg.Log}
+	}
+	if cfg.Notion == nil {
+		cfg.Notion = notion.Stub{}
 	}
 	if cfg.Files == nil {
 		cfg.Files = files.Unavailable{}

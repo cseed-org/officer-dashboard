@@ -102,6 +102,19 @@ func (d *DB) Ping(ctx context.Context) error {
 	return d.R.QueryRowContext(ctx, `SELECT 1`).Scan(&one)
 }
 
+// MigrationCount is the number of embedded migrations (tests compare against it so parallel
+// branches that each add a migration do not collide on a hard-coded number).
+func MigrationCount() int {
+	entries, _ := fs.ReadDir(migrationFS, "migrations")
+	n := 0
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".sql") {
+			n++
+		}
+	}
+	return n
+}
+
 func migrate(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
 		return err

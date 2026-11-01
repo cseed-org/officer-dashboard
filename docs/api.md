@@ -55,6 +55,10 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/api/events` | officer | — | `EventUpsertRequest` | `EventUpsertResponse` |
 | GET | `/api/events/:id` | officer | — | — | `EventDetailResponse` |
 | PATCH | `/api/events/:id` | officer | — | `EventPatchRequest` | `EventUpsertResponse` |
+| DELETE | `/api/events/:id` | officer | — | — | `OkResponse` |
+| GET | `/api/events/:id/cover` | officer | — | — | cover image bytes |
+| PUT | `/api/events/:id/cover` | officer | — | multipart: `file` (JPG, PNG or WebP, ≤ 5 MB) | `EventUpsertResponse` |
+| DELETE | `/api/events/:id/cover` | officer | — | — | `EventUpsertResponse` |
 | GET | `/api/events/:id/metrics` | officer | — | — | `EventMetricsResponse` |
 | POST | `/api/events/import` | officer | — | multipart: `CsvImportFields` + `file` | `CsvImportResponse` |
 | POST | `/api/ingest/luma` | token:ingest:luma | — | `LumaIngestRequest` | `LumaIngestResponse` |
@@ -152,7 +156,7 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 | --- | --- | --- |
 | `/login` | public | "Sign in with Discord" |
 | `/` | officer | Overview KPIs + recent events (`OverviewResponse`) |
-| `/events`, `/events?id=<id>` | officer | Event ratios + chart; CSV import on `/events/import` |
+| `/events`, `/events?id=<id>` | officer | List, month and week views; editor, Luma handoff kit, request design; CSV import on `/events?import=1` |
 | `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
 | `/admin/users`, `/admin/tokens` | director | 403 for officers |
@@ -272,3 +276,36 @@ The bootstrap environment cannot reclaim ownership after transfer. Explicit oper
 recovery with `provision-leadership --owner` remains available even when owners already
 exist: shell/database administrators can intentionally add an owner, and this action
 is audited. Discord login itself never creates users or grants leadership/ownership.
+
+## Events (V0.3)
+
+Every officer can create, edit and delete events, set the cover, and request design;
+directors and leadership have the same event powers. Each change writes `event.created`,
+`event.updated`, `event.deleted`, `event.cover_set` or `event.cover_removed` to the audit log.
+
+- **Fields.** `status` is `draft | published | completed | cancelled`. New events start as
+  `draft`; events created by a Luma import or ingest are `published` (so are the rows that
+  existed before migration 0006). `description` (≤ 5000), `capacity` (1–100000),
+  `hostSubteamId` (a `subteams` id; the name comes back as `hostSubteam`), `hostUserId`.
+  `GET /api/lookups` lists `subteams` and active `hosts` for the editor.
+- **Luma handoff.** There is no Luma API. The UI shows each field with a copy button,
+  the cover to download, and a link to `https://lu.ma/create`. The officer pastes the
+  published page back as `lumaUrl`. The server accepts only `https://` on `lu.ma`,
+  `www.lu.ma`, `luma.com` or `www.luma.com` with the path `/<slug>` (letters, digits,
+  hyphens) or `/event/evt-<id>`; Luma's own pages (`/create`, `/discover`, `/calendar`,
+  `/home`, the bare home page and similar) are refused with 400. The stored value drops
+  the query, fragment and trailing slash. A Luma page can be linked to one event only
+  (409). Linking never imports attendees: those still arrive by CSV import or
+  `POST /api/ingest/luma`.
+- **Cover.** `PUT /api/events/:id/cover` takes one image (content is checked against its
+  type). It is stored in the database; `coverUrl` is `/api/events/:id/cover?v=<ms>` and
+  changes when the cover does. The GET answers with `nosniff` and a sandbox CSP.
+- **Delete.** Guests, reflections and the cover go with the event. An event that
+  purchase requests point at answers 409 until they are moved. The published Luma event
+  must be removed in Luma separately.
+- **Notion (stub).** On create the server asks `NotionSync` for a page; the stub stores a
+  placeholder link and `notion.placeholder` is `true`. See `docs/notion-integration.md`.
+- **Design request.** `designRequestId` records the design request made from the event.
+  It has no foreign key until the `design_requests` table lands; the UI hands the event's
+  title, formats, due date and brief to the Design board through the URL (see
+  `web/src/lib/designPrefill.ts`).
