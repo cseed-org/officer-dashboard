@@ -302,9 +302,9 @@ func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store
 		case to == "submitted":
 			ok = viewer.ID == r.RequesterID
 		case to == "approved":
-			ok = viewer.Role == auth.RoleDirector && viewer.ID != r.RequesterID
+			ok = auth.HasRole(viewer.Role, auth.RoleDirector) && viewer.ID != r.RequesterID
 		default:
-			ok = viewer.Role == auth.RoleDirector
+			ok = auth.HasRole(viewer.Role, auth.RoleDirector)
 		}
 		if ok {
 			d.AllowedTransitions = append(d.AllowedTransitions, to)
@@ -342,7 +342,7 @@ func eventSnapshot(e *store.Event) map[string]any {
 
 func userSnapshot(u *store.User) map[string]any {
 	return map[string]any{
-		"id": u.ID, "discordId": u.DiscordID, "name": u.Name, "email": u.Email, "avatarUrl": u.AvatarURL, "role": u.Role, "active": u.Active, "title": u.Title,
+		"id": u.ID, "discordId": u.DiscordID, "name": u.Name, "email": u.Email, "avatarUrl": u.AvatarURL, "role": u.Role, "isOwner": u.IsOwner, "active": u.Active, "title": u.Title,
 		"lastLoginAt": isoPtr(u.LastLoginAt), "createdAt": isoMs(int64(u.CreatedAt)), "updatedAt": isoMs(int64(u.UpdatedAt)),
 	}
 }

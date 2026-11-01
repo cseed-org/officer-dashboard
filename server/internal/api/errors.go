@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/store"
@@ -84,6 +85,21 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 		return notFoundErr("Record not found")
 	}
 	msg := err.Error()
+	if strings.Contains(msg, "last owner") {
+		return conflict("Cannot remove the last owner")
+	}
+	if strings.Contains(msg, "replace an owner") {
+		return conflict("Cannot replace an owner")
+	}
+	if strings.Contains(msg, "last active leadership") {
+		return conflict("Cannot remove the last active leadership user")
+	}
+	if strings.Contains(msg, "invites.discord_id") {
+		return conflict("An invite for this Discord ID is already pending")
+	}
+	if strings.Contains(msg, "at most 5 calendar emails") {
+		return conflict("You can save at most 5 calendar emails")
+	}
 	if conflictRE.MatchString(msg) {
 		log.Warn("database conflict mapped to 409", "error", msg)
 		if lastDirRE.MatchString(msg) {

@@ -430,105 +430,105 @@
       "theme": "light",
       "width": 1440,
       "check": "copy button keeps field name",
-      "text": "Copy name"
-    },
-    {
-      "theme": "light",
-      "width": 1440,
-      "check": "focus after design request",
-      "focus": "design-status"
-    },
-    {
-      "theme": "light",
-      "width": 1440,
-      "check": "empty hides health",
-      "healthHidden": true,
-      "period": "No events"
-    },
-    {
-      "theme": "light",
-      "width": 1440,
-      "check": "loading hides health",
-      "healthHidden": true,
-      "period": "Loading events…"
-    },
-    {
-      "theme": "light",
-      "width": 1440,
-      "check": "error hides health",
-      "healthHidden": true,
-      "period": "Events unavailable"
-    },
-    {
-      "theme": "light",
-      "width": 1440,
-      "check": "empty CTA opens blank editor",
-      "name": "",
-      "deleteHidden": true
-    },
-    {
-      "theme": "light",
-      "width": 1440,
-      "check": "delete",
-      "focus": "period",
-      "visibleDraft": 0,
-      "period": "Fall term · 3 events"
-    },
-    {
-      "theme": "light",
-      "width": 390,
-      "check": "copy button keeps field name",
-      "text": "Copy name"
-    },
-    {
-      "theme": "light",
-      "width": 390,
-      "check": "focus after design request",
-      "focus": "design-status"
-    },
-    {
-      "theme": "light",
-      "width": 390,
-      "check": "empty hides health",
-      "healthHidden": true,
-      "period": "No events"
-    },
-    {
-      "theme": "light",
-      "width": 390,
-      "check": "loading hides health",
-      "healthHidden": true,
-      "period": "Loading events…"
-    },
-    {
-      "theme": "light",
-      "width": 390,
-      "check": "error hides health",
-      "healthHidden": true,
-      "period": "Events unavailable"
-    },
-    {
-      "theme": "light",
-      "width": 390,
-      "check": "empty CTA opens blank editor",
-      "name": "",
-      "deleteHidden": true
-    },
-    {
-      "theme": "light",
-      "width": 390,
-      "check": "delete",
-      "focus": "period",
-      "visibleDraft": 0,
-      "period": "Fall term · 3 events"
-    },
-    {
-      "theme": "dark",
-      "width": 1440,
-      "check": "copy button keeps field name",
       "text": "Copied name ✓"
     },
     {
+      "theme": "light",
+      "width": 1440,
+      "check": "focus after design request",
+      "focus": "design-status"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "empty hides health",
+      "healthHidden": true,
+      "period": "No events"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "loading hides health",
+      "healthHidden": true,
+      "period": "Loading events…"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "error hides health",
+      "healthHidden": true,
+      "period": "Events unavailable"
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "empty CTA opens blank editor",
+      "name": "",
+      "deleteHidden": true
+    },
+    {
+      "theme": "light",
+      "width": 1440,
+      "check": "delete",
+      "focus": "period",
+      "visibleDraft": 0,
+      "period": "Fall term · 3 events"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "copy button keeps field name",
+      "text": "Copy name"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "focus after design request",
+      "focus": "design-status"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "empty hides health",
+      "healthHidden": true,
+      "period": "No events"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "loading hides health",
+      "healthHidden": true,
+      "period": "Loading events…"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "error hides health",
+      "healthHidden": true,
+      "period": "Events unavailable"
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "empty CTA opens blank editor",
+      "name": "",
+      "deleteHidden": true
+    },
+    {
+      "theme": "light",
+      "width": 390,
+      "check": "delete",
+      "focus": "period",
+      "visibleDraft": 0,
+      "period": "Fall term · 3 events"
+    },
+    {
+      "theme": "dark",
+      "width": 1440,
+      "check": "copy button keeps field name",
+      "text": "Copy name"
+    },
+    {
       "theme": "dark",
       "width": 1440,
       "check": "focus after design request",
@@ -574,7 +574,7 @@
       "theme": "dark",
       "width": 390,
       "check": "copy button keeps field name",
-      "text": "Copy name"
+      "text": "Copied name ✓"
     },
     {
       "theme": "dark",

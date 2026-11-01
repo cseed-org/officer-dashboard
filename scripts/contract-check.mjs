@@ -46,6 +46,9 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130)
 const bundle = join(work, 'contracts.mjs');
 await build({ entryPoints: [join(root, 'src/core/contracts.ts')], bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'error' });
 const { ENDPOINTS, ApiError } = await import(pathToFileURL(bundle).href);
+const registryBundle = join(work, 'widget-registry.mjs');
+await build({ entryPoints: [join(root, 'web/src/ui/widgets/registry.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
+const { defaultWidgetLayout } = await import(pathToFileURL(registryBundle).href);
 
 // ───────────── binary, database, server ─────────────
 let bin = option('--bin');
@@ -58,7 +61,7 @@ if (!bin) {
 }
 const dbPath = join(work, 'check.db');
 const env = { ...process.env, DB_PATH: dbPath, RECEIPTS_DIR: join(work, 'receipts') };
-for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID']) delete env[k];
+for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID', 'BOOTSTRAP_OWNER_DISCORD_ID', 'BOOTSTRAP_OWNER_NAME']) delete env[k];
 const seeded = spawnSync(bin, ['seed', '-reset'], { env, encoding: 'utf8' });
 if (seeded.status !== 0) throw new Error(`seed failed: ${seeded.stderr}`);
 console.log(seeded.stdout.trim());
@@ -92,6 +95,7 @@ function sessionFor(userId) {
 const anon = {};
 const directorA = sessionFor('user-director');
 const officer = sessionFor('user-priya');
+const leadership = sessionFor('user-leadership');
 
 // ───────────── the caller ─────────────
 const covered = new Set();
@@ -234,7 +238,7 @@ await call('lookups', { expect: 401 });
 }
 
 // ───────────── 3. purchase lifecycle: club purchase settled below the estimate ─────────────
-const createdB = await call('adminUserCreate', { who: directorA, body: { discordId: '100000000000000077', name: 'Second Director', role: 'director', title: 'Treasurer', email: 'second@example.org' } });
+const createdB = await call('adminUserCreate', { who: leadership, body: { discordId: '100000000000000077', name: 'Second Director', role: 'director', title: 'Treasurer', email: 'second@example.org' } });
 const directorB = sessionFor(createdB.json.user.id);
 await call('adminUserUpdate', { who: directorA, params: { id: createdB.json.user.id }, body: { title: 'Co-director' } });
 
@@ -350,10 +354,34 @@ await call('agentJobs', { who: agent, expect: 401 });
 const audit = await call('adminAudit', { who: directorA, query: { entityType: 'purchase_request', entityId: id } });
 must(audit.json.items.some((a) => a.action === 'request.fulfilled'), 'the audit log recorded the settlement');
 
+// Ownership is restricted to owners, independent of leadership rank.
+await call('ownerAdd', { who: directorA, params: { userId: 'user-ava' }, expect: 403 });
+await call('ownerAdd', { who: leadership, params: { userId: 'user-ava' } });
+await call('ownerRemove', { who: leadership, params: { userId: 'user-ava' } });
+await call('ownerTransfer', { who: leadership, body: { toUserId: 'user-ava' } });
+await call('ownerAdd', { who: leadership, params: { userId: 'user-priya' }, expect: 403 });
+
 // Error shapes
 await call('requestDetail', { who: officer, params: { id: 'nope' }, expect: 404 });
 await call('eventCreate', { who: officer, body: {}, expect: 400 });
 await call('search', { who: officer, query: {}, expect: 400 });
+
+// V0.3 foundation endpoints, ownership and calendar limits.
+must(JSON.stringify((await call('prefsGet', { who: officer })).json.widgetLayout) === JSON.stringify(defaultWidgetLayout), 'server defaults match the web registry');
+const layout = { widgetLayout: [{ id: 'budget', size: 'L' }] };
+await call('prefsPut', { who: officer, body: layout });
+must(JSON.stringify((await call('prefsGet', { who: officer })).json) === JSON.stringify(layout), 'layout persists');
+await call('calendarEmailsList', { who: officer });
+const savedEmail = await call('calendarEmailCreate', { who: officer, body: { email: 'one@example.org' } });
+await call('calendarEmailUpdate', { who: officer, params: { id: savedEmail.json.email.id }, body: { email: 'changed@example.org' } });
+await call('calendarEmailUpdate', { who: directorA, params: { id: savedEmail.json.email.id }, body: { active: true }, expect: 404 });
+for (let i=0;i<4;i++) await call('calendarEmailCreate', { who: officer, body: { email: `calendar${i}@example.org` } });
+await call('calendarEmailCreate', { who: officer, body: { email: 'six@example.org' }, expect: 409 });
+await call('calendarEmailDelete', { who: officer, params: { id: savedEmail.json.email.id } });
+await call('inviteCreate', { who: officer, body: {}, expect: 403 });
+await call('inviteCreate', { who: directorA, body: { name:'New officer',discordId:'100000000000000088',subteamId:'team-events',method:'link' } });
+await call('adminUserUpdate', { who: directorA, params:{id:'user-priya'}, body:{role:'leadership'}, expect:403 });
+await call('adminUserUpdate', { who: leadership, params:{id:createdB.json.user.id}, body:{role:'leadership'} });
 
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev']); // redirects: covered by the Go tests

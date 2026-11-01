@@ -14,6 +14,7 @@ import { Async, Empty, errorMessage, Loading, Notice } from '../components/state
 const ROLE_OPTIONS = [
   { key: 'officer' as const, label: 'officer', hue: ROLE_HUE.officer },
   { key: 'director' as const, label: 'director', hue: ROLE_HUE.director },
+  { key: 'leadership' as const, label: 'leadership', hue: ROLE_HUE.leadership },
 ];
 
 /**
@@ -21,7 +22,7 @@ const ROLE_OPTIONS = [
  * role toggle (confirmed), a ⋯ menu for deactivate/reactivate (confirmed) and the add form
  * in a drawer opened from the tab's "+ add officer" button.
  */
-export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: string; adding: boolean; onCloseAdd: () => void }) {
+export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, onCloseAdd }: { isOwner: boolean; meId: string; canChangeRoles: boolean; adding: boolean; onCloseAdd: () => void }) {
   const state = useApi('adminUsers');
   const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string; n: number } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -43,6 +44,21 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
     }
   };
 
+  const ownership = async (u: AdminUser, action: 'add' | 'remove' | 'transfer') => {
+    const message = action === 'transfer'
+      ? `Transfer ownership to ${u.name}? They become an owner and you remain leadership without owner access. Other co-owners keep their access.`
+      : action === 'add' ? `Make ${u.name} a co-owner? Owners can transfer ownership and manage other owners.${u.role !== 'leadership' ? ' This also promotes them to leadership and signs them out of existing sessions.' : ''}` : `Remove owner access from ${u.name}? They remain leadership. The last owner cannot be removed.`;
+    if (!confirm(message)) return;
+    setBusyId(u.id); setNotice(null);
+    try {
+      if (action === 'transfer') await api('ownerTransfer', { body: { toUserId: u.id } });
+      else await api(action === 'add' ? 'ownerAdd' : 'ownerRemove', { params: { userId: u.id } });
+      // Refresh the signed-in user's owner flag as well as the directory.
+      location.reload();
+    } catch (e) { setNotice({ tone: 'negative', text: errorMessage(e), n: Date.now() }); }
+    finally { setBusyId(null); }
+  };
+
   return (
     <div class="stack stack--tight">
       {notice && (
@@ -56,6 +72,9 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
           <UserList
             users={d.users}
             meId={meId}
+            canChangeRoles={canChangeRoles}
+            isOwner={isOwner}
+            ownership={ownership}
             busyId={busyId}
             patch={patch}
             q={q}
@@ -69,6 +88,7 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
 
       <Drawer id="add-officer" open={adding} onClose={onCloseAdd} title="add an officer">
         <AddUser
+          canChangeRoles={canChangeRoles}
           onCancel={onCloseAdd}
           onAdded={(u) => {
             if (state.status === 'ready') state.set({ users: [...state.data.users, u] });
@@ -84,6 +104,9 @@ export default function AdminUsersView({ meId, adding, onCloseAdd }: { meId: str
 function UserList({
   users,
   meId,
+  canChangeRoles,
+  isOwner,
+  ownership,
   busyId,
   patch,
   q,
@@ -93,6 +116,9 @@ function UserList({
 }: {
   users: AdminUser[];
   meId: string;
+  canChangeRoles: boolean;
+  isOwner: boolean;
+  ownership: (u: AdminUser, action: 'add' | 'remove' | 'transfer') => void;
   busyId: string | null;
   patch: (u: AdminUser, body: { role?: Role; active?: boolean }, msg: string) => void;
   q: string;
@@ -162,6 +188,7 @@ function UserList({
                       <span class="people-text">
                         <span class="cell-title">
                           {u.name}
+                          {u.isOwner && <span class="tag">Owner</span>}
                           {u.id === meId && <span class="muted small"> (you)</span>}
                           {!u.active && <span class="tag">deactivated</span>}
                         </span>
@@ -177,14 +204,10 @@ function UserList({
                         label={`Role for ${u.name}`}
                         value={u.role}
                         options={ROLE_OPTIONS}
-                        disabled={busyId === u.id || !u.active}
+                        disabled={!canChangeRoles || (u.isOwner && !isOwner) || busyId === u.id || !u.active}
                         onChange={(role) => {
-                          const msg =
-                            role === 'director'
-                              ? `Make ${u.name} a director? Directors approve requests, see every report and manage officers.`
-                              : `Make ${u.name} an officer? They lose director access${u.id === meId ? ', including this page' : ''}.`;
-                          if (!confirm(msg)) return;
-                          patch(u, { role }, `${u.name} is now ${role === 'director' ? 'a director' : 'an officer'}.`);
+                          if (!confirm(`Make ${u.name} ${role}? Only leadership can change roles.`)) return;
+                          patch(u, { role }, `${u.name} is now ${role}.`);
                         }}
                       />
                     </td>
@@ -194,10 +217,14 @@ function UserList({
                       </span>
                     </td>
                     <td class="people-menu">
+                      {isOwner && u.active && <div class="stack stack--tight">
+                        <button class="btn btn--small" disabled={busyId !== null} onClick={() => ownership(u, u.isOwner ? 'remove' : 'add')}>{u.isOwner ? 'Remove owner' : 'Make co-owner'}</button>
+                        {u.id !== meId && <button class="btn btn--small" disabled={busyId !== null} onClick={() => ownership(u, 'transfer')}>Transfer ownership</button>}
+                      </div>}
                       <RowMenu
                         label={`Actions for ${u.name}`}
                         items={
-                          u.id === meId
+                          (u.id === meId || (u.isOwner && !isOwner) || (u.role === 'leadership' && !canChangeRoles))
                             ? []
                             : [
                                 u.active
@@ -231,7 +258,7 @@ function UserList({
   );
 }
 
-function AddUser({ onAdded, onCancel }: { onAdded: (u: AdminUser) => void; onCancel: () => void }) {
+function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolean; onAdded: (u: AdminUser) => void; onCancel: () => void }) {
   const empty = { discordId: '', name: '', role: 'officer' as Role, title: '', email: '' };
   const [f, setF] = useState(empty);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -290,13 +317,13 @@ function AddUser({ onAdded, onCancel }: { onAdded: (u: AdminUser) => void; onCan
       <fieldset class="fieldset">
         <legend class="field-label">role</legend>
         <div class="choice-row choice-row--compact">
-          {ROLE_OPTIONS.map((o) => (
+          {ROLE_OPTIONS.filter((o) => canChangeRoles || o.key === 'officer').map((o) => (
             <label class="choice" key={o.key}>
               <input type="radio" name="au-role" value={o.key} checked={f.role === o.key} onChange={() => set('role', o.key)} />
               <span class="choice-title dot-label" data-hue={o.hue}>
                 {o.label}
               </span>
-              <span class="choice-sub">{o.key === 'director' ? 'approves requests, sees every report, manages officers' : 'requests purchases, runs events'}</span>
+              <span class="choice-sub">{o.key === 'leadership' ? 'owns all access and role changes' : o.key === 'director' ? 'approves requests, sees every report, manages officers' : 'requests purchases, runs events'}</span>
             </label>
           ))}
         </div>
