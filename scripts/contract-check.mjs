@@ -61,7 +61,7 @@ if (!bin) {
 }
 const dbPath = join(work, 'check.db');
 const env = { ...process.env, DB_PATH: dbPath, RECEIPTS_DIR: join(work, 'receipts') };
-for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID']) delete env[k];
+for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID', 'BOOTSTRAP_OWNER_DISCORD_ID', 'BOOTSTRAP_OWNER_NAME']) delete env[k];
 const seeded = spawnSync(bin, ['seed', '-reset'], { env, encoding: 'utf8' });
 if (seeded.status !== 0) throw new Error(`seed failed: ${seeded.stderr}`);
 console.log(seeded.stdout.trim());
@@ -353,6 +353,13 @@ await call('adminTokenRevoke', { who: directorA, params: { id: issued.json.token
 await call('agentJobs', { who: agent, expect: 401 });
 const audit = await call('adminAudit', { who: directorA, query: { entityType: 'purchase_request', entityId: id } });
 must(audit.json.items.some((a) => a.action === 'request.fulfilled'), 'the audit log recorded the settlement');
+
+// Ownership is restricted to owners, independent of leadership rank.
+await call('ownerAdd', { who: directorA, params: { userId: 'user-ava' }, expect: 403 });
+await call('ownerAdd', { who: leadership, params: { userId: 'user-ava' } });
+await call('ownerRemove', { who: leadership, params: { userId: 'user-ava' } });
+await call('ownerTransfer', { who: leadership, body: { toUserId: 'user-ava' } });
+await call('ownerAdd', { who: leadership, params: { userId: 'user-priya' }, expect: 403 });
 
 // Error shapes
 await call('requestDetail', { who: officer, params: { id: 'nope' }, expect: 404 });

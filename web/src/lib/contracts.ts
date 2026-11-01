@@ -101,6 +101,7 @@ export const UserSummary = z.object({
 export type UserSummary = z.infer<typeof UserSummary>;
 
 export const CurrentUser = UserSummary.extend({
+  isOwner: z.boolean(),
   discordId: z.string(),
   role: Role,
   title: z.string().nullable(),
@@ -902,7 +903,9 @@ export const CalendarEmailUpdateRequest = CalendarEmailCreateRequest.partial();
 export const InviteCreateRequest = z.object({ name: z.string().trim().min(1).max(100), discordId: DiscordId, subteamId: Id, method: z.literal('link').default('link') });
 export const InviteResponse = z.object({ invite: z.object({ id: Id, name: z.string(), discordId: DiscordId, subteamId: Id, invitedBy: Id, method: z.enum(['dm','link','both']) }), token: z.string() });
 
-type Auth = 'leadership' | 'public' | 'officer' | 'director' | `token:${(typeof SERVICE_TOKEN_SCOPES)[number]}`;
+export const OwnerTransferRequest = z.object({ toUserId: Id });
+
+type Auth = 'owner' | 'leadership' | 'public' | 'officer' | 'director' | `token:${(typeof SERVICE_TOKEN_SCOPES)[number]}`;
 interface EndpointSpec {
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   path: string;
@@ -917,6 +920,9 @@ interface EndpointSpec {
  * keeps the two in sync.
  */
 export const ENDPOINTS = {
+  ownerAdd: { method: 'POST', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
+  ownerRemove: { method: 'DELETE', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
+  ownerTransfer: { method: 'POST', path: '/api/admin/owners/transfer', auth: 'owner', body: OwnerTransferRequest, response: AdminUsersResponse },
   prefsGet: { method: 'GET', path: '/api/me/prefs', auth: 'officer', response: WidgetPrefs },
   prefsPut: { method: 'PUT', path: '/api/me/prefs', auth: 'officer', body: WidgetPrefs, response: WidgetPrefs },
   calendarEmailsList: { method: 'GET', path: '/api/me/calendar-emails', auth: 'officer', response: CalendarEmailsResponse },

@@ -83,6 +83,9 @@ func apply(ctx context.Context, w *store.Queries) error {
 			return err
 		}
 	}
+	if err := w.Exec(ctx, `UPDATE users SET is_owner=1 WHERE id='user-leadership' AND NOT EXISTS(SELECT 1 FROM users WHERE is_owner=1)`); err != nil {
+		return err
+	}
 	for _, team := range []struct{ id, name string }{{"team-operations", "Operations"}, {"team-events", "Events"}, {"team-build", "Build"}} {
 		if err := insert(ctx, w, "subteams", "id,name", team.id, team.name); err != nil {
 			return err

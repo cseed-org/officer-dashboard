@@ -85,6 +85,12 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 		return notFoundErr("Record not found")
 	}
 	msg := err.Error()
+	if strings.Contains(msg, "last owner") {
+		return conflict("Cannot remove the last owner")
+	}
+	if strings.Contains(msg, "replace an owner") {
+		return conflict("Cannot replace an owner")
+	}
 	if strings.Contains(msg, "last active leadership") {
 		return conflict("Cannot remove the last active leadership user")
 	}

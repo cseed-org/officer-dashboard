@@ -592,3 +592,11 @@ td.people-who-cell {min-width:0;}
 .widget-slot--S { max-height:360px; overflow:auto; }
 .widget-controls { border:1px solid var(--line, #ccc); padding:8px; }
 .widget-controls + .block { height:auto; }
+/* Three role choices and ownership actions need their own lines on phones. */
+@media (max-width:639px) {
+  .dt.dt--people tr {grid-template-columns:minmax(0,1fr);align-items:start;gap:12px;}
+  .dt.dt--people td.people-menu {display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+  .dt--people .people-menu > .stack {flex-direction:row;flex-wrap:wrap;gap:8px;}
+  .dt--people .people-who {width:100%;}
+  .dt--people .role-toggle {max-width:100%;flex-wrap:wrap;}
+}

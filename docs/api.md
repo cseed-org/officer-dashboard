@@ -30,6 +30,7 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | Value | Meaning |
 | --- | --- |
 | public | No session needed. |
+| owner | Active dashboard owner (`isOwner=true`, role leadership). Owner-only operations recheck authorization inside the transaction. |
 | officer | Any signed-in, active officer, director, or leadership user. |
 | director | Director or leadership; officers get 403. `/admin/*` and `/api/admin/*` are enforced by the middleware, the rest by `requireRole(locals, 'director')` in the handler. |
 | token:&lt;scope&gt; | `Authorization: Bearer <service token>` with that scope (issued on `/admin/tokens`). No session. |
@@ -76,6 +77,9 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/api/finance/periods` | director | — | `FiscalYearPeriodsCreateRequest` | `FiscalPeriodsResponse` |
 | POST | `/api/finance/periods/:id/close` | director | — | `FiscalPeriodCloseRequest` | `FiscalPeriodsResponse` |
 | GET | `/api/finance/accounts` | director | — | — | `ChartOfAccountsResponse` |
+| POST | `/api/admin/owners/:userId` | owner | — | — | `AdminUserResponse` |
+| DELETE | `/api/admin/owners/:userId` | owner | — | — | `AdminUserResponse` |
+| POST | `/api/admin/owners/transfer` | owner | — | `OwnerTransferRequest` | `AdminUsersResponse` |
 | GET | `/api/admin/users` | director | — | — | `AdminUsersResponse` |
 | POST | `/api/admin/users` | director | — | `AdminUserCreateRequest` | `AdminUserResponse` |
 | PATCH | `/api/admin/users/:id` | director | — | `AdminUserUpdateRequest` | `AdminUserResponse` |
@@ -234,12 +238,32 @@ Officer profiles require phone, birthday, and subteam; name and Discord ID remai
 grad date, title, start term, and LinkedIn. No profile read endpoint is exposed here;
 future profile endpoints must restrict phone visibility to director+.
 
-Deployment provisioning: fresh `BOOTSTRAP_DIRECTOR_DISCORD_ID` logins create a
-leadership user (the environment variable retains its existing name). The migration
-preserves existing roles. For an upgraded deployment, the database operator explicitly
-selects the owner with `dashboard provision-leadership --db /path/dashboard.db
---discord-id 123456789012345678`. Run it before enabling role management. This command
-requires an existing active account, ends its sessions, and audit-logs the promotion;
-repeating it is safe. No existing director is silently promoted. The last active
-leadership user cannot be demoted or deactivated. The development seed includes
-`user-leadership`, and dev builds accept `/auth/dev?as=leadership`.
+Dashboard ownership: `CurrentUser` and `AdminUser` include `isOwner`. Owners are
+always active leadership. Only owners may add/remove co-owners or transfer ownership.
+Non-owner leadership receive 403 for these operations and for demoting or deactivating
+an owner. Owners may demote/deactivate another owner; this also removes that person's
+owner flag in the same transaction, subject to the last-owner guard. A name/title-only
+edit does not change ownership. Direct user PATCH bodies cannot set `isOwner`.
+
+POST `/api/admin/owners/:userId` adds an active target as co-owner, promoting their
+role if needed. DELETE removes their owner flag, retaining leadership. Last-owner
+removal returns 409. Repeating add/remove is safe. POST `/api/admin/owners/transfer`
+accepts `{toUserId}`: the active target becomes an owner before the caller loses their
+flag, atomically. Caller remains active leadership and other co-owners remain owners.
+It returns `{users: [target, caller]}`. Self-transfer is 400; missing targets are 404;
+inactive targets are 400. All changed users receive audit entries. Promotion invalidates
+the target's sessions; transferring/removing ownership preserves sessions when the role
+stays leadership, and subsequent requests read the current owner flag.
+
+Startup provisioning uses `BOOTSTRAP_OWNER_DISCORD_ID` and `BOOTSTRAP_OWNER_NAME`.
+The old `BOOTSTRAP_DIRECTOR_DISCORD_ID` is a deprecated ID alias. If no owner exists,
+the configured user is upserted as active leadership/owner and audited. Name defaults to
+the existing name, or “Dashboard owner” for a new account when unset. Once any owner
+exists, the environment is ignored; a mismatch logs a warning. Ownership transfer is
+permanent across restarts with the previous bootstrap configuration.
+
+Migration preserves existing roles; deployment operators can configure the initial
+owner before startup or explicitly recover an active account with `dashboard
+provision-leadership --owner --db /path/dashboard.db --discord-id 123456789012345678`.
+This is idempotent, ends changed accounts' sessions and audit-logs the change. Without
+`--owner`, it grants leadership only. Seed data includes a fictional owner for local QA.

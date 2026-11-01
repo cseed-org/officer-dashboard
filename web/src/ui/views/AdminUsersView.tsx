@@ -22,7 +22,7 @@ const ROLE_OPTIONS = [
  * role toggle (confirmed), a ⋯ menu for deactivate/reactivate (confirmed) and the add form
  * in a drawer opened from the tab's "+ add officer" button.
  */
-export default function AdminUsersView({ meId, canChangeRoles, adding, onCloseAdd }: { meId: string; canChangeRoles: boolean; adding: boolean; onCloseAdd: () => void }) {
+export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, onCloseAdd }: { isOwner: boolean; meId: string; canChangeRoles: boolean; adding: boolean; onCloseAdd: () => void }) {
   const state = useApi('adminUsers');
   const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string; n: number } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -44,6 +44,21 @@ export default function AdminUsersView({ meId, canChangeRoles, adding, onCloseAd
     }
   };
 
+  const ownership = async (u: AdminUser, action: 'add' | 'remove' | 'transfer') => {
+    const message = action === 'transfer'
+      ? `Transfer ownership to ${u.name}? They become an owner and you remain leadership without owner access. Other co-owners keep their access.`
+      : action === 'add' ? `Make ${u.name} a co-owner? Owners can transfer ownership and manage other owners.` : `Remove owner access from ${u.name}? They remain leadership. The last owner cannot be removed.`;
+    if (!confirm(message)) return;
+    setBusyId(u.id); setNotice(null);
+    try {
+      if (action === 'transfer') await api('ownerTransfer', { body: { toUserId: u.id } });
+      else await api(action === 'add' ? 'ownerAdd' : 'ownerRemove', { params: { userId: u.id } });
+      // Refresh the signed-in user's owner flag as well as the directory.
+      location.reload();
+    } catch (e) { setNotice({ tone: 'negative', text: errorMessage(e), n: Date.now() }); }
+    finally { setBusyId(null); }
+  };
+
   return (
     <div class="stack stack--tight">
       {notice && (
@@ -58,6 +73,8 @@ export default function AdminUsersView({ meId, canChangeRoles, adding, onCloseAd
             users={d.users}
             meId={meId}
             canChangeRoles={canChangeRoles}
+            isOwner={isOwner}
+            ownership={ownership}
             busyId={busyId}
             patch={patch}
             q={q}
@@ -88,6 +105,8 @@ function UserList({
   users,
   meId,
   canChangeRoles,
+  isOwner,
+  ownership,
   busyId,
   patch,
   q,
@@ -98,6 +117,8 @@ function UserList({
   users: AdminUser[];
   meId: string;
   canChangeRoles: boolean;
+  isOwner: boolean;
+  ownership: (u: AdminUser, action: 'add' | 'remove' | 'transfer') => void;
   busyId: string | null;
   patch: (u: AdminUser, body: { role?: Role; active?: boolean }, msg: string) => void;
   q: string;
@@ -167,6 +188,7 @@ function UserList({
                       <span class="people-text">
                         <span class="cell-title">
                           {u.name}
+                          {u.isOwner && <span class="tag">Owner</span>}
                           {u.id === meId && <span class="muted small"> (you)</span>}
                           {!u.active && <span class="tag">deactivated</span>}
                         </span>
@@ -182,7 +204,7 @@ function UserList({
                         label={`Role for ${u.name}`}
                         value={u.role}
                         options={ROLE_OPTIONS}
-                        disabled={!canChangeRoles || busyId === u.id || !u.active}
+                        disabled={!canChangeRoles || (u.isOwner && !isOwner) || busyId === u.id || !u.active}
                         onChange={(role) => {
                           if (!confirm(`Make ${u.name} ${role}? Only leadership can change roles.`)) return;
                           patch(u, { role }, `${u.name} is now ${role}.`);
@@ -195,10 +217,14 @@ function UserList({
                       </span>
                     </td>
                     <td class="people-menu">
+                      {isOwner && u.active && <div class="stack stack--tight">
+                        <button class="btn btn--small" disabled={busyId !== null} onClick={() => ownership(u, u.isOwner ? 'remove' : 'add')}>{u.isOwner ? 'Remove owner' : 'Make co-owner'}</button>
+                        {u.id !== meId && <button class="btn btn--small" disabled={busyId !== null} onClick={() => ownership(u, 'transfer')}>Transfer ownership</button>}
+                      </div>}
                       <RowMenu
                         label={`Actions for ${u.name}`}
                         items={
-                          (u.id === meId || (u.role === 'leadership' && !canChangeRoles))
+                          (u.id === meId || (u.isOwner && !isOwner) || (u.role === 'leadership' && !canChangeRoles))
                             ? []
                             : [
                                 u.active

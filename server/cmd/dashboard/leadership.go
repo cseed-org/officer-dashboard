@@ -19,6 +19,8 @@ import (
 func leadershipCmd(args []string, getenv func(string) string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("provision-leadership", flag.ContinueOnError)
 	var discordID string
+	var owner bool
+	fs.BoolVar(&owner, "owner", false, "also provision dashboard ownership")
 	fs.StringVar(&discordID, "discord-id", "", "existing active owner's Discord ID (required)")
 	cfg, err := loadSettings(fs, args, getenv)
 	if err != nil {
@@ -42,17 +44,23 @@ func leadershipCmd(args []string, getenv func(string) string, stdout io.Writer) 
 		if !user.Active {
 			return fmt.Errorf("cannot provision an inactive user")
 		}
-		if user.Role == auth.RoleLeadership {
+		if user.Role == auth.RoleLeadership && (!owner || user.IsOwner) {
 			return nil
 		}
 		if err := q.UpdateUser(ctx, user.ID, store.UserPatch{Role: store.Opt[string]{V: auth.RoleLeadership, Set: true}}, time.Now().UnixMilli()); err != nil {
 			return err
 		}
+		if owner {
+			if err := q.SetOwner(ctx, user.ID, true, time.Now().UnixMilli()); err != nil {
+				return err
+			}
+		}
 		if err := q.DeleteUserSessions(ctx, user.ID); err != nil {
 			return err
 		}
-		before, _ := json.Marshal(map[string]string{"role": user.Role})
-		after := `{"role":"leadership","source":"operator CLI"}`
+		before, _ := json.Marshal(map[string]any{"role": user.Role, "isOwner": user.IsOwner})
+		afterRaw, _ := json.Marshal(map[string]any{"role": "leadership", "isOwner": owner || user.IsOwner, "source": "operator CLI"})
+		after := string(afterRaw)
 		prior := string(before)
 		return q.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), Action: "user.provision_leadership", EntityType: "user", EntityID: &user.ID, BeforeJSON: &prior, AfterJSON: &after, CreatedAt: store.Ms(time.Now().UnixMilli())})
 	})

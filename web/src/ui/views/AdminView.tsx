@@ -54,7 +54,7 @@ export default function AdminView({ me }: { me: CurrentUser }) {
       </div>
       <div key={tab} id="adm-panel" role="tabpanel" aria-labelledby={`adm-tab-${tab}`} class="tab-panel">
         {tab === 'users' ? (
-          <AdminUsersView canChangeRoles={me.role === 'leadership'} meId={me.id} adding={creating} onCloseAdd={closeCreate} />
+          <AdminUsersView isOwner={me.isOwner} canChangeRoles={me.role === 'leadership'} meId={me.id} adding={creating} onCloseAdd={closeCreate} />
         ) : tab === 'tokens' ? (
           <AdminTokensView creating={creating} onCloseCreate={closeCreate} />
         ) : (

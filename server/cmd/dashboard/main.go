@@ -78,6 +78,7 @@ type settings struct {
 	StaticFallbackStatus             int
 	DiscordClientID, DiscordSecret   string
 	BootstrapDirector                string
+	BootstrapOwnerName               string
 	WebhookURL                       string
 	ServiceAccountJSON, DriveRoot    string
 	ReceiptsDir                      string
@@ -103,7 +104,8 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 		return s, err
 	}
 	s.DiscordClientID, s.DiscordSecret = env("DISCORD_CLIENT_ID", ""), env("DISCORD_CLIENT_SECRET", "")
-	s.BootstrapDirector = env("BOOTSTRAP_DIRECTOR_DISCORD_ID", "")
+	s.BootstrapDirector = env("BOOTSTRAP_OWNER_DISCORD_ID", env("BOOTSTRAP_DIRECTOR_DISCORD_ID", ""))
+	s.BootstrapOwnerName = env("BOOTSTRAP_OWNER_NAME", "")
 	s.WebhookURL = env("DISCORD_WEBHOOK_URL", "")
 	s.ServiceAccountJSON = env("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 	s.DriveRoot = env("DRIVE_ROOT_FOLDER_ID", env("GOOGLE_DRIVE_FOLDER_ID", ""))
@@ -140,9 +142,17 @@ func openDB(path string) (*store.DB, error) {
 
 // buildServer wires configuration into an api.Server.
 func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error) {
+	mismatch, err := db.BootstrapOwner(context.Background(), s.BootstrapDirector, s.BootstrapOwnerName, time.Now().UnixMilli())
+	if err != nil {
+		return nil, fmt.Errorf("provision dashboard owner: %w", err)
+	}
+	if mismatch {
+		log.Warn("bootstrap owner configuration ignored: ownership already belongs to another account")
+	}
+
 	cfg := api.Config{
 		DB: db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
-		BootstrapDirectorDiscordID: s.BootstrapDirector,
+		BootstrapDirectorDiscordID: "",
 		Tolerance:                  purchases.ToleranceFromEnv(s.TolerancePercent, s.ToleranceCents),
 		DevAuth:                    s.DevAuth,
 	}

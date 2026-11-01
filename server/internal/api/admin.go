@@ -98,6 +98,16 @@ func (c *Ctx) adminUserUpdate() error {
 		if err != nil {
 			return notFoundErr("Record not found")
 		}
+		if before.IsOwner && ((role.Set && role.V != before.Role) || (active.Set && !active.V)) {
+			if _, err := c.ownerIn(w); err != nil {
+				return err
+			}
+			// Owners may remove another owner's access, but the last-owner
+			// trigger refuses the whole transaction if this strands the dashboard.
+			if err := w.SetOwner(ctx, before.ID, false, c.S.nowMs()); err != nil {
+				return err
+			}
+		}
 		if before.Role == auth.RoleLeadership || (role.Set && role.V != before.Role) {
 			if _, err := c.requireLeadership(); err != nil {
 				return err

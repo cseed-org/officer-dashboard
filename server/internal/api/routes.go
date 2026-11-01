@@ -47,6 +47,9 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("GET /api/finance/accounts", (*Ctx).accounts)
 
 	h("POST /api/invites", (*Ctx).inviteCreate)
+	h("POST /api/admin/owners/{userId}", (*Ctx).ownerAdd)
+	h("DELETE /api/admin/owners/{userId}", (*Ctx).ownerRemove)
+	h("POST /api/admin/owners/transfer", (*Ctx).ownerTransfer)
 	h("GET /api/admin/users", (*Ctx).adminUsers)
 	h("POST /api/admin/users", (*Ctx).adminUserCreate)
 	h("PATCH /api/admin/users/{id}", (*Ctx).adminUserUpdate)

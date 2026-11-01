@@ -7,16 +7,18 @@ CREATE TABLE `__new_users` (
 	`email` text,
 	`avatar_url` text,
 	`role` text DEFAULT 'officer' NOT NULL,
+ `is_owner` integer DEFAULT 0 NOT NULL CHECK(is_owner IN (0,1)),
 	`active` integer DEFAULT true NOT NULL,
 	`title` text,
 	`last_login_at` integer,
 	`created_at` integer DEFAULT (unixepoch('subsec') * 1000) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch('subsec') * 1000) NOT NULL,
+	CHECK(is_owner = 0 OR (role = 'leadership' AND active = 1)),
 	CONSTRAINT "users_role_check" CHECK("role" IN ('leadership', 'director', 'officer'))
 );
 
 --> statement-breakpoint
-INSERT INTO __new_users SELECT * FROM users;
+INSERT INTO __new_users(id,discord_id,name,email,avatar_url,role,active,title,last_login_at,created_at,updated_at) SELECT id,discord_id,name,email,avatar_url,role,active,title,last_login_at,created_at,updated_at FROM users;
 --> statement-breakpoint
 DROP TABLE users;
 --> statement-breakpoint
@@ -96,3 +98,21 @@ CREATE TRIGGER users_last_leadership_delete BEFORE DELETE ON users
 WHEN OLD.active = 1 AND OLD.role = 'leadership'
  AND NOT EXISTS (SELECT 1 FROM users WHERE id <> OLD.id AND active = 1 AND role = 'leadership')
 BEGIN SELECT RAISE(ABORT, 'cannot remove last active leadership user'); END;
+
+--> statement-breakpoint
+CREATE TRIGGER users_last_owner BEFORE UPDATE OF is_owner, role, active ON users
+WHEN OLD.is_owner = 1 AND (NEW.is_owner = 0 OR NEW.role <> 'leadership' OR NEW.active <> 1)
+ AND NOT EXISTS (SELECT 1 FROM users WHERE id <> OLD.id AND is_owner = 1)
+BEGIN SELECT RAISE(ABORT, 'cannot remove last owner'); END;
+--> statement-breakpoint
+CREATE TRIGGER users_last_owner_delete BEFORE DELETE ON users
+WHEN OLD.is_owner = 1 AND NOT EXISTS (SELECT 1 FROM users WHERE id <> OLD.id AND is_owner = 1)
+BEGIN SELECT RAISE(ABORT, 'cannot remove last owner'); END;
+--> statement-breakpoint
+CREATE TRIGGER users_owner_no_replace BEFORE INSERT ON users
+WHEN EXISTS (SELECT 1 FROM users WHERE is_owner = 1 AND (id = NEW.id OR discord_id = NEW.discord_id))
+BEGIN SELECT RAISE(ABORT, 'cannot replace an owner'); END;
+--> statement-breakpoint
+CREATE TRIGGER users_owner_no_rekey BEFORE UPDATE OF id, discord_id ON users
+WHEN EXISTS (SELECT 1 FROM users WHERE is_owner = 1 AND id <> OLD.id AND (id = NEW.id OR discord_id = NEW.discord_id))
+BEGIN SELECT RAISE(ABORT, 'cannot replace an owner'); END;
