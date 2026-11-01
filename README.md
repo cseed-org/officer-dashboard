@@ -5,180 +5,45 @@ reflection surveys), budget status, a purchase-request flow (officer submits →
 approves → fulfilment), and a nonprofit-grade double-entry ledger that can later produce
 Form 990 / Washington filings and financial statements.
 
-One Astro app (SSR) on Cloudflare Workers with D1 (SQLite) through Drizzle ORM. Sign-in
-is Discord OAuth, limited to an allowlist of officers. The design follows
+Sign-in is Discord OAuth, limited to an allowlist of officers. The design follows
 [cseed.co](https://cseed.co): paper and ink, Playfair Display, Poppins, Anonymous Pro.
 
-> **Status: Phase 1.** API handlers, accounting, CSV ingest, Drive storage, Discord
-> notifications and every page (overview, events, requests, finance, admin) are implemented.
+## Layout
 
-> **v2: Go backend.** `server/` holds a Go replacement for the TypeScript backend (same JSON API,
-> same schema, one SQLite file; runs on a Raspberry Pi or in a Cloudflare Container) and serves the
-> static front end in `web/dist`. See [server/README.md](server/README.md). The TypeScript app below
-> stays until a cleanup PR removes it. `node scripts/contract-check.mjs` proves the Go server matches
-> `src/core/contracts.ts`.
+| Path | What it is |
+| --- | --- |
+| `server/` | The Go backend: JSON API, SQLite (embedded migrations), Discord sign-in, receipts, notifications; serves `web/dist`. Runs on a Raspberry Pi or in a Cloudflare Container. See [server/README.md](server/README.md). |
+| `web/` | The static Astro + Preact front end (five pages, sidebar, ⌘K search) and its Playwright suite. See [web/README.md](web/README.md). |
+| `docs/api.md` | The HTTP API reference. |
+| `src/core/contracts.ts` | The zod schemas for every request and response (`domain.ts` holds the enums it uses). The single source of truth for the API shape. |
+| `scripts/contract-check.mjs` | CI job logic: starts the Go server on a seeded temp database and validates every response against `contracts.ts`. |
+
+The old v1 TypeScript / Cloudflare Workers / D1 app has been removed; it lives in git history
+before the v1-cleanup PR.
 
 ## Quick start
 
-Needs Node ≥ 22.23 (tested on Node 26, Raspberry Pi 5 / linux arm64).
+Needs Go 1.24+ with a C compiler (cgo, for SQLite) and Node ≥ 22.23.
 
 ```sh
-npm install
-npm run db:migrate:local   # create the local D1 database (.wrangler/state)
-npm run db:seed:local      # sample officers, events, requests, budget, journal
-npm run dev                # http://localhost:4321
+(cd web && npm ci && npm run build)   # static front end -> web/dist
+cd server && make dev                 # seeds ./data/dev.db, serves with the dev login
 ```
 
-`npm run dev` creates `.dev.vars` from `.dev.vars.example` on first run, which turns on
-the **dev login**: open <http://localhost:4321/login> and choose *director* or *officer*
-(or go straight to `/auth/dev?as=director`). You don't need a Discord app for local work.
+See [server/README.md](server/README.md) for configuration, secrets and deployment, and
+[web/README.md](web/README.md) for the front-end dev server.
 
-> When Astro detects a coding agent it starts the dev server in the background
-> (`astro dev stop|status|logs`). Add `--ignore-lock` to keep it in the foreground.
+## Checks
 
-Reset the local database: `npm run db:reset:local`. Do this after pulling a change
-that rewrites existing migrations (as PR #1's review fixes did, before anything was deployed).
-
-## Scripts
-
-| Script | What it does |
+| Check | Command |
 | --- | --- |
-| `dev` | Astro dev server, running the Worker in workerd with local D1 |
-| `build` | Production build to `dist/`, then `scripts/check-build.mjs` fails if the dev login survived |
-| `preview` | Build, then serve `dist/` with `wrangler dev` |
-| `typecheck` | `wrangler types` + `astro check` + `tsc` for tests and scripts |
-| `test` | Vitest: core logic, the contract, migrations/triggers, seed |
-| `test:e2e` | Playwright smoke test on phone 390×844, tablet 820×1180, desktop 1440×900 |
-| `db:generate` | Diff `src/server/db/schema.ts` into a new SQL migration in `migrations/` |
-| `db:migrate:local` / `db:migrate:remote` | Apply `migrations/*.sql` to local / production D1 |
-| `db:seed:local` | Generate `scripts/seed` SQL and run it on local D1 (safe to re-run) |
-| `db:reset:local` | Delete local D1, migrate, seed |
-| `deploy` | Build, migrate remote D1, `wrangler deploy` |
+| Go vet + tests | `cd server && go vet ./... && go test ./...` |
+| API contract | `npm ci && npm run contract-check` (builds and runs the Go server itself) |
+| Front end build + types | `cd web && npm ci && npm run build && npx astro check` |
+| Front end e2e (local only) | `cd web && npm run test:e2e` (Playwright; not run in CI) |
 
-Playwright needs a browser once: `npx playwright install chromium`. The e2e run reuses a dev
-server on port 4321 or starts one (migrating and seeding first; set `E2E_PORT` to change it)
-and saves a screenshot of every page, light and dark, to `tmp/screenshots/<viewport>/<scheme>/`,
-plus empty / error / loading states under `states_*`. It creates purchase requests in the
-local D1 (titles marked `agent-e2e-…`); `npm run db:reset:local` clears them.
-
-## Environment and secrets
-
-Local values go in `.dev.vars` (git-ignored). In production, set secrets with
-`wrangler secret put <NAME>`; non-secret vars live in `wrangler.jsonc`.
-
-| Name | Kind | Needed for |
-| --- | --- | --- |
-| `DB` | D1 binding | Everything. `wrangler d1 create cseed-officer-dashboard`, then put the id in `wrangler.jsonc` |
-| `APP_URL` | var | Public origin used for the OAuth redirect, e.g. `https://officers.cseed.co` |
-| `DISCORD_CLIENT_ID` | secret | Discord sign-in |
-| `DISCORD_CLIENT_SECRET` | secret | Discord sign-in |
-| `BOOTSTRAP_DIRECTOR_DISCORD_ID` | secret/var | Your Discord user id; created as the first director on first sign-in |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | secret | Receipt uploads to Google Drive (service-account key JSON) |
-| `DRIVE_ROOT_FOLDER_ID` | secret/var | Shared-drive folder receipts are filed under |
-| `DISCORD_WEBHOOK_URL` | secret | Request notifications to a Discord channel |
-| `AGENT_SETTLEMENT_TOLERANCE_PERCENT` | var | Optional, default `10`. See "Agent settlement tolerance" |
-| `AGENT_SETTLEMENT_TOLERANCE_CENTS` | var | Optional, default `2500` ($25) |
-| `DEV_AUTH` | `.dev.vars` only | `1` enables `/auth/dev` in `astro dev`. Production builds compile it out |
-
-### Discord app
-
-1. <https://discord.com/developers/applications> → New Application → OAuth2.
-2. Add redirects `http://localhost:4321/auth/callback` and `https://<your domain>/auth/callback`.
-3. Copy the client id and secret into `.dev.vars` / `wrangler secret put`.
-4. Only the `identify` scope is requested. Sign-in is allowed only for Discord ids in the
-   `users` table (directors add officers on `/admin/users`), plus the bootstrap director.
-
-## Deploy (Cloudflare)
-
-```sh
-npx wrangler login
-npx wrangler d1 create cseed-officer-dashboard      # copy database_id into wrangler.jsonc
-npx wrangler secret put DISCORD_CLIENT_ID           # repeat for each secret above
-npm run deploy                                      # build → migrate remote D1 → deploy
-```
-
-Then add a custom domain to the Worker and set `APP_URL` to it.
-
-## Architecture
-
-```
-src/
-  core/            framework-free domain logic: no Astro, Cloudflare or Drizzle imports
-    contracts.ts   zod schemas + types for every API request/response (the UI ↔ backend contract)
-    domain.ts      enums (roles, statuses, account types, functional classes, …)
-    auth.ts        role rules, path → required role, dev-login guard, login allowlist decision
-    ports.ts       FileStore and Notifier interfaces
-    money.ts, metrics.ts, journal.ts, purchase-lifecycle.ts, fiscal.ts, contributions.ts
-  server/          adapters
-    db/            Drizzle schema (all tables) and D1 client
-    auth/          sessions (hashed tokens in D1), Discord OAuth (arctic), requireRole()
-    files/         FileStore: in-memory stub now, Google Drive in Phase 1
-    notify/        Notifier: console stub now, Discord webhook in Phase 1
-    env.ts         the one place that reads Worker bindings
-  middleware.ts    attaches locals.user, enforces roles per path (403 for officers on /admin/*)
-  pages/api/       thin JSON handlers (parse with contracts → call core → respond)
-  pages/           UI routes: server-rendered shell + h1, body is a Preact island
-  ui/              the UI layer (Phase 1)
-    api/client.ts  api('overview', …): typed by ENDPOINTS, responses validated by the contract schema
-    islands/       one interactive island per page (OverviewView, RequestFormView, FinanceView, …)
-    components/    states (loading/empty/error), tables that become cards on phones, SVG charts, forms
-  styles/tokens/   CSEED colour (light + dark), type and layout tokens
-migrations/        SQL migrations applied by wrangler (0001 = integrity triggers)
-scripts/seed/      seed data and SQL generator
-tests/core, tests/db   Vitest     tests/e2e   Playwright
-docs/api.md        endpoint table: method, path, role, schema names
-```
-
-`src/core` stays portable: a later Raspberry Pi / Node deployment swaps the adapters
-(`@astrojs/node`, better-sqlite3 with the same Drizzle schema, a filesystem FileStore)
-without touching domain code.
-
-### Data integrity
-
-- Money is stored as integer cents everywhere. CHECK `typeof(col) = 'integer'` rejects
-  fractional values, which SQLite's INTEGER affinity would otherwise store as REAL.
-- Enum columns have CHECK constraints; journal lines must be non-negative with exactly one
-  of debit or credit; purchase totals must equal quantity × unit cost + tax/shipping.
-- Triggers (`migrations/0001_integrity_triggers.sql`): journal entries are created as
-  drafts and can only be posted when balanced, with ≥ 2 lines, outside closed fiscal
-  periods. **Posted entries and their lines can't be updated or deleted**; corrections
-  are reversing entries. `audit_log` is append-only.
-- D1 runs with `recursive_triggers` off, so `INSERT OR REPLACE` / `UPDATE OR REPLACE`
-  delete conflicting rows without firing DELETE triggers. Extra guards therefore refuse any
-  insert or key change that collides with a posted entry or line, an audit row, or a
-  closed fiscal period. `tests/db/integrity-triggers.test.ts` runs every rule against both
-  `node:sqlite` and real local D1 (workerd via `getPlatformProxy`).
-- Sessions store only a SHA-256 of the cookie token. Service tokens likewise.
-
-### Accounting note
-
-The seeded chart of accounts, its Form 990 Part VIII/IX/X line mapping, the July–June
-fiscal year, and the donor-acknowledgment rules in `src/core/contributions.ts` are a
-reasonable starting point for a small 501(c)(3), **not tax or accounting advice. Have
-CSEED's CPA review them** before real books are kept or filings are prepared.
-
-## UI data flow
-
-Pages render the app shell and heading on the server; each page body is a Preact island that
-calls `/api/*` through `src/ui/api/client.ts` (`api(name, { params, query, body })`). Names,
-paths, bodies and responses all come from `ENDPOINTS` in `src/core/contracts.ts`, and every
-response is checked against its zod schema, so contract drift shows as an error state instead
-of wrong numbers. The e2e suite runs against the real API on the seeded local D1; empty, error
-and loading states are produced by intercepting the API in Playwright (`tests/e2e/states.spec.ts`).
-
-## Design
-
-Colours, fonts and the nav come from the cseed.co landing site
-(`cseed-org/cseed-landing-page`). Tokens live in `src/styles/tokens/`: the verbatim
-palette plus semantic tokens (surfaces, text, rules, status, charts) with a dark theme
-that follows the system preference or the nav's theme toggle. Fonts load from the same
-Google Fonts URL as the landing site. Status colours: sage = approved, sun = pending (ink
-text), sky = info, brick = denied / over budget.
-
-## CI
-
-`.github/workflows/ci.yml` runs typecheck and unit tests on pushes and pull requests.
-
+CI (`.github/workflows/ci.yml`) runs the `go`, `contract` and `web` jobs on every push to
+`main` and every pull request.
 
 ## Accounting model and operating rules
 
@@ -212,11 +77,11 @@ A period can move open → closed → locked and cannot reopen. Period close is 
 lock, not a year-end sweep of revenue/expense accounts: cumulative trial balances retain
 prior-year nominal accounts until explicit closing entries are prepared. Fiscal years
 currently run July–June (FY2027 ends June 2027). Period creation/close and manual ledger/
-contribution entry are engine/adapter operations, not dashboard API workflows in v1;
+contribution entry are engine/adapter operations, not dashboard API workflows;
 provision future open periods before the current year ends.
 
-Pure functions are in `src/core/accounting/`; the API persists posting statements with
-request state and audit rows in one D1 batch. Contributions validate their journal total
+Pure functions are in `server/internal/accounting/`; the API persists posting statements with
+request state and audit rows in one SQLite transaction. Contributions validate their journal total
 and revenue against the gift amount, track in-kind descriptions, and compute donor
 acknowledgment and quid-pro-quo disclosure flags. The thresholds follow the
 [IRS substantiation guidance](https://www.irs.gov/charities-non-profits/charitable-organizations/charitable-organizations-substantiation-and-disclosure-requirements).
@@ -243,7 +108,7 @@ Pending approval, invited, waitlisted, declined and cancelled guests do not coun
 registrations unless they checked in. Reflection rates count distinct respondents
 matched to checked-in guests. Bad rows are reported by physical source row and skipped;
 `dryRun=true` previews the merged metrics without writes, including for a new event.
-Imports use JSON bulk inserts to avoid D1 bind limits. Files are limited to 5 MB; JSON
+Files are limited to 5 MB; JSON
 ingest is limited to 5,000 guests by contract.
 
 Directors issue service tokens once, store only SHA-256 hashes, and may revoke them.
@@ -284,12 +149,11 @@ and the loser's empty duplicate is trashed. Trashing needs the service account t
 **Lock down the service account.** Because the scope is the full `drive` scope, the key
 reaches every file shared with that account. Make the service account a member of the
 receipts shared drive **only** (don't share other folders or drives with it), and keep
-its key **only** in Worker secrets (`wrangler secret put GOOGLE_SERVICE_ACCOUNT_JSON`):
-never in `wrangler.jsonc`, the repo, CI variables or chat. Rotate the key if it leaks.
+its key **only** in the server's environment / secret store (`GOOGLE_SERVICE_ACCOUNT_JSON`):
+never in the repo, CI variables or chat. Rotate the key if it leaks.
 
 Production receipt operations return HTTP 503 if Drive credentials or the root folder
-are missing. Development selects `LocalFileStore`: Node/Pi uses the filesystem directly;
-Workerd uses its local D1 SQLite-file backing because its virtual filesystem is request-scoped.
+are missing. Development selects the local-disk file store.
 Uploads precede the attachment metadata transaction, so a failed metadata commit may
 leave an unreferenced file for later cleanup. MIME validation checks the declared type;
 there is no virus scan or content classification.
