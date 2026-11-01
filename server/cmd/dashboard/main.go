@@ -4,6 +4,7 @@
 //	dashboard [serve]      run the server (default)
 //	dashboard seed [-reset] load the sample data (FY2027), optionally into a fresh database
 //	dashboard migrate      apply pending migrations and exit
+//	dashboard healthcheck  exit 0 if the local server answers /api/health (container HEALTHCHECK)
 //	dashboard version
 package main
 
@@ -52,6 +53,8 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		err = seedCmd(args, getenv, stdout, log)
 	case "migrate":
 		err = migrateCmd(args, getenv, stdout)
+	case "healthcheck":
+		err = healthcheck(args, getenv)
 	case "version":
 		fmt.Fprintln(stdout, version)
 	default:
@@ -304,5 +307,29 @@ func migrateCmd(args []string, getenv func(string) string, stdout io.Writer) err
 		return err
 	}
 	fmt.Fprintf(stdout, "%s: %d migrations applied\n", s.DBPath, n)
+	return nil
+}
+
+// healthcheck asks the server on this machine whether it is up; the runtime image has no curl.
+func healthcheck(args []string, getenv func(string) string) error {
+	fs := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
+	s, err := loadSettings(fs, args, getenv)
+	if err != nil {
+		return err
+	}
+	addr := s.Addr
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	res, err := client.Get("http://" + addr + "/api/health")
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<16))
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), `"ok":true`) || !strings.Contains(string(body), `"db":true`) {
+		return fmt.Errorf("unhealthy: %d %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
 	return nil
 }

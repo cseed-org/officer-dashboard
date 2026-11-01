@@ -106,3 +106,34 @@ func TestColdStartIsFast(t *testing.T) {
 		t.Errorf("open + migrate-check + wire took %s, budget 300ms", d)
 	}
 }
+
+func TestHealthcheckCommand(t *testing.T) {
+	dir := t.TempDir()
+	e := env(map[string]string{"DB_PATH": filepath.Join(dir, "dash.db"), "RECEIPTS_DIR": filepath.Join(dir, "r")})
+	var out, errb bytes.Buffer
+	if run([]string{"seed"}, e, &out, &errb) != 0 {
+		t.Fatal(errb.String())
+	}
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	s, _ := loadSettings(fs, nil, e)
+	db, err := openDB(s.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	srv, err := buildServer(s, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	addr := strings.TrimPrefix(ts.URL, "http://")
+	if code := run([]string{"healthcheck", "-addr", addr}, e, &out, &errb); code != 0 {
+		t.Errorf("healthy server → %d %s", code, errb.String())
+	}
+	ts.Close()
+	errb.Reset()
+	if code := run([]string{"healthcheck", "-addr", addr}, e, &out, &errb); code != 1 {
+		t.Errorf("a dead server should fail the check, got %d", code)
+	}
+}

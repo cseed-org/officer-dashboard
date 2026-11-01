@@ -42,6 +42,7 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | GET | `/api/me` | officer | — | — | `MeResponse` |
 | GET | `/api/lookups` | officer | — | — | `LookupsResponse` |
 | GET | `/api/overview` | officer | — | — | `OverviewResponse` |
+| GET | `/api/search` | officer | `SearchQuery` | — | `SearchResponse` |
 | GET | `/api/events` | officer | `EventsListQuery` | — | `EventsListResponse` |
 | POST | `/api/events` | officer | — | `EventUpsertRequest` | `EventUpsertResponse` |
 | GET | `/api/events/:id` | officer | — | — | `EventDetailResponse` |
@@ -86,6 +87,23 @@ and response is a zod schema there with its TypeScript type inferred under the s
 ¹ `?format=csv` returns `text/csv`. `:report` is one of `FINANCE_REPORTS` (`src/core/domain.ts`).
 Officers may read `budget-vs-actual` and `fund-balances` (`OFFICER_FINANCE_REPORTS`); the
 other reports return 403 for officers.
+
+## Search
+
+`GET /api/search?q=<text>&limit=<1..50, default 20>` powers the sidebar search. `q` is trimmed,
+1–100 characters, matched case-insensitively as a substring (LIKE wildcards in the text are
+literal) against:
+
+| Kind | Who sees it | Matched on | `title` / `subtitle` | `href` |
+| --- | --- | --- | --- | --- |
+| `event` | officers, directors | name, location, Luma id | name / `<Pacific date> · <location>` | `/events/:id` |
+| `request` | officers, directors | number, title, vendor | title / `<number> · <vendor> · <status>` | `/requests/:id` |
+| `user` | directors only | name, email, title | name / `<title> · <role> · <email>` | `/admin/users` |
+| `account` | directors only | code, name | `<code> <name>` / account type | `/finance?tab=accounts` |
+
+Results are ordered best match first (the primary field starts with the query, then contains
+it, then another field matches), ties broken by kind and recency, and cut to `limit`. No match
+is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is a 400.
 
 ## Rules the backend enforces
 

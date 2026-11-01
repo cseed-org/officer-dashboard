@@ -1,0 +1,16 @@
+[Unit]
+Description=Back up the officer dashboard database
+
+[Service]
+Type=oneshot
+User=dashboard
+Group=dashboard
+EnvironmentFile=/etc/officer-dashboard/env
+Environment=DB_PATH=/var/lib/officer-dashboard/dashboard.db
+Environment=BACKUP_DIR=/var/lib/officer-dashboard/backups
+ExecStart=/opt/officer-dashboard/backup
+StateDirectory=officer-dashboard
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
