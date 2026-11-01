@@ -1,0 +1,157 @@
+---
+/**
+ * Every page: the pre-paint theme script, the Notion-style sidebar (icons-only on tablet,
+ * a top bar + menu sheet on phone), the main column and the ⌘K command palette.
+ */
+import '../styles/tokens.css';
+import '../styles/base.css';
+import '../styles/components.css';
+import { Icon, type IconName } from '../ui/components/Icon';
+import CommandPalette from '../ui/shell/CommandPalette';
+import UserChip from '../ui/shell/UserChip';
+
+export type PageKey = 'home' | 'events' | 'finance' | 'admin' | 'settings';
+interface Props {
+  title: string;
+  page?: PageKey;
+  /** No shell (login, 404). */
+  bare?: boolean;
+  description?: string;
+}
+const { title, page, bare = false, description = 'CSEED officer dashboard' } = Astro.props;
+
+const NAV: { key: PageKey; label: string; href: string; icon: IconName; directorOnly?: boolean }[] = [
+  { key: 'home', label: 'Home', href: '/', icon: 'home' },
+  { key: 'events', label: 'Events', href: '/events', icon: 'calendar' },
+  { key: 'finance', label: 'Requests & Finance', href: '/finance', icon: 'wallet' },
+  { key: 'admin', label: 'Admin', href: '/admin', icon: 'shield', directorOnly: true },
+];
+const PREPAINT = `(function(){var d=document.documentElement,t,n,r;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role')}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r})();`;
+/**
+ * Phone menu sheet as a modal: dialog semantics while open, focus moved in and trapped
+ * (Tab cycles inside), the rest of the page inert, Escape / scrim / close button close it and
+ * focus returns to the menu button. Desktop and tablet never open it.
+ */
+const NAVSCRIPT = `(function () {
+  var h = document.documentElement, btn = document.querySelector('[data-nav-toggle]'), s = document.getElementById('sidebar');
+  if (!btn || !s) return;
+  var others = [document.querySelector('.topbar'), document.getElementById('main')];
+  var focusables = function () {
+    return Array.prototype.filter.call(s.querySelectorAll('a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])'), function (el) { return el.offsetParent !== null; });
+  };
+  function set(open, restore) {
+    if (open === h.classList.contains('nav-open')) return;
+    h.classList.toggle('nav-open', open);
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) { s.setAttribute('role', 'dialog'); s.setAttribute('aria-modal', 'true'); s.setAttribute('aria-label', 'Menu'); }
+    else { s.removeAttribute('role'); s.removeAttribute('aria-modal'); s.removeAttribute('aria-label'); }
+    others.forEach(function (el) { if (el) el.inert = open; });
+    if (open) { var f = focusables(); if (f[0]) f[0].focus(); }
+    else if (restore) btn.focus();
+  }
+  btn.addEventListener('click', function () { set(!h.classList.contains('nav-open'), false); });
+  document.addEventListener('keydown', function (e) {
+    if (!h.classList.contains('nav-open')) return;
+    if (e.key === 'Escape') { e.preventDefault(); set(false, true); return; }
+    if (e.key !== 'Tab') return;
+    var f = focusables(); if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !s.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !s.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+  });
+  s.addEventListener('click', function (e) {
+    if (e.target.closest('[data-nav-close]')) set(false, true);
+    else if (e.target.closest('a,[data-open-search]')) set(false, false);
+  });
+  var sc = document.querySelector('[data-nav-scrim]');
+  if (sc) sc.addEventListener('click', function () { set(false, true); });
+  matchMedia('(min-width: 768px)').addEventListener('change', function () { set(false, false); });
+})();`;
+---
+
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+    <title>{title} · CSEED officers</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script is:inline set:html={PREPAINT} />
+  </head>
+  <body class={bare ? 'is-bare' : undefined}>
+    <a class="skip-link" href="#main">Skip to content</a>
+    {
+      bare ? (
+        <main id="main" class="bare-main" tabindex="-1">
+          <slot />
+        </main>
+      ) : (
+        <div class="app" data-page={page}>
+          <header class="topbar">
+            <button type="button" class="icon-btn" data-nav-toggle aria-controls="sidebar" aria-expanded="false" aria-label="Menu">
+              <Icon name="menu" />
+            </button>
+            <a class="wordmark wordmark--top" href="/" aria-label="CSEED officers, home">
+              <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-logo.png" alt="" width="78" height="18" />
+              <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-logo-white.png" alt="" width="78" height="18" />
+            </a>
+            <button type="button" class="icon-btn" data-open-search aria-label="Search">
+              <Icon name="search" />
+            </button>
+          </header>
+          <div class="nav-scrim" data-nav-scrim aria-hidden="true" />
+          <nav class="sidebar" id="sidebar" aria-label="Main">
+            <button type="button" class="icon-btn sheet-close" data-nav-close aria-label="Close menu">
+              <Icon name="close" />
+            </button>
+            <a class="wordmark" href="/" aria-label="CSEED officers, home">
+              <span class="wordmark-mark" aria-hidden="true">C</span>
+              <span class="wordmark-text">
+                <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-logo.png" alt="" width="78" height="18" />
+                <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-logo-white.png" alt="" width="78" height="18" />
+                <span class="wordmark-sub">officers</span>
+              </span>
+            </a>
+            <button type="button" class="search-trigger" data-open-search aria-label="Search (Ctrl K)">
+              <Icon name="search" size={16} />
+              <span class="search-trigger-text">Search</span>
+              <kbd class="search-trigger-kbd" data-shortcut>Ctrl K</kbd>
+            </button>
+            <ul class="nav-list" role="list">
+              {
+                NAV.map((n) => (
+                  <li data-director-only={n.directorOnly ? '' : undefined}>
+                    <a class="nav-link" href={n.href} aria-current={page === n.key ? 'page' : undefined} title={n.label} data-nav={n.key}>
+                      <Icon name={n.icon} />
+                      <span class="nav-label">{n.label}</span>
+                    </a>
+                  </li>
+                ))
+              }
+            </ul>
+            <div class="sidebar-foot">
+              <a class="nav-link" href="/settings" aria-current={page === 'settings' ? 'page' : undefined} title="Settings" data-nav="settings">
+                <Icon name="settings" />
+                <span class="nav-label">Settings</span>
+              </a>
+              <UserChip client:load />
+            </div>
+          </nav>
+          <main id="main" class="main" tabindex="-1">
+            <header class="page-header">
+              <h1>{title}</h1>
+              <slot name="header" />
+            </header>
+            <slot />
+          </main>
+        </div>
+      )
+    }
+    {!bare && <CommandPalette client:load />}
+    {!bare && <script is:inline set:html={NAVSCRIPT} />}
+  </body>
+</html>
