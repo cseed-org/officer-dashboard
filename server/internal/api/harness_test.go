@@ -257,3 +257,11 @@ func expectStatus(t *testing.T, label string, r reply, want int) {
 		t.Errorf("%s: status %d want %d (%s)", label, r.Status, want, r.Raw)
 	}
 }
+
+var pacificForTest = func() *time.Location {
+	l, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		panic(err)
+	}
+	return l
+}()

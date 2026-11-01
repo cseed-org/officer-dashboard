@@ -52,7 +52,9 @@ func (s *Server) loadReportData(ctx context.Context, q *store.Queries, asOf stri
 		data.Budgets = append(data.Budgets, accounting.Budget{AccountID: b.AccountID, FundID: b.FundID, FiscalYear: b.FiscalYear, AmountCents: b.AmountCents})
 	}
 	today := fiscal.PacificDate(s.now())
-	cutoff, _ := time.Parse(time.RFC3339Nano, asOf+"T23:59:59.999Z")
+	// The end of the asOf day in the organisation's calendar, not in UTC.
+	day, _ := time.ParseInLocation("2006-01-02", asOf, fiscal.Pacific)
+	cutoff := day.AddDate(0, 0, 1).Add(-time.Millisecond)
 	var history []store.AuditEntry
 	if asOf < today {
 		if history, err = q.AuditAfter(ctx, cutoff.UnixMilli()); err != nil {

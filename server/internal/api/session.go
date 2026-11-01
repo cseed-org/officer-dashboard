@@ -80,6 +80,9 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 				}
 			case errors.Is(err, store.ErrNotFound):
 				s.clearCookie(w, s.sessionCookieName())
+			case errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
+				writeError(w, toAPIError(err, s.log))
+				return
 			default:
 				s.log.Error("session lookup failed", "error", err)
 			}

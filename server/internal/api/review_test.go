@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -170,4 +173,71 @@ func TestSecFetchSiteCrossSiteIsRefused(t *testing.T) {
 	}
 	w.headers = map[string]string{"Sec-Fetch-Site": "cross-site"}
 	expectStatus(t, "cross-site GET is a read", e.get("/api/me", w), 200)
+}
+
+// Commitments follow the Pacific day on both sides of midnight UTC: at 02:37 UTC on Nov 1 it
+// is still Oct 31 in Pacific, and a request approved "today" must count as committed today.
+func TestCommitmentsAreStableAcrossMidnightUTC(t *testing.T) {
+	for _, at := range []time.Time{
+		time.Date(2026, 10, 31, 18, 0, 0, 0, time.UTC), // 11:00 PDT Oct 31
+		time.Date(2026, 11, 1, 2, 37, 0, 0, time.UTC),  // 19:37 PDT Oct 31, after midnight UTC
+		time.Date(2026, 11, 1, 6, 59, 0, 0, time.UTC),  // 23:59 PDT Oct 31
+		time.Date(2026, 11, 1, 7, 1, 0, 0, time.UTC),   // 00:01 PDT Nov 1
+	} {
+		t.Run(at.Format(time.RFC3339), func(t *testing.T) {
+			e := newEnv(t)
+			e.clock = at
+			base := e.get("/api/finance/summary", e.officer()).num("totals", "committedCents")
+			id := e.mustOK(e.post("/api/requests", with(purchase, "submit", true), e.officer())).str("request", "id")
+			e.mustOK(e.post("/api/requests/"+id+"/approve", map[string]any{}, e.director()))
+			committed := e.get("/api/finance/summary", e.officer()).num("totals", "committedCents")
+			if committed != base+10000 {
+				t.Fatalf("after approval committed %d, want %d", committed, base+10000)
+			}
+			e.mustOK(e.post("/api/requests/"+id+"/transition", map[string]any{"to": "fulfilling"}, e.director()))
+			e.mustOK(e.post("/api/requests/"+id+"/transition", map[string]any{"to": "fulfilled", "actualTotalCents": 9500}, e.director()))
+			if got := e.get("/api/finance/summary", e.officer()).num("totals", "committedCents"); got != base {
+				t.Errorf("after settlement committed %d, want %d", got, base)
+			}
+			// An explicit asOf of the Pacific day sees the same books as the default.
+			day := at.In(pacificForTest).Format("2006-01-02")
+			if got := e.get("/api/finance/summary?asOf="+day, e.officer()).num("totals", "committedCents"); got != base {
+				t.Errorf("asOf=%s committed %d, want %d", day, got, base)
+			}
+		})
+	}
+}
+
+// F1: a client that hangs up mid-request is not a server error and must not log at ERROR.
+func TestClientCancellationIsNotAServerError(t *testing.T) {
+	var logs bytes.Buffer
+	e := newEnv(t, func(c *Config) {
+		c.Log = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	})
+	ck := e.login("user-director")
+	for _, path := range []string{"/api/requests?scope=all", "/api/finance/summary", "/api/me"} {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		req := httptest.NewRequest("GET", "http://localhost:8090"+path, nil).WithContext(ctx)
+		req.AddCookie(ck)
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		if rec.Code == 500 || rec.Code == 401 {
+			t.Errorf("%s with a canceled client → %d, want a non-5xx cancellation status", path, rec.Code)
+		}
+		if rec.Code != 499 {
+			t.Errorf("%s → %d, want 499", path, rec.Code)
+		}
+	}
+	if strings.Contains(logs.String(), "level=ERROR") {
+		t.Errorf("cancellation logged at ERROR:\n%s", logs.String())
+	}
+	// A real failure is still a logged 500.
+	if got := toAPIError(fmt.Errorf("disk on fire"), slog.New(slog.NewTextHandler(&logs, nil))); got.Status != 500 || !strings.Contains(logs.String(), "level=ERROR") {
+		t.Errorf("genuine errors must stay 500 + ERROR: %+v", got)
+	}
+	// A deadline is a timeout, not a 500 either.
+	if got := toAPIError(fmt.Errorf("query: %w", context.DeadlineExceeded), slog.Default()); got.Status != 504 {
+		t.Errorf("deadline → %d", got.Status)
+	}
 }

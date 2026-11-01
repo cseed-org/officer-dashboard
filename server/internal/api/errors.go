@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -68,6 +69,13 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 		return ae
 	}
 	switch {
+	case errors.Is(err, context.Canceled):
+		// The client hung up; nobody is reading the answer. Not a server fault, not logged as one.
+		log.Debug("request canceled by the client")
+		return fail(499, "internal", "Request canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		log.Debug("request timed out")
+		return fail(504, "internal", "Request timed out")
 	case errors.Is(err, files.ErrUnavailable):
 		return fail(503, "internal", err.Error())
 	case errors.Is(err, files.ErrInvalidUpload):

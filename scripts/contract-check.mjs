@@ -266,7 +266,8 @@ const committed = (await call('financeSummary', { who: officer })).json.totals.c
 await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilling' } });
 const settled = await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilled', actualTotalCents: 9500, attachmentIds: [attachmentId], orderReference: 'ORD-1', comment: '5% discount' } });
 must(settled.json.request.actualTotalCents === 9500 && settled.json.request.journalEntryIds.length === 1, 'settled at the actual 95.00 with one journal entry');
-must((await call('financeSummary', { who: officer })).json.totals.committedCents === committed - 10000, 'settling releases the 100.00 commitment');
+const afterSettle = (await call('financeSummary', { who: officer })).json.totals.committedCents;
+must(afterSettle === committed - 10000, 'settling releases the 100.00 commitment', { before: committed, after: afterSettle });
 await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilled', actualTotalCents: 9500 }, expect: 409 }); // already settled
 const closed = await call('requestTransition', { who: directorB, params: { id }, body: { to: 'closed' } });
 must(closed.json.request.status === 'closed', 'closed');
