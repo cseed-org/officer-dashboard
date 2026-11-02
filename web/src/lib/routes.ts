@@ -29,6 +29,10 @@ export const href = {
   newRequest: (eventId?: string) => `/finance${qs({ new: 1, eventId })}`,
   report: (report: string) => `/finance?tab=reports&report=${enc(report)}`,
 
+  design: (o: { view?: 'board' | 'list' } = {}) => `/design${qs(o)}`,
+  designRequest: (id: string) => `/design?id=${enc(id)}`,
+  newDesignRequest: (eventId?: string) => `/design${qs({ new: 1, eventId })}`,
+
   admin: (tab?: AdminTab) => `/admin${qs({ tab: tab === 'users' ? null : tab })}`,
 };
 
