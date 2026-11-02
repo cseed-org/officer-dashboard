@@ -7,7 +7,7 @@ Start with [development setup](docs/development.md) for prerequisites, local ser
 - Branch from the latest `origin/main`; keep each branch focused on one change.
 - Open an issue for substantial behavior changes, then link it in a pull request targeting `main`.
 - Explain the problem, resulting behavior and validation. Keep unrelated cleanup separate.
-- Use short, descriptive commit subjects. Recent history uses `Add …` and `V0.3 …: …`; no mandatory Conventional Commits prefix.
+- Use short, descriptive commit subjects; no Conventional Commits prefix required.
 - Wait for CI and maintainer review; address feedback before merging.
 
 ## Checks
@@ -44,7 +44,7 @@ node scripts/contract-check.mjs
 
 ## Database and API changes
 
-- Add the next zero-padded, numbered SQL file under `server/internal/store/migrations/` (after `0010_officers.sql`, use `0011_description.sql`). SQL migrations are embedded in the Go binary; preserve existing migrations and test both fresh databases and upgrades.
+- Add the next zero-padded, numbered SQL file under `server/internal/store/migrations/` (for example `0011_<description>.sql` after `0010_officers.sql`). SQL migrations are embedded in the Go binary; preserve existing migrations and test both fresh databases and upgrades.
 - Tests derive the migration count with `store.MigrationCount()`; do not hard-code a new count.
 - Keep `src/core/contracts.ts` and `web/src/lib/contracts.ts` in sync for shared API schemas, along with their domain types. Preserve web-specific additions. Update the Go handlers and contract scenarios when behavior changes, then run `npm run contract-check`.
 
