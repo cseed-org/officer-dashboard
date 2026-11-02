@@ -9,7 +9,7 @@ import { Async, ErrorState, errorMessage } from "../components/states";
 import { Gate } from "../shell/Gate";
 
 const label = (s: string) =>
-  s
+  s === "linkedin" ? "LinkedIn" : s
     .split("_")
     .map((w) => w[0]!.toUpperCase() + w.slice(1))
     .join(" ");
