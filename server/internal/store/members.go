@@ -152,7 +152,7 @@ func (q *Queries) MemberFacets(ctx context.Context) (map[string][]string, error)
 func (q *Queries) MemberSignupCounts(ctx context.Context, at int64) (map[string]int, error) {
 	counts := map[string]int{}
 	var total, week, month, today int
-	err := q.q.QueryRowContext(ctx, `SELECT count(*), coalesce(sum(date(join_date) >= date(?/1000,'unixepoch','-7 days') AND datetime(join_date) <= datetime(?/1000,'unixepoch')),0),coalesce(sum(date(join_date) >= date(?/1000,'unixepoch','-30 days') AND datetime(join_date) <= datetime(?/1000,'unixepoch')),0)  ,coalesce(sum(date(join_date)=date(?/1000,'unixepoch') AND datetime(join_date)<=datetime(?/1000,'unixepoch')),0) FROM members_mirror`, at, at, at, at, at, at).Scan(&total, &week, &month, &today)
+	err := q.q.QueryRowContext(ctx, `SELECT count(*), coalesce(sum(date(join_date) >= date(?/1000,'unixepoch','-6 days') AND datetime(join_date) <= datetime(?/1000,'unixepoch')),0),coalesce(sum(date(join_date) >= date(?/1000,'unixepoch','-29 days') AND datetime(join_date) <= datetime(?/1000,'unixepoch')),0)  ,coalesce(sum(date(join_date)=date(?/1000,'unixepoch') AND datetime(join_date)<=datetime(?/1000,'unixepoch')),0) FROM members_mirror`, at, at, at, at, at, at).Scan(&total, &week, &month, &today)
 	counts["today"] = today
 	counts["members"] = total
 	counts["last7Days"] = week

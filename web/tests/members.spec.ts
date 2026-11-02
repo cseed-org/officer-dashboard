@@ -71,6 +71,19 @@ for (const theme of THEMES) {
       page.getByRole("heading", { name: "1,001 members", exact: true }),
     ).toBeVisible();
     await expect(page.locator("tbody tr")).toHaveCount(25);
+    const visibleName = await page
+      .locator(".member-name")
+      .first()
+      .boundingBox();
+    expect(visibleName).not.toBeNull();
+    expect(visibleName!.x).toBeGreaterThanOrEqual(0);
+    expect(visibleName!.x + visibleName!.width).toBeLessThanOrEqual(
+      page.viewportSize()!.width,
+    );
+    await expect(page.locator(".members-table")).toHaveJSProperty(
+      "scrollLeft",
+      0,
+    );
     await expect(page.getByRole("link", { name: "Export CSV" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Sync now" })).toHaveCount(0);
     const next = page.getByRole("button", { name: "Next", exact: true });
@@ -90,7 +103,9 @@ for (const theme of THEMES) {
     await expect(drawer.getByLabel("Audit note")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Clear filters" }).click();
-    await page.getByLabel("Campus", { exact: true }).selectOption("Seattle");
+    await page
+      .getByRole("combobox", { name: "Campus", exact: true })
+      .selectOption("Seattle");
     await expect(
       page.getByRole("heading", { name: "500 members", exact: true }),
     ).toBeVisible();

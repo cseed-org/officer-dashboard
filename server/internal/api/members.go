@@ -115,6 +115,7 @@ func (c *Ctx) memberUpdate() error {
 	if err != nil {
 		return err
 	}
+	before.Demographics = nil
 	columns := []string{}
 	params := []any{}
 	changes := map[string]any{}
@@ -206,7 +207,9 @@ func (c *Ctx) memberUpdate() error {
 	}
 	var auditMember any
 	if remoteErr == nil {
-		auditMember = after
+		auditPerson := after
+		auditPerson.Demographics = nil
+		auditMember = auditPerson
 	}
 	// Finish the audit even if the caller disconnected after D1 committed.
 	ctx := c.R.Context()

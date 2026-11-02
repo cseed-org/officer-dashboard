@@ -126,11 +126,32 @@ export default function CloudflareWidget({
               <>
                 <p class="widget-figure">{metrics[0]?.[1]}</p>
                 <p class="widget-sub">{metrics[0]?.[0]}</p>
+                {id === "member-signups" && (
+                  <p class="widget-sub">+{metrics[1]?.[1]} joined in 7 days</p>
+                )}
               </>
             ) : (
               <ul class="widget-list">
                 {metrics
-                  .slice(0, size === "M" ? 3 : metrics.length)
+                  .filter(
+                    ([label]) =>
+                      size !== "M" ||
+                      id !== "workers-d1" ||
+                      [
+                        "Worker requests",
+                        "CPU time · p50",
+                        "D1 rows read",
+                        "D1 rows written",
+                      ].includes(label),
+                  )
+                  .slice(
+                    0,
+                    size === "M"
+                      ? id === "traffic-security" || id === "workers-d1"
+                        ? 4
+                        : 3
+                      : metrics.length,
+                  )
                   .map(([label, value]) => (
                     <li key={label}>
                       <span>{label}</span>
@@ -164,16 +185,16 @@ function extractMetrics(w: Widget): [string, string][] {
   if (!data) return [];
   if (w.id === "member-signups")
     return [
-      ["Joined this week", Number(data.last7Days ?? 0).toLocaleString()],
-      ["Joined today", Number(data.today ?? 0).toLocaleString()],
       ["Total members", Number(data.members ?? 0).toLocaleString()],
+      ["Joined in 7 days", Number(data.last7Days ?? 0).toLocaleString()],
+      ["Joined today", Number(data.today ?? 0).toLocaleString()],
       ["Joined in 30 days", Number(data.last30Days ?? 0).toLocaleString()],
     ];
   const wanted: Record<string, string> =
     w.id === "web-analytics"
       ? { count: "Page views", visits: "Visits" }
       : w.id === "traffic-security"
-        ? { count: "Requests", edgeResponseBytes: "Response bytes" }
+        ? { count: "Requests", edgeResponseBytes: "Bandwidth" }
         : w.id === "performance"
           ? {
               largestContentfulPaintP75: "LCP · p75",
@@ -190,32 +211,27 @@ function extractMetrics(w: Widget): [string, string][] {
               rowsWritten: "D1 rows written",
               databaseSizeBytes: "Largest D1 database",
             };
-  const out: [string, string][] = [];
+  const values = new Map<string, number>();
   function walk(v: unknown, path = "") {
     if (!v || typeof v !== "object") return;
-    for (const [k, n] of Object.entries(v)) {
-      if (typeof n === "number" && wanted[k] && n >= 0) {
-        let label = wanted[k];
-        if (
+    for (const [key, n] of Object.entries(v)) {
+      if (
+        typeof n === "number" &&
+        Number.isFinite(n) &&
+        n >= 0 &&
+        wanted[key]
+      ) {
+        const label =
           w.id === "traffic-security" &&
-          k === "count" &&
+          key === "count" &&
           path.includes("firewall")
-        )
-          label = "Security events";
-        if (
-          (w.id === "performance" && k !== "cumulativeLayoutShiftP75") ||
-          k === "cpuTimeP50"
-        )
-          out.push([
-            label,
-            `${(n / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 })} ms`,
-          ]);
-        else
-          out.push([
-            label,
-            n.toLocaleString(undefined, { maximumFractionDigits: 3 }),
-          ]);
-      } else walk(n, path + "." + k);
+            ? "Security events"
+            : wanted[key]!;
+        values.set(
+          label,
+          label === "Security events" ? (values.get(label) ?? 0) + n : n,
+        );
+      } else walk(n, path + "." + key);
     }
   }
   const root = data as {
@@ -225,46 +241,35 @@ function extractMetrics(w: Widget): [string, string][] {
     };
   };
   const scoped = root.viewer?.accounts?.[0] ?? root.viewer?.zones?.[0] ?? {};
-  const summary = Object.fromEntries(
-    Object.entries(scoped).filter(
-      ([k]) => !["topPages", "referrers", "countries", "cached"].includes(k),
+  walk(
+    Object.fromEntries(
+      Object.entries(scoped).filter(
+        ([key]) =>
+          !["topPages", "referrers", "countries", "cached"].includes(key),
+      ),
     ),
   );
-  walk(summary);
-  const bytesIndex = out.findIndex(([label]) => label === "Response bytes");
-  if (bytesIndex >= 0) {
-    const n = Number(out[bytesIndex]![1].replaceAll(",", ""));
-    out[bytesIndex] = ["Bandwidth", formatBytes(n)];
-  }
-  const storage = out.findIndex(([label]) => label === "Largest D1 database");
-  if (storage >= 0)
-    out[storage] = [
-      "Largest D1 database",
-      formatBytes(Number(out[storage]![1].replaceAll(",", ""))),
-    ];
-  const total = Number(
-    (out.find(([label]) => label === "Requests")?.[1] ?? "0").replaceAll(
-      ",",
-      "",
-    ),
-  );
+  const requests = values.get("Requests");
   const cached = (scoped.cached as { count?: number }[] | undefined)?.[0]
     ?.count;
-  if (total && typeof cached === "number")
-    out.push(["Cache hit", `${((cached / total) * 100).toFixed(1)}%`]);
-
-  // Aggregated firewall actions may have several rows.
-  const merged = new Map<string, string>();
-  for (const [label, value] of out) {
-    if (label === "Security events") {
-      const previous = Number((merged.get(label) ?? "0").replaceAll(",", ""));
-      merged.set(
+  if (requests && typeof cached === "number")
+    values.set("Cache hit", (cached / requests) * 100);
+  return [...values].map(([label, n]) => {
+    if (label === "Bandwidth" || label === "Largest D1 database")
+      return [label, formatBytes(n)];
+    if (["LCP · p75", "INP · p75", "CPU time · p50"].includes(label))
+      return [
         label,
-        (previous + Number(value.replaceAll(",", ""))).toLocaleString(),
-      );
-    } else merged.set(label, value);
-  }
-  return [...merged.entries()];
+        (n / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 }) +
+          " ms",
+      ];
+    if (label === "Cache hit")
+      return [
+        label,
+        n.toLocaleString(undefined, { maximumFractionDigits: 1 }) + "%",
+      ];
+    return [label, n.toLocaleString(undefined, { maximumFractionDigits: 3 })];
+  });
 }
 
 function formatBytes(n: number) {
@@ -297,7 +302,10 @@ function Breakdowns({ data }: { data: unknown }) {
             <ul class="widget-list">
               {rows.map((row, i) => (
                 <li key={i}>
-                  <span>{row.dimensions?.[dim!] || "Direct"}</span>
+                  <span>
+                    {row.dimensions?.[dim!] ||
+                      (key === "referrers" ? "Direct" : "Unknown")}
+                  </span>
                   <strong>{row.count?.toLocaleString() ?? "—"}</strong>
                 </li>
               ))}

@@ -47,6 +47,7 @@ function Members({ me }: { me: CurrentUser }) {
     [detailId, setDetailId] = useState<string | null>(null);
   const limit = 25;
   useEffect(() => {
+    if (filters.q === search) return;
     const timer = setTimeout(() => {
       setFilters((f) => (f.q === search ? f : { ...f, q: search }));
       setOffset(0);
@@ -293,7 +294,7 @@ function Members({ me }: { me: CurrentUser }) {
                     <tbody>
                       {data.items.map((p) => (
                         <tr key={p.person_id}>
-                          <td>
+                          <td class="dt-primary" data-label="Name">
                             <button
                               class="member-name"
                               onClick={() => {
@@ -310,12 +311,16 @@ function Members({ me }: { me: CurrentUser }) {
                                 </span>
                               )}
                           </td>
-                          <td>{p.uw_email || "—"}</td>
-                          <td>{p.major || "—"}</td>
-                          <td>{p.grad_year || "—"}</td>
-                          <td>{p.campus || "—"}</td>
-                          <td class="nowrap">{p.join_date.slice(0, 10)}</td>
-                          <td>{p.has_been_cseed_officer ? "Yes" : "No"}</td>
+                          <td data-label="UW email">{p.uw_email || "—"}</td>
+                          <td data-label="Major">{p.major || "—"}</td>
+                          <td data-label="Grad year">{p.grad_year || "—"}</td>
+                          <td data-label="Campus">{p.campus || "—"}</td>
+                          <td class="nowrap" data-label="Joined">
+                            {p.join_date.slice(0, 10)}
+                          </td>
+                          <td data-label="Has been officer">
+                            {p.has_been_cseed_officer ? "Yes" : "No"}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -326,7 +331,7 @@ function Members({ me }: { me: CurrentUser }) {
                 <span role="status">
                   {data.total === 0
                     ? "0 members"
-                    : `${offset + 1}–${Math.min(offset + limit, data.total)} of ${data.total.toLocaleString()}`}
+                    : `${data.offset + 1}–${Math.min(data.offset + data.limit, data.total)} of ${data.total.toLocaleString()}`}
                 </span>
                 <div class="action-row">
                   <button
@@ -535,7 +540,7 @@ function MemberEditor({
             </p>
           )}
           {review ? (
-            <ConfirmDialog onClose={() => setReview(false)}>
+            <ConfirmDialog busy={busy} onClose={() => setReview(false)}>
               <div class="stack">
                 <h3 tabIndex={-1}>Confirm D1 update</h3>
                 <p>
@@ -556,9 +561,15 @@ function MemberEditor({
                     <tbody>
                       {changed.map(([key, label]) => (
                         <tr key={key}>
-                          <th scope="row">{label}</th>
-                          <td>{member[key] || "Not provided"}</td>
-                          <td>{draft[key] || "Not provided"}</td>
+                          <td class="dt-primary" data-label="Field">
+                            {label}
+                          </td>
+                          <td data-label="Current">
+                            {member[key] || "Not provided"}
+                          </td>
+                          <td data-label="New">
+                            {draft[key] || "Not provided"}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -610,7 +621,9 @@ function MemberEditor({
 function ConfirmDialog({
   children,
   onClose,
+  busy,
 }: {
+  busy: boolean;
   children: import("preact").ComponentChildren;
   onClose: () => void;
 }) {
@@ -631,7 +644,10 @@ function ConfirmDialog({
       ref={ref}
       class="dialog"
       aria-label="Confirm D1 update"
-      onCancel={onClose}
+      onCancel={(event) => {
+        if (busy) event.preventDefault();
+        else onClose();
+      }}
       onClose={onClose}
     >
       <div class="dialog-inner">
