@@ -155,7 +155,7 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   notification; submit / deny / fulfilled also notify.
 - **Design requests.** Every officer sees the whole board (`GET /api/design-requests`) and
   can create a request, comment, and attach reference files. The design team is the active
-  users whose officer profile is on the subteam named **Design** (migration 0006 creates it).
+  users whose officer profile is on the subteam named **Design** (migration 0008 creates it).
   - Designers assign any designer (themselves included) and move cards between New,
     Accepted, In progress and In review. Moving an unassigned card past New assigns the
     designer who moved it. Past New a card always has an assignee, so unassigning requires
