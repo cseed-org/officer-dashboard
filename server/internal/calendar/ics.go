@@ -11,6 +11,7 @@ import (
 
 // Event is what gets put on a calendar.
 type Event struct {
+	Timezone    string // recipient’s effective display zone; instants remain UTC
 	UID         string // stable across updates
 	Sequence    int    // bump on every update so clients replace the old copy
 	Summary     string
@@ -87,6 +88,9 @@ func ICS(e Event, organizer, attendee string, now time.Time) string {
 		"STATUS:" + status,
 		"ORGANIZER;CN=CSEED Officer Dashboard:mailto:" + organizer,
 		"ATTENDEE;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:" + attendee,
+	}
+	if e.Timezone != "" {
+		lines = append(lines, "X-CSEED-TIMEZONE:"+icsText(e.Timezone))
 	}
 	if e.Location != "" {
 		lines = append(lines, "LOCATION:"+icsText(e.Location))

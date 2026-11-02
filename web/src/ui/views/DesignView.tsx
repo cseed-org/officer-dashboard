@@ -1,3 +1,4 @@
+import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, STORAGE_UNAVAILABLE_MESSAGE } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
@@ -226,7 +227,7 @@ export default function DesignView({ me }: { me: CurrentUser }) {
                     {filter === 'all' && !type
                       ? `${plural(open.length, 'open request')} · ${d.items.length - open.length} delivered`
                       : `Showing ${shown.length} of ${plural(d.items.length, 'request')}`}
-                    {overdue > 0 && ` · ${overdue} overdue`} · Shared with everyone · Deadlines shown in Vancouver time
+                    {overdue > 0 && ` · ${overdue} overdue`} · Shared with everyone · Deadlines shown in {effectiveTimezone()}
                     {d.designers.length === 0 && ' · Nobody is on the Design subteam yet, so no one can pick these up'}
                   </p>
                   {shown.length === 0 ? (

@@ -257,4 +257,4 @@ Order: toolbar (New design request; `.segmented` Board / List / My work), then t
 | Actions trigger | The bare "⋯" on cards is replaced by a labelled `button.card-actions` "Actions ▾" (40px tall on phone). Its `.row-menu-list.is-floating` is `position: fixed`, placed from the button and flipped upward near the bottom edge, so the Kanban's horizontal scroller can no longer clip it; it follows its button when the page or board scrolls. Tables keep the "⋯" row menu. |
 | My work | `.mywork` > `section.mywork-section` (`h3.mywork-head` + count) > `ul.mywork-list` of the same cards (one column on phone). Sections: Assigned to you (designers), Waiting on your approval, Your open requests, Up for grabs (designers and director+). Nearest due first. |
 
-Times: dates use the existing `src/lib/format.ts` helpers; no new zones are added and the "Deadlines shown in Vancouver time" label stays for the V0.4 time-zone work to replace.
+Times: dates use the `src/lib/format.ts` helpers, which follow the viewer's effective time zone (`src/lib/timezone.ts`); the board line reads "Deadlines shown in <effective zone>". No zones are hard-coded.

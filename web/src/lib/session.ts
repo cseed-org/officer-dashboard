@@ -6,6 +6,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { api, ApiCallError, redirectToLogin } from './api/client';
 import type { CurrentUser } from './contracts';
 
+import { initTimezone } from './timezone';
+
 const ROLE_KEY = 'cseed-role';
 let mePromise: Promise<CurrentUser> | null = null;
 let current: CurrentUser | null = null;
@@ -23,7 +25,8 @@ function applyRole(role: string | null) {
 
 export function loadMe(): Promise<CurrentUser> {
   mePromise ??= api('me')
-    .then(({ user, onboarding }) => {
+    .then(async ({ user, onboarding }) => {
+      await initTimezone();
       current = user;
       applyRole(user.role);
       // Invitees finish setup before anything else.

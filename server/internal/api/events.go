@@ -12,7 +12,6 @@ import (
 
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/files"
-	"officerdashboard/internal/fiscal"
 	"officerdashboard/internal/luma"
 	"officerdashboard/internal/notion"
 	"officerdashboard/internal/store"
@@ -46,6 +45,7 @@ func (c *Ctx) eventsList() error {
 	}
 	now := c.S.now()
 	needle := strings.ToLower(qtext.V)
+	zone := c.S.effectiveZone(ctx, c.User.ID)
 	var rows []store.Event
 	for _, e := range cat.events {
 		t, err := luma.ParseInstant(e.StartsAt)
@@ -65,7 +65,7 @@ func (c *Ctx) eventsList() error {
 		if needle != "" && !strings.Contains(strings.ToLower(e.Name), needle) && (e.Location == nil || !strings.Contains(strings.ToLower(*e.Location), needle)) {
 			continue
 		}
-		day := fiscal.PacificDate(t)
+		day := t.In(zone).Format("2006-01-02")
 		if from.V != "" && day < from.V || to.V != "" && day > to.V {
 			continue
 		}
@@ -558,14 +558,15 @@ func (c *Ctx) eventMetrics() error {
 		return err
 	}
 	start, _ := luma.ParseInstant(e.StartsAt)
+	zone := c.S.effectiveZone(ctx, c.User.ID)
 	registrations, responses := map[string]int{}, map[string]int{}
 	for _, g := range guests {
 		if g.RegisteredAt != nil && *g.RegisteredAt <= start.UnixMilli() && luma.IsRegistered(g.ApprovalStatus, g.CheckedIn) {
-			registrations[fiscal.PacificDate(time.UnixMilli(*g.RegisteredAt))]++
+			registrations[time.UnixMilli(*g.RegisteredAt).In(zone).Format("2006-01-02")]++
 		}
 	}
 	for _, t := range times {
-		responses[fiscal.PacificDate(time.UnixMilli(t))]++
+		responses[time.UnixMilli(t).In(zone).Format("2006-01-02")]++
 	}
 	type regDay struct {
 		Date       string `json:"date"`

@@ -3,7 +3,7 @@
 | Guide | Contents |
 | --- | --- |
 | [Development](development.md) | Quick start, live development, seed data, tests, contract checks, Playwright. |
-| [Configuration](configuration.md) | Server environment variables, aliases, container and tooling settings. |
+| [Configuration](configuration.md) | Server environment variables, club location/time zone, aliases, container and tooling settings. |
 | [Deployment](deployment.md) | Raspberry Pi/systemd, HTTPS proxy, containers, replication, backups. |
 | [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
 | [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
