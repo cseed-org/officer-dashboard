@@ -361,7 +361,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
                       <strong>{c.name}</strong>
                       <span>{[c.org, c.role].filter(Boolean).join(" · ")}</span>
                       <span>
-                        {label(c.type)} · {c.topics.join(" · ")}
+                        {[label(c.type), ...c.topics].join(" · ")}
                       </span>
                       <Spoken c={c} />
                       <Reach c={c} />
