@@ -915,11 +915,32 @@ interface EndpointSpec {
   response: z.ZodType | 'csv' | 'redirect' | 'binary';
 }
 
+export const Member = z.object({
+  person_id: z.string(), first_name: z.string(), last_name: z.string(),
+  preferred_name: z.string().nullable(), uw_email: z.string().nullable(), cs_email: z.string().nullable(), personal_email: z.string().nullable(),
+  major: z.string().nullable(), grad_year: z.string().nullable(), campus: z.string().nullable(), pronouns: z.string().nullable(), demographics: z.string().nullable(),
+  join_date: z.string(), agreed_to_membership_agreement: z.number().int().min(0).max(1), has_been_cseed_officer: z.number().int().min(0).max(1),
+});
+export type Member = z.infer<typeof Member>;
+export const MembersQuery = z.object({q:z.string().max(200).optional(),campus:z.string().max(100).optional(),gradYear:z.string().max(20).optional(),officer:z.enum(['yes','no']).optional(),limit:QueryInt.min(1).max(200).default(50),offset:QueryInt.min(0).max(1000000).default(0)});
+export const MembersResponse = z.object({items:z.array(Member),total:z.number().int(),limit:z.number().int(),offset:z.number().int(),connected:z.boolean(),lastSync:z.number().nullable(),syncError:z.string(),facets:z.object({campus:z.array(z.string()),grad_year:z.array(z.string())})});
+export const MemberResponse = z.object({member:Member});
+export const MemberUpdateRequest = z.object({first_name:z.string().trim().min(1).max(254).optional(),last_name:z.string().trim().min(1).max(254).optional(),preferred_name:z.string().max(254).nullable().optional(),uw_email:z.email().max(254).nullable().optional(),cs_email:z.email().max(254).nullable().optional(),personal_email:z.email().max(254).nullable().optional(),major:z.string().max(254).nullable().optional(),grad_year:z.string().max(254).nullable().optional(),campus:z.string().max(254).nullable().optional(),pronouns:z.string().max(254).nullable().optional(),auditNote:z.string().trim().min(1).max(2000)}).strict();
+export const CloudflareSyncResponse = z.object({ok:z.literal(true),connected:z.boolean()});
+export const CloudflareWidget = z.object({id:z.string(),connected:z.boolean(),lastSync:z.number().nullable(),error:z.string(),data:z.unknown().nullable()});
+export const CloudflareWidgetsResponse = z.object({widgets:z.array(CloudflareWidget)});
+
 /**
  * Machine-readable index of every endpoint; docs/api.md is the human version and a test
  * keeps the two in sync.
  */
 export const ENDPOINTS = {
+  membersList: {method:'GET',path:'/api/members',auth:'officer',query:MembersQuery,response:MembersResponse},
+  membersExport: {method:'GET',path:'/api/members/export',auth:'director',query:MembersQuery,response:'csv'},
+  memberDetail: {method:'GET',path:'/api/members/:id',auth:'officer',response:MemberResponse},
+  memberUpdate: {method:'PATCH',path:'/api/members/:id',auth:'director',body:MemberUpdateRequest,response:MemberResponse},
+  cloudflareSync: {method:'POST',path:'/api/cloudflare/sync',auth:'director',response:CloudflareSyncResponse},
+  cloudflareWidgets: {method:'GET',path:'/api/cloudflare/widgets',auth:'officer',response:CloudflareWidgetsResponse},
   ownerAdd: { method: 'POST', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
   ownerRemove: { method: 'DELETE', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
   ownerTransfer: { method: 'POST', path: '/api/admin/owners/transfer', auth: 'owner', body: OwnerTransferRequest, response: AdminUsersResponse },

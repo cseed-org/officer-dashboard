@@ -6,7 +6,7 @@ import { defaultWidgetLayout, widgetRegistry } from './registry';
 import { Loading } from '../components/states';
 
 /** Layout stays on the server. Theme and density remain browser preferences. */
-export default function WidgetGrid({ children }: { children: (id: string) => ComponentChildren }) {
+export default function WidgetGrid({ children }: { children: (id: string, size: WidgetPlacement["size"]) => ComponentChildren }) {
   const [layout, setLayout] = useState<WidgetPlacement[] | null>(null);
   const [saved, setSaved] = useState<WidgetPlacement[]>([]);
   const [editing, setEditing] = useState(false);
@@ -58,7 +58,7 @@ export default function WidgetGrid({ children }: { children: (id: string) => Com
             <label>Size <select value={w.size} onChange={(e) => setLayout(layout.map((p) => p.id === w.id ? { ...p, size: e.currentTarget.value as WidgetPlacement['size'] } : p))}><option>S</option><option>M</option><option>L</option></select></label>
             <button class="btn btn--small" onClick={() => setLayout(layout.filter((p) => p.id !== w.id))}>Remove {title}</button>
           </fieldset>}
-          {children(w.id)}
+          {children(w.id, w.size)}
         </div>;
       })}
     </div>

@@ -61,7 +61,7 @@ if (!bin) {
 }
 const dbPath = join(work, 'check.db');
 const env = { ...process.env, DB_PATH: dbPath, RECEIPTS_DIR: join(work, 'receipts') };
-for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID', 'BOOTSTRAP_OWNER_DISCORD_ID', 'BOOTSTRAP_OWNER_NAME']) delete env[k];
+for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID', 'BOOTSTRAP_OWNER_DISCORD_ID', 'BOOTSTRAP_OWNER_NAME', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_ZONE_ID', 'D1_DATABASE_ID']) delete env[k];
 const seeded = spawnSync(bin, ['seed', '-reset'], { env, encoding: 'utf8' });
 if (seeded.status !== 0) throw new Error(`seed failed: ${seeded.stderr}`);
 console.log(seeded.stdout.trim());
@@ -160,7 +160,7 @@ async function call(name, { who = anon, params = {}, query, body, form, expect =
   } else if (csv || spec.response === 'csv') {
     const text = raw?.toString() ?? '';
     if (!type.startsWith('text/csv') || !res.headers.get('content-disposition')?.includes('attachment')) fail(label, 'CSV headers wrong', { type });
-    if (!text.startsWith('"fiscalYear"') || !text.endsWith('\r\n')) fail(label, 'CSV body is not the report table', text.slice(0, 120));
+    if (!(name === 'membersExport' ? text.startsWith('Person ID,First name,Last name') && text.endsWith('\r\n') : text.startsWith('"fiscalYear"') && text.endsWith('\r\n'))) fail(label, 'CSV body is not the report table', text.slice(0, 120));
   } else if (typeof spec.response !== 'string') {
     const r = spec.response.safeParse(json);
     if (!r.success) {
@@ -382,6 +382,18 @@ await call('inviteCreate', { who: officer, body: {}, expect: 403 });
 await call('inviteCreate', { who: directorA, body: { name:'New officer',discordId:'100000000000000088',subteamId:'team-events',method:'link' } });
 await call('adminUserUpdate', { who: directorA, params:{id:'user-priya'}, body:{role:'leadership'}, expect:403 });
 await call('adminUserUpdate', { who: leadership, params:{id:createdB.json.user.id}, body:{role:'leadership'} });
+
+// Membership mirror and disconnected Cloudflare. Remote writes are fake-server tested in Go.
+const member = {person_id:'contract-member',first_name:'Ada',last_name:'Member',preferred_name:null,uw_email:'ada@uw.edu',cs_email:null,personal_email:null,major:'CS',grad_year:'2028',campus:'Seattle',pronouns:null,demographics:null,join_date:'2026-10-31',agreed_to_membership_agreement:1,has_been_cseed_officer:0};
+db.prepare('INSERT INTO members_mirror(person_id,first_name,last_name,uw_email,major,grad_year,campus,join_date,has_been_officer,record_json) VALUES(?,?,?,?,?,?,?,?,?,?)').run(member.person_id,member.first_name,member.last_name,member.uw_email,member.major,member.grad_year,member.campus,member.join_date,0,JSON.stringify(member));
+await call('membersList',{who:officer,query:{q:'Ada',limit:'50',offset:'0'}});
+await call('memberDetail',{who:officer,params:{id:member.person_id}});
+await call('memberUpdate',{who:directorA,params:{id:member.person_id},body:{major:'Math',auditNote:'Correction'},expect:503});
+await call('memberUpdate',{who:officer,params:{id:member.person_id},body:{major:'Math',auditNote:'Correction'},expect:403});
+await call('membersExport',{who:directorA,csv:true});
+await call('cloudflareWidgets',{who:officer});
+await call('cloudflareSync',{who:directorA});
+await call('cloudflareSync',{who:officer,expect:403});
 
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev']); // redirects: covered by the Go tests

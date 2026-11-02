@@ -47,7 +47,7 @@ func TestSeedMigrateAndServeWiring(t *testing.T) {
 		t.Errorf("seed output %q", out.String())
 	}
 	out.Reset()
-	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), "6 migrations applied") {
+	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), "7 migrations applied") {
 		t.Errorf("migrate → %d %q", code, out.String())
 	}
 	out.Reset()

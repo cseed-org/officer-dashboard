@@ -229,3 +229,6 @@ func (q *Queries) Exec(ctx context.Context, query string, args ...any) error {
 	_, err := q.q.ExecContext(ctx, query, args...)
 	return err
 }
+
+// On binds typed queries to an explicit read transaction.
+func On(q Q) *Queries { return &Queries{q: q} }

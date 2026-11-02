@@ -12,7 +12,7 @@ import (
 
 // Keep defaults aligned with the web widget registry. Unknown IDs remain valid so
 // later feature Panes can register widgets without a database migration.
-var defaultWidgets = []store.WidgetPlacement{{ID: "kpis", Size: "L"}, {ID: "my-action", Size: "M"}, {ID: "recent-events", Size: "M"}, {ID: "budget", Size: "M"}, {ID: "activity", Size: "M"}}
+var defaultWidgets = []store.WidgetPlacement{{ID: "kpis", Size: "L"}, {ID: "my-action", Size: "M"}, {ID: "recent-events", Size: "M"}, {ID: "budget", Size: "M"}, {ID: "activity", Size: "M"}, {ID: "web-analytics", Size: "L"}}
 
 func (c *Ctx) prefsGet() error {
 	u, err := c.officer()
