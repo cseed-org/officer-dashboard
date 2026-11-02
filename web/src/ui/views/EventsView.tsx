@@ -1,3 +1,4 @@
+import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useState } from 'preact/hooks';
 import { useApi } from '../../lib/api/useApi';
 import { addDays, monthGrid, monthLabel, monthOf, mondayOf, pacificToday, weekLabel, whenShort } from '../../lib/calendar';
@@ -38,7 +39,7 @@ function listColumns(now: number): Column<EventListItem>[] {
   return [
     {
       key: 'name',
-      label: 'Event · Vancouver time',
+      label: `Event · ${effectiveTimezone()}`,
       cardLabel: 'Event',
       primary: true,
       render: (e) => (

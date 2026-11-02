@@ -223,6 +223,7 @@ func TestOfficersDirectoryPhoneVisibilityAndSubteamEdits(t *testing.T) {
 func TestICSDeliveryOnEventCreateAndUpdate(t *testing.T) {
 	m := &fakeMailer{}
 	e := newEnv(t, func(c *Config) { c.Mailer = m })
+	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"timezoneMode": "manual", "timezone": "Asia/Tokyo"}, e.officer()))
 	st := e.mustOK(e.get("/api/me/calendar", e.officer()))
 	if st.at("ics", "configured") != true || st.at("google", "configured") != false || st.str("mode") != "ics" {
 		t.Fatalf("settings %s", st.Raw)
@@ -239,6 +240,9 @@ func TestICSDeliveryOnEventCreateAndUpdate(t *testing.T) {
 	msgs := m.all()[backfilled:]
 	if len(msgs) != 1 || msgs[0].To != "priya.cal@example.org" || !strings.Contains(msgs[0].ICS, `SUMMARY:Hack\, Night\; 2`) || !strings.Contains(msgs[0].ICS, "SEQUENCE:0") || !strings.Contains(msgs[0].ICS, "DTSTART:20261121T020000Z") {
 		t.Fatalf("mail %+v", msgs)
+	}
+	if !strings.Contains(msgs[0].Text, "11:00 AM JST") || !strings.Contains(msgs[0].Text, "Asia/Tokyo") || !strings.Contains(msgs[0].ICS, "X-CSEED-TIMEZONE:Asia/Tokyo") {
+		t.Fatalf("recipient timezone not used: %+v", msgs[0])
 	}
 	e.mustOK(e.do("PATCH", "/api/events/"+ev.str("event", "id"), map[string]any{"location": "Room 202"}, e.officer()))
 	e.srv.WaitBackground()

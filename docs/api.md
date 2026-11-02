@@ -47,8 +47,10 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | GET | `/api/cloudflare/widgets` | officer | — | — | `CloudflareWidgetsResponse` |
 | GET | `/api/health` | public | — | — | `HealthResponse` |
 | GET | `/api/me` | officer | — | — | `MeResponse` |
+| GET | `/api/club/settings` | officer | — | — | `ClubSettings` |
+| PUT | `/api/club/settings` | leadership | — | `ClubSettings` | `ClubSettings` |
 | GET | `/api/me/prefs` | officer | — | — | `WidgetPrefs` |
-| PUT | `/api/me/prefs` | officer | — | `WidgetPrefs` | `WidgetPrefs` |
+| PUT | `/api/me/prefs` | officer | — | `PrefsUpdate` | `WidgetPrefs` |
 | GET | `/api/me/calendar-emails` | officer | — | — | `CalendarEmailsResponse` |
 | POST | `/api/me/calendar-emails` | officer | — | `CalendarEmailCreateRequest` | `CalendarEmailResponse` |
 | PATCH | `/api/me/calendar-emails/:id` | officer | — | `CalendarEmailUpdateRequest` | `CalendarEmailResponse` |
@@ -282,7 +284,7 @@ the active status of a director or leadership account, or modifying an existing 
 user at all, requires leadership. Role changes invalidate the affected user's sessions. The last
 active director-or-leadership account cannot be deactivated or demoted to officer.
 
-`GET/PUT /api/me/prefs` returns/replaces `{widgetLayout: [{id, size}]}`. Array order is
+`GET/PUT /api/me/prefs` returns `{widgetLayout: [{id, size}], timezoneMode, timezone, effectiveTimezone}`. PUT accepts partial updates so widget and timezone preferences never overwrite each other. `timezoneMode` is `club` (the default), `auto`, or `manual`; `timezone` is the detected/manual IANA name, or an empty string for club fallback. Manual mode requires a valid zone. `effectiveTimezone` is read-only. Array order is
 widget order, IDs are unique (1–64 characters), sizes are `S`, `M`, `L`, maximum 50
 widgets. An empty array is intentional. Missing prefs return the default Home cards.
 Unknown IDs survive round trips for forward compatibility. Theme and density remain
@@ -523,3 +525,9 @@ Dates are normalized to UTC; the latest dated entry wins, with creation time the
 General contact edits never change the derived last outreach. Outreach is append-only.
 
 `GET /api/search` also returns `kind: "contact"` for all officers, linking to `/speakers?id=…`.
+
+### Club location and time zone
+
+`GET /api/club/settings` returns `{location, clubTimezone}` for every officer. `PUT` requires active leadership (including owners), rechecks permission in the transaction, and records `club_settings.updated` with before/after values. Directors and officers receive 403. Both fields are required; location is 1–200 characters and clubTimezone is a valid IANA name. Defaults: University of Washington, Seattle / America/Los_Angeles.
+
+Automatic mode detects the browser zone on load, focus, and visibility return, persisting changes through `/api/me/prefs` for calendar emails. Until detection is possible it uses the club zone. Date-only deadlines remain calendar dates; timestamps remain UTC instants. Invitations retain UTC DTSTART/DTEND for interoperability and include the recipient’s display zone as `X-CSEED-TIMEZONE` metadata. Email text uses that same zone. Calendar clients choose their own display zone.

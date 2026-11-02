@@ -33,7 +33,7 @@ func (c *Ctx) clubSettingsPut() error {
 	var s store.ClubSettings
 	if err := c.jsonBody(func(r *validate.Reader) {
 		s.ClubTimezone = r.Str("clubTimezone", validate.S{Req: true, Max: 100}).V
-		s.Location = r.Str("location", validate.S{Req: true, Trim: true, Max: 200}).V
+		s.Location = r.Str("location", validate.S{Req: true, Trim: true, Min: 1, Max: 200}).V
 		if !validTimezone(s.ClubTimezone) {
 			r.Issues.Add("clubTimezone", "Choose an IANA time zone")
 		}

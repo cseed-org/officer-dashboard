@@ -1,3 +1,4 @@
+import { fmtDateTime } from '../../lib/format';
 import { useApi } from "../../lib/api/useApi";
 import type { ResponseOf } from "../../lib/api/client";
 import { widgetRegistry } from "./registry";
@@ -172,7 +173,7 @@ export default function CloudflareWidget({
       <footer class="widget-foot">
         Synced daily, last{" "}
         {widget?.lastSync
-          ? new Date(widget.lastSync).toLocaleString()
+          ? fmtDateTime(new Date(widget.lastSync).toISOString())
           : "never"}
       </footer>
     </section>

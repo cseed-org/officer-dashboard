@@ -26,7 +26,7 @@ test('a design request moves across the board', async ({ page }, info) => {
   const form = page.locator('dialog[open] [data-design-form]');
   await expect(form.getByLabel('Title')).toHaveValue('Hack Night promo');
   // Due a week before Hack Night (Nov 13, 2026), never before today, none once it has passed.
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver' }).format(new Date());
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
   await expect(form.getByLabel('Due date')).toHaveValue(today >= '2026-11-13' ? '' : today > '2026-11-06' ? today : '2026-11-06');
   await form.getByLabel('Title').fill(title);
   await form.getByLabel('Type').selectOption('poster');

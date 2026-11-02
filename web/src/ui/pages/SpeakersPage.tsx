@@ -1,3 +1,5 @@
+import { fromLocalInput, toLocalInput } from '../../lib/calendar';
+import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Contact, CurrentUser, EventListItem } from "../../lib/contracts";
 import { api, fieldErrors, type BodyOf } from "../../lib/api/client";
@@ -164,9 +166,11 @@ function Speakers({ me }: { me: CurrentUser }) {
     setBusy(true);
     setError("");
     try {
+      const date = fromLocalInput(outDraft.date);
+      if (!date) throw new Error('Choose a valid time in the selected time zone (outside the daylight-saving gap).');
       const d = await api("contactOutreachCreate", {
         params: { id: openId! },
-        body: { ...outDraft, date: new Date(outDraft.date).toISOString() },
+        body: { ...outDraft, date },
       });
       setContact(d.contact);
       list.reload();
@@ -561,11 +565,7 @@ function Speakers({ me }: { me: CurrentUser }) {
                     setError("");
                     const now = new Date();
                     setOutDraft({
-                      date: new Date(
-                        now.getTime() - now.getTimezoneOffset() * 60000,
-                      )
-                        .toISOString()
-                        .slice(0, 16),
+                      date: toLocalInput(now.toISOString()),
                       channel: "email",
                       outcome: "awaiting_reply",
                       note: "",
@@ -610,7 +610,7 @@ function Speakers({ me }: { me: CurrentUser }) {
             </p>
             <p>Reached out by {me.name} (you)</p>
             <label class="field">
-              <span class="field-label">When</span>
+              <span class="field-label">When · {effectiveTimezone()}</span>
               <input
                 class="input"
                 type="datetime-local"

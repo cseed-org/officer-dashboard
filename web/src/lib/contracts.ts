@@ -972,7 +972,7 @@ export const ClubSettings = z.object({ clubTimezone: IanaTimezone, location: z.s
 export type ClubSettings = z.infer<typeof ClubSettings>;
 export const TimezoneMode = z.enum(['club', 'auto', 'manual']);
 export const WidgetPrefs = z.object({ timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
-export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone');
+export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined, 'No preferences supplied');
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
 export type CalendarEmail = z.infer<typeof CalendarEmail>;

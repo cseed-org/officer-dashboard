@@ -1,10 +1,11 @@
+import { dateTimeFormatter, effectiveTimezone } from './timezone';
 import type { FunctionalClass, PurchaseStatus, PurchaseType, Restriction, FundKind, FinanceReport } from './domain';
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 /** 123450 → "$1,234.50"; -310 → "-$3.10" (same as v1 core/money). */
 const coreFormatCents = (cents: number) => usd.format(cents / 100);
 
 
-/** CSEED is in Washington: dates and numbers use US formats, and times are Pacific. */
+/** CSEED is in Washington: dates and numbers use US formats; times follow the account preference. */
 const LOCALE = 'en-US';
 /** Like core formatCents, but never prints "-$0.00". */
 export const formatCents = (cents: number) => coreFormatCents(cents === 0 ? 0 : cents);
@@ -19,23 +20,18 @@ export function pct(rate: number | null | undefined, digits = 0): string {
 const usd0 = new Intl.NumberFormat(LOCALE, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 export const dollars = (cents: number) => usd0.format(Math.round(cents / 100));
 
-const tz = 'America/Los_Angeles';
 
-/** Today's date in Pacific time as YYYY-MM-DD (not the UTC date). */
+
+/** Today's date in selected time zone time as YYYY-MM-DD (not the UTC date). */
 export function todayPacific(now = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: effectiveTimezone(), year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
-const dateFmt = new Intl.DateTimeFormat(LOCALE, { month: 'short', day: 'numeric', year: 'numeric', timeZone: tz });
-const shortFmt = new Intl.DateTimeFormat(LOCALE, { month: 'short', day: 'numeric', timeZone: tz });
-const timeFmt = new Intl.DateTimeFormat(LOCALE, { hour: 'numeric', minute: '2-digit', timeZone: tz });
-const weekdayFmt = new Intl.DateTimeFormat(LOCALE, { weekday: 'short', timeZone: tz });
-
 const toDate = (v: string) => (v.length === 10 ? new Date(`${v}T12:00:00Z`) : new Date(v));
-export const fmtDate = (v: string | null | undefined) => (v ? dateFmt.format(toDate(v)) : '—');
-export const fmtShort = (v: string) => (v.length === 10 ? new Intl.DateTimeFormat(LOCALE, { month: 'short', day: 'numeric', timeZone: 'UTC' }) : shortFmt).format(toDate(v));
-export const fmtTime = (v: string) => timeFmt.format(toDate(v));
-export const fmtDateTime = (v: string | null | undefined) => (v ? `${dateFmt.format(toDate(v))}, ${timeFmt.format(toDate(v))}` : '—');
-export const fmtWeekday = (v: string) => weekdayFmt.format(toDate(v));
+export const fmtDate = (v: string | null | undefined) => v ? dateTimeFormatter({ month: 'short', day: 'numeric', year: 'numeric' }, v.length === 10).format(toDate(v)) : '—';
+export const fmtShort = (v: string) => dateTimeFormatter({ month: 'short', day: 'numeric' }, v.length === 10).format(toDate(v));
+export const fmtTime = (v: string) => dateTimeFormatter({ hour: 'numeric', minute: '2-digit' }).format(toDate(v));
+export const fmtDateTime = (v: string | null | undefined) => v ? `${fmtDate(v)}, ${fmtTime(v)}` : '—';
+export const fmtWeekday = (v: string) => dateTimeFormatter({ weekday: 'short' }, v.length === 10).format(toDate(v));
 
 export function relative(v: string | null | undefined, now = Date.now()): string {
   if (!v) return 'never';
@@ -104,7 +100,7 @@ export function dollarsToCents(input: string): number | null {
 export { safeUrl } from './url';
 
 /**
- * A Pacific wall time ("2026-10-31", "18:00") as an ISO datetime with its offset
+ * A selected-zone wall time ("2026-10-31", "18:00") as an ISO datetime with its offset
  * ("2026-10-31T18:00:00-07:00"), whatever the browser's own time zone is.
  */
 export function pacificIso(date: string, time = '18:00'): string {
@@ -113,7 +109,7 @@ export function pacificIso(date: string, time = '18:00'): string {
   const wall = Date.UTC(y, m - 1, d, hh, mm);
   const offsetAt = (instant: number) => {
     const p = Object.fromEntries(
-      new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      new Intl.DateTimeFormat('en-US', { timeZone: effectiveTimezone(), hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
         .formatToParts(new Date(instant))
         .map((x) => [x.type, x.value]),
     );
@@ -134,5 +130,5 @@ export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n ==
 export const lumaManageUrl = (lumaId: string | null | undefined) =>
   lumaId && /^evt-[\w-]+$/.test(lumaId) ? `https://lu.ma/event/manage/${lumaId}` : null;
 
-/** Calendar date in Washington time for any instant (v1 core/luma/time pacificDate). */
+/** Calendar date in the effective time zone for any instant (v1 core/luma/time pacificDate). */
 export const pacificDate = (value: Date | string) => todayPacific(new Date(value));

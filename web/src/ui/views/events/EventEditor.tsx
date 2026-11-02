@@ -1,8 +1,9 @@
+import { effectiveTimezone } from '../../../lib/timezone';
 import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, fieldErrors } from '../../../lib/api/client';
 import { useApi } from '../../../lib/api/useApi';
-import { fromLocalInput, toLocalInput, TZ_LABEL } from '../../../lib/calendar';
+import { fromLocalInput, toLocalInput } from '../../../lib/calendar';
 import type { EventDetailResponse, EventStatus, EventUpsertRequest } from '../../../lib/contracts';
 import { safeUrl } from '../../../lib/format';
 import { describe, Field } from '../../components/kit';
@@ -223,10 +224,10 @@ function EditorForm({
           <input class="input" type="text" maxLength={200} value={d.name} onInput={set('name')} {...describe('ev-name', errors.name)} />
         </Field>
         <div class="grid-fields">
-          <Field id="ev-starts" label={`Starts · ${TZ_LABEL}`} error={errors.startsAt}>
+          <Field id="ev-starts" label={`Starts · ${effectiveTimezone()}`} error={errors.startsAt}>
             <input class="input" type="datetime-local" value={d.starts} onInput={set('starts')} {...describe('ev-starts', errors.startsAt)} />
           </Field>
-          <Field id="ev-ends" label={`Ends · ${TZ_LABEL}`} error={errors.endsAt} optional>
+          <Field id="ev-ends" label={`Ends · ${effectiveTimezone()}`} error={errors.endsAt} optional>
             <input class="input" type="datetime-local" value={d.ends} onInput={set('ends')} {...describe('ev-ends', errors.endsAt)} />
           </Field>
         </div>
