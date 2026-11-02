@@ -223,8 +223,9 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 
 Roles rank `leadership > director > officer`. Only leadership may change `role` in
 PATCH `/api/admin/users/:id` or create a user with a role other than officer.
-Directors may create officers and invites; modifying an existing leadership user also
-requires leadership. Role changes invalidate the affected user's sessions. The last
+Directors may create officers and invites, and deactivate or reactivate officers. Changing
+the active status of a director or leadership account, or modifying an existing leadership
+user at all, requires leadership. Role changes invalidate the affected user's sessions. The last
 active director-or-leadership account cannot be deactivated or demoted to officer.
 
 `GET/PUT /api/me/prefs` returns/replaces `{widgetLayout: [{id, size}]}`. Array order is
@@ -334,7 +335,8 @@ deactivated accounts) with subteam, profile fields and onboarding state, plus
 `subteams`, `canManage` and `canChangeRoles`. **Phone is only present for director+
 viewers.** Birthday (month-day) is visible to every officer. PATCH
 `/api/officers/:id` (director+) changes `subteamId` and `title`; editing a leadership
-user requires leadership. Role and active status stay on PATCH `/api/admin/users/:id`.
+user requires leadership. Role and active status stay on PATCH `/api/admin/users/:id`. Making someone a co-owner
+(POST `/api/admin/owners/:userId`) also promotes them to leadership.
 
 **Calendar delivery.** Each officer's mode is `ics` or `google`.
 

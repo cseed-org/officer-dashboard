@@ -519,6 +519,8 @@ function ProfileDrawer({
   const self = o?.id === me.id;
   const ownerLocked = !!o?.isOwner && !me.isOwner;
   const canEditTeam = canManage && !!o && (o.role !== 'leadership' || canChangeRoles);
+  // Directors deactivate officers; only leadership deactivates directors or leadership.
+  const canDeactivate = !!o && (canChangeRoles || (canManage && o.role === 'officer'));
 
   const saveTeam = async () => {
     if (!o) return;
@@ -611,13 +613,14 @@ function ProfileDrawer({
             </section>
           )}
 
-          {canChangeRoles && !self && (
+          {canDeactivate && !self && (
             <section class="stack" data-access>
               <h3>Workspace access</h3>
               {ownerLocked ? (
                 <p class="notice">Only an owner can change an owner’s role or deactivate them.</p>
               ) : (
                 <>
+                  {canChangeRoles && (
                   <div class="field">
                     <label class="field-label" for="pd-role">
                       Role
@@ -631,7 +634,9 @@ function ProfileDrawer({
                       Choose a different role to review the change.
                     </p>
                   </div>
+                  )}
                   <div class="action-row">
+                    {canChangeRoles && (
                     <button
                       class="btn"
                       disabled={role === o.role}
@@ -649,6 +654,7 @@ function ProfileDrawer({
                     >
                       Review role change
                     </button>
+                    )}
                     <button
                       class={`btn${o.active ? ' btn--danger' : ''}`}
                       onClick={() =>

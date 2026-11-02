@@ -389,3 +389,16 @@ func TestReissuedInviteLinkReplacesTheOldOneAndCorrectionsAreRateLimited(t *test
 		t.Fatalf("DMs %d", len(dm.sent))
 	}
 }
+
+func TestDirectorsDeactivateOfficersOnlyLeadershipDeactivatesDirectors(t *testing.T) {
+	e := newEnv(t)
+	second := e.mustOK(e.post("/api/admin/users", map[string]any{"name": "Second Director", "discordId": "100000000000000555", "role": "director"}, e.as("user-leadership"))).str("user", "id")
+	e.mustOK(e.do("PATCH", "/api/admin/users/user-marcus", map[string]any{"active": false}, e.director()))
+	e.mustOK(e.do("PATCH", "/api/admin/users/user-marcus", map[string]any{"active": true}, e.director()))
+	expectStatus(t, "director deactivates director", e.do("PATCH", "/api/admin/users/"+second, map[string]any{"active": false}, e.director()), 403)
+	expectStatus(t, "director deactivates leadership", e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"active": false}, e.director()), 403)
+	e.mustOK(e.do("PATCH", "/api/admin/users/"+second, map[string]any{"active": false}, e.as("user-leadership")))
+	expectStatus(t, "director reactivates director", e.do("PATCH", "/api/admin/users/"+second, map[string]any{"active": true}, e.director()), 403)
+	// A name-only edit of a director is still fine for directors.
+	e.mustOK(e.do("PATCH", "/api/admin/users/user-director", map[string]any{"title": "ED"}, e.director()))
+}
