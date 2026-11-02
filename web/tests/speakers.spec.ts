@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { devLogin, openDialog, overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
 
 /**
- * Speakers & Mentors against the real API: an officer adds a contact, edits it, logs outreach
+ * External Contacts against the real API: an officer adds a contact, edits it, logs outreach
  * through the nested dialog (and comes back to the contact with focus restored), sees
  * "Last reached out by" follow the latest *dated* entry, filters the directory, keeps drafts
  * when a save fails, and deletes the contact. Each run creates contacts with a unique marker.
@@ -11,14 +11,14 @@ import { devLogin, openDialog, overflow, settle, THEMES, useTheme, watchErrors }
 const shot = async (page: Page, name: string, project: string, theme: string) => {
   if (!process.env.SHOTS) return;
   await page.waitForTimeout(400);
-  await page.screenshot({ path: `tmp/shots/speakers-${project}-${theme}-${name}.png`, fullPage: !(await openDialog(page).count()) });
+  await page.screenshot({ path: `tmp/shots/contacts-${project}-${theme}-${name}.png`, fullPage: !(await openDialog(page).count()) });
 };
 
 /** The directory row (desktop table) or card (phone) for a contact. */
 const entry = (page: Page, name: string) =>
   page.locator('main').locator('.speakers-desktop tr, .speakers-mobile article').filter({ visible: true, hasText: name });
 
-async function addContact(page: Page, c: { name: string; org?: string; type?: string; topics?: string; email?: string }) {
+async function addContact(page: Page, c: { name: string; org?: string; type?: string; topics?: string; email?: string; spoken?: boolean }) {
   await page.getByRole('button', { name: 'Add contact', exact: true }).click();
   const d = openDialog(page);
   await expect(d.getByRole('heading', { level: 2, name: 'Add contact' })).toBeFocused();
@@ -27,8 +27,9 @@ async function addContact(page: Page, c: { name: string; org?: string; type?: st
   if (c.type) await d.getByLabel('Type', { exact: true }).selectOption(c.type);
   if (c.topics) await d.getByLabel('Topics').fill(c.topics);
   if (c.email) await d.getByLabel('Email').fill(c.email);
+  if (c.spoken) await d.getByLabel('Has spoken for CSEED before').check();
   await d.getByRole('button', { name: 'Add contact' }).click();
-  await expect(page).toHaveURL(/\/speakers\?id=/);
+  await expect(page).toHaveURL(/\/contacts\?id=/);
   await expect(openDialog(page).getByRole('heading', { level: 2, name: c.name })).toBeVisible();
 }
 
@@ -36,7 +37,7 @@ test('contacts: field-named validation error, error styling, add draft kept on c
   const errors = watchErrors(page);
   const name = `Draft ${Date.now().toString(36)}`;
   await devLogin(page, 'officer');
-  await page.goto('/speakers');
+  await page.goto('/contacts');
   await settle(page);
 
   // A whitespace-only name passes `required` but the API rejects it: the alert names the field.
@@ -67,7 +68,7 @@ test('contacts: field-named validation error, error styling, add draft kept on c
 
   // After a successful create the detail heading takes focus, and the next Add starts blank.
   await d.getByRole('button', { name: 'Add contact' }).click();
-  await expect(page).toHaveURL(/\/speakers\?id=/);
+  await expect(page).toHaveURL(/\/contacts\?id=/);
   d = openDialog(page);
   await expect(d.getByRole('heading', { level: 2, name })).toBeFocused();
   await page.keyboard.press('Escape');
@@ -93,7 +94,7 @@ for (const theme of THEMES) {
     const name = `Priya ${m}`;
     await useTheme(page, theme);
     await devLogin(page, 'officer');
-    await page.goto('/speakers');
+    await page.goto('/contacts');
     await settle(page);
     expect(await overflow(page)).toEqual([]);
 
@@ -105,10 +106,11 @@ for (const theme of THEMES) {
     await page.keyboard.press('Escape');
     await expect(openDialog(page)).toHaveCount(0);
 
-    await addContact(page, { name, org: 'North Shore', type: 'both', topics: `Fundraising, ${m}-topic`, email: `priya.${m}@example.com` });
+    await addContact(page, { name, org: 'North Shore', type: 'both', topics: `Fundraising, ${m}-topic`, email: `priya.${m}@example.com`, spoken: true });
     await expect(page.getByRole('status').filter({ hasText: 'Contact added.' })).toBeAttached();
     d = openDialog(page);
     await expect(d.getByText('No outreach yet.')).toBeVisible();
+    await expect(d.getByLabel('Has spoken for CSEED before')).toBeChecked();
     await shot(page, 'detail', info.project.name, theme);
 
     // Edit with a failing save: the error shows and the draft is kept, then the retry saves it.
@@ -188,11 +190,13 @@ for (const theme of THEMES) {
     await shot(page, 'detail-with-outreach', info.project.name, theme);
     await page.keyboard.press('Escape');
     await expect(openDialog(page)).toHaveCount(0);
-    await expect(page).toHaveURL(/\/speakers$/);
+    await expect(page).toHaveURL(/\/contacts$/);
     const row = entry(page, name);
     await expect(row).toContainText('Ava Romero · Oct 30, 2026');
     await expect(row).toContainText('LinkedIn · Interested');
     await expect(row).toContainText('North Shore Ventures');
+
+    await expect(row).toContainText('Has spoken');
 
     // Filters: a mentor with another topic, then type/topic/search narrowing.
     const mentor = `Sofia ${m}`;
@@ -201,6 +205,13 @@ for (const theme of THEMES) {
     await page.getByLabel('Find a contact').fill(m);
     await expect(entry(page, name)).toHaveCount(1);
     await expect(entry(page, mentor)).toHaveCount(1);
+    await page.getByLabel('Speaking history').selectOption('true');
+    await expect(entry(page, name)).toHaveCount(1);
+    await expect(entry(page, mentor)).toHaveCount(0);
+    await page.getByLabel('Speaking history').selectOption('false');
+    await expect(entry(page, name)).toHaveCount(0);
+    await expect(entry(page, mentor)).toContainText('Not yet');
+    await page.getByLabel('Speaking history').selectOption('');
     await page.getByLabel('Type', { exact: true }).selectOption('speaker');
     await expect(entry(page, name)).toHaveCount(1); // "both" counts as a speaker
     await expect(entry(page, mentor)).toHaveCount(0);
@@ -232,3 +243,24 @@ for (const theme of THEMES) {
     expect(errors.filter((e) => !/→ 50[03]$/.test(e))).toEqual([]);
   });
 }
+
+test('legacy Speakers deep link redirects to External Contacts', async ({ page }) => {
+  await devLogin(page, 'officer');
+  const response = await page.request.post('/api/contacts', { data: { name: 'Legacy deep link', type: 'speaker' } });
+  const { contact } = await response.json();
+  await page.goto(`/speakers?id=${contact.id}`);
+  await expect(page).toHaveURL(`/contacts?id=${contact.id}`);
+  await expect(page.getByRole('heading', { level: 1, name: 'External Contacts' })).toBeVisible();
+  await expect(openDialog(page).getByLabel('Has spoken for CSEED before')).not.toBeChecked();
+  await openDialog(page).getByLabel('Has spoken for CSEED before').check();
+  await openDialog(page).getByRole('button', { name: 'Save contact', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Contact saved.' })).toBeAttached();
+  await page.reload();
+  await expect(openDialog(page).getByLabel('Has spoken for CSEED before')).toBeChecked();
+  await openDialog(page).getByLabel('Has spoken for CSEED before').uncheck();
+  await openDialog(page).getByRole('button', { name: 'Save contact', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Contact saved.' })).toBeAttached();
+  await page.reload();
+  await expect(openDialog(page).getByLabel('Has spoken for CSEED before')).not.toBeChecked();
+  await page.request.delete(`/api/contacts/${contact.id}`);
+});

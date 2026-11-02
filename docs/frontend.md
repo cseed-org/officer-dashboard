@@ -43,7 +43,7 @@ and keeps redirects on :4340, so dev sign-in works: open `/login` and use the
 
 ## Routes (for the Go server)
 
-V0.3 also serves `/officers`, `/members`, `/speakers`, `/design`, and `/onboarding` from their corresponding `<route>/index.html` files.
+The app also serves `/officers`, `/members`, `/contacts`, `/design`, and `/onboarding` from their corresponding `<route>/index.html` files.
 
 Each page is a static file. Details, drawers, tabs and filters live in the query
 string, so **no rewrite or SPA fallback is needed**: serve `<path>/index.html` for `<path>`
@@ -99,8 +99,10 @@ src/lib/          contract copy, API client + useApi, routes, same-page router, 
 src/layouts/      AppLayout.astro: pre-paint script, sidebar / top bar, palette
 src/pages/        page routes + login + 404 (each mounts one island)
 src/ui/pages/     page islands (auth gate + view)
-src/ui/views/     page bodies, including Home, Events, Finance (+ request detail/form), Admin, Settings, Officers, Members, Speakers, Design, Onboarding
+src/ui/views/     page bodies, including Home, Events, Finance (+ request detail/form), Admin, Settings, Officers, Members, External Contacts, Design, Onboarding
 src/ui/components/ kit, states, charts, drawer, icons, CSV import (ported from v1)
 src/ui/shell/     command palette, user chip, auth gate
 tests/            Playwright
 ```
+
+External Contacts uses `/contacts`. The legacy `/speakers` route redirects to it (including contact deep links). The directory offers All / Has spoken / Not yet speaking-history filters and an editable “Has spoken for CSEED before” checkbox.

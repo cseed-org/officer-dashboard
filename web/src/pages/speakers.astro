@@ -1,8 +1,5 @@
 ---
-import AppLayout from '../layouts/AppLayout.astro';
-import SpeakersPage from '../ui/pages/SpeakersPage';
-import '../styles/speakers.css';
 ---
-<AppLayout title="Speakers & Mentors" page="speakers">
-  <SpeakersPage client:load />
-</AppLayout>
+<script is:inline>location.replace('/contacts' + location.search + location.hash);</script>
+<meta http-equiv="refresh" content="0;url=/contacts" />
+<a href="/contacts">External Contacts</a>
