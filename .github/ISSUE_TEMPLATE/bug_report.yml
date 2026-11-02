@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a reproducible problem with the dashboard.
+title: "Bug: "
+body:
+  - type: markdown
+    attributes:
+      value: "For security issues, follow SECURITY.md. Remove secrets and personal data from all details and screenshots."
+  - type: dropdown
+    id: area
+    attributes:
+      label: Page or area
+      options:
+        - Home
+        - Events
+        - Officers
+        - Members
+        - Speakers
+        - Design Requests
+        - Finance
+        - Admin
+        - Onboarding
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Signed-in role
+      options:
+        - Leadership
+        - Director
+        - Officer
+        - Signed out
+        - Unsure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and environment
+      description: Commit or release, browser/version, OS, viewport and local or hosted deployment.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal sequence with sanitized sample data.
+      placeholder: "1. Open …"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include sanitized errors or logs if helpful.
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Attach relevant images; remove private club data and personal information.
