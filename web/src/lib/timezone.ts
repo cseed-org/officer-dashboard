@@ -31,13 +31,15 @@ export async function refreshTimezone() {
 }
 export const timezoneSnapshot = () => ({ prefs, club });
 let watching = false;
+/** Never fatal: if preferences can't load, pages keep the club default and retry on focus. */
 export async function initTimezone() {
-  await refreshTimezone();
-  if (watching) return;
-  watching = true;
-  const refresh = () => { if (document.visibilityState !== 'hidden') void refreshTimezone().catch(() => {}); };
-  window.addEventListener('focus', refresh);
-  document.addEventListener('visibilitychange', refresh);
+  if (!watching) {
+    watching = true;
+    const refresh = () => { if (document.visibilityState !== 'hidden') void refreshTimezone().catch(() => {}); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+  }
+  await refreshTimezone().catch((err) => console.warn('[timezone] using the club default', err));
 }
 const formatters = new Map<string, Intl.DateTimeFormat>();
 export function dateTimeFormatter(options: Intl.DateTimeFormatOptions, dateOnly = false) {
