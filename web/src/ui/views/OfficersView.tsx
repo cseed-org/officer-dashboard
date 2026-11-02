@@ -777,7 +777,7 @@ function MyProfileDrawer({ open, onClose, onSaved }: { open: boolean; onClose: (
 
 // ─────────────────────────── page ───────────────────────────
 
-export default function OfficersView({ me }: { me: CurrentUser }) {
+export default function OfficersView({ me, section = 'directory' }: { me: CurrentUser; section?: 'directory' | 'invites' }) {
   const list = useApi('officersList');
   const isDirector = me.role !== 'officer';
   const [invites, setInvites] = useState<{ invites: Invite[]; dmConfigured: boolean } | null>(null);
@@ -845,6 +845,7 @@ export default function OfficersView({ me }: { me: CurrentUser }) {
           )}
         </div>
       </div>
+      {section === 'directory' && <>
       <div class="toolbar">
         <div class="toolbar-main">
           <label class="field">
@@ -964,7 +965,9 @@ export default function OfficersView({ me }: { me: CurrentUser }) {
         </div>
       )}
 
-      {isDirector && invites && (
+      </>}
+
+      {section === 'invites' && isDirector && invites && (
         <InvitesSection
           invites={invites.invites}
           dmConfigured={invites.dmConfigured}

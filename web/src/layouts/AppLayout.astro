@@ -30,7 +30,6 @@ const NAV: { key: PageKey; label: string; href: string; icon: IconName; director
   { key: 'members', label: 'Members', href: '/members', icon: 'user' },
   { key: 'speakers', label: 'Speakers', href: '/speakers', icon: 'user' },
   { key: 'design', label: 'Design', href: '/design', icon: 'inbox' },
-  { key: 'admin', label: 'Admin', href: '/admin', icon: 'shield', directorOnly: true },
 ];
 const PREPAINT = `(function(){var d=document.documentElement,t,n,r;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role')}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r})();`;
 /**

@@ -32,7 +32,7 @@ func under(path, prefix string) bool { return path == prefix || strings.HasPrefi
 var (
 	publicPrefixes       = []string{"/login", "/auth", "/api/health"}
 	serviceTokenPrefixes = []string{"/api/ingest", "/api/agent"}
-	directorPrefixes     = []string{"/admin", "/api/admin"}
+	directorPrefixes     = []string{"/api/admin"}
 )
 
 // RequiredRoleForPath is the minimum role a signed-in user needs for a path, or "" when the

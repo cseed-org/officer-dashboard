@@ -217,14 +217,14 @@ function UserList({
                       </span>
                     </td>
                     <td class="people-menu">
-                      {isOwner && u.active && <div class="stack stack--tight">
-                        <button class="btn btn--small" disabled={busyId !== null} onClick={() => ownership(u, u.isOwner ? 'remove' : 'add')}>{u.isOwner ? 'Remove owner' : 'Make co-owner'}</button>
-                        {u.id !== meId && <button class="btn btn--small" disabled={busyId !== null} onClick={() => ownership(u, 'transfer')}>Transfer ownership</button>}
-                      </div>}
                       <RowMenu
                         label={`Actions for ${u.name}`}
-                        items={
-                          (u.id === meId || (u.isOwner && !isOwner) || (u.role !== 'officer' && !canChangeRoles)) // directors deactivate officers only
+                        items={[
+                          ...(isOwner && u.active ? [
+                            { label: u.isOwner ? 'Remove owner' : 'Make co-owner', disabled: busyId !== null, onSelect: () => ownership(u, u.isOwner ? 'remove' : 'add') },
+                            ...(u.id !== meId ? [{ label: 'Transfer ownership', disabled: busyId !== null, onSelect: () => ownership(u, 'transfer') }] : []),
+                          ] : []),
+                          ...((u.id === meId || (u.isOwner && !isOwner) || (u.role !== 'officer' && !canChangeRoles)) // directors deactivate officers only
                             ? []
                             : [
                                 u.active
@@ -243,8 +243,8 @@ function UserList({
                                         patch(u, { active: true }, `${u.name} is active again.`);
                                       },
                                     },
-                              ]
-                        }
+                              ]).map((item) => ({ ...item, disabled: busyId !== null }))
+                        ]}
                       />
                     </td>
                   </tr>

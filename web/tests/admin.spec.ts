@@ -7,8 +7,8 @@ const stamp = () => Date.now().toString(36);
 
 test('admin: add an officer in the drawer, change their role, deactivate and reactivate them', async ({ page }) => {
   const errors = watchErrors(page);
-  await devLogin(page, 'director');
-  await page.goto('/admin');
+  await devLogin(page, 'leadership');
+  await page.goto('/officers?tab=access');
   await settle(page);
   await expect(page.locator('[data-officer-count]')).toContainText(/active officers?/);
 
@@ -38,11 +38,11 @@ test('admin: add an officer in the drawer, change their role, deactivate and rea
   await expect(toDirector).toHaveAttribute('aria-pressed', 'false');
   page.once('dialog', (d) => void d.accept());
   await toDirector.click();
-  await expect(page.getByText(`${name} is now a director.`)).toBeVisible();
+  await expect(page.getByText(`${name} is now director.`)).toBeVisible();
   await expect(toDirector).toHaveAttribute('aria-pressed', 'true');
   page.once('dialog', (d) => void d.accept());
   await row.getByRole('group', { name: `Role for ${name}` }).getByRole('button', { name: 'officer', exact: true }).click();
-  await expect(page.getByText(`${name} is now an officer.`)).toBeVisible();
+  await expect(page.getByText(`${name} is now officer.`)).toBeVisible();
 
   // Deactivate from the ⋯ menu (keyboard), then it is hidden until "show deactivated".
   await row.getByRole('button', { name: `Actions for ${name}` }).click();
@@ -64,7 +64,7 @@ test('admin: add an officer in the drawer, change their role, deactivate and rea
 test('admin: create a service token in the drawer, see the secret once, revoke it from the menu', async ({ page }) => {
   const errors = watchErrors(page);
   await devLogin(page, 'director');
-  await page.goto('/admin?tab=tokens');
+  await page.goto('/officers?tab=tokens');
   await settle(page);
   await page.locator('[data-admin-create]').click();
   const drawer = openDialog(page);
@@ -90,7 +90,7 @@ test('admin: create a service token in the drawer, see the secret once, revoke i
 
 test('admin: audit log rows filter by actor, action and date', async ({ page }) => {
   await devLogin(page, 'director');
-  await page.goto('/admin?tab=audit');
+  await page.goto('/officers?tab=audit');
   await settle(page);
   const rows = page.locator('.audit-row');
   await expect(rows.first()).toBeVisible();
