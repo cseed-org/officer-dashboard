@@ -27,6 +27,7 @@ import (
 
 	"officerdashboard/internal/api"
 	"officerdashboard/internal/auth"
+	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
 	"officerdashboard/internal/files"
@@ -83,6 +84,10 @@ type settings struct {
 	BootstrapDirector                string
 	BootstrapOwnerName               string
 	WebhookURL                       string
+	DiscordBotToken                  string
+	SMTPHost, SMTPPort, SMTPUser     string
+	SMTPPassword, SMTPFrom           string
+	GoogleClientID, GoogleSecret     string
 	ServiceAccountJSON, DriveRoot    string
 	ReceiptsDir                      string
 	DevAuth                          bool
@@ -110,6 +115,10 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	s.BootstrapDirector = env("BOOTSTRAP_OWNER_DISCORD_ID", env("BOOTSTRAP_DIRECTOR_DISCORD_ID", ""))
 	s.BootstrapOwnerName = env("BOOTSTRAP_OWNER_NAME", "")
 	s.WebhookURL = env("DISCORD_WEBHOOK_URL", "")
+	s.DiscordBotToken = env("DISCORD_BOT_TOKEN", "")
+	s.SMTPHost, s.SMTPPort = env("SMTP_HOST", ""), env("SMTP_PORT", "587")
+	s.SMTPUser, s.SMTPPassword, s.SMTPFrom = env("SMTP_USERNAME", ""), env("SMTP_PASSWORD", ""), env("SMTP_FROM", "")
+	s.GoogleClientID, s.GoogleSecret = env("GOOGLE_OAUTH_CLIENT_ID", ""), env("GOOGLE_OAUTH_CLIENT_SECRET", "")
 	s.ServiceAccountJSON = env("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 	s.DriveRoot = env("DRIVE_ROOT_FOLDER_ID", env("GOOGLE_DRIVE_FOLDER_ID", ""))
 	s.ReceiptsDir = env("RECEIPTS_DIR", "")
@@ -172,6 +181,21 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		cfg.Notifier = notify.NewDiscord(s.WebhookURL)
 	} else {
 		cfg.Notifier = notify.Console{Log: log}
+	}
+	if s.DiscordBotToken != "" {
+		cfg.DM = notify.NewDiscordBot(s.DiscordBotToken)
+	} else {
+		log.Warn("Discord invite DMs are not configured (DISCORD_BOT_TOKEN): invites are copy-link only")
+	}
+	if s.SMTPHost != "" && s.SMTPFrom != "" {
+		cfg.Mailer = &calendar.SMTP{Host: s.SMTPHost, Port: s.SMTPPort, Username: s.SMTPUser, Password: s.SMTPPassword, Sender: s.SMTPFrom}
+	} else {
+		log.Warn(".ics calendar invites are not configured (SMTP_HOST / SMTP_FROM)")
+	}
+	if s.GoogleClientID != "" && s.GoogleSecret != "" {
+		cfg.Google = calendar.NewGoogle(s.GoogleClientID, s.GoogleSecret, s.AppURL+"/auth/google/callback")
+	} else {
+		log.Warn("Google Calendar sync is not configured (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET)")
 	}
 	switch {
 	case s.ServiceAccountJSON != "" && s.DriveRoot != "":
@@ -248,7 +272,12 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		log.Info("shutting down")
 		shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		return httpSrv.Shutdown(shutdown)
+		err := httpSrv.Shutdown(shutdown)
+		// Let queued calendar deliveries finish (and record themselves), within reason.
+		if !srv.WaitBackgroundFor(20 * time.Second) {
+			log.Warn("calendar deliveries still running at shutdown; the next event change resends them")
+		}
+		return err
 	}
 	return nil
 }

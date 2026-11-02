@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"officerdashboard/internal/auth"
+	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
 	"officerdashboard/internal/files"
@@ -26,6 +28,13 @@ type Config struct {
 	DB         *store.DB
 	Files      files.Store
 	Notifier   notify.Notifier
+	// DM sends invite DMs through the Discord bot; nil when DISCORD_BOT_TOKEN is unset,
+	// and invites fall back to copy-link only.
+	DM notify.DirectMessenger
+	// Mailer sends .ics invitations; nil when SMTP is not configured.
+	Mailer calendar.Mailer
+	// Google syncs officers' Google Calendars; nil when the OAuth client is not configured.
+	Google *calendar.Google
 	// Notion drafts each event's Notion page. TODO(notion): only the stub exists so far.
 	Notion notion.NotionSync
 	// Now is the clock; tests fix it.
@@ -48,6 +57,12 @@ type Server struct {
 	log    *slog.Logger
 	secure bool
 	host   string // APP_URL host, for the Origin check
+
+	sealer     *calendar.Sealer
+	bg         sync.WaitGroup // background calendar deliveries
+	calMu      sync.Mutex     // guards calQueue and calRunning
+	calQueue   []calJob       // FIFO; one worker drains it
+	calRunning bool
 }
 
 // New builds a server from its config.
@@ -74,6 +89,9 @@ func New(cfg Config) *Server {
 		cfg.Version = "0.1.0"
 	}
 	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log}
+	if cfg.Google != nil {
+		s.sealer = calendar.NewSealer(cfg.Google.ClientSecret)
+	}
 	if u, err := url.Parse(cfg.AppURL); err == nil {
 		s.secure = u.Scheme == "https"
 		s.host = u.Host
@@ -82,7 +100,22 @@ func New(cfg Config) *Server {
 }
 
 func (s *Server) now() time.Time { return s.cfg.Now() }
-func (s *Server) nowMs() int64   { return s.now().UnixMilli() }
+
+// WaitBackground blocks until background calendar deliveries finish (tests, shutdown).
+func (s *Server) WaitBackground() { s.bg.Wait() }
+
+// WaitBackgroundFor waits at most d for background deliveries; it reports whether they finished.
+func (s *Server) WaitBackgroundFor(d time.Duration) bool {
+	done := make(chan struct{})
+	go func() { s.bg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
+func (s *Server) nowMs() int64 { return s.now().UnixMilli() }
 
 // Ctx carries one request through a handler.
 type Ctx struct {

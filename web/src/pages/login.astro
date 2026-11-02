@@ -6,10 +6,11 @@ const MESSAGES = {
   inactive: 'Your officer account is deactivated. Ask a director to restore it.',
   state: 'The sign-in link expired. Try again.',
   discord: 'Discord sign-in failed. Try again.',
+  invite_unavailable: 'That invitation has expired or is for a different Discord account. Ask the person who invited you for a new link.',
 };
 // ?next= and ?error= are read in the browser: the page is static. `next` must resolve to
 // this origin (new URL check; "//x" and backslash forms are refused), as in src/lib/url.ts.
-const SCRIPT = `(function(){function safe(r){if(!r||r.charAt(0)!=='/'||r.charAt(1)==='/'||r.indexOf('\\\\')>=0)return'/';try{var u=new URL(r,location.origin);return u.origin===location.origin?u.pathname+u.search+u.hash:'/'}catch(e){return'/'}}var p=new URLSearchParams(location.search),n=safe(p.get('next'));var q=n==='/'?'':'next='+encodeURIComponent(n);document.querySelectorAll('[data-auth-link]').forEach(function(a){var u=new URL(a.getAttribute('href'),location.href);if(q)u.searchParams.set('next',n);a.setAttribute('href',u.pathname+u.search)});var e=p.get('error'),m=${JSON.stringify(MESSAGES)},el=document.querySelector('[data-login-error]');if(e&&el){el.textContent=m[e]||'Sign-in failed.';el.hidden=false}fetch('/api/me',{credentials:'same-origin'}).then(function(r){if(r.ok)location.replace(n);else try{localStorage.removeItem('cseed-role')}catch(e){}}).catch(function(){})})();`;
+const SCRIPT = `(function(){function safe(r){if(!r||r.charAt(0)!=='/'||r.charAt(1)==='/'||r.indexOf('\\\\')>=0)return'/';try{var u=new URL(r,location.origin);return u.origin===location.origin?u.pathname+u.search+u.hash:'/'}catch(e){return'/'}}var p=new URLSearchParams(location.search),n=safe(p.get('next'));var q=n==='/'?'':'next='+encodeURIComponent(n),iv=p.get('invite');if(iv){var note=document.querySelector('[data-invite-note]');if(note)note.hidden=false;var intro=document.querySelector('[data-login-intro]');if(intro)intro.hidden=true}document.querySelectorAll('[data-auth-link]').forEach(function(a){var u=new URL(a.getAttribute('href'),location.href);if(q)u.searchParams.set('next',n);if(iv)u.searchParams.set('invite',iv);a.setAttribute('href',u.pathname+u.search)});var e=p.get('error'),m=${JSON.stringify(MESSAGES)},el=document.querySelector('[data-login-error]');if(e&&el){el.textContent=m[e]||'Sign-in failed.';el.hidden=false}fetch('/api/me',{credentials:'same-origin'}).then(function(r){if(r.ok)location.replace(n);else try{localStorage.removeItem('cseed-role')}catch(e){}}).catch(function(){})})();`;
 ---
 
 <AppLayout title="Sign in" bare>
@@ -17,7 +18,8 @@ const SCRIPT = `(function(){function safe(r){if(!r||r.charAt(0)!=='/'||r.charAt(
     <span class="wordmark-mark" aria-hidden="true">C</span>
     <h1 id="login-h">CSEED officers</h1>
     <p class="notice notice--negative" role="alert" data-login-error hidden></p>
-    <p class="muted">Events, purchase requests and the books. Sign in with the Discord account a director added.</p>
+    <p class="muted" data-login-intro>Events, purchase requests and the books. Sign in with the Discord account a director added.</p>
+    <p class="notice" data-invite-note hidden>You've been invited to the CSEED officer team. Sign in with the Discord account the invite was sent to, and we'll get you set up.</p>
     <a class="btn btn--primary btn--block" href="/auth/login" data-auth-link data-login>
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"
         ><path

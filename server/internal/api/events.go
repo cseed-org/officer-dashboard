@@ -183,6 +183,7 @@ func (c *Ctx) eventCreate() error {
 	ctx := c.Context()
 	id := auth.UUID()
 	var out EventListItem
+	var synced store.Event
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		cat, err := loadCatalog(ctx, w, false)
 		if err != nil {
@@ -212,6 +213,7 @@ func (c *Ctx) eventCreate() error {
 		if err := c.audit(ctx, w, "event.created", "event", id, nil, eventSnapshot(&e)); err != nil {
 			return err
 		}
+		synced = e
 		items, err := c.S.eventItems(ctx, w, cat, []store.Event{e}, id)
 		if err != nil {
 			return err
@@ -222,6 +224,7 @@ func (c *Ctx) eventCreate() error {
 	if err != nil {
 		return err
 	}
+	c.S.SyncEventToCalendars(synced)
 	writeJSON(c.W, 200, map[string]any{"event": out})
 	return nil
 }
@@ -237,6 +240,7 @@ func (c *Ctx) eventUpdate() error {
 	ctx := c.Context()
 	id := c.R.PathValue("id")
 	var out EventListItem
+	var synced store.Event
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		e, err := w.EventByID(ctx, id)
 		if err != nil {
@@ -273,6 +277,7 @@ func (c *Ctx) eventUpdate() error {
 		if err := c.audit(ctx, w, "event.updated", "event", id, before, eventSnapshot(updated)); err != nil {
 			return err
 		}
+		synced = *updated
 		items, err := c.S.eventItems(ctx, w, cat, []store.Event{*updated}, id)
 		if err != nil {
 			return err
@@ -283,6 +288,7 @@ func (c *Ctx) eventUpdate() error {
 	if err != nil {
 		return err
 	}
+	c.S.SyncEventToCalendars(synced)
 	writeJSON(c.W, 200, map[string]any{"event": out})
 	return nil
 }
@@ -293,6 +299,8 @@ func (c *Ctx) eventDelete() error {
 	}
 	ctx := c.Context()
 	id := c.R.PathValue("id")
+	var deleted store.Event
+	var priors map[string]store.Delivery
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		e, err := w.EventByID(ctx, id)
 		if err != nil {
@@ -306,6 +314,11 @@ func (c *Ctx) eventDelete() error {
 			return conflict(fmt.Sprintf("%s has %d purchase request%s. Move them to another event before deleting it.", e.Name, n, map[bool]string{true: "", false: "s"}[n == 1]))
 		}
 		before := eventSnapshot(e)
+		// Calendar deliveries cascade with the event: keep them to send cancellations.
+		if priors, err = w.DeliveriesForEvent(ctx, id); err != nil {
+			return err
+		}
+		deleted = *e
 		if err := w.DeleteEvent(ctx, id); err != nil {
 			return err
 		}
@@ -314,6 +327,7 @@ func (c *Ctx) eventDelete() error {
 	if err != nil {
 		return err
 	}
+	c.S.CancelEventOnCalendars(deleted, priors)
 	writeJSON(c.W, 200, map[string]any{"ok": true})
 	return nil
 }
@@ -800,6 +814,9 @@ func (c *Ctx) eventsImport() error {
 	if err != nil && !errors.Is(err, errRollback) {
 		return err
 	}
+	if err == nil && result.EventID != "" {
+		c.S.syncEventID(result.EventID) // a new event from the CSV reaches calendars too
+	}
 	writeJSON(c.W, 200, result)
 	return nil
 }
@@ -942,6 +959,7 @@ func (c *Ctx) ingestLuma() error {
 	if err != nil {
 		return err
 	}
+	c.S.syncEventID(result.EventID) // unchanged events are skipped per recipient
 	writeJSON(c.W, 200, result)
 	return nil
 }

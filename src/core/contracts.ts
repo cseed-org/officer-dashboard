@@ -146,7 +146,21 @@ export type EventCounts = z.infer<typeof EventCounts>;
 // ───────────────────────────── Session / me ─────────────────────────────
 
 /** GET /api/me */
-export const MeResponse = z.object({ user: CurrentUser });
+export const Subteam = z.object({ id: Id, name: z.string() });
+export type Subteam = z.infer<typeof Subteam>;
+/** Present on /api/me while an invited officer hasn't finished onboarding; null otherwise. */
+export const OnboardingState = z.object({
+  step: z.number().int().min(1).max(6),
+  name: z.string(),
+  subteam: Subteam.nullable(),
+  invitedBy: UserSummary.nullable(),
+  inviterDiscordId: DiscordId.nullable(),
+  hasProfile: z.boolean(),
+  /** false when the Discord bot isn't configured: corrections open a Discord DM instead. */
+  correctionsByDm: z.boolean(),
+});
+export type OnboardingState = z.infer<typeof OnboardingState>;
+export const MeResponse = z.object({ user: CurrentUser, onboarding: OnboardingState.nullable() });
 export type MeResponse = z.infer<typeof MeResponse>;
 
 /** GET /api/lookups — dropdown options for forms. */
@@ -960,12 +974,77 @@ export type WidgetPlacement = z.infer<typeof WidgetPlacement>;
 export const WidgetPrefs = z.object({ widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
+export type CalendarEmail = z.infer<typeof CalendarEmail>;
 export const CalendarEmailsResponse = z.object({ emails: z.array(CalendarEmail).max(5) });
 export const CalendarEmailResponse = z.object({ email: CalendarEmail });
 export const CalendarEmailCreateRequest = z.object({ email: z.email().max(254), active: z.boolean().optional() });
 export const CalendarEmailUpdateRequest = CalendarEmailCreateRequest.partial();
-export const InviteCreateRequest = z.object({ name: z.string().trim().min(1).max(100), discordId: DiscordId, subteamId: Id, method: z.literal('link').default('link') });
-export const InviteResponse = z.object({ invite: z.object({ id: Id, name: z.string(), discordId: DiscordId, subteamId: Id, invitedBy: Id, method: z.enum(['dm','link','both']) }), token: z.string() });
+export const InviteMethod = z.enum(['dm', 'link', 'both']);
+export const InviteCreateRequest = z.object({ name: z.string().trim().min(1).max(100), discordId: DiscordId, subteamId: Id, method: InviteMethod.default('link') });
+export const Invite = z.object({
+  id: Id, name: z.string(), discordId: DiscordId, subteam: Subteam.nullable(), invitedBy: UserSummary.nullable(), method: InviteMethod,
+  status: z.enum(['pending', 'expired', 'accepted', 'onboarded']),
+  dmSentAt: IsoDateTime.nullable(), dmError: z.string().nullable(), createdAt: IsoDateTime, expiresAt: IsoDateTime.nullable(),
+  acceptedAt: IsoDateTime.nullable(), onboardedAt: IsoDateTime.nullable(), userId: Id.nullable(),
+});
+export type Invite = z.infer<typeof Invite>;
+export const DMResult = z.object({ status: z.enum(['sent', 'failed', 'not_configured', 'skipped']), sentAt: IsoDateTime.nullable(), message: z.string().nullable() });
+export type DMResult = z.infer<typeof DMResult>;
+/** `link` is always returned so a failed or unconfigured DM can fall back to copy-link. */
+export const InviteResponse = z.object({ invite: Invite, token: z.string(), link: z.url(), reinvited: z.boolean(), dm: DMResult });
+export type InviteResponse = z.infer<typeof InviteResponse>;
+export const InvitesResponse = z.object({ invites: z.array(Invite), dmConfigured: z.boolean() });
+
+/** Birthday is month-day (MM-DD); no year is collected. */
+export const MonthDay = z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'Enter a month and day, like 04-21');
+export const Officer = UserSummary.extend({
+  discordId: DiscordId, role: Role, isOwner: z.boolean(), active: z.boolean(), title: z.string().nullable(), subteam: Subteam.nullable(),
+  preferredName: z.string().nullable(), pronouns: z.string().nullable(), birthday: MonthDay.nullable(),
+  personalEmail: z.string().nullable(), schoolEmail: z.string().nullable(), gradDate: z.string().nullable(), startTerm: z.string().nullable(), linkedin: z.string().nullable(),
+  /** Director+ viewers only; absent otherwise. */
+  phone: z.string().optional(),
+  profileComplete: z.boolean(),
+  onboarding: z.enum(['none', 'pending', 'done']),
+  lastLoginAt: IsoDateTime.nullable().optional(),
+});
+export type Officer = z.infer<typeof Officer>;
+export const OfficersResponse = z.object({ officers: z.array(Officer), subteams: z.array(Subteam), canManage: z.boolean(), canChangeRoles: z.boolean() });
+export type OfficersResponse = z.infer<typeof OfficersResponse>;
+export const OfficerResponse = z.object({ officer: Officer });
+export const OfficerUpdateRequest = z.object({ subteamId: Id.optional(), title: z.string().trim().max(100).nullable().optional() });
+export const DeliveryMode = z.enum(['ics', 'google']);
+export const MyProfile = z.object({
+  subteam: Subteam.nullable(), phone: z.string(), birthday: MonthDay,
+  preferredName: z.string().nullable(), pronouns: z.string().nullable(), personalEmail: z.string().nullable(), schoolEmail: z.string().nullable(),
+  gradDate: z.string().nullable(), title: z.string().nullable(), startTerm: z.string().nullable(), linkedin: z.string().nullable(),
+  calendarDeliveryMode: DeliveryMode,
+});
+export type MyProfile = z.infer<typeof MyProfile>;
+export const ProfileResponse = z.object({ profile: MyProfile.nullable(), subteams: z.array(Subteam), subteamLocked: z.boolean(), defaultSubteam: Subteam.nullable() });
+export type ProfileResponse = z.infer<typeof ProfileResponse>;
+const optText = (max: number) => z.string().trim().max(max).nullable().optional();
+export const ProfileUpsertRequest = z.object({
+  phone: z.string().trim().min(1).max(32), birthday: MonthDay,
+  /** Only for officers without a profile or invite; otherwise must match (directors change it). */
+  subteamId: Id.optional(),
+  preferredName: optText(60), pronouns: optText(40), personalEmail: optText(254), schoolEmail: optText(254),
+  gradDate: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(), title: optText(100), startTerm: optText(40), linkedin: optText(300),
+  calendarDeliveryMode: DeliveryMode.optional(),
+});
+export type ProfileUpsertRequest = z.infer<typeof ProfileUpsertRequest>;
+export const OnboardingSaveRequest = z.object({ step: z.number().int().min(1).max(6) });
+export const OnboardingResponse = z.object({ onboarding: OnboardingState.nullable() });
+export const OnboardingCompleteResponse = z.object({ user: CurrentUser, onboarding: z.null() });
+export const OnboardingCorrectionRequest = z.object({ message: z.string().trim().min(1).max(500) });
+export const OnboardingCorrectionResponse = z.object({ dm: DMResult, inviter: UserSummary, inviterDiscordId: DiscordId });
+export const CalendarSettings = z.object({
+  mode: DeliveryMode, hasProfile: z.boolean(), activeEmail: z.string().nullable(),
+  ics: z.object({ configured: z.boolean() }),
+  google: z.object({ configured: z.boolean(), connected: z.boolean(), accountEmail: z.string().nullable(), connectedAt: IsoDateTime.nullable() }),
+});
+export type CalendarSettings = z.infer<typeof CalendarSettings>;
+export const CalendarModeRequest = z.object({ mode: DeliveryMode });
+export const CalendarTestResponse = z.object({ status: z.enum(['sent', 'failed', 'skipped', 'not_configured']), message: z.string() });
 
 // ───────────────────────────── Design requests ─────────────────────────────
 // One board everyone sees. Design-subteam members (and director+) assign and move work;
@@ -1144,7 +1223,23 @@ export const ENDPOINTS = {
   calendarEmailCreate: { method: 'POST', path: '/api/me/calendar-emails', auth: 'officer', body: CalendarEmailCreateRequest, response: CalendarEmailResponse },
   calendarEmailUpdate: { method: 'PATCH', path: '/api/me/calendar-emails/:id', auth: 'officer', body: CalendarEmailUpdateRequest, response: CalendarEmailResponse },
   calendarEmailDelete: { method: 'DELETE', path: '/api/me/calendar-emails/:id', auth: 'officer', response: OkResponse },
+  invitesList: { method: 'GET', path: '/api/invites', auth: 'director', response: InvitesResponse },
   inviteCreate: { method: 'POST', path: '/api/invites', auth: 'director', body: InviteCreateRequest, response: InviteResponse },
+  inviteRevoke: { method: 'DELETE', path: '/api/invites/:id', auth: 'director', response: OkResponse },
+  officersList: { method: 'GET', path: '/api/officers', auth: 'officer', response: OfficersResponse },
+  officerDetail: { method: 'GET', path: '/api/officers/:id', auth: 'officer', response: OfficerResponse },
+  officerUpdate: { method: 'PATCH', path: '/api/officers/:id', auth: 'director', body: OfficerUpdateRequest, response: OfficerResponse },
+  profileGet: { method: 'GET', path: '/api/me/profile', auth: 'officer', response: ProfileResponse },
+  profilePut: { method: 'PUT', path: '/api/me/profile', auth: 'officer', body: ProfileUpsertRequest, response: ProfileResponse },
+  onboardingSave: { method: 'PUT', path: '/api/me/onboarding', auth: 'officer', body: OnboardingSaveRequest, response: OnboardingResponse },
+  onboardingComplete: { method: 'POST', path: '/api/me/onboarding/complete', auth: 'officer', response: OnboardingCompleteResponse },
+  onboardingCorrection: { method: 'POST', path: '/api/me/onboarding/correction', auth: 'officer', body: OnboardingCorrectionRequest, response: OnboardingCorrectionResponse },
+  calendarGet: { method: 'GET', path: '/api/me/calendar', auth: 'officer', response: CalendarSettings },
+  calendarPut: { method: 'PUT', path: '/api/me/calendar', auth: 'officer', body: CalendarModeRequest, response: CalendarSettings },
+  calendarTest: { method: 'POST', path: '/api/me/calendar/test', auth: 'officer', response: CalendarTestResponse },
+  googleConnect: { method: 'GET', path: '/api/me/calendar/google/connect', auth: 'officer', response: 'redirect' },
+  googleDisconnect: { method: 'DELETE', path: '/api/me/calendar/google', auth: 'officer', response: CalendarSettings },
+  googleCallback: { method: 'GET', path: '/auth/google/callback', auth: 'public', response: 'redirect' },
   designRequestsList: { method: 'GET', path: '/api/design-requests', auth: 'officer', response: DesignRequestsListResponse },
   designRequestCreate: { method: 'POST', path: '/api/design-requests', auth: 'officer', body: DesignRequestCreateRequest, response: DesignRequestResponse },
   designRequestDetail: { method: 'GET', path: '/api/design-requests/:id', auth: 'officer', response: DesignRequestResponse },

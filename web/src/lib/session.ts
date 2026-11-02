@@ -23,9 +23,14 @@ function applyRole(role: string | null) {
 
 export function loadMe(): Promise<CurrentUser> {
   mePromise ??= api('me')
-    .then(({ user }) => {
+    .then(({ user, onboarding }) => {
       current = user;
       applyRole(user.role);
+      // Invitees finish setup before anything else.
+      if (onboarding && location.pathname !== '/onboarding') {
+        location.replace('/onboarding');
+        return new Promise<CurrentUser>(() => {});
+      }
       return user;
     })
     .catch((err) => {

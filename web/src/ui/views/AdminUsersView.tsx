@@ -224,7 +224,7 @@ function UserList({
                       <RowMenu
                         label={`Actions for ${u.name}`}
                         items={
-                          (u.id === meId || (u.isOwner && !isOwner) || (u.role === 'leadership' && !canChangeRoles) || (u.active && u.role === 'director' && !canChangeRoles))
+                          (u.id === meId || (u.isOwner && !isOwner) || (u.role !== 'officer' && !canChangeRoles)) // directors deactivate officers only
                             ? []
                             : [
                                 u.active

@@ -20,7 +20,11 @@ func (c *Ctx) me() error {
 	if err != nil {
 		return err
 	}
-	writeJSON(c.W, 200, map[string]any{"user": currentUser(u)})
+	st, err := c.S.onboardingState(c.Context(), c.S.db.Read(), u.ID)
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"user": currentUser(u), "onboarding": st})
 	return nil
 }
 
@@ -35,6 +39,13 @@ func (c *Ctx) authLogin() error {
 	state, verifier := auth.RandomToken(32), auth.RandomToken(32)
 	for name, value := range map[string]string{oauthStateName: state, oauthVerifier: verifier, nextCookieName: auth.SafeNext(c.R.URL.Query().Get("next"))} {
 		c.S.setCookie(c.W, c.S.hostPrefixed(name), value, c.S.now().Add(10*60e9), 600)
+	}
+	// An invite link marks this sign-in as an invite acceptance, so a wrong Discord
+	// account gets the "invite unavailable" screen instead of "not allowlisted".
+	if t := c.R.URL.Query().Get("invite"); t != "" && len(t) <= 128 {
+		c.S.setCookie(c.W, c.S.hostPrefixed(inviteCookieName), auth.SHA256Hex(t), c.S.now().Add(10*60e9), 600)
+	} else {
+		c.S.clearCookie(c.W, c.S.hostPrefixed(inviteCookieName))
 	}
 	http.Redirect(c.W, c.R, d.AuthURL(state, verifier), http.StatusFound)
 	return nil
@@ -59,7 +70,9 @@ func (c *Ctx) authCallback() error {
 	code, state := q.Get("code"), q.Get("state")
 	storedState, verifier := c.cookie(c.S.hostPrefixed(oauthStateName)), c.cookie(c.S.hostPrefixed(oauthVerifier))
 	next := auth.SafeNext(c.cookie(c.S.hostPrefixed(nextCookieName)))
-	for _, n := range []string{oauthStateName, oauthVerifier, nextCookieName} {
+	inviteHash := c.cookie(c.S.hostPrefixed(inviteCookieName))
+	fromInvite := inviteHash != ""
+	for _, n := range []string{oauthStateName, oauthVerifier, nextCookieName, inviteCookieName} {
 		c.S.clearCookie(c.W, c.S.hostPrefixed(n))
 	}
 	if code == "" || state == "" || storedState == "" || verifier == "" || state != storedState {
@@ -89,6 +102,22 @@ func (c *Ctx) authCallback() error {
 			known = &auth.KnownUser{ID: existing.ID, Role: existing.Role, Active: existing.Active}
 		case !errors.Is(err, store.ErrNotFound):
 			return err
+		default:
+			// No account yet: a pending invite for this Discord ID creates one.
+			id, reason, err := c.S.acceptInvite(ctx, w, profile.ID, avatar, inviteHash)
+			if err != nil {
+				return err
+			}
+			if reason != "" {
+				denied = reason
+				return nil
+			}
+			if id != "" {
+				known = &auth.KnownUser{ID: id, Role: auth.RoleOfficer, Active: true}
+			} else if fromInvite {
+				denied = "invite_unavailable"
+				return nil
+			}
 		}
 		decision := auth.DecideLogin(known)
 		switch decision.Kind {
@@ -104,12 +133,20 @@ func (c *Ctx) authCallback() error {
 		c.S.log.Error("sign-in failed", "error", err)
 		return c.loginRedirect("discord")
 	}
+	if denied == "invite_unavailable" {
+		http.Redirect(c.W, c.R, "/onboarding?unavailable=1", http.StatusFound)
+		return nil
+	}
 	if denied != "" {
 		return c.loginRedirect(denied)
 	}
 	if err := c.S.createSession(ctx, c.W, userID, c.R.UserAgent()); err != nil {
 		c.S.log.Error("create session failed", "error", err)
 		return c.loginRedirect("discord")
+	}
+	// Invitees who haven't finished setup always resume onboarding.
+	if inv, err := c.S.db.Read().InviteForUser(ctx, userID); err == nil && inv.OnboardedAt == nil {
+		next = "/onboarding"
 	}
 	http.Redirect(c.W, c.R, next, http.StatusFound)
 	return nil

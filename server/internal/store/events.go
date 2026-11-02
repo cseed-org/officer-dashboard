@@ -194,8 +194,8 @@ func (q *Queries) DeleteEventCover(ctx context.Context, eventID string) (bool, e
 
 // Subteam is a subteams row.
 type Subteam struct {
-	ID   string
-	Name string
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // Subteams lists subteams by name.
@@ -205,7 +205,7 @@ func (q *Queries) Subteams(ctx context.Context) ([]Subteam, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Subteam
+	out := []Subteam{}
 	for rows.Next() {
 		var t Subteam
 		if err := rows.Scan(&t.ID, &t.Name); err != nil {

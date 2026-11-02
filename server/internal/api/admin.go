@@ -113,7 +113,10 @@ func (c *Ctx) adminUserUpdate() error {
 				return err
 			}
 		}
-		if before.Role == auth.RoleLeadership || (role.Set && role.V != before.Role) || (before.Role == auth.RoleDirector && active.Set && !active.V) {
+		// Directors may deactivate or reactivate officers; only leadership changes the
+		// active status of a director or leadership account (or edits leadership at all).
+		activeChange := active.Set && active.V != before.Active
+		if before.Role == auth.RoleLeadership || (role.Set && role.V != before.Role) || (activeChange && before.Role == auth.RoleDirector) {
 			if _, err := c.requireLeadershipIn(w); err != nil {
 				return err
 			}
