@@ -19,15 +19,26 @@ func (c *Ctx) prefsGet() error {
 	if err != nil {
 		return err
 	}
-	raw, err := c.S.db.Read().WidgetLayout(c.Context(), u.ID)
+	return c.writePrefs(u.ID)
+}
+func (c *Ctx) writePrefs(userID string) error {
+	q, ctx := c.S.db.Read(), c.Context()
+	raw, err := q.WidgetLayout(ctx, userID)
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(c.W, 200, map[string]any{"widgetLayout": defaultWidgets})
-		return nil
+		b, _ := json.Marshal(defaultWidgets)
+		raw = string(b)
+	} else if err != nil {
+		return err
 	}
+	pref, err := q.TimezonePref(ctx, userID)
 	if err != nil {
 		return err
 	}
-	writeJSON(c.W, 200, map[string]any{"widgetLayout": json.RawMessage(raw)})
+	zone, err := q.EffectiveTimezone(ctx, userID)
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"widgetLayout": json.RawMessage(raw), "timezoneMode": pref.Mode, "timezone": pref.Zone, "effectiveTimezone": zone.String()})
 	return nil
 }
 func (c *Ctx) prefsPut() error {
@@ -37,8 +48,11 @@ func (c *Ctx) prefsPut() error {
 	}
 	layout := []store.WidgetPlacement{}
 	seen := map[string]bool{}
+	var hasLayout bool
+	var mode, zone validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
-		r.Objects("widgetLayout", true, 50, func(_ int, sub *validate.Reader) {
+		hasLayout = r.Has("widgetLayout")
+		r.Objects("widgetLayout", false, 50, func(_ int, sub *validate.Reader) {
 			id := sub.Str("id", validate.S{Req: true, Min: 1, Max: 64}).V
 			size := sub.Str("size", validate.S{Req: true, Enum: []string{"S", "M", "L"}}).V
 			if seen[id] {
@@ -47,30 +61,65 @@ func (c *Ctx) prefsPut() error {
 			seen[id] = true
 			layout = append(layout, store.WidgetPlacement{ID: id, Size: size})
 		})
+		mode = r.Str("timezoneMode", validate.S{Enum: []string{"auto", "club", "manual"}})
+		zone = r.Str("timezone", validate.S{Max: 100})
+		if zone.Set && zone.V != "" && !validTimezone(zone.V) {
+			r.Issues.Add("timezone", "Choose an IANA time zone")
+		}
+		if mode.Set && mode.V == "manual" && (!zone.Set || zone.V == "") {
+			r.Issues.Add("timezone", "Choose a manual time zone")
+		}
+		if zone.Set && !mode.Set {
+			r.Issues.Add("timezoneMode", "Specify the time zone mode")
+		}
+		if !hasLayout && !mode.Set {
+			r.Issues.AddForm("No preferences supplied")
+		}
 	}); err != nil {
 		return err
 	}
-	raw, _ := json.Marshal(layout)
 	ctx := c.Context()
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
 		before, e := q.WidgetLayout(ctx, u.ID)
 		if e != nil && !errors.Is(e, store.ErrNotFound) {
 			return e
 		}
-		if e := q.SaveWidgetLayout(ctx, u.ID, string(raw), c.S.nowMs()); e != nil {
+		prior, e := q.TimezonePref(ctx, u.ID)
+		if e != nil {
 			return e
 		}
-		var prior any
-		if before != "" {
-			prior = json.RawMessage(before)
+		// A timezone-only update must retain the registry's default widget layout.
+		if hasLayout || before == "" {
+			widgets := layout
+			if !hasLayout {
+				widgets = defaultWidgets
+			}
+			raw, _ := json.Marshal(widgets)
+			if err := q.SaveWidgetLayout(ctx, u.ID, string(raw), c.S.nowMs()); err != nil {
+				return err
+			}
 		}
-		return c.audit(ctx, q, "prefs.updated", "user_prefs", u.ID, prior, layout)
+		after := prior
+		if mode.Set {
+			after = store.TimezonePref{Mode: mode.V, Zone: zone.V}
+			if err := q.SaveTimezonePref(ctx, u.ID, after, c.S.nowMs()); err != nil {
+				return err
+			}
+		}
+		saved, err := q.WidgetLayout(ctx, u.ID)
+		if err != nil {
+			return err
+		}
+		var priorLayout any
+		if before != "" {
+			priorLayout = json.RawMessage(before)
+		}
+		return c.audit(ctx, q, "prefs.updated", "user_prefs", u.ID, map[string]any{"widgetLayout": priorLayout, "timezone": prior}, map[string]any{"widgetLayout": json.RawMessage(saved), "timezone": after})
 	})
 	if err != nil {
 		return err
 	}
-	writeJSON(c.W, 200, map[string]any{"widgetLayout": layout})
-	return nil
+	return c.writePrefs(u.ID)
 }
 func (c *Ctx) calendarEmailsList() error {
 	u, err := c.officer()

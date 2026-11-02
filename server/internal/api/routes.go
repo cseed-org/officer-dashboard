@@ -13,6 +13,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("GET /api/cloudflare/widgets", (*Ctx).cloudflareWidgets)
 	h("GET /api/health", (*Ctx).health)
 	h("GET /api/me", (*Ctx).me)
+	h("GET /api/club/settings", (*Ctx).clubSettingsGet)
+	h("PUT /api/club/settings", (*Ctx).clubSettingsPut)
 	h("GET /api/me/prefs", (*Ctx).prefsGet)
 	h("PUT /api/me/prefs", (*Ctx).prefsPut)
 	h("GET /api/me/calendar-emails", (*Ctx).calendarEmailsList)
