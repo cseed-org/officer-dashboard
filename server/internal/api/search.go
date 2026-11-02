@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"officerdashboard/internal/auth"
@@ -55,6 +56,8 @@ func (c *Ctx) search() error {
 		hits = hits[:limit]
 	}
 	out := make([]searchResult, 0, len(hits))
+	// One zone lookup per request, only when an event is in the results.
+	zone := sync.OnceValue(func() *time.Location { return c.S.effectiveZone(c.Context(), c.User.ID) })
 	for _, h := range hits {
 		r := searchResult{Kind: h.Kind, ID: h.ID}
 		switch h.Kind {
@@ -63,7 +66,7 @@ func (c *Ctx) search() error {
 			r.Subtitle = joinNonEmpty(" · ", h.A, h.B, h.C)
 		case "event":
 			r.Title, r.Href = h.Primary, "/events?id="+h.ID
-			r.Subtitle = joinNonEmpty(" · ", eventDay(h.A, c.S.effectiveZone(c.Context(), c.User.ID)), h.B)
+			r.Subtitle = joinNonEmpty(" · ", eventDay(h.A, zone()), h.B)
 		case "request":
 			r.Title, r.Href = h.Primary, "/finance?id="+h.ID
 			r.Subtitle = joinNonEmpty(" · ", h.A, h.B, h.C)
