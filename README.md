@@ -28,7 +28,7 @@ V0.3 uses Discord sign-in with leadership, director, and officer roles, plus exp
 
 | Page | What you can do |
 | --- | --- |
-| Home | Arrange widgets; see club activity and Cloudflare analytics connection states. |
+| Home | A grid of blocks: drag, resize (1×1 up to 4×2) and add widgets; see club activity and Cloudflare analytics connection states. |
 | Officers / onboarding | Invite via Discord DM, complete profiles, manage subteams, choose calendar delivery. |
 | Members | Search the local D1 mirror, edit member records, export CSV, and sync. |
 | Events | Plan events, generate a Luma handoff kit, import registrations/check-ins and reflections, track metrics. |
@@ -47,8 +47,8 @@ V0.3 uses Discord sign-in with leadership, director, and officer roles, plus exp
 Existing V0.3 design captures; GitHub chooses the light or dark version to match your theme.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/home-v03-1440-dark.png">
-  <img src="web/design/shots/home-v03-1440-light.png" alt="Home dashboard with customizable widgets" width="100%">
+  <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/v04/home-grid-1440-dark.png">
+  <img src="web/design/shots/v04/home-grid-1440-light.png" alt="Home dashboard as a grid of widget blocks" width="100%">
 </picture>
 
 <details>
