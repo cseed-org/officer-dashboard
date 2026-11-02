@@ -11,8 +11,8 @@ import { Icon } from '../components/Icon';
 type Kind = SearchResult['kind'] | 'page';
 type Item = { kind: Kind; id: string; title: string; subtitle: string; href: string };
 
-const GROUP_LABEL: Record<Kind, string> = { page: 'go to', request: 'requests', event: 'events', user: 'people', account: 'accounts' };
-const GROUP_ORDER: Kind[] = ['request', 'event', 'user', 'account', 'page'];
+const GROUP_LABEL: Record<Kind, string> = { page: 'go to', request: 'requests', event: 'events', user: 'people', account: 'accounts', contact: 'contacts' };
+const GROUP_ORDER: Kind[] = ['request', 'event', 'user', 'account', 'contact', 'page'];
 
 const pages = (director: boolean): Item[] => [
   { kind: 'page', id: 'new-request', title: 'New purchase request', subtitle: 'finance', href: href.newRequest() },

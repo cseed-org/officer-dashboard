@@ -21,7 +21,7 @@ type searchResult struct {
 	Href     string `json:"href"`
 }
 
-var kindOrder = map[string]int{"event": 0, "request": 1, "user": 2, "account": 3}
+var kindOrder = map[string]int{"event": 0, "request": 1, "user": 2, "account": 3, "contact": 4}
 
 // search is the sidebar search: GET /api/search?q=&limit=. Everyone signed in finds events
 // and purchase requests; users and chart-of-accounts rows appear only for directors.
@@ -59,6 +59,9 @@ func (c *Ctx) search() error {
 	for _, h := range hits {
 		r := searchResult{Kind: h.Kind, ID: h.ID}
 		switch h.Kind {
+		case "contact":
+			r.Title, r.Href = h.Primary, "/speakers?id="+h.ID
+			r.Subtitle = joinNonEmpty(" · ", h.A, h.B, h.C)
 		case "event":
 			r.Title, r.Href = h.Primary, "/events?id="+h.ID
 			r.Subtitle = joinNonEmpty(" · ", eventDay(h.A), h.B)

@@ -1,6 +1,8 @@
 ---
 import AppLayout from '../layouts/AppLayout.astro';
+import SpeakersPage from '../ui/pages/SpeakersPage';
+import '../styles/speakers.css';
 ---
 <AppLayout title="Speakers & Mentors" page="speakers">
-  <section class="block"><header class="block-head"><h2>Speakers & Mentors</h2></header><div class="block-body"><p>This workspace is coming soon.</p></div></section>
+  <SpeakersPage client:load />
 </AppLayout>
