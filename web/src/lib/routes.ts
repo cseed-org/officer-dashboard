@@ -22,6 +22,10 @@ export const href = {
   events: (o: { when?: 'upcoming' | 'past'; q?: string } = {}) => `/events${qs(o)}`,
   event: (id: string) => `/events?id=${enc(id)}`,
   eventImport: (eventId?: string) => `/events${qs({ import: 1, id: eventId })}`,
+  eventNew: () => '/events?new=1',
+  eventEdit: (id: string) => `/events?edit=${enc(id)}`,
+  eventKit: (id: string) => `/events?kit=${enc(id)}`,
+  eventDelete: (id: string) => `/events?delete=${enc(id)}`,
 
   finance: (tab?: FinanceTab, extra: Record<string, string | number | null | undefined> = {}) => `/finance${qs({ tab: tab === 'requests' ? null : tab, ...extra })}`,
   requests: (o: { scope?: 'mine' | 'all'; status?: string } = {}) => `/finance${qs(o)}`,

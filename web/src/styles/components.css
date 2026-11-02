@@ -600,3 +600,6 @@ td.people-who-cell {min-width:0;}
   .dt--people .people-who {width:100%;}
   .dt--people .role-toggle {max-width:100%;flex-wrap:wrap;}
 }
+
+/* Placeholder text meets 4.5:1 in both themes (the browser default measured 3.61:1 on the dark surface). */
+.input::placeholder, .textarea::placeholder {color:var(--muted);opacity:1;}
