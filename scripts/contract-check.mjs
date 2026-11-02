@@ -383,6 +383,31 @@ await call('inviteCreate', { who: directorA, body: { name:'New officer',discordI
 await call('adminUserUpdate', { who: directorA, params:{id:'user-priya'}, body:{role:'leadership'}, expect:403 });
 await call('adminUserUpdate', { who: leadership, params:{id:createdB.json.user.id}, body:{role:'leadership'} });
 
+// Design requests: board, designer flow, requester-only approval, files, prefill from an event.
+const designer = sessionFor('user-riley');
+const designBoard = await call('designRequestsList', { who: officer });
+must(designBoard.json.designers.some((d) => d.id === 'user-riley'), 'the seeded designer is on the board', designBoard.json.designers);
+const designDraft = await call('designRequestDraftFromEvent', { who: officer, params: { id: eventId } });
+const dr = await call('designRequestCreate', { who: officer, body: { title: 'Contract check poster', type: 'poster', formats: 'A3 PDF', dueDate: '2026-12-01', urgency: 'high', brief: 'Exercise the board', references: 'Fall template', eventId, program: null } });
+const drId = dr.json.request.id;
+await call('designRequestDetail', { who: designer, params: { id: drId } });
+await call('designRequestUpdate', { who: officer, params: { id: drId }, body: { title: 'Contract check poster v2', program: 'Officer program' } });
+await call('designRequestMove', { who: officer, params: { id: drId }, body: { stage: 'accepted' }, expect: 403 });
+await call('designRequestAssign', { who: designer, params: { id: drId }, body: { assigneeId: 'user-riley' } });
+await call('designRequestMove', { who: designer, params: { id: drId }, body: { stage: 'in-review' } });
+await call('designRequestComment', { who: designer, params: { id: drId }, body: { body: 'Ready for your review.' } });
+const designFile = new FormData();
+designFile.set('kind', 'review');
+designFile.set('file', new Blob(['%PDF-1.4\n% design proof\n'], { type: 'application/pdf' }), 'proof.pdf');
+const uploaded = await call('designRequestUpload', { who: designer, params: { id: drId }, form: designFile });
+await call('designFileDownload', { who: officer, params: { id: uploaded.json.request.files[0].id } });
+await call('designRequestApprove', { who: directorA, params: { id: drId }, expect: 403 });
+const deliveredReq = await call('designRequestApprove', { who: officer, params: { id: drId } });
+must(deliveredReq.json.request.stage === 'delivered', 'requester approval delivers', deliveredReq.json.request.stage);
+const fromEvent = await call('designRequestCreateFromEvent', { who: officer, params: { id: eventId }, body: { type: 'social' } });
+must(fromEvent.json.request.event?.id === eventId && fromEvent.json.request.title === designDraft.json.draft.title, 'event prefill creates a linked request');
+await call('designRequestDelete', { who: officer, params: { id: fromEvent.json.request.id } });
+
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev']); // redirects: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);

@@ -1,0 +1,85 @@
+/* Design requests page: the Kanban and brand empty-state rules from web/design/v03.css
+   (spec.md § "V0.3 additions"), with only the tokens they need. Imported by the Design page
+   alone. When v03.css moves into tokens.css/components.css wholesale, drop the duplicates here. */
+
+@font-face {font-family:'Playfair Display';src:url('/fonts/playfair-display.woff2') format('woff2');font-weight:400 900;font-style:normal;font-display:swap;}
+
+:root {
+  --font-display: 'Playfair Display', ui-serif, Georgia, 'Times New Roman', serif;
+  --paper: #e4e3e1;
+  --paper-raised: #f4f4f4;
+  --brand-ink: #141414;
+  --brand-ink-soft: #3d3d3d;
+  --brand-control: #76756f;
+  --overlay-shadow: 0 18px 40px -18px rgb(0 0 0 / .22), 0 2px 6px rgb(0 0 0 / .06);
+}
+:root[data-theme="dark"] {
+  --paper: #1a1916; --paper-raised: #24231f; --brand-ink: #f1efe8; --brand-ink-soft: #c4c1b8; --brand-control: #87847c;
+  --overlay-shadow: 0 18px 40px -16px rgb(0 0 0 / .6), 0 2px 6px rgb(0 0 0 / .3);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --paper: #1a1916; --paper-raised: #24231f; --brand-ink: #f1efe8; --brand-ink-soft: #c4c1b8; --brand-control: #87847c;
+    --overlay-shadow: 0 18px 40px -16px rgb(0 0 0 / .6), 0 2px 6px rgb(0 0 0 / .3);
+  }
+}
+
+/* ───────────── Kanban (design requests): calm, dense, readable ───────────── */
+.kanban {display:grid;grid-auto-flow:column;grid-auto-columns:minmax(200px, 1fr);gap:12px;overflow-x:auto;padding-bottom:4px;align-items:start;}
+.kanban:focus-visible {outline:2px solid var(--focus, var(--c-blue));outline-offset:4px;}
+.kanban-col {display:grid;gap:8px;align-content:start;min-width:0;padding:10px;border-radius:var(--radius-card);background:var(--sunken);border:1px solid var(--line);transition:border-color var(--dur-1) ease;}
+.kanban-col.is-over {border-color:var(--control);}
+.kanban-col-head {display:flex;align-items:center;gap:8px;padding:2px 4px 4px;min-height:32px;}
+.kanban-col-head::before {content:'';flex:none;width:8px;height:8px;border-radius:50%;background:var(--hue, var(--control));}
+.kanban-col-name {flex:1;margin:0;font-size:13px;font-weight:600;}
+.kanban-count {font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.kanban-list {list-style:none;margin:0;padding:0;display:grid;gap:8px;min-height:48px;}
+.kanban-card {display:grid;gap:8px;padding:12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;transition:border-color var(--dur-1) ease, box-shadow var(--dur-1) ease, transform var(--dur-1) var(--ease-out);}
+.kanban-card[draggable="true"] {cursor:grab;}
+.kanban-card:hover {border-color:var(--control);}
+.kanban-card-title {margin:0;font-size:13px;font-weight:500;line-height:1.35;overflow-wrap:anywhere;}
+.kanban-card-title a {color:inherit;}
+.kanban-card-title a:hover {text-decoration:underline;}
+.kanban-card-meta {display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12px;color:var(--muted);}
+.kanban-card-sub {margin:0;font-size:12px;color:var(--muted);overflow-wrap:anywhere;}
+.kanban-tag {display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text);}
+.kanban-tag::before {content:'';width:6px;height:6px;border-radius:2px;background:var(--hue, var(--control));}
+.kanban-tag[data-hue="blue"] {--hue:var(--c-blue);}
+.kanban-tag[data-hue="violet"] {--hue:var(--c-violet);}
+.kanban-tag[data-hue="amber"] {--hue:var(--c-amber);}
+.kanban-tag[data-hue="teal"] {--hue:var(--c-teal);}
+.kanban-tag[data-hue="coral"] {--hue:var(--c-coral);}
+.kanban-tag[data-hue="green"] {--hue:var(--c-green);}
+.kanban-due.is-soon {color:var(--attention);}
+.kanban-due.is-overdue {color:var(--negative);font-weight:500;}
+.kanban-link {font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.kanban-card-foot {display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;}
+.kanban-people {display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);min-width:0;}
+.kanban-people .avatar {box-shadow:0 0 0 2px var(--surface);}
+.kanban-unassigned {font-size:12px;color:var(--muted);}
+.kanban-card.is-dragging {cursor:grabbing;transform:rotate(-1.5deg) scale(1.02);box-shadow:var(--overlay-shadow);border-color:var(--control);}
+.kanban-drop {height:64px;border:2px dashed var(--control);border-radius:10px;background:color-mix(in srgb, var(--c-blue) 6%, transparent);}
+.kanban-empty {margin:0;padding:16px 8px;border:1px dashed var(--line);border-radius:10px;text-align:center;font-size:12px;color:var(--muted);}
+.kanban-col[data-stage="new"] {--hue:var(--control);}
+.kanban-col[data-stage="accepted"] {--hue:var(--c-blue);}
+.kanban-col[data-stage="in-progress"] {--hue:var(--c-amber);}
+.kanban-col[data-stage="in-review"] {--hue:var(--c-violet);}
+.kanban-col[data-stage="delivered"] {--hue:var(--c-green);}
+@media (max-width: 639px) {
+  .kanban {grid-auto-columns:84%;scroll-snap-type:x mandatory;scroll-padding:0 16px;margin:0 -16px;padding:0 16px 8px;}
+  .kanban-col {scroll-snap-align:start;}
+  .kanban-card {padding:14px;}
+  .kanban-card .row-menu-btn {width:44px;height:44px;}
+}
+
+/* Detail drawer */
+.design-prose {margin:0;white-space:pre-wrap;overflow-wrap:anywhere;}
+.design-actions {display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.design-worker {display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--sunken);}
+.design-upload {display:flex;flex-wrap:wrap;gap:8px;align-items:end;}
+.design-upload .field {flex:1 1 180px;}
+
+/* ───────────── Brand empty state (first-run only) ───────────── */
+.state--brand {padding:40px 24px;border:0;border-radius:var(--radius-card);background:var(--paper);color:var(--brand-ink);gap:12px;}
+.state--brand .state-title {font-family:var(--font-display);font-weight:400;font-size:24px;letter-spacing:-.01em;}
+.state--brand .state-body {color:var(--brand-ink-soft);}

@@ -1,6 +1,9 @@
 ---
 import AppLayout from '../layouts/AppLayout.astro';
+import DesignPage from '../ui/pages/DesignPage';
+import '../styles/design-requests.css';
 ---
-<AppLayout title="Design Requests" page="design">
-  <section class="block"><header class="block-head"><h2>Design Requests</h2></header><div class="block-body"><p>This workspace is coming soon.</p></div></section>
+
+<AppLayout title="Design requests" page="design">
+  <DesignPage client:load />
 </AppLayout>
