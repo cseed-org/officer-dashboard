@@ -34,7 +34,7 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 					return nil
 				}
 				var err error
-				userID, reason, err = c.S.acceptInvite(ctx, w, id, nil)
+				userID, reason, err = c.S.acceptInvite(ctx, w, id, nil, "")
 				if err == nil && userID == "" && reason == "" {
 					reason = "not_allowlisted"
 				}

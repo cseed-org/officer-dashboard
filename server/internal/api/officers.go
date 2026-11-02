@@ -220,7 +220,15 @@ func (c *Ctx) officerUpdate() error {
 		if err != nil {
 			return err
 		}
-		return c.audit(ctx, q, "officer.updated", "user", before.ID, before, out)
+		// Only the editable fields: the full DTO carries phone, which stays out of the log.
+		snap := func(o *OfficerDTO) map[string]any {
+			var team *string
+			if o.Subteam != nil {
+				team = &o.Subteam.ID
+			}
+			return map[string]any{"subteamId": team, "title": o.Title}
+		}
+		return c.audit(ctx, q, "officer.updated", "user", before.ID, snap(before), snap(out))
 	})
 	if err != nil {
 		return err
@@ -383,11 +391,13 @@ func (c *Ctx) profilePut() error {
 	p.UserID = u.ID
 	ctx := c.Context()
 	var resp map[string]any
+	created := false
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
 		before, err := q.ProfileByUser(ctx, u.ID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
+		created = before == nil
 		switch {
 		case before != nil:
 			if subteam.Set && subteam.V != before.SubteamID {
@@ -441,6 +451,9 @@ func (c *Ctx) profilePut() error {
 	})
 	if err != nil {
 		return err
+	}
+	if created {
+		c.S.backfillCalendar(u.ID) // they just became a calendar recipient
 	}
 	writeJSON(c.W, 200, resp)
 	return nil
@@ -573,6 +586,7 @@ func (c *Ctx) onboardingComplete() error {
 	if err != nil {
 		return err
 	}
+	c.S.backfillCalendar(u.ID)
 	writeJSON(c.W, 200, map[string]any{"user": currentUser(u), "onboarding": nil})
 	return nil
 }
@@ -595,6 +609,17 @@ func (c *Ctx) onboardingCorrection() error {
 	if err != nil {
 		return err
 	}
+	// The bot DMs a real person: at most one correction a minute and five per invite.
+	total, recent, err := q.AuditCountSince(ctx, "onboarding.correction", inv.ID, c.S.nowMs()-60_000)
+	if err != nil {
+		return err
+	}
+	if total >= 5 {
+		return conflict("You've sent five corrections already. Message your inviter on Discord directly.")
+	}
+	if recent > 0 {
+		return conflict("Give your inviter a minute before sending another correction.")
+	}
 	inviter, err := q.UserByID(ctx, inv.InvitedBy)
 	if err != nil {
 		return notFoundErr("Your inviter's account is gone. Ask leadership on Discord.")
@@ -615,8 +640,9 @@ func (c *Ctx) onboardingCorrection() error {
 			dm = DMResult{Status: "sent", SentAt: &at}
 		}
 	}
-	err = c.S.db.Write(context.WithoutCancel(ctx), func(w *store.Queries) error {
-		return c.audit(ctx, w, "onboarding.correction", "invite", inv.ID, nil, map[string]any{"message": message, "dm": dm.Status})
+	wctx := context.WithoutCancel(ctx)
+	err = c.S.db.Write(wctx, func(w *store.Queries) error {
+		return c.audit(wctx, w, "onboarding.correction", "invite", inv.ID, nil, map[string]any{"message": message, "dm": dm.Status})
 	})
 	if err != nil {
 		return err

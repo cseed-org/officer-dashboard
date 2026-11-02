@@ -290,7 +290,10 @@ func (c *Ctx) inviteRevoke() error {
 
 // acceptInvite runs inside the sign-in transaction for a Discord account with no user
 // row. It creates the officer from their pending invite. reason is a /login error code.
-func (s *Server) acceptInvite(ctx context.Context, q *store.Queries, discordID string, avatar *string) (userID, reason string, err error) {
+// tokenHash is the sha256 of the link's token when the sign-in started from an invite
+// link: an old link (replaced by a re-invite) no longer works, though signing in
+// directly with the invited Discord account still does.
+func (s *Server) acceptInvite(ctx context.Context, q *store.Queries, discordID string, avatar *string, tokenHash string) (userID, reason string, err error) {
 	inv, err := q.PendingInviteByDiscordID(ctx, discordID)
 	if errors.Is(err, store.ErrNotFound) {
 		return "", "", nil
@@ -300,6 +303,9 @@ func (s *Server) acceptInvite(ctx context.Context, q *store.Queries, discordID s
 	}
 	now := s.nowMs()
 	if inv.ExpiresAt != nil && *inv.ExpiresAt <= now {
+		return "", "invite_unavailable", nil
+	}
+	if tokenHash != "" && tokenHash != inv.TokenHash {
 		return "", "invite_unavailable", nil
 	}
 	id := auth.UUID()

@@ -267,7 +267,12 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		log.Info("shutting down")
 		shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		return httpSrv.Shutdown(shutdown)
+		err := httpSrv.Shutdown(shutdown)
+		// Let queued calendar deliveries finish (and record themselves), within reason.
+		if !srv.WaitBackgroundFor(20 * time.Second) {
+			log.Warn("calendar deliveries still running at shutdown; the next event change resends them")
+		}
+		return err
 	}
 	return nil
 }

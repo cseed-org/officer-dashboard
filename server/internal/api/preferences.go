@@ -104,6 +104,7 @@ func (c *Ctx) calendarEmailMutate(create, remove bool) error {
 	}
 	ctx := c.Context()
 	var out store.CalendarEmail
+	wasActive := false
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
 		emails, err := q.CalendarEmails(ctx, u.ID)
 		if err != nil {
@@ -126,6 +127,7 @@ func (c *Ctx) calendarEmailMutate(create, remove bool) error {
 			if before == nil {
 				return notFoundErr("Calendar email not found")
 			}
+			wasActive = before.Active
 		}
 		if email.Set {
 			out.Email = strings.ToLower(email.V)
@@ -180,6 +182,10 @@ func (c *Ctx) calendarEmailMutate(create, remove bool) error {
 	})
 	if err != nil {
 		return err
+	}
+	// A new active address should receive the upcoming events it hasn't had yet.
+	if (remove && wasActive) || out.Active {
+		c.S.backfillCalendar(u.ID)
 	}
 	if remove {
 		writeJSON(c.W, 200, map[string]any{"ok": true})

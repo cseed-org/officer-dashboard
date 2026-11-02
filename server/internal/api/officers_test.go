@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/notify"
@@ -227,17 +228,36 @@ func TestICSDeliveryOnEventCreateAndUpdate(t *testing.T) {
 		t.Fatalf("settings %s", st.Raw)
 	}
 	e.mustOK(e.post("/api/me/calendar-emails", map[string]any{"email": "priya.cal@example.org"}, e.officer()))
+	e.srv.WaitBackground()
+	// Choosing an address backfills the upcoming events they haven't received.
+	backfilled := len(m.all())
+	if backfilled == 0 {
+		t.Fatal("no backfill to the new calendar email")
+	}
 	ev := e.mustOK(e.post("/api/events", map[string]any{"name": "Hack, Night; 2", "startsAt": "2026-11-20T18:00:00-08:00", "location": "Room 101"}, e.officer()))
 	e.srv.WaitBackground()
-	msgs := m.all()
+	msgs := m.all()[backfilled:]
 	if len(msgs) != 1 || msgs[0].To != "priya.cal@example.org" || !strings.Contains(msgs[0].ICS, `SUMMARY:Hack\, Night\; 2`) || !strings.Contains(msgs[0].ICS, "SEQUENCE:0") || !strings.Contains(msgs[0].ICS, "DTSTART:20261121T020000Z") {
 		t.Fatalf("mail %+v", msgs)
 	}
 	e.mustOK(e.do("PATCH", "/api/events/"+ev.str("event", "id"), map[string]any{"location": "Room 202"}, e.officer()))
 	e.srv.WaitBackground()
-	msgs = m.all()
+	msgs = m.all()[backfilled:]
 	if len(msgs) != 2 || !strings.Contains(msgs[1].ICS, "SEQUENCE:1") || !strings.HasPrefix(msgs[1].Subject, "Updated") {
 		t.Fatalf("update mail %+v", msgs[1:])
+	}
+	// Saving the same content again sends nothing; switching mode and back resends nothing.
+	e.mustOK(e.do("PATCH", "/api/events/"+ev.str("event", "id"), map[string]any{"location": "Room 202"}, e.officer()))
+	e.srv.WaitBackground()
+	if n := len(m.all()) - backfilled; n != 2 {
+		t.Fatalf("unchanged event resent: %d mails", n)
+	}
+	// A new active address gets the events it hasn't had.
+	e.mustOK(e.post("/api/me/calendar-emails", map[string]any{"email": "priya.other@example.org", "active": true}, e.officer()))
+	e.srv.WaitBackground()
+	last := m.all()[len(m.all())-1]
+	if last.To != "priya.other@example.org" {
+		t.Fatalf("no backfill to the new address: %+v", last.To)
 	}
 	test := e.mustOK(e.post("/api/me/calendar/test", nil, e.officer()))
 	if test.str("status") != "sent" {
@@ -337,3 +357,35 @@ func TestGoogleOAuthConnectSyncAndDisconnect(t *testing.T) {
 }
 
 func b64(s string) string { return base64.RawURLEncoding.EncodeToString([]byte(s)) }
+
+func TestReissuedInviteLinkReplacesTheOldOneAndCorrectionsAreRateLimited(t *testing.T) {
+	dm := &fakeDM{}
+	e := discordEnv(t, `{"id":"`+inviteeID+`","username":"alex","global_name":"Alex"}`, nil)
+	e.cfg.DM = dm
+	e.srv = New(e.cfg)
+	e.h = e.srv.Handler()
+	old := e.mustOK(e.post("/api/invites", inviteBody("link"), e.director())).str("token")
+	fresh := e.mustOK(e.post("/api/invites", inviteBody("link"), e.director())).str("token")
+	if cb := signInAsInvitee(t, e, "invite="+old); cb.Header.Get("Location") != "/onboarding?unavailable=1" {
+		t.Fatalf("old link → %s", cb.Header.Get("Location"))
+	}
+	if e.scalar(`SELECT count(*) FROM users WHERE discord_id=?`, inviteeID) != int64(0) {
+		t.Fatal("old link created an account")
+	}
+	cb := signInAsInvitee(t, e, "invite="+fresh)
+	if cb.Header.Get("Location") != "/onboarding" {
+		t.Fatalf("new link → %s", cb.Header.Get("Location"))
+	}
+	alex := actor{cookie: cookieNamed(setCookies(cb), e.srv.sessionCookieName())}
+	e.mustOK(e.post("/api/me/onboarding/correction", map[string]any{"message": "typo in my name"}, alex))
+	expectStatus(t, "second within a minute", e.post("/api/me/onboarding/correction", map[string]any{"message": "again"}, alex), 409)
+	for i := 0; i < 4; i++ {
+		e.clock = e.clock.Add(2 * time.Minute)
+		e.mustOK(e.post("/api/me/onboarding/correction", map[string]any{"message": "more"}, alex))
+	}
+	e.clock = e.clock.Add(2 * time.Minute)
+	expectStatus(t, "sixth", e.post("/api/me/onboarding/correction", map[string]any{"message": "too many"}, alex), 409)
+	if len(dm.sent) != 5 {
+		t.Fatalf("DMs %d", len(dm.sent))
+	}
+}

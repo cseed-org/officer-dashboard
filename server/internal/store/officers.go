@@ -144,14 +144,15 @@ type Delivery struct {
 	Sequence      int
 	Status        string
 	Error         *string
+	ContentHash   *string
 	UpdatedAt     int64
 }
 
 func (q *Queries) DeliveryFor(ctx context.Context, eventID, userID string) (*Delivery, error) {
 	var d Delivery
 	var at Ms
-	err := q.q.QueryRowContext(ctx, `SELECT event_id,user_id,mode,recipient,google_event_id,sequence,status,error,updated_at FROM calendar_deliveries WHERE event_id=? AND user_id=?`, eventID, userID).
-		Scan(&d.EventID, &d.UserID, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.Error, &at)
+	err := q.q.QueryRowContext(ctx, `SELECT event_id,user_id,mode,recipient,google_event_id,sequence,status,error,content_hash,updated_at FROM calendar_deliveries WHERE event_id=? AND user_id=?`, eventID, userID).
+		Scan(&d.EventID, &d.UserID, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.Error, &d.ContentHash, &at)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -160,10 +161,10 @@ func (q *Queries) DeliveryFor(ctx context.Context, eventID, userID string) (*Del
 }
 
 func (q *Queries) SaveDelivery(ctx context.Context, d Delivery) error {
-	return q.Exec(ctx, `INSERT INTO calendar_deliveries(event_id,user_id,mode,recipient,google_event_id,sequence,status,error,updated_at) VALUES(?,?,?,?,?,?,?,?,?)
+	return q.Exec(ctx, `INSERT INTO calendar_deliveries(event_id,user_id,mode,recipient,google_event_id,sequence,status,error,content_hash,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(event_id,user_id) DO UPDATE SET mode=excluded.mode,recipient=excluded.recipient,google_event_id=excluded.google_event_id,
-		sequence=excluded.sequence,status=excluded.status,error=excluded.error,updated_at=excluded.updated_at`,
-		d.EventID, d.UserID, d.Mode, d.Recipient, d.GoogleEventID, d.Sequence, d.Status, d.Error, d.UpdatedAt)
+		sequence=excluded.sequence,status=excluded.status,error=excluded.error,content_hash=excluded.content_hash,updated_at=excluded.updated_at`,
+		d.EventID, d.UserID, d.Mode, d.Recipient, d.GoogleEventID, d.Sequence, d.Status, d.Error, d.ContentHash, d.UpdatedAt)
 }
 
 // ─── Google tokens ───

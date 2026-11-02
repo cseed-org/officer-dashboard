@@ -307,7 +307,9 @@ unexpired invite creates an active officer named as invited, marks the invite ac
 audits `user.created` and `invite.accepted` as the new user, and redirects to
 `/onboarding`. Without an invite the usual `not_allowlisted` applies; when the sign-in
 started from an invite link (or the invite expired), it redirects to
-`/onboarding?unavailable=1` without revealing any invite details. Until onboarding is
+`/onboarding?unavailable=1` without revealing any invite details. A sign-in started from
+an invite link must carry the invite's current token: a re-invite makes older links show
+"invitation unavailable", while signing in directly with the invited account still works. Until onboarding is
 complete, every sign-in lands on `/onboarding`.
 
 **Onboarding** is for invitees only. `/api/me` carries `onboarding` (step to resume,
@@ -315,7 +317,8 @@ invited name and subteam, inviter, `hasProfile`, `correctionsByDm`) or `null`. P
 `/api/me/onboarding {step}` saves where to resume ("Finish later"). POST
 `/api/me/onboarding/correction {message}` DMs the inviter that the pre-filled name or
 subteam is wrong; without a bot it returns `not_configured` plus the inviter's Discord
-ID so the client can open a DM. POST `/api/me/onboarding/complete` requires a saved
+ID so the client can open a DM. Corrections are limited to one a minute and five per
+invite (409). POST `/api/me/onboarding/complete` requires a saved
 profile (409 otherwise) and is idempotent; non-invitees get 409.
 
 **Profiles.** PUT `/api/me/profile` replaces the caller's profile. Required: `phone`
@@ -345,10 +348,17 @@ user requires leadership. Role and active status stay on PATCH `/api/admin/users
   mode to google and returns to `next` with `?google=connected|cancelled|failed`.
   Needs `GOOGLE_OAUTH_CLIENT_ID`/`_SECRET`, redirect URI `APP_URL/auth/google/callback`.
   DELETE disconnects, revokes the grant and falls back to ics.
+  The sealing key is derived from the client secret: rotating `GOOGLE_OAUTH_CLIENT_SECRET`
+  makes stored tokens unreadable, so every officer has to reconnect Google.
 - Without configuration, `ics.configured`/`google.configured` are false and the UI shows
   "not configured"; choosing google then is 409.
-- Event create/update sends to every active officer with a profile, in the background.
-  Changing mode or connecting Google backfills upcoming events. Deliveries are recorded
-  in `calendar_deliveries` so updates replace (not duplicate) the entry. Event deletion
+- Event create/update (including CSV import and Luma ingest) sends to every active officer
+  with a profile, on one background worker in FIFO order; each job re-reads the event, so
+  the newest content wins. Each recipient has its own 45s timeout. Upcoming events are
+  backfilled when an officer saves their first profile, finishes onboarding, changes
+  their active calendar email or delivery mode, or connects Google. `calendar_deliveries`
+  records what each officer last received (a content fingerprint), so unchanged events
+  are never resent and updates replace rather than duplicate (the Google event id is kept
+  across mode switches). Shutdown waits up to 20s for queued deliveries. Event deletion
   (events Pane) should call `Server.SyncEventToCalendars(event, true)` to send a cancel.
 - POST `/api/me/calendar/test` sends a sample invite synchronously and reports the result.

@@ -562,6 +562,9 @@ func (c *Ctx) eventsImport() error {
 	if err != nil && !errors.Is(err, errRollback) {
 		return err
 	}
+	if err == nil && result.EventID != "" {
+		c.S.syncEventID(result.EventID) // a new event from the CSV reaches calendars too
+	}
 	writeJSON(c.W, 200, result)
 	return nil
 }
@@ -676,6 +679,7 @@ func (c *Ctx) ingestLuma() error {
 	if err != nil {
 		return err
 	}
+	c.S.syncEventID(result.EventID) // unchanged events are skipped per recipient
 	writeJSON(c.W, 200, result)
 	return nil
 }

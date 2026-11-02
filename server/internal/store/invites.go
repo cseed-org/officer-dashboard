@@ -152,3 +152,10 @@ func (q *Queries) Subteams(ctx context.Context) ([]Subteam, error) {
 	}
 	return out, rows.Err()
 }
+
+// AuditCountSince counts an entity's audit rows for one action: all of them, and those
+// at or after since (ms). Used to rate-limit actions that reach other people.
+func (q *Queries) AuditCountSince(ctx context.Context, action, entityID string, since int64) (total, recent int, err error) {
+	err = q.q.QueryRowContext(ctx, `SELECT count(*), coalesce(sum(created_at >= ?),0) FROM audit_log WHERE action=? AND entity_id=?`, since, action, entityID).Scan(&total, &recent)
+	return
+}

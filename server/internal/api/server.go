@@ -52,9 +52,11 @@ type Server struct {
 	secure bool
 	host   string // APP_URL host, for the Origin check
 
-	sealer *calendar.Sealer
-	bg     sync.WaitGroup // background calendar deliveries
-	calMu  sync.Mutex     // serialises deliveries so SEQUENCE numbers stay ordered
+	sealer     *calendar.Sealer
+	bg         sync.WaitGroup // background calendar deliveries
+	calMu      sync.Mutex     // guards calQueue and calRunning
+	calQueue   []calJob       // FIFO; one worker drains it
+	calRunning bool
 }
 
 // New builds a server from its config.
@@ -89,7 +91,19 @@ func (s *Server) now() time.Time { return s.cfg.Now() }
 
 // WaitBackground blocks until background calendar deliveries finish (tests, shutdown).
 func (s *Server) WaitBackground() { s.bg.Wait() }
-func (s *Server) nowMs() int64    { return s.now().UnixMilli() }
+
+// WaitBackgroundFor waits at most d for background deliveries; it reports whether they finished.
+func (s *Server) WaitBackgroundFor(d time.Duration) bool {
+	done := make(chan struct{})
+	go func() { s.bg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
+func (s *Server) nowMs() int64 { return s.now().UnixMilli() }
 
 // Ctx carries one request through a handler.
 type Ctx struct {

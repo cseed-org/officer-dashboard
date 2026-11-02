@@ -101,7 +101,7 @@ export function CalendarPanel({ next, removable = false, onState }: { next: stri
       <EmailPicker
         removable={removable}
         label={st.mode === 'google' ? 'Saved contact email · Google sync uses the account you connect' : 'Send calendar invites to'}
-        onChange={(active) => setSt((s) => (s ? { ...s, activeEmail: active } : s))}
+        onChange={(active) => apply({ ...st, activeEmail: active })}
       />
       <fieldset class="fieldset">
         <legend>How should events reach you?</legend>

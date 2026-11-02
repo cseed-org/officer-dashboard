@@ -12,6 +12,9 @@ ALTER TABLE invites ADD COLUMN onboarded_at INTEGER CHECK(onboarded_at IS NULL O
 -- The onboarding step to resume at (1-6), saved by "Finish later" and each step.
 ALTER TABLE invites ADD COLUMN onboarding_step INTEGER NOT NULL DEFAULT 1 CHECK(onboarding_step BETWEEN 1 AND 6);
 --> statement-breakpoint
+-- Invites from before expiry existed get the standard 7 days from when they were sent.
+UPDATE invites SET expires_at = created_at + 604800000 WHERE accepted_at IS NULL AND expires_at IS NULL;
+--> statement-breakpoint
 CREATE INDEX invites_user ON invites(user_id) WHERE user_id IS NOT NULL;
 --> statement-breakpoint
 -- Discord IDs that already belong to an account cannot hold a pending invite.
@@ -40,6 +43,8 @@ CREATE TABLE calendar_deliveries (
  sequence INTEGER NOT NULL DEFAULT 0,
  status TEXT NOT NULL CHECK(status IN ('sent','failed')),
  error TEXT,
+ -- What the recipient last received (mode, address and event content), to skip resends.
+ content_hash TEXT,
  updated_at INTEGER NOT NULL,
  PRIMARY KEY(event_id, user_id)
 );

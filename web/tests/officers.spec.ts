@@ -57,6 +57,7 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   await page.locator('[data-onb-next]').click();
 
   // Profile: inline errors, then a valid month-day birthday.
+  await expect(page.locator('[data-finish-later]')).toBeVisible(); // phones too
   await page.locator('[data-onb-next]').click();
   await expect(page.locator('#pf-phone-error')).toContainText('phone');
   await expect(page.locator('#pf-birthday-error')).toBeVisible();
@@ -73,6 +74,8 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   await picker.getByRole('button', { name: 'Save' }).click();
   await expect(picker.locator('.email-picker-value')).toHaveText('robin@example.org');
   await expect(picker.locator('[data-email-count]')).toHaveText('1 of 5 saved');
+  // Saving an address updates the step: Continue (not "Set up later").
+  await expect(page.locator('[data-onb-next]')).toHaveText('Continue →');
   await expect(page.locator('[data-ics-status]')).toContainText('not configured');
   await page.getByLabel('Google Calendar sync').check();
   await expect(page.locator('[data-google-status]')).toContainText('not configured');
@@ -83,6 +86,7 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   await page.getByLabel('Budget vs actual').uncheck();
   await page.locator('[data-onb-next]').click();
   await expect(page.locator('[data-summary]')).toContainText('Profile complete');
+  await expect(page.locator('[data-summary]')).toContainText('.ics invites to robin@example.org');
   await page.locator('[data-onb-next]').click();
   await expect(page).toHaveURL(/\/$/);
   await settle(page);

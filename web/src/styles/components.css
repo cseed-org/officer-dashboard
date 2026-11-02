@@ -600,3 +600,10 @@ td.people-who-cell {min-width:0;}
   .dt--people .people-who {width:100%;}
   .dt--people .role-toggle {max-width:100%;flex-wrap:wrap;}
 }
+
+/* Onboarding on phones: keep "Finish later" reachable (the shared rule hides it), as a
+   compact text action in the footer between Back and Continue. */
+@media (max-width: 767px) {
+  .onb-foot .onb-skip {display:inline-flex;padding-inline:8px;}
+  .onb-foot .btn--text:first-child {padding-inline:8px;}
+}

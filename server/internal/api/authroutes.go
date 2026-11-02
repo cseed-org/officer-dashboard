@@ -42,8 +42,8 @@ func (c *Ctx) authLogin() error {
 	}
 	// An invite link marks this sign-in as an invite acceptance, so a wrong Discord
 	// account gets the "invite unavailable" screen instead of "not allowlisted".
-	if c.R.URL.Query().Get("invite") != "" {
-		c.S.setCookie(c.W, c.S.hostPrefixed(inviteCookieName), "1", c.S.now().Add(10*60e9), 600)
+	if t := c.R.URL.Query().Get("invite"); t != "" && len(t) <= 128 {
+		c.S.setCookie(c.W, c.S.hostPrefixed(inviteCookieName), auth.SHA256Hex(t), c.S.now().Add(10*60e9), 600)
 	} else {
 		c.S.clearCookie(c.W, c.S.hostPrefixed(inviteCookieName))
 	}
@@ -70,7 +70,8 @@ func (c *Ctx) authCallback() error {
 	code, state := q.Get("code"), q.Get("state")
 	storedState, verifier := c.cookie(c.S.hostPrefixed(oauthStateName)), c.cookie(c.S.hostPrefixed(oauthVerifier))
 	next := auth.SafeNext(c.cookie(c.S.hostPrefixed(nextCookieName)))
-	fromInvite := c.cookie(c.S.hostPrefixed(inviteCookieName)) != ""
+	inviteHash := c.cookie(c.S.hostPrefixed(inviteCookieName))
+	fromInvite := inviteHash != ""
 	for _, n := range []string{oauthStateName, oauthVerifier, nextCookieName, inviteCookieName} {
 		c.S.clearCookie(c.W, c.S.hostPrefixed(n))
 	}
@@ -103,7 +104,7 @@ func (c *Ctx) authCallback() error {
 			return err
 		default:
 			// No account yet: a pending invite for this Discord ID creates one.
-			id, reason, err := c.S.acceptInvite(ctx, w, profile.ID, avatar)
+			id, reason, err := c.S.acceptInvite(ctx, w, profile.ID, avatar, inviteHash)
 			if err != nil {
 				return err
 			}
