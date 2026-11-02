@@ -125,6 +125,7 @@ literal) against:
 | --- | --- | --- | --- | --- |
 | `event` | officers, directors | name, location, Luma id | name / `<Pacific date> · <location>` | `/events?id=<id>` |
 | `request` | officers, directors | number, title, vendor | title / `<number> · <vendor> · <status>` | `/finance?id=<id>` |
+| `contact` | all officers | name, organization, role, email, topics | name / `<org> · <role> · <type>` | `/speakers?id=<id>` |
 | `user` | directors only | name, email, title | name / `<title> · <role> · <email>` | `/admin` |
 | `account` | directors only | code, name | `<code> <name>` / account type | `/finance?tab=reports&report=trial-balance` |
 
@@ -364,3 +365,36 @@ user requires leadership. Role and active status stay on PATCH `/api/admin/users
   across mode switches). Shutdown waits up to 20s for queued deliveries. Event deletion
   (events Pane) should call `Server.SyncEventToCalendars(event, true)` to send a cancel.
 - POST `/api/me/calendar/test` sends a sample invite synchronously and reports the result.
+
+### Speakers & Mentors
+
+All active officers (including director and leadership) may read and edit the shared directory.
+Contact writes, event-link replacements and outreach appends are atomic with their audit records.
+Service tokens cannot use these session-authenticated endpoints.
+
+| Method | Route | Behavior |
+| --- | --- | --- |
+| GET | `/api/contacts?q=&type=&topic=` | `{items: Contact[]}`, ordered by name. Search covers name, organization, role, email and topics. Type `speaker`/`mentor` includes `both`; `both` matches only `both`. Topic is a case-insensitive exact match. |
+| POST | `/api/contacts` | Create; requires `name`, `type`. Returns `{contact}`. |
+| GET | `/api/contacts/:id` | `{contact}` or 404. |
+| PATCH | `/api/contacts/:id` | Partial update; omitted fields are preserved. Returns `{contact}`. |
+| DELETE | `/api/contacts/:id` | Delete contact, event links and outreach; returns `{ok:true}`. Audit retains the complete prior record. |
+| POST | `/api/contacts/:id/outreach` | Append outreach; requires `date` (ISO datetime with offset), `channel`, `outcome`; optional `note`. Returns `{contact}`. Officer comes from the session. |
+
+Contact fields: `id`, `name` (1–200), `org`, `role` (up to 200), `type`
+(`speaker`, `mentor`, `both`), `topics` (up to 30 nonblank strings, 100 characters each),
+`email` (email or empty), `linkedin` (http/https URL or empty), `notes` (up to 10,000),
+`createdAt` and `updatedAt` (epoch milliseconds), `events`, `outreach`, `lastOutreach`.
+Create/PATCH accepts `eventIds` (up to 100 distinct existing event IDs); it replaces the links.
+Empty strings clear optional text fields; empty arrays clear topics/event links. Nulls are rejected.
+Topics are trimmed and deduplicated case-insensitively. Linked events carry `id`, `name`, `startsAt`.
+The UI labels only events that have started as past events.
+
+Outreach entries contain `id`, `officerId`, `officerName`, `date`, `channel`, `outcome`, `note`,
+`createdAt`. Channels: `email`, `linkedin`, `discord`, `phone`, `in_person`.
+Outcomes: `awaiting_reply`, `interested`, `confirmed`, `declined`, `follow_up`.
+Dates are normalized to UTC; the latest dated entry wins, with creation time then ID as deterministic
+ tie breakers. Backdated entries remain in the history. `lastOutreach` is null before outreach is logged.
+General contact edits never change the derived last outreach. Outreach is append-only.
+
+`GET /api/search` also returns `kind: "contact"` for all officers, linking to `/speakers?id=…`.

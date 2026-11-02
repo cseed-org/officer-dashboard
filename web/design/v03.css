@@ -254,6 +254,7 @@
 .cal-event::before {content:'';flex:none;width:6px;height:6px;border-radius:50%;background:var(--hue, var(--c-blue));}
 .cal-event-time {flex:none;color:var(--muted);font-variant-numeric:tabular-nums;}
 .cal-event-title {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cal-event:not(button):not(a) {cursor:default;}
 .cal-event.is-draft {background:transparent;box-shadow:inset 0 0 0 1px var(--line);}
 .cal-event.is-draft .cal-event-title {color:var(--muted);}
 .cal-more {align-self:flex-start;padding:0 6px;border:0;background:none;font:inherit;font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
@@ -410,8 +411,35 @@
 .state-photos .polaroid:first-child {left:12px;top:4px;}
 .state-photos .polaroid:last-child {right:12px;top:0;}
 
+/* Events handoff: readable copy rows and a bounded cover preview. */
+.event-copy {display:flex;align-items:start;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid var(--line);}
+.event-copy > div {min-width:0;overflow-wrap:anywhere;}
+.event-copy p {margin:4px 0 0;}
+.event-copy .btn {flex:none;}
+.event-cover {display:block;width:100%;max-height:240px;object-fit:cover;border-radius:var(--radius-control);}
+.events-v03 body:has(dialog[open]) {overflow:hidden;}
+.events-v03 [hidden] {display:none !important;}
+@media(max-width:767px) {.event-copy {flex-direction:column;gap:8px;} .cal-day .cal-date {min-height:24px;} .cal-block {text-align:left;} }
+
+/* Placeholder text meets 4.5:1 in both themes (browser default fails on dark surface). Adopt in src/styles. */
+.input::placeholder, .textarea::placeholder {color:var(--muted);opacity:1;}
+
 /* D2 onboarding form composition, readable hints on paper, and photo placement. */
 .onb-step{padding:20px 0}.onb-form .grid-fields{gap:16px}.onb-form details{border-top:1px solid var(--brand-control);padding-top:12px}.onb-form summary{cursor:pointer;min-height:44px}.onb-form .choice{background:var(--paper-raised);color:var(--brand-ink);border-color:var(--brand-control);min-height:64px}.onb-form .choice-sub{color:var(--brand-ink-soft)}.onb-form .choice-row{display:grid;grid-template-columns:1fr 1fr}.onb-form .btn{min-height:44px}.onb-form .field-error{margin:0}.onb-prefill{display:grid;grid-template-columns:100px minmax(0,1fr)}.onb-prefill dd{overflow-wrap:anywhere}.onb-art .polaroid:first-child{width:300px;height:340px;left:15px;top:30px}.onb-art .polaroid:last-child{width:270px;height:290px;right:0;bottom:20px}.onb .notice{font-family:var(--font)}.onb .field-hint{color:var(--brand-ink-soft)}
 
 @media(max-width:767px){.onb-form .choice-row{grid-template-columns:1fr}.onb-title.display--xl{font-size:36px}.onb-step{gap:16px}.onb-form .grid-fields{grid-template-columns:1fr}}
 .onb-art[hidden],.onb-foot[hidden],.onb-progress[hidden],.onb-count[hidden]{display:none}
+
+/* D3 directory composition */
+/* Directory-only composition; shared components and color tokens remain authoritative. */
+.people-group{gap:12px}.people-group .section-head{margin-bottom:0}
+.toolbar-main>.field{flex:1;min-width:150px}.toolbar-main{align-items:end}.main{min-width:0}
+.drawer-body,.dialog-body{overflow-wrap:anywhere}.invite-link{flex-wrap:wrap}.invite-link code{overflow-wrap:anywhere;white-space:normal}
+body:has(dialog[open]){overflow:hidden}
+@media(max-width:640px){.toolbar-main{width:100%}.toolbar-main>.field{min-width:100%}.toolbar-actions{flex-wrap:wrap}.toolbar-actions .btn{flex:1}.btn,.select,.input,summary{min-height:44px}.facts dd{overflow-wrap:anywhere}.invite-delivery{grid-template-columns:1fr}}
+.people-cell{display:block;min-width:0}
+@media(max-width:640px){.dt td::before{flex:0 0 90px}.people-cell{flex:1;overflow-wrap:anywhere}.dt-primary .people-cell{text-align:left}.dt td:not(.dt-primary) .cell-sub{margin-top:2px}.dt td{padding:5px 0}}
+/* Row names are .linkish buttons (every row opens its record); prototype-only toggles sit apart from real actions. */
+.dt-primary .linkish{text-align:left}.prototype-toggle{display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px dashed var(--line)}
+@media(max-width:640px){.dt-primary .linkish{min-height:44px;display:inline-flex;align-items:center}.dt .action-row .btn{min-height:44px}}
+@media(min-width:641px){.people-group .dt{table-layout:fixed}.people-group .dt th:first-child{width:46%}.people-group .dt th:nth-child(2){width:30%}}

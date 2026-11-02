@@ -144,6 +144,20 @@ Yellow's role widens slightly. It stays decorative everywhere except where ink t
 - Both themes, 1440 and 390, with no page-level horizontal scroll: `node web/design/capture.mjs <page>` captures just your page and fails on overflow.
 - Phone principal controls stay at least 44px. The widget handle and remove button grow to 40 and 36px on phone, and the size buttons sit in the same 44px row.
 
+### Events V0.3 page contract
+
+Reference: `mockups/events-v03.html`, generated with `python3 web/design/build-events-v03.py` using the v2 builder helpers. The work register applies throughout. `.event-copy` lays out a field/value and its copy button (stacked on phone); `.event-cover` bounds the cover preview to 240px. Both live in `v03.css`. Native dialogs lock background scroll and retain Escape/focus return. Month and week use the shared calendar styling (month is a labelled group rather than an interactive ARIA grid); phone week uses its agenda. The month phone agenda lists the month's scheduled events rather than requiring precision taps on small date cells.
+
+Every officer can create/edit/delete events, import CSV, and request design; directors, leadership and leadership with owner status share those event actions. Ownership adds no event-specific power. The role selector demonstrates that equivalence. Luma publication is manual: field copies, cover download, external create link, and validated HTTPS lu.ma/luma.com URL entry. Linked means URL saved, never attendee sync. Notion is disabled and labelled Coming soon. Event health distinguishes registrations, check-ins and reflections and gives CSV freshness. CSV preview includes a blocking row error; correction precedes import. The design request starts with the event title, formats, due date and brief prefilled. Delete requires confirmation and explains the separate Luma step.
+
+Preview controls are illustrative and have no persistence. Current sample cover is an existing CSEED photo, explicitly awaiting approved event artwork. No Luma or Notion API is called. Calendar navigation is fixed to November 2026 in this fixture. Empty/loading/error examples replace the active populated view; their controls and role selection are review tools outside the intended production layout. Only Founder stories opens the working editor/kit; the remaining records are contextual samples. Cover download is used instead of clipboard image copy because the next Luma step is file upload. Background scroll lock and hidden-state rules are scoped to `.events-v03`.
+
+Events contrast is measured on rendered elements, not tokens: `capture-events-v03.mjs` samples the computed colour of every visible text node and form value/placeholder in each captured state (list, month, week, every dialog, invalid/linked URL, empty/loading/error, deleted) against its composited background, in both themes and at 1440 and 390, and fails below 4.5:1 (3:1 for large text). Disabled controls are exempt. Results are in `shots/validation-events-v03-details.json`. This surfaced one shared defect: the browser-default placeholder colour measured 3.61:1 on the dark surface. `v03.css` now sets `.input::placeholder, .textarea::placeholder` to `--muted`, and production `src/styles` should adopt the same rule.
+
+Fixture details: empty/loading/error hide event health and the view toggle, and they retitle the heading. "Create first event" and "New event" open a blank editor without Delete. After a delete, focus moves to the period heading, every Founder stories entry is hidden (list, month cell, month and week agendas, week block) and a status note repeats the separate Luma step. Contextual calendar events are non-interactive `span.cal-event` (with `cursor:default`) rather than disabled buttons. Day cells carry no `aria-label`. Copy buttons keep their field name ("Copied name ✓") and revert after 2.5s.
+
+Open for implementation: the fixture's Luma check accepts any non-root, non-`/create` path on lu.ma/luma.com (including `/discover` and `/calendar`). The real form needs a stricter event-slug rule or a server-side check.
+
 ### D2 onboarding page additions
 
 Reference: [mockups/onboarding-v03.html](mockups/onboarding-v03.html), interaction and state details in [onboarding-notes.md](onboarding-notes.md). Reuses `.onb-*`, `.polaroid`, form, choice, role and feedback contracts above. Page-local `.onb-review` is a wrapping design-preview strip for step/state/role examples and is omitted from production. The page `<style>` holds only the review strip and the four-row grid it needs. Production rules live in `v03.css` under the D2 block: paper `.onb-form .choice` cards (`--paper-raised`, `--brand-control` border, 64px), the `.onb-prefill` definition grid, `.onb-form details/summary` disclosure, 44px `.onb-form .btn`, `.onb .field-hint` in `--brand-ink-soft` (8.47:1 on light paper), the phone single column and 36px title, the two `.onb-art` polaroid sizes, and `[hidden]` overrides for `.onb-art/.onb-foot/.onb-progress/.onb-count`. No new tokens. Widgets use checkbox choice cards instead of polaroid `.gallery-item` previews: real checkboxes give native keyboard and screen-reader semantics, and previews of unconnected widgets would show empty frames. Revisit once widget previews exist. Native `.select` is used for this onboarding email picker so its keyboard behavior comes from the browser; the custom listbox contract remains available for the Officers page.
@@ -159,3 +173,68 @@ Contacts show dated outreach independently from general notes and linked past ev
 Review: `node web/design/capture.mjs speakers-v03 design-requests-v03` captures both themes at 1440/390 and checks 820 as well. Use each page's preview controls and buttons to inspect the remaining states. Open design questions: none; the build should confirm membership in the design team and current requester from authenticated data.
 
 `node web/design/verify-speakers-design.mjs` exercises the role and data-state selectors, contact/add/outreach drawers, request form, requester-only approval and phone list in both themes at 1440/390 (92 checks). It also captures each flow in `shots/`. All label controls include explicit accessible names, including selects whose option text would otherwise obscure the label in automation.
+
+### Home V0.3 design fixture (D1)
+
+`python3 web/design/build-home-v03.py` rebuilds `mockups/home-v03.html` using the existing shell builder. `home-v03.css` and `home-v03.js` are design-only assets; no application files change. Run `node web/design/capture.mjs home-v03`, then `node web/design/verify-home-v03.mjs` for interaction checks and the extra captures (`home-v03-<state>-*`, `home-v03-role-<role>-*`, `home-v03-edit-*`, `home-v03-lift-*`, `home-v03-gallery-*`). URL parameters: `role`, `state` (`disconnected|connected|empty|loading|error|mixed`), `mode=edit|gallery`, and `lift=<id>&slot=<index>` for a lifted widget with its drop slot.
+
+**Layout and sizes.** Home uses the shared S/M/L grid and gallery. The default layout is the five existing home cards, Web Analytics (on by default, L) and D1 Member signups (S). S shows one summary (plus the sync time for synced widgets), M the principal metrics, L adds breakdowns: Web Analytics top pages/referrers/countries; Traffic threats by action and requests by country; Performance per-page p75 with an "Insufficient samples" row; Workers/D1 daily request bars (text equivalent in `.visually-hidden`) and storage; My actions the full list. Every widget supports every size. L content fits the 2×2 cell; widget bodies never scroll.
+
+**Sync and connection states.** Cloudflare/D1 start at **Not connected**, never zero. One vocabulary drives the page line under the grid and the widget footers: connected "Synced daily, last 7:02 AM"; not connected "Not connected · syncs daily once leadership connects cseed.co"; loading "Checking today's sync…"; error "Sync failed 7:02 AM · no earlier snapshot"; mixed "Stale · Oct 31, 7:02 AM". A not-connected L widget shows a dashed preview of the metric names it will hold (no numbers), so the default first view is not a blank card. "Connection details" is a `<details>` inside the widget and is role-aware: leadership/owner see which deployment config to set (`CLOUDFLARE_API_TOKEN`, D1 account/database/token); officers and directors are told leadership connects it. There is no token-entry form.
+
+**States.** Loading sets `aria-busy="true"` on each `li` with `.skel--kpi`/`.skel--row` placeholders and visually hidden "Loading <widget>". Error adds `.state--error` on the `li` (negative border) and a `.badge--negative` "Failed"; synced widgets say "Sync failed", club widgets "Couldn't load", both with Retry. **Mixed** is the realistic failure: club cards are normal and synced widgets show the previous snapshot under a "Stale" badge with its timestamp. Empty means connected with no records, never inferred from a missing connection.
+
+**Roles.** My actions differs by role: officer (own follow-ups, design approvals, receipts), director (purchase reviews for their scope, the invite "DM sent ✓" item, member-record fixes), leadership (club-wide approvals, role changes, leadership grants), owner (leadership plus an ownership item). Member signups L links officers to "View members" and director+ to "Edit member records". Owner is leadership plus a written Owner label, not a fourth rank. Analytics are readable by all four. The role explanation is a design annotation inside the dashed `.home-preview` box, not product UI.
+
+**Edit mode.** The `.edit-bar` holds Add widget and Done (the toolbar's Add widget hides while editing). Grips support drag, touch drag and keyboard reorder (arrows move one place, Enter/Space lifts or drops); moves announce position and the preceding neighbour. While dragging, the widget gets `.is-lifted` and an `li.widget-slot` with the dragged widget's `--span-c/--span-r` marks the drop target. Footers hide while editing so the size pill never covers text; on phone, S labels wrap to two lines and S links hide. Size buttons are named Small/Medium/Large. Remove shows an Undo toast that auto-dismisses after 8s and clears on Done. Done simulates saving; production persists `user_prefs` server-side. No localStorage layout.
+
+**Gallery.** Native modal, Escape, focus return and background scroll lock. Each polaroid holds a real `.widget.widget--m` with the S summary of the connected sample, labelled "Sample" for synced widgets; `.gallery-sub` states the token requirement and "Not connected yet". Adding keeps the sheet open and moves focus to the next Add button.
+
+Design-only classes (in `home-v03.css`, no new colour tokens): `.home-preview` and `.home-role-note` (preview controls and role annotation); `.home-widgets` scopes Home density; `.home-details` holds L-only breakdowns and `.home-detail-hint` points to them at smaller sizes; `.home-metrics` (`--3` for three columns) groups numeric pairs; `.home-analytics` (`--2`) lays out breakdown groups with `.home-sub-head`; `.home-bars` is the usage column chart; `.home-connect` is the connection-details disclosure; `.home-ghost`/`.home-ghost-list` the not-connected preview; `.home-add-slot` keeps the add tile inside valid list markup. For the shared gallery's flex column, Home keeps the header and categories from shrinking and gives the body `min-height:0`.
+
+Open design questions: none. Account persistence and connection setup are implementation work.
+
+### D3 · Officers and Members fixtures
+
+`mockups/officers-v03.html` and `mockups/members-v03.html` are generated with
+`python3 web/design/build-people.py`, which reuses the `build-mockups.py` shell. Rows render
+in `people-preview.js` from one embedded JSON sample, so the directory, drawers, filters and
+confirm steps always agree. `node web/design/check-people.mjs` (from the repo root) asserts the
+contract below at 1440 and 390 in both themes and captures the overlay screenshots.
+No new color tokens or fonts. Brand typography and imagery stay off these work pages.
+
+**Classes added in `v03.css`.** `.people-group` (a subteam section with a fixed column grid at
+desktop widths). `.people-cell` wraps each cell's value and secondary text; on phones it sits
+beside a fixed 90px label. `.prototype-toggle` sets prototype-only switches (such as "make the DM
+fail") apart from real actions with a dashed rule. Row names reuse `.linkish.cell-title`: every
+row opens its record, and on phones the name is a 44px target.
+
+**Roles.** Officer: directory and profiles without phone. Director+: phone, invites, invite list,
+member edit and CSV export. Leadership: role change, deactivate and reactivate, never on their own
+record. An owner's role can only be changed by an owner. Owner: make co-owner (which grants
+leadership), transfer ownership and remove owner status; the last owner cannot be removed. The
+server enforces all of this and omits phone from officer responses.
+
+**Overlays.** Profiles and records are `.drawer`s. Invites and every confirm step are centred
+`.dialog`s with a normal `.action-row`, never a drawer on a drawer. Dialogs are labelled by their
+`h2` (`aria-labelledby`), focus the first useful control, close on Escape, return focus to the
+trigger and lock background scroll. A result is announced once: in the open dialog's
+`[data-result]` status, otherwise in the page notice.
+
+**Officers.** States: ready, no officers yet (only the bootstrap owner, with an Invite CTA for
+director+), loading, error, and filtered to nothing. Filters: text, subteam, role (including Owner)
+and status (Active, Deactivated). The role picker preselects the current role; Review stays
+disabled until it changes. The invite list shows sent time and expiry (7 days), delivery, status
+(Awaiting sign-in, DM failed, Expired, Accepted, Revoked) and Resend, Retry DM, Copy link,
+Revoke or Remove. My profile holds the calendar picker (native select, five-address limit) with the
+saved-address list and its Remove buttons beside it, outside the picker.
+
+**Members.** A 25-row server pagination contract (1,086 in the sample; 8 drawn). Search and
+filters run on the server; CSV covers all matching records and is recorded in the audit log.
+Edit needs a changed field and an audit note. The confirm dialog lists only the changed fields
+(current → new), the write target, the note and the actor. A failed write keeps the dialog
+and the edits, with an alert. A successful write refreshes the mirror. States: ready, empty
+(no matches), loading, page error (table hidden, filters kept), **sync failed** (the last mirror
+stays visible with its date, the banner uses `notice--attention`, and edits pause) and **not
+connected** (no credentials and no mirror: say so, never show a zero count). Never replace a
+failed sync with an empty directory.

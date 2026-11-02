@@ -91,6 +91,24 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 		return nil, err
 	}
 
+	rows, err = q.q.QueryContext(ctx, `SELECT id,name,org,role,type,updated_at FROM contacts WHERE fold(name) LIKE ?1 ESCAPE '\' OR fold(org) LIKE ?1 ESCAPE '\' OR fold(role) LIKE ?1 ESCAPE '\' OR EXISTS (SELECT 1 FROM json_each(contacts.topics) WHERE fold(value) LIKE ?1 ESCAPE '\') OR fold(email) LIKE ?1 ESCAPE '\' ORDER BY name LIMIT ?2`, contains, limit)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var h SearchHit
+		if err := rows.Scan(&h.ID, &h.Primary, &h.A, &h.B, &h.C, &h.Sort); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		h.Kind = "contact"
+		h.Score = score(h.Primary, true)
+		out = append(out, h)
+	}
+	if err := closeRows(rows); err != nil {
+		return nil, err
+	}
+
 	if !includeDirectorKinds {
 		return out, nil
 	}
