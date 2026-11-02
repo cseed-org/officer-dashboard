@@ -1,164 +1,179 @@
-# cseed officer dashboard
+<a id="top"></a>
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="web/public/images/cseed-logo-white.png">
+    <img src="web/public/images/cseed-logo.png" alt="CSEED" width="160">
+  </picture>
+  <h1>CSEED Officer Dashboard</h1>
+  <p>Events, people, purchases, and club finances in one place.</p>
 
-Internal dashboard for CSEED officers: event health (Luma registrations → check-ins →
-reflection surveys), budget status, a purchase-request flow (officer submits → director
-approves → fulfilment), and a nonprofit-grade double-entry ledger that can later produce
-Form 990 / Washington filings and financial statements.
+[![CI](https://img.shields.io/github/actions/workflow/status/cseed-org/officer-dashboard/ci.yml?branch=main&label=CI)](https://github.com/cseed-org/officer-dashboard/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![Go](https://img.shields.io/github/go-mod/go-version/cseed-org/officer-dashboard?filename=server%2Fgo.mod)](server/go.mod)
+[![Node](https://img.shields.io/badge/node-%3E%3D22.23.4-339933?logo=node.js)](package.json)
+[![Astro](https://img.shields.io/badge/Astro-7.4.4-BC52EE?logo=astro)](web/package.json)
+[![Last commit](https://img.shields.io/github/last-commit/cseed-org/officer-dashboard)](https://github.com/cseed-org/officer-dashboard/commits/main)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
-Sign-in is Discord OAuth, limited to an allowlist of officers. The design follows
-[cseed.co](https://cseed.co): paper and ink, Playfair Display, Poppins, Anonymous Pro.
+[Docs](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Report a bug](https://github.com/cseed-org/officer-dashboard/issues/new)
+</div>
 
-## Layout
+## Table of contents
 
-| Path | What it is |
+[Features](#features) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Quick start](#quick-start) · [Configuration](#configuration) · [Testing and checks](#testing-and-checks) · [Project layout](#project-layout) · [Documentation](#documentation) · [Contributing](#contributing) · [Security](#security) · [License](#license)
+
+## Features
+
+V0.3 uses Discord sign-in with leadership, director, and officer roles, plus explicit owner access.
+
+| Page | What you can do |
 | --- | --- |
-| `server/` | The Go backend: JSON API, SQLite (embedded migrations), Discord sign-in, receipts, notifications; serves `web/dist`. Runs on a Raspberry Pi or in a Cloudflare Container. See [server/README.md](server/README.md). |
-| `web/` | The static Astro + Preact front end (five pages, sidebar, ⌘K search) and its Playwright suite. See [web/README.md](web/README.md). |
-| `docs/api.md` | The HTTP API reference. |
-| `src/core/contracts.ts` | The zod schemas for every request and response (`domain.ts` holds the enums it uses). The single source of truth for the API shape. |
-| `scripts/contract-check.mjs` | CI job logic: starts the Go server on a seeded temp database and validates every response against `contracts.ts`. |
+| Home | Arrange widgets; see club activity and Cloudflare analytics connection states. |
+| Officers / onboarding | Invite via Discord DM, complete profiles, manage subteams, choose calendar delivery. |
+| Members | Search the local D1 mirror, edit member records, export CSV, and sync. |
+| Events | Plan events, generate a Luma handoff kit, import registrations/check-ins and reflections, track metrics. |
+| Finance | Submit and review purchase requests, attach receipts, track budgets, and view double-entry financial reports. |
+| Speakers & Mentors | Maintain contacts and log outreach. |
+| Design Requests | Track work on a Kanban board with assignments, comments, files, and approval. |
+| Admin / Settings | Manage access, tokens, audit history, preferences, and calendar connections. |
 
-The old v1 TypeScript / Cloudflare Workers / D1 app has been removed; it lives in git history
-before the v1-cleanup PR.
+> [!NOTE]
+> Notion event links are placeholders; see the [integration status](docs/notion-integration.md).
+
+[Back to top](#top)
+
+## Screenshots
+
+Existing V0.3 design captures; GitHub chooses the light or dark version to match your theme.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/home-v03-1440-dark.png">
+  <img src="web/design/shots/home-v03-1440-light.png" alt="Home dashboard with customizable widgets" width="100%">
+</picture>
+
+<details>
+<summary>Events and officers</summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/events-v03-1440-dark.png">
+  <img src="web/design/shots/events-v03-1440-light.png" alt="Events planning page" width="100%">
+</picture>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/officers-v03-1440-dark.png">
+  <img src="web/design/shots/officers-v03-1440-light.png" alt="Officers directory" width="100%">
+</picture>
+</details>
+
+[Back to top](#top)
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser[Browser: Astro + Preact] --> API[Go API]
+  API --> SQLite[(SQLite)]
+  API <--> Discord[Discord OAuth]
+  API --> Bot[Discord bot DMs / webhook]
+  API <--> CF[Cloudflare D1 / Analytics]
+  Luma[Luma CSV / survey CSV] --> API
+  API --> Calendar[Google Calendar / email invites]
+  API --> Receipts[Google Drive / local receipts]
+```
+
+The Go server serves the static front end and JSON API from one origin. SQLite is the primary database; D1 supplies the membership mirror. Run on a Raspberry Pi or a single container with durable replication. See [architecture](docs/architecture.md) and [deployment](docs/deployment.md).
+
+[Back to top](#top)
 
 ## Quick start
 
-Needs Go 1.24+ with a C compiler (cgo, for SQLite) and Node ≥ 22.23.
+Install Go 1.24+, a C compiler for SQLite/cgo, Make, and Node ≥22.23.4 (from `package.json`; this repo has no `.nvmrc`). From the repository root:
 
 ```sh
-(cd web && npm ci && npm run build)   # static front end -> web/dist
-cd server && make dev                 # seeds ./data/dev.db, serves with the dev login
+(cd web && npm ci && npm run build)
+cd server
+make dev
 ```
 
-See [server/README.md](server/README.md) for configuration, secrets and deployment, and
-[web/README.md](web/README.md) for the front-end dev server.
+Open <http://localhost:8090/auth/dev?as=director> or <http://localhost:8090/auth/dev?as=officer>.
 
-## Checks
+> [!IMPORTANT]
+> `make dev` resets the sample database at `server/data/dev.db`. The dev login requires both a `-tags dev` build and `DEV_AUTH=1`; production builds have no `/auth/dev` route.
+
+See [development](docs/development.md) for live front-end development, seeding, and Playwright.
+
+[Back to top](#top)
+
+## Configuration
+
+| Variable | Purpose / default |
+| --- | --- |
+| `ADDR`, `DB_PATH` | Listen on `:8090`; database `./data/dashboard.db`. |
+| `APP_URL` | Public origin for OAuth, cookies, and notification links. |
+| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord OAuth credentials. |
+| `BOOTSTRAP_OWNER_DISCORD_ID` | Provision the initial owner while no owner exists. |
+| `DISCORD_BOT_TOKEN` | Officer invitation DMs. |
+| `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID` | Google Drive receipt storage. |
+| `RECEIPTS_DIR` | Local receipt storage alternative. |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID` | Membership sync and analytics integration. |
+
+All variables, aliases, defaults, and optional calendar settings: [configuration reference](docs/configuration.md).
+
+[Back to top](#top)
+
+## Testing and checks
+
+Run from the repository root:
 
 | Check | Command |
 | --- | --- |
-| Go vet + tests | `cd server && go vet ./... && go test ./...` |
-| API contract | `npm ci && npm run contract-check` (builds and runs the Go server itself) |
-| Front end build + types | `cd web && npm ci && npm run build && npx astro check` |
-| Front end e2e (local only) | `cd web && npm run test:e2e` (Playwright; not run in CI) |
+| Go vet and tests, including dev login | `cd server && make vet && make test` |
+| API contracts | `npm ci && npm run contract-check` |
+| Web build and types | `cd web && npm ci && npm run build && npm run check` |
+| Playwright (local, seeded backend required) | `cd web && API_ORIGIN=http://127.0.0.1:8090 npm run test:e2e` |
 
-CI (`.github/workflows/ci.yml`) runs the `go`, `contract` and `web` jobs on every push to
-`main` and every pull request.
+[CI](.github/workflows/ci.yml) runs Go, contract, and web jobs on PRs and pushes to `main`. Playwright runs locally. [Test details](docs/development.md).
 
-## Accounting model and operating rules
+[Back to top](#top)
 
-All ledger amounts are safe integer cents. Account codes map natural categories to
-Form 990 Part VIII (revenue), IX (expense) and X (position); the `form-990` report groups
-VIII/IX lines, and the functional expense report splits program, management & general,
-and fundraising. This is a preparatory rollup, not a complete filing or WA return.
-Funds retain grant/sponsor purpose tracking independently of net asset class. Fund balances
-include restricted/unrestricted ending amounts; releases show the gross reclassification
-as an informational column, not an additional deduction from the combined ending balance. Revenue
-uses the donor restriction of its fund; expenses are always presented without donor
-restrictions. Settling a restricted-fund purchase also posts Dr 3100 / Cr 3000 in that
-same fund, releasing the actual cost from donor restriction. The transaction refuses
-to release more than the remaining restricted balance. A director's approval is the
-operational assertion that the purchase satisfies the grant purpose; time-restricted
-or otherwise conditional gifts need CPA review before being spent.
+## Project layout
 
-Approval records an encumbrance memo in the audit log; approved/fulfilling requests
-count as commitments. A $100 estimate settled for $95 posts $95 of expense and releases
-all $100 of commitment. Club purchases credit checking (1000); reimbursements credit
-reimbursements payable (2100). **Closing a reimbursement confirms it has been paid**
-and posts Dr 2100 / Cr 1000. Closing a club purchase only archives it. Free settlements
-(actual cost zero) retain the lifecycle/audit evidence and post no zero-value journal.
-Receipts selected at settlement link to its expense entry. Draft deletion records its
-attachment metadata in the immutable audit log; stored bytes are retained.
+| Path | Purpose |
+| --- | --- |
+| [server/](server/README.md) | Go API, accounting engine, embedded SQLite migrations, deployment assets. |
+| [web/](web/README.md) | Static Astro + Preact UI, design references, Playwright tests. |
+| [src/core/contracts.ts](src/core/contracts.ts) | Canonical zod API schemas; enums in `src/core/domain.ts`. |
+| [web/src/lib/contracts.ts](web/src/lib/contracts.ts) | Front-end contract schemas. |
+| [scripts/contract-check.mjs](scripts/contract-check.mjs) | Seed a temporary Go server and validate API contracts. |
+| [docs/](docs/README.md) | Guides and API reference. |
 
-Posting requires a matching open fiscal period, at least two one-sided balanced lines,
-active accounts/funds, and a functional class on expense lines. Posted entries and lines
-are immutable in both the engine and SQL triggers; correct them with reversing entries.
-A period can move open → closed → locked and cannot reopen. Period close is a posting
-lock, not a year-end sweep of revenue/expense accounts: cumulative trial balances retain
-prior-year nominal accounts until explicit closing entries are prepared. Fiscal years
-currently run July–June (FY2027 ends June 2027). Period creation/close and manual ledger/
-contribution entry are engine/adapter operations, not dashboard API workflows;
-provision future open periods before the current year ends.
+The original TypeScript / Cloudflare Workers / D1 application is in git history before the v1-cleanup PR. The design follows [cseed.co](https://cseed.co): paper and ink, Playfair Display, Poppins, and Anonymous Pro.
 
-Pure functions are in `server/internal/accounting/`; the API persists posting statements with
-request state and audit rows in one SQLite transaction. Contributions validate their journal total
-and revenue against the gift amount, track in-kind descriptions, and compute donor
-acknowledgment and quid-pro-quo disclosure flags. The thresholds follow the
-[IRS substantiation guidance](https://www.irs.gov/charities-non-profits/charitable-organizations/charitable-organizations-substantiation-and-disclosure-requirements).
+[Back to top](#top)
 
-**CPA review is required before keeping real books or preparing filings.** Confirm the
-chart mappings, fiscal year, restricted gift terms, in-kind valuation, capitalization,
-revenue recognition and allocation policy. Automatic release assumes a purpose
-restriction satisfied by the approved purchase; it cannot interpret donor agreements.
+## Documentation
 
-## CSV import and service integrations
+Start at the [docs index](docs/README.md), including [API](docs/api.md), [permissions](docs/roles-and-permissions.md), [integrations](docs/integrations.md), and [accounting](docs/accounting.md).
 
-CSV imports accept UTF-8 (optional BOM), quoted commas/newlines, and CRLF or LF. Header
-matching ignores case, spaces, underscores and punctuation. Guest files need `email`;
-optional headers are `name` / `full name`, `guest id` / `api id`, `approval status` /
-`registration status`, `registered at` / `registration time`, and `checked in at` /
-`check-in time`. Reflection files need `email` / `email address` and `timestamp` /
-`submitted at`. Timestamps with an offset are preferred. Offset-less ISO dates/times or
-`MM/DD/YYYY HH:mm:ss [AM|PM]` are interpreted in America/Los_Angeles; nonexistent spring
-DST times are rejected and ambiguous autumn times choose the earlier instant.
+> [!WARNING]
+> Accounting reports are preparatory rollups, not complete tax filings. CPA review is required before keeping real books or preparing filings.
 
-Emails are trimmed/lowercased; duplicate event/email rows upsert. Blank/missing CSV fields and omitted JSON fields preserve existing values, including
-check-ins; explicit JSON null clears a nullable guest field.
-Pending approval, invited, waitlisted, declined and cancelled guests do not count as
-registrations unless they checked in. Reflection rates count distinct respondents
-matched to checked-in guests. Bad rows are reported by physical source row and skipped;
-`dryRun=true` previews the merged metrics without writes, including for a new event.
-Files are limited to 5 MB; JSON
-ingest is limited to 5,000 guests by contract.
+[Back to top](#top)
 
-Directors issue service tokens once, store only SHA-256 hashes, and may revoke them.
-`ingest:luma` permits `/api/ingest/luma`; `agent:jobs` permits jobs list/claim/complete.
-A failed job returns its request to approved, clears its token claim and re-queues
-automatically while fewer than three total claims have been attempted. The default
-queued-job poll discovers retries. After the third failed attempt the job stays failed
-for a director to resolve manually. Only the current claiming token may complete it. Revoking a token
-prevents future use; deactivating a user ends sessions but does not revoke independently
-issued service tokens (revoke those separately).
+## Contributing
 
-**Agent settlement tolerance.** The purchasing agent's `POST /api/agent/jobs/:id/complete`
-may post an `actualTotalCents` of up to the larger of the estimate + 10% and the
-estimate + $25 (set by `AGENT_SETTLEMENT_TOLERANCE_PERCENT` / `_CENTS`). Above that it
-gets a 409 and the job becomes `held`: its claim is cleared, so later complete, failed or
-claim calls from the agent return 409 and can never re-queue it (no second purchase).
-Directors get a `request.held` notification with the attempted vs approved amount, and
-the request page shows a "held for director review" banner (`settlementHold`). A
-director settles it with `POST /api/requests/:id/transition` (`to: 'fulfilled'`), which
-clears the hold; sending it back to `approved` cancels the held job instead. The
-director's own settlement has no limit.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). For usage help, see [SUPPORT.md](SUPPORT.md).
 
-Receipts allow PDF, PNG, JPEG, HEIC and WebP, up to 10 MB. Configure
-`GOOGLE_SERVICE_ACCOUNT_JSON` and `DRIVE_ROOT_FOLDER_ID` (the older
-`GOOGLE_DRIVE_FOLDER_ID` is accepted as an alias). Share the Drive folder with the
-service-account identity. The adapter uses WebCrypto RS256 JWT exchange, Drive v3
-multipart uploads and shared-drive flags, following Google's
-[service-account protocol](https://developers.google.com/identity/protocols/oauth2/service-account)
-and [upload API](https://developers.google.com/workspace/drive/api/guides/manage-uploads).
-The token requests the full `https://www.googleapis.com/auth/drive` scope to access the pre-existing shared folder. Files are
-stored under `FY<year>/<request-id>/`, and officers need Drive access to open its links.
-Folder lookups search the shared drive that holds the root folder (`corpora=drive` +
-`driveId`, or `corpora=allDrives` if the root isn't in a shared drive). When two first
-uploads race to create the same folder, both re-list after creating, keep the oldest,
-and the loser's empty duplicate is trashed. Trashing needs the service account to be a
-**Content manager** of the shared drive; as a Contributor the empty duplicate just stays.
+[Back to top](#top)
 
-**Lock down the service account.** Because the scope is the full `drive` scope, the key
-reaches every file shared with that account. Make the service account a member of the
-receipts shared drive **only** (don't share other folders or drives with it), and keep
-its key **only** in the server's environment / secret store (`GOOGLE_SERVICE_ACCOUNT_JSON`):
-never in the repo, CI variables or chat. Rotate the key if it leaks.
+## Security
 
-Production receipt operations return HTTP 503 if Drive credentials or the root folder
-are missing. Development selects the local-disk file store.
-Uploads precede the attachment metadata transaction, so a failed metadata commit may
-leave an unreferenced file for later cleanup. MIME validation checks the declared type;
-there is no virus scan or content classification.
+Follow [SECURITY.md](SECURITY.md) to report vulnerabilities privately. Keep deployment credentials in the server environment or secret store.
 
-`DISCORD_WEBHOOK_URL` enables bounded, best-effort embeds; unset webhooks log events.
-Delivery failure does not undo the committed purchase. Live Google/Discord credentials
-are not needed for the local test suite; production delivery must be checked with the
-organization's actual credentials.
+[Back to top](#top)
+
+## License
+
+Code: Apache-2.0. The CSEED name and logo are not licensed — see [TRADEMARKS.md](TRADEMARKS.md).
+See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+[Back to top](#top)
