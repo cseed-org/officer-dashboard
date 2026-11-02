@@ -916,6 +916,7 @@ export type WidgetPlacement = z.infer<typeof WidgetPlacement>;
 export const WidgetPrefs = z.object({ widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
+export type CalendarEmail = z.infer<typeof CalendarEmail>;
 export const CalendarEmailsResponse = z.object({ emails: z.array(CalendarEmail).max(5) });
 export const CalendarEmailResponse = z.object({ email: CalendarEmail });
 export const CalendarEmailCreateRequest = z.object({ email: z.email().max(254), active: z.boolean().optional() });

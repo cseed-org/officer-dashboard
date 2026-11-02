@@ -3,6 +3,10 @@ import type { CurrentUser } from '../../lib/contracts';
 import { type Density, getDensity, getTheme, setDensity, setTheme, type ThemePref } from '../../lib/prefs';
 import { clearCachedRole, initials } from '../../lib/session';
 import { Section } from '../components/kit';
+import { useApi } from '../../lib/api/useApi';
+import { ErrorState, Loading } from '../components/states';
+import { ProfileForm } from './ProfileForm';
+import { CalendarPanel } from './CalendarPanel';
 import { safeImageUrl } from '../../lib/url';
 
 const THEMES: { key: ThemePref; label: string; sub: string }[] = [
@@ -18,6 +22,7 @@ const DENSITIES: { key: Density; label: string; sub: string }[] = [
 export default function SettingsView({ me }: { me: CurrentUser }) {
   const [theme, setThemeState] = useState<ThemePref>(getTheme);
   const [density, setDensityState] = useState<Density>(getDensity);
+  const profile = useApi('profileGet');
 
   return (
     <div class="stack settings">
@@ -89,7 +94,18 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
             </div>
           </dl>
         </div>
-        <p class="muted small">Your name and picture come from Discord. A director can change your role or title.</p>
+        <p class="muted small">Your name and picture come from Discord. A director can change your role or subteam.</p>
+        {profile.status === 'loading' ? (
+          <Loading rows={3} label="Loading your profile" />
+        ) : profile.status === 'error' ? (
+          <ErrorState error={profile.error} onRetry={profile.reload} />
+        ) : (
+          <ProfileForm data={profile.data} onSaved={profile.set} />
+        )}
+      </Section>
+
+      <Section title="calendar" id="calendar">
+        <CalendarPanel next="/settings" removable />
       </Section>
 
       <Section title="session" id="session">

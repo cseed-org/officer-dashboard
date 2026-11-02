@@ -13,7 +13,7 @@ import (
 )
 
 // inviteTTL is how long an invite link and its Discord ID match stay valid.
-const inviteTTL = 14 * 24 * time.Hour
+const inviteTTL = 7 * 24 * time.Hour
 
 // InviteDTO is an invite as directors see it. The token is never part of it.
 type InviteDTO struct {

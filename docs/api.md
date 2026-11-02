@@ -289,7 +289,7 @@ with `method` `dm`, `link` (default) or `both`. It returns the invite, a one-tim
 `{status: sent|failed|not_configured|skipped, sentAt, message}`. The link is always
 returned so a failed or unconfigured DM falls back to copy-link; `message` is plain
 advice for the director (for example Discord error 50007, closed DMs). Only the token's
-SHA-256 is stored. Invites expire after 14 days.
+SHA-256 is stored. Invites expire after 7 days.
 
 - A Discord ID that already belongs to an account is refused with 409 (active: "they
   can sign in now"; deactivated: "reactivate them on the Officers page"). A database

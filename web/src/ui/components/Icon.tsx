@@ -16,6 +16,8 @@ const PATHS: Record<string, string> = {
   message: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
   inbox: 'M3 13h5l1.5 3h5L16 13h5M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z',
   ledger: 'M4 4h16v16H4zM4 9h16M9 9v11',
+  'chevron-down': 'm6 9 6 6 6-6',
+  'arrow-right': 'M5 12h14M13 6l6 6-6 6',
 };
 
 export type IconName = keyof typeof PATHS;
