@@ -46,6 +46,8 @@ test('admin: add an officer in the drawer, change their role, deactivate and rea
 
   // Deactivate from the ⋯ menu (keyboard), then it is hidden until "show deactivated".
   await row.getByRole('button', { name: `Actions for ${name}` }).click();
+  await expect(page.getByRole('menuitem', { name: 'Make co-owner' })).toBeFocused();
+  await page.keyboard.press('ArrowUp');
   await expect(page.getByRole('menuitem', { name: 'deactivate' })).toBeFocused();
   page.once('dialog', (d) => void d.accept());
   await page.keyboard.press('Enter');

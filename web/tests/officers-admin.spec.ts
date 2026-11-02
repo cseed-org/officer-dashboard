@@ -9,6 +9,7 @@ for (const theme of THEMES) {
     await settle(page);
     await expect(page.getByRole('tab', { name: 'Directory', exact: true })).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('#sidebar [data-nav="admin"]')).toHaveCount(0);
+    if (process.env.SHOTS) await page.screenshot({ path: `design/shots/v04/officers-directory-${info.project.name}-${theme}.png`, fullPage: true });
     for (const tab of ['Invites', 'Access', 'Service tokens', 'Audit log']) {
       await page.getByRole('tab', { name: tab, exact: true }).click();
       await settle(page);
@@ -22,8 +23,11 @@ for (const theme of THEMES) {
     await row.getByRole('button', { name: 'Actions for Priya Shah' }).click();
     await expect(page.getByRole('menuitem', { name: 'Make co-owner' })).toBeVisible();
     await expect(page.getByRole('menuitem', { name: 'Transfer ownership' })).toBeVisible();
+    const menu = await page.getByRole('menu').boundingBox();
+    expect(menu!.x).toBeGreaterThanOrEqual(0);
+    expect(menu!.x + menu!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
     expect(await overflow(page)).toEqual([]);
-    if (process.env.SHOTS) await page.screenshot({ path: `design/shots/v04/officers-owner-menu-${info.project.name}-${theme}.png`, fullPage: true });
+    if (process.env.SHOTS) await page.screenshot({ path: `design/shots/v04/officers-owner-menu-${info.project.name}-${theme}.png`, fullPage: false });
     await page.keyboard.press('Escape');
     await expect(row.getByRole('button', { name: 'Actions for Priya Shah' })).toBeFocused();
   });

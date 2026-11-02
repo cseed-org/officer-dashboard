@@ -1,0 +1,4 @@
+/* On phone, actions sit on the left of each labelled officer record. */
+@media (max-width: 640px) {
+  .officers-page .people-menu .row-menu-list { left: 0; right: auto; }
+}
