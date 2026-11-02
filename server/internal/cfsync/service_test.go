@@ -22,9 +22,11 @@ func TestPullIdempotentAndFailureRetainsMirror(t *testing.T) {
 	fail := false
 	calls := 0
 	count := 1001
-	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer secret" {
-			t.Error("missing token")
+	fake := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer secret" {
+			t.Errorf("unexpected request %s %s (auth %q)", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
 		}
 		calls++
 		var body struct {
@@ -32,6 +34,11 @@ func TestPullIdempotentAndFailureRetainsMirror(t *testing.T) {
 			Params []string `json:"params"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if !strings.HasSuffix(r.URL.Path, "graphql") && len(body.Params) == 0 {
+			t.Errorf("D1 query without params: %q", body.SQL)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, "graphql") {
 			_, _ = w.Write([]byte(`{"data":{"viewer":{"accounts":[{"rumPageloadEventsAdaptiveGroups":[{"count":25,"sum":{"visits":12}}]}]}}}`))
 			return
@@ -54,10 +61,13 @@ func TestPullIdempotentAndFailureRetainsMirror(t *testing.T) {
 			}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "result": []any{map[string]any{"success": true, "results": rows}}})
-	}))
-	defer fake.Close()
+	})
 	client := cloudflare.New(cloudflare.Config{Token: "secret", AccountID: "account", ZoneID: "zone", DatabaseID: "db"})
-	client.BaseURL = fake.URL
+	// Serve the fake API in-process rather than on a loopback port: anything else on the
+	// machine that connects to a listening port (health checks, port probes) would
+	// otherwise reach the handler and break the exact request count below.
+	client.BaseURL = "http://cloudflare.test"
+	client.HTTP = &http.Client{Transport: handlerTransport{fake}}
 	svc := &Service{Client: client, DB: db}
 	for i := 0; i < 2; i++ {
 		if err = svc.Run(ctx, nil); err != nil {
@@ -101,6 +111,16 @@ func TestPullIdempotentAndFailureRetainsMirror(t *testing.T) {
 		t.Fatal("source deletions not mirrored")
 	}
 }
+
+// handlerTransport answers requests by calling the handler directly, with no listener.
+type handlerTransport struct{ h http.Handler }
+
+func (t handlerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	rec := httptest.NewRecorder()
+	t.h.ServeHTTP(rec, r)
+	return rec.Result(), nil
+}
+
 func TestMissingConfigDoesNotCallHTTP(t *testing.T) {
 	db, err := store.Open(t.TempDir() + "/skip.db")
 	if err != nil {
