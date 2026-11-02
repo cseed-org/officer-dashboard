@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"officerdashboard/internal/store"
 )
 
 func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
@@ -43,11 +46,11 @@ func TestSeedMigrateAndServeWiring(t *testing.T) {
 	if code := run([]string{"seed", "-reset"}, e, &out, &errb); code != 0 {
 		t.Fatalf("seed → %d %s", code, errb.String())
 	}
-	if !strings.Contains(out.String(), "5 users, 6 events, 6 requests, 18 journal lines (FY2027)") {
+	if !strings.Contains(out.String(), "6 users, 6 events, 6 requests, 18 journal lines (FY2027)") {
 		t.Errorf("seed output %q", out.String())
 	}
 	out.Reset()
-	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), "8 migrations applied") {
+	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), fmt.Sprintf("%d migrations applied", store.MigrationCount())) {
 		t.Errorf("migrate → %d %q", code, out.String())
 	}
 	out.Reset()

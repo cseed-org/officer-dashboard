@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io/fs"
 	"regexp"
 	"testing"
 )
@@ -338,11 +337,7 @@ func TestMigrationsAreIdempotentAndReaderSeesWriterCommits(t *testing.T) {
 	}
 	var applied int
 	_ = d.W.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied)
-	files, err := fs.Glob(migrationFS, "migrations/*.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if applied != len(files) {
-		t.Errorf("applied migrations = %d (want %d)", applied, len(files))
+	if want := MigrationCount(); applied != want {
+		t.Errorf("applied migrations = %d (want %d)", applied, want)
 	}
 }
