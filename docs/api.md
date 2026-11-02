@@ -47,7 +47,23 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/api/me/calendar-emails` | officer | — | `CalendarEmailCreateRequest` | `CalendarEmailResponse` |
 | PATCH | `/api/me/calendar-emails/:id` | officer | — | `CalendarEmailUpdateRequest` | `CalendarEmailResponse` |
 | DELETE | `/api/me/calendar-emails/:id` | officer | — | — | `OkResponse` |
+| GET | `/api/invites` | director | — | — | `InvitesResponse` |
 | POST | `/api/invites` | director | — | `InviteCreateRequest` | `InviteResponse` |
+| DELETE | `/api/invites/:id` | director | — | — | `OkResponse` |
+| GET | `/api/officers` | officer | — | — | `OfficersResponse` |
+| GET | `/api/officers/:id` | officer | — | — | `OfficerResponse` |
+| PATCH | `/api/officers/:id` | director | — | `OfficerUpdateRequest` | `OfficerResponse` |
+| GET | `/api/me/profile` | officer | — | — | `ProfileResponse` |
+| PUT | `/api/me/profile` | officer | — | `ProfileUpsertRequest` | `ProfileResponse` |
+| PUT | `/api/me/onboarding` | officer | — | `OnboardingSaveRequest` | `OnboardingResponse` |
+| POST | `/api/me/onboarding/complete` | officer | — | — | `OnboardingCompleteResponse` |
+| POST | `/api/me/onboarding/correction` | officer | — | `OnboardingCorrectionRequest` | `OnboardingCorrectionResponse` |
+| GET | `/api/me/calendar` | officer | — | — | `CalendarSettings` |
+| PUT | `/api/me/calendar` | officer | — | `CalendarModeRequest` | `CalendarSettings` |
+| POST | `/api/me/calendar/test` | officer | — | — | `CalendarTestResponse` |
+| GET | `/api/me/calendar/google/connect` | officer | `next` | — | redirect to Google |
+| DELETE | `/api/me/calendar/google` | officer | — | — | `CalendarSettings` |
+| GET | `/auth/google/callback` | public (session) | — | — | redirect |
 | GET | `/api/lookups` | officer | — | — | `LookupsResponse` |
 | GET | `/api/overview` | officer | — | — | `OverviewResponse` |
 | GET | `/api/search` | officer | `SearchQuery` | — | `SearchResponse` |
@@ -227,16 +243,7 @@ Mutations audit the entire before/after collection. Calendar delivery mode is st
 on `officer_profiles` as `ics` (default) or `google`; delivery and OAuth belong to the
 officers/onboarding feature.
 
-POST `/api/invites` currently accepts copy-link invitations (`method: "link"`). It
-returns a plaintext token once and stores only its SHA-256 hash. The token is omitted
-from audit records. Schema supports `dm` and `both`, `dm_sent_at`, and `accepted_at`;
-Discord delivery, accepting invitations, and onboarding are added by the officers
-feature. This endpoint does not send a DM or allow the invitee to sign in yet.
-
-Officer profiles require phone, birthday, and subteam; name and Discord ID remain on
-`users`. Optional profile fields are preferred name, pronouns, personal/school email,
-grad date, title, start term, and LinkedIn. No profile read endpoint is exposed here;
-future profile endpoints must restrict phone visibility to director+.
+See "V0.3 officers" below for invites, profiles, onboarding and calendar delivery.
 
 Dashboard ownership: `CurrentUser` and `AdminUser` include `isOwner`. Owners are
 always active leadership. Only owners may add/remove co-owners or transfer ownership.
@@ -271,4 +278,77 @@ This is idempotent, ends changed accounts' sessions and audit-logs the change. W
 The bootstrap environment cannot reclaim ownership after transfer. Explicit operator
 recovery with `provision-leadership --owner` remains available even when owners already
 exist: shell/database administrators can intentionally add an owner, and this action
-is audited. Discord login itself never creates users or grants leadership/ownership.
+is audited. Discord login never grants leadership/ownership; it creates an account only
+for a pending, unexpired invite (below).
+
+## V0.3 officers
+
+**Invites.** POST `/api/invites` (director+) takes `{name, discordId, subteamId, method}`
+with `method` `dm`, `link` (default) or `both`. It returns the invite, a one-time
+`token`, the full `link` (`/login?invite=<token>`), `reinvited`, and `dm`:
+`{status: sent|failed|not_configured|skipped, sentAt, message}`. The link is always
+returned so a failed or unconfigured DM falls back to copy-link; `message` is plain
+advice for the director (for example Discord error 50007, closed DMs). Only the token's
+SHA-256 is stored. Invites expire after 14 days.
+
+- A Discord ID that already belongs to an account is refused with 409 (active: "they
+  can sign in now"; deactivated: "reactivate them on the Officers page"). A database
+  trigger enforces the same rule.
+- A Discord ID with a pending invite is **re-invited**: same invite id, new token, name,
+  subteam, inviter and expiry; the old link and DM status are cleared.
+- GET lists the newest 200 invites with `status` pending | expired | accepted |
+  onboarded and `dmConfigured`. DELETE revokes a pending invite (409 once accepted).
+- DMs go through the Discord bot API (`DISCORD_BOT_TOKEN`, `notify.DiscordBot`). The bot
+  must share a server with the invitee. Without the token, `dm.status` is
+  `not_configured`.
+
+**Accepting.** Signing in with Discord as an account that has no user row but a pending,
+unexpired invite creates an active officer named as invited, marks the invite accepted,
+audits `user.created` and `invite.accepted` as the new user, and redirects to
+`/onboarding`. Without an invite the usual `not_allowlisted` applies; when the sign-in
+started from an invite link (or the invite expired), it redirects to
+`/onboarding?unavailable=1` without revealing any invite details. Until onboarding is
+complete, every sign-in lands on `/onboarding`.
+
+**Onboarding** is for invitees only. `/api/me` carries `onboarding` (step to resume,
+invited name and subteam, inviter, `hasProfile`, `correctionsByDm`) or `null`. PUT
+`/api/me/onboarding {step}` saves where to resume ("Finish later"). POST
+`/api/me/onboarding/correction {message}` DMs the inviter that the pre-filled name or
+subteam is wrong; without a bot it returns `not_configured` plus the inviter's Discord
+ID so the client can open a DM. POST `/api/me/onboarding/complete` requires a saved
+profile (409 otherwise) and is idempotent; non-invitees get 409.
+
+**Profiles.** PUT `/api/me/profile` replaces the caller's profile. Required: `phone`
+(7–15 digits; `+ ( ) . -` and spaces allowed) and `birthday` as **MM-DD** (no year is
+collected; Feb 29 allowed). Optional (null or omitted clears): preferredName, pronouns,
+personalEmail, schoolEmail (lower-cased), gradDate (`YYYY-MM`), title (also the
+user's display title), startTerm, linkedin (https on linkedin.com). The subteam comes
+from the invite or existing profile; changing it is 403 ("ask a director"). Officers
+with neither pick one with `subteamId` on first save. Phone is redacted from the audit log.
+
+**Officers directory.** GET `/api/officers` lists active officers (director+ also see
+deactivated accounts) with subteam, profile fields and onboarding state, plus
+`subteams`, `canManage` and `canChangeRoles`. **Phone is only present for director+
+viewers.** Birthday (month-day) is visible to every officer. PATCH
+`/api/officers/:id` (director+) changes `subteamId` and `title`; editing a leadership
+user requires leadership. Role and active status stay on PATCH `/api/admin/users/:id`.
+
+**Calendar delivery.** Each officer's mode is `ics` or `google`.
+
+- `ics`: dashboard events are emailed as RFC 5545 invitations (METHOD:REQUEST, a stable
+  UID per event, SEQUENCE bumped on each update) to the officer's active calendar email.
+  Needs `SMTP_HOST`, `SMTP_FROM` and usually `SMTP_USERNAME`/`SMTP_PASSWORD`; port 465
+  is implicit TLS, others require STARTTLS (except localhost).
+- `google`: GET `/api/me/calendar/google/connect?next=` sends the officer to Google
+  consent (PKCE, offline access, scope `calendar.events`); `/auth/google/callback`
+  stores the AES-GCM-sealed tokens (key derived from the client secret), switches the
+  mode to google and returns to `next` with `?google=connected|cancelled|failed`.
+  Needs `GOOGLE_OAUTH_CLIENT_ID`/`_SECRET`, redirect URI `APP_URL/auth/google/callback`.
+  DELETE disconnects, revokes the grant and falls back to ics.
+- Without configuration, `ics.configured`/`google.configured` are false and the UI shows
+  "not configured"; choosing google then is 409.
+- Event create/update sends to every active officer with a profile, in the background.
+  Changing mode or connecting Google backfills upcoming events. Deliveries are recorded
+  in `calendar_deliveries` so updates replace (not duplicate) the entry. Event deletion
+  (events Pane) should call `Server.SyncEventToCalendars(event, true)` to send a cancel.
+- POST `/api/me/calendar/test` sends a sample invite synchronously and reports the result.

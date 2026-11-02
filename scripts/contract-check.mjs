@@ -61,7 +61,7 @@ if (!bin) {
 }
 const dbPath = join(work, 'check.db');
 const env = { ...process.env, DB_PATH: dbPath, RECEIPTS_DIR: join(work, 'receipts') };
-for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID', 'BOOTSTRAP_OWNER_DISCORD_ID', 'BOOTSTRAP_OWNER_NAME']) delete env[k];
+for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID', 'BOOTSTRAP_OWNER_DISCORD_ID', 'BOOTSTRAP_OWNER_NAME', 'DISCORD_BOT_TOKEN', 'SMTP_HOST', 'SMTP_FROM', 'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET']) delete env[k];
 const seeded = spawnSync(bin, ['seed', '-reset'], { env, encoding: 'utf8' });
 if (seeded.status !== 0) throw new Error(`seed failed: ${seeded.stderr}`);
 console.log(seeded.stdout.trim());
@@ -379,12 +379,44 @@ for (let i=0;i<4;i++) await call('calendarEmailCreate', { who: officer, body: { 
 await call('calendarEmailCreate', { who: officer, body: { email: 'six@example.org' }, expect: 409 });
 await call('calendarEmailDelete', { who: officer, params: { id: savedEmail.json.email.id } });
 await call('inviteCreate', { who: officer, body: {}, expect: 403 });
-await call('inviteCreate', { who: directorA, body: { name:'New officer',discordId:'100000000000000088',subteamId:'team-events',method:'link' } });
+const invited = await call('inviteCreate', { who: directorA, body: { name:'New officer',discordId:'100000000000000088',subteamId:'team-events',method:'link' } });
+// V0.3 officers: invites, directory, profile, onboarding and calendar delivery (no bot, SMTP or Google configured).
+const dmLess = await call('inviteCreate', { who: directorA, body: { name:'DM officer',discordId:'100000000000000089',subteamId:'team-build',method:'both' } });
+must(dmLess.json.dm.status === 'not_configured' && dmLess.json.link.includes('/login?invite='), 'no bot token falls back to copy-link');
+await call('inviteCreate', { who: directorA, body: { name:'Priya again',discordId:'100000000000000002',subteamId:'team-events' }, expect: 409 });
+must((await call('invitesList', { who: directorA })).json.invites.length >= 2, 'invites listed');
+await call('invitesList', { who: officer, expect: 403 });
+await call('inviteRevoke', { who: directorA, params: { id: dmLess.json.invite.id } });
+const officersOfficer = await call('officersList', { who: officer });
+must(officersOfficer.json.officers.every((o) => o.phone === undefined), 'officers never see phone');
+must((await call('officersList', { who: directorA })).json.officers.some((o) => typeof o.phone === 'string'), 'directors see phone');
+await call('officerDetail', { who: officer, params: { id: 'user-ava' } });
+await call('officerUpdate', { who: directorA, params: { id: 'user-marcus' }, body: { subteamId: 'team-events', title: 'Events crew' } });
+await call('officerUpdate', { who: officer, params: { id: 'user-marcus' }, body: { title: 'x' }, expect: 403 });
+await call('profileGet', { who: officer });
+await call('profilePut', { who: officer, body: { phone: '+1 206 555 0199', birthday: '04-21', pronouns: 'she/her' } });
+await call('profilePut', { who: officer, body: { phone: '1', birthday: '2004-04-21' }, expect: 400 });
+// Accept the invite the way sign-in does, then walk onboarding.
+db.prepare(`INSERT INTO users (id, discord_id, name, role, active, created_at, updated_at) VALUES ('user-invitee', '100000000000000088', 'New officer', 'officer', 1, ?, ?)`).run(Date.now(), Date.now());
+db.prepare(`UPDATE invites SET accepted_at = ?, user_id = 'user-invitee' WHERE id = ?`).run(Date.now(), invited.json.invite.id);
+const invitee = sessionFor('user-invitee');
+must((await call('me', { who: invitee })).json.onboarding?.step === 1, 'invitee starts onboarding');
+await call('onboardingSave', { who: invitee, body: { step: 3 } });
+await call('onboardingCorrection', { who: invitee, body: { message: 'Wrong subteam' } });
+await call('onboardingComplete', { who: invitee, expect: 409 });
+await call('profilePut', { who: invitee, body: { phone: '+1 206 555 0123', birthday: '12-01' } });
+await call('calendarGet', { who: invitee });
+await call('calendarPut', { who: invitee, body: { mode: 'ics' } });
+await call('calendarPut', { who: invitee, body: { mode: 'google' }, expect: 409 });
+await call('calendarTest', { who: invitee });
+await call('googleDisconnect', { who: invitee });
+await call('onboardingComplete', { who: invitee });
+must((await call('me', { who: invitee })).json.onboarding === null, 'onboarding done');
 await call('adminUserUpdate', { who: directorA, params:{id:'user-priya'}, body:{role:'leadership'}, expect:403 });
 await call('adminUserUpdate', { who: leadership, params:{id:createdB.json.user.id}, body:{role:'leadership'} });
 
 // Everything with a zod response schema must have been exercised.
-const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev']); // redirects: covered by the Go tests
+const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'googleConnect', 'googleCallback']); // redirects: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);
 if (missed.length) fail('coverage', `endpoints never called: ${missed.join(', ')}`);
 
