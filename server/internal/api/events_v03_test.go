@@ -137,7 +137,7 @@ func TestEventCoverUploadServeAndRemove(t *testing.T) {
 func TestEventLookupsListSubteamsAndHosts(t *testing.T) {
 	e := newEnv(t)
 	look := e.mustOK(e.get("/api/lookups", e.officer()))
-	if len(look.list("subteams")) != 3 || len(look.list("hosts")) == 0 {
+	if teams := e.scalar(`SELECT count(*) FROM subteams`); int64(len(look.list("subteams"))) != teams || len(look.list("hosts")) == 0 {
 		t.Fatalf("lookups: %s", look.Raw)
 	}
 }
