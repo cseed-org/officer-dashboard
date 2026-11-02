@@ -99,7 +99,7 @@ func apply(ctx context.Context, w *store.Queries) error {
 		if u.ID == "user-ava" {
 			team = "team-build"
 		}
-		if err := w.Exec(ctx, `INSERT INTO officer_profiles(user_id,subteam_id,phone,birthday,title,personal_email,start_term) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM officer_profiles WHERE user_id=?)`, u.ID, team, fmt.Sprintf("+120655501%02d", i), "2004-01-15", u.Title, u.Email, "Fall 2026", u.ID); err != nil {
+		if err := w.Exec(ctx, `INSERT INTO officer_profiles(user_id,subteam_id,phone,birthday,title,personal_email,start_term) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM officer_profiles WHERE user_id=?)`, u.ID, team, fmt.Sprintf("+120655501%02d", i), "01-15", u.Title, u.Email, "Fall 2026", u.ID); err != nil {
 			return err
 		}
 	}

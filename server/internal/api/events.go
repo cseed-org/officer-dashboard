@@ -137,6 +137,7 @@ func (c *Ctx) eventCreate() error {
 	ctx := c.Context()
 	id := auth.UUID()
 	var out EventListItem
+	var synced store.Event
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		cat, err := loadCatalog(ctx, w, false)
 		if err != nil {
@@ -157,6 +158,7 @@ func (c *Ctx) eventCreate() error {
 		if err := c.audit(ctx, w, "event.created", "event", id, nil, eventSnapshot(&e)); err != nil {
 			return err
 		}
+		synced = e
 		items, err := c.S.eventItems(ctx, w, cat, []store.Event{e}, id)
 		if err != nil {
 			return err
@@ -167,6 +169,7 @@ func (c *Ctx) eventCreate() error {
 	if err != nil {
 		return err
 	}
+	c.S.SyncEventToCalendars(synced, false)
 	writeJSON(c.W, 200, map[string]any{"event": out})
 	return nil
 }
@@ -182,6 +185,7 @@ func (c *Ctx) eventUpdate() error {
 	ctx := c.Context()
 	id := c.R.PathValue("id")
 	var out EventListItem
+	var synced store.Event
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		e, err := w.EventByID(ctx, id)
 		if err != nil {
@@ -217,6 +221,7 @@ func (c *Ctx) eventUpdate() error {
 		if err := c.audit(ctx, w, "event.updated", "event", id, before, eventSnapshot(updated)); err != nil {
 			return err
 		}
+		synced = *updated
 		items, err := c.S.eventItems(ctx, w, cat, []store.Event{*updated}, id)
 		if err != nil {
 			return err
@@ -227,6 +232,7 @@ func (c *Ctx) eventUpdate() error {
 	if err != nil {
 		return err
 	}
+	c.S.SyncEventToCalendars(synced, false)
 	writeJSON(c.W, 200, map[string]any{"event": out})
 	return nil
 }

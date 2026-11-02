@@ -337,7 +337,7 @@ func TestMigrationsAreIdempotentAndReaderSeesWriterCommits(t *testing.T) {
 	}
 	var applied int
 	_ = d.W.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied)
-	if applied != 6 {
-		t.Errorf("applied migrations = %d (want 6)", applied)
+	if applied != 7 {
+		t.Errorf("applied migrations = %d (want 7)", applied)
 	}
 }

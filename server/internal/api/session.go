@@ -14,11 +14,15 @@ import (
 )
 
 const (
-	sessionTTL     = 30 * 24 * time.Hour
-	renewWhenLeft  = 15 * 24 * time.Hour
-	oauthStateName = "cseed_oauth_state"
-	oauthVerifier  = "cseed_oauth_verifier"
-	nextCookieName = "cseed_next"
+	sessionTTL       = 30 * 24 * time.Hour
+	renewWhenLeft    = 15 * 24 * time.Hour
+	oauthStateName   = "cseed_oauth_state"
+	oauthVerifier    = "cseed_oauth_verifier"
+	nextCookieName   = "cseed_next"
+	inviteCookieName = "cseed_invite"
+	googleStateName  = "cseed_google_state"
+	googleVerifier   = "cseed_google_verifier"
+	googleNextName   = "cseed_google_next"
 )
 
 type principalKey struct{}
