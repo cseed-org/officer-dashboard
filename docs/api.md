@@ -301,8 +301,8 @@ active director-or-leadership account cannot be deactivated or demoted to office
 widget order, IDs are unique (1–64 characters), maximum 50 widgets. Sizes are Home grid
 blocks, `W×H`: `1x1`, `2x1`, `1x2`, `2x2`, `4x1`, `4x2` (each widget supports a subset; see
 `web/src/ui/widgets/registry.ts`). V0.3 sizes `S`, `M`, `L` and the old `kpis` widget are still
-accepted and returned; the web client migrates them to blocks on load and saves the migrated
-layout on the person's next save. An empty array is intentional. Missing prefs return the
+accepted and returned; the web client migrates them to blocks on load and automatically saves the converted
+layout once on first load. An empty array is intentional. Missing prefs return the
 default Home layout (five stat tiles, My actions, Recent events, Budget vs actual, Activity, Web Analytics).
 Unknown IDs survive round trips for forward compatibility. Theme and density remain
 in localStorage. All preference writes are audit logged.

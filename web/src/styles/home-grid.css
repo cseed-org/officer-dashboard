@@ -41,10 +41,10 @@
 .blk[data-w="2"] {--w: 2;} .blk[data-w="4"] {--w: 4;}
 .blk[data-h="2"] {--h: 2;}
 /* Middle width (tablets, narrow windows): stat tiles stay four across, but tables and feeds need
-   room, so 2×2 takes the full row and 1×2 takes half. */
+   room, so 2×2 takes the full row and 1×2 becomes 2×1 to pair with two stat tiles. */
 @container blocks (min-width: 600px) and (max-width: 959px) {
   .blk[data-w="2"][data-h="2"] {--w: 4;}
-  .blk[data-w="1"][data-h="2"] {--w: 2;}
+  .blk[data-w="1"][data-h="2"] {--w: 2; --h: 1;}
 }
 /* Two columns below 600px of Home width (phones, narrow tablets). Anything two blocks tall or four
    wide takes the full row so tables and feeds stay readable; 1×1 tiles pair up. */

@@ -20,7 +20,7 @@ var defaultWidgets = []store.WidgetPlacement{
 }
 
 // widgetSizes lists V0.4 block sizes, then the V0.3 S/M/L sizes. Layouts saved before V0.4 keep
-// S/M/L until the person next saves; the web client migrates them on load, and an old open tab
+// S/M/L until Home automatically saves the converted layout on load; an old open tab
 // can still save.
 var widgetSizes = []string{"1x1", "2x1", "1x2", "2x2", "4x1", "4x2", "S", "M", "L"}
 

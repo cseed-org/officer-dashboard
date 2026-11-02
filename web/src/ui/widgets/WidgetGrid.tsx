@@ -32,10 +32,19 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
     let alive = true;
     setError('');
     api('prefsGet').then(
-      (p) => {
+      async (p) => {
         if (!alive) return;
         const { layout: l } = migrateLayout(p.widgetLayout);
-        setLayout(l); setSaved(l); setLoaded(true);
+        setLayout(l); setSaved(l);
+        // Upgrade only legacy storage, once; ordinary loads must not write preferences.
+        if (p.widgetLayout.some((w) => w.id === 'kpis' || ['S', 'M', 'L'].includes(w.size))) {
+          try {
+            await api('prefsPut', { body: { widgetLayout: l } });
+          } catch (e) {
+            if (alive) setError(`Couldn’t save the upgraded layout. Use Edit home and Done to retry. ${(e as Error).message}`);
+          }
+        }
+        if (alive) setLoaded(true);
       },
       (e: Error) => { if (alive) { setError(e.message); setLayout(defaultWidgetLayout); setLoaded(false); } },
     );
@@ -71,7 +80,7 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
     const next = moveTo(layout!, id, to);
     if (next === layout) return;
     setLayout(next); setMoved(id); announce(id, next);
-    focusAfter.current = `[data-widget="${id}"] .blk-handle`;
+    focusAfter.current = `[data-widget="${CSS.escape(id)}"] .blk-handle`;
   }
   function onHandleKey(e: KeyboardEvent, id: string, i: number) {
     if (drag) return;
@@ -112,7 +121,7 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
     setLayout(next);
     setLive(`Removed ${title(id)}`);
     const neighbour = next[Math.min(i, next.length - 1)];
-    focusAfter.current = neighbour ? `[data-widget="${neighbour.id}"] .blk-handle` : '.blk-add';
+    focusAfter.current = neighbour ? `[data-widget="${CSS.escape(neighbour.id)}"] .blk-handle` : '.blk-add';
   }
   function add(id: string) {
     const def = widgetDef(id)!;

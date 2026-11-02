@@ -73,7 +73,6 @@ for (const theme of THEMES) {
 }
 
 test('Default layout packs into a full rectangle: no ragged gaps', async ({ page }, info) => {
-  test.skip(info.project.name === 'tablet', 'the middle width widens tables; covered by the phone and desktop shapes');
   await openHome(page);
   const box = await grid(page).boundingBox();
   const rects = await grid(page).locator(':scope > li[data-widget]').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right, b: r.bottom })));
@@ -194,6 +193,12 @@ test('V0.3 S/M/L layouts migrate to blocks without losing anything', async ({ pa
   await expect(widget(page, 'kpi-pending')).toHaveAttribute('data-size', '1x1');
   await expect(widget(page, 'web-analytics')).toHaveAttribute('data-size', '4x2');
   await expect(widget(page, 'activity')).toHaveAttribute('data-size', '2x2');
+  await expect.poll(async () => (await savedLayout(page)).map((w) => w.size)).toEqual(['2x2', '1x1', '1x1', '1x1', '1x1', '1x1', '4x2', '2x2', '2x2']);
+  let upgradeWrites = 0;
+  page.on('request', (r) => { if (r.method() === 'PUT' && r.url().endsWith('/api/me/prefs')) upgradeWrites++; });
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Edit home' })).toBeEnabled();
+  expect(upgradeWrites).toBe(0);
   // A widget from a feature that has not shipped stays saved and shows in edit mode.
   await page.getByRole('button', { name: 'Edit home' }).click();
   await expect(widget(page, 'future-widget')).toContainText('Unavailable widget (future-widget)');
