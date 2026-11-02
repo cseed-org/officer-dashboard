@@ -182,7 +182,7 @@ Review: `node web/design/capture.mjs speakers-v03 design-requests-v03` captures 
 
 **Layout and sizes.** Home uses the shared S/M/L grid and gallery. The default layout is the five existing home cards, Web Analytics (on by default, L) and D1 Member signups (S). S shows one summary (plus the sync time for synced widgets), M the principal metrics, L adds breakdowns: Web Analytics top pages/referrers/countries; Traffic threats by action and requests by country; Performance per-page p75 with an "Insufficient samples" row; Workers/D1 daily request bars (text equivalent in `.visually-hidden`) and storage; My actions the full list. Every widget supports every size. L content fits the 2×2 cell; widget bodies never scroll.
 
-**Sync and connection states.** Cloudflare/D1 start at **Not connected**, never zero. One vocabulary drives the page line under the grid and the widget footers: connected "Synced daily, last 7:02 AM"; not connected "Not connected · syncs daily once leadership connects cseed.co"; loading "Checking today's sync…"; error "Sync failed 7:02 AM · no earlier snapshot"; mixed "Stale · Oct 31, 7:02 AM". A not-connected L widget shows a dashed preview of the metric names it will hold (no numbers), so the default first view is not a blank card. "Connection details" is a `<details>` inside the widget and is role-aware: leadership/owner see which deployment config to set (`CLOUDFLARE_API_TOKEN`, D1 account/database/token); officers and directors are told leadership connects it. There is no token-entry form.
+**Sync and connection states.** Cloudflare/D1 start at **Not connected**, never zero. One vocabulary drives the page line under the grid and the widget footers: connected "Synced daily, last 7:02 AM"; not connected "Not connected · syncs daily once leadership connects cseed.co"; loading "Checking today's sync…"; error "Sync failed 7:02 AM · no earlier snapshot"; mixed "Stale · Oct 31, 7:02 AM". A not-connected L widget shows a preview of the metric names it will hold (no numbers), so the default first view is not a blank card. "Connection details" is a `<details>` inside the widget and is role-aware: leadership/owner see which deployment config to set (`CLOUDFLARE_API_TOKEN`, D1 account/database/token); officers and directors are told leadership connects it. There is no token-entry form.
 
 **States.** Loading sets `aria-busy="true"` on each `li` with `.skel--kpi`/`.skel--row` placeholders and visually hidden "Loading <widget>". Error adds `.state--error` on the `li` (negative border) and a `.badge--negative` "Failed"; synced widgets say "Sync failed", club widgets "Couldn't load", both with Retry. **Mixed** is the realistic failure: club cards are normal and synced widgets show the previous snapshot under a "Stale" badge with its timestamp. Empty means connected with no records, never inferred from a missing connection.
 
@@ -195,6 +195,36 @@ Review: `node web/design/capture.mjs speakers-v03 design-requests-v03` captures 
 Design-only classes (in `home-v03.css`, no new colour tokens): `.home-preview` and `.home-role-note` (preview controls and role annotation); `.home-widgets` scopes Home density; `.home-details` holds L-only breakdowns and `.home-detail-hint` points to them at smaller sizes; `.home-metrics` (`--3` for three columns) groups numeric pairs; `.home-analytics` (`--2`) lays out breakdown groups with `.home-sub-head`; `.home-bars` is the usage column chart; `.home-connect` is the connection-details disclosure; `.home-ghost`/`.home-ghost-list` the not-connected preview; `.home-add-slot` keeps the add tile inside valid list markup. For the shared gallery's flex column, Home keeps the header and categories from shrinking and gives the body `min-height:0`.
 
 Open design questions: none. Account persistence and connection setup are implementation work.
+
+### V0.4 Home block grid
+
+Supersedes the V0.3 "Widget grid", "Widget edit mode" and "Widget gallery" rows above and the S/M/L sizing in the Home V0.3 fixture. Reference: [mockups/home-v04.html](mockups/home-v04.html) (`?mode=edit`, `?mode=edit&drag=<id>`, `?mode=edit&gallery=1`, `?theme=dark`). Production rules live in `src/styles/home-grid.css`; the mockup loads that file directly, so the mockup and the app cannot drift.
+
+**Grid.** Home is a grid of square-ish base blocks: `.blocks-wrap` (size container) > `ul.blocks[aria-label="Home widgets"]` > `li.blk[data-widget][data-w][data-h]`. Four columns when Home is at least 600px wide, two below that (the container width decides, not the viewport, so the sidebar never forces four cramped columns). Rows are `minmax(--block-row, auto)`: 152px (136px on two columns) at minimum, growing only if content needs it, so nothing is clipped and widgets never scroll inside. Flow is `row dense`: later small widgets fill holes left by larger ones. On two columns, anything two blocks tall or four wide takes the full row and 1×1 tiles pair up.
+
+**Sizes.** A size is `W×H` blocks: `1x1`, `2x1`, `1x2`, `2x2`, `4x1`, `4x2`. Each widget declares the sizes it supports and a default:
+
+| Widget | Sizes | Default |
+|---|---|---|
+| Stat tiles: upcoming events, avg check-in rate, reflection rate, budget remaining, pending requests (formerly the one "Key figures" row) | 1×1, 2×1 | 1×1 |
+| My actions, Recent events, Budget vs actual | 2×2, 4×2 | 2×2 |
+| Activity | 1×2, 2×2, 4×2 | 1×2 |
+| Web Analytics | 1×1 summary, 2×2 detail, 4×2 detail with breakdowns | 1×1 |
+| Traffic & security, Performance, Workers/D1, Member signups | 1×1 summary, 2×2 detail | 1×1 |
+
+The default layout fills a clean 4×5 rectangle on desktop: four stat tiles; My actions and Recent events (2×2 each); Budget vs actual (2×2), Activity (1×2), Pending requests and Web Analytics (1×1 each).
+
+**Tile.** Every widget is one `.tile` (solid 1px `--line` border, `--radius-widget`, a faint shadow, `--surface`): `.tile-head` (`h2.tile-title`, optional `.tile-link`) then `.tile-body`. Stat tiles are `a.tile.tile--stat` (the whole tile is the link) holding `.kpi-head`, `.kpi-value`, optional `.kpi-trend` and `.kpi-sub`. `.state` empty states inside a tile drop their own frame. Cloudflare widgets render as `.tile.cf-widget` with the detail level taken from the size (1×1 summary, 2×2 principal metrics, 4×2 plus breakdowns).
+
+**No dashed borders on Home**, in view or edit mode. Edit state, drop targets and the add tile use solid edges, soft fills and shadows.
+
+**Edit mode.** "Edit home" turns the toolbar into a sticky `.blocks-bar.is-editing` ("Arrange your home", a hint, Add widget, Cancel, primary Done) and adds `.is-editing` to the grid. Each tile gets a soft blue ring, its content dims to 38% and turns inert, and `.blk-tools` overlays: `button.blk-handle` (grip), `.blk-name`, `button.blk-remove` ("Remove <name>"), and `.blk-sizes[role=group]` > `button.blk-size[aria-pressed]` labelled "1×1" with the accessible name "1 by 1 blocks"; only the widget's allowed sizes appear. Tiles sway ±0.3° over 3.2s with staggered phases; reduced motion removes the sway and keeps every control. The grid ends with `button.blk-add` (solid border, `--sunken` fill, "Add widget · N available").
+
+**Reorder.** Pointer drag (mouse, pen and touch) on the grip: the widget's own cell becomes the drop target as a soft filled highlight (`.blk.is-dragging`, `--block-drop` fill with an inset ring) and a lifted `.blk-float` card with the name and size follows the pointer; crossing another widget moves the target there. Escape cancels the drag. Keyboard: on a focused grip, arrow keys move one place (Left/Up earlier, Right/Down later), Home/End to the ends; focus stays on the grip, the moved tile flashes the same fill, and a polite live region says "Recent events, position 3 of 10".
+
+**Add.** Add widget opens `dialog.blk-gallery` (native modal; Escape and focus return): one `.blk-gallery-item` per widget not on Home, with its name, the sizes it supports as text plus decorative `.blk-glyph` footprints, and "Add <name>". Adding uses the default size, appends the widget and keeps the sheet open. A bottom sheet on phone.
+
+**Persistence and migration.** Done saves `{widgetLayout: [{id, size}]}` to `PUT /api/me/prefs` (array order is visual order); Cancel restores the saved layout. Layouts saved before V0.4 use S/M/L and the single `kpis` widget; the web client migrates them in code on load: `kpis` expands in place into the five 1×1 stat tiles, S becomes the smallest allowed size, M becomes 2×2 (or the nearest allowed size), L becomes 4×2 (or the largest allowed), and a size a widget does not support snaps to its nearest allowed size. Unknown widget IDs are kept and shown in edit mode as "Unavailable widget". The migrated layout is saved the next time the person presses Done; the server still accepts S/M/L so an old open tab can save.
 
 ### D3 · Officers and Members fixtures
 

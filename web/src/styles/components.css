@@ -584,14 +584,7 @@ td.people-who-cell {min-width:0;}
 @media (max-width:639px) {.list-toolbar .toolbar-actions, .list-toolbar .toolbar-search {width:100%;flex:1 1 100%;}}
 .people-title + .copy-text::before {content:"·";margin-right:4px;color:var(--muted);}
 
-/* Foundation widget shell; page design continues to use existing block styles. */
-.widget-toolbar,.widget-gallery,.widget-controls { display:flex; gap:var(--space-2, 8px); flex-wrap:wrap; align-items:center; margin-bottom:16px; }
-.widget-slot { min-width:0; }
-.widget-slot > .block { height:100%; }
-.widget-slot--L { grid-column:1 / -1; }
-.widget-slot--S { max-height:360px; overflow:auto; }
-.widget-controls { border:1px solid var(--line, #ccc); padding:8px; }
-.widget-controls + .block { height:auto; }
+/* Home widgets: see home-grid.css (V0.4 block grid). */
 /* Three role choices and ownership actions need their own lines on phones. */
 @media (max-width:639px) {
   .dt.dt--people tr {grid-template-columns:minmax(0,1fr);align-items:start;gap:12px;}
