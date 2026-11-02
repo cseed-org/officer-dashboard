@@ -1,4 +1,5 @@
 /** Track edits across all native forms, including drawers mounted after page load. */
+import { useEffect } from 'preact/hooks';
 type Control = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 const dirty = new Map<Control, string>();
 const initial = new WeakMap<Control, string>();
@@ -15,7 +16,19 @@ const changed = () => {
     window.dispatchEvent(new Event('cseed-unsaved'));
   }, 0);
 };
+const declared = new Set<symbol>();
+/** For editors that are not native forms (row editors, action panels): report dirtiness explicitly. */
+export function useUnsavedEdits(isDirty: boolean) {
+  useEffect(() => {
+    if (!isDirty) return;
+    const key = Symbol('unsaved');
+    declared.add(key);
+    changed();
+    return () => { declared.delete(key); changed(); };
+  }, [isDirty]);
+}
 export function hasUnsavedEdits() {
+  if (declared.size > 0) return true;
   for (const el of dirty.keys()) if (!el.isConnected || el.closest('dialog:not([open])') || initial.get(el) === value(el)) dirty.delete(el);
   for (const form of completing) {
     if (form.isConnected && form.querySelector('fieldset:disabled, button[type=submit]:disabled, input[type=submit]:disabled')) return true;

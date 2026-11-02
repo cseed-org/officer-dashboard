@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import type { BudgetLine, BudgetsResponse, CurrentUser, LookupsResponse, PurchaseRequestsListQuery } from '../../lib/contracts';
 import { FINANCE_REPORTS, OFFICER_FINANCE_REPORTS, type FinanceReport, type PurchaseStatus } from '../../lib/domain';
 import { api } from '../../lib/api/client';
+import { useUnsavedEdits } from '../../lib/unsaved';
 import { useApi } from '../../lib/api/useApi';
 import { dollarsToCents, formatCents, REPORT_LABEL, STATUS_LABEL } from '../../lib/format';
 import { setParams, useSearch } from '../../lib/nav';
@@ -302,6 +303,7 @@ function BudgetEditor({ data, lookups, onSaved }: { data: BudgetsResponse; looku
   const set = (key: string, patch: Partial<Draft>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const total = rows.reduce((s, r) => s + (dollarsToCents(r.amount) || 0), 0);
   const dirty = JSON.stringify(rows.map(({ key: _k, ...r }) => r)) !== JSON.stringify(data.lines.map(toDraft).map(({ key: _k, ...r }) => r));
+  useUnsavedEdits(dirty);
 
   const save = async () => {
     const e: Record<string, string> = {};
