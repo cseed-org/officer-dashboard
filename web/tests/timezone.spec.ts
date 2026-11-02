@@ -19,7 +19,12 @@ test('automatic follows device on focus; manual and club persist independently o
   await expect.poll(async () => (await (await page.request.get('/api/me/prefs')).json()).effectiveTimezone).toBe('Asia/Tokyo');
   await expect(page.locator('[data-timezone-preview]')).toContainText('Asia/Tokyo');
   await page.getByRole('radio', { name: 'Choose manually' }).check();
-  await page.getByLabel('Manual time zone', { exact: true }).fill('Europe/London');
+  const manual = page.getByLabel('Manual time zone', { exact: true });
+  await manual.fill('Mars/Base');
+  await page.getByRole('button', { name: 'Save time zone', exact: true }).click();
+  await expect(manual).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.locator('#manual-timezone-error')).toHaveText('Choose an IANA time zone');
+  await manual.fill('Europe/London');
   await page.getByRole('button', { name: 'Save time zone', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Time zone saved' })).toBeVisible();
   await page.reload();
