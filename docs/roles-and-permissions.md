@@ -34,6 +34,7 @@ Roles rank `leadership > director > officer`; unknown roles are denied. Owner is
 | Capability | Officer | Director | Leadership | Owner |
 | --- | --- | --- | --- | --- |
 | Read dashboard, events, contacts, members | Yes | Yes | Yes | Yes |
+| Create/edit/delete External Contacts, set speaking history, log outreach | Yes | Yes | Yes | Yes |
 | Manage own profile/calendar and submit purchases | Yes | Yes | Yes | Yes |
 | Approve/settle purchases, manage budgets/periods | No | Yes | Yes | Yes |
 | Officers Access, service tokens, audit history | No | Yes | Yes | Yes |

@@ -11,7 +11,7 @@ import { Icon } from '../components/Icon';
 type Kind = SearchResult['kind'] | 'page';
 type Item = { kind: Kind; id: string; title: string; subtitle: string; href: string };
 
-const GROUP_LABEL: Record<Kind, string> = { page: 'go to', request: 'requests', event: 'events', user: 'people', account: 'accounts', contact: 'contacts' };
+const GROUP_LABEL: Record<Kind, string> = { page: 'go to', request: 'requests', event: 'events', user: 'people', account: 'accounts', contact: 'External Contacts' };
 const GROUP_ORDER: Kind[] = ['request', 'event', 'user', 'account', 'contact', 'page'];
 
 const pages = (director: boolean): Item[] => [
@@ -22,6 +22,7 @@ const pages = (director: boolean): Item[] => [
   { kind: 'page', id: 'finance', title: 'Requests & finance', subtitle: 'requests, budgets, reports', href: href.finance() },
   { kind: 'page', id: 'reports', title: 'Finance reports', subtitle: 'statements and CSV export', href: href.finance('reports') },
   ...(director ? [{ kind: 'page' as const, id: 'access', title: 'Officer access', subtitle: 'roles, ownership, tokens, audit log', href: href.admin() }] : []),
+  { kind: 'page', id: 'contacts', title: 'External Contacts', subtitle: 'speakers, mentors and outreach', href: '/contacts' },
   { kind: 'page', id: 'settings', title: 'Settings', subtitle: 'theme, density, sign out', href: href.settings },
 ];
 

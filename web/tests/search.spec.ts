@@ -34,7 +34,7 @@ test('Ctrl+K opens the palette anywhere and arrow keys move through results', as
   await expect(box).toBeFocused();
   await box.fill('hack');
   await expect(page.locator('.palette [data-group="request"]')).toBeVisible();
-  const options = page.getByRole('option');
+  const options = page.locator('.palette').getByRole('option');
   await box.press('ArrowDown');
   await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
   await box.press('ArrowUp');
