@@ -192,9 +192,9 @@ export function lumaEventUrlProblem(raw: string): string | null {
     return msg;
   }
   if (u.protocol !== 'https:' || u.username || u.password || u.port || !LUMA_HOSTS.includes(u.hostname.toLowerCase())) return msg;
-  const parts = u.pathname.replace(/\/$/, '').replace(/^\//, '').split('/');
-  if (parts.length === 1 && /^[A-Za-z0-9][A-Za-z0-9-]{1,99}$/.test(parts[0]) && !LUMA_RESERVED.has(parts[0].toLowerCase())) return null;
-  if (parts.length === 2 && parts[0] === 'event' && /^evt-[A-Za-z0-9]{4,64}$/.test(parts[1])) return null;
+  const [first = '', second, ...rest] = u.pathname.replace(/\/$/, '').replace(/^\//, '').split('/');
+  if (second === undefined && /^[A-Za-z0-9][A-Za-z0-9-]{1,99}$/.test(first) && !LUMA_RESERVED.has(first.toLowerCase())) return null;
+  if (rest.length === 0 && first === 'event' && second !== undefined && /^evt-[A-Za-z0-9]{4,64}$/.test(second)) return null;
   return msg;
 }
 export const LumaEventUrl = z
@@ -263,8 +263,6 @@ export const EventDetailResponse = z.object({
     description: z.string().nullable(),
     /** TODO(notion): placeholder is true while the NotionSync stub is in use (no page exists). */
     notion: z.object({ url: z.string().nullable(), placeholder: z.boolean() }),
-    /** The design request made from this event (design_requests is built separately). */
-    designRequestId: Id.nullable(),
     updatedAt: IsoDateTime,
   }),
   /** Purchase requests linked to this event. */
@@ -299,7 +297,6 @@ export const EventUpsertRequest = z.object({
   capacity: z.number().int().min(1).max(100000).nullable().optional(),
   hostSubteamId: Id.nullable().optional(),
   lumaUrl: LumaEventUrl.nullable().optional(),
-  designRequestId: Id.nullable().optional(),
 });
 export type EventUpsertRequest = z.infer<typeof EventUpsertRequest>;
 export const EventPatchRequest = EventUpsertRequest.partial();

@@ -129,13 +129,8 @@ func TestEventCoverUploadServeAndRemove(t *testing.T) {
 	}
 }
 
-func TestEventDesignRequestLinkAndLookups(t *testing.T) {
+func TestEventLookupsListSubteamsAndHosts(t *testing.T) {
 	e := newEnv(t)
-	id := e.mustOK(e.post("/api/events", draftEvent, e.officer())).str("event", "id")
-	e.mustOK(e.do("PATCH", "/api/events/"+id, map[string]any{"designRequestId": "dr-123"}, e.officer()))
-	if got := e.mustOK(e.get("/api/events/"+id, e.officer())).str("event", "designRequestId"); got != "dr-123" {
-		t.Fatalf("designRequestId %q", got)
-	}
 	look := e.mustOK(e.get("/api/lookups", e.officer()))
 	if len(look.list("subteams")) != 3 || len(look.list("hosts")) == 0 {
 		t.Fatalf("lookups: %s", look.Raw)

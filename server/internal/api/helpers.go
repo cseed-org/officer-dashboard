@@ -358,7 +358,7 @@ func eventSnapshot(e *store.Event) map[string]any {
 	return map[string]any{
 		"id": e.ID, "lumaId": e.LumaID, "name": e.Name, "startsAt": e.StartsAt, "endsAt": e.EndsAt, "location": e.Location, "url": e.URL,
 		"hostUserId": e.HostUserID, "status": e.Status, "description": e.Description, "capacity": e.Capacity, "hostSubteamId": e.HostSubteamID,
-		"lumaUrl": e.LumaURL, "notionUrl": e.NotionURL, "designRequestId": e.DesignRequestID, "hasCover": e.CoverUpdatedAt != nil,
+		"lumaUrl": e.LumaURL, "notionUrl": e.NotionURL, "hasCover": e.CoverUpdatedAt != nil,
 		"createdAt": isoMs(int64(e.CreatedAt)), "updatedAt": isoMs(int64(e.UpdatedAt)),
 	}
 }

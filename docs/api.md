@@ -305,7 +305,6 @@ directors and leadership have the same event powers. Each change writes `event.c
   must be removed in Luma separately.
 - **Notion (stub).** On create the server asks `NotionSync` for a page; the stub stores a
   placeholder link and `notion.placeholder` is `true`. See `docs/notion-integration.md`.
-- **Design request.** `designRequestId` records the design request made from the event.
-  It has no foreign key until the `design_requests` table lands; the UI hands the event's
-  title, formats, due date and brief to the Design board through the URL (see
-  `web/src/lib/designPrefill.ts`).
+- **Design request.** "Request design" opens the Design board's new-request form for the
+  event (`/design?new=1&eventId=<id>`). The board prefills it from the event and keeps the
+  link on its own side (`design_requests.event_id`), built in the design-requests Pane.

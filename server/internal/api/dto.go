@@ -76,7 +76,6 @@ type EventDetail struct {
 	URL             *string    `json:"url"`
 	Description     *string    `json:"description"`
 	Notion          NotionLink `json:"notion"`
-	DesignRequestID *string    `json:"designRequestId"`
 	UpdatedAt       string     `json:"updatedAt"`
 }
 

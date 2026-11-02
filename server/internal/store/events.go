@@ -23,7 +23,6 @@ type Event struct {
 	HostSubteamID   *string
 	LumaURL         *string
 	NotionURL       *string
-	DesignRequestID *string
 	CreatedAt       Ms
 	UpdatedAt       Ms
 	// CoverUpdatedAt is read from event_covers (nil when the event has no cover).
@@ -33,16 +32,16 @@ type Event struct {
 // EventStatuses are the values events.status accepts.
 var EventStatuses = []string{"draft", "published", "completed", "cancelled"}
 
-const eventCols = `id, luma_id, name, starts_at, ends_at, location, url, host_user_id, status, description, capacity, host_subteam_id, luma_url, notion_url, design_request_id, created_at, updated_at`
+const eventCols = `id, luma_id, name, starts_at, ends_at, location, url, host_user_id, status, description, capacity, host_subteam_id, luma_url, notion_url, created_at, updated_at`
 
 const eventSelect = `SELECT e.id, e.luma_id, e.name, e.starts_at, e.ends_at, e.location, e.url, e.host_user_id, e.status, e.description, e.capacity,
-	e.host_subteam_id, e.luma_url, e.notion_url, e.design_request_id, e.created_at, e.updated_at, c.updated_at
+	e.host_subteam_id, e.luma_url, e.notion_url, e.created_at, e.updated_at, c.updated_at
 	FROM events e LEFT JOIN event_covers c ON c.event_id = e.id`
 
 func scanEvent(s interface{ Scan(...any) error }) (*Event, error) {
 	var e Event
 	if err := s.Scan(&e.ID, &e.LumaID, &e.Name, &e.StartsAt, &e.EndsAt, &e.Location, &e.URL, &e.HostUserID, &e.Status, &e.Description, &e.Capacity,
-		&e.HostSubteamID, &e.LumaURL, &e.NotionURL, &e.DesignRequestID, &e.CreatedAt, &e.UpdatedAt, &e.CoverUpdatedAt); err != nil {
+		&e.HostSubteamID, &e.LumaURL, &e.NotionURL, &e.CreatedAt, &e.UpdatedAt, &e.CoverUpdatedAt); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -89,9 +88,9 @@ func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	if e.Status == "" {
 		e.Status = "published"
 	}
-	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		e.ID, e.LumaID, e.Name, e.StartsAt, e.EndsAt, e.Location, e.URL, e.HostUserID, e.Status, e.Description, e.Capacity, e.HostSubteamID,
-		e.LumaURL, e.NotionURL, e.DesignRequestID, int64(e.CreatedAt), int64(e.UpdatedAt))
+		e.LumaURL, e.NotionURL, int64(e.CreatedAt), int64(e.UpdatedAt))
 	return err
 }
 
@@ -110,7 +109,6 @@ type EventPatch struct {
 	HostSubteamID   Opt[string]
 	LumaURL         Opt[string]
 	NotionURL       Opt[string]
-	DesignRequestID Opt[string]
 }
 
 // UpdateEvent applies a patch and stamps updated_at.
@@ -137,7 +135,6 @@ func (q *Queries) UpdateEvent(ctx context.Context, id string, p EventPatch, now 
 	str("host_subteam_id", p.HostSubteamID)
 	str("luma_url", p.LumaURL)
 	str("notion_url", p.NotionURL)
-	str("design_request_id", p.DesignRequestID)
 	sets = append(sets, "updated_at = ?")
 	args = append(args, now, id)
 	_, err := q.q.ExecContext(ctx, `UPDATE events SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
