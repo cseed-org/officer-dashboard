@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Contact, CurrentUser, EventListItem } from "../../lib/contracts";
-import { api, type BodyOf } from "../../lib/api/client";
+import { api, fieldErrors, type BodyOf } from "../../lib/api/client";
 import { useApi } from "../../lib/api/useApi";
 import { setParams, useSearch } from "../../lib/nav";
 import { safeUrl, fmtDate, fmtDateTime } from "../../lib/format";
@@ -13,6 +13,10 @@ const label = (s: string) =>
     .split("_")
     .map((w) => w[0]!.toUpperCase() + w.slice(1))
     .join(" ");
+const formError = (error: unknown) => {
+  const fields = Object.entries(fieldErrors(error));
+  return fields.length ? fields.map(([key, message]) => `${key === 'linkedin' ? 'LinkedIn' : key === 'eventIds' ? 'Linked events' : label(key)}: ${message}`).join(' · ') : errorMessage(error);
+};
 const blank = {
   name: "",
   org: "",
@@ -49,6 +53,7 @@ function Speakers({ me }: { me: CurrentUser }) {
   const [topic, setTopic] = useState("");
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Draft>({ ...blank });
+  const addDraft = useRef<Draft | null>(null);
   const [contact, setContact] = useState<Contact | null>(null);
   const [detailError, setDetailError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -89,14 +94,18 @@ function Speakers({ me }: { me: CurrentUser }) {
       requestAnimationFrame(() => logButton.current?.focus());
     }
   }, [outreach]);
+  useEffect(() => {
+    if (!adding && openId && contact?.id) requestAnimationFrame(() => document.getElementById('contact-title')?.focus());
+  }, [adding, contact?.id]);
   function closeContact() {
     if (busy) return;
+    if (adding) addDraft.current = draft;
     setAdding(false);
     setParams({ id: null });
     setError("");
   }
   function add() {
-    setDraft({ ...blank, eventIds: [] });
+    setDraft(addDraft.current ?? { ...blank, eventIds: [] });
     setError("");
     setAdding(true);
   }
@@ -121,11 +130,12 @@ function Speakers({ me }: { me: CurrentUser }) {
       list.reload();
       setNotice(adding ? "Contact added." : "Contact saved.");
       if (adding) {
+        addDraft.current = null;
         setAdding(false);
         setParams({ id: d.contact.id });
       }
     } catch (e) {
-      setError(errorMessage(e));
+      setError(formError(e));
     } finally {
       setBusy(false);
     }
@@ -143,7 +153,7 @@ function Speakers({ me }: { me: CurrentUser }) {
       setNotice("Contact deleted.");
       setParams({ id: null });
     } catch (e) {
-      setError(errorMessage(e));
+      setError(formError(e));
     } finally {
       setBusy(false);
     }
@@ -163,7 +173,7 @@ function Speakers({ me }: { me: CurrentUser }) {
       setNotice("Outreach logged.");
       setOutreach(false);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(formError(e));
     } finally {
       setBusy(false);
     }
@@ -512,7 +522,7 @@ function Speakers({ me }: { me: CurrentUser }) {
                     <p>Loading events…</p>
                   )}
                 </fieldset>
-                {error && <p role="alert">{error}</p>}
+                {error && <p class="field-error" role="alert">{error}</p>}
                 <button class="btn btn--primary" type="submit">
                   {busy ? "Saving…" : adding ? "Add contact" : "Save contact"}
                 </button>
@@ -665,7 +675,7 @@ function Speakers({ me }: { me: CurrentUser }) {
               Latest dated entry updates “Last reached out by”. Contact notes
               stay separate.
             </p>
-            {error && <p role="alert">{error}</p>}
+            {error && <p class="field-error" role="alert">{error}</p>}
             <button class="btn btn--primary" type="submit">
               {busy ? "Saving…" : "Save outreach"}
             </button>
