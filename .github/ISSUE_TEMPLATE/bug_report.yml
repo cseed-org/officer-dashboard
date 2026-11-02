@@ -1,10 +1,11 @@
 name: Bug report
 description: Report a reproducible problem with the dashboard.
 title: "Bug: "
+labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: "For security issues, follow SECURITY.md. Remove secrets and personal data from all details and screenshots."
+      value: "For security issues, follow [SECURITY.md](https://github.com/cseed-org/officer-dashboard/blob/main/SECURITY.md). Remove secrets and personal data from all details and screenshots."
   - type: dropdown
     id: area
     attributes:
@@ -14,11 +15,13 @@ body:
         - Events
         - Officers
         - Members
-        - Speakers
+        - Speakers & Mentors
         - Design Requests
         - Finance
         - Admin
         - Onboarding
+        - Settings
+        - Sign-in
         - Other
     validations:
       required: true
