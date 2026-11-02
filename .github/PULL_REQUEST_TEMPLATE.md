@@ -15,7 +15,7 @@ Closes #<!-- issue number, or explain why no issue applies -->
 
 ## Validation
 
-Run the commands in [CONTRIBUTING.md](../CONTRIBUTING.md). Mark items that apply and explain skipped checks.
+Run the commands in [CONTRIBUTING.md](https://github.com/cseed-org/officer-dashboard/blob/main/CONTRIBUTING.md). Mark items that apply and explain skipped checks.
 
 - [ ] Go formatting (`gofmt`) is clean.
 - [ ] `go vet ./...` and `go vet -tags dev ./...` pass.
@@ -27,7 +27,7 @@ Run the commands in [CONTRIBUTING.md](../CONTRIBUTING.md). Mark items that apply
 - [ ] New migrations use the next numbered SQL filename; tests use `store.MigrationCount()`.
 - [ ] Relevant local Playwright tests pass for UI changes.
 - [ ] UI screenshots attached: 1440px and 390px, each in light and dark themes.
-- [ ] Brand changes follow [TRADEMARKS.md](../TRADEMARKS.md).
+- [ ] Brand changes follow [TRADEMARKS.md](https://github.com/cseed-org/officer-dashboard/blob/main/TRADEMARKS.md).
 
 Checks skipped / additional evidence:
 
