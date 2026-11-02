@@ -24,13 +24,67 @@ async function addContact(page: Page, c: { name: string; org?: string; type?: st
   await expect(d.getByRole('heading', { level: 2, name: 'Add contact' })).toBeFocused();
   await d.getByLabel('Name').fill(c.name);
   if (c.org) await d.getByLabel('Organization').fill(c.org);
-  if (c.type) await d.getByLabel('Type').selectOption(c.type);
+  if (c.type) await d.getByLabel('Type', { exact: true }).selectOption(c.type);
   if (c.topics) await d.getByLabel('Topics').fill(c.topics);
   if (c.email) await d.getByLabel('Email').fill(c.email);
   await d.getByRole('button', { name: 'Add contact' }).click();
   await expect(page).toHaveURL(/\/speakers\?id=/);
   await expect(openDialog(page).getByRole('heading', { level: 2, name: c.name })).toBeVisible();
 }
+
+test('contacts: field-named validation error, error styling, add draft kept on close, detail heading focused after create', async ({ page }) => {
+  const errors = watchErrors(page);
+  const name = `Draft ${Date.now().toString(36)}`;
+  await devLogin(page, 'officer');
+  await page.goto('/speakers');
+  await settle(page);
+
+  // A whitespace-only name passes `required` but the API rejects it: the alert names the field.
+  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  let d = openDialog(page);
+  await d.getByLabel('Name').fill('   ');
+  await d.getByRole('button', { name: 'Add contact' }).click();
+  const alert = d.getByRole('alert');
+  await expect(alert).toContainText(/Name:/);
+  await expect(alert).not.toHaveText('Validation failed');
+  // Styled as an error, not body text.
+  await expect(alert).toHaveClass(/field-error/);
+  const [alertColor, bodyColor] = await Promise.all([
+    alert.evaluate((el) => getComputedStyle(el).color),
+    d.getByLabel('Name').evaluate((el) => getComputedStyle(el).color),
+  ]);
+  expect(alertColor).not.toBe(bodyColor);
+
+  // Closing the Add drawer by accident keeps the draft for the next "Add contact".
+  await d.getByLabel('Name').fill(name);
+  await d.getByLabel('Organization').fill('Draft Org');
+  await page.keyboard.press('Escape');
+  await expect(openDialog(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  d = openDialog(page);
+  await expect(d.getByLabel('Name')).toHaveValue(name);
+  await expect(d.getByLabel('Organization')).toHaveValue('Draft Org');
+
+  // After a successful create the detail heading takes focus, and the next Add starts blank.
+  await d.getByRole('button', { name: 'Add contact' }).click();
+  await expect(page).toHaveURL(/\/speakers\?id=/);
+  d = openDialog(page);
+  await expect(d.getByRole('heading', { level: 2, name })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(openDialog(page)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  await expect(openDialog(page).getByLabel('Name')).toHaveValue('');
+  await page.keyboard.press('Escape');
+
+  // Clean up.
+  const row = page.locator('main').locator('.speakers-desktop tr, .speakers-mobile article').filter({ visible: true, hasText: name });
+  await row.getByRole('button', { name: `View contact ${name}` }).click();
+  d = openDialog(page);
+  await d.getByRole('button', { name: 'Delete contact' }).click();
+  await d.getByRole('button', { name: 'Confirm delete contact and outreach history' }).click();
+  await expect(row).toHaveCount(0);
+  expect(errors.filter((e) => !/\/api\/contacts → 400$/.test(e))).toEqual([]);
+});
 
 for (const theme of THEMES) {
   test(`contacts: add, edit, nested outreach, latest outreach, filters, errors, delete (${theme})`, async ({ page }, info) => {
@@ -89,18 +143,27 @@ for (const theme of THEMES) {
     await expect(d.getByRole('button', { name: 'Log outreach' })).toBeFocused();
     await expect(d.getByLabel('Organization')).toHaveValue('North Shore Ventures');
 
+    // The Close button does the same. Wait for the outreach heading first so dialog[open] is
+    // not resolved against the parent drawer while it closes.
+    await d.getByRole('button', { name: 'Log outreach' }).click();
+    await expect(page.locator('#outreach-title')).toBeFocused();
+    await openDialog(page).getByRole('button', { name: 'Close' }).click();
+    d = openDialog(page);
+    await expect(d.getByRole('heading', { level: 2, name })).toBeVisible();
+    await expect(d.getByRole('button', { name: 'Log outreach' })).toBeFocused();
+
     // Outreach save fails: the error shows inside the outreach dialog and the note is kept.
     await d.getByRole('button', { name: 'Log outreach' }).click();
     d = openDialog(page);
     await d.getByLabel('When').fill('2026-10-30T10:00');
-    await d.getByLabel('Channel').selectOption('linkedin');
-    await d.getByLabel('Outcome').selectOption('interested');
+    await d.getByLabel('Channel', { exact: true }).selectOption('linkedin');
+    await d.getByLabel('Outcome', { exact: true }).selectOption('interested');
     await d.getByLabel('Notes').fill('Follow up Nov 5');
     await page.route('**/api/contacts/*/outreach', (r) => r.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"unavailable"}' }));
     await d.getByRole('button', { name: 'Save outreach' }).click();
     await expect(d.getByRole('alert')).toBeVisible();
     await expect(d.getByLabel('Notes')).toHaveValue('Follow up Nov 5');
-    await expect(d.getByLabel('Channel')).toHaveValue('linkedin');
+    await expect(d.getByLabel('Channel', { exact: true })).toHaveValue('linkedin');
     await shot(page, 'outreach-error', info.project.name, theme);
     await page.unrouteAll({ behavior: 'ignoreErrors' });
     await d.getByRole('button', { name: 'Save outreach' }).click();
@@ -108,15 +171,15 @@ for (const theme of THEMES) {
     await expect(d.getByRole('heading', { level: 2, name })).toBeVisible();
     await expect(d.getByRole('button', { name: 'Log outreach' })).toBeFocused();
     await expect(d.locator('.timeline li')).toHaveCount(1);
-    await expect(d.locator('.timeline')).toContainText('Linkedin · Interested');
+    await expect(d.locator('.timeline')).toContainText('LinkedIn · Interested');
     await expect(d.getByLabel('Organization')).toHaveValue('North Shore Ventures');
 
     // An older entry logged later does not replace "Last reached out by".
     await d.getByRole('button', { name: 'Log outreach' }).click();
     d = openDialog(page);
     await d.getByLabel('When').fill('2026-10-01T09:00');
-    await d.getByLabel('Channel').selectOption('email');
-    await d.getByLabel('Outcome').selectOption('awaiting_reply');
+    await d.getByLabel('Channel', { exact: true }).selectOption('email');
+    await d.getByLabel('Outcome', { exact: true }).selectOption('awaiting_reply');
     await d.getByRole('button', { name: 'Save outreach' }).click();
     d = openDialog(page);
     await expect(d.locator('.timeline li')).toHaveCount(2);
@@ -128,7 +191,7 @@ for (const theme of THEMES) {
     await expect(page).toHaveURL(/\/speakers$/);
     const row = entry(page, name);
     await expect(row).toContainText('Ava Romero · Oct 30, 2026');
-    await expect(row).toContainText('Linkedin · Interested');
+    await expect(row).toContainText('LinkedIn · Interested');
     await expect(row).toContainText('North Shore Ventures');
 
     // Filters: a mentor with another topic, then type/topic/search narrowing.
