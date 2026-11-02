@@ -37,8 +37,15 @@
   min-width: 0;
   border-radius: var(--block-radius);
 }
+.blk-body {flex: 1; display: flex; min-width: 0;}
 .blk[data-w="2"] {--w: 2;} .blk[data-w="4"] {--w: 4;}
 .blk[data-h="2"] {--h: 2;}
+/* Middle width (tablets, narrow windows): stat tiles stay four across, but tables and feeds need
+   room, so 2×2 takes the full row and 1×2 takes half. */
+@container blocks (min-width: 600px) and (max-width: 959px) {
+  .blk[data-w="2"][data-h="2"] {--w: 4;}
+  .blk[data-w="1"][data-h="2"] {--w: 2;}
+}
 /* Two columns below 600px of Home width (phones, narrow tablets). Anything two blocks tall or four
    wide takes the full row so tables and feeds stay readable; 1×1 tiles pair up. */
 @container blocks (max-width: 599px) {
@@ -46,8 +53,9 @@
   .blk[data-w="4"], .blk[data-h="2"] {--w: 2;}
 }
 
-/* A tile is the widget surface. Every widget, including the stat tiles, is one tile. */
-.tile {
+/* A tile is the widget surface. Every widget, including the stat tiles, is one tile.
+   `.kpi.tile` outranks the older `.kpi` card rules. */
+.tile, .kpi.tile {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -62,7 +70,7 @@
   text-decoration: none;
   overflow: hidden;
 }
-a.tile:hover {border-color: var(--control);}
+a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
 .tile-head {display: flex; align-items: center; gap: 8px; min-width: 0;}
 .tile-title {flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 500; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
 .tile-link {font-size: 12px; white-space: nowrap;}
@@ -70,6 +78,10 @@ a.tile:hover {border-color: var(--control);}
 /* Empty states inside a tile sit on the tile, without their own (dashed) frame. */
 .tile .state {border: 0; padding: 8px 0; background: none;}
 .tile .table-wrap {border-radius: 8px;}
+/* Narrow tiles: a long status wraps under the title instead of squeezing it. */
+.tile .list-row {flex-wrap: wrap; row-gap: 4px;}
+.tile .list-main {flex: 1 1 10em;}
+.tile .list-side {flex: 0 1 auto; margin-left: auto; text-align: right;}
 /* Stat tile (1×1 or 2×1): the old Key figures row, one figure per block. */
 .tile--stat {gap: 6px; justify-content: space-between;}
 .tile--stat .kpi-value {font-size: 2rem; line-height: 1.05;}
@@ -89,10 +101,11 @@ a.tile:hover {border-color: var(--control);}
 @media (max-width: 767px) {.blocks-bar.is-editing {top: 60px;} .blocks-bar-actions .btn {min-height: 44px;}}
 
 /* ───────────── Edit mode ───────────── */
-/* A slow, small sway says "movable". Reduced motion keeps every control and drops the sway. */
-.blocks.is-editing .blk {animation: blk-sway 3.2s var(--ease-soft, ease-in-out) infinite alternate; animation-delay: calc(var(--i, 0) * -430ms);}
+/* A slow, small sway of the tile surface says "movable". The controls on top hold still so they
+   are easy to hit. Reduced motion keeps every control and drops the sway. */
+.blocks.is-editing .blk-body {animation: blk-sway 3.2s var(--ease-soft, ease-in-out) infinite alternate; animation-delay: calc(var(--i, 0) * -430ms);}
 @keyframes blk-sway {from {transform: rotate(-.3deg);} to {transform: rotate(.3deg);}}
-@media (prefers-reduced-motion: reduce) {.blocks.is-editing .blk {animation: none;}}
+@media (prefers-reduced-motion: reduce) {.blocks.is-editing .blk-body {animation: none;}}
 .blocks.is-editing .tile {box-shadow: 0 0 0 2px var(--block-ring), var(--block-shadow);}
 .blocks.is-editing .tile > * {opacity: .38; pointer-events: none; user-select: none;}
 .blocks.is-editing .tile-head, .blocks.is-editing .kpi-head, .blocks.is-editing .cf-widget .widget-head {visibility: hidden;} /* the edit label takes their place */
@@ -117,7 +130,7 @@ a.tile:hover {border-color: var(--control);}
 
 /* Dragging: the widget's own cell becomes the drop target, a soft filled highlight; a lifted card
    follows the pointer. Keyboard moves flash the same fill on the moved widget. */
-.blk.is-dragging, .blk.is-moved {animation: none !important;}
+.blk.is-dragging .blk-body, .blk.is-moved .blk-body {animation: none !important;}
 .blk.is-dragging {background: var(--block-drop); box-shadow: inset 0 0 0 2px var(--block-ring);}
 .blk.is-dragging > * {visibility: hidden;}
 .blk.is-moved .tile {background: var(--block-drop);}

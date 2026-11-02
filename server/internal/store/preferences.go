@@ -2,7 +2,7 @@ package store
 
 import "context"
 
-// WidgetPlacement is ordered in the layout array; size is S, M, or L.
+// WidgetPlacement is ordered in the layout array; size is W×H blocks ("2x2"), or a V0.3 S/M/L.
 type WidgetPlacement struct {
 	ID   string `json:"id"`
 	Size string `json:"size"`

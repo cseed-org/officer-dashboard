@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError } from '../../lib/api/client';
 import type { CalendarSettings, CurrentUser, OnboardingState, ProfileResponse, WidgetPlacement } from '../../lib/contracts';
 import { clearCachedRole } from '../../lib/session';
-import { widgetRegistry } from '../widgets/registry';
+import { choiceOf, layoutForChoices, onboardingChoices } from '../widgets/registry';
 import { Icon } from '../components/Icon';
 import { ProfileForm, type ProfileFormHandle } from '../views/ProfileForm';
 import { CalendarPanel } from '../views/CalendarPanel';
@@ -81,8 +81,7 @@ export default function OnboardingPage() {
         }
         setData({ user: me.user, onboarding: me.onboarding });
         setProfile(p);
-        const ids = new Set(widgetRegistry.map((w) => w.id));
-        setPicked(new Set(prefs.widgetLayout.map((w) => w.id).filter((id) => ids.has(id))));
+        setPicked(new Set(prefs.widgetLayout.map((w) => choiceOf(w.id)).filter((id): id is string => !!id)));
         // Resume at the saved step; Google consent returns to the calendar step.
         const back = new URLSearchParams(location.search).get('google');
         const s = back ? 4 : Math.min(me.onboarding.step, me.onboarding.hasProfile ? 6 : 3);
@@ -196,7 +195,7 @@ export default function OnboardingPage() {
     if (step === 5) {
       setBusy(true);
       try {
-        const layout: WidgetPlacement[] = widgetRegistry.filter((w) => picked.has(w.id)).map(({ id, size }) => ({ id, size }));
+        const layout: WidgetPlacement[] = layoutForChoices(picked);
         await api('prefsPut', { body: { widgetLayout: layout } });
         await api('onboardingComplete');
         setDir(1);
@@ -356,7 +355,7 @@ export default function OnboardingPage() {
         <fieldset class="fieldset">
           <legend>Widgets for your Home</legend>
           <div class="choice-row">
-            {widgetRegistry.map((w) => (
+            {onboardingChoices.map((w) => (
               <label class="choice" key={w.id}>
                 <input
                   type="checkbox"

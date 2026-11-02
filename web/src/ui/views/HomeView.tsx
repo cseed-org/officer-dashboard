@@ -1,5 +1,6 @@
 import CloudflareWidget, { cloudflareIds } from '../widgets/CloudflareWidget';
 import WidgetGrid from '../widgets/WidgetGrid';
+import { kpiIds, widgetDef, type BlockSize } from '../widgets/registry';
 import type { ComponentChildren } from 'preact';
 import type { AuditLogEntry, CurrentUser, PurchaseRequestListItem } from '../../lib/contracts';
 import type { PurchaseStatus } from '../../lib/domain';
@@ -13,111 +14,108 @@ import { eventColumns } from './columns';
 
 const OPEN: PurchaseStatus[] = ['draft', 'submitted', 'approved', 'fulfilling', 'fulfilled', 'reimbursed'];
 
-/** A titled card in the home grid. */
-function Block({ id, title, action, span, children }: { id: string; title: string; action?: ComponentChildren; span?: 'wide' | 'full'; children: ComponentChildren }) {
+/** A titled widget tile in the Home block grid. */
+function Block({ id, title, action, children }: { id: string; title: string; action?: ComponentChildren; children: ComponentChildren }) {
   return (
-    <section class={`block${span ? ` block--${span}` : ''}`} aria-labelledby={`${id}-h`} data-block={id}>
-      <header class="block-head">
-        <h2 id={`${id}-h`}>{title}</h2>
-        {action && <div class="block-action">{action}</div>}
+    <section class="tile" aria-labelledby={`${id}-h`} data-block={id}>
+      <header class="tile-head">
+        <h2 class="tile-title" id={`${id}-h`}>{title}</h2>
+        {action && <div class="tile-link">{action}</div>}
       </header>
-      <div class="block-body">{children}</div>
+      <div class="tile-body">{children}</div>
     </section>
   );
 }
 
+/** A loading or failed stat tile keeps its block so the grid does not jump. */
+function StatState({ label, state }: { label: string; state: { status: string; reload?: () => void } }) {
+  return (
+    <section class="tile tile--stat" aria-label={label} aria-busy={state.status === 'loading' ? 'true' : undefined}>
+      <span class="kpi-label">{label}</span>
+      {state.status === 'loading' ? <><span class="visually-hidden">Loading {label}…</span><span class="skel skel--kpi" /></> : <span class="kpi-sub">Couldn’t load. <button class="btn btn--small" onClick={state.reload}>Retry</button></span>}
+    </section>
+  );
+}
+
+const wide = (size: BlockSize) => size.startsWith('4');
+
 export default function HomeView({ me }: { me: CurrentUser }) {
   const director = me.role !== 'officer';
   const overview = useApi('overview');
-  const cloudflare=useApi('cloudflareWidgets');
+  const cloudflare = useApi('cloudflareWidgets');
   const fy = overview.status === 'ready' ? overview.data.fiscalYear : undefined;
+
+  /** One stat tile per key figure (formerly one "Key figures" row). */
+  function stat(id: string) {
+    const label = widgetDef(id)?.title ?? id;
+    if (overview.status !== 'ready') return <StatState label={label} state={overview} />;
+    const d = overview.data;
+    const k = d.kpis;
+    const now = Date.now();
+    // Past events oldest → newest, for the rate sparklines.
+    const past = d.recentEvents.filter((e) => new Date(e.startsAt).getTime() <= now).reverse();
+    const used = k.budgetCents ? (k.spentCents + k.committedCents) / k.budgetCents : null;
+    switch (id) {
+      case 'kpi-upcoming':
+        return <Kpi tile label="upcoming events" icon="calendar" hue="blue" value={k.upcomingEvents} href={href.events({ when: 'upcoming' })} sub="on the calendar" />;
+      case 'kpi-checkin':
+        return <Kpi tile label="avg check-in rate" icon="check" hue="teal" value={pct(k.avgCheckInRate)} trend={<Sparkline values={past.map((e) => e.metrics.checkInRate)} hue="teal" />} sub={`past events, FY${d.fiscalYear}`} />;
+      case 'kpi-reflection':
+        return <Kpi tile label="reflection rate" icon="message" hue="violet" value={pct(k.avgReflectionRate)} trend={<Sparkline values={past.map((e) => e.metrics.reflectionRate)} hue="violet" />} sub="of checked-in guests" />;
+      case 'kpi-budget':
+        return (
+          <Kpi tile label="budget remaining" icon="wallet" hue="green" value={dollars(k.remainingCents)} tone={k.remainingCents < 0 ? 'negative' : undefined} href={href.finance('budgets')}
+            trend={<Progress value={used} hue={usageHue(used)} label={`${pct(used)} of the budget used or committed`} />}
+            sub={`${dollars(k.spentCents)} spent · ${dollars(k.committedCents)} committed of ${dollars(k.budgetCents)}`} />
+        );
+      default:
+        return <Kpi tile label="pending requests" icon="inbox" hue="amber" value={k.pendingRequests} href={href.requests({ scope: 'all', status: 'pending' })} sub={k.pendingRequests ? `${dollars(k.pendingRequestsCents)} awaiting a director` : 'nothing waiting'} />;
+    }
+  }
 
   return (
     <WidgetGrid>
-      {(id,size) => cloudflareIds.includes(id) ? <CloudflareWidget id={id} size={size} state={cloudflare}/> : ({
-        'kpis': (
-          <section class="block block--full block--bare" aria-label="Key figures" data-block="kpis">
-            <Async state={overview} loading={<Loading tiles={5} rows={0} label="Loading key figures" />}>
-              {(d) => {
-                const k = d.kpis;
-                const now = Date.now();
-                // Past events oldest → newest, for the rate sparklines.
-                const past = d.recentEvents.filter((e) => new Date(e.startsAt).getTime() <= now).reverse();
-                const used = k.budgetCents ? (k.spentCents + k.committedCents) / k.budgetCents : null;
-                return (
-                  <div class="kpis">
-                    <Kpi label="upcoming events" icon="calendar" hue="blue" value={k.upcomingEvents} href={href.events({ when: 'upcoming' })} sub="on the calendar" />
-                    <Kpi
-                      label="avg check-in rate"
-                      icon="check"
-                      hue="teal"
-                      value={pct(k.avgCheckInRate)}
-                      trend={<Sparkline values={past.map((e) => e.metrics.checkInRate)} hue="teal" />}
-                      sub={`past events, FY${d.fiscalYear}`}
-                    />
-                    <Kpi
-                      label="reflection rate"
-                      icon="message"
-                      hue="violet"
-                      value={pct(k.avgReflectionRate)}
-                      trend={<Sparkline values={past.map((e) => e.metrics.reflectionRate)} hue="violet" />}
-                      sub="of checked-in guests"
-                    />
-                    <Kpi
-                      label="budget remaining"
-                      icon="wallet"
-                      hue="green"
-                      value={dollars(k.remainingCents)}
-                      tone={k.remainingCents < 0 ? 'negative' : undefined}
-                      href={href.finance('budgets')}
-                      trend={<Progress value={used} hue={usageHue(used)} label={`${pct(used)} of the budget used or committed`} />}
-                      sub={`${dollars(k.spentCents)} spent · ${dollars(k.committedCents)} committed of ${dollars(k.budgetCents)}`}
-                    />
-                    <Kpi
-                      label="pending requests"
-                      icon="inbox"
-                      hue="amber"
-                      value={k.pendingRequests}
-                      href={href.requests({ scope: 'all', status: 'pending' })}
-                      sub={k.pendingRequests ? `${dollars(k.pendingRequestsCents)} awaiting a director` : 'nothing waiting'}
-                    />
-                  </div>
-                );
-              }}
-            </Async>
-          </section>
-        ),
-        'my-action': (
-          <Block id="my-action" title={director ? 'awaiting your approval' : 'my open requests'} action={<a href={href.newRequest()}>new request →</a>}>
-            <MyAction me={me} />
-          </Block>
-        ),
-        'recent-events': (
-          <Block id="recent-events" title="recent events" action={<a href={href.events()}>all events →</a>}>
-            <Async state={overview} loading={<Loading rows={4} label="Loading events" />}>
-              {(d) =>
-                d.recentEvents.length === 0 ? (
-                  <Empty title="No events yet" action={<a href={href.eventImport()}>import a Luma guest export →</a>}>
-                    Events appear here once a Luma guest list is imported.
-                  </Empty>
-                ) : (
-                  <DataTable rows={d.recentEvents.slice(0, 5)} columns={eventColumns(Date.now(), { compact: true })} rowKey={(e) => e.id} caption="Recent events" dense />
-                )
-              }
-            </Async>
-          </Block>
-        ),
-        'budget': (
-          <Block id="budget" title="budget vs actual" action={<a href={href.finance('budgets')}>budgets →</a>}>
-            {fy === undefined ? <Loading rows={4} label="Loading the budget" /> : <BudgetMini fiscalYear={fy} />}
-          </Block>
-        ),
-        'activity': (
-          <Block id="activity" title={director ? 'recent activity' : 'latest requests'} action={director ? <a href={href.admin('audit')}>audit log →</a> : <a href={href.requests({ scope: 'all' })}>all requests →</a>}>
-            {director ? <AuditFeed /> : <RequestFeed />}
-          </Block>
-        )
-      } as Record<string, ComponentChildren>)[id]}
+      {(id, size) => {
+        if (cloudflareIds.includes(id)) return <CloudflareWidget id={id} size={size} state={cloudflare} />;
+        if (kpiIds.includes(id)) return stat(id);
+        switch (id) {
+          case 'my-action':
+            return (
+              <Block id="my-action" title={director ? 'awaiting your approval' : 'my open requests'} action={<a href={href.newRequest()}>new request →</a>}>
+                <MyAction me={me} />
+              </Block>
+            );
+          case 'recent-events':
+            return (
+              <Block id="recent-events" title="recent events" action={<a href={href.events()}>all events →</a>}>
+                <Async state={overview} loading={<Loading rows={4} label="Loading events" />}>
+                  {(d) =>
+                    d.recentEvents.length === 0 ? (
+                      <Empty title="No events yet" action={<a href={href.eventImport()}>import a Luma guest export →</a>}>
+                        Events appear here once a Luma guest list is imported.
+                      </Empty>
+                    ) : (
+                      <DataTable rows={d.recentEvents.slice(0, 5)} columns={eventColumns(Date.now(), { compact: !wide(size) })} rowKey={(e) => e.id} caption="Recent events" dense />
+                    )
+                  }
+                </Async>
+              </Block>
+            );
+          case 'budget':
+            return (
+              <Block id="budget" title="budget vs actual" action={<a href={href.finance('budgets')}>budgets →</a>}>
+                {fy === undefined ? <Loading rows={4} label="Loading the budget" /> : <BudgetMini fiscalYear={fy} rows={wide(size) ? 8 : 5} />}
+              </Block>
+            );
+          case 'activity':
+            return (
+              <Block id="activity" title={director ? 'recent activity' : 'latest requests'} action={director ? <a href={href.admin('audit')}>audit log →</a> : <a href={href.requests({ scope: 'all' })}>all requests →</a>}>
+                {director ? <AuditFeed limit={size === '1x2' ? 5 : 8} /> : <RequestFeed limit={size === '1x2' ? 4 : 6} />}
+              </Block>
+            );
+        }
+        return null;
+      }}
     </WidgetGrid>
   );
 }
@@ -176,8 +174,8 @@ function MyAction({ me }: { me: CurrentUser }) {
   );
 }
 
-function RequestFeed() {
-  const state = useApi('requestsList', { query: { scope: 'all', limit: 6 } });
+function RequestFeed({ limit }: { limit: number }) {
+  const state = useApi('requestsList', { query: { scope: 'all', limit } });
   return (
     <Async state={state} loading={<Loading rows={4} label="Loading requests" />}>
       {(d) => (d.items.length ? <RequestList items={d.items} showRequester /> : <Empty title="No requests yet">Purchase requests from every officer show here.</Empty>)}
@@ -185,13 +183,13 @@ function RequestFeed() {
   );
 }
 
-function BudgetMini({ fiscalYear }: { fiscalYear: number }) {
+function BudgetMini({ fiscalYear, rows: limit = 6 }: { fiscalYear: number; rows?: number }) {
   const state = useApi('financeSummary', { query: { fiscalYear } });
   return (
     <Async state={state} loading={<Loading rows={4} label="Loading the budget" />}>
       {(d) => {
         if (!d.byCategory.length) return <Empty title="No budget set">A director sets the year’s budget by category.</Empty>;
-        const rows = [...d.byCategory].sort((a, b) => b.spentCents + b.committedCents - (a.spentCents + a.committedCents)).slice(0, 6);
+        const rows = [...d.byCategory].sort((a, b) => b.spentCents + b.committedCents - (a.spentCents + a.committedCents)).slice(0, limit);
         return (
           <DataTable
             dense
@@ -260,8 +258,8 @@ export function auditSummary(e: AuditLogEntry) {
   return { who, what: `${verb} ${words(e.entityType)}` };
 }
 
-function AuditFeed() {
-  const state = useApi('adminAudit', { query: { limit: 8 } });
+function AuditFeed({ limit }: { limit: number }) {
+  const state = useApi('adminAudit', { query: { limit } });
   return (
     <Async state={state} loading={<Loading rows={4} label="Loading activity" />}>
       {(d) =>
