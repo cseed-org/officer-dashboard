@@ -30,6 +30,7 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   const id = inviteeId();
   await devLogin(page, 'director');
   await invite(page, 'Robin Park', id);
+  await page.getByRole('tab', { name: 'Invites', exact: true }).click();
   await expect(page.locator(`[data-invite="${id}"]`)).toContainText('Awaiting sign-in');
 
   // Inviting an existing account is refused with a clear reason.

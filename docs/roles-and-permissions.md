@@ -11,7 +11,7 @@ warning. An ownership transfer therefore survives restarts even with the old env
 The deprecated `BOOTSTRAP_DIRECTOR_DISCORD_ID` remains an alias for the ID.
 
 Owners can add co-owners, remove owner access, or transfer their own ownership from
-Admin. Non-owner leadership cannot manage ownership or demote/deactivate an owner.
+Officers → Access, using each person’s actions menu. Non-owner leadership cannot manage ownership or demote/deactivate an owner.
 Every owner must be active leadership, and the last owner cannot be removed. Transfer
 keeps the caller active leadership and keeps any other co-owners.
 
@@ -34,11 +34,19 @@ Roles rank `leadership > director > officer`; unknown roles are denied. Owner is
 | Capability | Officer | Director | Leadership | Owner |
 | --- | --- | --- | --- | --- |
 | Read dashboard, events, contacts, members | Yes | Yes | Yes | Yes |
+| Create/edit/delete External Contacts, set speaking history, log outreach | Yes | Yes | Yes | Yes |
 | Manage own profile/calendar and submit purchases | Yes | Yes | Yes | Yes |
 | Approve/settle purchases, manage budgets/periods | No | Yes | Yes | Yes |
-| Admin, service tokens, audit history | No | Yes | Yes | Yes |
+| Officers Access, service tokens, audit history | No | Yes | Yes | Yes |
 | Invite officers, manage officer subteam/title | No | Yes, except leadership targets | Yes | Yes |
 | Change roles / director active status / edit leadership | No | No | Yes | Yes |
 | Manage ownership or demote/deactivate owners | No | No | No | Yes, with last-owner protection |
 
 Approval cannot be self-approval. Member edits/export require director access; ordinary officers can read member records. Design request permissions also depend on authorship, assignment and Design subteam membership. Design members and director+ can assign and move work; only the requester can approve a version in review and deliver it. Director status never overrides design approval. Marking an event as not needing design is limited to director+ and the event's host; any officer can say an event needs design. See [API reference](api.md) for endpoint-specific behavior. Source: `server/internal/auth/auth.go`, `server/internal/api/{admin,officers,invites,members,design,requests}.go` and database guards.
+
+Officers is the single people-management page. Its Directory is available to all officers;
+Invites, Access (including adding officers), Service tokens and Audit log require director or
+leadership access. Directors deactivate/reactivate officers only; leadership also manages
+directors and leadership. Role changes require leadership; owner targets require an owner.
+The old `/admin` page redirects to Officers Access; `?tab=tokens`, `?tab=audit` and
+`#audit` links open the matching tab. API permissions and audit recording are unchanged.

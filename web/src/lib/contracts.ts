@@ -1206,24 +1206,24 @@ export const CloudflareSyncResponse = z.object({ok:z.literal(true),connected:z.b
 export const CloudflareWidget = z.object({id:z.string(),connected:z.boolean(),lastSync:z.number().nullable(),error:z.string(),data:z.unknown().nullable()});
 export const CloudflareWidgetsResponse = z.object({widgets:z.array(CloudflareWidget)});
 
-// Speakers & Mentors
+// External Contacts
 export const ContactType = z.enum(['speaker', 'mentor', 'both']);
 export const OutreachChannel = z.enum(['email', 'linkedin', 'discord', 'phone', 'in_person']);
 export const OutreachOutcome = z.enum(['awaiting_reply', 'interested', 'confirmed', 'declined', 'follow_up']);
 export const ContactOutreach = z.object({ id: Id, officerId: Id, officerName: z.string(), date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string(), createdAt: z.number().int() });
 export const Contact = z.object({
- id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType,
+ id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType, hasSpokenForUs: z.boolean(),
  topics: z.array(z.string()), email: z.string(), linkedin: z.string(), notes: z.string(),
  createdAt: z.number().int(), updatedAt: z.number().int(),
  events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
  outreach: z.array(ContactOutreach), lastOutreach: ContactOutreach.nullable(),
 });
 export type Contact = z.infer<typeof Contact>;
-export const ContactCreateRequest = z.object({ name: z.string().trim().min(1).max(200), org: z.string().trim().max(200).optional(), role: z.string().trim().max(200).optional(), type: ContactType,
+export const ContactCreateRequest = z.object({ hasSpokenForUs: z.boolean().optional(), name: z.string().trim().min(1).max(200), org: z.string().trim().max(200).optional(), role: z.string().trim().max(200).optional(), type: ContactType,
  topics: z.array(z.string().trim().min(1).max(100)).max(30).optional(), email: z.union([z.string().trim().pipe(z.email().max(254)), z.literal('')]).optional(), linkedin: z.union([z.string().trim().pipe(z.url({ protocol: /^https?$/ }).max(2000)), z.literal('')]).optional(), notes: z.string().max(10000).optional(), eventIds: z.array(Id).max(100).optional() });
 export const ContactPatchRequest = ContactCreateRequest.partial();
 export const ContactResponse = z.object({ contact: Contact });
-export const ContactsQuery = z.object({ q: z.string().trim().max(100).optional(), type: ContactType.optional(), topic: z.string().trim().max(100).optional() });
+export const ContactsQuery = z.object({ hasSpokenForUs: z.enum(['true', 'false']).optional(), q: z.string().trim().max(100).optional(), type: ContactType.optional(), topic: z.string().trim().max(100).optional() });
 export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string().max(10000).optional() });
 
 /**

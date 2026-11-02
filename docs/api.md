@@ -32,8 +32,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | public | No session needed. |
 | owner | Active dashboard owner (`isOwner=true`, role leadership). Owner-only operations recheck authorization inside the transaction. |
 | officer | Any signed-in, active officer, director, or leadership user. |
-| director | Director or leadership; officers get 403. `/admin/*` and `/api/admin/*` are enforced by the middleware, the rest by `requireRole(locals, 'director')` in the handler. |
-| token:&lt;scope&gt; | `Authorization: Bearer <service token>` with that scope (issued on `/admin/tokens`). No session. |
+| director | Director or leadership; officers get 403. `/api/admin/*` is enforced by the middleware, the rest by `requireRole(locals, 'director')` in the handler. |
+| token:&lt;scope&gt; | `Authorization: Bearer <service token>` with that scope (issued on `/officers?tab=tokens`). No session. |
 
 ## Endpoints
 
@@ -151,7 +151,7 @@ literal) against:
 | --- | --- | --- | --- | --- |
 | `event` | officers, directors | name, location, Luma id | name / `<Pacific date> · <location>` | `/events?id=<id>` |
 | `request` | officers, directors | number, title, vendor | title / `<number> · <vendor> · <status>` | `/finance?id=<id>` |
-| `contact` | all officers | name, organization, role, email, topics | name / `<org> · <role> · <type>` | `/speakers?id=<id>` |
+| `contact` | all officers | name, organization, role, email, topics | name / `<org> · <role> · <type>` | `/contacts?id=<id>` |
 | `user` | directors only | name, email, title | name / `<title> · <role> · <email>` | `/admin` |
 | `account` | directors only | code, name | `<code> <name>` / account type | `/finance?tab=reports&report=trial-balance` |
 
@@ -237,7 +237,7 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 | `/events`, `/events?id=<id>` | officer | List, month and week views; editor, Luma handoff kit, request design; CSV import on `/events?import=1` |
 | `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
-| `/admin/users`, `/admin/tokens` | director | 403 for officers |
+| `/admin`, `/admin/users`, `/admin/tokens`, `/admin/audit` | officer | Redirect to Officers; management tabs require director |
 | `/design`, `/design?id=<id>`, `/design?new=1&eventId=<id>`, `?view=board\|list\|mine`, `?filter=mine\|unassigned\|due`, `?type=<type>` | officer | Design page: upcoming events with design needs, then the request board (list view on phones) or My work; opens a request or the prefilled form |
 
 
@@ -504,7 +504,7 @@ Cloudflare references: [D1 query API](https://developers.cloudflare.com/api/reso
 [GraphQL datasets](https://developers.cloudflare.com/analytics/graphql-api/features/data-sets/),
 [D1 analytics](https://developers.cloudflare.com/d1/observability/metrics-analytics/).
 
-### Speakers & Mentors
+### External Contacts
 
 All active officers (including director and leadership) may read and edit the shared directory.
 Contact writes, event-link replacements and outreach appends are atomic with their audit records.
@@ -512,7 +512,7 @@ Service tokens cannot use these session-authenticated endpoints.
 
 | Method | Route | Behavior |
 | --- | --- | --- |
-| GET | `/api/contacts?q=&type=&topic=` | `{items: Contact[]}`, ordered by name. Search covers name, organization, role, email and topics. Type `speaker`/`mentor` includes `both`; `both` matches only `both`. Topic is a case-insensitive exact match. |
+| GET | `/api/contacts?q=&type=&topic=&hasSpokenForUs=` | `{items: Contact[]}`, ordered by name. Search covers name, organization, role, email and topics. Type `speaker`/`mentor` includes `both`; `both` matches only `both`. Topic is a case-insensitive exact match. Optional `hasSpokenForUs=true|false` filters speaking history. |
 | POST | `/api/contacts` | Create; requires `name`, `type`. Returns `{contact}`. |
 | GET | `/api/contacts/:id` | `{contact}` or 404. |
 | PATCH | `/api/contacts/:id` | Partial update; omitted fields are preserved. Returns `{contact}`. |
@@ -522,7 +522,7 @@ Service tokens cannot use these session-authenticated endpoints.
 Contact fields: `id`, `name` (1–200), `org`, `role` (up to 200), `type`
 (`speaker`, `mentor`, `both`), `topics` (up to 30 nonblank strings, 100 characters each),
 `email` (email or empty), `linkedin` (http/https URL or empty), `notes` (up to 10,000),
-`createdAt` and `updatedAt` (epoch milliseconds), `events`, `outreach`, `lastOutreach`.
+`hasSpokenForUs` (boolean, editable; defaults to false for new contacts), `createdAt` and `updatedAt` (epoch milliseconds), `events`, `outreach`, `lastOutreach`.
 Create/PATCH accepts `eventIds` (up to 100 distinct existing event IDs); it replaces the links.
 Empty strings clear optional text fields; empty arrays clear topics/event links. Nulls are rejected.
 Topics are trimmed and deduplicated case-insensitively. Linked events carry `id`, `name`, `startsAt`.
@@ -535,4 +535,6 @@ Dates are normalized to UTC; the latest dated entry wins, with creation time the
  tie breakers. Backdated entries remain in the history. `lastOutreach` is null before outreach is logged.
 General contact edits never change the derived last outreach. Outreach is append-only.
 
-`GET /api/search` also returns `kind: "contact"` for all officers, linking to `/speakers?id=…`.
+`GET /api/search` also returns `kind: "contact"` for all officers, linking to `/contacts?id=…`.
+
+External Contacts lives at `/contacts`; `/speakers` permanently redirects there, preserving query parameters. Existing `/api/contacts` endpoints remain unchanged. Migration 0011 initializes `has_spoken_for_us` from linked events whose start time is before migration time. Later event-link edits do not override this manually maintained field. Create/PATCH accepts optional `hasSpokenForUs`; omission on PATCH preserves the value, and changes appear in contact audit before/after records. Types remain `speaker`, `mentor`, and `both`; adding `other` is deferred because the existing database CHECK constraint requires a table rebuild.

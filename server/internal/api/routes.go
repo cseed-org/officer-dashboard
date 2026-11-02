@@ -117,6 +117,20 @@ func (s *Server) routes(mux *http.ServeMux) {
 
 	// Anything else under /api is a 404 in the ApiError shape; everything else is the front end.
 	h("/api/", func(c *Ctx) error { return notFoundErr("Endpoint not found") })
+	mux.HandleFunc("GET /speakers", func(w http.ResponseWriter, r *http.Request) {
+		target := "/contacts"
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+	})
+	mux.HandleFunc("GET /speakers/", func(w http.ResponseWriter, r *http.Request) {
+		target := "/contacts"
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+	})
 	mux.Handle("/", s.staticHandler())
 }
 
