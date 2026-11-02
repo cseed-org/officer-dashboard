@@ -1,0 +1,117 @@
+{
+  "screenshots": 8,
+  "layouts": [
+    {
+      "name": "officers-v03",
+      "width": 1440,
+      "theme": "light",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 4
+    },
+    {
+      "name": "members-v03",
+      "width": 1440,
+      "theme": "light",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 4
+    },
+    {
+      "name": "officers-v03",
+      "width": 820,
+      "theme": "light",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 4
+    },
+    {
+      "name": "members-v03",
+      "width": 820,
+      "theme": "light",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 4
+    },
+    {
+      "name": "officers-v03",
+      "width": 390,
+      "theme": "light",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 4
+    },
+    {
+      "name": "members-v03",
+      "width": 390,
+      "theme": "light",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 4
+    },
+    {
+      "name": "officers-v03",
+      "width": 1440,
+      "theme": "dark",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 4
+    },
+    {
+      "name": "members-v03",
+      "width": 1440,
+      "theme": "dark",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 4
+    },
+    {
+      "name": "officers-v03",
+      "width": 820,
+      "theme": "dark",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 4
+    },
+    {
+      "name": "members-v03",
+      "width": 820,
+      "theme": "dark",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 4
+    },
+    {
+      "name": "officers-v03",
+      "width": 390,
+      "theme": "dark",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 4
+    },
+    {
+      "name": "members-v03",
+      "width": 390,
+      "theme": "dark",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 4
+    }
+  ],
+  "checks": [
+    "No horizontal page overflow at 390, 820, 1440 in both themes",
+    "No browser script errors"
+  ]
+}
