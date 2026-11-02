@@ -10,9 +10,19 @@ import (
 	"officerdashboard/internal/validate"
 )
 
-// Keep defaults aligned with the web widget registry. Unknown IDs remain valid so
-// later feature Panes can register widgets without a database migration.
-var defaultWidgets = []store.WidgetPlacement{{ID: "kpis", Size: "L"}, {ID: "my-action", Size: "M"}, {ID: "recent-events", Size: "M"}, {ID: "budget", Size: "M"}, {ID: "activity", Size: "M"}, {ID: "web-analytics", Size: "L"}}
+// Keep defaults aligned with the web widget registry (web/src/ui/widgets/registry.ts). Unknown
+// IDs remain valid so later feature Panes can register widgets without a database migration.
+// Sizes are W×H Home grid blocks; this default fills a clean 4×5 rectangle on desktop.
+var defaultWidgets = []store.WidgetPlacement{
+	{ID: "kpi-upcoming", Size: "1x1"}, {ID: "kpi-checkin", Size: "1x1"}, {ID: "kpi-reflection", Size: "1x1"}, {ID: "kpi-budget", Size: "1x1"},
+	{ID: "my-action", Size: "2x2"}, {ID: "recent-events", Size: "2x2"},
+	{ID: "budget", Size: "2x2"}, {ID: "activity", Size: "1x2"}, {ID: "kpi-pending", Size: "1x1"}, {ID: "web-analytics", Size: "1x1"},
+}
+
+// widgetSizes lists V0.4 block sizes, then the V0.3 S/M/L sizes. Layouts saved before V0.4 keep
+// S/M/L until Home automatically saves the converted layout on load; an old open tab
+// can still save.
+var widgetSizes = []string{"1x1", "2x1", "1x2", "2x2", "4x1", "4x2", "S", "M", "L"}
 
 func (c *Ctx) prefsGet() error {
 	u, err := c.officer()
@@ -54,7 +64,7 @@ func (c *Ctx) prefsPut() error {
 		hasLayout = r.Has("widgetLayout")
 		r.Objects("widgetLayout", false, 50, func(_ int, sub *validate.Reader) {
 			id := sub.Str("id", validate.S{Req: true, Min: 1, Max: 64}).V
-			size := sub.Str("size", validate.S{Req: true, Enum: []string{"S", "M", "L"}}).V
+			size := sub.Str("size", validate.S{Req: true, Enum: widgetSizes}).V
 			if seen[id] {
 				r.Issues.Add("widgetLayout", "Widget IDs must be unique")
 			}

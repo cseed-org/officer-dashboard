@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import { normalizeHref } from '../src/lib/routes';
 import { sanitizeResults } from '../src/lib/search';
 import { internalPath, internalRoute, safeImageUrl, safeUrl } from '../src/lib/url';
+import { migrateLayout, moveTo, nearestSize } from '../src/ui/widgets/layout';
+import { defaultWidgetLayout, layoutForChoices } from '../src/ui/widgets/registry';
 
 /** Pure-function tests (no browser); run once, in the desktop project. */
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'unit tests run once'));
@@ -81,4 +83,41 @@ test('events: the Luma URL rule matches the server', async () => {
     expect(lumaEventUrlProblem(ok), ok).toBeNull();
   for (const bad of ['http://lu.ma/x1', 'https://lu.ma/', 'https://lu.ma', 'https://lu.ma/create', 'https://lu.ma/discover', 'https://lu.ma/calendar', 'https://lu.ma/a/b', 'https://evil.example/x1', 'https://lu.ma:444/x1', 'https://lu.ma:443/x1', 'https://lu.ma\\x1', 'https:lu.ma/x1', 'nope'])
     expect(lumaEventUrlProblem(bad), bad).not.toBeNull();
+});
+
+test('V0.4: V0.3 widget layouts migrate to block sizes in place', () => {
+  const { layout, changed } = migrateLayout([
+    { id: 'activity', size: 'L' },
+    { id: 'kpis', size: 'M' },
+    { id: 'my-action', size: 'S' },
+    { id: 'member-signups', size: 'M' },
+    { id: 'kpi-budget', size: '1x1' }, // already produced by kpis: dropped, not duplicated
+    { id: 'unknown', size: 'S' },
+  ]);
+  expect(changed).toBe(true);
+  expect(layout).toEqual([
+    { id: 'activity', size: '4x2' },
+    { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }, { id: 'kpi-reflection', size: '1x1' }, { id: 'kpi-budget', size: '1x1' }, { id: 'kpi-pending', size: '1x1' },
+    { id: 'my-action', size: '2x2' },
+    { id: 'member-signups', size: '2x2' },
+    { id: 'unknown', size: '1x1' },
+  ]);
+  // A saved V0.4 layout passes through untouched; an unsupported size snaps to the nearest.
+  expect(migrateLayout(defaultWidgetLayout)).toEqual({ layout: defaultWidgetLayout, changed: false });
+  expect(migrateLayout([{ id: 'kpi-pending', size: '4x2' }]).layout).toEqual([{ id: 'kpi-pending', size: '2x1' }]);
+  expect(nearestSize(['1x1', '2x2'], '2x1')).toBe('1x1');
+  expect(nearestSize(['2x2', '4x2'], '4x1')).toBe('2x2');
+});
+
+test('V0.4: moveTo clamps and keeps the array when nothing moves', () => {
+  const l = [{ id: 'a', size: '1x1' as const }, { id: 'b', size: '1x1' as const }, { id: 'c', size: '1x1' as const }];
+  expect(moveTo(l, 'c', 0).map((w) => w.id)).toEqual(['c', 'a', 'b']);
+  expect(moveTo(l, 'a', 99).map((w) => w.id)).toEqual(['b', 'c', 'a']);
+  expect(moveTo(l, 'a', -5)).toBe(l);
+  expect(moveTo(l, 'zzz', 1)).toBe(l);
+});
+
+test('V0.4: onboarding Key figures expands to the five stat tiles in default order', () => {
+  const l = layoutForChoices(new Set(['kpis', 'member-signups']));
+  expect(l.map((w) => w.id)).toEqual(['kpi-upcoming', 'kpi-checkin', 'kpi-reflection', 'kpi-budget', 'kpi-pending', 'member-signups']);
 });

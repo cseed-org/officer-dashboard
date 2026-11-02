@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { devLogin, useTheme, overflow, THEMES } from "./helpers";
+import { defaultWidgetLayout } from "../src/ui/widgets/registry";
 
 const makeMember = (n: number) => ({
   person_id: `person-${n}`,
@@ -176,41 +177,20 @@ for (const theme of THEMES) {
     expect(writes).toBe(1);
     expect(await overflow(page)).toEqual([]);
   });
-  test(`Disconnected Cloudflare widget and layout persistence · ${theme}`, async ({
-    page,
-  }) => {
+  // Layout persistence moved to home-grid.spec.ts, which resets the layout before each test.
+  test(`Disconnected Cloudflare widget · ${theme}`, async ({ page }) => {
     await useTheme(page, theme);
     await devLogin(page, "officer");
-    await expect(page.locator('[data-widget="web-analytics"]')).toContainText(
-      "Not connected",
-    );
-    await expect(page.locator('[data-widget="web-analytics"]')).toContainText(
-      "Synced daily, last never",
-    );
-    const saved = (await page.request.get("/api/me/prefs")).json();
-    const original = await saved;
-    try {
-      await page.getByRole("button", { name: "Edit widgets" }).click();
-      await page
-        .getByRole("button", { name: "Add Member signups", exact: true })
-        .click();
-      await page.getByRole("button", { name: "Save layout" }).click();
-      await page.reload();
-      await expect(
-        page.locator('[data-widget="member-signups"]'),
-      ).toContainText("Not connected");
-      await page.getByRole("button", { name: "Edit widgets" }).click();
-      await page
-        .getByRole("button", { name: "Remove Member signups", exact: true })
-        .click();
-      await page.getByRole("button", { name: "Save layout" }).click();
-      await page.reload();
-      await expect(page.locator('[data-widget="member-signups"]')).toHaveCount(
-        0,
-      );
-    } finally {
-      await page.request.put("/api/me/prefs", { data: original });
-    }
+    const res = await page.request.put("/api/me/prefs", {
+      data: { widgetLayout: [{ id: "web-analytics", size: "2x2" }] },
+      timeout: 15_000,
+    });
+    expect(res.ok()).toBe(true);
+    await page.goto("/");
+    const w = page.locator('[data-widget="web-analytics"]');
+    await expect(w).toContainText("Not connected");
+    await expect(w).toContainText("Synced daily, last never");
+    await page.request.put("/api/me/prefs", { data: { widgetLayout: defaultWidgetLayout }, timeout: 15_000 });
     expect(await overflow(page)).toEqual([]);
   });
 }

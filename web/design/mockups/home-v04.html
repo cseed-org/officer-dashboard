@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home V0.4 block grid · CSEED design</title>
+<link rel="stylesheet" href="../../src/styles/tokens.css">
+<link rel="stylesheet" href="../../src/styles/base.css">
+<link rel="stylesheet" href="../../src/styles/components.css">
+<link rel="stylesheet" href="../../src/styles/v03.css">
+<link rel="stylesheet" href="../../src/styles/home-grid.css">
+<style>
+  /* Mockup frame only: a stand-in sidebar and the review strip. Not production. */
+  body {background: var(--bg);}
+  .mk {display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh;}
+  .mk-side {border-right: 1px solid var(--line); background: var(--surface); padding: 20px 16px; display: grid; align-content: start; gap: 6px; font-size: 14px;}
+  .mk-side b {font-family: var(--font-display); font-size: 20px; margin-bottom: 12px;}
+  .mk-side span {padding: 6px 10px; border-radius: 8px; color: var(--muted);}
+  .mk-side span[aria-current] {background: var(--hover); color: var(--text); font-weight: 500;}
+  .mk-main {padding: 28px 32px 48px; min-width: 0; max-width: 1240px;}
+  .mk-review {display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 20px; padding: 10px 12px; border-radius: 10px; background: var(--sunken); font-size: 12px; color: var(--muted);}
+  .mk-review a {color: var(--text);}
+  .mk-list {list-style: none; margin: 0; padding: 0; display: grid;}
+  .mk-list li {display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 13px;}
+  .mk-list li:first-child {border-top: 0;}
+  .mk-list span:last-child {color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums;}
+  .mk-spark {height: 28px; width: 100%; max-width: 160px; color: var(--hue);}
+  .mk-bar {height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden;}
+  .mk-bar i {display: block; height: 100%; width: 62%; background: var(--c-green);}
+  @media (max-width: 767px) {.mk {grid-template-columns: 1fr;} .mk-side {display: none;} .mk-main {padding: 16px 16px 40px;}}
+</style>
+</head>
+<body>
+<div class="mk">
+  <nav class="mk-side" aria-label="Main (mockup)"><b>officers</b><span aria-current="page">Home</span><span>Events</span><span>Requests &amp; Finance</span><span>Officers</span><span>Members</span><span>Design</span></nav>
+  <main class="mk-main" id="main">
+    <p class="mk-review">Design preview · sample data ·
+      <a href="?">view</a> <a href="?mode=edit">edit mode</a> <a href="?mode=edit&amp;drag=recent-events">dragging</a> <a href="?mode=edit&amp;gallery=1">add widget</a> <a href="?theme=dark">dark</a></p>
+    <header class="page-header"><h1 class="display">hey alex, welcome in.</h1></header>
+    <div class="blocks-bar" id="bar"></div>
+    <div class="blocks-wrap"><ul class="blocks" id="blocks" aria-label="Home widgets"></ul></div>
+    <p class="visually-hidden" id="live" aria-live="polite"></p>
+  </main>
+</div>
+<dialog class="blk-gallery" id="gallery" aria-labelledby="gallery-title"><div class="blk-gallery-inner">
+  <div class="blk-gallery-head"><h2 id="gallery-title">Add a widget</h2><button class="btn btn--small" id="gallery-close">Close</button></div>
+  <div class="blk-gallery-body"><ul class="blk-gallery-list" id="gallery-list"></ul></div>
+</div></dialog>
+<script>
+const q = new URLSearchParams(location.search);
+document.documentElement.dataset.theme = q.get('theme') || 'light';
+const spark = '<svg class="mk-spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="2" points="0,22 20,16 40,18 60,9 80,12 100,5"/></svg>';
+const stat = (icon, hue, label, value, sub, extra = '') => `<span class="kpi-head"><span class="kpi-chip" data-hue="${hue}" aria-hidden="true">●</span><span class="kpi-label">${label}</span></span><span class="kpi-value">${value}</span>${extra}<span class="kpi-sub">${sub}</span>`;
+const rows = (items) => `<ul class="mk-list">${items.map(([a, b]) => `<li><span>${a}</span><span>${b}</span></li>`).join('')}</ul>`;
+const W = {
+  'kpi-upcoming': {title: 'Upcoming events', sizes: ['1x1', '2x1'], stat: true, body: () => stat('cal', 'blue', 'upcoming events', '4', 'on the calendar')},
+  'kpi-checkin': {title: 'Avg check-in rate', sizes: ['1x1', '2x1'], stat: true, body: () => stat('chk', 'teal', 'avg check-in rate', '71%', 'past events, FY2027', `<span class="kpi-trend" data-hue="teal">${spark}</span>`)},
+  'kpi-reflection': {title: 'Reflection rate', sizes: ['1x1', '2x1'], stat: true, body: () => stat('msg', 'violet', 'reflection rate', '38%', 'of checked-in guests')},
+  'kpi-budget': {title: 'Budget remaining', sizes: ['1x1', '2x1'], stat: true, body: () => stat('wal', 'green', 'budget remaining', '$6,420', '$2,180 spent · $400 committed', '<div class="mk-bar"><i></i></div>')},
+  'kpi-pending': {title: 'Pending requests', sizes: ['1x1', '2x1'], stat: true, body: () => stat('inb', 'amber', 'pending requests', '3', '$412 awaiting a director')},
+  'my-action': {title: 'awaiting your approval', sizes: ['2x2', '4x2'], link: 'new request →', body: () => rows([['Pizza for speaker night', '$184'], ['Sticker reorder', '$96'], ['Venue deposit', '$132'], ['Zoom renewal', '$15']])},
+  'recent-events': {title: 'recent events', sizes: ['2x2', '4x2'], link: 'all events →', body: () => rows([['Founders panel · Oct 28', '64 guests'], ['Pitch practice · Oct 21', '22 guests'], ['Resume clinic · Oct 14', '31 guests'], ['Kickoff social · Oct 7', '88 guests']])},
+  'budget': {title: 'budget vs actual', sizes: ['2x2', '4x2'], link: 'budgets →', body: () => rows([['Food', '$1,240 of $2,000'], ['Venue', '$600 of $1,500'], ['Marketing', '$210 of $800'], ['Software', '$130 of $400']])},
+  'activity': {title: 'recent activity', sizes: ['1x2', '2x2', '4x2'], link: 'audit log →', body: () => rows([['Sam approved #0012', '2h'], ['Ana imported guests', '5h'], ['Lee invited Kim', '1d'], ['Sam updated budget', '2d'], ['Ana created event', '3d']])},
+  'web-analytics': {title: 'Web Analytics', sizes: ['1x1', '2x2', '4x2'], body: () => '<div class="widget-state"><p class="widget-state-title">Not connected</p><p class="widget-state-body">Leadership connects Cloudflare.</p></div>'},
+  'member-signups': {title: 'Member signups', sizes: ['1x1', '2x2'], body: () => '<div class="widget-state"><p class="widget-state-title">Not connected</p></div>'},
+  'performance': {title: 'Performance', sizes: ['1x1', '2x2'], body: () => ''},
+};
+let layout = [['kpi-upcoming', '1x1'], ['kpi-checkin', '1x1'], ['kpi-reflection', '1x1'], ['kpi-budget', '1x1'], ['my-action', '2x2'], ['recent-events', '2x2'], ['budget', '2x2'], ['activity', '1x2'], ['kpi-pending', '1x1'], ['web-analytics', '1x1']];
+let editing = q.get('mode') === 'edit';
+const dragging = q.get('drag');
+const sizeName = (s) => s.replace('x', '×');
+function render() {
+  const bar = document.getElementById('bar');
+  bar.className = 'blocks-bar' + (editing ? ' is-editing' : '');
+  bar.innerHTML = editing
+    ? '<div class="blocks-bar-text"><span class="blocks-bar-title">Arrange your home</span><span class="blocks-bar-hint">Drag a grip or use arrow keys on it. Pick a size in blocks.</span></div><div class="blocks-bar-actions"><button class="btn" data-act="add">Add widget</button><button class="btn" data-act="cancel">Cancel</button><button class="btn btn--primary" data-act="done">Done</button></div>'
+    : '<div class="blocks-bar-text"><span class="blocks-bar-hint">Your layout follows you across devices.</span></div><div class="blocks-bar-actions"><button class="btn btn--small" data-act="edit">Edit home</button></div>';
+  const ul = document.getElementById('blocks');
+  ul.className = 'blocks' + (editing ? ' is-editing' : '');
+  ul.innerHTML = layout.map(([id, size], i) => {
+    const w = W[id], [cw, ch] = size.split('x');
+    const head = w.stat ? '' : `<header class="tile-head"><h2 class="tile-title">${w.title}</h2>${w.link ? `<a class="tile-link" href="#">${w.link}</a>` : ''}</header>`;
+    const tools = `<div class="blk-tools"><div class="blk-tools-top"><button class="blk-handle" aria-label="Move ${w.title}. Arrow keys move it.">⠿</button><span class="blk-name">${w.title}</span><button class="blk-remove" data-remove="${id}" aria-label="Remove ${w.title}">×</button></div>
+      <div class="blk-sizes" role="group" aria-label="Size of ${w.title}">${w.sizes.map((s) => `<button class="blk-size" data-size="${id}:${s}" aria-pressed="${s === size}" aria-label="${s.replace('x', ' by ')} blocks">${sizeName(s)}</button>`).join('')}</div></div>`;
+    return `<li class="blk${dragging === id ? ' is-dragging' : ''}" data-widget="${id}" data-w="${cw}" data-h="${ch}" style="--i:${i}"><section class="tile${w.stat ? ' tile--stat' : ''}" aria-label="${w.title}">${head}<div class="tile-body">${w.body()}</div></section>${editing ? tools : ''}</li>`;
+  }).join('') + (editing ? '<li class="blk" data-w="1" data-h="1"><button class="blk-add" data-act="add"><span class="blk-add-plus" aria-hidden="true">+</span>Add widget<span class="blk-add-sub">' + Object.keys(W).filter((id) => !layout.some(([x]) => x === id)).length + ' available</span></button></li>' : '');
+  if (dragging && editing) {
+    const r = ul.querySelector(`[data-widget="${dragging}"]`).getBoundingClientRect();
+    let f = document.querySelector('.blk-float');
+    if (!f) { f = document.createElement('div'); f.className = 'blk-float'; document.body.append(f); }
+    f.innerHTML = `⠿ ${W[dragging].title} <span class="blk-float-size">${sizeName(layout.find(([x]) => x === dragging)[1])}</span>`;
+    f.style.left = (r.left + 40) + 'px'; f.style.top = (r.top + 60) + 'px';
+  }
+  const list = document.getElementById('gallery-list');
+  const free = Object.keys(W).filter((id) => !layout.some(([x]) => x === id));
+  list.innerHTML = free.map((id) => `<li class="blk-gallery-item"><p class="blk-gallery-name">${W[id].title}</p><p class="blk-gallery-sub">Sizes ${W[id].sizes.map(sizeName).join(', ')}</p><div class="blk-gallery-sizes">${W[id].sizes.map((s) => { const [a, b] = s.split('x'); return `<span class="blk-glyph" style="--w:${a}" aria-hidden="true">${'<i></i>'.repeat(a * b)}</span>`; }).join('')}</div><button class="btn btn--small" data-addid="${id}">Add ${W[id].title}</button></li>`).join('') || '<p class="blk-gallery-empty">Every widget is on your home.</p>';
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.act === 'edit') editing = true;
+  if (t.dataset.act === 'done' || t.dataset.act === 'cancel') editing = false;
+  if (t.dataset.act === 'add') document.getElementById('gallery').showModal();
+  if (t.dataset.remove) layout = layout.filter(([x]) => x !== t.dataset.remove);
+  if (t.dataset.size) { const [id, s] = t.dataset.size.split(':'); layout = layout.map(([x, z]) => [x, x === id ? s : z]); }
+  if (t.dataset.addid) layout.push([t.dataset.addid, W[t.dataset.addid].sizes[0]]);
+  if (t.id === 'gallery-close') document.getElementById('gallery').close();
+  render();
+});
+render();
+if (q.get('gallery')) document.getElementById('gallery').showModal();
+</script>
+</body>
+</html>

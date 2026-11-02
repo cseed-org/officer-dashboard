@@ -298,8 +298,12 @@ user at all, requires leadership. Role changes invalidate the affected user's se
 active director-or-leadership account cannot be deactivated or demoted to officer.
 
 `GET/PUT /api/me/prefs` returns `{widgetLayout: [{id, size}], timezoneMode, timezone, effectiveTimezone}`. PUT accepts partial updates so widget and timezone preferences never overwrite each other. `timezoneMode` is `club` (the default), `auto`, or `manual`; `timezone` is the detected/manual IANA name, or an empty string for club fallback. Manual mode requires a valid zone. `effectiveTimezone` is read-only. Array order is
-widget order, IDs are unique (1–64 characters), sizes are `S`, `M`, `L`, maximum 50
-widgets. An empty array is intentional. Missing prefs return the default Home cards.
+widget order, IDs are unique (1–64 characters), maximum 50 widgets. Sizes are Home grid
+blocks, `W×H`: `1x1`, `2x1`, `1x2`, `2x2`, `4x1`, `4x2` (each widget supports a subset; see
+`web/src/ui/widgets/registry.ts`). V0.3 sizes `S`, `M`, `L` and the old `kpis` widget are still
+accepted and returned; the web client migrates them to blocks on load and automatically saves the converted
+layout once on first load. An empty array is intentional. Missing prefs return the
+default Home layout (five stat tiles, My actions, Recent events, Budget vs actual, Activity, Web Analytics).
 Unknown IDs survive round trips for forward compatibility. Theme and density remain
 in localStorage. All preference writes are audit logged.
 

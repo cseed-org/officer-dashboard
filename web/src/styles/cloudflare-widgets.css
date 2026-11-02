@@ -1,14 +1,6 @@
+/* Surface, border and padding come from .tile (home-grid.css); height comes from the block grid. */
 .cf-widget {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  height: 100%;
-  min-height: 220px;
-  min-width: 0;
-  padding: 20px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 16px;
+  gap: 10px;
 }
 .cf-widget .widget-head {
   display: flex;
@@ -76,9 +68,6 @@
   font-size: 12px;
 }
 @media (max-width: 600px) {
-  .cf-widget {
-    padding: 16px;
-  }
   .cf-widget .btn {
     min-height: 44px;
   }
@@ -90,12 +79,6 @@
   line-height: 1.1;
   margin: 8px 0 0;
   font-variant-numeric: tabular-nums;
-}
-.cf-widget.widget--s {
-  min-height: 180px;
-}
-.cf-widget.widget--l {
-  min-height: 340px;
 }
 .cf-widget summary {
   font-size: 12px;

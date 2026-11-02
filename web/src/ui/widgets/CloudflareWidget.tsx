@@ -1,7 +1,7 @@
 import { fmtDateTime } from '../../lib/format';
 import { useApi } from "../../lib/api/useApi";
 import type { ResponseOf } from "../../lib/api/client";
-import { widgetRegistry } from "./registry";
+import { widgetRegistry, type BlockSize } from "./registry";
 import { Icon } from "../components/Icon";
 import "../../styles/cloudflare-widgets.css";
 export const cloudflareIds = [
@@ -12,15 +12,19 @@ export const cloudflareIds = [
   "member-signups",
 ];
 type CloudflareState = ReturnType<typeof useApi<"cloudflareWidgets">>;
+/** Detail level by footprint: 1×1 summary, 2×2 principal metrics, 4×2 adds breakdowns. */
+export const detailLevel = (size: BlockSize): "S" | "M" | "L" =>
+  size === "1x1" ? "S" : size.startsWith("4") ? "L" : "M";
 export default function CloudflareWidget({
   id,
-  size,
+  size: blockSize,
   state,
 }: {
   id: string;
-  size: "S" | "M" | "L";
+  size: BlockSize;
   state: CloudflareState;
 }) {
+  const size = detailLevel(blockSize);
   const title = widgetRegistry.find((w) => w.id === id)?.title ?? id;
   const widget =
     state.status === "ready"
@@ -32,7 +36,7 @@ export default function CloudflareWidget({
     (Date.now() - widget.lastSync > 36 * 60 * 60 * 1000 || widget.error);
   return (
     <section
-      class={`cf-widget widget widget--${size.toLowerCase()}`}
+      class={`tile cf-widget widget--${size.toLowerCase()}`}
       aria-label={title}
     >
       <header class="widget-head">
@@ -61,8 +65,9 @@ export default function CloudflareWidget({
           <div class="widget-state">
             <h3 class="widget-state-title">Not connected</h3>
             <p class="widget-state-body">
-              Cloudflare credentials haven’t been added. Ask a director to
-              connect this source.
+              {size === "S"
+                ? "Ask a director to connect it."
+                : "Cloudflare credentials haven’t been added. Ask a director to connect this source."}
             </p>
             {size !== "S" && (
               <details>
@@ -171,7 +176,7 @@ export default function CloudflareWidget({
         )}
       </div>
       <footer class="widget-foot">
-        Synced daily, last{" "}
+        {size === "S" ? "Last sync " : "Synced daily, last "}
         {widget?.lastSync
           ? fmtDateTime(new Date(widget.lastSync).toISOString())
           : "never"}

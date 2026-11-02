@@ -1,0 +1,167 @@
+/* CSEED dashboard · V0.4 Home block grid. Contract: web/design/spec.md § "V0.4 Home block grid".
+   Home is a grid of square-ish base blocks. Each widget spans W×H blocks (1x1, 2x1, 1x2, 2x2, 4x1, 4x2).
+   Solid, subtle edges only: no dashed borders anywhere on Home, in or out of edit mode. */
+
+:root {
+  --block-row: 152px;            /* minimum height of one block row; rows grow if content needs it */
+  --block-gap: 16px;
+  --block-radius: var(--radius-widget, 16px);
+  --block-shadow: 0 1px 2px rgb(20 20 20 / .04), 0 1px 1px rgb(20 20 20 / .03);
+  --block-lift: 0 18px 40px -18px rgb(0 0 0 / .32), 0 2px 6px rgb(0 0 0 / .08);
+  --block-drop: color-mix(in srgb, var(--c-blue) 12%, var(--surface));
+  --block-ring: color-mix(in srgb, var(--c-blue) 30%, transparent);
+}
+:root[data-theme="dark"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); } }
+
+/* The wrapper is the size container: columns follow the space Home actually has, not the viewport,
+   so the sidebar never squeezes four columns into a tablet. */
+.blocks-wrap {container: blocks / inline-size; min-width: 0;}
+.blocks {
+  --cols: 4;
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  grid-auto-rows: minmax(var(--block-row), auto);
+  grid-auto-flow: row dense;
+  gap: var(--block-gap);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.blk {
+  --w: 1; --h: 1;
+  position: relative;
+  grid-column: span var(--w);
+  grid-row: span var(--h);
+  display: flex;
+  min-width: 0;
+  border-radius: var(--block-radius);
+}
+.blk-body {flex: 1; display: flex; min-width: 0;}
+.blk[data-w="2"] {--w: 2;} .blk[data-w="4"] {--w: 4;}
+.blk[data-h="2"] {--h: 2;}
+/* Middle width (tablets, narrow windows): stat tiles stay four across, but tables and feeds need
+   room, so 2×2 takes the full row and 1×2 becomes 2×1 to pair with two stat tiles. */
+@container blocks (min-width: 600px) and (max-width: 959px) {
+  .blk[data-w="2"][data-h="2"] {--w: 4;}
+  .blk[data-w="1"][data-h="2"] {--w: 2; --h: 1;}
+}
+/* Two columns below 600px of Home width (phones, narrow tablets). Anything two blocks tall or four
+   wide takes the full row so tables and feeds stay readable; 1×1 tiles pair up. */
+@container blocks (max-width: 599px) {
+  .blocks {--cols: 2; --block-row: 136px; gap: 12px;}
+  .blk[data-w="4"], .blk[data-h="2"] {--w: 2;}
+}
+
+/* A tile is the widget surface. Every widget, including the stat tiles, is one tile.
+   `.kpi.tile` outranks the older `.kpi` card rules. */
+.tile, .kpi.tile {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--block-radius);
+  box-shadow: var(--block-shadow);
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+}
+a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
+.tile-head {display: flex; align-items: center; gap: 8px; min-width: 0;}
+.tile-title {flex: 1; min-width: 0; margin: 0; font-size: 13px; font-weight: 500; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.tile-link {font-size: 12px; white-space: nowrap;}
+.tile-body {flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; overflow-wrap: anywhere;}
+/* Empty states inside a tile sit on the tile, without their own (dashed) frame. */
+.tile .state {border: 0; padding: 8px 0; background: none;}
+.tile .table-wrap {border-radius: 8px;}
+/* Narrow tiles: a long status wraps under the title instead of squeezing it. */
+.tile .list-row {flex-wrap: wrap; row-gap: 4px;}
+.tile .list-main {flex: 1 1 10em;}
+.tile .list-side {flex: 0 1 auto; margin-left: auto; text-align: right;}
+/* Stat tile (1×1 or 2×1): the old Key figures row, one figure per block. */
+.tile--stat {gap: 6px; justify-content: space-between;}
+.tile--stat .kpi-value {font-size: 2rem; line-height: 1.05;}
+.tile--stat .kpi-sub {font-size: 12px; color: var(--muted); line-height: 1.4;}
+@container blocks (max-width: 599px) {
+  .tile {padding: 14px;}
+  .tile--stat .kpi-value {font-size: 1.5rem;}
+}
+
+/* ───────────── Toolbar and edit bar ───────────── */
+.blocks-bar {display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 16px; min-width: 0;}
+.blocks-bar-text {display: grid; min-width: 0;}
+.blocks-bar-title {font-weight: 600;}
+.blocks-bar-hint {font-size: 12px; color: var(--muted);}
+.blocks-bar-actions {display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto;}
+.blocks-bar.is-editing {position: sticky; top: 8px; z-index: 6; padding: 10px 12px 10px 16px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--sunken); box-shadow: var(--block-shadow);}
+@media (max-width: 767px) {.blocks-bar.is-editing {top: 60px;} .blocks-bar-actions .btn {min-height: 44px;}}
+
+/* ───────────── Edit mode ───────────── */
+/* A slow, small sway of the tile surface says "movable". The controls on top hold still so they
+   are easy to hit. Reduced motion keeps every control and drops the sway. */
+.blocks.is-editing .blk-body {animation: blk-sway 3.2s var(--ease-soft, ease-in-out) infinite alternate; animation-delay: calc(var(--i, 0) * -430ms);}
+@keyframes blk-sway {from {transform: rotate(-.3deg);} to {transform: rotate(.3deg);}}
+@media (prefers-reduced-motion: reduce) {.blocks.is-editing .blk-body {animation: none;}}
+.blocks.is-editing .tile {box-shadow: 0 0 0 2px var(--block-ring), var(--block-shadow);}
+.blocks.is-editing .tile > * {opacity: .38; pointer-events: none; user-select: none;}
+.blocks.is-editing .tile-head, .blocks.is-editing .kpi-head, .blocks.is-editing .cf-widget .widget-head {visibility: hidden;} /* the edit label takes their place */
+.blk-tools {position: absolute; inset: 0; z-index: 2; display: none; flex-direction: column; justify-content: space-between; padding: 8px; pointer-events: none;}
+.blocks.is-editing .blk-tools {display: flex;}
+.blk-tools-top {display: flex; align-items: center; gap: 8px; min-width: 0;}
+.blk-tools > * > * {pointer-events: auto;}
+.blk-name {flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none !important;}
+.blk-handle, .blk-remove {flex: none; display: inline-grid; place-items: center; border: 0; font: inherit; cursor: pointer;}
+.blk-handle {width: 32px; height: 32px; border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--line), var(--block-shadow); cursor: grab; touch-action: none;}
+.blk-handle:hover {background: var(--hover);}
+.blk-remove {width: 28px; height: 28px; border-radius: 50%; background: var(--text); color: var(--bg);}
+.blk-sizes {align-self: center; display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 2px; padding: 2px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--block-shadow);}
+.blk-size {min-width: 36px; min-height: 28px; padding: 0 8px; border: 0; border-radius: 999px; background: transparent; font: inherit; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted); cursor: pointer;}
+.blk-size:hover {color: var(--text); background: var(--hover);}
+.blk-size[aria-pressed="true"] {background: var(--text); color: var(--bg);}
+@media (max-width: 767px) {
+  .blk-handle {width: 40px; height: 40px;}
+  .blk-remove {width: 36px; height: 36px;}
+  .blk-size {min-height: 36px;}
+}
+
+/* Dragging: the widget's own cell becomes the drop target, a soft filled highlight; a lifted card
+   follows the pointer. Keyboard moves flash the same fill on the moved widget. */
+.blk.is-dragging .blk-body, .blk.is-moved .blk-body {animation: none !important;}
+.blk.is-dragging {background: var(--block-drop); box-shadow: inset 0 0 0 2px var(--block-ring);}
+.blk.is-dragging > * {visibility: hidden;}
+.blk.is-moved .tile {background: var(--block-drop);}
+.blk-float {position: fixed; z-index: 50; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--block-radius); background: var(--surface); box-shadow: var(--block-lift); font-weight: 600; pointer-events: none; transform: rotate(-1.2deg) scale(1.02);}
+.blk-float-size {font-size: 12px; font-weight: 500; color: var(--muted);}
+@media (prefers-reduced-motion: reduce) {.blk-float {transform: none;}}
+
+/* The add tile ends the grid in edit mode. Solid, soft fill: never a dashed outline. */
+.blk-add {flex: 1; display: grid; place-content: center; justify-items: center; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: var(--block-radius); background: var(--sunken); color: var(--text); font: inherit; font-weight: 500; cursor: pointer; transition: background-color var(--dur-1) ease;}
+.blk-add:hover {background: var(--hover);}
+.blk-add-plus {display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--text); color: var(--bg); font-size: 20px; line-height: 1;}
+.blk-add-sub {font-size: 12px; font-weight: 400; color: var(--muted);}
+
+/* ───────────── Add-widget gallery ───────────── */
+.blk-gallery {width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 0; border: 1px solid var(--line); border-radius: var(--radius-overlay); background: var(--surface); color: var(--text); box-shadow: var(--block-lift);}
+.blk-gallery::backdrop {background: rgb(0 0 0 / .35);}
+.blk-gallery-inner {display: flex; flex-direction: column; max-height: inherit;}
+.blk-gallery-head {display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 20px 12px;}
+.blk-gallery-head h2 {margin: 0; font-size: 18px;}
+.blk-gallery-body {overflow-y: auto; padding: 0 20px 20px;}
+.blk-gallery-list {display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; list-style: none; margin: 0; padding: 0;}
+.blk-gallery-item {display: grid; gap: 8px; align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg);}
+.blk-gallery-name {margin: 0; font-weight: 600; font-size: 14px;}
+.blk-gallery-sub {margin: 0; font-size: 12px; color: var(--muted);}
+.blk-gallery-sizes {display: flex; flex-wrap: wrap; gap: 6px; align-items: end;}
+/* A size glyph: the widget's footprint drawn in blocks. Decorative; the text says the size. */
+.blk-glyph {display: inline-grid; grid-template-columns: repeat(var(--w), 8px); grid-auto-rows: 8px; gap: 2px;}
+.blk-glyph i {display: block; border-radius: 2px; background: var(--control);}
+.blk-gallery-empty {margin: 0; color: var(--muted);}
+@media (max-width: 767px) {
+  .blk-gallery {width: 100vw; max-width: 100vw; margin: auto 0 0; max-height: 90dvh; border-radius: var(--radius-overlay) var(--radius-overlay) 0 0;}
+  .blk-gallery-list {grid-template-columns: 1fr;}
+  .blk-gallery .btn {min-height: 44px;}
+}

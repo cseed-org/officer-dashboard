@@ -103,6 +103,7 @@ export function Kpi({
   icon,
   hue,
   trend,
+  tile,
 }: {
   label: string;
   value: ComponentChildren;
@@ -114,7 +115,10 @@ export function Kpi({
   hue?: Hue;
   /** Sparkline, progress bar or delta under the figure. */
   trend?: ComponentChildren;
+  /** Render as a Home block-grid stat tile (`.tile.tile--stat`). */
+  tile?: boolean;
 }) {
+  const extra = tile ? ' tile tile--stat' : '';
   const body = (
     <>
       <span class="kpi-head">
@@ -131,11 +135,11 @@ export function Kpi({
     </>
   );
   return href ? (
-    <a class="kpi kpi--link" href={href}>
+    <a class={`kpi kpi--link${extra}`} href={href}>
       {body}
     </a>
   ) : (
-    <div class="kpi">{body}</div>
+    <div class={`kpi${extra}`}>{body}</div>
   );
 }
 

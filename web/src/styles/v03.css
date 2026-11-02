@@ -130,13 +130,13 @@
 }
 
 /* Edit mode: the grid says so in words (edit bar), every tile shows its handles; a slow sway signals
-   "movable". Reduced motion keeps the handles and dashed edge, drops the sway. */
+   "movable". Reduced motion keeps the handles and ring, drops the sway. No dashed edges (V0.4). */
 .edit-bar {position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px 10px 16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--sunken);}
 .edit-bar-text {display:grid;min-width:0;}
 .edit-bar-title {font-weight:600;}
 .edit-bar-hint {font-size:12px;color:var(--muted);}
 @media (max-width: 767px) {.edit-bar {top:52px;}}
-.widget-grid.is-editing .widget {border-style:dashed;border-color:var(--control);animation:widget-sway 2.6s var(--ease-soft) infinite alternate;animation-delay:calc(var(--i, 0) * -370ms);}
+.widget-grid.is-editing .widget {box-shadow:0 0 0 2px color-mix(in srgb, var(--c-blue) 30%, transparent);animation:widget-sway 2.6s var(--ease-soft) infinite alternate;animation-delay:calc(var(--i, 0) * -370ms);}
 .widget-grid.is-editing .widget > :not(.widget-edit) {opacity:.42;pointer-events:none;}
 .widget-grid.is-editing .widget-head {visibility:hidden;}  /* the edit label takes its place */
 @keyframes widget-sway {from {transform:rotate(calc(var(--wiggle) * -1));} to {transform:rotate(var(--wiggle));}}
@@ -151,10 +151,10 @@
 .widget-size[aria-pressed="true"] {background:var(--text);color:var(--bg);}
 .widget-size:disabled {opacity:.4;cursor:not-allowed;}
 .widget-label {position:absolute;z-index:2;left:48px;top:14px;right:44px;font-size:12px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.widget-grid.is-editing .widget.is-lifted {animation:none;transform:scale(1.03) rotate(-1deg);box-shadow:var(--overlay-shadow);border-style:solid;z-index:3;}
+.widget-grid.is-editing .widget.is-lifted {animation:none;transform:scale(1.03) rotate(-1deg);box-shadow:var(--overlay-shadow);z-index:3;}
 .widget-grid.is-editing .widget.is-lifted .widget-handle {cursor:grabbing;background:var(--text);color:var(--bg);}
-.widget-slot {grid-column:span var(--span-c, 1);grid-row:span var(--span-r, 1);border:2px dashed var(--control);border-radius:var(--radius-widget);background:color-mix(in srgb, var(--c-blue) 6%, transparent);}
-.widget-add {grid-column:span 1;display:grid;place-content:center;justify-items:center;gap:6px;border:1px dashed var(--control);border-radius:var(--radius-widget);background:transparent;color:var(--text);font:inherit;font-weight:500;cursor:pointer;transition:background-color var(--dur-1) ease;}
+.widget-slot {grid-column:span var(--span-c, 1);grid-row:span var(--span-r, 1);box-shadow:inset 0 0 0 2px color-mix(in srgb, var(--c-blue) 30%, transparent);border-radius:var(--radius-widget);background:color-mix(in srgb, var(--c-blue) 6%, transparent);}
+.widget-add {grid-column:span 1;display:grid;place-content:center;justify-items:center;gap:6px;border:1px solid var(--line);border-radius:var(--radius-widget);background:var(--sunken);color:var(--text);font:inherit;font-weight:500;cursor:pointer;transition:background-color var(--dur-1) ease;}
 .widget-add:hover {background:var(--hover);}
 .widget-add-plus {display:inline-grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--text);color:var(--bg);}
 .widget-add-sub {font-size:12px;font-weight:400;color:var(--muted);}

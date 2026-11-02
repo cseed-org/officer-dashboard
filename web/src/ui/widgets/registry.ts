@@ -1,16 +1,67 @@
-import type { WidgetPlacement } from '../../lib/contracts';
+import type { WidgetBlockSize } from '../../lib/contracts';
 
-/** Stable IDs form the persisted contract; feature Panes can extend this registry. */
-export const widgetRegistry = [
-  { id: 'kpis', title: 'Key figures', size: 'L' },
-  { id: 'my-action', title: 'My actions', size: 'M' },
-  { id: 'recent-events', title: 'Recent events', size: 'M' },
-  { id: 'budget', title: 'Budget vs actual', size: 'M' },
-  { id: 'activity', title: 'Activity', size: 'M' },
-  { id: 'web-analytics', title: 'Web Analytics', size: 'L' },
-  { id: 'traffic-security', title: 'Traffic & security', size: 'M' },
-  { id: 'performance', title: 'Performance', size: 'M' },
-  { id: 'workers-d1', title: 'Workers/D1 usage', size: 'M' },
-  { id: 'member-signups', title: 'Member signups', size: 'S' },
-] satisfies (WidgetPlacement & { title: string })[];
-export const defaultWidgetLayout: WidgetPlacement[] = widgetRegistry.filter(w=>!['traffic-security','performance','workers-d1','member-signups'].includes(w.id)).map(({ id, size }) => ({ id, size }));
+export type BlockSize = WidgetBlockSize;
+export interface WidgetDef {
+  /** Stable ID: part of the persisted contract (user_prefs). */
+  id: string;
+  title: string;
+  /** Sizes this widget supports, smallest first. */
+  sizes: BlockSize[];
+  /** Size used when the widget is added. */
+  size: BlockSize;
+  /** Widgets offered together as one onboarding choice (the old "Key figures" row). */
+  group?: 'kpis';
+}
+
+/** Feature Panes can extend this registry. Keep defaults in step with server/internal/api/preferences.go. */
+export const widgetRegistry: WidgetDef[] = [
+  { id: 'kpi-upcoming', title: 'Upcoming events', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'kpi-checkin', title: 'Avg check-in rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'kpi-reflection', title: 'Reflection rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'kpi-budget', title: 'Budget remaining', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'kpi-pending', title: 'Pending requests', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'my-action', title: 'My actions', sizes: ['2x2', '4x2'], size: '2x2' },
+  { id: 'recent-events', title: 'Recent events', sizes: ['2x2', '4x2'], size: '2x2' },
+  { id: 'budget', title: 'Budget vs actual', sizes: ['2x2', '4x2'], size: '2x2' },
+  { id: 'activity', title: 'Activity', sizes: ['1x2', '2x2', '4x2'], size: '1x2' },
+  { id: 'web-analytics', title: 'Web Analytics', sizes: ['1x1', '2x2', '4x2'], size: '1x1' },
+  { id: 'traffic-security', title: 'Traffic & security', sizes: ['1x1', '2x2'], size: '1x1' },
+  { id: 'performance', title: 'Performance', sizes: ['1x1', '2x2'], size: '1x1' },
+  { id: 'workers-d1', title: 'Workers/D1 usage', sizes: ['1x1', '2x2'], size: '1x1' },
+  { id: 'member-signups', title: 'Member signups', sizes: ['1x1', '2x2'], size: '1x1' },
+];
+
+/** The old single "Key figures" widget, split into one stat tile per figure in V0.4. */
+export const KPI_GROUP_ID = 'kpis';
+export const kpiIds = widgetRegistry.filter((w) => w.group === 'kpis').map((w) => w.id);
+
+/** A clean 4×5 rectangle on four columns; pairs up cleanly on two. */
+export const defaultWidgetLayout: { id: string; size: BlockSize }[] = [
+  { id: 'kpi-upcoming', size: '1x1' },
+  { id: 'kpi-checkin', size: '1x1' },
+  { id: 'kpi-reflection', size: '1x1' },
+  { id: 'kpi-budget', size: '1x1' },
+  { id: 'my-action', size: '2x2' },
+  { id: 'recent-events', size: '2x2' },
+  { id: 'budget', size: '2x2' },
+  { id: 'activity', size: '1x2' },
+  { id: 'kpi-pending', size: '1x1' },
+  { id: 'web-analytics', size: '1x1' },
+];
+
+export const widgetDef = (id: string) => widgetRegistry.find((w) => w.id === id);
+
+/** Onboarding offers the stat tiles as one "Key figures" choice; everything else one by one. */
+export const onboardingChoices: { id: string; title: string; ids: string[] }[] = [
+  { id: KPI_GROUP_ID, title: 'Key figures', ids: kpiIds },
+  ...widgetRegistry.filter((w) => !w.group).map((w) => ({ id: w.id, title: w.title, ids: [w.id] })),
+];
+/** The onboarding choice a saved widget ID belongs to (V0.3 "kpis" included). */
+export const choiceOf = (id: string) => onboardingChoices.find((c) => c.id === id || c.ids.includes(id))?.id;
+/** A layout for the picked choices: default order and sizes first, then the rest at their default size. */
+export function layoutForChoices(picked: Set<string>): { id: string; size: BlockSize }[] {
+  const ids = onboardingChoices.filter((c) => picked.has(c.id)).flatMap((c) => c.ids);
+  const first = defaultWidgetLayout.filter((p) => ids.includes(p.id));
+  const rest = ids.filter((id) => !first.some((p) => p.id === id)).map((id) => ({ id, size: widgetDef(id)!.size }));
+  return [...first, ...rest];
+}

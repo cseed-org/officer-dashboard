@@ -975,7 +975,12 @@ export type HealthResponse = z.infer<typeof HealthResponse>;
 // ───────────────────────────── Endpoint index ─────────────────────────────
 
 // V0.3: server-backed Home layout and private calendar addresses.
-export const WidgetPlacement = z.object({ id: Id, size: z.enum(['S', 'M', 'L']) });
+/** V0.4 block sizes are W×H in Home grid blocks. S/M/L are V0.3 sizes: still accepted and returned for
+ *  layouts saved before V0.4; the web client migrates them on load (web/src/ui/widgets/layout.ts). */
+export const WidgetBlockSize = z.enum(['1x1', '2x1', '1x2', '2x2', '4x1', '4x2']);
+export type WidgetBlockSize = z.infer<typeof WidgetBlockSize>;
+export const WidgetLegacySize = z.enum(['S', 'M', 'L']);
+export const WidgetPlacement = z.object({ id: Id, size: z.union([WidgetBlockSize, WidgetLegacySize]) });
 export type WidgetPlacement = z.infer<typeof WidgetPlacement>;
 export const IanaTimezone = z.string().max(100).refine((v) => {
   try { return v !== 'Local' && (v === 'UTC' || v.includes('/')) && !!new Intl.DateTimeFormat('en-US', { timeZone: v }); } catch { return false; }
