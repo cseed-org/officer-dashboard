@@ -1,0 +1,41 @@
+name: Dependency review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Check dependency graph availability
+        id: graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          status=$(curl --silent --show-error --output /tmp/dependency-diff.json --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GH_REPO/dependency-graph/compare/$BASE_SHA...$HEAD_SHA")
+          case "$status" in
+            200) echo 'available=true' >> "$GITHUB_OUTPUT" ;;
+            403|404)
+              echo '::warning::Dependency review unavailable. Enable Dependency graph in repository settings.'
+              echo 'Dependency review did not run: enable Dependency graph in repository settings. It will run automatically when available.' >> "$GITHUB_STEP_SUMMARY"
+              echo 'available=false' >> "$GITHUB_OUTPUT"
+              ;;
+            *) echo "::error::Dependency graph API returned HTTP $status"; exit 1 ;;
+          esac
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        if: steps.graph.outputs.available == 'true'
+        with:
+          fail-on-severity: high
