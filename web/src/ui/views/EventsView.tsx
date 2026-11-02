@@ -192,7 +192,15 @@ export default function EventsView() {
 
   const health = all.status === 'ready' ? healthEvent(all.data.items, now) : undefined;
   const closeAll = () => setParams({ ...PANELS });
-  const focusPeriod = () => setTimeout(() => document.getElementById('period')?.focus());
+  /** After a delete: wait until every dialog has closed (each returns focus to its opener), then focus the heading. */
+  const focusPeriod = () => {
+    let tries = 0;
+    const step = () => {
+      if (document.querySelector('dialog[open]') && tries++ < 60) return void requestAnimationFrame(step);
+      requestAnimationFrame(() => document.getElementById('period')?.focus());
+    };
+    requestAnimationFrame(step);
+  };
 
   return (
     <div class="stack events-page">

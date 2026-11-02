@@ -9,22 +9,22 @@ import (
 
 // Event is an events row.
 type Event struct {
-	ID              string
-	LumaID          *string
-	Name            string
-	StartsAt        string // ISO with offset, as supplied
-	EndsAt          *string
-	Location        *string
-	URL             *string
-	HostUserID      *string
-	Status          string // draft | published | completed | cancelled
-	Description     *string
-	Capacity        *int64
-	HostSubteamID   *string
-	LumaURL         *string
-	NotionURL       *string
-	CreatedAt       Ms
-	UpdatedAt       Ms
+	ID            string
+	LumaID        *string
+	Name          string
+	StartsAt      string // ISO with offset, as supplied
+	EndsAt        *string
+	Location      *string
+	URL           *string
+	HostUserID    *string
+	Status        string // draft | published | completed | cancelled
+	Description   *string
+	Capacity      *int64
+	HostSubteamID *string
+	LumaURL       *string
+	NotionURL     *string
+	CreatedAt     Ms
+	UpdatedAt     Ms
 	// CoverUpdatedAt is read from event_covers (nil when the event has no cover).
 	CoverUpdatedAt *int64
 }
@@ -96,19 +96,19 @@ func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 
 // EventPatch lists the event fields that can change.
 type EventPatch struct {
-	Name            Opt[string]
-	StartsAt        Opt[string]
-	EndsAt          Opt[string]
-	Location        Opt[string]
-	URL             Opt[string]
-	LumaID          Opt[string]
-	HostUserID      Opt[string]
-	Status          Opt[string]
-	Description     Opt[string]
-	Capacity        Opt[int64]
-	HostSubteamID   Opt[string]
-	LumaURL         Opt[string]
-	NotionURL       Opt[string]
+	Name          Opt[string]
+	StartsAt      Opt[string]
+	EndsAt        Opt[string]
+	Location      Opt[string]
+	URL           Opt[string]
+	LumaID        Opt[string]
+	HostUserID    Opt[string]
+	Status        Opt[string]
+	Description   Opt[string]
+	Capacity      Opt[int64]
+	HostSubteamID Opt[string]
+	LumaURL       Opt[string]
+	NotionURL     Opt[string]
 }
 
 // UpdateEvent applies a patch and stamps updated_at.

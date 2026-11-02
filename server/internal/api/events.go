@@ -85,34 +85,34 @@ func (c *Ctx) eventsList() error {
 }
 
 type eventInput struct {
-	Name            validate.Field[string]
-	StartsAt        validate.Field[string]
-	EndsAt          validate.Field[string]
-	Location        validate.Field[string]
-	URL             validate.Field[string]
-	LumaID          validate.Field[string]
-	HostUserID      validate.Field[string]
-	Status          validate.Field[string]
-	Description     validate.Field[string]
-	Capacity        validate.Field[int64]
-	HostSubteamID   validate.Field[string]
-	LumaURL         validate.Field[string]
+	Name          validate.Field[string]
+	StartsAt      validate.Field[string]
+	EndsAt        validate.Field[string]
+	Location      validate.Field[string]
+	URL           validate.Field[string]
+	LumaID        validate.Field[string]
+	HostUserID    validate.Field[string]
+	Status        validate.Field[string]
+	Description   validate.Field[string]
+	Capacity      validate.Field[int64]
+	HostSubteamID validate.Field[string]
+	LumaURL       validate.Field[string]
 }
 
 func readEvent(r *validate.Reader, create bool) eventInput {
 	in := eventInput{
-		Name:            r.Str("name", validate.S{Req: create, Trim: true, Min: 1, Max: 200}),
-		StartsAt:        r.Str("startsAt", validate.S{Req: create, Format: "datetime"}),
-		EndsAt:          r.Str("endsAt", validate.S{Null: true, Format: "datetime"}),
-		Location:        r.Str("location", validate.S{Null: true, Max: 200}),
-		URL:             r.Str("url", validate.S{Null: true, Format: "url"}),
-		LumaID:          r.Str("lumaId", validate.S{Null: true, Max: 100}),
-		HostUserID:      r.Str("hostUserId", validate.S{Null: true, Min: 1, Max: 64}),
-		Status:          r.Str("status", validate.S{Enum: store.EventStatuses, HasDef: create, Default: "draft"}),
-		Description:     r.Str("description", validate.S{Null: true, Max: 5000}),
-		Capacity:        r.Int("capacity", validate.I{Null: true, Min: validate.Lo(1), Max: validate.Lo(100000)}),
-		HostSubteamID:   r.Str("hostSubteamId", validate.S{Null: true, Min: 1, Max: 64}),
-		LumaURL:         r.Str("lumaUrl", validate.S{Null: true, Max: 300}),
+		Name:          r.Str("name", validate.S{Req: create, Trim: true, Min: 1, Max: 200}),
+		StartsAt:      r.Str("startsAt", validate.S{Req: create, Format: "datetime"}),
+		EndsAt:        r.Str("endsAt", validate.S{Null: true, Format: "datetime"}),
+		Location:      r.Str("location", validate.S{Null: true, Max: 200}),
+		URL:           r.Str("url", validate.S{Null: true, Format: "url"}),
+		LumaID:        r.Str("lumaId", validate.S{Null: true, Max: 100}),
+		HostUserID:    r.Str("hostUserId", validate.S{Null: true, Min: 1, Max: 64}),
+		Status:        r.Str("status", validate.S{Enum: store.EventStatuses, HasDef: create, Default: "draft"}),
+		Description:   r.Str("description", validate.S{Null: true, Max: 5000}),
+		Capacity:      r.Int("capacity", validate.I{Null: true, Min: validate.Lo(1), Max: validate.Lo(100000)}),
+		HostSubteamID: r.Str("hostSubteamId", validate.S{Null: true, Min: 1, Max: 64}),
+		LumaURL:       r.Str("lumaUrl", validate.S{Null: true, Max: 300}),
 	}
 	if in.LumaURL.Has() {
 		if norm, err := luma.NormalizeEventURL(in.LumaURL.V); err != nil {

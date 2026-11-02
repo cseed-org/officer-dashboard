@@ -73,10 +73,10 @@ type NotionLink struct {
 
 type EventDetail struct {
 	EventListItem
-	URL             *string    `json:"url"`
-	Description     *string    `json:"description"`
-	Notion          NotionLink `json:"notion"`
-	UpdatedAt       string     `json:"updatedAt"`
+	URL         *string    `json:"url"`
+	Description *string    `json:"description"`
+	Notion      NotionLink `json:"notion"`
+	UpdatedAt   string     `json:"updatedAt"`
 }
 
 type AccountBrief = accounting.AccountBrief
