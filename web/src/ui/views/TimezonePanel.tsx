@@ -6,7 +6,7 @@ import { Section, Field, describe } from '../components/kit';
 
 export function TimezonePanel({ me }: { me: CurrentUser }) {
   const snapshot = timezoneSnapshot();
-  const [prefs, setPrefs] = useState<WidgetPrefs | null>(snapshot.prefs);
+  const [, setPrefs] = useState<WidgetPrefs | null>(snapshot.prefs);
   const [club, setClub] = useState<ClubSettings | null>(snapshot.club);
   const [mode, setMode] = useState(snapshot.prefs?.timezoneMode ?? 'club');
   const [manual, setManual] = useState(snapshot.prefs?.timezone || effectiveTimezone());
@@ -66,7 +66,7 @@ export function TimezonePanel({ me }: { me: CurrentUser }) {
         {mode === 'manual' && <Field id="manual-timezone" label="Manual time zone" error={errors.timezone} hint="Search by region or city, for example Asia/Tokyo.">
           <input {...describe('manual-timezone', errors.timezone, true)} class="input" list="iana-timezones" value={manual} onInput={(e) => setManual(e.currentTarget.value)} required disabled={busy} />
         </Field>}
-        <p class="muted small">Current time: <time data-timezone-preview>{dateTimeFormatter({ dateStyle: 'medium', timeStyle: 'short' }).format(now)} · {prefs?.effectiveTimezone ?? effectiveTimezone()}</time></p>
+        <p class="muted small">Current time: <time data-timezone-preview>{dateTimeFormatter({ dateStyle: 'medium', timeStyle: 'short' }).format(now)} · {effectiveTimezone()}</time></p>
         <p class="muted small">Saved to your account. Automatic detection needs access to your device’s time zone; until detected, the club default applies.</p>
         {status('personal')}
         <div><button class="btn btn--primary" type="submit" disabled={busy}>Save time zone</button></div>

@@ -87,3 +87,114 @@ test('event wall time conversion handles selected zone, DST gaps, and date-only 
   });
   expect(result).toEqual({ winter: '2026-01-15T18:00:00-05:00', summer: '2026-07-15T18:00:00-04:00', gap: null, date: 'Jan 15, 2026', instant: '2026-01-16T08:00' });
 });
+
+test('automatic zone changes preserve an unsaved event and apply after saving', async ({ page }) => {
+  await page.goto('/auth/dev?as=officer');
+  await page.request.put('/api/me/prefs', { data: { timezoneMode: 'auto', timezone: 'America/Los_Angeles' } });
+  await page.goto('/events');
+  await settle(page);
+  await page.locator('[data-new-event]').click();
+  const editor = page.locator('dialog[open]');
+  const name = `Zone change draft ${Date.now()}`;
+  await editor.getByLabel('Event name').fill(name);
+  await editor.getByLabel(/^Starts/).fill('2026-11-20T18:00');
+  await page.evaluate(() => {
+    const original = Intl.DateTimeFormat.prototype.resolvedOptions;
+    Intl.DateTimeFormat.prototype.resolvedOptions = function () { return { ...original.call(this), timeZone: 'America/New_York' }; };
+    window.dispatchEvent(new Event('focus'));
+  });
+  await expect.poll(async () => (await (await page.request.get('/api/me/prefs')).json()).effectiveTimezone).toBe('America/New_York');
+  // The modal drawer hides the page, so the notice must also show inside it.
+  await expect(editor.getByRole('status').filter({ hasText: 'Your time zone changed' })).toBeVisible();
+  await expect(editor.getByRole('status').filter({ hasText: 'Your time zone changed' })).toContainText('America/New_York');
+  await expect(editor.getByLabel('Event name')).toHaveValue(name);
+  await expect(editor.getByLabel(/^Starts/)).toHaveValue('2026-11-20T18:00');
+  await editor.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(page).toHaveURL(/[?&]edit=/);
+  const id = new URL(page.url()).searchParams.get('edit')!;
+  await expect(page.getByText('Your time zone changed', { exact: false })).toHaveCount(0);
+  await expect(editor.getByLabel('Event name')).toHaveValue(name);
+  await expect(editor.getByLabel(/^Starts/)).toHaveValue('2026-11-20T21:00');
+  const saved = await (await page.request.get(`/api/events/${id}`)).json();
+  expect(new Date(saved.event.startsAt).toISOString()).toBe('2026-11-21T02:00:00.000Z');
+  await page.request.delete(`/api/events/${id}`);
+  await page.request.put('/api/me/prefs', { data: { timezoneMode: 'club', timezone: '' } });
+});
+
+test('a failed save retains edits and the pending zone applies when the drawer closes', async ({ page }) => {
+  await page.goto('/auth/dev?as=officer');
+  await page.request.put('/api/me/prefs', { data: { timezoneMode: 'auto', timezone: 'America/Los_Angeles' } });
+  await page.goto('/events');
+  await settle(page);
+  await page.locator('[data-new-event]').click();
+  const editor = page.locator('dialog[open]');
+  await editor.getByLabel('Event name').fill('Keep this failed draft');
+  await editor.getByLabel(/^Starts/).fill('2026-11-20T18:00');
+  await page.evaluate(() => {
+    const original = Intl.DateTimeFormat.prototype.resolvedOptions;
+    Intl.DateTimeFormat.prototype.resolvedOptions = function () { return { ...original.call(this), timeZone: 'America/New_York' }; };
+    window.dispatchEvent(new Event('focus'));
+  });
+  const notice = editor.getByRole('status').filter({ hasText: 'Your time zone changed' });
+  await expect(notice).toBeVisible();
+  await page.route('**/api/events', (route) => route.request().method() === 'POST'
+    ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'internal', message: 'Try again' } }) })
+    : route.continue());
+  await editor.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await expect(editor.getByText('Try again', { exact: true })).toBeVisible();
+  await expect(editor.getByLabel('Event name')).toHaveValue('Keep this failed draft');
+  await expect(notice).toBeVisible();
+  await editor.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await expect(page.getByText('Your time zone changed', { exact: false })).toHaveCount(0);
+  const zone = await page.evaluate(async () => { const path = '/src/lib/timezone.ts'; return (await import(path)).effectiveTimezone(); });
+  expect(zone).toBe('America/New_York');
+  await page.request.put('/api/me/prefs', { data: { timezoneMode: 'club', timezone: '' } });
+});
+
+test('saving time zone settings keeps another dirty profile form intact', async ({ page }) => {
+  await page.goto('/auth/dev?as=officer');
+  await page.request.put('/api/me/prefs', { data: { timezoneMode: 'club', timezone: '' } });
+  await page.goto('/settings');
+  await settle(page);
+  const phone = page.locator('#pf-phone');
+  const before = await phone.inputValue();
+  await phone.fill('2065550199');
+  await page.getByRole('radio', { name: 'Choose manually' }).check();
+  await page.getByLabel('Manual time zone', { exact: true }).fill('America/New_York');
+  await page.getByRole('button', { name: 'Save time zone', exact: true }).click();
+  const notice = page.getByRole('status').filter({ hasText: 'Your time zone changed' });
+  await expect(notice).toContainText('America/New_York');
+  await expect(phone).toHaveValue('2065550199');
+  await expect(page.locator('[data-timezone-preview]')).toContainText('America/Los_Angeles');
+  await page.getByRole('button', { name: 'Save profile', exact: true }).click();
+  await expect(notice).toHaveCount(0);
+  await expect(page.locator('[data-timezone-preview]')).toContainText('America/New_York');
+  await expect(phone).toHaveValue('2065550199');
+  await phone.fill(before);
+  await page.getByRole('button', { name: 'Save profile', exact: true }).click();
+  await expect(page.getByText('Saved ✓', { exact: true })).toBeVisible();
+  await page.request.put('/api/me/prefs', { data: { timezoneMode: 'club', timezone: '' } });
+});
+
+test('a dirty budget editor (not a native form) keeps edits until discarded', async ({ page }) => {
+  await page.goto('/auth/dev?as=director');
+  await page.request.put('/api/me/prefs', { data: { timezoneMode: 'auto', timezone: 'America/Los_Angeles' } });
+  await page.goto('/finance?tab=budgets');
+  await settle(page);
+  const notes = page.locator('#bl-n-0');
+  const before = await notes.inputValue();
+  await notes.fill('Keep this budget note');
+  await page.evaluate(() => {
+    const original = Intl.DateTimeFormat.prototype.resolvedOptions;
+    Intl.DateTimeFormat.prototype.resolvedOptions = function () { return { ...original.call(this), timeZone: 'America/New_York' }; };
+    window.dispatchEvent(new Event('focus'));
+  });
+  const notice = page.getByRole('status').filter({ hasText: 'Your time zone changed' });
+  await expect(notice).toContainText('America/New_York');
+  await expect(notes).toHaveValue('Keep this budget note');
+  await page.getByRole('button', { name: 'discard changes', exact: true }).click();
+  await expect(notice).toHaveCount(0);
+  await expect(page.locator('#bl-n-0')).toHaveValue(before);
+  await page.request.put('/api/me/prefs', { data: { timezoneMode: 'club', timezone: '' } });
+});

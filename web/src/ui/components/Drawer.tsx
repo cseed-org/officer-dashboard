@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { TimezonePendingNotice } from './TimezonePendingNotice';
 import { useEffect, useRef } from 'preact/hooks';
 import { Icon } from './Icon';
 
@@ -77,7 +78,7 @@ export function Drawer({
             <Icon name="close" />
           </button>
         </header>
-        <div class={`${kind}-body`}>{open ? children : null}</div>
+        <div class={`${kind}-body`}>{open && <TimezonePendingNotice />}{open ? children : null}</div>
       </div>
     </dialog>
   );

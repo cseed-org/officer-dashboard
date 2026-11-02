@@ -1,3 +1,4 @@
+import { savingForm } from '../unsaved';
 /**
  * The UI's only way to reach the backend. Every call is named by an ENDPOINTS key from
  * src/core/contracts.ts, so the path, method, body and response types all come from the
@@ -99,6 +100,7 @@ export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> 
     (init.headers as Record<string, string>)['content-type'] = 'application/json';
   }
 
+  const saved = spec.method === 'GET' ? () => {} : savingForm();
   let res: Response;
   try {
     res = await fetch(url, init);
@@ -111,10 +113,12 @@ export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> 
     if (res.status === 401) redirectToLogin();
     throw err;
   }
-  if (res.status === 204) return validate(name, { ok: true });
+  if (res.status === 204) { const result = validate(name, { ok: true }); saved(); return result; }
   const ct = res.headers.get('content-type') ?? '';
   if (!ct.includes('json')) throw new ApiCallError(res.status, 'internal', `Unexpected ${ct || 'empty'} response from ${spec.path}`);
-  return validate(name, await res.json());
+  const result = validate(name, await res.json());
+  saved();
+  return result;
 }
 
 let redirecting = false;

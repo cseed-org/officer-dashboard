@@ -3,6 +3,7 @@ package luma
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseGuestsQuotedBOMCRLFAndNormalisedEmail(t *testing.T) {
@@ -94,5 +95,35 @@ func TestCSVTimestampEdges(t *testing.T) {
 		if _, err := CSVTimestamp(in); err == nil {
 			t.Errorf("CSVTimestamp(%q) should fail", in)
 		}
+	}
+}
+
+func TestClubTimezoneTimestamps(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for input, want := range map[string]string{
+		"2026-01-15 18:00":          "2026-01-15T23:00:00.000Z",
+		"2026-07-15 18:00":          "2026-07-15T22:00:00.000Z",
+		"2026-01-15T18:00:00-08:00": "2026-01-16T02:00:00.000Z",
+		"2026-01-15T18:00:00Z":      "2026-01-15T18:00:00.000Z",
+		"2026-11-01 01:30":          "2026-11-01T05:30:00.000Z",
+	} {
+		got, err := CSVTimestamp(input, ny)
+		if err != nil || got != want {
+			t.Errorf("%s: %s, %v; want %s", input, got, err, want)
+		}
+	}
+	if _, err := CSVTimestamp("2026-03-08 02:30", ny); err == nil {
+		t.Fatal("accepted DST gap")
+	}
+	guests, err := ParseGuests("email,registered at\na@b.org,2026-01-15 18:00", ny)
+	if err != nil || len(guests.Rows) != 1 || *guests.Rows[0].RegisteredAt != "2026-01-15T23:00:00.000Z" {
+		t.Fatalf("guests: %+v %v", guests, err)
+	}
+	reflections, err := ParseReflections("email,timestamp\na@b.org,2026-01-15 18:00", ny)
+	if err != nil || len(reflections.Rows) != 1 || reflections.Rows[0].SubmittedAt != "2026-01-15T23:00:00.000Z" {
+		t.Fatalf("reflections: %+v %v", reflections, err)
 	}
 }

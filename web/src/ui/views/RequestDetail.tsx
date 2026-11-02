@@ -4,6 +4,7 @@ import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME_TYPES, type PurchaseRequestDetail
 import type { PurchaseStatus } from '../../lib/domain';
 import { api, endpointUrl, isStorageUnavailable, STORAGE_UNAVAILABLE_MESSAGE } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
+import { useUnsavedEdits } from '../../lib/unsaved';
 import { describe, Field, Section, StatusBadge } from '../components/kit';
 import { Empty, ErrorState, errorMessage, Loading, Notice } from '../components/states';
 import { bytes, safeUrl, dollarsToCents, fmtDate, fmtDateTime, formatCents, FUNCTIONAL_LABEL, TYPE_LABEL } from '../../lib/format';
@@ -266,6 +267,8 @@ function Actions({
   const canDecide = canApprove || canDeny;
   const settleTo = t.has('fulfilled') ? 'fulfilled' : t.has('reimbursed') ? 'reimbursed' : null;
   const mine = r.requester.id === meId;
+  // Only fields still on screen count; settling or deciding removes their panel.
+  useUnsavedEdits((canDecide && comment.trim() !== '') || (!!settleTo && (orderRef.trim() !== '' || actual !== (r.totalCents / 100).toFixed(2))));
 
   const run = async (label: string, fn: () => Promise<{ request: PurchaseRequestDetail }>, msg: string) => {
     setBusy(label);

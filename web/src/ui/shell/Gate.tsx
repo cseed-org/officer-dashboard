@@ -1,3 +1,4 @@
+import { TimezonePendingNotice } from '../components/TimezonePendingNotice';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import type { CurrentUser } from '../../lib/contracts';
@@ -17,5 +18,5 @@ export function Gate({ children, label }: { children: (me: CurrentUser) => Compo
   useEffect(() => interceptSamePageLinks(), []);
   if (me.status === 'loading') return <Loading rows={6} label={`Loading ${label}`} />;
   if (me.status === 'error') return <ErrorState error={me.error} onRetry={me.retry} />;
-  return <div class="page-enter" key={label === 'settings' ? undefined : zoneVersion}>{children(me.user)}</div>;
+  return <><TimezonePendingNotice /><div class="page-enter" key={label === 'settings' ? undefined : zoneVersion}>{children(me.user)}</div></>;
 }

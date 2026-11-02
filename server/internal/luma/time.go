@@ -35,8 +35,8 @@ func ParseInstant(s string) (time.Time, error) {
 }
 
 // CSVTimestamp normalises an export timestamp to ISO UTC. Values without an offset are
-// Washington local time; API ingest always requires an explicit offset.
-func CSVTimestamp(value string) (string, error) {
+// the supplied club location (Pacific by default); API ingest requires an offset.
+func CSVTimestamp(value string, locations ...*time.Location) (string, error) {
 	if value == "" {
 		return "", nil
 	}
@@ -77,12 +77,21 @@ func CSVTimestamp(value string) (string, error) {
 	if desired.Year() != y || int(desired.Month()) != mo || desired.Day() != d {
 		return "", fmt.Errorf("Invalid timestamp: %s", value)
 	}
-	// Try both standard and daylight offsets; ambiguous autumn times take the earlier instant.
+	location := fiscal.Pacific
+	if len(locations) > 0 && locations[0] != nil {
+		location = locations[0]
+	}
+	// Try offsets around the date, including both sides of DST transitions; ambiguous autumn times take the earlier instant.
 	var best time.Time
 	found := false
-	for _, hours := range []int{7, 8} {
-		cand := desired.Add(time.Duration(hours) * time.Hour)
-		w := cand.In(fiscal.Pacific)
+	offsets := map[int]bool{}
+	for day := -2; day <= 2; day++ {
+		_, offset := desired.AddDate(0, 0, day).In(location).Zone()
+		offsets[offset] = true
+	}
+	for offset := range offsets {
+		cand := desired.Add(-time.Duration(offset) * time.Second)
+		w := cand.In(location)
 		if w.Year() == y && int(w.Month()) == mo && w.Day() == d && w.Hour() == h && w.Minute() == mi && w.Second() == sec {
 			if !found || cand.Before(best) {
 				best, found = cand, true
@@ -90,7 +99,7 @@ func CSVTimestamp(value string) (string, error) {
 		}
 	}
 	if !found {
-		return "", fmt.Errorf("Nonexistent Pacific local time; supply an offset: %s", value)
+		return "", fmt.Errorf("Nonexistent %s local time; supply an offset: %s", location, value)
 	}
 	return ISO(best), nil
 }

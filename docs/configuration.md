@@ -83,3 +83,8 @@ In Settings, leadership and owners set the club location label and IANA default 
 Each officer can choose Club default (initial preference), Automatic, or a manual IANA zone in Settings. Automatic reads the browser’s device zone on page load/focus/visibility return and saves it for server emails; if detection is unavailable, the club zone applies. Manual preferences remain fixed when travelling. The current time preview shows the saved effective zone. Club changes affect everyone using Club default immediately on their next page load or focus.
 
 Event times, calendar/editor inputs, outreach, audit logs and widgets share the effective zone. Date-only deadlines and accounting dates retain their original date. Instants remain stored in UTC; changing a preference never moves an event. Fiscal accounting boundaries retain the established Washington rules. ICS invitations contain UTC instants and display-zone metadata; calendar applications control their own display preferences. Go embeds IANA tzdata so minimal containers can resolve saved zones without system zoneinfo.
+
+Automatic zone changes are saved immediately. If a form has unsaved edits, a notice
+appears and display times update after the form is saved or closed. Guest and reflection
+CSV imports interpret offset-less timestamps in the club default zone, with a Pacific
+fallback; personal display preferences do not affect imports.
