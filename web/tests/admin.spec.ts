@@ -38,11 +38,11 @@ test('admin: add an officer in the drawer, change their role, deactivate and rea
   await expect(toDirector).toHaveAttribute('aria-pressed', 'false');
   page.once('dialog', (d) => void d.accept());
   await toDirector.click();
-  await expect(page.getByText(`${name} is now director.`)).toBeVisible();
+  await expect(page.getByText(`${name} is now a director.`)).toBeVisible();
   await expect(toDirector).toHaveAttribute('aria-pressed', 'true');
   page.once('dialog', (d) => void d.accept());
   await row.getByRole('group', { name: `Role for ${name}` }).getByRole('button', { name: 'officer', exact: true }).click();
-  await expect(page.getByText(`${name} is now officer.`)).toBeVisible();
+  await expect(page.getByText(`${name} is now an officer.`)).toBeVisible();
 
   // Deactivate from the ⋯ menu (keyboard), then it is hidden until "show deactivated".
   await row.getByRole('button', { name: `Actions for ${name}` }).click();

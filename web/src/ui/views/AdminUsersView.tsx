@@ -101,6 +101,8 @@ export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, 
   );
 }
 
+const ROLE_NOUN: Record<Role, string> = { officer: 'an officer', director: 'a director', leadership: 'leadership' };
+
 function UserList({
   users,
   meId,
@@ -137,6 +139,8 @@ function UserList({
     [users, showInactive, term],
   );
   const active = users.length - inactive;
+  // The server refuses removing the last owner, so the menu doesn't offer it.
+  const lastOwner = users.filter((u) => u.isOwner && u.active).length <= 1;
 
   return (
     <>
@@ -207,7 +211,7 @@ function UserList({
                         disabled={!canChangeRoles || (u.isOwner && !isOwner) || busyId === u.id || !u.active}
                         onChange={(role) => {
                           if (!confirm(`Make ${u.name} ${role}? Only leadership can change roles.`)) return;
-                          patch(u, { role }, `${u.name} is now ${role}.`);
+                          patch(u, { role }, `${u.name} is now ${ROLE_NOUN[role]}.`);
                         }}
                       />
                     </td>
@@ -220,7 +224,7 @@ function UserList({
                       <RowMenu
                         label={`Actions for ${u.name}`}
                         items={[
-                          ...(isOwner && u.active ? [
+                          ...(isOwner && u.active && !(u.isOwner && lastOwner) ? [
                             { label: u.isOwner ? 'Remove owner' : 'Make co-owner', disabled: busyId !== null, onSelect: () => ownership(u, u.isOwner ? 'remove' : 'add') },
                             ...(u.id !== meId ? [{ label: 'Transfer ownership', disabled: busyId !== null, onSelect: () => ownership(u, 'transfer') }] : []),
                           ] : []),

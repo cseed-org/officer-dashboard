@@ -18,6 +18,8 @@ for (const theme of THEMES) {
     }
     await page.getByRole('tab', { name: 'Access', exact: true }).click();
     await settle(page);
+    // The only owner can't remove themselves (the server refuses it), so their row has no menu.
+    await expect(page.locator('tr[data-officer="Sam Rivera"] .row-menu-btn')).toHaveCount(0);
     const row = page.locator('tr[data-officer="Priya Shah"]');
     await expect(row.getByRole('button', { name: 'Make co-owner' })).toHaveCount(0);
     await row.getByRole('button', { name: 'Actions for Priya Shah' }).click();
