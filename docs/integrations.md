@@ -8,7 +8,8 @@ optional headers are `name` / `full name`, `guest id` / `api id`, `approval stat
 `registration status`, `registered at` / `registration time`, and `checked in at` /
 `check-in time`. Reflection files need `email` / `email address` and `timestamp` /
 `submitted at`. Timestamps with an offset are preferred. Offset-less ISO dates/times or
-`MM/DD/YYYY HH:mm:ss [AM|PM]` are interpreted in America/Los_Angeles; nonexistent spring
+`MM/DD/YYYY HH:mm:ss [AM|PM]` are interpreted in the club default time zone (`club_settings.club_timezone`), falling
+back to America/Los_Angeles when unset; nonexistent spring
 DST times are rejected and ambiguous autumn times choose the earlier instant.
 
 Emails are trimmed/lowercased; duplicate event/email rows upsert. Blank/missing CSV fields and omitted JSON fields preserve existing values, including
@@ -19,6 +20,11 @@ matched to checked-in guests. Bad rows are reported by physical source row and s
 `dryRun=true` previews the merged metrics without writes, including for a new event.
 Files are limited to 5 MB; JSON
 ingest is limited to 5,000 guests by contract.
+
+The club zone applies to both Luma guests and reflection CSV timestamps. Explicit
+offsets and Z retain their instant. `/api/ingest/luma` accepts JSON with explicit
+offsets only; naive timestamps are rejected. Fiscal and accounting date boundaries
+remain Pacific regardless of the club or personal display zone.
 
 ## Service tokens and purchasing agents
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"officerdashboard/internal/validate"
@@ -204,11 +205,11 @@ func email(v *string) (string, error) {
 	return s, nil
 }
 
-func stamp(v *string) (*string, error) {
+func stamp(v *string, locations ...*time.Location) (*string, error) {
 	if v == nil {
 		return nil, nil
 	}
-	t, err := CSVTimestamp(*v)
+	t, err := CSVTimestamp(*v, locations...)
 	if err != nil {
 		return nil, err
 	}
@@ -216,17 +217,17 @@ func stamp(v *string) (*string, error) {
 }
 
 // ParseGuests reads a Luma guest export.
-func ParseGuests(text string) (Result[Guest], error) {
+func ParseGuests(text string, locations ...*time.Location) (Result[Guest], error) {
 	return parse(text, false, func(g getter) (Guest, error) {
 		e, err := email(g("email"))
 		if err != nil {
 			return Guest{}, err
 		}
-		reg, err := stamp(g("registeredAt"))
+		reg, err := stamp(g("registeredAt"), locations...)
 		if err != nil {
 			return Guest{}, err
 		}
-		chk, err := stamp(g("checkedInAt"))
+		chk, err := stamp(g("checkedInAt"), locations...)
 		if err != nil {
 			return Guest{}, err
 		}
@@ -235,9 +236,9 @@ func ParseGuests(text string) (Result[Guest], error) {
 }
 
 // ParseReflections reads a survey export.
-func ParseReflections(text string) (Result[Reflection], error) {
+func ParseReflections(text string, locations ...*time.Location) (Result[Reflection], error) {
 	return parse(text, true, func(g getter) (Reflection, error) {
-		at, err := stamp(g("submittedAt"))
+		at, err := stamp(g("submittedAt"), locations...)
 		if err != nil {
 			return Reflection{}, err
 		}

@@ -712,13 +712,25 @@ func (c *Ctx) eventsImport() error {
 		return badRequest("CSV file required (maximum 5 MB)")
 	}
 	text = string(raw)
+	settings, err := c.S.db.Read().ClubSettings(c.Context())
+	if err != nil {
+		return err
+	}
+	zone := settings.ClubTimezone
+	if zone == "" {
+		zone = store.DefaultTimezone
+	}
+	location, err := time.LoadLocation(zone)
+	if err != nil {
+		return err
+	}
 
 	var guestRows []luma.Guest
 	var reflRows []luma.Reflection
 	var errs []rowError
 	total := 0
 	if kind.V == "luma_guests" {
-		res, perr := luma.ParseGuests(text)
+		res, perr := luma.ParseGuests(text, location)
 		if perr != nil {
 			return fail(422, "import_failed", perr.Error())
 		}
@@ -727,7 +739,7 @@ func (c *Ctx) eventsImport() error {
 			errs = append(errs, rowError(e))
 		}
 	} else {
-		res, perr := luma.ParseReflections(text)
+		res, perr := luma.ParseReflections(text, location)
 		if perr != nil {
 			return fail(422, "import_failed", perr.Error())
 		}

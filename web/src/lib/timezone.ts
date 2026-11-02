@@ -1,3 +1,4 @@
+import { hasUnsavedEdits, watchUnsavedEdits } from './unsaved';
 /** One effective wall clock for every island. Date-only values remain calendar dates. */
 import { api } from './api/client';
 import type { ClubSettings, WidgetPrefs } from './contracts';
@@ -8,11 +9,20 @@ let prefs: WidgetPrefs | null = null;
 let club: ClubSettings | null = null;
 let refreshing: Promise<void> | null = null;
 export const effectiveTimezone = () => zone;
+let pending: WidgetPrefs | null = null;
+export const pendingTimezone = () => pending?.effectiveTimezone;
 export function applyTimezone(p: WidgetPrefs) {
   prefs = p;
-  if (zone === p.effectiveTimezone) return;
+  pending = null;
+  if (zone === p.effectiveTimezone) { window.dispatchEvent(new Event('cseed-timezone-pending')); return; }
+  if (hasUnsavedEdits()) {
+    pending = p;
+    window.dispatchEvent(new Event('cseed-timezone-pending'));
+    return;
+  }
   zone = p.effectiveTimezone;
   window.dispatchEvent(new Event('cseed-timezone'));
+  window.dispatchEvent(new Event('cseed-timezone-pending'));
 }
 export const browserTimezone = () => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
@@ -35,6 +45,10 @@ let watching = false;
 export async function initTimezone() {
   if (!watching) {
     watching = true;
+    watchUnsavedEdits();
+    window.addEventListener('cseed-unsaved', () => {
+      if (pending && !hasUnsavedEdits()) applyTimezone(pending);
+    });
     const refresh = () => { if (document.visibilityState !== 'hidden') void refreshTimezone().catch(() => {}); };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
