@@ -1,8 +1,10 @@
 ---
 import AppLayout from '../layouts/AppLayout.astro';
 import EventsPage from '../ui/pages/EventsPage';
+import '../styles/events.css';
 ---
 
 <AppLayout title="Events" page="events">
+  <p class="page-sub" slot="header">Plan the gathering. Keep the handoff together.</p>
   <EventsPage client:load />
 </AppLayout>

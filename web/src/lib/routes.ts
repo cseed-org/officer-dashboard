@@ -22,12 +22,20 @@ export const href = {
   events: (o: { when?: 'upcoming' | 'past'; q?: string } = {}) => `/events${qs(o)}`,
   event: (id: string) => `/events?id=${enc(id)}`,
   eventImport: (eventId?: string) => `/events${qs({ import: 1, id: eventId })}`,
+  eventNew: () => '/events?new=1',
+  eventEdit: (id: string) => `/events?edit=${enc(id)}`,
+  eventKit: (id: string) => `/events?kit=${enc(id)}`,
+  eventDelete: (id: string) => `/events?delete=${enc(id)}`,
 
   finance: (tab?: FinanceTab, extra: Record<string, string | number | null | undefined> = {}) => `/finance${qs({ tab: tab === 'requests' ? null : tab, ...extra })}`,
   requests: (o: { scope?: 'mine' | 'all'; status?: string } = {}) => `/finance${qs(o)}`,
   request: (id: string) => `/finance?id=${enc(id)}`,
   newRequest: (eventId?: string) => `/finance${qs({ new: 1, eventId })}`,
   report: (report: string) => `/finance?tab=reports&report=${enc(report)}`,
+
+  design: (o: { view?: 'board' | 'list' } = {}) => `/design${qs(o)}`,
+  designRequest: (id: string) => `/design?id=${enc(id)}`,
+  newDesignRequest: (eventId?: string) => `/design${qs({ new: 1, eventId })}`,
 
   admin: (tab?: AdminTab) => `/admin${qs({ tab: tab === 'users' ? null : tab })}`,
 };

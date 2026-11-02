@@ -259,6 +259,14 @@ func TestICSDeliveryOnEventCreateAndUpdate(t *testing.T) {
 	if last.To != "priya.other@example.org" {
 		t.Fatalf("no backfill to the new address: %+v", last.To)
 	}
+	// Deleting the event cancels it wherever it was sent.
+	before := len(m.all())
+	e.mustOK(e.do("DELETE", "/api/events/"+ev.str("event", "id"), nil, e.officer()))
+	e.srv.WaitBackground()
+	cancels := m.all()[before:]
+	if len(cancels) != 1 || cancels[0].Method != "CANCEL" || !strings.Contains(cancels[0].ICS, "STATUS:CANCELLED") || !strings.HasPrefix(cancels[0].Subject, "Cancelled") {
+		t.Fatalf("cancellation %+v", cancels)
+	}
 	test := e.mustOK(e.post("/api/me/calendar/test", nil, e.officer()))
 	if test.str("status") != "sent" {
 		t.Fatalf("test %s", test.Raw)

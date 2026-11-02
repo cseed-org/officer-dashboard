@@ -160,6 +160,27 @@ func (q *Queries) DeliveryFor(ctx context.Context, eventID, userID string) (*Del
 	return &d, nil
 }
 
+// DeliveriesForEvent snapshots what each officer received for an event (before deleting it:
+// the rows cascade with the event).
+func (q *Queries) DeliveriesForEvent(ctx context.Context, eventID string) (map[string]Delivery, error) {
+	rows, err := q.q.QueryContext(ctx, `SELECT event_id,user_id,mode,recipient,google_event_id,sequence,status,error,content_hash,updated_at FROM calendar_deliveries WHERE event_id=?`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Delivery{}
+	for rows.Next() {
+		var d Delivery
+		var at Ms
+		if err := rows.Scan(&d.EventID, &d.UserID, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.Error, &d.ContentHash, &at); err != nil {
+			return nil, err
+		}
+		d.UpdatedAt = int64(at)
+		out[d.UserID] = d
+	}
+	return out, rows.Err()
+}
+
 func (q *Queries) SaveDelivery(ctx context.Context, d Delivery) error {
 	return q.Exec(ctx, `INSERT INTO calendar_deliveries(event_id,user_id,mode,recipient,google_event_id,sequence,status,error,content_hash,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(event_id,user_id) DO UPDATE SET mode=excluded.mode,recipient=excluded.recipient,google_event_id=excluded.google_event_id,

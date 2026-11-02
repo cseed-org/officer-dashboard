@@ -411,6 +411,7 @@ type calJob struct {
 	eventID   string       // "" with onlyUser: every upcoming event (backfill)
 	snapshot  *store.Event // set for cancellations
 	cancelled bool
+	priors    map[string]store.Delivery // cancellations: what each officer received before the delete
 	onlyUser  string
 }
 
@@ -463,7 +464,7 @@ func (s *Server) runCalJob(j calJob) {
 		return
 	}
 	if j.cancelled {
-		s.deliverEvent(j.snapshot, true, j.onlyUser)
+		s.cancelEvent(j.snapshot, j.priors)
 		return
 	}
 	e, err := s.db.Read().EventByID(ctx, j.eventID)
@@ -474,15 +475,37 @@ func (s *Server) runCalJob(j calJob) {
 }
 
 // SyncEventToCalendars sends a created or changed event to every active officer, in the
-// background, after the caller's write has committed. Event deletes pass cancelled=true
-// with the deleted row so invitations are cancelled.
-func (s *Server) SyncEventToCalendars(e store.Event, cancelled bool) {
-	if cancelled {
-		snap := e
-		s.enqueue(calJob{eventID: e.ID, snapshot: &snap, cancelled: true})
+// background, after the caller's write has committed.
+func (s *Server) SyncEventToCalendars(e store.Event) { s.enqueue(calJob{eventID: e.ID}) }
+
+// CancelEventOnCalendars withdraws a deleted event from every calendar it reached. priors
+// must be read (DeliveriesForEvent) before the delete, since those rows cascade with it.
+func (s *Server) CancelEventOnCalendars(e store.Event, priors map[string]store.Delivery) {
+	if len(priors) == 0 {
 		return
 	}
-	s.enqueue(calJob{eventID: e.ID})
+	snap := e
+	s.enqueue(calJob{eventID: e.ID, snapshot: &snap, cancelled: true, priors: priors})
+}
+
+// cancelEvent sends a CANCEL (.ics) or cancels the Google event for each officer who had
+// it. The event row is gone, so nothing is recorded afterwards.
+func (s *Server) cancelEvent(e *store.Event, priors map[string]store.Delivery) {
+	for userID, prior := range priors {
+		if prior.Status != "sent" {
+			continue
+		}
+		p := prior
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		ev, err := s.calendarEvent(e, prior.Sequence+1, true)
+		if err == nil {
+			out := s.deliverOne(ctx, recipient{UserID: userID, Mode: prior.Mode, Email: prior.Recipient}, ev, &p)
+			if out.Status == "failed" {
+				s.log.Warn("calendar cancellation failed", "event", e.ID, "user", userID, "error", out.Message)
+			}
+		}
+		cancel()
+	}
 }
 
 // syncEventID is SyncEventToCalendars for callers that only have the ID (imports).
@@ -526,13 +549,6 @@ func (s *Server) deliverTo(e *store.Event, cancelled bool, r recipient) {
 	prior, err := s.db.Read().DeliveryFor(ctx, e.ID, r.UserID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return
-	}
-	if cancelled {
-		if prior == nil || prior.Status != "sent" {
-			return
-		}
-		// Cancel where the invitation actually went.
-		r.Mode, r.Email = prior.Mode, prior.Recipient
 	}
 	seq := 0
 	if prior != nil {

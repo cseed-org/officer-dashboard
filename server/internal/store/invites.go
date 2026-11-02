@@ -131,28 +131,6 @@ func (q *Queries) SubteamExists(ctx context.Context, id string) (bool, error) {
 	return n > 0, err
 }
 
-type Subteam struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
-func (q *Queries) Subteams(ctx context.Context) ([]Subteam, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id,name FROM subteams ORDER BY name COLLATE NOCASE`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Subteam{}
-	for rows.Next() {
-		var s Subteam
-		if err := rows.Scan(&s.ID, &s.Name); err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
-}
-
 // AuditCountSince counts an entity's audit rows for one action: all of them, and those
 // at or after since (ms). Used to rate-limit actions that reach other people.
 func (q *Queries) AuditCountSince(ctx context.Context, action, entityID string, since int64) (total, recent int, err error) {

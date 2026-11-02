@@ -45,20 +45,38 @@ type EventCounts struct {
 }
 
 type EventListItem struct {
-	ID       string       `json:"id"`
-	LumaID   *string      `json:"lumaId"`
-	Name     string       `json:"name"`
-	StartsAt string       `json:"startsAt"`
-	Location *string      `json:"location"`
-	Host     *UserSummary `json:"host"`
-	Metrics  EventCounts  `json:"metrics"`
+	ID          string        `json:"id"`
+	LumaID      *string       `json:"lumaId"`
+	Name        string        `json:"name"`
+	StartsAt    string        `json:"startsAt"`
+	EndsAt      *string       `json:"endsAt"`
+	Location    *string       `json:"location"`
+	Host        *UserSummary  `json:"host"`
+	HostSubteam *SubteamBrief `json:"hostSubteam"`
+	Status      string        `json:"status"`
+	Capacity    *int64        `json:"capacity"`
+	LumaURL     *string       `json:"lumaUrl"`
+	CoverURL    *string       `json:"coverUrl"`
+	Metrics     EventCounts   `json:"metrics"`
+}
+
+type SubteamBrief struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type NotionLink struct {
+	URL *string `json:"url"`
+	// Placeholder is true while the NotionSync stub is in use (no page exists).
+	Placeholder bool `json:"placeholder"`
 }
 
 type EventDetail struct {
 	EventListItem
-	EndsAt    *string `json:"endsAt"`
-	URL       *string `json:"url"`
-	UpdatedAt string  `json:"updatedAt"`
+	URL         *string    `json:"url"`
+	Description *string    `json:"description"`
+	Notion      NotionLink `json:"notion"`
+	UpdatedAt   string     `json:"updatedAt"`
 }
 
 type AccountBrief = accounting.AccountBrief

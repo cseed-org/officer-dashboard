@@ -607,3 +607,6 @@ td.people-who-cell {min-width:0;}
   .onb-foot .onb-skip {display:inline-flex;padding-inline:8px;}
   .onb-foot .btn--text:first-child {padding-inline:8px;}
 }
+
+/* Placeholder text meets 4.5:1 in both themes (the browser default measured 3.61:1 on the dark surface). */
+.input::placeholder, .textarea::placeholder {color:var(--muted);opacity:1;}

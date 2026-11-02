@@ -77,6 +77,10 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/api/events` | officer | — | `EventUpsertRequest` | `EventUpsertResponse` |
 | GET | `/api/events/:id` | officer | — | — | `EventDetailResponse` |
 | PATCH | `/api/events/:id` | officer | — | `EventPatchRequest` | `EventUpsertResponse` |
+| DELETE | `/api/events/:id` | officer | — | — | `OkResponse` |
+| GET | `/api/events/:id/cover` | officer | — | — | cover image bytes |
+| PUT | `/api/events/:id/cover` | officer | — | multipart: `file` (JPG, PNG or WebP, ≤ 5 MB) | `EventUpsertResponse` |
+| DELETE | `/api/events/:id/cover` | officer | — | — | `EventUpsertResponse` |
 | GET | `/api/events/:id/metrics` | officer | — | — | `EventMetricsResponse` |
 | POST | `/api/events/import` | officer | — | multipart: `CsvImportFields` + `file` | `CsvImportResponse` |
 | POST | `/api/ingest/luma` | token:ingest:luma | — | `LumaIngestRequest` | `LumaIngestResponse` |
@@ -91,6 +95,19 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/api/requests/:id/transition` | director | — | `PurchaseTransitionRequest` | `PurchaseRequestResponse` |
 | POST | `/api/requests/:id/attachments` | officer | — | multipart: `AttachmentUploadFields` + `file` | `AttachmentUploadResponse` |
 | GET | `/api/attachments/:id` | officer | — | — | receipt bytes or Drive redirect |
+| GET | `/api/design-requests` | officer | — | — | `DesignRequestsListResponse` |
+| POST | `/api/design-requests` | officer | — | `DesignRequestCreateRequest` | `DesignRequestResponse` |
+| GET | `/api/design-requests/:id` | officer | — | — | `DesignRequestResponse` |
+| PATCH | `/api/design-requests/:id` | officer | — | `DesignRequestUpdateRequest` | `DesignRequestResponse` |
+| DELETE | `/api/design-requests/:id` | officer | — | — | `OkResponse` |
+| POST | `/api/design-requests/:id/assign` | officer | — | `DesignAssignRequest` | `DesignRequestResponse` |
+| POST | `/api/design-requests/:id/move` | officer | — | `DesignMoveRequest` | `DesignRequestResponse` |
+| POST | `/api/design-requests/:id/approve` | officer | — | — | `DesignRequestResponse` |
+| POST | `/api/design-requests/:id/comments` | officer | — | `DesignCommentRequest` | `DesignRequestResponse` |
+| POST | `/api/design-requests/:id/files` | officer | — | multipart: `DesignFileUploadFields` + `file` | `DesignRequestResponse` |
+| GET | `/api/design-files/:id` | officer | — | — | file bytes or Drive redirect |
+| GET | `/api/events/:id/design-request-draft` | officer | — | — | `DesignRequestDraftResponse` |
+| POST | `/api/events/:id/design-requests` | officer | — | `DesignRequestFromEventRequest` (optional) | `DesignRequestResponse` |
 | GET | `/api/finance/summary` | officer | `FinanceQuery` | — | `FinanceSummaryResponse` |
 | GET | `/api/finance/reports/:report` | officer | `FinanceReportQuery` | — | `FinanceReportResponse` or CSV ¹ |
 | GET | `/api/finance/budgets` | officer | `FinanceQuery` | — | `BudgetsResponse` |
@@ -163,6 +180,35 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   uploaded to the request.
 - **Approve** enqueues a `fulfillment_jobs` row for club purchases and sends a Discord
   notification; submit / deny / fulfilled also notify.
+- **Design requests.** Every officer sees the whole board (`GET /api/design-requests`) and
+  can create a request, comment, and attach reference files. The design team is the active
+  users whose officer profile is on the subteam named **Design** (migration 0008 creates it).
+  - Designers assign any designer (themselves included) and move cards between New,
+    Accepted, In progress and In review. Moving an unassigned card past New assigns the
+    designer who moved it. Past New a card always has an assignee, so unassigning requires
+    moving it back to New first (409). Directors and leadership have the same assign and
+    move powers as an administrative override, but can only assign designers (400).
+  - **Delivered is reached only by `POST /approve`**, and only by the requester while the
+    card is In review. Rank gives no shortcut: a director, leadership or the designer gets
+    403. The requester can instead send it back with `move` → `in-progress` ("Request
+    changes"). Designers can reopen a delivered card to In progress, which clears the approval.
+  - The requester (or a director) edits the fields until delivery (409 after). The requester
+    can withdraw (`DELETE`) while the card is New; directors can delete any time.
+  - Files: `reference` from the requester or the design team until delivery; `review` from
+    the design team while the card is open; `delivered` from the design team at any stage
+    (directors and leadership share the design team's file rights, as with assign/move). Same
+    storage, size and type rules as receipts (PDF, PNG, JPEG, WebP, HEIC; up to 10 MB; content
+    sniffed), rechecked inside the write. Downloads are officer-only. Deleting a request removes
+    its local files and trashes Drive copies; the audit row lists the files and comments removed.
+  - A call that changes nothing (moving to the current stage, an empty `PATCH`) answers with
+    the current request and writes no audit row, but is still permission-checked.
+  - `DesignRequestDetail.permissions` tells the UI which actions the viewer has.
+  - **From an event.** `GET /api/events/:id/design-request-draft` proposes a request for
+    the event: title "<event> promo", type social, a brief with the date, place and RSVP
+    link, and a due date a week before the event (Vancouver time), never before today, or
+    null for a past event. `POST /api/events/:id/design-requests` creates it directly; any
+    supplied field overrides the draft, and the event link is fixed. The Design page also
+    opens the prefilled form at `/design?new=1&eventId=<id>`.
 - **Admin users.** Directors may deactivate officers. Deactivating directors or leadership requires leadership; owner accounts additionally require an owner. Deactivating a user deletes their sessions. The last active director can't
   be demoted or deactivated (409).
 - **Service tokens.** The plaintext is returned once by `POST /api/admin/tokens`; only a
@@ -175,10 +221,11 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 | --- | --- | --- |
 | `/login` | public | "Sign in with Discord" |
 | `/` | officer | Overview KPIs + recent events (`OverviewResponse`) |
-| `/events`, `/events?id=<id>` | officer | Event ratios + chart; CSV import on `/events/import` |
+| `/events`, `/events?id=<id>` | officer | List, month and week views; editor, Luma handoff kit, request design; CSV import on `/events?import=1` |
 | `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
 | `/admin/users`, `/admin/tokens` | director | 403 for officers |
+| `/design`, `/design?id=<id>`, `/design?new=1&eventId=<id>` | officer | Design request board (list view on phones); opens a request or the prefilled form |
 
 
 ## Backend implementation notes
@@ -369,8 +416,46 @@ user requires leadership. Role and active status stay on PATCH `/api/admin/users
   records what each officer last received (a content fingerprint), so unchanged events
   are never resent and updates replace rather than duplicate (the Google event id is kept
   across mode switches). Shutdown waits up to 20s for queued deliveries. Event deletion
-  (events Pane) should call `Server.SyncEventToCalendars(event, true)` to send a cancel.
+  sends cancellations: `eventDelete` snapshots `calendar_deliveries` (they cascade) and calls `Server.CancelEventOnCalendars`, which sends a CANCEL to the address the invite last went to, or cancels the Google event.
 - POST `/api/me/calendar/test` sends a sample invite synchronously and reports the result.
+
+## Events (V0.3)
+
+Every officer can create, edit and delete events, set the cover, and request design;
+directors and leadership have the same event powers. Each change writes `event.created`,
+`event.updated`, `event.deleted`, `event.cover_set` or `event.cover_removed` to the audit log.
+
+- **Fields.** `status` is `draft | published | completed | cancelled`. New events start as
+  `draft`; events created by a Luma import or ingest are `published` (so are the rows that
+  existed before migration 0009). `description` (≤ 5000), `capacity` (1–100000),
+  `hostSubteamId` (a `subteams` id; the name comes back as `hostSubteam`), `hostUserId`.
+  `GET /api/lookups` lists `subteams` and active `hosts` for the editor.
+- **Luma handoff.** There is no Luma API. The UI shows each field with a copy button,
+  the cover to download, and a link to `https://lu.ma/create`. The officer pastes the
+  published page back as `lumaUrl`. The server accepts only `https://` on `lu.ma`,
+  `www.lu.ma`, `luma.com` or `www.luma.com` with the path `/<slug>` (letters, digits,
+  hyphens) or `/event/evt-<id>`; Luma's own pages (`/create`, `/discover`, `/calendar`,
+  `/home`, the bare home page and similar) are refused with 400, and so are ports,
+  userinfo and backslashes. The stored value is on the canonical host (`https://lu.ma/…`)
+  without query, fragment or trailing slash. A Luma page can be linked to one event only
+  (409), compared case-insensitively, so `luma.com/X` and `lu.ma/x` are the same page.
+  Linking never imports attendees: those still arrive by CSV import or
+  `POST /api/ingest/luma`.
+- **Luma import publishes drafts.** A Luma guest list for a draft (CSV `kind=luma_guests`, not a
+  dry run, or `POST /api/ingest/luma`) moves it to `published`, audited as `event.updated`
+  with `reason: luma_import`. Reflection imports and other statuses are left alone.
+- **Cover.** `PUT /api/events/:id/cover` takes one image (content is checked against its
+  type). It is stored in the database; `coverUrl` is `/api/events/:id/cover?v=<ms>` and
+  changes when the cover does. The GET answers with `nosniff` and a sandbox CSP.
+- **Search.** `q` matches the event name or location.
+- **Delete.** Guests, reflections and the cover go with the event. An event that
+  purchase requests point at answers 409 until they are moved. The published Luma event
+  must be removed in Luma separately.
+- **Notion (stub).** On create the server asks `NotionSync` for a page; the stub stores a
+  placeholder link and `notion.placeholder` is `true`. See `docs/notion-integration.md`.
+- **Design request.** "Request design" opens the Design board's new-request form for the
+  event (`/design?new=1&eventId=<id>`). The board prefills it from the event and keeps the
+  link on its own side (`design_requests.event_id`), built in the design-requests Pane.
 
 ## Membership and Cloudflare
 

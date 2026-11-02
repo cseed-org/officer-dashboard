@@ -168,6 +168,9 @@ export const LookupsResponse = z.object({
   expenseAccounts: z.array(AccountOption),
   funds: z.array(FundOption),
   events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+  subteams: z.array(z.object({ id: Id, name: z.string() })),
+  /** Active officers, by name: the event host picker. */
+  hosts: z.array(UserSummary),
   currentFiscalYear: FiscalYear,
 });
 export type LookupsResponse = z.infer<typeof LookupsResponse>;
@@ -203,13 +206,60 @@ export type SearchResponse = z.infer<typeof SearchResponse>;
 
 // ───────────────────────────── Overview ─────────────────────────────
 
+/** draft until published by hand in Luma; imports from Luma arrive as published. */
+export const EventStatus = z.enum(['draft', 'published', 'completed', 'cancelled']);
+export type EventStatus = z.infer<typeof EventStatus>;
+export const SubteamBrief = z.object({ id: Id, name: z.string() });
+export type SubteamBrief = z.infer<typeof SubteamBrief>;
+
+const LUMA_HOSTS = ['lu.ma', 'www.lu.ma', 'luma.com', 'www.luma.com'];
+const LUMA_RESERVED = new Set(
+  'create discover calendar calendars home signin signup login logout settings explore user u event events pricing help about terms privacy map search dashboard check-in checkin manage embed api ios android download careers blog changelog features community library pay'.split(' '),
+);
+/**
+ * The public Luma event page pasted back after publishing by hand: https on lu.ma or
+ * luma.com, path /<slug> or /event/evt-<id>. Luma's own pages (/create, /discover,
+ * /calendar, the home page…) are refused. The server applies the same rule and stores the
+ * link without query, fragment or trailing slash.
+ */
+export function lumaEventUrlProblem(raw: string): string | null {
+  const msg = 'Use the HTTPS link to a Luma event page, like https://lu.ma/your-event';
+  const text = raw.trim();
+  // Go's url.Parse is stricter than WHATWG URL here: no backslashes, no port (even :443),
+  // and the "//" after the scheme is required.
+  if (!/^https:\/\//i.test(text) || text.includes('\\') || /^https:\/\/[^/?#]*:\d*(?:[/?#]|$)/i.test(text)) return msg;
+  let u: URL;
+  try {
+    u = new URL(text);
+  } catch {
+    return msg;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port || !LUMA_HOSTS.includes(u.hostname.toLowerCase())) return msg;
+  const [first = '', second, ...rest] = u.pathname.replace(/\/$/, '').replace(/^\//, '').split('/');
+  if (second === undefined && /^[A-Za-z0-9][A-Za-z0-9-]{1,99}$/.test(first) && !LUMA_RESERVED.has(first.toLowerCase())) return null;
+  if (rest.length === 0 && first === 'event' && second !== undefined && /^evt-[A-Za-z0-9]{4,64}$/.test(second)) return null;
+  return msg;
+}
+export const LumaEventUrl = z
+  .string()
+  .max(300)
+  .refine((v) => lumaEventUrlProblem(v) === null, { message: 'Use the HTTPS link to a Luma event page, like https://lu.ma/your-event' });
+
 export const EventListItem = z.object({
   id: Id,
   lumaId: z.string().nullable(),
   name: z.string(),
   startsAt: IsoDateTime,
+  endsAt: IsoDateTime.nullable(),
   location: z.string().nullable(),
   host: UserSummary.nullable(),
+  hostSubteam: SubteamBrief.nullable(),
+  status: EventStatus,
+  capacity: z.number().int().positive().nullable(),
+  /** The Luma event page saved after the manual handoff; never synced. */
+  lumaUrl: z.string().nullable(),
+  /** App path of the cover image (GET, officer session), cache-busted by `v`. */
+  coverUrl: z.string().nullable(),
   metrics: EventCounts,
 });
 export type EventListItem = z.infer<typeof EventListItem>;
@@ -252,8 +302,10 @@ export type EventsListResponse = z.infer<typeof EventsListResponse>;
 /** GET /api/events/:id */
 export const EventDetailResponse = z.object({
   event: EventListItem.extend({
-    endsAt: IsoDateTime.nullable(),
     url: z.string().nullable(),
+    description: z.string().nullable(),
+    /** TODO(notion): placeholder is true while the NotionSync stub is in use (no page exists). */
+    notion: z.object({ url: z.string().nullable(), placeholder: z.boolean() }),
     updatedAt: IsoDateTime,
   }),
   /** Purchase requests linked to this event. */
@@ -282,6 +334,12 @@ export const EventUpsertRequest = z.object({
   url: z.url().nullable().optional(),
   lumaId: z.string().max(100).nullable().optional(),
   hostUserId: Id.nullable().optional(),
+  /** Defaults to draft on create. */
+  status: EventStatus.optional(),
+  description: z.string().max(5000).nullable().optional(),
+  capacity: z.number().int().min(1).max(100000).nullable().optional(),
+  hostSubteamId: Id.nullable().optional(),
+  lumaUrl: LumaEventUrl.nullable().optional(),
 });
 export type EventUpsertRequest = z.infer<typeof EventUpsertRequest>;
 export const EventPatchRequest = EventUpsertRequest.partial();
@@ -988,6 +1046,109 @@ export type CalendarSettings = z.infer<typeof CalendarSettings>;
 export const CalendarModeRequest = z.object({ mode: DeliveryMode });
 export const CalendarTestResponse = z.object({ status: z.enum(['sent', 'failed', 'skipped', 'not_configured']), message: z.string() });
 
+// ───────────────────────────── Design requests ─────────────────────────────
+// One board everyone sees. Design-subteam members (and director+) assign and move work;
+// only the requester approves in review, which is the only way to reach Delivered.
+
+export const DESIGN_STAGES = ['new', 'accepted', 'in-progress', 'in-review', 'delivered'] as const;
+export const DesignStage = z.enum(DESIGN_STAGES);
+export type DesignStage = z.infer<typeof DesignStage>;
+export const DESIGN_TYPES = ['poster', 'social', 'slides', 'merch', 'video', 'other'] as const;
+export const DesignType = z.enum(DESIGN_TYPES);
+export type DesignType = z.infer<typeof DesignType>;
+export const DesignUrgency = z.enum(['normal', 'high']);
+export const DesignFileKind = z.enum(['reference', 'review', 'delivered']);
+export type DesignFileKind = z.infer<typeof DesignFileKind>;
+
+export const DesignEventRef = z.object({ id: Id, name: z.string(), startsAt: z.string() });
+export const DesignRequestItem = z.object({
+  id: Id,
+  title: z.string(),
+  type: DesignType,
+  formats: z.string(),
+  dueDate: IsoDate.nullable(),
+  urgency: DesignUrgency,
+  stage: DesignStage,
+  event: DesignEventRef.nullable(),
+  program: z.string().nullable(),
+  requester: UserSummary,
+  assignee: UserSummary.nullable(),
+  commentCount: z.number().int().nonnegative(),
+  fileCount: z.number().int().nonnegative(),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type DesignRequestItem = z.infer<typeof DesignRequestItem>;
+export const DesignComment = z.object({ id: Id, author: UserSummary, body: z.string(), createdAt: IsoDateTime });
+export type DesignComment = z.infer<typeof DesignComment>;
+export const DesignFile = z.object({
+  id: Id, kind: DesignFileKind, filename: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
+  url: z.string(), uploadedBy: UserSummary, createdAt: IsoDateTime,
+});
+export type DesignFile = z.infer<typeof DesignFile>;
+/** What the current viewer may do; the server enforces the same rules. */
+export const DesignPermissions = z.object({
+  canEdit: z.boolean(),
+  canDelete: z.boolean(),
+  canAssign: z.boolean(),
+  canAssignSelf: z.boolean(),
+  moveTo: z.array(DesignStage),
+  canApprove: z.boolean(),
+  canRequestChanges: z.boolean(),
+  uploadKinds: z.array(DesignFileKind),
+});
+export type DesignPermissions = z.infer<typeof DesignPermissions>;
+export const DesignRequestDetail = DesignRequestItem.extend({
+  brief: z.string(),
+  references: z.string(),
+  approvedBy: UserSummary.nullable(),
+  approvedAt: IsoDateTime.nullable(),
+  comments: z.array(DesignComment),
+  files: z.array(DesignFile),
+  permissions: DesignPermissions,
+});
+export type DesignRequestDetail = z.infer<typeof DesignRequestDetail>;
+
+/** GET /api/design-requests: the whole board (club scale, no paging). */
+export const DesignRequestsListResponse = z.object({
+  items: z.array(DesignRequestItem),
+  designers: z.array(UserSummary),
+  viewer: z.object({ isDesigner: z.boolean(), canAssign: z.boolean() }),
+});
+export type DesignRequestsListResponse = z.infer<typeof DesignRequestsListResponse>;
+export const DesignRequestResponse = z.object({ request: DesignRequestDetail, designers: z.array(UserSummary) });
+export type DesignRequestResponse = z.infer<typeof DesignRequestResponse>;
+
+export const DesignRequestCreateRequest = z.object({
+  title: z.string().trim().min(1).max(200),
+  type: DesignType,
+  formats: z.string().trim().max(500).optional(),
+  dueDate: IsoDate.nullable().optional(),
+  urgency: DesignUrgency.optional(),
+  brief: z.string().trim().min(1).max(4000),
+  references: z.string().trim().max(4000).optional(),
+  eventId: Id.nullable().optional(),
+  program: z.string().trim().max(200).nullable().optional(),
+});
+export type DesignRequestCreateRequest = z.infer<typeof DesignRequestCreateRequest>;
+export const DesignRequestUpdateRequest = DesignRequestCreateRequest.partial();
+export type DesignRequestUpdateRequest = z.infer<typeof DesignRequestUpdateRequest>;
+export const DesignAssignRequest = z.object({ assigneeId: Id.nullable() });
+export const DesignMoveRequest = z.object({ stage: DesignStage });
+export const DesignCommentRequest = z.object({ body: z.string().trim().min(1).max(4000) });
+/** multipart fields of POST /api/design-requests/:id/files, plus `file` (PDF, PNG, JPEG, WebP, HEIC; ≤ 10 MB). */
+export const DesignFileUploadFields = z.object({ kind: DesignFileKind.default('reference') });
+
+/** GET /api/events/:id/design-request-draft: a request prefilled from the event. */
+export const DesignRequestDraft = z.object({
+  title: z.string(), type: DesignType, formats: z.string(), dueDate: IsoDate.nullable(), urgency: DesignUrgency,
+  brief: z.string(), eventId: Id, event: DesignEventRef,
+});
+export type DesignRequestDraft = z.infer<typeof DesignRequestDraft>;
+export const DesignRequestDraftResponse = z.object({ draft: DesignRequestDraft });
+/** POST /api/events/:id/design-requests: every field optional; missing ones come from the draft. The event link is fixed. */
+export const DesignRequestFromEventRequest = DesignRequestCreateRequest.omit({ eventId: true }).partial();
+
 export const OwnerTransferRequest = z.object({ toUserId: Id });
 
 type Auth = 'owner' | 'leadership' | 'public' | 'officer' | 'director' | `token:${(typeof SERVICE_TOKEN_SCOPES)[number]}`;
@@ -1079,6 +1240,19 @@ export const ENDPOINTS = {
   googleConnect: { method: 'GET', path: '/api/me/calendar/google/connect', auth: 'officer', response: 'redirect' },
   googleDisconnect: { method: 'DELETE', path: '/api/me/calendar/google', auth: 'officer', response: CalendarSettings },
   googleCallback: { method: 'GET', path: '/auth/google/callback', auth: 'public', response: 'redirect' },
+  designRequestsList: { method: 'GET', path: '/api/design-requests', auth: 'officer', response: DesignRequestsListResponse },
+  designRequestCreate: { method: 'POST', path: '/api/design-requests', auth: 'officer', body: DesignRequestCreateRequest, response: DesignRequestResponse },
+  designRequestDetail: { method: 'GET', path: '/api/design-requests/:id', auth: 'officer', response: DesignRequestResponse },
+  designRequestUpdate: { method: 'PATCH', path: '/api/design-requests/:id', auth: 'officer', body: DesignRequestUpdateRequest, response: DesignRequestResponse },
+  designRequestDelete: { method: 'DELETE', path: '/api/design-requests/:id', auth: 'officer', response: OkResponse },
+  designRequestAssign: { method: 'POST', path: '/api/design-requests/:id/assign', auth: 'officer', body: DesignAssignRequest, response: DesignRequestResponse },
+  designRequestMove: { method: 'POST', path: '/api/design-requests/:id/move', auth: 'officer', body: DesignMoveRequest, response: DesignRequestResponse },
+  designRequestApprove: { method: 'POST', path: '/api/design-requests/:id/approve', auth: 'officer', response: DesignRequestResponse },
+  designRequestComment: { method: 'POST', path: '/api/design-requests/:id/comments', auth: 'officer', body: DesignCommentRequest, response: DesignRequestResponse },
+  designRequestUpload: { method: 'POST', path: '/api/design-requests/:id/files', auth: 'officer', body: 'multipart', response: DesignRequestResponse },
+  designFileDownload: { method: 'GET', path: '/api/design-files/:id', auth: 'officer', response: 'binary' },
+  designRequestDraftFromEvent: { method: 'GET', path: '/api/events/:id/design-request-draft', auth: 'officer', response: DesignRequestDraftResponse },
+  designRequestCreateFromEvent: { method: 'POST', path: '/api/events/:id/design-requests', auth: 'officer', body: DesignRequestFromEventRequest, response: DesignRequestResponse },
 
   health: { method: 'GET', path: '/api/health', auth: 'public', response: HealthResponse },
   me: { method: 'GET', path: '/api/me', auth: 'officer', response: MeResponse },
@@ -1090,6 +1264,10 @@ export const ENDPOINTS = {
   eventCreate: { method: 'POST', path: '/api/events', auth: 'officer', body: EventUpsertRequest, response: EventUpsertResponse },
   eventDetail: { method: 'GET', path: '/api/events/:id', auth: 'officer', response: EventDetailResponse },
   eventUpdate: { method: 'PATCH', path: '/api/events/:id', auth: 'officer', body: EventPatchRequest, response: EventUpsertResponse },
+  eventDelete: { method: 'DELETE', path: '/api/events/:id', auth: 'officer', response: OkResponse },
+  eventCoverGet: { method: 'GET', path: '/api/events/:id/cover', auth: 'officer', response: 'binary' },
+  eventCoverPut: { method: 'PUT', path: '/api/events/:id/cover', auth: 'officer', body: 'multipart', response: EventUpsertResponse },
+  eventCoverDelete: { method: 'DELETE', path: '/api/events/:id/cover', auth: 'officer', response: EventUpsertResponse },
   eventMetrics: { method: 'GET', path: '/api/events/:id/metrics', auth: 'officer', response: EventMetricsResponse },
   eventsImport: { method: 'POST', path: '/api/events/import', auth: 'officer', body: 'multipart', response: CsvImportResponse },
   ingestLuma: { method: 'POST', path: '/api/ingest/luma', auth: 'token:ingest:luma', body: LumaIngestRequest, response: LumaIngestResponse },
