@@ -101,6 +101,8 @@ export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, 
   );
 }
 
+const ROLE_NOUN: Record<Role, string> = { officer: 'an officer', director: 'a director', leadership: 'leadership' };
+
 function UserList({
   users,
   meId,
@@ -137,6 +139,8 @@ function UserList({
     [users, showInactive, term],
   );
   const active = users.length - inactive;
+  // The server refuses removing the last owner, so the menu doesn't offer it.
+  const lastOwner = users.filter((u) => u.isOwner && u.active).length <= 1;
 
   return (
     <>
@@ -207,7 +211,7 @@ function UserList({
                         disabled={!canChangeRoles || (u.isOwner && !isOwner) || busyId === u.id || !u.active}
                         onChange={(role) => {
                           if (!confirm(`Make ${u.name} ${role}? Only leadership can change roles.`)) return;
-                          patch(u, { role }, `${u.name} is now ${role}.`);
+                          patch(u, { role }, `${u.name} is now ${ROLE_NOUN[role]}.`);
                         }}
                       />
                     </td>
@@ -217,14 +221,14 @@ function UserList({
                       </span>
                     </td>
                     <td class="people-menu">
-                      {isOwner && u.active && <div class="stack stack--tight">
-                        <button class="btn btn--small" disabled={busyId !== null} onClick={() => ownership(u, u.isOwner ? 'remove' : 'add')}>{u.isOwner ? 'Remove owner' : 'Make co-owner'}</button>
-                        {u.id !== meId && <button class="btn btn--small" disabled={busyId !== null} onClick={() => ownership(u, 'transfer')}>Transfer ownership</button>}
-                      </div>}
                       <RowMenu
                         label={`Actions for ${u.name}`}
-                        items={
-                          (u.id === meId || (u.isOwner && !isOwner) || (u.role !== 'officer' && !canChangeRoles)) // directors deactivate officers only
+                        items={[
+                          ...(isOwner && u.active && !(u.isOwner && lastOwner) ? [
+                            { label: u.isOwner ? 'Remove owner' : 'Make co-owner', disabled: busyId !== null, onSelect: () => ownership(u, u.isOwner ? 'remove' : 'add') },
+                            ...(u.id !== meId ? [{ label: 'Transfer ownership', disabled: busyId !== null, onSelect: () => ownership(u, 'transfer') }] : []),
+                          ] : []),
+                          ...((u.id === meId || (u.isOwner && !isOwner) || (u.role !== 'officer' && !canChangeRoles)) // directors deactivate officers only
                             ? []
                             : [
                                 u.active
@@ -243,8 +247,8 @@ function UserList({
                                         patch(u, { active: true }, `${u.name} is active again.`);
                                       },
                                     },
-                              ]
-                        }
+                              ]).map((item) => ({ ...item, disabled: busyId !== null }))
+                        ]}
                       />
                     </td>
                   </tr>

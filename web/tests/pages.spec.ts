@@ -8,9 +8,9 @@ const PAGES: { path: string; heading: string }[] = [
   { path: '/finance?tab=budgets', heading: 'Requests & Finance' },
   { path: '/finance?tab=reports', heading: 'Requests & Finance' },
   { path: '/finance?tab=periods', heading: 'Requests & Finance' },
-  { path: '/admin', heading: 'Admin' },
-  { path: '/admin?tab=tokens', heading: 'Admin' },
-  { path: '/admin?tab=audit', heading: 'Admin' },
+  { path: '/officers?tab=access', heading: 'Officers' },
+  { path: '/officers?tab=tokens', heading: 'Officers' },
+  { path: '/officers?tab=audit', heading: 'Officers' },
   { path: '/settings', heading: 'Settings' },
 ];
 
