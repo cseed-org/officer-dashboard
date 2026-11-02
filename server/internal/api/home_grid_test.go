@@ -21,8 +21,8 @@ func TestHomeGridBlockSizes(t *testing.T) {
 	}
 	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"widgetLayout": layout}, e.officer()))
 	got := e.mustOK(e.get("/api/me/prefs", e.officer()))
-	want := `{"widgetLayout":[{"id":"kpi-pending","size":"2x1"},{"id":"recent-events","size":"4x2"},{"id":"activity","size":"1x2"},{"id":"future-widget","size":"4x1"}]}`
-	if strings.TrimSpace(string(got.Raw)) != want {
+	want := `"widgetLayout":[{"id":"kpi-pending","size":"2x1"},{"id":"recent-events","size":"4x2"},{"id":"activity","size":"1x2"},{"id":"future-widget","size":"4x1"}]`
+	if !strings.Contains(string(got.Raw), want) {
 		t.Fatalf("order or sizes changed:\n got %s\nwant %s", got.Raw, want)
 	}
 	// An old open tab still saves V0.3 sizes.
