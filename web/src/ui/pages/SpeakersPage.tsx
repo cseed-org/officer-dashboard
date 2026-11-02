@@ -256,7 +256,8 @@ function Speakers({ me }: { me: CurrentUser }) {
             <span class="field-label">Type</span>
             <select
               class="select"
-              value={type}
+              aria-label="Type"
+ value={type}
               onChange={(e) => setType(e.currentTarget.value)}
             >
               <option value="">All types</option>
@@ -269,7 +270,8 @@ function Speakers({ me }: { me: CurrentUser }) {
             <span class="field-label">Topic</span>
             <select
               class="select"
-              value={topic}
+              aria-label="Topic"
+ value={topic}
               onChange={(e) => setTopic(e.currentTarget.value)}
             >
               <option value="">All topics</option>
@@ -430,7 +432,8 @@ function Speakers({ me }: { me: CurrentUser }) {
                   <span class="field-label">Type</span>
                   <select
                     class="select"
-                    value={draft.type}
+                    aria-label="Type"
+ value={draft.type}
                     onChange={(e) =>
                       setDraft({
                         ...draft,
@@ -622,7 +625,8 @@ function Speakers({ me }: { me: CurrentUser }) {
               <span class="field-label">Channel</span>
               <select
                 class="select"
-                value={outDraft.channel}
+                aria-label="Channel"
+ value={outDraft.channel}
                 onChange={(e) =>
                   setOutDraft({
                     ...outDraft,
@@ -641,7 +645,8 @@ function Speakers({ me }: { me: CurrentUser }) {
               <span class="field-label">Outcome</span>
               <select
                 class="select"
-                value={outDraft.outcome}
+                aria-label="Outcome"
+ value={outDraft.outcome}
                 onChange={(e) =>
                   setOutDraft({
                     ...outDraft,
