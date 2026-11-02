@@ -1,3 +1,4 @@
+import { effectiveTimezone } from '../../../lib/timezone';
 import type { EventListItem } from '../../../lib/contracts';
 import {
   addDays,
@@ -135,7 +136,7 @@ export function WeekView({ monday, events, onOpen, onWeek }: { monday: string; e
   const inWeek = days.flatMap((d) => map.get(d) ?? []);
   const [first, last] = hourRange(inWeek);
   const rows = (last - first) * 2;
-  const label = `${weekLabel(monday)} · Vancouver`;
+  const label = `${weekLabel(monday)} · ${effectiveTimezone()}`;
   return (
     <section class="cal" id="view-week" aria-label={`Events in the week of ${weekLabel(monday)}`}>
       <div class="cal-head">

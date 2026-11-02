@@ -1,18 +1,15 @@
 /**
  * Calendar maths for the Events month and week views. Every event time is shown on the
- * club's wall clock (Pacific: Vancouver and Los Angeles share offsets), whatever the
+ * selected wall clock, whatever the
  * browser's time zone. Dates are YYYY-MM-DD strings; weeks start on Monday.
  */
 import { pacificIso } from './format';
 
-const TZ = 'America/Los_Angeles';
-export const TZ_LABEL = 'America/Vancouver';
+import { dateTimeFormatter, effectiveTimezone } from './timezone';
 
-const partsFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-
-/** Pacific calendar date and minutes after midnight for an ISO instant. */
+/** selected time zone calendar date and minutes after midnight for an ISO instant. */
 export function pacificParts(iso: string | Date): { date: string; minutes: number } {
-  const p = Object.fromEntries(partsFmt.formatToParts(typeof iso === 'string' ? new Date(iso) : iso).map((x) => [x.type, x.value]));
+  const p = Object.fromEntries(dateTimeFormatter({ hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(typeof iso === 'string' ? new Date(iso) : iso).map((x) => [x.type, x.value]));
   const hour = Number(p.hour) % 24;
   return { date: `${p.year}-${p.month}-${p.day}`, minutes: hour * 60 + Number(p.minute) };
 }
@@ -82,7 +79,7 @@ function clock(minutes: number, meridiem: boolean): string {
   return `${h12}${m ? `:${pad(m)}` : ''}${meridiem ? (h < 12 ? ' AM' : ' PM') : ''}`;
 }
 
-/** "6–8 PM", "10–11:30 AM", "11 AM–1 PM", or "6 PM" with no end (same Pacific day only). */
+/** "6–8 PM", "10–11:30 AM", "11 AM–1 PM", or "6 PM" with no end (same selected time zone day only). */
 export function timeRange(startsAt: string, endsAt?: string | null): string {
   const s = pacificParts(startsAt);
   if (!endsAt) return clock(s.minutes, true);
@@ -94,23 +91,26 @@ export function timeRange(startsAt: string, endsAt?: string | null): string {
 
 /** "Nov 12 · 6–8 PM" */
 export const whenShort = (startsAt: string, endsAt?: string | null) => `${shortDay(pacificParts(startsAt).date)} · ${timeRange(startsAt, endsAt)}`;
-/** "November 12, 2026 · 6–8 PM · America/Vancouver" (the handoff kit's Time field). */
-export const whenLong = (startsAt: string, endsAt?: string | null) => `${longDay(pacificParts(startsAt).date)} · ${timeRange(startsAt, endsAt)} · ${TZ_LABEL}`;
+/** "November 12, 2026 · 6–8 PM · the selected time zone" (the handoff kit's Time field). */
+export const whenLong = (startsAt: string, endsAt?: string | null) => `${longDay(pacificParts(startsAt).date)} · ${timeRange(startsAt, endsAt)} · ${effectiveTimezone()}`;
 
-/** ISO instant → the value of a datetime-local input on the Pacific wall clock. */
+/** ISO instant → the value of a datetime-local input on the selected time zone wall clock. */
 export function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return '';
   const p = pacificParts(iso);
   return `${p.date}T${pad(Math.floor(p.minutes / 60))}:${pad(p.minutes % 60)}`;
 }
 
-/** A datetime-local value read as Pacific wall time → ISO with offset; null when blank or malformed. */
+/** A datetime-local value read as selected time zone wall time → ISO with offset; null when blank or malformed. */
 export function fromLocalInput(value: string): string | null {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(value.trim());
-  return m ? pacificIso(m[1]!, m[2]!) : null;
+  if (!m) return null;
+  const iso = pacificIso(m[1]!, m[2]!);
+  // Reject nonexistent wall times (the spring DST gap), rather than shift an event.
+  return toLocalInput(iso) === `${m[1]}T${m[2]}` ? iso : null;
 }
 
-/** Pacific date of an instant ("today" for the calendar highlight). */
+/** selected time zone date of an instant ("today" for the calendar highlight). */
 export const pacificToday = (now = new Date()) => pacificParts(now).date;
 
 /**

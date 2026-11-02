@@ -13,6 +13,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("GET /api/cloudflare/widgets", (*Ctx).cloudflareWidgets)
 	h("GET /api/health", (*Ctx).health)
 	h("GET /api/me", (*Ctx).me)
+	h("GET /api/club/settings", (*Ctx).clubSettingsGet)
+	h("PUT /api/club/settings", (*Ctx).clubSettingsPut)
 	h("GET /api/me/prefs", (*Ctx).prefsGet)
 	h("PUT /api/me/prefs", (*Ctx).prefsPut)
 	h("GET /api/me/calendar-emails", (*Ctx).calendarEmailsList)
@@ -116,6 +118,20 @@ func (s *Server) routes(mux *http.ServeMux) {
 
 	// Anything else under /api is a 404 in the ApiError shape; everything else is the front end.
 	h("/api/", func(c *Ctx) error { return notFoundErr("Endpoint not found") })
+	mux.HandleFunc("GET /speakers", func(w http.ResponseWriter, r *http.Request) {
+		target := "/contacts"
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+	})
+	mux.HandleFunc("GET /speakers/", func(w http.ResponseWriter, r *http.Request) {
+		target := "/contacts"
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, target, http.StatusPermanentRedirect)
+	})
 	mux.Handle("/", s.staticHandler())
 }
 

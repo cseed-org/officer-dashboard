@@ -76,3 +76,65 @@ func TestContactLifecycleAndOutreach(t *testing.T) {
 		t.Fatalf("audit mutations %d %v", n, err)
 	}
 }
+
+func TestContactSpeakingHistory(t *testing.T) {
+	e := newEnv(t)
+	created := e.mustOK(e.post("/api/contacts", map[string]any{"name": "Spoken contact", "type": "speaker", "hasSpokenForUs": true}, e.officer()))
+	var v struct {
+		Contact struct {
+			ID        string `json:"id"`
+			HasSpoken bool   `json:"hasSpokenForUs"`
+		}
+	}
+	if err := json.Unmarshal(created.Raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	if !v.Contact.HasSpoken {
+		t.Fatalf("missing history: %s", created.Raw)
+	}
+	path := "/api/contacts/" + v.Contact.ID
+	for _, b := range []map[string]any{{"hasSpokenForUs": nil}, {"hasSpokenForUs": "true"}, {"hasSpokenForUs": 1}} {
+		expectStatus(t, "invalid boolean", e.do("PATCH", path, b, e.officer()), 400)
+	}
+	expectStatus(t, "invalid filter", e.get("/api/contacts?hasSpokenForUs=yes", e.officer()), 400)
+	preserved := e.mustOK(e.do("PATCH", path, map[string]any{"org": "Updated"}, e.officer()))
+	if !strings.Contains(string(preserved.Raw), `"hasSpokenForUs":true`) {
+		t.Fatal("omitted flag lost")
+	}
+	for _, flag := range []string{"true", "false"} {
+		r := e.mustOK(e.get("/api/contacts?hasSpokenForUs="+flag, e.officer()))
+		if strings.Contains(string(r.Raw), v.Contact.ID) != (flag == "true") {
+			t.Fatalf("wrong filter: %s", r.Raw)
+		}
+	}
+	updated := e.mustOK(e.do("PATCH", path, map[string]any{"hasSpokenForUs": false}, e.officer()))
+	if !strings.Contains(string(updated.Raw), `"hasSpokenForUs":false`) {
+		t.Fatal("cannot clear flag")
+	}
+	search := e.mustOK(e.get("/api/search?q=Spoken%20contact", e.officer()))
+	if !strings.Contains(string(search.Raw), "/contacts?id="+v.Contact.ID) {
+		t.Fatalf("wrong search link: %s", search.Raw)
+	}
+	var before, after string
+	if err := e.db.R.QueryRow(`SELECT before_json,after_json FROM audit_log WHERE entity_id=? AND action='contact.updated' ORDER BY rowid DESC LIMIT 1`, v.Contact.ID).Scan(&before, &after); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(before, `"hasSpokenForUs":true`) || !strings.Contains(after, `"hasSpokenForUs":false`) {
+		t.Fatalf("audit history: %s %s", before, after)
+	}
+	created = e.mustOK(e.post("/api/contacts", map[string]any{"name": "New contact", "type": "mentor"}, e.officer()))
+	if !strings.Contains(string(created.Raw), `"hasSpokenForUs":false`) {
+		t.Fatal("new default not false")
+	}
+}
+
+func TestLegacySpeakersRedirect(t *testing.T) {
+	e := newEnv(t)
+	for _, path := range []string{"/speakers?id=contact-1", "/speakers/?id=contact-1"} {
+		r := e.get(path, e.officer())
+		expectStatus(t, "redirect", r, 308)
+		if r.Header.Get("Location") != "/contacts?id=contact-1" {
+			t.Fatalf("lost deep link: %s", r.Header.Get("Location"))
+		}
+	}
+}

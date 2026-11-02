@@ -339,7 +339,9 @@ func (s *Server) deliverOne(ctx context.Context, r recipient, ev calendar.Event,
 		} else if ev.Sequence > 0 {
 			subject = "Updated invitation: " + ev.Summary
 		}
-		when := ev.Start.In(pacific()).Format("Mon Jan 2, 3:04 PM MST")
+		zone := s.effectiveZone(ctx, r.UserID)
+		ev.Timezone = zone.String()
+		when := ev.Start.In(zone).Format("Mon Jan 2, 3:04 PM MST") + " · " + zone.String()
 		text := fmt.Sprintf("%s\n%s\n%s\n\nOpen the attached invite to add it to your calendar.\n%s", ev.Summary, when, ev.Location, ev.URL)
 		err := s.cfg.Mailer.Send(ctx, calendar.Message{To: *r.Email, Subject: subject, Text: text, Method: method,
 			ICS: calendar.ICS(ev, s.cfg.Mailer.From(), *r.Email, s.now())})

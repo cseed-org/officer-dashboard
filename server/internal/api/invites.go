@@ -242,7 +242,7 @@ func (c *Ctx) sendInviteDM(i *store.Invite, inviter *store.User, link string) DM
 		}
 	}
 	content := fmt.Sprintf("hey %s! %s added you to the CSEED officer team (%s).\n\nSign in to the officer dashboard with this Discord account to set up your profile. It takes about three minutes:\n%s\n\nThis invite expires %s.",
-		i.Name, inviter.Name, team, link, time.UnixMilli(*i.ExpiresAt).In(pacific()).Format("Mon, Jan 2"))
+		i.Name, inviter.Name, team, link, time.UnixMilli(*i.ExpiresAt).In(c.S.effectiveZone(c.Context(), "")).Format("Mon, Jan 2"))
 	if err := c.S.cfg.DM.SendDM(c.Context(), i.DiscordID, content); err != nil {
 		var de *notify.DMError
 		msg := "The Discord DM failed. Copy the link instead."
@@ -254,13 +254,6 @@ func (c *Ctx) sendInviteDM(i *store.Invite, inviter *store.User, link string) DM
 	}
 	at := isoMs(c.S.nowMs())
 	return DMResult{Status: "sent", SentAt: &at}
-}
-
-func pacific() *time.Location {
-	if l, err := time.LoadLocation("America/Los_Angeles"); err == nil {
-		return l
-	}
-	return time.UTC
 }
 
 func (c *Ctx) inviteRevoke() error {

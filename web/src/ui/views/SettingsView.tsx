@@ -1,3 +1,4 @@
+import { TimezonePanel } from './TimezonePanel';
 import { useState } from 'preact/hooks';
 import type { CurrentUser } from '../../lib/contracts';
 import { type Density, getDensity, getTheme, setDensity, setTheme, type ThemePref } from '../../lib/prefs';
@@ -71,6 +72,8 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
         </fieldset>
         <p class="muted small">Saved in this browser only.</p>
       </Section>
+
+      <TimezonePanel me={me} />
 
       <Section title="your profile" id="profile">
         <div class="profile">

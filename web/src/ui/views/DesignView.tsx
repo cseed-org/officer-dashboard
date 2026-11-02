@@ -1,3 +1,4 @@
+import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, STORAGE_UNAVAILABLE_MESSAGE } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
@@ -106,7 +107,7 @@ export default function DesignView({ me }: { me: CurrentUser }) {
           ) : (
             <>
               <p class="small muted">
-                {plural(d.items.length, 'request')} · Shared with everyone · Deadlines shown in Vancouver time
+                {plural(d.items.length, 'request')} · Shared with everyone · Deadlines shown in {effectiveTimezone()}
                 {d.designers.length === 0 && ' · Nobody is on the Design subteam yet, so no one can pick these up'}
               </p>
               {view === 'board' ? <Board data={d} me={me} menu={menu} onMove={move} /> : <List data={d} menu={menu} />}

@@ -1,3 +1,5 @@
+import { fromLocalInput, toLocalInput } from '../../lib/calendar';
+import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { Contact, CurrentUser, EventListItem } from "../../lib/contracts";
 import { api, fieldErrors, type BodyOf } from "../../lib/api/client";
@@ -18,6 +20,7 @@ const formError = (error: unknown) => {
   return fields.length ? fields.map(([key, message]) => `${key === 'linkedin' ? 'LinkedIn' : key === 'eventIds' ? 'Linked events' : label(key)}: ${message}`).join(' · ') : errorMessage(error);
 };
 const blank = {
+  hasSpokenForUs: false,
   name: "",
   org: "",
   role: "",
@@ -30,6 +33,7 @@ const blank = {
 };
 type Draft = typeof blank;
 const draftOf = (c: Contact): Draft => ({
+  hasSpokenForUs: c.hasSpokenForUs,
   name: c.name,
   org: c.org,
   role: c.role,
@@ -41,14 +45,15 @@ const draftOf = (c: Contact): Draft => ({
   eventIds: c.events.map((e) => e.id),
 });
 
-export default function SpeakersPage() {
-  return <Gate label="speakers">{(me) => <Speakers me={me} />}</Gate>;
+export default function ExternalContactsPage() {
+  return <Gate label="external contacts">{(me) => <ExternalContacts me={me} />}</Gate>;
 }
-function Speakers({ me }: { me: CurrentUser }) {
+function ExternalContacts({ me }: { me: CurrentUser }) {
   const search = useSearch();
   const openId = search.get("id");
   const list = useApi("contactsList");
   const [q, setQ] = useState("");
+  const [spoken, setSpoken] = useState("");
   const [type, setType] = useState("");
   const [topic, setTopic] = useState("");
   const [adding, setAdding] = useState(false);
@@ -164,9 +169,11 @@ function Speakers({ me }: { me: CurrentUser }) {
     setBusy(true);
     setError("");
     try {
+      const date = fromLocalInput(outDraft.date);
+      if (!date) throw new Error('Choose a valid time in the selected time zone (outside the daylight-saving gap).');
       const d = await api("contactOutreachCreate", {
         params: { id: openId! },
-        body: { ...outDraft, date: new Date(outDraft.date).toISOString() },
+        body: { ...outDraft, date },
       });
       setContact(d.contact);
       list.reload();
@@ -179,7 +186,7 @@ function Speakers({ me }: { me: CurrentUser }) {
     }
   }
   const field = (
-    key: Exclude<keyof Draft, "type" | "eventIds">,
+    key: Exclude<keyof Draft, "type" | "eventIds" | "hasSpokenForUs">,
     title: string,
     inputType: "text" | "email" | "url" = "text",
   ) => {
@@ -213,6 +220,7 @@ function Speakers({ me }: { me: CurrentUser }) {
   ].sort();
   const filtered = items.filter(
     (c) =>
+      (!spoken || c.hasSpokenForUs === (spoken === "true")) &&
       (!type || c.type === type || c.type === "both") &&
       (!topic ||
         c.topics.some(
@@ -238,7 +246,7 @@ function Speakers({ me }: { me: CurrentUser }) {
   return (
     <div class="stack speakers-page">
       <p class="muted">
-        People who share what they know. Keep the next conversation in context.
+        Keep your external contacts and the next conversation in context.
       </p>
       <div class="toolbar">
         <div class="toolbar-main speakers-filters">
@@ -264,6 +272,14 @@ function Speakers({ me }: { me: CurrentUser }) {
               {["speaker", "mentor", "both"].map((t) => (
                 <option value={t}>{label(t)}</option>
               ))}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Speaking history</span>
+            <select class="select" value={spoken} onChange={(e) => setSpoken(e.currentTarget.value)}>
+              <option value="">All</option>
+              <option value="true">Has spoken</option>
+              <option value="false">Not yet</option>
             </select>
           </label>
           <label class="field">
@@ -295,7 +311,7 @@ function Speakers({ me }: { me: CurrentUser }) {
               <div class="table-wrap speakers-desktop">
                 <table class="dt">
                   <caption class="visually-hidden">
-                    Speaker and mentor directory
+                    External Contacts directory
                   </caption>
                   <thead>
                     <tr>
@@ -327,7 +343,7 @@ function Speakers({ me }: { me: CurrentUser }) {
                           </button>
                         </td>
                         <td>
-                          <span class="badge badge--info">{label(c.type)}</span>
+                          <span class="badge badge--info">{label(c.type)}</span> <Spoken c={c} />
                           <span class="cell-sub">{c.topics.join(" · ")}</span>
                         </td>
                         <td>
@@ -349,8 +365,9 @@ function Speakers({ me }: { me: CurrentUser }) {
                       <strong>{c.name}</strong>
                       <span>{[c.org, c.role].filter(Boolean).join(" · ")}</span>
                       <span>
-                        {label(c.type)} · {c.topics.join(" · ")}
+                        {[label(c.type), ...c.topics].join(" · ")}
                       </span>
+                      <Spoken c={c} />
                       <Reach c={c} />
                       <div>
                         <span class="field-label">Past events</span>
@@ -382,7 +399,7 @@ function Speakers({ me }: { me: CurrentUser }) {
               <p class="state-title">
                 {items.length
                   ? "No matching contacts"
-                  : "Make room for what's next."}
+                  : "Build your External Contacts directory."}
               </p>
               <p class="state-body">
                 {items.length
@@ -396,6 +413,7 @@ function Speakers({ me }: { me: CurrentUser }) {
                     ? () => {
                         setQ("");
                         setType("");
+                        setSpoken("");
                         setTopic("");
                       }
                     : add
@@ -445,6 +463,10 @@ function Speakers({ me }: { me: CurrentUser }) {
                       <option value={t}>{label(t)}</option>
                     ))}
                   </select>
+                </label>
+                <label class="choice">
+                  <input type="checkbox" checked={draft.hasSpokenForUs} onChange={(e) => setDraft({ ...draft, hasSpokenForUs: e.currentTarget.checked })} />
+                  <span>Has spoken for CSEED before</span>
                 </label>
                 {field("topics", "Topics")}
                 <p class="field-hint">Separate topics with commas.</p>
@@ -561,11 +583,7 @@ function Speakers({ me }: { me: CurrentUser }) {
                     setError("");
                     const now = new Date();
                     setOutDraft({
-                      date: new Date(
-                        now.getTime() - now.getTimezoneOffset() * 60000,
-                      )
-                        .toISOString()
-                        .slice(0, 16),
+                      date: toLocalInput(now.toISOString()),
                       channel: "email",
                       outcome: "awaiting_reply",
                       note: "",
@@ -610,7 +628,7 @@ function Speakers({ me }: { me: CurrentUser }) {
             </p>
             <p>Reached out by {me.name} (you)</p>
             <label class="field">
-              <span class="field-label">When</span>
+              <span class="field-label">When · {effectiveTimezone()}</span>
               <input
                 class="input"
                 type="datetime-local"
@@ -725,4 +743,8 @@ function Past({ c }: { c: Contact }) {
   ) : (
     <span class="muted">No past events yet</span>
   );
+}
+
+function Spoken({ c }: { c: Contact }) {
+ return <span class={`badge ${c.hasSpokenForUs ? "badge--info" : ""}`}>{c.hasSpokenForUs ? "Has spoken" : "Not yet"}</span>;
 }

@@ -36,7 +36,7 @@ test('events: draft, handoff kit, Luma link, request design, delete', async ({ p
   await editor.getByRole('button', { name: 'Open handoff kit' }).click();
   const kit = page.locator('dialog#handoff');
   await expect(kit).toBeVisible();
-  await expect(kit.locator('[data-copy-field="time"] p')).toHaveText('November 20, 2026 · 6–8 PM · America/Vancouver');
+  await expect(kit.locator('[data-copy-field="time"] p')).toHaveText('November 20, 2026 · 6–8 PM · America/Los_Angeles');
   await kit.getByRole('button', { name: 'Copy name' }).click();
   await expect(kit.getByRole('button', { name: 'Copied name ✓' })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(name);

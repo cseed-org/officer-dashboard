@@ -6,20 +6,21 @@ import (
 )
 
 type Contact struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	Org          string            `json:"org"`
-	Role         string            `json:"role"`
-	Type         string            `json:"type"`
-	Topics       []string          `json:"topics"`
-	Email        string            `json:"email"`
-	LinkedIn     string            `json:"linkedin"`
-	Notes        string            `json:"notes"`
-	CreatedAt    int64             `json:"createdAt"`
-	UpdatedAt    int64             `json:"updatedAt"`
-	Events       []ContactEvent    `json:"events"`
-	Outreach     []ContactOutreach `json:"outreach"`
-	LastOutreach *ContactOutreach  `json:"lastOutreach"`
+	HasSpokenForUs bool              `json:"hasSpokenForUs"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Org            string            `json:"org"`
+	Role           string            `json:"role"`
+	Type           string            `json:"type"`
+	Topics         []string          `json:"topics"`
+	Email          string            `json:"email"`
+	LinkedIn       string            `json:"linkedin"`
+	Notes          string            `json:"notes"`
+	CreatedAt      int64             `json:"createdAt"`
+	UpdatedAt      int64             `json:"updatedAt"`
+	Events         []ContactEvent    `json:"events"`
+	Outreach       []ContactOutreach `json:"outreach"`
+	LastOutreach   *ContactOutreach  `json:"lastOutreach"`
 }
 type ContactEvent struct {
 	ID       string `json:"id"`
@@ -39,7 +40,7 @@ type ContactOutreach struct {
 
 func (q *Queries) Contacts(ctx context.Context) ([]Contact, error) { return q.contacts(ctx, "") }
 func (q *Queries) contacts(ctx context.Context, id string) ([]Contact, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id,name,org,role,type,topics,email,linkedin,notes,created_at,updated_at FROM contacts WHERE (?1='' OR id=?1) ORDER BY name COLLATE NOCASE,id`, id)
+	rows, err := q.q.QueryContext(ctx, `SELECT id,name,org,role,type,topics,email,linkedin,notes,created_at,updated_at,has_spoken_for_us FROM contacts WHERE (?1='' OR id=?1) ORDER BY name COLLATE NOCASE,id`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +48,7 @@ func (q *Queries) contacts(ctx context.Context, id string) ([]Contact, error) {
 	for rows.Next() {
 		var c Contact
 		var topics string
-		if err := rows.Scan(&c.ID, &c.Name, &c.Org, &c.Role, &c.Type, &topics, &c.Email, &c.LinkedIn, &c.Notes, &c.CreatedAt, &c.UpdatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Org, &c.Role, &c.Type, &topics, &c.Email, &c.LinkedIn, &c.Notes, &c.CreatedAt, &c.UpdatedAt, &c.HasSpokenForUs); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -128,7 +129,7 @@ func (q *Queries) SaveContact(ctx context.Context, c Contact) error {
 	if err != nil {
 		return err
 	}
-	_, err = q.q.ExecContext(ctx, `INSERT INTO contacts(id,name,org,role,type,topics,email,linkedin,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,org=excluded.org,role=excluded.role,type=excluded.type,topics=excluded.topics,email=excluded.email,linkedin=excluded.linkedin,notes=excluded.notes,updated_at=excluded.updated_at`, c.ID, c.Name, c.Org, c.Role, c.Type, string(topics), c.Email, c.LinkedIn, c.Notes, c.CreatedAt, c.UpdatedAt)
+	_, err = q.q.ExecContext(ctx, `INSERT INTO contacts(id,name,org,role,type,topics,email,linkedin,notes,created_at,updated_at,has_spoken_for_us) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,org=excluded.org,role=excluded.role,type=excluded.type,topics=excluded.topics,email=excluded.email,linkedin=excluded.linkedin,notes=excluded.notes,updated_at=excluded.updated_at,has_spoken_for_us=excluded.has_spoken_for_us`, c.ID, c.Name, c.Org, c.Role, c.Type, string(topics), c.Email, c.LinkedIn, c.Notes, c.CreatedAt, c.UpdatedAt, c.HasSpokenForUs)
 	return err
 }
 func (q *Queries) SetContactEvents(ctx context.Context, id string, ids []string) error {

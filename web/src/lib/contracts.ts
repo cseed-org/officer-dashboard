@@ -970,7 +970,14 @@ export type WidgetBlockSize = z.infer<typeof WidgetBlockSize>;
 export const WidgetLegacySize = z.enum(['S', 'M', 'L']);
 export const WidgetPlacement = z.object({ id: Id, size: z.union([WidgetBlockSize, WidgetLegacySize]) });
 export type WidgetPlacement = z.infer<typeof WidgetPlacement>;
-export const WidgetPrefs = z.object({ widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
+export const IanaTimezone = z.string().max(100).refine((v) => {
+  try { return v !== 'Local' && (v === 'UTC' || v.includes('/')) && !!new Intl.DateTimeFormat('en-US', { timeZone: v }); } catch { return false; }
+}, 'Choose an IANA time zone');
+export const ClubSettings = z.object({ clubTimezone: IanaTimezone, location: z.string().trim().min(1).max(200) });
+export type ClubSettings = z.infer<typeof ClubSettings>;
+export const TimezoneMode = z.enum(['club', 'auto', 'manual']);
+export const WidgetPrefs = z.object({ timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
+export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined, 'No preferences supplied');
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
 export type CalendarEmail = z.infer<typeof CalendarEmail>;
@@ -1175,24 +1182,24 @@ export const CloudflareSyncResponse = z.object({ok:z.literal(true),connected:z.b
 export const CloudflareWidget = z.object({id:z.string(),connected:z.boolean(),lastSync:z.number().nullable(),error:z.string(),data:z.unknown().nullable()});
 export const CloudflareWidgetsResponse = z.object({widgets:z.array(CloudflareWidget)});
 
-// Speakers & Mentors
+// External Contacts
 export const ContactType = z.enum(['speaker', 'mentor', 'both']);
 export const OutreachChannel = z.enum(['email', 'linkedin', 'discord', 'phone', 'in_person']);
 export const OutreachOutcome = z.enum(['awaiting_reply', 'interested', 'confirmed', 'declined', 'follow_up']);
 export const ContactOutreach = z.object({ id: Id, officerId: Id, officerName: z.string(), date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string(), createdAt: z.number().int() });
 export const Contact = z.object({
- id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType,
+ id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType, hasSpokenForUs: z.boolean(),
  topics: z.array(z.string()), email: z.string(), linkedin: z.string(), notes: z.string(),
  createdAt: z.number().int(), updatedAt: z.number().int(),
  events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
  outreach: z.array(ContactOutreach), lastOutreach: ContactOutreach.nullable(),
 });
 export type Contact = z.infer<typeof Contact>;
-export const ContactCreateRequest = z.object({ name: z.string().trim().min(1).max(200), org: z.string().trim().max(200).optional(), role: z.string().trim().max(200).optional(), type: ContactType,
+export const ContactCreateRequest = z.object({ hasSpokenForUs: z.boolean().optional(), name: z.string().trim().min(1).max(200), org: z.string().trim().max(200).optional(), role: z.string().trim().max(200).optional(), type: ContactType,
  topics: z.array(z.string().trim().min(1).max(100)).max(30).optional(), email: z.union([z.string().trim().pipe(z.email().max(254)), z.literal('')]).optional(), linkedin: z.union([z.string().trim().pipe(z.url({ protocol: /^https?$/ }).max(2000)), z.literal('')]).optional(), notes: z.string().max(10000).optional(), eventIds: z.array(Id).max(100).optional() });
 export const ContactPatchRequest = ContactCreateRequest.partial();
 export const ContactResponse = z.object({ contact: Contact });
-export const ContactsQuery = z.object({ q: z.string().trim().max(100).optional(), type: ContactType.optional(), topic: z.string().trim().max(100).optional() });
+export const ContactsQuery = z.object({ hasSpokenForUs: z.enum(['true', 'false']).optional(), q: z.string().trim().max(100).optional(), type: ContactType.optional(), topic: z.string().trim().max(100).optional() });
 export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string().max(10000).optional() });
 
 /**
@@ -1216,8 +1223,10 @@ export const ENDPOINTS = {
   ownerAdd: { method: 'POST', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
   ownerRemove: { method: 'DELETE', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
   ownerTransfer: { method: 'POST', path: '/api/admin/owners/transfer', auth: 'owner', body: OwnerTransferRequest, response: AdminUsersResponse },
+  clubSettingsGet: { method: 'GET', path: '/api/club/settings', auth: 'officer', response: ClubSettings },
+  clubSettingsPut: { method: 'PUT', path: '/api/club/settings', auth: 'leadership', body: ClubSettings, response: ClubSettings },
   prefsGet: { method: 'GET', path: '/api/me/prefs', auth: 'officer', response: WidgetPrefs },
-  prefsPut: { method: 'PUT', path: '/api/me/prefs', auth: 'officer', body: WidgetPrefs, response: WidgetPrefs },
+  prefsPut: { method: 'PUT', path: '/api/me/prefs', auth: 'officer', body: PrefsUpdate, response: WidgetPrefs },
   calendarEmailsList: { method: 'GET', path: '/api/me/calendar-emails', auth: 'officer', response: CalendarEmailsResponse },
   calendarEmailCreate: { method: 'POST', path: '/api/me/calendar-emails', auth: 'officer', body: CalendarEmailCreateRequest, response: CalendarEmailResponse },
   calendarEmailUpdate: { method: 'PATCH', path: '/api/me/calendar-emails/:id', auth: 'officer', body: CalendarEmailUpdateRequest, response: CalendarEmailResponse },

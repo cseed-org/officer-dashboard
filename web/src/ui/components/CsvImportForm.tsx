@@ -1,3 +1,4 @@
+import { effectiveTimezone } from '../../lib/timezone';
 import { href } from '../../lib/routes';
 import { useState } from 'preact/hooks';
 import type { CsvImportResponse } from '../../lib/contracts';
@@ -52,7 +53,7 @@ export function CsvImportForm({ eventId, compact, onImported }: { eventId?: stri
     if (creating) {
       form.set('eventName', newName.trim());
       form.set('lumaEventId', newLuma.trim());
-      // The date is a Pacific wall time (6 pm), not the browser's zone.
+      // The date is a selected wall time (6 pm), not the browser's zone.
       form.set('eventStartsAt', pacificIso(newDate, '18:00'));
     } else form.set('eventId', eventId ?? target);
     form.set('file', file!);
@@ -122,7 +123,7 @@ export function CsvImportForm({ eventId, compact, onImported }: { eventId?: stri
               <Field id={`${idp}-luma`} label="Luma event id" error={errors.lumaEventId} hint="from the event URL, e.g. evt-abc123">
                 <input class="input" {...describe(`${idp}-luma`, errors.lumaEventId, true)} value={newLuma} onInput={(e) => setNewLuma(e.currentTarget.value)} />
               </Field>
-              <Field id={`${idp}-date`} label="date" error={errors.eventStartsAt} hint="Pacific time; imported as 6 pm that day">
+              <Field id={`${idp}-date`} label="date" error={errors.eventStartsAt} hint={`${effectiveTimezone()}; imported as 6 pm that day`}>
                 <input class="input" type="date" {...describe(`${idp}-date`, errors.eventStartsAt, true)} value={newDate} onInput={(e) => setNewDate(e.currentTarget.value)} />
               </Field>
             </>

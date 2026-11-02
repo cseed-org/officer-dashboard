@@ -30,7 +30,7 @@ func TestHasRole(t *testing.T) {
 func TestRequiredRoleForPath(t *testing.T) {
 	cases := map[string]string{
 		"/login": "", "/auth/callback": "", "/api/health": "",
-		"/admin/users": "director", "/admin": "director", "/api/admin/tokens": "director",
+		"/admin/users": "officer", "/admin": "officer", "/api/admin/tokens": "director",
 		"/administrivia": "officer", "/": "officer", "/requests/new": "officer", "/api/overview": "officer",
 		"/api/ingest/luma": "", "/api/agent/jobs": "",
 	}

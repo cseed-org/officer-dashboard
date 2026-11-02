@@ -9,12 +9,10 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/files"
-	"officerdashboard/internal/fiscal"
 	"officerdashboard/internal/luma"
 	"officerdashboard/internal/store"
 	"officerdashboard/internal/validate"
@@ -844,17 +842,18 @@ func (c *Ctx) designFileDownload() error {
 // ─── prefill from an event (used by the Events page's "Request design") ───
 
 // designDraftFor proposes a request for an event: due a week before it starts (in
-// Vancouver time), never before today.
-func (s *Server) designDraftFor(e *store.Event) DesignRequestDraft {
+// the effective time zone), never before today.
+func (s *Server) designDraftFor(ctx context.Context, userID string, e *store.Event) DesignRequestDraft {
 	d := DesignRequestDraft{Title: e.Name + " promo", Type: "social", Urgency: "normal", EventID: e.ID, Event: DesignEventRef{ID: e.ID, Name: e.Name, StartsAt: e.StartsAt}}
 	when := ""
 	if t, err := luma.ParseInstant(e.StartsAt); err == nil {
-		p := t.In(fiscal.Pacific)
-		when = p.Format("Mon Jan 2, 3:04 PM")
+		zone := s.effectiveZone(ctx, userID)
+		p := t.In(zone)
+		when = p.Format("Mon Jan 2, 3:04 PM MST")
 		// A past event gets no due date; otherwise a week ahead, but never before today.
 		if t.After(s.now()) {
-			due := fiscal.PacificDate(t.Add(-7 * 24 * time.Hour))
-			if today := fiscal.PacificDate(s.now()); due < today {
+			due := t.In(zone).AddDate(0, 0, -7).Format("2006-01-02")
+			if today := s.now().In(zone).Format("2006-01-02"); due < today {
 				due = today
 			}
 			d.DueDate = &due
@@ -884,7 +883,7 @@ func (c *Ctx) designDraftFromEvent() error {
 	if err != nil {
 		return notFoundErr("Record not found")
 	}
-	writeJSON(c.W, 200, map[string]any{"draft": c.S.designDraftFor(e)})
+	writeJSON(c.W, 200, map[string]any{"draft": c.S.designDraftFor(c.Context(), c.User.ID, e)})
 	return nil
 }
 
@@ -908,7 +907,7 @@ func (c *Ctx) designCreateFromEvent() error {
 			return err
 		}
 	}
-	draft := c.S.designDraftFor(e)
+	draft := c.S.designDraftFor(c.Context(), c.User.ID, e)
 	fill := func(f *validate.Field[string], v string) {
 		if !f.Has() {
 			*f = validate.Field[string]{V: v, Set: true}
