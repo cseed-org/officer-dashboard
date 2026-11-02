@@ -251,10 +251,9 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
   const p = r.permissions;
   const [assignee, setAssignee] = useState(r.assignee?.id ?? '');
   const [stage, setStage] = useState<DesignStage>(r.stage);
-  useEffect(() => {
-    setAssignee(r.assignee?.id ?? '');
-    setStage(r.stage);
-  }, [r.assignee?.id, r.stage]);
+  // Re-sync each select only when its own server value changes, so a partial update keeps the other choice.
+  useEffect(() => setAssignee(r.assignee?.id ?? ''), [r.assignee?.id]);
+  useEffect(() => setStage(r.stage), [r.stage]);
 
   const options = designers.filter((d) => p.canAssign || d.id === me.id || d.id === r.assignee?.id);
   const changed = assignee !== (r.assignee?.id ?? '') || stage !== r.stage;
@@ -327,7 +326,9 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
 }
 
 function Upload({ r, kinds, onUpdate }: { r: Detail; kinds: DesignFileKind[]; onUpdate: (d: DesignRequestResponse) => void }) {
-  const [kind, setKind] = useState<DesignFileKind>(kinds.includes('review') && r.stage !== 'delivered' ? (r.stage === 'in-review' || r.stage === 'in-progress' ? 'review' : 'reference') : kinds[0]!);
+  const [chosen, setKind] = useState<DesignFileKind>(kinds.includes('review') && (r.stage === 'in-review' || r.stage === 'in-progress') ? 'review' : kinds[0]!);
+  // Allowed kinds shrink on delivery; never send one that is no longer offered.
+  const kind = kinds.includes(chosen) ? chosen : kinds[0]!;
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const upload = async (list: FileList | null) => {

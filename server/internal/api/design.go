@@ -644,7 +644,9 @@ func (c *Ctx) designDelete() error {
 		snap := designSnapshot(r)
 		fileIDs, commentIDs := []string{}, []string{}
 		for _, f := range fs {
-			keys = append(keys, f.StorageKey) // local files are removed, Drive files trashed
+			if f.Storage == storageKind(c.S.cfg.Files) {
+				keys = append(keys, f.StorageKey) // local files are removed, Drive files trashed
+			}
 			fileIDs = append(fileIDs, f.ID+" "+f.Filename)
 		}
 		for _, cm := range cs {
@@ -928,4 +930,16 @@ func truncRunes(s string, n int) string {
 		return s
 	}
 	return strings.TrimSpace(string([]rune(s)[:n]))
+}
+
+// storageKind names the configured file backend as design_request_files.storage records it,
+// so a delete after a backend switch doesn't hand one backend the other's keys.
+func storageKind(s files.Store) string {
+	switch s.(type) {
+	case files.Local, *files.Local:
+		return "local"
+	case *files.Drive:
+		return "drive"
+	}
+	return ""
 }

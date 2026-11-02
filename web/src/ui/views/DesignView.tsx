@@ -61,11 +61,9 @@ export default function DesignView({ me }: { me: CurrentUser }) {
   const menu = (item: DesignRequestItem, d: DesignRequestsListResponse): MenuItem[] => {
     const items: MenuItem[] = [{ label: 'Open request', onSelect: () => setParams({ id: item.id }) }];
     if (d.viewer.isDesigner && item.stage !== 'delivered' && item.assignee?.id !== me.id) items.push({ label: 'Assign to me', onSelect: () => void assignMe(item) });
-    if (!d.viewer.canAssign) {
-      // The requester decides in the drawer, next to the version: approve or request changes.
-      if (item.stage === 'in-review' && item.requester.id === me.id) items.push({ label: 'Review and approve', onSelect: () => setParams({ id: item.id }) });
-      return items;
-    }
+    // The requester decides in the drawer, next to the version: approve or request changes.
+    if (item.stage === 'in-review' && item.requester.id === me.id) items.push({ label: 'Review and approve', onSelect: () => setParams({ id: item.id }) });
+    if (!d.viewer.canAssign) return items;
     for (const s of designMoveTargets(item, viewer(d))) items.push({ label: `Move to ${STAGE_LABEL[s]}`, onSelect: () => void move(item, s) });
     return items;
   };
