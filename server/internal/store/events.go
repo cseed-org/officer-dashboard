@@ -9,23 +9,39 @@ import (
 
 // Event is an events row.
 type Event struct {
-	ID         string
-	LumaID     *string
-	Name       string
-	StartsAt   string // ISO with offset, as supplied
-	EndsAt     *string
-	Location   *string
-	URL        *string
-	HostUserID *string
-	CreatedAt  Ms
-	UpdatedAt  Ms
+	ID            string
+	LumaID        *string
+	Name          string
+	StartsAt      string // ISO with offset, as supplied
+	EndsAt        *string
+	Location      *string
+	URL           *string
+	HostUserID    *string
+	Status        string // draft | published | completed | cancelled
+	Description   *string
+	Capacity      *int64
+	HostSubteamID *string
+	LumaURL       *string
+	NotionURL     *string
+	CreatedAt     Ms
+	UpdatedAt     Ms
+	// CoverUpdatedAt is read from event_covers (nil when the event has no cover).
+	CoverUpdatedAt *int64
 }
 
-const eventCols = `id, luma_id, name, starts_at, ends_at, location, url, host_user_id, created_at, updated_at`
+// EventStatuses are the values events.status accepts.
+var EventStatuses = []string{"draft", "published", "completed", "cancelled"}
+
+const eventCols = `id, luma_id, name, starts_at, ends_at, location, url, host_user_id, status, description, capacity, host_subteam_id, luma_url, notion_url, created_at, updated_at`
+
+const eventSelect = `SELECT e.id, e.luma_id, e.name, e.starts_at, e.ends_at, e.location, e.url, e.host_user_id, e.status, e.description, e.capacity,
+	e.host_subteam_id, e.luma_url, e.notion_url, e.created_at, e.updated_at, c.updated_at
+	FROM events e LEFT JOIN event_covers c ON c.event_id = e.id`
 
 func scanEvent(s interface{ Scan(...any) error }) (*Event, error) {
 	var e Event
-	if err := s.Scan(&e.ID, &e.LumaID, &e.Name, &e.StartsAt, &e.EndsAt, &e.Location, &e.URL, &e.HostUserID, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := s.Scan(&e.ID, &e.LumaID, &e.Name, &e.StartsAt, &e.EndsAt, &e.Location, &e.URL, &e.HostUserID, &e.Status, &e.Description, &e.Capacity,
+		&e.HostSubteamID, &e.LumaURL, &e.NotionURL, &e.CreatedAt, &e.UpdatedAt, &e.CoverUpdatedAt); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -33,7 +49,7 @@ func scanEvent(s interface{ Scan(...any) error }) (*Event, error) {
 
 // Events lists every event (callers filter and page: there are tens per year).
 func (q *Queries) Events(ctx context.Context) ([]Event, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT `+eventCols+` FROM events ORDER BY rowid`)
+	rows, err := q.q.QueryContext(ctx, eventSelect+` ORDER BY e.rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -51,55 +67,153 @@ func (q *Queries) Events(ctx context.Context) ([]Event, error) {
 
 // EventByID returns ErrNotFound for an unknown id.
 func (q *Queries) EventByID(ctx context.Context, id string) (*Event, error) {
-	e, err := scanEvent(q.q.QueryRowContext(ctx, `SELECT `+eventCols+` FROM events WHERE id = ?`, id))
+	e, err := scanEvent(q.q.QueryRowContext(ctx, eventSelect+` WHERE e.id = ?`, id))
 	return e, notFound(err)
 }
 
 // EventByLumaID returns ErrNotFound when no event has the Luma id.
 func (q *Queries) EventByLumaID(ctx context.Context, lumaID string) (*Event, error) {
-	e, err := scanEvent(q.q.QueryRowContext(ctx, `SELECT `+eventCols+` FROM events WHERE luma_id = ?`, lumaID))
+	e, err := scanEvent(q.q.QueryRowContext(ctx, eventSelect+` WHERE e.luma_id = ?`, lumaID))
 	return e, notFound(err)
 }
 
-// InsertEvent adds an event.
+// EventByLumaURL returns ErrNotFound when no event links the Luma page.
+func (q *Queries) EventByLumaURL(ctx context.Context, lumaURL string) (*Event, error) {
+	e, err := scanEvent(q.q.QueryRowContext(ctx, eventSelect+` WHERE e.luma_url = ?`, lumaURL))
+	return e, notFound(err)
+}
+
+// InsertEvent adds an event. An empty Status stores "published" (imports come from Luma).
 func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
-	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-		e.ID, e.LumaID, e.Name, e.StartsAt, e.EndsAt, e.Location, e.URL, e.HostUserID, int64(e.CreatedAt), int64(e.UpdatedAt))
+	if e.Status == "" {
+		e.Status = "published"
+	}
+	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		e.ID, e.LumaID, e.Name, e.StartsAt, e.EndsAt, e.Location, e.URL, e.HostUserID, e.Status, e.Description, e.Capacity, e.HostSubteamID,
+		e.LumaURL, e.NotionURL, int64(e.CreatedAt), int64(e.UpdatedAt))
 	return err
 }
 
 // EventPatch lists the event fields that can change.
 type EventPatch struct {
-	Name       Opt[string]
-	StartsAt   Opt[string]
-	EndsAt     Opt[string]
-	Location   Opt[string]
-	URL        Opt[string]
-	LumaID     Opt[string]
-	HostUserID Opt[string]
+	Name          Opt[string]
+	StartsAt      Opt[string]
+	EndsAt        Opt[string]
+	Location      Opt[string]
+	URL           Opt[string]
+	LumaID        Opt[string]
+	HostUserID    Opt[string]
+	Status        Opt[string]
+	Description   Opt[string]
+	Capacity      Opt[int64]
+	HostSubteamID Opt[string]
+	LumaURL       Opt[string]
+	NotionURL     Opt[string]
 }
 
 // UpdateEvent applies a patch and stamps updated_at.
 func (q *Queries) UpdateEvent(ctx context.Context, id string, p EventPatch, now int64) error {
 	var sets []string
 	var args []any
-	add := func(col string, o Opt[string]) {
-		if o.Set {
+	add := func(col string, set bool, v any) {
+		if set {
 			sets = append(sets, col+" = ?")
-			args = append(args, o.val())
+			args = append(args, v)
 		}
 	}
-	add("name", p.Name)
-	add("starts_at", p.StartsAt)
-	add("ends_at", p.EndsAt)
-	add("location", p.Location)
-	add("url", p.URL)
-	add("luma_id", p.LumaID)
-	add("host_user_id", p.HostUserID)
+	str := func(col string, o Opt[string]) { add(col, o.Set, o.val()) }
+	str("name", p.Name)
+	str("starts_at", p.StartsAt)
+	str("ends_at", p.EndsAt)
+	str("location", p.Location)
+	str("url", p.URL)
+	str("luma_id", p.LumaID)
+	str("host_user_id", p.HostUserID)
+	str("status", p.Status)
+	str("description", p.Description)
+	add("capacity", p.Capacity.Set, p.Capacity.val())
+	str("host_subteam_id", p.HostSubteamID)
+	str("luma_url", p.LumaURL)
+	str("notion_url", p.NotionURL)
 	sets = append(sets, "updated_at = ?")
 	args = append(args, now, id)
 	_, err := q.q.ExecContext(ctx, `UPDATE events SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
 	return err
+}
+
+// EventRequestCount counts purchase requests that point at the event (they block a delete).
+func (q *Queries) EventRequestCount(ctx context.Context, id string) (int, error) {
+	var n int
+	err := q.q.QueryRowContext(ctx, `SELECT count(*) FROM purchase_requests WHERE event_id = ?`, id).Scan(&n)
+	return n, err
+}
+
+// DeleteEvent removes an event; guests, reflections and the cover cascade.
+func (q *Queries) DeleteEvent(ctx context.Context, id string) error {
+	_, err := q.q.ExecContext(ctx, `DELETE FROM events WHERE id = ?`, id)
+	return err
+}
+
+// Cover is an event's cover image.
+type Cover struct {
+	EventID   string
+	MimeType  string
+	Bytes     []byte
+	Filename  string
+	UpdatedAt int64
+}
+
+// EventCover returns ErrNotFound when the event has no cover.
+func (q *Queries) EventCover(ctx context.Context, eventID string) (*Cover, error) {
+	var c Cover
+	err := q.q.QueryRowContext(ctx, `SELECT event_id, mime_type, bytes, filename, updated_at FROM event_covers WHERE event_id = ?`, eventID).
+		Scan(&c.EventID, &c.MimeType, &c.Bytes, &c.Filename, &c.UpdatedAt)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	return &c, nil
+}
+
+// PutEventCover inserts or replaces the cover.
+func (q *Queries) PutEventCover(ctx context.Context, c Cover) error {
+	_, err := q.q.ExecContext(ctx, `INSERT INTO event_covers (event_id, mime_type, bytes, filename, updated_at) VALUES (?,?,?,?,?)
+		ON CONFLICT (event_id) DO UPDATE SET mime_type = excluded.mime_type, bytes = excluded.bytes, filename = excluded.filename, updated_at = excluded.updated_at`,
+		c.EventID, c.MimeType, c.Bytes, c.Filename, c.UpdatedAt)
+	return err
+}
+
+// DeleteEventCover removes the cover and reports whether there was one.
+func (q *Queries) DeleteEventCover(ctx context.Context, eventID string) (bool, error) {
+	res, err := q.q.ExecContext(ctx, `DELETE FROM event_covers WHERE event_id = ?`, eventID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// Subteam is a subteams row.
+type Subteam struct {
+	ID   string
+	Name string
+}
+
+// Subteams lists subteams by name.
+func (q *Queries) Subteams(ctx context.Context) ([]Subteam, error) {
+	rows, err := q.q.QueryContext(ctx, `SELECT id, name FROM subteams ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Subteam
+	for rows.Next() {
+		var t Subteam
+		if err := rows.Scan(&t.ID, &t.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 // Counts are the raw numbers behind an event's health ratios.

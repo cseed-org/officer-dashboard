@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -27,6 +29,8 @@ type catalog struct {
 	fundByID  map[string]*accounting.Fund
 	events    []store.Event
 	eventByID map[string]*store.Event
+	subteams  []store.Subteam
+	teamByID  map[string]*store.Subteam
 }
 
 func loadCatalog(ctx context.Context, q *store.Queries, withEvents bool) (*catalog, error) {
@@ -37,6 +41,13 @@ func loadCatalog(ctx context.Context, q *store.Queries, withEvents bool) (*catal
 	c := &catalog{users: map[string]*store.User{}, acctByID: map[string]*accounting.Account{}, fundByID: map[string]*accounting.Fund{}, eventByID: map[string]*store.Event{}}
 	for i := range users {
 		c.users[users[i].ID] = &users[i]
+	}
+	if c.subteams, err = q.Subteams(ctx); err != nil {
+		return nil, err
+	}
+	c.teamByID = map[string]*store.Subteam{}
+	for i := range c.subteams {
+		c.teamByID[c.subteams[i].ID] = &c.subteams[i]
 	}
 	if c.accounts, err = q.Accounts(ctx); err != nil {
 		return nil, err
@@ -186,12 +197,22 @@ func (s *Server) eventItems(ctx context.Context, q *store.Queries, cat *catalog,
 }
 
 func eventItem(cat *catalog, e store.Event, counts *store.Counts) EventListItem {
-	item := EventListItem{ID: e.ID, LumaID: e.LumaID, Name: e.Name, StartsAt: e.StartsAt, Location: e.Location, Metrics: eventCounts(counts)}
+	item := EventListItem{ID: e.ID, LumaID: e.LumaID, Name: e.Name, StartsAt: e.StartsAt, EndsAt: e.EndsAt, Location: e.Location, Status: e.Status,
+		Capacity: e.Capacity, LumaURL: e.LumaURL, Metrics: eventCounts(counts)}
 	if e.HostUserID != nil {
 		if u := cat.users[*e.HostUserID]; u != nil {
 			s := userSummary(u)
 			item.Host = &s
 		}
+	}
+	if e.HostSubteamID != nil {
+		if t := cat.teamByID[*e.HostSubteamID]; t != nil {
+			item.HostSubteam = &SubteamBrief{ID: t.ID, Name: t.Name}
+		}
+	}
+	if e.CoverUpdatedAt != nil {
+		u := fmt.Sprintf("/api/events/%s/cover?v=%d", url.PathEscape(e.ID), *e.CoverUpdatedAt)
+		item.CoverURL = &u
 	}
 	return item
 }
@@ -336,7 +357,9 @@ func jobSnapshot(j *store.Job) map[string]any {
 func eventSnapshot(e *store.Event) map[string]any {
 	return map[string]any{
 		"id": e.ID, "lumaId": e.LumaID, "name": e.Name, "startsAt": e.StartsAt, "endsAt": e.EndsAt, "location": e.Location, "url": e.URL,
-		"hostUserId": e.HostUserID, "createdAt": isoMs(int64(e.CreatedAt)), "updatedAt": isoMs(int64(e.UpdatedAt)),
+		"hostUserId": e.HostUserID, "status": e.Status, "description": e.Description, "capacity": e.Capacity, "hostSubteamId": e.HostSubteamID,
+		"lumaUrl": e.LumaURL, "notionUrl": e.NotionURL, "hasCover": e.CoverUpdatedAt != nil,
+		"createdAt": isoMs(int64(e.CreatedAt)), "updatedAt": isoMs(int64(e.UpdatedAt)),
 	}
 }
 

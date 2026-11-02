@@ -340,6 +340,30 @@ await call('eventsImport', { who: officer, form: csv('reflections', 'Name\nAnn\n
 const newEvent = await call('eventCreate', { who: officer, body: { name: 'Contract check social', startsAt: '2026-12-12T19:00:00-08:00', endsAt: '2026-12-12T21:00:00-08:00', location: 'Atrium', url: 'https://example.org/social', hostUserId: 'user-ava' } });
 await call('eventUpdate', { who: officer, params: { id: newEvent.json.event.id }, body: { location: 'Lobby', endsAt: null } });
 await call('eventDetail', { who: officer, params: { id: newEvent.json.event.id } });
+// V0.3: a draft with the handoff fields, a cover, the pasted Luma link, then delete.
+const evDraft = await call('eventCreate', {
+  who: officer,
+  body: { name: 'Contract check draft', startsAt: '2026-12-14T18:00:00-08:00', description: 'Kit copy', capacity: 80, hostSubteamId: 'team-events', hostUserId: 'user-priya' },
+});
+const draftId = evDraft.json.event.id;
+must(evDraft.json.event.status === 'draft', 'new events start as drafts');
+const draftDetail = await call('eventDetail', { who: officer, params: { id: draftId } });
+must(draftDetail.json.event.notion.placeholder === true, 'the Notion stub stores a placeholder');
+await call('eventUpdate', { who: officer, params: { id: draftId }, body: { lumaUrl: 'https://lu.ma/discover' }, expect: 400 });
+const linked = await call('eventUpdate', { who: officer, params: { id: draftId }, body: { lumaUrl: 'https://lu.ma/contract-draft', status: 'published' } });
+must(linked.json.event.lumaUrl === 'https://lu.ma/contract-draft', 'Luma link saved');
+const coverForm = () => {
+  const f = new FormData();
+  f.set('file', new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])], { type: 'image/png' }), 'cover.png');
+  return f;
+};
+const covered1 = await call('eventCoverPut', { who: officer, params: { id: draftId }, form: coverForm() });
+must(covered1.json.event.coverUrl?.startsWith(`/api/events/${draftId}/cover`), 'cover URL listed');
+const coverBytes = await call('eventCoverGet', { who: officer, params: { id: draftId } });
+must(coverBytes.raw?.[0] === 0x89, 'cover served byte for byte');
+await call('eventCoverDelete', { who: officer, params: { id: draftId } });
+await call('eventDelete', { who: officer, params: { id: draftId } });
+await call('eventDetail', { who: officer, params: { id: draftId }, expect: 404 });
 
 // ───────────── 5. director-only finance and admin writes ─────────────
 const budgets = (await call('budgetsGet', { who: officer, query: { fiscalYear: '2027' } })).json;

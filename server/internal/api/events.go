@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sort"
@@ -10,8 +11,10 @@ import (
 	"time"
 
 	"officerdashboard/internal/auth"
+	"officerdashboard/internal/files"
 	"officerdashboard/internal/fiscal"
 	"officerdashboard/internal/luma"
+	"officerdashboard/internal/notion"
 	"officerdashboard/internal/store"
 	"officerdashboard/internal/validate"
 )
@@ -82,25 +85,43 @@ func (c *Ctx) eventsList() error {
 }
 
 type eventInput struct {
-	Name       validate.Field[string]
-	StartsAt   validate.Field[string]
-	EndsAt     validate.Field[string]
-	Location   validate.Field[string]
-	URL        validate.Field[string]
-	LumaID     validate.Field[string]
-	HostUserID validate.Field[string]
+	Name          validate.Field[string]
+	StartsAt      validate.Field[string]
+	EndsAt        validate.Field[string]
+	Location      validate.Field[string]
+	URL           validate.Field[string]
+	LumaID        validate.Field[string]
+	HostUserID    validate.Field[string]
+	Status        validate.Field[string]
+	Description   validate.Field[string]
+	Capacity      validate.Field[int64]
+	HostSubteamID validate.Field[string]
+	LumaURL       validate.Field[string]
 }
 
 func readEvent(r *validate.Reader, create bool) eventInput {
-	return eventInput{
-		Name:       r.Str("name", validate.S{Req: create, Trim: true, Min: 1, Max: 200}),
-		StartsAt:   r.Str("startsAt", validate.S{Req: create, Format: "datetime"}),
-		EndsAt:     r.Str("endsAt", validate.S{Null: true, Format: "datetime"}),
-		Location:   r.Str("location", validate.S{Null: true, Max: 200}),
-		URL:        r.Str("url", validate.S{Null: true, Format: "url"}),
-		LumaID:     r.Str("lumaId", validate.S{Null: true, Max: 100}),
-		HostUserID: r.Str("hostUserId", validate.S{Null: true, Min: 1, Max: 64}),
+	in := eventInput{
+		Name:          r.Str("name", validate.S{Req: create, Trim: true, Min: 1, Max: 200}),
+		StartsAt:      r.Str("startsAt", validate.S{Req: create, Format: "datetime"}),
+		EndsAt:        r.Str("endsAt", validate.S{Null: true, Format: "datetime"}),
+		Location:      r.Str("location", validate.S{Null: true, Max: 200}),
+		URL:           r.Str("url", validate.S{Null: true, Format: "url"}),
+		LumaID:        r.Str("lumaId", validate.S{Null: true, Max: 100}),
+		HostUserID:    r.Str("hostUserId", validate.S{Null: true, Min: 1, Max: 64}),
+		Status:        r.Str("status", validate.S{Enum: store.EventStatuses, HasDef: create, Default: "draft"}),
+		Description:   r.Str("description", validate.S{Null: true, Max: 5000}),
+		Capacity:      r.Int("capacity", validate.I{Null: true, Min: validate.Lo(1), Max: validate.Lo(100000)}),
+		HostSubteamID: r.Str("hostSubteamId", validate.S{Null: true, Min: 1, Max: 64}),
+		LumaURL:       r.Str("lumaUrl", validate.S{Null: true, Max: 300}),
 	}
+	if in.LumaURL.Has() {
+		if norm, err := luma.NormalizeEventURL(in.LumaURL.V); err != nil {
+			r.Issues.Add("lumaUrl", err.Error())
+		} else {
+			in.LumaURL.V = norm
+		}
+	}
+	return in
 }
 
 func endsBeforeStarts(starts, ends string) bool {
@@ -109,10 +130,23 @@ func endsBeforeStarts(starts, ends string) bool {
 	return err1 == nil && err2 == nil && b.Before(a)
 }
 
-func (c *Ctx) hostOK(cat *catalog, host validate.Field[string]) error {
-	if host.Has() {
-		if u := cat.users[host.V]; u == nil || !u.Active {
+// refsOK checks the host user, the host subteam, and that no other event links the Luma page.
+func (c *Ctx) refsOK(ctx context.Context, w *store.Queries, cat *catalog, in eventInput, eventID string) error {
+	if in.HostUserID.Has() {
+		if u := cat.users[in.HostUserID.V]; u == nil || !u.Active {
 			return badRequest("Invalid host")
+		}
+	}
+	if in.HostSubteamID.Has() && cat.teamByID[in.HostSubteamID.V] == nil {
+		return badRequest("Invalid host subteam")
+	}
+	if in.LumaURL.Has() {
+		other, err := w.EventByLumaURL(ctx, in.LumaURL.V)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if other != nil && other.ID != eventID {
+			return conflict("That Luma page is already linked to " + other.Name)
 		}
 	}
 	return nil
@@ -124,6 +158,18 @@ func ptrIf(f validate.Field[string]) *string {
 	}
 	v := f.V
 	return &v
+}
+
+func intPtrIf(f validate.Field[int64]) *int64 {
+	if !f.Set || f.Null {
+		return nil
+	}
+	v := f.V
+	return &v
+}
+
+func notionEvent(e *store.Event) notion.Event {
+	return notion.Event{ID: e.ID, Name: e.Name, StartsAt: e.StartsAt, EndsAt: e.EndsAt, Location: e.Location, Description: e.Description, LumaURL: e.LumaURL}
 }
 
 func (c *Ctx) eventCreate() error {
@@ -142,7 +188,7 @@ func (c *Ctx) eventCreate() error {
 		if err != nil {
 			return err
 		}
-		if err := c.hostOK(cat, in.HostUserID); err != nil {
+		if err := c.refsOK(ctx, w, cat, in, id); err != nil {
 			return err
 		}
 		if in.EndsAt.Has() && endsBeforeStarts(in.StartsAt.V, in.EndsAt.V) {
@@ -150,7 +196,16 @@ func (c *Ctx) eventCreate() error {
 		}
 		now := store.Ms(c.S.nowMs())
 		e := store.Event{ID: id, Name: in.Name.V, StartsAt: in.StartsAt.V, EndsAt: ptrIf(in.EndsAt), Location: ptrIf(in.Location), URL: ptrIf(in.URL),
-			LumaID: ptrIf(in.LumaID), HostUserID: ptrIf(in.HostUserID), CreatedAt: now, UpdatedAt: now}
+			LumaID: ptrIf(in.LumaID), HostUserID: ptrIf(in.HostUserID), Status: in.Status.V, Description: ptrIf(in.Description), Capacity: intPtrIf(in.Capacity),
+			HostSubteamID: ptrIf(in.HostSubteamID), LumaURL: ptrIf(in.LumaURL), CreatedAt: now, UpdatedAt: now}
+		// TODO(notion): the stub only hands back a placeholder link. A real client must not
+		// call Notion inside this transaction; queue the draft and store the link afterwards.
+		if page, err := c.S.cfg.Notion.DraftEventPage(ctx, notionEvent(&e)); err != nil {
+			c.S.log.Warn("notion draft failed", "event", id, "err", err)
+		} else if page.URL != "" {
+			u := page.URL
+			e.NotionURL = &u
+		}
 		if err := w.InsertEvent(ctx, e); err != nil {
 			return err
 		}
@@ -191,7 +246,7 @@ func (c *Ctx) eventUpdate() error {
 		if err != nil {
 			return err
 		}
-		if err := c.hostOK(cat, in.HostUserID); err != nil {
+		if err := c.refsOK(ctx, w, cat, in, id); err != nil {
 			return err
 		}
 		startsAt, endsAt := e.StartsAt, e.EndsAt
@@ -206,7 +261,8 @@ func (c *Ctx) eventUpdate() error {
 		}
 		before := eventSnapshot(e)
 		patch := store.EventPatch{Name: optOf(in.Name), StartsAt: optOf(in.StartsAt), EndsAt: optOf(in.EndsAt), Location: optOf(in.Location),
-			URL: optOf(in.URL), LumaID: optOf(in.LumaID), HostUserID: optOf(in.HostUserID)}
+			URL: optOf(in.URL), LumaID: optOf(in.LumaID), HostUserID: optOf(in.HostUserID), Status: optOf(in.Status), Description: optOf(in.Description),
+			Capacity: optOf(in.Capacity), HostSubteamID: optOf(in.HostSubteamID), LumaURL: optOf(in.LumaURL)}
 		if err := w.UpdateEvent(ctx, id, patch, c.S.nowMs()); err != nil {
 			return err
 		}
@@ -228,6 +284,37 @@ func (c *Ctx) eventUpdate() error {
 		return err
 	}
 	writeJSON(c.W, 200, map[string]any{"event": out})
+	return nil
+}
+
+func (c *Ctx) eventDelete() error {
+	if _, err := c.officer(); err != nil {
+		return err
+	}
+	ctx := c.Context()
+	id := c.R.PathValue("id")
+	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		e, err := w.EventByID(ctx, id)
+		if err != nil {
+			return notFoundErr("Record not found")
+		}
+		n, err := w.EventRequestCount(ctx, id)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			return conflict(fmt.Sprintf("%s has %d purchase request%s. Move them to another event before deleting it.", e.Name, n, map[bool]string{true: "", false: "s"}[n == 1]))
+		}
+		before := eventSnapshot(e)
+		if err := w.DeleteEvent(ctx, id); err != nil {
+			return err
+		}
+		return c.audit(ctx, w, "event.deleted", "event", id, before, nil)
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"ok": true})
 	return nil
 }
 
@@ -266,10 +353,162 @@ func (c *Ctx) eventDetail() error {
 		}
 	}
 	writeJSON(c.W, 200, map[string]any{
-		"event":      EventDetail{EventListItem: items[0], EndsAt: e.EndsAt, URL: e.URL, UpdatedAt: isoMs(int64(e.UpdatedAt))},
+		"event": EventDetail{EventListItem: items[0], URL: e.URL, Description: e.Description, UpdatedAt: isoMs(int64(e.UpdatedAt)),
+			Notion: NotionLink{URL: e.NotionURL, Placeholder: e.NotionURL == nil || notion.IsPlaceholder(*e.NotionURL)}},
 		"requests":   list,
 		"spentCents": spent,
 	})
+	return nil
+}
+
+// ─── cover image ───
+
+const coverMaxBytes = 5 * 1024 * 1024
+
+var coverMIME = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+
+func (c *Ctx) eventCoverPut() error {
+	if _, err := c.officer(); err != nil {
+		return err
+	}
+	ctx := c.Context()
+	id := c.R.PathValue("id")
+	if _, err := c.S.db.Read().EventByID(ctx, id); err != nil {
+		return notFoundErr("Record not found")
+	}
+	c.R.Body = http.MaxBytesReader(c.W, c.R.Body, coverMaxBytes+1<<20)
+	if err := c.R.ParseMultipartForm(8 << 20); err != nil {
+		return badRequest("Expected multipart/form-data with an image file (maximum 5 MB)")
+	}
+	fhs := c.R.MultipartForm.File["file"]
+	if len(fhs) == 0 {
+		return badRequest("Image file required")
+	}
+	fh := fhs[0]
+	mime := strings.ToLower(strings.TrimSpace(strings.SplitN(fh.Header.Get("Content-Type"), ";", 2)[0]))
+	if _, ok := coverMIME[mime]; !ok {
+		return badRequest("Cover must be a JPG, PNG or WebP image")
+	}
+	if fh.Size == 0 || fh.Size > coverMaxBytes {
+		return badRequest("Cover must be at most 5 MB")
+	}
+	f, err := fh.Open()
+	if err != nil {
+		return badRequest("Image file required")
+	}
+	body, err := io.ReadAll(f)
+	f.Close()
+	if err != nil {
+		return badRequest("Image file required")
+	}
+	if err := files.CheckContent(mime, body); err != nil {
+		return err
+	}
+	name := strings.TrimSpace(fh.Filename)
+	if name == "" || len(name) > 200 {
+		name = "cover" + coverMIME[mime]
+	}
+	var out EventListItem
+	err = c.S.db.Write(ctx, func(w *store.Queries) error {
+		e, err := w.EventByID(ctx, id)
+		if err != nil {
+			return notFoundErr("Record not found")
+		}
+		now := c.S.nowMs()
+		if err := w.PutEventCover(ctx, store.Cover{EventID: id, MimeType: mime, Bytes: body, Filename: name, UpdatedAt: now}); err != nil {
+			return err
+		}
+		if err := w.UpdateEvent(ctx, id, store.EventPatch{}, now); err != nil {
+			return err
+		}
+		if err := c.audit(ctx, w, "event.cover_set", "event", id, map[string]any{"hasCover": e.CoverUpdatedAt != nil},
+			map[string]any{"hasCover": true, "mimeType": mime, "sizeBytes": len(body), "filename": name}); err != nil {
+			return err
+		}
+		updated, err := w.EventByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		cat, err := loadCatalog(ctx, w, false)
+		if err != nil {
+			return err
+		}
+		items, err := c.S.eventItems(ctx, w, cat, []store.Event{*updated}, id)
+		if err != nil {
+			return err
+		}
+		out = items[0]
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"event": out})
+	return nil
+}
+
+func (c *Ctx) eventCoverDelete() error {
+	if _, err := c.officer(); err != nil {
+		return err
+	}
+	ctx := c.Context()
+	id := c.R.PathValue("id")
+	var out EventListItem
+	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		if _, err := w.EventByID(ctx, id); err != nil {
+			return notFoundErr("Record not found")
+		}
+		had, err := w.DeleteEventCover(ctx, id)
+		if err != nil {
+			return err
+		}
+		if had {
+			if err := w.UpdateEvent(ctx, id, store.EventPatch{}, c.S.nowMs()); err != nil {
+				return err
+			}
+			if err := c.audit(ctx, w, "event.cover_removed", "event", id, map[string]any{"hasCover": true}, map[string]any{"hasCover": false}); err != nil {
+				return err
+			}
+		}
+		updated, err := w.EventByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		cat, err := loadCatalog(ctx, w, false)
+		if err != nil {
+			return err
+		}
+		items, err := c.S.eventItems(ctx, w, cat, []store.Event{*updated}, id)
+		if err != nil {
+			return err
+		}
+		out = items[0]
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"event": out})
+	return nil
+}
+
+func (c *Ctx) eventCoverGet() error {
+	if _, err := c.officer(); err != nil {
+		return err
+	}
+	cov, err := c.S.db.Read().EventCover(c.Context(), c.R.PathValue("id"))
+	if err != nil {
+		return notFoundErr("Record not found")
+	}
+	h := c.W.Header()
+	h.Set("Content-Type", cov.MimeType)
+	h.Set("Content-Length", fmt.Sprint(len(cov.Bytes)))
+	h.Set("Content-Disposition", "inline; filename*=UTF-8''"+encodeRFC5987(cov.Filename))
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	h.Set("Cache-Control", "private, max-age=86400")
+	c.W.WriteHeader(200)
+	_, _ = c.W.Write(cov.Bytes)
 	return nil
 }
 

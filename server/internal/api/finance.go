@@ -656,8 +656,19 @@ func (c *Ctx) lookups() error {
 	for i, e := range cat.events {
 		events[i] = ev{e.ID, e.Name, e.StartsAt}
 	}
+	teams := make([]SubteamBrief, len(cat.subteams))
+	for i, t := range cat.subteams {
+		teams[i] = SubteamBrief{ID: t.ID, Name: t.Name}
+	}
+	hosts := []UserSummary{}
+	for _, u := range cat.users {
+		if u.Active {
+			hosts = append(hosts, userSummary(u))
+		}
+	}
+	sort.Slice(hosts, func(i, j int) bool { return hosts[i].Name < hosts[j].Name })
 	fy, _ := fiscal.YearFor(fiscal.PacificDate(c.S.now()), fiscal.DefaultStartMonth)
-	writeJSON(c.W, 200, map[string]any{"expenseAccounts": expense, "funds": funds, "events": events, "currentFiscalYear": fy})
+	writeJSON(c.W, 200, map[string]any{"expenseAccounts": expense, "funds": funds, "events": events, "subteams": teams, "hosts": hosts, "currentFiscalYear": fy})
 	return nil
 }
 
