@@ -39,6 +39,12 @@ and response is a zod schema there with its TypeScript type inferred under the s
 
 | Method | Path | Auth | Query | Body | Response |
 | --- | --- | --- | --- | --- | --- |
+| GET | `/api/members` | officer | `MembersQuery` | — | `MembersResponse` |
+| GET | `/api/members/export` | director | `MembersQuery` | — | CSV |
+| GET | `/api/members/:id` | officer | — | — | `MemberResponse` |
+| PATCH | `/api/members/:id` | director | — | `MemberUpdateRequest` | `MemberResponse` |
+| POST | `/api/cloudflare/sync` | director | — | — | `CloudflareSyncResponse` |
+| GET | `/api/cloudflare/widgets` | officer | — | — | `CloudflareWidgetsResponse` |
 | GET | `/api/health` | public | — | — | `HealthResponse` |
 | GET | `/api/me` | officer | — | — | `MeResponse` |
 | GET | `/api/me/prefs` | officer | — | — | `WidgetPrefs` |
@@ -272,3 +278,37 @@ The bootstrap environment cannot reclaim ownership after transfer. Explicit oper
 recovery with `provision-leadership --owner` remains available even when owners already
 exist: shell/database administrators can intentionally add an owner, and this action
 is audited. Discord login itself never creates users or grants leadership/ownership.
+
+## Membership and Cloudflare
+
+Members use SQL search, exact campus/graduation/officer filters and offset pagination
+(default 50, maximum 200). `total` is the filtered count. CSV exports every matching
+row, ignores offset/limit, neutralizes spreadsheet formulas, and records an audit event.
+Member fields retain the source D1 column names and nulls. Detail is read from the local
+mirror; submission payloads are stored locally but are not exposed by this API.
+
+Directors and leadership may patch names, emails, major, graduation year, campus and
+pronouns with a required `auditNote`. Join date, officer history, identity, demographics
+and membership consent are read-only. UW and CS email domains are validated before D1's
+own triggers run. Each external write records intent first, then success or an unconfirmed
+outcome. A failed response can mean D1 committed: sync before retrying. Writes and sync
+share one lock; overlapping operations return 409. Roles are rechecked before writes.
+
+Cloudflare configuration is environment-only: `CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID`, `D1_DATABASE_ID` (the ID of
+`cseed-membership`). No settings or tokens are sent to the browser. The token needs
+Analytics Read and product dataset access; D1 reads need D1 Read, and member editing
+also needs D1 Edit. A read-only token supports analytics and mirror pulls but cannot
+perform edits. Unset configuration logs a skip for each job and shows Not connected.
+
+The job runs on startup and every 24 hours, with a four-minute deadline (manual Sync now is bounded to 45 seconds, below the HTTP timeout). D1 pages are
+250 rows, ordered by primary key. Only a complete successful pull replaces People and
+Membership_submissions in a transaction. Analytics queries fail independently per widget;
+last successful data remains available with an error and timestamp. Snapshots upsert by
+widget and UTC date. Account analytics cover the account; traffic/security cover the
+configured zone. Web Analytics reports seven days; other analytics report the prior 24 hours (D1 usage uses the previous UTC date). Demographics stay in the mirror and are never exposed in directory responses. Signup counts include today and 7/30-day windows. If a daily job collides with another operation, it retries in one minute.
+Last sync timestamps are epoch milliseconds, nullable before the first success.
+
+Cloudflare references: [D1 query API](https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/),
+[GraphQL datasets](https://developers.cloudflare.com/analytics/graphql-api/features/data-sets/),
+[D1 analytics](https://developers.cloudflare.com/d1/observability/metrics-analytics/).

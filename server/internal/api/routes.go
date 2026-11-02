@@ -5,6 +5,12 @@ import "net/http"
 func (s *Server) routes(mux *http.ServeMux) {
 	h := func(pattern string, fn handlerFunc) { mux.HandleFunc(pattern, s.wrap(fn)) }
 
+	h("GET /api/members", (*Ctx).membersList)
+	h("GET /api/members/export", (*Ctx).membersExport)
+	h("GET /api/members/{id}", (*Ctx).memberDetail)
+	h("PATCH /api/members/{id}", (*Ctx).memberUpdate)
+	h("POST /api/cloudflare/sync", (*Ctx).cloudflareSync)
+	h("GET /api/cloudflare/widgets", (*Ctx).cloudflareWidgets)
 	h("GET /api/health", (*Ctx).health)
 	h("GET /api/me", (*Ctx).me)
 	h("GET /api/me/prefs", (*Ctx).prefsGet)

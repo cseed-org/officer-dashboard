@@ -13,12 +13,13 @@ import UserChip from '../ui/shell/UserChip';
 export type PageKey = 'home' | 'events' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'speakers' | 'design';
 interface Props {
   title: string;
+  customHeader?: boolean;
   page?: PageKey;
   /** No shell (login, 404). */
   bare?: boolean;
   description?: string;
 }
-const { title, page, bare = false, description = 'CSEED officer dashboard' } = Astro.props;
+const { title, page, bare = false, customHeader = false, description = 'CSEED officer dashboard' } = Astro.props;
 
 const NAV: { key: PageKey; label: string; href: string; icon: IconName; directorOnly?: boolean }[] = [
   { key: 'home', label: 'Home', href: '/', icon: 'home' },
@@ -146,10 +147,10 @@ const NAVSCRIPT = `(function () {
             </div>
           </nav>
           <main id="main" class="main" tabindex="-1">
-            <header class="page-header">
+            {!customHeader && <header class="page-header">
               <h1>{title}</h1>
               <slot name="header" />
-            </header>
+            </header>}
             <slot />
           </main>
         </div>
