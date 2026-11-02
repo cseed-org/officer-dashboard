@@ -17,6 +17,13 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("GET /api/overview", (*Ctx).overview)
 	h("GET /api/search", (*Ctx).search)
 
+	h("GET /api/contacts", (*Ctx).contactsList)
+	h("POST /api/contacts", (*Ctx).contactCreate)
+	h("GET /api/contacts/{id}", (*Ctx).contactDetail)
+	h("PATCH /api/contacts/{id}", (*Ctx).contactUpdate)
+	h("DELETE /api/contacts/{id}", (*Ctx).contactDelete)
+	h("POST /api/contacts/{id}/outreach", (*Ctx).contactOutreachCreate)
+
 	h("GET /api/events", (*Ctx).eventsList)
 	h("POST /api/events", (*Ctx).eventCreate)
 	h("POST /api/events/import", (*Ctx).eventsImport)
