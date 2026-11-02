@@ -173,3 +173,68 @@ Contacts show dated outreach independently from general notes and linked past ev
 Review: `node web/design/capture.mjs speakers-v03 design-requests-v03` captures both themes at 1440/390 and checks 820 as well. Use each page's preview controls and buttons to inspect the remaining states. Open design questions: none; the build should confirm membership in the design team and current requester from authenticated data.
 
 `node web/design/verify-speakers-design.mjs` exercises the role and data-state selectors, contact/add/outreach drawers, request form, requester-only approval and phone list in both themes at 1440/390 (92 checks). It also captures each flow in `shots/`. All label controls include explicit accessible names, including selects whose option text would otherwise obscure the label in automation.
+
+### Home V0.3 design fixture (D1)
+
+`python3 web/design/build-home-v03.py` rebuilds `mockups/home-v03.html` using the existing shell builder. `home-v03.css` and `home-v03.js` are design-only assets; no application files change. Run `node web/design/capture.mjs home-v03`, then `node web/design/verify-home-v03.mjs` for interaction checks and the extra captures (`home-v03-<state>-*`, `home-v03-role-<role>-*`, `home-v03-edit-*`, `home-v03-lift-*`, `home-v03-gallery-*`). URL parameters: `role`, `state` (`disconnected|connected|empty|loading|error|mixed`), `mode=edit|gallery`, and `lift=<id>&slot=<index>` for a lifted widget with its drop slot.
+
+**Layout and sizes.** Home uses the shared S/M/L grid and gallery. The default layout is the five existing home cards, Web Analytics (on by default, L) and D1 Member signups (S). S shows one summary (plus the sync time for synced widgets), M the principal metrics, L adds breakdowns: Web Analytics top pages/referrers/countries; Traffic threats by action and requests by country; Performance per-page p75 with an "Insufficient samples" row; Workers/D1 daily request bars (text equivalent in `.visually-hidden`) and storage; My actions the full list. Every widget supports every size. L content fits the 2×2 cell; widget bodies never scroll.
+
+**Sync and connection states.** Cloudflare/D1 start at **Not connected**, never zero. One vocabulary drives the page line under the grid and the widget footers: connected "Synced daily, last 7:02 AM"; not connected "Not connected · syncs daily once leadership connects cseed.co"; loading "Checking today's sync…"; error "Sync failed 7:02 AM · no earlier snapshot"; mixed "Stale · Oct 31, 7:02 AM". A not-connected L widget shows a dashed preview of the metric names it will hold (no numbers), so the default first view is not a blank card. "Connection details" is a `<details>` inside the widget and is role-aware: leadership/owner see which deployment config to set (`CLOUDFLARE_API_TOKEN`, D1 account/database/token); officers and directors are told leadership connects it. There is no token-entry form.
+
+**States.** Loading sets `aria-busy="true"` on each `li` with `.skel--kpi`/`.skel--row` placeholders and visually hidden "Loading <widget>". Error adds `.state--error` on the `li` (negative border) and a `.badge--negative` "Failed"; synced widgets say "Sync failed", club widgets "Couldn't load", both with Retry. **Mixed** is the realistic failure: club cards are normal and synced widgets show the previous snapshot under a "Stale" badge with its timestamp. Empty means connected with no records, never inferred from a missing connection.
+
+**Roles.** My actions differs by role: officer (own follow-ups, design approvals, receipts), director (purchase reviews for their scope, the invite "DM sent ✓" item, member-record fixes), leadership (club-wide approvals, role changes, leadership grants), owner (leadership plus an ownership item). Member signups L links officers to "View members" and director+ to "Edit member records". Owner is leadership plus a written Owner label, not a fourth rank. Analytics are readable by all four. The role explanation is a design annotation inside the dashed `.home-preview` box, not product UI.
+
+**Edit mode.** The `.edit-bar` holds Add widget and Done (the toolbar's Add widget hides while editing). Grips support drag, touch drag and keyboard reorder (arrows move one place, Enter/Space lifts or drops); moves announce position and the preceding neighbour. While dragging, the widget gets `.is-lifted` and an `li.widget-slot` with the dragged widget's `--span-c/--span-r` marks the drop target. Footers hide while editing so the size pill never covers text; on phone, S labels wrap to two lines and S links hide. Size buttons are named Small/Medium/Large. Remove shows an Undo toast that auto-dismisses after 8s and clears on Done. Done simulates saving; production persists `user_prefs` server-side. No localStorage layout.
+
+**Gallery.** Native modal, Escape, focus return and background scroll lock. Each polaroid holds a real `.widget.widget--m` with the S summary of the connected sample, labelled "Sample" for synced widgets; `.gallery-sub` states the token requirement and "Not connected yet". Adding keeps the sheet open and moves focus to the next Add button.
+
+Design-only classes (in `home-v03.css`, no new colour tokens): `.home-preview` and `.home-role-note` (preview controls and role annotation); `.home-widgets` scopes Home density; `.home-details` holds L-only breakdowns and `.home-detail-hint` points to them at smaller sizes; `.home-metrics` (`--3` for three columns) groups numeric pairs; `.home-analytics` (`--2`) lays out breakdown groups with `.home-sub-head`; `.home-bars` is the usage column chart; `.home-connect` is the connection-details disclosure; `.home-ghost`/`.home-ghost-list` the not-connected preview; `.home-add-slot` keeps the add tile inside valid list markup. For the shared gallery's flex column, Home keeps the header and categories from shrinking and gives the body `min-height:0`.
+
+Open design questions: none. Account persistence and connection setup are implementation work.
+
+### D3 · Officers and Members fixtures
+
+`mockups/officers-v03.html` and `mockups/members-v03.html` are generated with
+`python3 web/design/build-people.py`, which reuses the `build-mockups.py` shell. Rows render
+in `people-preview.js` from one embedded JSON sample, so the directory, drawers, filters and
+confirm steps always agree. `node web/design/check-people.mjs` (from the repo root) asserts the
+contract below at 1440 and 390 in both themes and captures the overlay screenshots.
+No new color tokens or fonts. Brand typography and imagery stay off these work pages.
+
+**Classes added in `v03.css`.** `.people-group` (a subteam section with a fixed column grid at
+desktop widths). `.people-cell` wraps each cell's value and secondary text; on phones it sits
+beside a fixed 90px label. `.prototype-toggle` sets prototype-only switches (such as "make the DM
+fail") apart from real actions with a dashed rule. Row names reuse `.linkish.cell-title`: every
+row opens its record, and on phones the name is a 44px target.
+
+**Roles.** Officer: directory and profiles without phone. Director+: phone, invites, invite list,
+member edit and CSV export. Leadership: role change, deactivate and reactivate, never on their own
+record. An owner's role can only be changed by an owner. Owner: make co-owner (which grants
+leadership), transfer ownership and remove owner status; the last owner cannot be removed. The
+server enforces all of this and omits phone from officer responses.
+
+**Overlays.** Profiles and records are `.drawer`s. Invites and every confirm step are centred
+`.dialog`s with a normal `.action-row`, never a drawer on a drawer. Dialogs are labelled by their
+`h2` (`aria-labelledby`), focus the first useful control, close on Escape, return focus to the
+trigger and lock background scroll. A result is announced once: in the open dialog's
+`[data-result]` status, otherwise in the page notice.
+
+**Officers.** States: ready, no officers yet (only the bootstrap owner, with an Invite CTA for
+director+), loading, error, and filtered to nothing. Filters: text, subteam, role (including Owner)
+and status (Active, Deactivated). The role picker preselects the current role; Review stays
+disabled until it changes. The invite list shows sent time and expiry (7 days), delivery, status
+(Awaiting sign-in, DM failed, Expired, Accepted, Revoked) and Resend, Retry DM, Copy link,
+Revoke or Remove. My profile holds the calendar picker (native select, five-address limit) with the
+saved-address list and its Remove buttons beside it, outside the picker.
+
+**Members.** A 25-row server pagination contract (1,086 in the sample; 8 drawn). Search and
+filters run on the server; CSV covers all matching records and is recorded in the audit log.
+Edit needs a changed field and an audit note. The confirm dialog lists only the changed fields
+(current → new), the write target, the note and the actor. A failed write keeps the dialog
+and the edits, with an alert. A successful write refreshes the mirror. States: ready, empty
+(no matches), loading, page error (table hidden, filters kept), **sync failed** (the last mirror
+stays visible with its date, the banner uses `notice--attention`, and edits pause) and **not
+connected** (no credentials and no mirror: say so, never show a zero count). Never replace a
+failed sync with an empty directory.
