@@ -17,7 +17,7 @@ export async function useTheme(page: Page, theme: Theme) {
   }, theme);
 }
 
-export async function devLogin(page: Page, as: 'director' | 'officer') {
+export async function devLogin(page: Page, as: 'director' | 'officer' | 'leadership') {
   const res = await page.goto(`/auth/dev?as=${as}`);
   expect(res?.ok(), `dev login as ${as} failed; is the API (API_ORIGIN) running with DEV_AUTH?`).toBe(true);
   await expect(page).toHaveURL(/\/$/);

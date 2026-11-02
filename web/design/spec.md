@@ -55,7 +55,7 @@ Events: search and time filter, one Import CSV button, event table. Detail drawe
 
 Requests & Finance: Requests, Budgets, Reports, Periods tabs. Requests default to actionable entries; one New request action opens a drawer. Detail places amount and status above properties, receipts and history; approve/deny/settle controls follow permission and state. Budgets show allocated/spent/committed/available columns. Reports are statement tables with restrained CSV export. Periods expose close state in text and place destructive close/reopen behind a confirmation.
 
-Admin: Users, Tokens, Audit log tabs, searchable tables. Tokens reveal their secret once in `.secret` with copy action. Audit retains actor, timestamp and target. Settings: separate Theme, Density, Profile sections with native radio groups and inline properties; save preferences immediately and announce the change.
+Officers: Directory (default), Invites, Access, Service tokens, Audit log tabs. All officers see the directory; director+ see the management tabs. Access reuses searchable officer controls; ownership actions live in the row menu. Directors manage officer active status; leadership changes roles and manages director/leadership active status, with owner guards enforced on the server. Tokens reveal their secret once in `.secret` with copy action. Audit retains actor, timestamp and target. Settings: separate Theme, Density, Profile sections with native radio groups and inline properties; save preferences immediately and announce the change.
 
 ## Responsive layouts
 

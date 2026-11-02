@@ -32,8 +32,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | public | No session needed. |
 | owner | Active dashboard owner (`isOwner=true`, role leadership). Owner-only operations recheck authorization inside the transaction. |
 | officer | Any signed-in, active officer, director, or leadership user. |
-| director | Director or leadership; officers get 403. `/admin/*` and `/api/admin/*` are enforced by the middleware, the rest by `requireRole(locals, 'director')` in the handler. |
-| token:&lt;scope&gt; | `Authorization: Bearer <service token>` with that scope (issued on `/admin/tokens`). No session. |
+| director | Director or leadership; officers get 403. `/api/admin/*` is enforced by the middleware, the rest by `requireRole(locals, 'director')` in the handler. |
+| token:&lt;scope&gt; | `Authorization: Bearer <service token>` with that scope (issued on `/officers?tab=tokens`). No session. |
 
 ## Endpoints
 
@@ -226,7 +226,7 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 | `/events`, `/events?id=<id>` | officer | List, month and week views; editor, Luma handoff kit, request design; CSV import on `/events?import=1` |
 | `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
-| `/admin/users`, `/admin/tokens` | director | 403 for officers |
+| `/admin`, `/admin/users`, `/admin/tokens`, `/admin/audit` | officer | Redirect to Officers; management tabs require director |
 | `/design`, `/design?id=<id>`, `/design?new=1&eventId=<id>` | officer | Design request board (list view on phones); opens a request or the prefilled form |
 
 

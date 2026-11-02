@@ -21,7 +21,7 @@ const pages = (director: boolean): Item[] => [
   { kind: 'page', id: 'import', title: 'Import a Luma CSV', subtitle: 'events', href: href.eventImport() },
   { kind: 'page', id: 'finance', title: 'Requests & finance', subtitle: 'requests, budgets, reports', href: href.finance() },
   { kind: 'page', id: 'reports', title: 'Finance reports', subtitle: 'statements and CSV export', href: href.finance('reports') },
-  ...(director ? [{ kind: 'page' as const, id: 'admin', title: 'Admin', subtitle: 'officers, tokens, audit log', href: href.admin() }] : []),
+  ...(director ? [{ kind: 'page' as const, id: 'access', title: 'Officer access', subtitle: 'roles, ownership, tokens, audit log', href: href.admin() }] : []),
   { kind: 'page', id: 'settings', title: 'Settings', subtitle: 'theme, density, sign out', href: href.settings },
 ];
 

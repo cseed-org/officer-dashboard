@@ -37,12 +37,12 @@ export const href = {
   designRequest: (id: string) => `/design?id=${enc(id)}`,
   newDesignRequest: (eventId?: string) => `/design${qs({ new: 1, eventId })}`,
 
-  admin: (tab?: AdminTab) => `/admin${qs({ tab: tab === 'users' ? null : tab })}`,
+  admin: (tab?: AdminTab) => `/officers${qs({ tab: !tab || tab === 'users' ? 'access' : tab })}`,
 };
 
 /**
  * Map a v1-style path (the Go server's search may return these) to its v2 home:
- * /requests/:id → /finance?id=, /events/:id → /events?id=, /admin/tokens → /admin?tab=tokens.
+ * /requests/:id → /finance?id=, /events/:id → /events?id=, /admin/tokens → /officers?tab=tokens.
  * Anything else passes through.
  */
 export function normalizeHref(raw: string): string {
@@ -60,8 +60,10 @@ export function normalizeHref(raw: string): string {
   if (p === '/requests') return `/finance${u.search}`;
   if (p === '/events/import') return href.eventImport();
   if ((m = /^\/events\/([^/]+)$/.exec(p))) return href.event(decodeURIComponent(m[1]!));
-  if (p === '/admin/users') return href.admin('users');
-  if (p === '/admin/tokens') return href.admin('tokens');
-  if (p === '/admin/audit') return href.admin('audit');
+  if (p === '/admin' || /^\/admin\/(users|tokens|audit)$/.test(p)) {
+    const requested = p.split('/')[2] || u.searchParams.get('tab') || u.hash.slice(1);
+    const tab = requested === 'tokens' || requested === 'audit' ? requested : 'access';
+    return `/officers${qs({ ...Object.fromEntries(u.searchParams), tab })}`;
+  }
   return `${p}${u.search}${u.hash}`;
 }

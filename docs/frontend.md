@@ -9,7 +9,7 @@ runtime, same origin, with the session cookie. The Go backend serves `web/dist`.
   (`src/lib/api/client.ts`); drift shows as a "did not match the API contract" error, not a
   blank page. `SearchResponse` is now also defined in the canonical root contract.
 - Auth: each page calls `GET /api/me`; a 401 sends the browser to `/login?next=<here>`.
-  Director-or-higher UI (Admin, fiscal periods, director reports, approve/settle) is hidden for
+  Director-or-higher UI (Officers Access, fiscal periods, director reports, approve/settle) is hidden for
   officers; the server still enforces every rule.
 - Styles: `src/styles/{tokens,base,components}.css` and `design/` belong to the designer.
   Markup uses the class contract in `design/spec.md`.
@@ -60,7 +60,8 @@ for anything else (status 404).
 | `/finance?id=<requestId>` | `finance/index.html` | request detail slide-over (works with any tab) |
 | `/finance?new=1[&eventId=]` | `finance/index.html` | new request drawer |
 | `/finance?tab=budgets\|reports\|periods` | `finance/index.html` | `&fy=`, `&fund=`, `&report=<FINANCE_REPORTS key>` |
-| `/admin` | `admin/index.html` | `?tab=tokens\|audit` (directors) |
+| `/officers` | `officers/index.html` | `?tab=invites\|access\|tokens\|audit` (directors); directory for everyone |
+| `/admin` | `admin/index.html` | Redirects to Officers Access; query/hash tabs and legacy subpaths are mapped |
 | `/settings` | `settings/index.html` | theme, density, profile, sign out |
 | `/login` | `login/index.html` | `?next=`, `?error=not_allowlisted\|inactive\|state\|discord` |
 | anything else | `404.html` | |
@@ -68,7 +69,7 @@ for anything else (status 404).
 `/api/*` and `/auth/*` are the backend's. Sign-out is a form `POST /auth/logout`.
 
 **Search hrefs.** `GET /api/search` results should use the v2 URLs above
-(`/finance?id=…`, `/events?id=…`, `/admin`, `/finance?tab=budgets`). The palette also maps
+(`/finance?id=…`, `/events?id=…`, `/officers?tab=access`, `/finance?tab=budgets`). The palette also maps
 v1-style paths (`/requests/:id`, `/events/:id`, `/requests/new`, `/events/import`,
 `/admin/users|tokens`) through `normalizeHref` in `src/lib/routes.ts`, so either works.
 For compatibility with the historical v1 backend, when `/api/search` answers 404, the palette falls back to
@@ -79,7 +80,7 @@ For compatibility with the historical v1 backend, when `/api/search` answers 404
 Theme (`cseed-theme`: `light` default, `dark`, `system`) and density (`cseed-density`:
 `comfortable`, `compact`) are in `localStorage` and applied to `<html data-theme
 data-density>` by an inline script in `<head>` before first paint. The last known role
-(`cseed-role`) is cached the same way so the Admin link doesn't flash for officers.
+(`cseed-role`) is cached the same way so restricted navigation doesn't flash for officers.
 
 ## Check and test
 
@@ -99,7 +100,7 @@ src/lib/          contract copy, API client + useApi, routes, same-page router, 
 src/layouts/      AppLayout.astro: pre-paint script, sidebar / top bar, palette
 src/pages/        page routes + login + 404 (each mounts one island)
 src/ui/pages/     page islands (auth gate + view)
-src/ui/views/     page bodies, including Home, Events, Finance (+ request detail/form), Admin, Settings, Officers, Members, Speakers, Design, Onboarding
+src/ui/views/     page bodies, including Home, Events, Finance (+ request detail/form), Settings, Officers, Members, Speakers, Design, Onboarding
 src/ui/components/ kit, states, charts, drawer, icons, CSV import (ported from v1)
 src/ui/shell/     command palette, user chip, auth gate
 tests/            Playwright
