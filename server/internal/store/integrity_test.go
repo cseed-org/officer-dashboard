@@ -337,7 +337,9 @@ func TestMigrationsAreIdempotentAndReaderSeesWriterCommits(t *testing.T) {
 	}
 	var applied int
 	_ = d.W.QueryRow(`SELECT count(*) FROM schema_migrations`).Scan(&applied)
-	if want := MigrationCount(); applied != want || want < 7 {
-		t.Errorf("applied migrations = %d (want %d)", applied, want)
+	// V0.3 merge order: 0000–0005, 0006 speakers (#20), 0007 members (#22),
+	// 0008 design requests (#19), 0009 events (#21).
+	if want := 10; applied != want || MigrationCount() != want {
+		t.Errorf("applied migrations = %d, embedded = %d (want %d)", applied, MigrationCount(), want)
 	}
 }

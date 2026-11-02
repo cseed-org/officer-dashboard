@@ -285,7 +285,7 @@ directors and leadership have the same event powers. Each change writes `event.c
 
 - **Fields.** `status` is `draft | published | completed | cancelled`. New events start as
   `draft`; events created by a Luma import or ingest are `published` (so are the rows that
-  existed before migration 0006). `description` (≤ 5000), `capacity` (1–100000),
+  existed before migration 0009). `description` (≤ 5000), `capacity` (1–100000),
   `hostSubteamId` (a `subteams` id; the name comes back as `hostSubteam`), `hostUserId`.
   `GET /api/lookups` lists `subteams` and active `hosts` for the editor.
 - **Luma handoff.** There is no Luma API. The UI shows each field with a copy button,
