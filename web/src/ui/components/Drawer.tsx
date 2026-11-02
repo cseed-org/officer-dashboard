@@ -14,6 +14,7 @@ export function Drawer({
   id,
   size = 'md',
   kind = 'drawer',
+  dismissible = true,
   children,
 }: {
   open: boolean;
@@ -24,6 +25,7 @@ export function Drawer({
   size?: 'md' | 'lg';
   /** `dialog` centres it (CSV import); `drawer` slides in from the right. */
   kind?: 'drawer' | 'dialog';
+  dismissible?: boolean;
   children: ComponentChildren;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -53,13 +55,14 @@ export function Drawer({
       class={`${kind} ${kind}--${size}`}
       aria-labelledby={`${id}-title`}
       onClose={() => {
-        document.documentElement.classList.remove('has-modal');
+        if (!document.querySelector('dialog[open]')) document.documentElement.classList.remove('has-modal');
         if (opener.current?.isConnected) opener.current.focus();
         opener.current = null;
         closeRef.current();
       }}
+      onCancel={(e) => { if (!dismissible) e.preventDefault(); }}
       onClick={(e) => {
-        if (e.target === ref.current) ref.current?.close();
+        if (dismissible && e.target === ref.current) ref.current?.close();
       }}
     >
       <div class={`${kind}-inner`}>
@@ -70,7 +73,7 @@ export function Drawer({
               {title}
             </h2>
           </div>
-          <button type="button" class="icon-btn" aria-label="Close" onClick={() => ref.current?.close()}>
+          <button type="button" class="icon-btn" aria-label="Close" disabled={!dismissible} onClick={() => ref.current?.close()}>
             <Icon name="close" />
           </button>
         </header>

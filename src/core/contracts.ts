@@ -160,7 +160,7 @@ export type LookupsResponse = z.infer<typeof LookupsResponse>;
 
 // ───────────────────────────── Search ─────────────────────────────
 
-export const SearchKind = z.enum(['event', 'request', 'user', 'account']);
+export const SearchKind = z.enum(['event', 'request', 'user', 'account', 'contact']);
 
 /**
  * GET /api/search?q=<text>&limit=<1..50, default 20> — the sidebar search. Matches
@@ -921,11 +921,37 @@ interface EndpointSpec {
   response: z.ZodType | 'csv' | 'redirect' | 'binary';
 }
 
+// Speakers & Mentors
+export const ContactType = z.enum(['speaker', 'mentor', 'both']);
+export const OutreachChannel = z.enum(['email', 'linkedin', 'discord', 'phone', 'in_person']);
+export const OutreachOutcome = z.enum(['awaiting_reply', 'interested', 'confirmed', 'declined', 'follow_up']);
+export const ContactOutreach = z.object({ id: Id, officerId: Id, officerName: z.string(), date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string(), createdAt: z.number().int() });
+export const Contact = z.object({
+ id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType,
+ topics: z.array(z.string()), email: z.string(), linkedin: z.string(), notes: z.string(),
+ createdAt: z.number().int(), updatedAt: z.number().int(),
+ events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+ outreach: z.array(ContactOutreach), lastOutreach: ContactOutreach.nullable(),
+});
+export type Contact = z.infer<typeof Contact>;
+export const ContactCreateRequest = z.object({ name: z.string().trim().min(1).max(200), org: z.string().trim().max(200).optional(), role: z.string().trim().max(200).optional(), type: ContactType,
+ topics: z.array(z.string().trim().min(1).max(100)).max(30).optional(), email: z.union([z.string().trim().pipe(z.email().max(254)), z.literal('')]).optional(), linkedin: z.union([z.string().trim().pipe(z.url({ protocol: /^https?$/ }).max(2000)), z.literal('')]).optional(), notes: z.string().max(10000).optional(), eventIds: z.array(Id).max(100).optional() });
+export const ContactPatchRequest = ContactCreateRequest.partial();
+export const ContactResponse = z.object({ contact: Contact });
+export const ContactsQuery = z.object({ q: z.string().trim().max(100).optional(), type: ContactType.optional(), topic: z.string().trim().max(100).optional() });
+export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string().max(10000).optional() });
+
 /**
  * Machine-readable index of every endpoint; docs/api.md is the human version and a test
  * keeps the two in sync.
  */
 export const ENDPOINTS = {
+ contactsList: { method: 'GET', path: '/api/contacts', auth: 'officer', query: ContactsQuery, response: z.object({ items: z.array(Contact) }) },
+ contactCreate: { method: 'POST', path: '/api/contacts', auth: 'officer', body: ContactCreateRequest, response: ContactResponse },
+ contactDetail: { method: 'GET', path: '/api/contacts/:id', auth: 'officer', response: ContactResponse },
+ contactUpdate: { method: 'PATCH', path: '/api/contacts/:id', auth: 'officer', body: ContactPatchRequest, response: ContactResponse },
+ contactDelete: { method: 'DELETE', path: '/api/contacts/:id', auth: 'officer', response: OkResponse },
+ contactOutreachCreate: { method: 'POST', path: '/api/contacts/:id/outreach', auth: 'officer', body: OutreachCreateRequest, response: ContactResponse },
   ownerAdd: { method: 'POST', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
   ownerRemove: { method: 'DELETE', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
   ownerTransfer: { method: 'POST', path: '/api/admin/owners/transfer', auth: 'owner', body: OwnerTransferRequest, response: AdminUsersResponse },

@@ -1,0 +1,97 @@
+.speakers-filters {
+  align-items: end;
+  flex-wrap: wrap;
+}
+.speakers-filters .field:first-child {
+  flex: 1;
+  min-width: 180px;
+}
+.speakers-fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.speakers-mobile {
+  display: none;
+}
+.speakers-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.speakers-page td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+/* Brand empty state from the approved v03 design system. */
+@font-face {
+  font-family: "Playfair Display";
+  src: url("/fonts/playfair-display.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+.speakers-page {
+  --font-display: "Playfair Display", ui-serif, Georgia, serif;
+  --paper: #e4e3e1;
+  --paper-raised: #f4f4f4;
+  --brand-ink: #141414;
+  --brand-ink-soft: #3d3d3d;
+  --brand-control: #76756f;
+}
+[data-theme="dark"] .speakers-page {
+  --paper: #1a1916;
+  --paper-raised: #24231f;
+  --brand-ink: #f1efe8;
+  --brand-ink-soft: #c4c1b8;
+  --brand-control: #87847c;
+}
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] .speakers-page {
+    --paper: #1a1916;
+    --paper-raised: #24231f;
+    --brand-ink: #f1efe8;
+    --brand-ink-soft: #c4c1b8;
+    --brand-control: #87847c;
+  }
+}
+.speakers-page .state--brand {
+  padding: 40px 24px;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--paper);
+  color: var(--brand-ink);
+  gap: 12px;
+}
+.speakers-page .state--brand .state-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+}
+.speakers-page .state--brand .state-body {
+  color: var(--brand-ink-soft);
+}
+.speakers-page .state--brand .btn {
+  border-color: var(--brand-control);
+  background: var(--paper-raised);
+  color: var(--brand-ink);
+}
+@media (max-width: 640px) {
+  .speakers-desktop {
+    display: none;
+  }
+  .speakers-mobile {
+    display: grid;
+    gap: var(--space-4, 16px);
+  }
+  .speakers-mobile .cell-sub {
+    display: block;
+  }
+  .speakers-mobile a {
+    overflow-wrap: anywhere;
+  }
+  .speakers-filters {
+    width: 100%;
+  }
+}

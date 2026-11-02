@@ -383,6 +383,21 @@ await call('inviteCreate', { who: directorA, body: { name:'New officer',discordI
 await call('adminUserUpdate', { who: directorA, params:{id:'user-priya'}, body:{role:'leadership'}, expect:403 });
 await call('adminUserUpdate', { who: leadership, params:{id:createdB.json.user.id}, body:{role:'leadership'} });
 
+// Speakers CRM: all writes as an officer, dated outreach independent of profile edits.
+const contact = await call('contactCreate', { who: officer, body: { name: 'Contract speaker', org: 'CSEED example', type: 'both', topics: ['Climate tech'], eventIds: [eventId] } });
+const contactParams = { id: contact.json.contact.id };
+await call('contactsList', { who: officer, query: { q: 'contract', type: 'mentor', topic: 'Climate tech' } });
+await call('contactDetail', { who: officer, params: contactParams });
+await call('contactUpdate', { who: officer, params: contactParams, body: { notes: 'General context', email: 'speaker@example.org' } });
+await call('contactOutreachCreate', { who: officer, params: contactParams, body: { date: '2026-10-30T12:00:00-07:00', channel: 'email', outcome: 'interested', note: 'Send the outline' } });
+const backdated = await call('contactOutreachCreate', { who: directorA, params: contactParams, body: { date: '2026-10-29T12:00:00Z', channel: 'linkedin', outcome: 'awaiting_reply' } });
+must(backdated.json.contact.lastOutreach.officerId === 'user-priya', 'backdated outreach does not replace latest contact');
+await call('search', { who: officer, query: { q: 'Contract speaker' } });
+await call('contactCreate', { who: officer, body: { name: '', type: 'speaker' }, expect: 400 });
+await call('contactUpdate', { who: officer, params: contactParams, body: { eventIds: ['missing'] }, expect: 400 });
+await call('contactDelete', { who: officer, params: contactParams });
+await call('contactDetail', { who: officer, params: contactParams, expect: 404 });
+
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev']); // redirects: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);
