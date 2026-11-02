@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, fieldErrors } from '../../../lib/api/client';
 import { useApi } from '../../../lib/api/useApi';
 import { fromLocalInput, toLocalInput } from '../../../lib/calendar';
-import type { EventDetailResponse, EventStatus, EventUpsertRequest } from '../../../lib/contracts';
+import type { DesignNeed, EventDetailResponse, EventStatus, EventUpsertRequest } from '../../../lib/contracts';
 import { safeUrl } from '../../../lib/format';
+import { isDirector, useMe } from '../../../lib/session';
 import { describe, Field } from '../../components/kit';
 import { errorMessage, ErrorState, Loading, Notice } from '../../components/states';
 
@@ -25,9 +26,11 @@ interface Draft {
   description: string;
   capacity: string;
   status: EventStatus;
+  /** "Needs design" toggle: unchecked means not_needed. Unknown stays unknown until changed. */
+  designNeed: DesignNeed;
 }
 
-const blank: Draft = { name: '', starts: '', ends: '', location: '', hostSubteamId: '', hostUserId: '', description: '', capacity: '', status: 'draft' };
+const blank: Draft = { name: '', starts: '', ends: '', location: '', hostSubteamId: '', hostUserId: '', description: '', capacity: '', status: 'draft', designNeed: 'unknown' };
 
 function fromEvent(e: Detail): Draft {
   return {
@@ -40,6 +43,7 @@ function fromEvent(e: Detail): Draft {
     description: e.description ?? '',
     capacity: e.capacity === null ? '' : String(e.capacity),
     status: e.status,
+    designNeed: e.designNeed,
   };
 }
 
@@ -109,6 +113,11 @@ function EditorForm({
   const [removeCover, setRemoveCover] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const me = useMe();
+  const user = me.status === 'ready' ? me.user : null;
+  // Ruling an event out of design is director+ or the host's call (the server checks the saved host).
+  const canSkipDesign = isDirector(user) || (!!user && (event ? event.host?.id === user.id : d.hostUserId === user.id));
+  const savedNeed = event?.designNeed ?? 'unknown';
   const set = (k: keyof Draft) => (e: Event) => setD({ ...d, [k]: (e.currentTarget as HTMLInputElement).value });
 
   useEffect(() => {
@@ -153,6 +162,7 @@ function EditorForm({
       description: d.description.trim() || null,
       capacity: d.capacity.trim() ? Number(d.capacity) : null,
       ...(event ? { status: d.status } : {}),
+      ...(d.designNeed !== savedNeed ? { designNeed: d.designNeed } : {}),
     };
     setBusy(true);
     setMessage(null);
@@ -273,6 +283,26 @@ function EditorForm({
               </select>
             </Field>
           )}
+        </div>
+        <div class="field" data-design-need>
+          <label class="check">
+            <input
+              type="checkbox"
+              id="ev-design"
+              checked={d.designNeed !== 'not_needed'}
+              disabled={d.designNeed !== 'not_needed' && !canSkipDesign}
+              aria-describedby="ev-design-hint"
+              onChange={(e) => setD({ ...d, designNeed: e.currentTarget.checked ? (savedNeed === 'not_needed' ? 'needed' : savedNeed) : 'not_needed' })}
+            />
+            <span>Needs design</span>
+          </label>
+          <p class="field-hint check-sub" id="ev-design-hint">
+            {d.designNeed === 'not_needed'
+              ? 'The Design page shows this event as not needing design.'
+              : canSkipDesign
+                ? 'Shown on the Design page until a request is made. Untick if no poster or post is needed.'
+                : 'Shown on the Design page until a request is made. Only a director or the host can mark it not needed.'}
+          </p>
         </div>
         <div class={`field${errors.cover ? ' field--error' : ''}`}>
           <label class="dropzone" for="ev-cover">

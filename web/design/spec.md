@@ -270,3 +270,21 @@ and the edits, with an alert. A successful write refreshes the mirror. States: r
 stays visible with its date, the banner uses `notice--attention`, and edits pause) and **not
 connected** (no credentials and no mirror: say so, never show a zero count). Never replace a
 failed sync with an empty directory.
+
+## V0.4 Design page
+
+Reference: [mockups/design-v04.html](mockups/design-v04.html) (`python3 web/design/build-design-v04.py`, captured with `node web/design/capture.mjs design-v04` into `shots/design-v04-{1440,390}-{light,dark}.png`). The page title becomes **Design**. Classes live in `src/styles/design-requests.css`, which the mockup loads directly, so there is one copy.
+
+Order: toolbar (New design request; `.segmented` Board / List / My work), then the upcoming events rail, then the summary filters and the board, list or My work. Work register throughout; the brand touches are the Anonymous Pro `.brand-eyebrow` ("next six weeks") beside the rail heading and a 3px `--seed` edge on events that still need design (decorative; the state is always written).
+
+| Component | Classes and state contract |
+|---|---|
+| Upcoming events rail | `section.design-rail` > `.design-rail-head` (`h2.design-rail-title` + eyebrow, `.design-rail-note` "**3 need design** · 2 requested · 1 done", or "Nothing needs design") + `ul.design-rail-list[tabindex=0]` (horizontal scroller; 82% wide snapping tiles on phone) > `li.rail-event[data-need=needs\|requested\|done\|not-needed]`. A tile holds `.rail-date` (month, day, weekday; `aria-hidden`, with the date repeated in visually hidden text), `.rail-title` (link to the event), `.rail-sub` (status: Draft in italics or Published, then team · host or "No host yet"), the indicator, and `.rail-actions`. Empty: `.rail-empty` with a link to Events. |
+| Design indicator | `span.design-need[data-need]`: a 7px dot plus the written state. Needs design (amber), Requested (blue, followed by `.design-need-sub` "In progress · Jordan" or "2 requests open"), Done (green), Not needed (hollow ring, muted text). Never a filled capsule. |
+| Rail actions | Needs design: a hairline `Request design` button (opens the prefilled request) and, for director+ or the event's host only, `Mark not needed` (`.linkish`). Requested: Open request, Request another. Done: See delivered files. Not needed: Needs design after all (anyone). |
+| Summary filters | `.design-summary` > `.design-filters[role=group]` > `button.design-filter[aria-pressed][data-filter=all\|mine\|unassigned\|due]` with `.design-filter-n` (Due soon's count is `.is-alert`), then `label.design-type` with a type `select`. Filters and type live in the URL (`?filter=`, `?type=`) and apply to Board and List. Mine = assigned to me or requested by me. A filter that empties the board shows a plain `.state` with Clear filters. |
+| Card (V0.4) | `.kanban-card-top` (title + `.urgent-flag` "High" with a small triangle, open work only), `.kanban-card-meta` (type tag + `.due-chip` with `.is-soon`, `.is-overdue` or `.is-none` and the words "Due soon"/"Overdue"/"No due date"; delivered cards say "Delivered"), `p.kanban-event` (event link + `.kanban-event-when` date), foot (avatar + name, then the actions trigger). `.kanban-card.is-mine` draws a 3px ink inset edge on cards assigned to the viewer. |
+| Actions trigger | The bare "⋯" on cards is replaced by a labelled `button.card-actions` "Actions ▾" (40px tall on phone). Its `.row-menu-list.is-floating` is `position: fixed`, placed from the button and flipped upward near the bottom edge, so the Kanban's horizontal scroller can no longer clip it; it follows its button when the page or board scrolls. Tables keep the "⋯" row menu. |
+| My work | `.mywork` > `section.mywork-section` (`h3.mywork-head` + count) > `ul.mywork-list` of the same cards (one column on phone). Sections: Assigned to you (designers), Waiting on your approval, Your open requests, Up for grabs (designers and director+). Nearest due first. |
+
+Times: dates use the `src/lib/format.ts` helpers, which follow the viewer's effective time zone (`src/lib/timezone.ts`); the board line reads "Deadlines shown in <effective zone>". No zones are hard-coded.

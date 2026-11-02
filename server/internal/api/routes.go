@@ -69,6 +69,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("GET /api/design-files/{id}", (*Ctx).designFileDownload)
 	h("GET /api/events/{id}/design-request-draft", (*Ctx).designDraftFromEvent)
 	h("POST /api/events/{id}/design-requests", (*Ctx).designCreateFromEvent)
+	h("PUT /api/events/{id}/design-need", (*Ctx).eventDesignNeed)
 
 	h("GET /api/finance/summary", func(c *Ctx) error { return c.financeSummary() })
 	h("GET /api/finance/reports/{report}", func(c *Ctx) error { return c.financeReport() })
