@@ -209,15 +209,15 @@ function Body({ data, me, onUpdate, onDeleted }: { data: DesignRequestResponse; 
           </p>
         ))}
 
-      {r.stage === 'delivered' && (
+      {r.stage === 'delivered' && r.approvedBy && r.approvedAt && <Notice tone="positive">Approved by {r.approvedBy.name} · {fmtDateTime(r.approvedAt)}</Notice>}
+      {(r.stage === 'delivered' || files('delivered').length > 0) && (
         <section class="stack stack--tight" aria-labelledby="dr-delivered-h">
-          {r.approvedBy && r.approvedAt && <Notice tone="positive">Approved by {r.approvedBy.name} · {fmtDateTime(r.approvedAt)}</Notice>}
           <h3 id="dr-delivered-h">Delivered files</h3>
           {files('delivered').length ? <FileList files={files('delivered')} label="Delivered files" /> : <p class="muted">No delivered files attached.</p>}
         </section>
       )}
 
-      {(p.canAssign || p.canAssignSelf) && <DesignerActions r={r} designers={data.designers} me={me} busy={!!busy} run={run} />}
+      {(p.canAssign || p.canAssignSelf) && <DesignerActions r={r} designers={data.designers} me={me} busy={!!busy} run={run} onStep={onUpdate} />}
 
       {p.uploadKinds.length > 0 && <Upload r={r} kinds={p.uploadKinds} onUpdate={onUpdate} />}
 
@@ -247,7 +247,7 @@ function FileList({ files, label }: { files: DesignFile[]; label: string }) {
 type Run = (label: string, fn: () => Promise<DesignRequestResponse>, done: string) => Promise<void>;
 
 /** Assignee + stage: the keyboard/touch alternative to dragging (and the only path on phones). */
-function DesignerActions({ r, designers, me, busy, run }: { r: Detail; designers: UserSummary[]; me: CurrentUser; busy: boolean; run: Run }) {
+function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; designers: UserSummary[]; me: CurrentUser; busy: boolean; run: Run; onStep: (d: DesignRequestResponse) => void }) {
   const p = r.permissions;
   const [assignee, setAssignee] = useState(r.assignee?.id ?? '');
   const [stage, setStage] = useState<DesignStage>(r.stage);
@@ -271,9 +271,14 @@ function DesignerActions({ r, designers, me, busy, run }: { r: Detail; designers
       'Updating…',
       async () => {
         let res: DesignRequestResponse | null = null;
-        if (assignee !== current && !unassignAfterMove) res = await api('designRequestAssign', { params: { id: r.id }, body: { assigneeId: assignee || null } });
-        if (stage !== r.stage) res = await api('designRequestMove', { params: { id: r.id }, body: { stage } });
-        if (unassignAfterMove) res = await api('designRequestAssign', { params: { id: r.id }, body: { assigneeId: null } });
+        // Show each step that landed even if a later one fails.
+        const step = async (p: Promise<DesignRequestResponse>) => {
+          res = await p;
+          onStep(res);
+        };
+        if (assignee !== current && !unassignAfterMove) await step(api('designRequestAssign', { params: { id: r.id }, body: { assigneeId: assignee || null } }));
+        if (stage !== r.stage) await step(api('designRequestMove', { params: { id: r.id }, body: { stage } }));
+        if (unassignAfterMove) await step(api('designRequestAssign', { params: { id: r.id }, body: { assigneeId: null } }));
         return res!;
       },
       `${done.join('. ')}.`,
@@ -284,7 +289,7 @@ function DesignerActions({ r, designers, me, busy, run }: { r: Detail; designers
     <section class="design-worker" aria-labelledby="dr-worker-h" data-designer-actions>
       <h3 id="dr-worker-h">Designer actions</h3>
       <div class="grid-fields">
-        <Field id="dr-assignee" label="Assignee" hint={stage !== 'new' && !assignee ? 'Work past New needs a designer.' : undefined}>
+        <Field id="dr-assignee" label="Assignee" hint={stage !== 'new' && !assignee ? (current ? 'Work past New keeps a designer: move it to New to unassign.' : 'Work past New needs a designer; moving it assigns you.') : undefined}>
           <select class="select" {...describe('dr-assignee', undefined, stage !== 'new' && !assignee)} aria-label="Assignee" value={assignee} disabled={busy || (!p.canAssign && !p.canAssignSelf)} onChange={(e) => setAssignee(e.currentTarget.value)}>
             <option value="">Unassigned</option>
             {options.map((d) => (
@@ -307,7 +312,7 @@ function DesignerActions({ r, designers, me, busy, run }: { r: Detail; designers
         </Field>
       </div>
       <div class="design-actions">
-        <button type="button" class="btn btn--primary" disabled={busy || !changed || (stage !== 'new' && !assignee && !meDesigner)} onClick={() => void apply()}>
+        <button type="button" class="btn btn--primary" disabled={busy || !changed || (stage !== 'new' && !assignee && (current !== '' || !meDesigner))} onClick={() => void apply()}>
           Update request
         </button>
         {p.canAssignSelf && !changed && (

@@ -61,6 +61,11 @@ export default function DesignView({ me }: { me: CurrentUser }) {
   const menu = (item: DesignRequestItem, d: DesignRequestsListResponse): MenuItem[] => {
     const items: MenuItem[] = [{ label: 'Open request', onSelect: () => setParams({ id: item.id }) }];
     if (d.viewer.isDesigner && item.stage !== 'delivered' && item.assignee?.id !== me.id) items.push({ label: 'Assign to me', onSelect: () => void assignMe(item) });
+    if (!d.viewer.canAssign) {
+      // The requester decides in the drawer, next to the version: approve or request changes.
+      if (item.stage === 'in-review' && item.requester.id === me.id) items.push({ label: 'Review and approve', onSelect: () => setParams({ id: item.id }) });
+      return items;
+    }
     for (const s of designMoveTargets(item, viewer(d))) items.push({ label: `Move to ${STAGE_LABEL[s]}`, onSelect: () => void move(item, s) });
     return items;
   };
@@ -208,8 +213,9 @@ function Board({
               <h3 class="kanban-col-name" id={`col-${stage}`}>
                 {STAGE_LABEL[stage]}
               </h3>
-              <span class="kanban-count" aria-label={plural(items.length, 'request')}>
+              <span class="kanban-count">
                 {items.length}
+                <span class="visually-hidden"> {items.length === 1 ? 'request' : 'requests'}</span>
               </span>
             </div>
             <ul class="kanban-list">

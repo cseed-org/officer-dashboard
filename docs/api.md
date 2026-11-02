@@ -167,9 +167,14 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
     changes"). Designers can reopen a delivered card to In progress, which clears the approval.
   - The requester (or a director) edits the fields until delivery (409 after). The requester
     can withdraw (`DELETE`) while the card is New; directors can delete any time.
-  - Files: `reference` from the requester or the design team; `review` and `delivered` from
-    the design team. Same storage, size and type rules as receipts (PDF, PNG, JPEG, WebP,
-    HEIC; up to 10 MB; content sniffed). Downloads are officer-only.
+  - Files: `reference` from the requester or the design team until delivery; `review` from
+    the design team while the card is open; `delivered` from the design team at any stage
+    (directors and leadership share the design team's file rights, as with assign/move). Same
+    storage, size and type rules as receipts (PDF, PNG, JPEG, WebP, HEIC; up to 10 MB; content
+    sniffed), rechecked inside the write. Downloads are officer-only. Deleting a request removes
+    its local files and trashes Drive copies; the audit row lists the files and comments removed.
+  - A call that changes nothing (moving to the current stage, an empty `PATCH`) answers with
+    the current request and writes no audit row, but is still permission-checked.
   - `DesignRequestDetail.permissions` tells the UI which actions the viewer has.
   - **From an event.** `GET /api/events/:id/design-request-draft` proposes a request for
     the event: title "<event> promo", type social, a brief with the date, place and RSVP

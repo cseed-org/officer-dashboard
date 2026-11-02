@@ -112,7 +112,7 @@ function Plain({ editing, onDone, onCancel }: { editing?: DesignRequestDetail | 
   const lookups = useApi('lookups');
   return (
     <Async state={lookups} loading={<Loading rows={8} label="Loading the form" />}>
-      {(l) => <Form lookups={l} editing={editing} initial={editing ? fromRequest(editing) : readDraft() ?? empty} onDone={onDone} onCancel={onCancel} />}
+      {(l) => <Form lookups={l} editing={editing} persist={!editing} initial={editing ? fromRequest(editing) : readDraft() ?? empty} onDone={onDone} onCancel={onCancel} />}
     </Async>
   );
 }
@@ -126,14 +126,14 @@ function FromEvent({ eventId, onDone, onCancel }: { eventId: string; onDone: (r:
     return (
       <>
         <Notice tone="attention">Couldn't prefill from that event: {errorMessage(draft.error)} Fill in the brief below.</Notice>
-        <Form lookups={lookups.data} initial={readDraft() ?? empty} onDone={onDone} onCancel={onCancel} />
+        <Form lookups={lookups.data} initial={{ ...empty, link: eventId }} onDone={onDone} onCancel={onCancel} />
       </>
     );
   }
   return <Form lookups={lookups.data} initial={fromDraft(draft.data.draft)} onDone={onDone} onCancel={onCancel} />;
 }
 
-function Form({ lookups, editing, initial, onDone, onCancel }: { lookups: LookupsResponse; editing?: DesignRequestDetail | undefined; initial: FormState; onDone: (r: Created) => void; onCancel: () => void }) {
+function Form({ lookups, editing, initial, persist = false, onDone, onCancel }: { lookups: LookupsResponse; editing?: DesignRequestDetail | undefined; initial: FormState; persist?: boolean; onDone: (r: Created) => void; onCancel: () => void }) {
   const [f, setF] = useState<FormState>(initial);
   const [files, setFiles] = useState<File[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -144,8 +144,8 @@ function Form({ lookups, editing, initial, onDone, onCancel }: { lookups: Lookup
 
   // Keep an unsent new request across reloads and network failures (cleared on success).
   useEffect(() => {
-    if (!editing) writeDraft(f);
-  }, [f, editing]);
+    if (persist) writeDraft(f);
+  }, [f, persist]);
 
   const events = lookups.events.slice().sort((a, b) => b.startsAt.localeCompare(a.startsAt));
   const linkedMissing = f.link && f.link !== PROGRAM && !events.some((e) => e.id === f.link);
@@ -191,7 +191,7 @@ function Form({ lookups, editing, initial, onDone, onCancel }: { lookups: Lookup
     setBusy(editing ? 'Saving…' : 'Submitting…');
     try {
       let { request } = editing ? await api('designRequestUpdate', { params: { id: editing.id }, body: parsed.data }) : await api('designRequestCreate', { body: parsed.data });
-      if (!editing) writeDraft(null);
+      if (persist) writeDraft(null);
       let failed = 0;
       let storageOff = false;
       for (const [i, file] of files.entries()) {
@@ -318,7 +318,14 @@ function Form({ lookups, editing, initial, onDone, onCancel }: { lookups: Lookup
         <button type="submit" class="btn btn--primary" disabled={!!busy}>
           {busy ?? (editing ? 'Save changes' : 'Submit design request')}
         </button>
-        <button type="button" class="linkish" onClick={onCancel}>
+        <button
+          type="button"
+          class="linkish"
+          onClick={() => {
+            if (persist) writeDraft(null);
+            onCancel();
+          }}
+        >
           Cancel
         </button>
       </div>

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/files"
@@ -185,11 +187,16 @@ func (d *designCtx) permissions(r *store.DesignRequest) DesignPermissions {
 	} else if p.CanRequestChanges {
 		p.MoveTo = append(p.MoveTo, "in-progress")
 	}
-	if requester || d.worker() {
+	// References until delivery; review versions while open; delivered files any time
+	// (the design team adds finals before or after approval). Director+ share the team's rights.
+	if open && (requester || d.worker()) {
 		p.UploadKinds = append(p.UploadKinds, "reference")
 	}
+	if open && d.worker() {
+		p.UploadKinds = append(p.UploadKinds, "review")
+	}
 	if d.worker() {
-		p.UploadKinds = append(p.UploadKinds, "review", "delivered")
+		p.UploadKinds = append(p.UploadKinds, "delivered")
 	}
 	return p
 }
@@ -482,6 +489,10 @@ func (c *Ctx) designMutate(action string, fn func(dc *designCtx, r *store.Design
 		if err := fn(dc, r); err != nil {
 			return err
 		}
+		if reflect.DeepEqual(before, designSnapshot(r)) {
+			// Nothing changed: answer with the current state, no write or audit row.
+			return c.designRespond(ctx, w, dc, id, &out)
+		}
 		r.UpdatedAt = c.S.nowMs()
 		if err := w.SaveDesignRequest(ctx, *r); err != nil {
 			return err
@@ -561,6 +572,9 @@ func (c *Ctx) designMove() error {
 	}
 	return c.designMutate("design_request.moved", func(dc *designCtx, r *store.DesignRequest) error {
 		if to == r.Stage {
+			if !dc.worker() && !dc.permissions(r).CanRequestChanges {
+				return forbidden("Only the design team can move requests")
+			}
 			return nil
 		}
 		if to == "delivered" {
@@ -623,15 +637,24 @@ func (c *Ctx) designDelete() error {
 		if err != nil {
 			return err
 		}
-		for _, f := range fs {
-			if f.Storage == "local" {
-				keys = append(keys, f.StorageKey)
-			}
+		cs, err := w.DesignComments(ctx, id)
+		if err != nil {
+			return err
 		}
+		snap := designSnapshot(r)
+		fileIDs, commentIDs := []string{}, []string{}
+		for _, f := range fs {
+			keys = append(keys, f.StorageKey) // local files are removed, Drive files trashed
+			fileIDs = append(fileIDs, f.ID+" "+f.Filename)
+		}
+		for _, cm := range cs {
+			commentIDs = append(commentIDs, cm.ID)
+		}
+		snap["files"], snap["commentIds"] = fileIDs, commentIDs
 		if err := w.DeleteDesignRequest(ctx, id); err != nil {
 			return err
 		}
-		return c.audit(ctx, w, "design_request.deleted", "design_request", id, designSnapshot(r), nil)
+		return c.audit(ctx, w, "design_request.deleted", "design_request", id, snap, nil)
 	})
 	if err != nil {
 		return err
@@ -695,6 +718,13 @@ func (c *Ctx) designUpload() error {
 	if err != nil {
 		return notFoundErr("Record not found")
 	}
+	dc, err := loadDesignCtx(ctx, q, u)
+	if err != nil {
+		return err
+	}
+	if len(dc.permissions(r).UploadKinds) == 0 { // cheap check before reading the body
+		return forbidden("You cannot add files to this request")
+	}
 	c.R.Body = http.MaxBytesReader(c.W, c.R.Body, files.MaxBytes+1<<20)
 	if err := c.R.ParseMultipartForm(8 << 20); err != nil {
 		return badRequest("Expected multipart/form-data with a file")
@@ -703,10 +733,6 @@ func (c *Ctx) designUpload() error {
 	kind := rd.Str("kind", validate.S{Enum: []string{"reference", "review", "delivered"}, HasDef: true, Default: "reference"})
 	if rd.Issues.Any() {
 		return validationError(rd.Issues)
-	}
-	dc, err := loadDesignCtx(ctx, q, u)
-	if err != nil {
-		return err
 	}
 	if !slices.Contains(dc.permissions(r).UploadKinds, kind.V) {
 		return forbidden("You cannot add " + kind.V + " files to this request")
@@ -742,8 +768,20 @@ func (c *Ctx) designUpload() error {
 	}
 	var out DesignRequestDetail
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
-		if _, err := w.DesignRequestByID(ctx, id); err != nil {
+		cur, err := w.DesignRequestByID(ctx, id)
+		if err != nil {
 			return notFoundErr("Record not found")
+		}
+		// Re-check with the caller and team as they are now (the upload may have taken a while).
+		viewer, err := w.UserByID(ctx, u.ID)
+		if err != nil || !viewer.Active {
+			return forbidden("Account inactive")
+		}
+		if dc, err = loadDesignCtx(ctx, w, viewer); err != nil {
+			return err
+		}
+		if !slices.Contains(dc.permissions(cur).UploadKinds, kind.V) {
+			return forbidden("You cannot add " + kind.V + " files to this request")
 		}
 		df := store.DesignFile{ID: auth.UUID(), RequestID: id, Kind: kind.V, Filename: name, MimeType: mime, SizeBytes: stored.SizeBytes,
 			Storage: stored.Storage, StorageKey: stored.Key, UploadedBy: u.ID, CreatedAt: c.S.nowMs()}
@@ -831,9 +869,8 @@ func (s *Server) designDraftFor(e *store.Event) DesignRequestDraft {
 	if e.URL != nil && *e.URL != "" {
 		d.Brief += fmt.Sprintf(" RSVP: %s", *e.URL)
 	}
-	if len(d.Title) > 200 {
-		d.Title = d.Title[:200]
-	}
+	d.Title = truncRunes(d.Title, 200)
+	d.Brief = truncRunes(d.Brief, 4000)
 	return d
 }
 
@@ -883,4 +920,12 @@ func (c *Ctx) designCreateFromEvent() error {
 		in.DueDate = validate.Field[string]{V: *draft.DueDate, Set: true}
 	}
 	return c.createDesign(in)
+}
+
+// truncRunes cuts s to at most n characters without splitting a UTF-8 sequence.
+func truncRunes(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return strings.TrimSpace(string([]rune(s)[:n]))
 }

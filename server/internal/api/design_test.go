@@ -64,6 +64,13 @@ func TestDesignRequestLifecycle(t *testing.T) {
 	expectStatus(t, "unassign past new", e.post("/api/design-requests/"+id+"/assign", map[string]any{"assigneeId": nil}, riley), 409)
 	expectStatus(t, "designer delivers", e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "delivered"}, riley), 409)
 	e.mustOK(e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "in-review"}, riley))
+	// A no-op move is still permission-checked, and a permitted one writes nothing.
+	expectStatus(t, "bystander no-op move", e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "in-review"}, ava), 403)
+	moves := e.auditCount("design_request.moved", id)
+	e.mustOK(e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "in-review"}, riley))
+	if e.auditCount("design_request.moved", id) != moves {
+		t.Fatal("no-op move was audited")
+	}
 
 	// Only the requester approves; rank grants no shortcut.
 	expectStatus(t, "designer approves", e.post("/api/design-requests/"+id+"/approve", nil, riley), 403)
@@ -80,6 +87,9 @@ func TestDesignRequestLifecycle(t *testing.T) {
 	done := e.mustOK(e.post("/api/design-requests/"+id+"/approve", nil, priya))
 	if done.str("request", "stage") != "delivered" || done.str("request", "approvedBy", "id") != "user-priya" || done.str("request", "approvedAt") == "" {
 		t.Fatalf("approved %s", done.Raw)
+	}
+	if kinds := stringsOf(e.mustOK(e.get("/api/design-requests/"+id, riley)).list("request", "permissions", "uploadKinds")); !slices.Equal(kinds, []string{"delivered"}) {
+		t.Fatalf("upload kinds after delivery %v", kinds)
 	}
 	expectStatus(t, "edit delivered", e.do("PATCH", "/api/design-requests/"+id, map[string]any{"title": "x"}, priya), 409)
 
@@ -167,6 +177,14 @@ func TestDesignRequestFromEvent(t *testing.T) {
 	custom := e.mustOK(e.post("/api/events/event-hack-night/design-requests", map[string]any{"title": "Hack Night shirts", "type": "merch", "eventId": "event-kickoff"}, e.officer()))
 	if custom.str("request", "type") != "merch" || custom.str("request", "event", "id") != "event-hack-night" {
 		t.Fatalf("custom %s", custom.Raw)
+	}
+	// Long names are cut by character, never producing invalid UTF-8 or a constraint error.
+	if _, err := e.db.W.Exec(`UPDATE events SET name=?, location=? WHERE id='event-hack-night'`, strings.Repeat("é", 300), strings.Repeat("x", 5000)); err != nil {
+		t.Fatal(err)
+	}
+	long := e.mustOK(e.post("/api/events/event-hack-night/design-requests", nil, e.officer()))
+	if n := len([]rune(long.str("request", "title"))); n != 200 || len([]rune(long.str("request", "brief"))) > 4000 {
+		t.Fatalf("long event: title %d runes", n)
 	}
 	expectStatus(t, "bad override", e.post("/api/events/event-hack-night/design-requests", map[string]any{"type": "banner"}, e.officer()), 400)
 }
