@@ -102,7 +102,7 @@
 .design-meta {margin:0;}
 
 /* Upcoming events rail */
-.design-rail {display:grid;gap:10px;min-width:0;}
+.design-rail {display:grid;gap:10px;min-width:0;margin-bottom:12px;}
 .design-rail-head {display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px;}
 .design-rail-title {display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:0;font-size:15px;font-weight:600;}
 .design-rail-title .brand-eyebrow {font-weight:400;color:var(--muted);}
