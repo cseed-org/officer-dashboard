@@ -5,8 +5,8 @@ import "testing"
 func TestNormalizeEventURL(t *testing.T) {
 	ok := map[string]string{
 		"https://lu.ma/founder-stories":          "https://lu.ma/founder-stories",
-		" https://www.LU.MA/abc123xy/ ":          "https://www.lu.ma/abc123xy",
-		"https://luma.com/Founder-Stories?x=1#y": "https://luma.com/Founder-Stories",
+		" https://www.LU.MA/abc123xy/ ":          "https://lu.ma/abc123xy",
+		"https://luma.com/Founder-Stories?x=1#y": "https://lu.ma/Founder-Stories",
 		"https://lu.ma/event/evt-AbCd1234":       "https://lu.ma/event/evt-AbCd1234",
 	}
 	for in, want := range ok {

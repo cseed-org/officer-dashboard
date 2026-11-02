@@ -12,7 +12,8 @@ ALTER TABLE events ADD COLUMN host_subteam_id TEXT REFERENCES subteams(id);
 -- The public event page the officer pasted back after publishing in Luma (https lu.ma / luma.com).
 ALTER TABLE events ADD COLUMN luma_url TEXT CHECK(luma_url IS NULL OR luma_url GLOB 'https://*');
 --> statement-breakpoint
-CREATE UNIQUE INDEX events_luma_url_unique ON events(luma_url) WHERE luma_url IS NOT NULL;
+-- Luma slugs are case-insensitive, so one page is one link whatever case was pasted.
+CREATE UNIQUE INDEX events_luma_url_unique ON events(lower(luma_url)) WHERE luma_url IS NOT NULL;
 --> statement-breakpoint
 -- TODO(notion): today this holds the stub's placeholder link; see docs/notion-integration.md.
 ALTER TABLE events ADD COLUMN notion_url TEXT;

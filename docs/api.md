@@ -293,13 +293,15 @@ directors and leadership have the same event powers. Each change writes `event.c
   published page back as `lumaUrl`. The server accepts only `https://` on `lu.ma`,
   `www.lu.ma`, `luma.com` or `www.luma.com` with the path `/<slug>` (letters, digits,
   hyphens) or `/event/evt-<id>`; Luma's own pages (`/create`, `/discover`, `/calendar`,
-  `/home`, the bare home page and similar) are refused with 400. The stored value drops
-  the query, fragment and trailing slash. A Luma page can be linked to one event only
-  (409). Linking never imports attendees: those still arrive by CSV import or
+  `/home`, the bare home page and similar) are refused with 400, and so are ports,
+  userinfo and backslashes. The stored value is on the canonical host (`https://lu.ma/…`)
+  without query, fragment or trailing slash. A Luma page can be linked to one event only
+  (409), compared case-insensitively, so `luma.com/X` and `lu.ma/x` are the same page. Linking never imports attendees: those still arrive by CSV import or
   `POST /api/ingest/luma`.
 - **Cover.** `PUT /api/events/:id/cover` takes one image (content is checked against its
   type). It is stored in the database; `coverUrl` is `/api/events/:id/cover?v=<ms>` and
   changes when the cover does. The GET answers with `nosniff` and a sandbox CSP.
+- **Search.** `q` matches the event name or location.
 - **Delete.** Guests, reflections and the cover go with the event. An event that
   purchase requests point at answers 409 until they are moved. The published Luma event
   must be removed in Luma separately.

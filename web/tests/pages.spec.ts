@@ -51,7 +51,7 @@ for (const theme of THEMES) {
 
       // The CSV import dialog lives on the same page.
       await page.locator('[data-open-import]').click();
-      await expect(openDialog(page).getByRole('heading', { name: 'import a CSV' })).toBeVisible();
+      await expect(openDialog(page).getByRole('heading', { name: 'Import event data' })).toBeVisible();
       await page.keyboard.press('Escape');
 
       await page.goto('/finance?scope=all');

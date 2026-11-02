@@ -185,9 +185,13 @@ const LUMA_RESERVED = new Set(
  */
 export function lumaEventUrlProblem(raw: string): string | null {
   const msg = 'Use the HTTPS link to a Luma event page, like https://lu.ma/your-event';
+  const text = raw.trim();
+  // Go's url.Parse is stricter than WHATWG URL here: no backslashes, no port (even :443),
+  // and the "//" after the scheme is required.
+  if (!/^https:\/\//i.test(text) || text.includes('\\') || /^https:\/\/[^/?#]*:\d*(?:[/?#]|$)/i.test(text)) return msg;
   let u: URL;
   try {
-    u = new URL(raw.trim());
+    u = new URL(text);
   } catch {
     return msg;
   }

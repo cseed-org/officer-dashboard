@@ -70,10 +70,11 @@ function Kit({ event: e, onSaved }: { event: Detail; onSaved: () => void }) {
     setNote(null);
     try {
       // Saving the published page moves a draft to published; unlinking leaves the status alone.
-      await api('eventUpdate', { params: { id: e.id }, body: next ? { lumaUrl: next, ...(e.status === 'draft' ? { status: 'published' as const } : {}) } : { lumaUrl: null } });
+      const saved = await api('eventUpdate', { params: { id: e.id }, body: next ? { lumaUrl: next, ...(e.status === 'draft' ? { status: 'published' as const } : {}) } : { lumaUrl: null } });
       setProblem(null);
       setNote(next ? null : 'Unlinked.');
-      if (!next) setUrl('');
+      // Show what was stored (canonical host, no query or trailing slash).
+      setUrl(saved.event.lumaUrl ?? '');
       onSaved();
     } catch (err) {
       setProblem(errorMessage(err));

@@ -62,7 +62,7 @@ func (c *Ctx) eventsList() error {
 				continue
 			}
 		}
-		if needle != "" && !strings.Contains(strings.ToLower(e.Name), needle) {
+		if needle != "" && !strings.Contains(strings.ToLower(e.Name), needle) && (e.Location == nil || !strings.Contains(strings.ToLower(*e.Location), needle)) {
 			continue
 		}
 		day := fiscal.PacificDate(t)
@@ -296,7 +296,7 @@ func (c *Ctx) eventDelete() error {
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		e, err := w.EventByID(ctx, id)
 		if err != nil {
-			return notFoundErr("Record not found")
+			return err // ErrNotFound answers 404; anything else stays a 500
 		}
 		n, err := w.EventRequestCount(ctx, id)
 		if err != nil {
@@ -374,7 +374,7 @@ func (c *Ctx) eventCoverPut() error {
 	ctx := c.Context()
 	id := c.R.PathValue("id")
 	if _, err := c.S.db.Read().EventByID(ctx, id); err != nil {
-		return notFoundErr("Record not found")
+		return err
 	}
 	c.R.Body = http.MaxBytesReader(c.W, c.R.Body, coverMaxBytes+1<<20)
 	if err := c.R.ParseMultipartForm(8 << 20); err != nil {
@@ -412,7 +412,7 @@ func (c *Ctx) eventCoverPut() error {
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
 		e, err := w.EventByID(ctx, id)
 		if err != nil {
-			return notFoundErr("Record not found")
+			return err
 		}
 		now := c.S.nowMs()
 		if err := w.PutEventCover(ctx, store.Cover{EventID: id, MimeType: mime, Bytes: body, Filename: name, UpdatedAt: now}); err != nil {
@@ -456,7 +456,7 @@ func (c *Ctx) eventCoverDelete() error {
 	var out EventListItem
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		if _, err := w.EventByID(ctx, id); err != nil {
-			return notFoundErr("Record not found")
+			return err
 		}
 		had, err := w.DeleteEventCover(ctx, id)
 		if err != nil {

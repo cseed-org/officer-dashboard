@@ -9,6 +9,7 @@ import { describe, Field } from '../../components/kit';
 import { errorMessage, ErrorState, Loading, Notice } from '../../components/states';
 
 type Detail = EventDetailResponse['event'];
+type Flash = { tone: 'positive' | 'negative'; text: string };
 
 const COVER_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const COVER_MAX = 5 * 1024 * 1024;
@@ -53,7 +54,7 @@ type EditorProps = {
 export function EventEditor(props: EditorProps) {
   const look = useApi('lookups');
   // Survives the remount when a new draft becomes an edit of its saved id.
-  const [flash, setFlash] = useState<string | null>(null);
+  const [flash, setFlash] = useState<Flash | null>(null);
   if (look.status === 'loading') return <Loading rows={8} label="Loading the editor" />;
   if (look.status === 'error') return <ErrorState error={look.error} onRetry={look.reload} />;
   const form = (event: Detail | null, reload?: () => void) => (
@@ -62,8 +63,8 @@ export function EventEditor(props: EditorProps) {
       event={event}
       lookups={look.data}
       flash={flash}
-      onSaved={(id, created, text) => {
-        setFlash(text);
+      onSaved={(id, created, message) => {
+        setFlash(message);
         if (!created) reload?.();
         props.onSaved(id, created);
       }}
@@ -91,17 +92,17 @@ function EditorForm({
 }: {
   event: Detail | null;
   lookups: { subteams: { id: string; name: string }[]; hosts: { id: string; name: string }[] };
-  onSaved: (id: string, created: boolean, message: string) => void;
+  onSaved: (id: string, created: boolean, message: Flash) => void;
   onRequestDesign: (id: string) => void;
   onDelete: (id: string) => void;
   onOpenKit: (id: string) => void;
-  flash: string | null;
+  flash: Flash | null;
 }) {
   const [d, setD] = useState<Draft>(event ? fromEvent(event) : blank);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(
-    flash ? { tone: 'positive', text: flash } : event ? null : { tone: 'positive', text: 'New event · Add the details, then save your draft.' },
+    flash ?? (event ? null : { tone: 'positive', text: 'New event · Add the details, then save your draft.' }),
   );
   const [cover, setCover] = useState<File | null>(null);
   const [removeCover, setRemoveCover] = useState(false);
@@ -154,28 +155,39 @@ function EditorForm({
     };
     setBusy(true);
     setMessage(null);
+    let sid: string;
     try {
       const saved = event ? await api('eventUpdate', { params: { id: event.id }, body }) : await api('eventCreate', { body });
-      const sid = saved.event.id;
+      sid = saved.event.id;
+    } catch (err) {
+      setErrors(fieldErrors(err));
+      setMessage({ tone: 'negative', text: errorMessage(err) });
+      setBusy(false);
+      return;
+    }
+    // The event is saved from here on: a cover failure is reported on its own, and the next
+    // Save edits this event instead of creating another draft.
+    const done = event ? 'Changes saved.' : 'Draft saved. Open its Luma handoff kit when you are ready to publish.';
+    let result: Flash = { tone: 'positive', text: done };
+    try {
       if (cover) {
         const f = new FormData();
         f.set('file', cover, cover.name);
         await api('eventCoverPut', { params: { id: sid }, body: f });
+        setCover(null);
+        if (fileRef.current) fileRef.current.value = '';
       } else if (removeCover && event?.coverUrl) {
         await api('eventCoverDelete', { params: { id: sid } });
       }
-      const text = event ? 'Changes saved.' : 'Draft saved. Open its Luma handoff kit when you are ready to publish.';
-      setCover(null);
       setRemoveCover(false);
-      setMessage({ tone: 'positive', text });
-      onSaved(sid, !event, text);
     } catch (err) {
-      const fe = fieldErrors(err);
-      setErrors(fe);
-      setMessage({ tone: 'negative', text: errorMessage(err) });
-    } finally {
-      setBusy(false);
+      const retry = event ? 'Choose Save again to retry, or pick another image.' : 'Choose the image again to retry.';
+      result = { tone: 'negative', text: `${done.replace(/\.$/, '')}, but the cover couldn't be uploaded: ${errorMessage(err)} ${retry}` };
+      setErrors({ cover: errorMessage(err) });
     }
+    setMessage(result);
+    setBusy(false);
+    onSaved(sid, !event, result);
   }
 
   function pickCover(e: Event) {
@@ -200,7 +212,11 @@ function EditorForm({
   return (
     <div class="stack" data-event-editor={id ?? 'new'}>
       <Notice tone="info">
-        {isDraft ? 'Draft · Only saved in this workspace until you publish in Luma.' : 'Published in Luma · Changes here do not update the Luma page.'}
+        {isDraft
+          ? 'Draft · Only saved in this workspace until you publish in Luma.'
+          : event?.status === 'cancelled'
+            ? 'Cancelled · If it was published in Luma, cancel it there too.'
+            : 'Published in Luma · Changes here do not update the Luma page.'}
       </Notice>
       <form class="stack" onSubmit={save} noValidate>
         <Field id="ev-name" label="Event name" error={errors.name}>

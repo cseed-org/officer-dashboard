@@ -164,11 +164,14 @@ export default function EventsView() {
   const grid = monthGrid(month);
   const range = view === 'month' ? { from: grid[0]!.date, to: grid[grid.length - 1]!.date } : view === 'week' ? { from: monday, to: addDays(monday, 6) } : {};
   const query = { when: 'all' as const, q: view === 'list' ? debounced || undefined : undefined, limit: 200, ...range };
-  const state = useApi('eventsList', { query });
+  // Every event (counts, event health); the unfiltered list view reuses it instead of asking twice.
   const all = useApi('eventsList', { query: { when: 'all', limit: 200 } });
+  const filtered = view !== 'list' || !!debounced;
+  const narrow = useApi('eventsList', { query: filtered ? query : { when: 'all', limit: 1 } }, filtered ? query : 'idle');
+  const state = filtered ? narrow : all;
   const reload = () => {
-    state.reload();
     all.reload();
+    if (filtered) narrow.reload();
   };
 
   const now = Date.now();

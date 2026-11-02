@@ -77,9 +77,9 @@ func (q *Queries) EventByLumaID(ctx context.Context, lumaID string) (*Event, err
 	return e, notFound(err)
 }
 
-// EventByLumaURL returns ErrNotFound when no event links the Luma page.
+// EventByLumaURL returns ErrNotFound when no event links the Luma page (compared case-insensitively).
 func (q *Queries) EventByLumaURL(ctx context.Context, lumaURL string) (*Event, error) {
-	e, err := scanEvent(q.q.QueryRowContext(ctx, eventSelect+` WHERE e.luma_url = ?`, lumaURL))
+	e, err := scanEvent(q.q.QueryRowContext(ctx, eventSelect+` WHERE lower(e.luma_url) = lower(?)`, lumaURL))
 	return e, notFound(err)
 }
 

@@ -29,8 +29,14 @@ var (
 	}
 )
 
+// CanonicalHost is the host every stored Luma link uses: lu.ma, www.lu.ma, luma.com and
+// www.luma.com serve the same event pages, so one spelling keeps the one-event-per-page
+// check honest.
+const CanonicalHost = "lu.ma"
+
 // NormalizeEventURL checks that s is an HTTPS lu.ma or luma.com event page and returns it
-// without query, fragment or trailing slash. It accepts /<slug> and /event/evt-<id>.
+// on the canonical host without query, fragment or trailing slash. It accepts /<slug> and
+// /event/evt-<id>. Slug case is kept; uniqueness is compared case-insensitively.
 func NormalizeEventURL(s string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(s))
 	if err != nil || u.Scheme != "https" || u.User != nil || u.Port() != "" || u.Opaque != "" {
@@ -48,5 +54,5 @@ func NormalizeEventURL(s string) (string, error) {
 	default:
 		return "", ErrEventURL
 	}
-	return "https://" + host + "/" + strings.Join(parts, "/"), nil
+	return "https://" + CanonicalHost + "/" + strings.Join(parts, "/"), nil
 }

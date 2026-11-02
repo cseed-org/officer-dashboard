@@ -88,6 +88,11 @@ func TestEventLumaURLIsValidatedNormalizedAndUnique(t *testing.T) {
 	if got := r.str("event", "lumaUrl"); got != "https://lu.ma/founder-stories" {
 		t.Fatalf("normalized: %q", got)
 	}
+	// Host aliases and slug case are the same Luma page.
+	alias := e.mustOK(e.post("/api/events", with(draftEvent, "name", "Alias"), e.officer())).str("event", "id")
+	for _, same := range []string{"https://luma.com/founder-stories", "https://www.lu.ma/Founder-Stories"} {
+		expectStatus(t, same, e.do("PATCH", "/api/events/"+alias, map[string]any{"lumaUrl": same}, e.officer()), 409)
+	}
 	e.mustOK(e.do("PATCH", "/api/events/"+id, map[string]any{"lumaUrl": "https://luma.com/event/evt-AbC123xyz"}, e.officer()))
 
 	other := e.mustOK(e.post("/api/events", with(draftEvent, "name", "Second"), e.officer())).str("event", "id")

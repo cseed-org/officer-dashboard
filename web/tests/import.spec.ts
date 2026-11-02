@@ -12,7 +12,7 @@ test('events: a Luma guest CSV creates a new event with the right guest counts',
   await page.goto('/events?import=1');
   await settle(page);
   const dialog = openDialog(page);
-  await expect(dialog.getByRole('heading', { name: 'import a CSV' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Import event data' })).toBeVisible();
   await dialog.getByLabel('event', { exact: true }).selectOption('__new');
   await dialog.getByLabel('event name').fill(name);
   await dialog.getByLabel('Luma event id').fill(`evt-e2e${stamp}`);
