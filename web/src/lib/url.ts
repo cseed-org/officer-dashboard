@@ -26,7 +26,7 @@ export function internalPath(raw: string | null | undefined, origin = currentOri
 }
 
 /** Internal pages the UI may navigate to from data (search results, ?next=). */
-const INTERNAL_PAGES = ['/', '/events', '/finance', '/admin', '/settings'];
+const INTERNAL_PAGES = ['/', '/events', '/finance', '/admin', '/settings', '/design'];
 
 /** internalPath, further limited to the dashboard's own pages (not /api, /auth or assets). */
 export function internalRoute(raw: string | null | undefined, origin = currentOrigin()): string | null {
