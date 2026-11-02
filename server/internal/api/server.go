@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"officerdashboard/internal/auth"
+	"officerdashboard/internal/cfsync"
+	"officerdashboard/internal/cloudflare"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/notify"
 	"officerdashboard/internal/purchases"
@@ -19,9 +21,10 @@ import (
 
 // Config wires the server to its collaborators.
 type Config struct {
-	DB       *store.DB
-	Files    files.Store
-	Notifier notify.Notifier
+	Cloudflare *cfsync.Service
+	DB         *store.DB
+	Files      files.Store
+	Notifier   notify.Notifier
 	// Now is the clock; tests fix it.
 	Now       func() time.Time
 	Tolerance purchases.Tolerance
@@ -46,6 +49,9 @@ type Server struct {
 
 // New builds a server from its config.
 func New(cfg Config) *Server {
+	if cfg.Cloudflare == nil {
+		cfg.Cloudflare = &cfsync.Service{Client: cloudflare.New(cloudflare.Config{}), DB: cfg.DB, Log: cfg.Log}
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -193,3 +199,6 @@ func (c *Ctx) requireLeadershipIn(q *store.Queries) (*store.User, error) {
 	}
 	return u, nil
 }
+
+// CloudflareDaily runs the daily job until shutdown.
+func (s *Server) CloudflareDaily(ctx context.Context) { s.cfg.Cloudflare.Daily(ctx) }

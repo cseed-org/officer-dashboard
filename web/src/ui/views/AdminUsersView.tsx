@@ -224,7 +224,7 @@ function UserList({
                       <RowMenu
                         label={`Actions for ${u.name}`}
                         items={
-                          (u.id === meId || (u.isOwner && !isOwner) || (u.role === 'leadership' && !canChangeRoles))
+                          (u.id === meId || (u.isOwner && !isOwner) || (u.role === 'leadership' && !canChangeRoles) || (u.active && u.role === 'director' && !canChangeRoles))
                             ? []
                             : [
                                 u.active

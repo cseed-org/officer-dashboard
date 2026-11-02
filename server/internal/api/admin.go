@@ -113,7 +113,7 @@ func (c *Ctx) adminUserUpdate() error {
 				return err
 			}
 		}
-		if before.Role == auth.RoleLeadership || (role.Set && role.V != before.Role) {
+		if before.Role == auth.RoleLeadership || (role.Set && role.V != before.Role) || (before.Role == auth.RoleDirector && active.Set && !active.V) {
 			if _, err := c.requireLeadershipIn(w); err != nil {
 				return err
 			}

@@ -27,6 +27,8 @@ import (
 
 	"officerdashboard/internal/api"
 	"officerdashboard/internal/auth"
+	"officerdashboard/internal/cfsync"
+	"officerdashboard/internal/cloudflare"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/notify"
 	"officerdashboard/internal/purchases"
@@ -73,6 +75,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 
 // settings is the process configuration: environment variables, overridable by flags.
 type settings struct {
+	Cloudflare                       cloudflare.Config
 	Addr, DBPath, AppURL, StaticDir  string
 	StaticFallback                   string
 	StaticFallbackStatus             int
@@ -93,7 +96,7 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 		}
 		return def
 	}
-	s := settings{}
+	s := settings{Cloudflare: cloudflare.FromEnv(getenv)}
 	fs.StringVar(&s.Addr, "addr", env("ADDR", ":8090"), "listen address (ADDR)")
 	fs.StringVar(&s.DBPath, "db", env("DB_PATH", "./data/dashboard.db"), "SQLite file (DB_PATH)")
 	fs.StringVar(&s.AppURL, "app-url", env("APP_URL", ""), "public origin, used for OAuth redirects and links (APP_URL)")
@@ -151,7 +154,8 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 	}
 
 	cfg := api.Config{
-		DB: db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
+		Cloudflare: &cfsync.Service{Client: cloudflare.New(s.Cloudflare), DB: db, Log: log},
+		DB:         db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
 		Tolerance: purchases.ToleranceFromEnv(s.TolerancePercent, s.ToleranceCents),
 		DevAuth:   s.DevAuth,
 	}
@@ -231,6 +235,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go sessionJanitor(ctx, db, log)
+	go srv.CloudflareDaily(ctx)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
 	log.Info("listening", "addr", s.Addr, "db", s.DBPath, "app_url", s.AppURL, "version", version, "dev_build", api.DevBuild, "startup_ms", time.Since(started).Milliseconds())

@@ -1,3 +1,4 @@
+import CloudflareWidget, { cloudflareIds } from '../widgets/CloudflareWidget';
 import WidgetGrid from '../widgets/WidgetGrid';
 import type { ComponentChildren } from 'preact';
 import type { AuditLogEntry, CurrentUser, PurchaseRequestListItem } from '../../lib/contracts';
@@ -28,11 +29,12 @@ function Block({ id, title, action, span, children }: { id: string; title: strin
 export default function HomeView({ me }: { me: CurrentUser }) {
   const director = me.role !== 'officer';
   const overview = useApi('overview');
+  const cloudflare=useApi('cloudflareWidgets');
   const fy = overview.status === 'ready' ? overview.data.fiscalYear : undefined;
 
   return (
     <WidgetGrid>
-      {(id) => ({
+      {(id,size) => cloudflareIds.includes(id) ? <CloudflareWidget id={id} size={size} state={cloudflare}/> : ({
         'kpis': (
           <section class="block block--full block--bare" aria-label="Key figures" data-block="kpis">
             <Async state={overview} loading={<Loading tiles={5} rows={0} label="Loading key figures" />}>
