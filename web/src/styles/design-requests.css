@@ -27,7 +27,7 @@
 /* ───────────── Kanban (design requests): calm, dense, readable ───────────── */
 .kanban {display:grid;grid-auto-flow:column;grid-auto-columns:minmax(200px, 1fr);gap:12px;overflow-x:auto;padding-bottom:4px;align-items:start;}
 .kanban:focus-visible {outline:2px solid var(--focus, var(--c-blue));outline-offset:4px;}
-.kanban-col {display:grid;gap:8px;align-content:start;min-width:0;padding:10px;border-radius:var(--radius-card);background:var(--sunken);border:1px solid var(--line);transition:border-color var(--dur-1) ease;}
+.kanban-col {position:relative;display:grid;gap:8px;align-content:start;min-width:0;padding:10px;border-radius:var(--radius-card);background:var(--sunken);border:1px solid var(--line);transition:border-color var(--dur-1) ease;}
 .kanban-col.is-over {border-color:var(--control);}
 .kanban-col-head {display:flex;align-items:center;gap:8px;padding:2px 4px 4px;min-height:32px;}
 .kanban-col-head::before {content:'';flex:none;width:8px;height:8px;border-radius:50%;background:var(--hue, var(--control));}
