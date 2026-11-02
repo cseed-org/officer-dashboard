@@ -148,3 +148,50 @@ func TestImportedEventsArePublished(t *testing.T) {
 		t.Fatalf("seeded event status %q", got)
 	}
 }
+
+func TestLumaGuestImportPublishesADraft(t *testing.T) {
+	e := newEnv(t)
+	status := func(id string) string { return e.mustOK(e.get("/api/events/"+id, e.officer())).str("event", "status") }
+	importCSV := func(id, kind, csv string, dry bool) {
+		fields := map[string]string{"kind": kind, "eventId": id}
+		if dry {
+			fields["dryRun"] = "true"
+		}
+		e.mustOK(e.do("POST", "/api/events/import", formBody{fields: fields, files: []formFile{{"file", "g.csv", "text/csv", csv}}}, e.officer()))
+	}
+	guests := "Name,Email\nAda,ada@example.org\n"
+
+	// A dry run changes nothing; reflections are not a Luma guest list.
+	id := e.mustOK(e.post("/api/events", draftEvent, e.officer())).str("event", "id")
+	importCSV(id, "luma_guests", guests, true)
+	importCSV(id, "reflections", "Email,Timestamp\nada@example.org,2026-11-13T09:00:00Z\n", false)
+	if got := status(id); got != "draft" {
+		t.Fatalf("after dry run and reflections: %q", got)
+	}
+	importCSV(id, "luma_guests", guests, false)
+	if got := status(id); got != "published" {
+		t.Fatalf("after guest import: %q", got)
+	}
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE entity_id = ? AND action = 'event.updated' AND after_json LIKE '%luma_import%'`, id); n != int64(1) {
+		t.Errorf("publish audited %v times", n)
+	}
+
+	// Cancelled stays cancelled.
+	cancelled := e.mustOK(e.post("/api/events", with(draftEvent, "name", "Called off"), e.officer())).str("event", "id")
+	e.mustOK(e.do("PATCH", "/api/events/"+cancelled, map[string]any{"status": "cancelled"}, e.officer()))
+	importCSV(cancelled, "luma_guests", guests, false)
+	if got := status(cancelled); got != "cancelled" {
+		t.Fatalf("cancelled event became %q", got)
+	}
+
+	// The service ingest publishes a draft that carries the Luma id.
+	ingested := e.mustOK(e.post("/api/events", with(draftEvent, "name", "Ingested", "lumaId", "evt-draft1"), e.officer())).str("event", "id")
+	token := e.mustOK(e.post("/api/admin/tokens", map[string]any{"name": "ingest", "scopes": []string{"ingest:luma"}}, e.director())).str("plaintext")
+	e.mustOK(e.post("/api/ingest/luma", map[string]any{
+		"event":  map[string]any{"lumaId": "evt-draft1", "name": "Ingested", "startsAt": "2026-11-12T18:00:00-08:00"},
+		"guests": []any{map[string]any{"email": "grace@example.org"}},
+	}, bearer(token)))
+	if got := status(ingested); got != "published" {
+		t.Fatalf("after ingest: %q", got)
+	}
+}

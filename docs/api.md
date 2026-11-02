@@ -296,7 +296,10 @@ directors and leadership have the same event powers. Each change writes `event.c
   `/home`, the bare home page and similar) are refused with 400, and so are ports,
   userinfo and backslashes. The stored value is on the canonical host (`https://lu.ma/…`)
   without query, fragment or trailing slash. A Luma page can be linked to one event only
-  (409), compared case-insensitively, so `luma.com/X` and `lu.ma/x` are the same page. Linking never imports attendees: those still arrive by CSV import or
+  (409), compared case-insensitively, so `luma.com/X` and `lu.ma/x` are the same page.
+- **Luma import publishes drafts.** A Luma guest list for a draft (CSV `kind=luma_guests`, not a
+  dry run, or `POST /api/ingest/luma`) moves it to `published`, audited as `event.updated`
+  with `reason: luma_import`. Reflection imports and other statuses are left alone. Linking never imports attendees: those still arrive by CSV import or
   `POST /api/ingest/luma`.
 - **Cover.** `PUT /api/events/:id/cover` takes one image (content is checked against its
   type). It is stored in the database; `coverUrl` is `/api/events/:id/cover?v=<ms>` and

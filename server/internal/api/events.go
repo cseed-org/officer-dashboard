@@ -776,6 +776,11 @@ func (c *Ctx) eventsImport() error {
 		if err != nil {
 			return err
 		}
+		if len(guests) > 0 {
+			if err := c.publishOnLumaImport(ctx, w, id); err != nil {
+				return err
+			}
+		}
 		if !dryRun {
 			if err := c.audit(ctx, w, "event.imported", "event", id, nil, map[string]any{"kind": kind.V, "created": created, "updated": updated, "errors": errs}); err != nil {
 				return err
@@ -797,6 +802,29 @@ func (c *Ctx) eventsImport() error {
 	}
 	writeJSON(c.W, 200, result)
 	return nil
+}
+
+// publishOnLumaImport moves a draft to published once Luma guests arrive for it: guests mean
+// the event exists in Luma. Other statuses are left alone. Audited as an event update.
+func (c *Ctx) publishOnLumaImport(ctx context.Context, w *store.Queries, id string) error {
+	e, err := w.EventByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if e.Status != "draft" {
+		return nil
+	}
+	before := eventSnapshot(e)
+	if err := w.UpdateEvent(ctx, id, store.EventPatch{Status: store.Opt[string]{V: "published", Set: true}}, c.S.nowMs()); err != nil {
+		return err
+	}
+	after, err := w.EventByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	snap := eventSnapshot(after)
+	snap["reason"] = "luma_import"
+	return c.audit(ctx, w, "event.updated", "event", id, before, snap)
 }
 
 // ingestLuma is the service-token import: the event plus its guests as JSON.
@@ -891,6 +919,11 @@ func (c *Ctx) ingestLuma() error {
 		created, updated, err := c.applyImport(ctx, w, id, list, nil)
 		if err != nil {
 			return err
+		}
+		if len(list) > 0 {
+			if err := c.publishOnLumaImport(ctx, w, id); err != nil {
+				return err
+			}
 		}
 		if err := w.TouchToken(ctx, tok.ID, now); err != nil {
 			return err
