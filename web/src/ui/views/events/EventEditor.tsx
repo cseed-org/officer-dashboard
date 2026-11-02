@@ -1,3 +1,4 @@
+import type { JSX } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, fieldErrors } from '../../../lib/api/client';
 import { useApi } from '../../../lib/api/useApi';
@@ -40,23 +41,22 @@ function fromEvent(e: Detail): Draft {
   };
 }
 
-/** Load the event (when editing) and the host pickers, then show the form. */
-export function EventEditor(props: {
+type EditorProps = {
   eventId: string | null;
   onSaved: (id: string, created: boolean) => void;
   onRequestDesign: (id: string) => void;
   onDelete: (id: string) => void;
   onOpenKit: (id: string) => void;
-}) {
+};
+
+/** Load the host pickers (and the event, when editing), then show the form. */
+export function EventEditor(props: EditorProps) {
   const look = useApi('lookups');
   // Survives the remount when a new draft becomes an edit of its saved id.
   const [flash, setFlash] = useState<string | null>(null);
-  const detail = useApi('eventDetail', { params: { id: props.eventId ?? '' } }, props.eventId);
-  if (look.status === 'loading' || (props.eventId && detail.status === 'loading')) return <Loading rows={8} label="Loading the editor" />;
+  if (look.status === 'loading') return <Loading rows={8} label="Loading the editor" />;
   if (look.status === 'error') return <ErrorState error={look.error} onRetry={look.reload} />;
-  if (props.eventId && detail.status === 'error') return <ErrorState error={detail.error} onRetry={detail.reload} />;
-  const event = props.eventId && detail.status === 'ready' ? detail.data.event : null;
-  return (
+  const form = (event: Detail | null, reload?: () => void) => (
     <EditorForm
       {...props}
       event={event}
@@ -64,12 +64,20 @@ export function EventEditor(props: {
       flash={flash}
       onSaved={(id, created, text) => {
         setFlash(text);
-        if (!created) detail.reload();
+        if (!created) reload?.();
         props.onSaved(id, created);
       }}
       key={event?.id ?? 'new'}
     />
   );
+  return props.eventId ? <WithEvent id={props.eventId} render={form} /> : form(null);
+}
+
+function WithEvent({ id, render }: { id: string; render: (event: Detail, reload: () => void) => JSX.Element }) {
+  const detail = useApi('eventDetail', { params: { id } });
+  if (detail.status === 'loading') return <Loading rows={8} label="Loading the editor" />;
+  if (detail.status === 'error') return <ErrorState error={detail.error} onRetry={detail.reload} />;
+  return render(detail.data.event, detail.reload);
 }
 
 function EditorForm({
