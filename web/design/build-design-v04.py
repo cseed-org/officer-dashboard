@@ -84,7 +84,7 @@ def card(c):
     return (f'<li class="kanban-card{" is-mine" if mine else ""}" data-card="{cid}" data-type="{typ.lower()}" data-due="{due_state}" data-mine="{int(mine)}" data-unassigned="{int(who is None)}">'
             f'<div class="kanban-card-top"><p class="kanban-card-title"><a href="#">{E(title)}</a></p>{flag}</div>'
             f'<div class="kanban-card-meta"><span class="kanban-tag" data-hue="{hue}">{typ}</span><span class="due-chip{due_cls}">{due_txt}</span></div>'
-            f'{ev}<div class="kanban-card-foot">{person}<button class="card-actions" aria-haspopup="menu" aria-label="Actions for {E(title)}">Move<span class="card-actions-chev" aria-hidden="true">▾</span></button></div></li>')
+            f'{ev}<div class="kanban-card-foot">{person}<button class="card-actions" aria-haspopup="menu" aria-label="Actions for {E(title)}">Actions<span class="card-actions-chev" aria-hidden="true">▾</span></button></div></li>')
 
 
 def board():

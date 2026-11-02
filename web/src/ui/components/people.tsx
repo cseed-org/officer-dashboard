@@ -1,4 +1,5 @@
 import type { ComponentChildren } from 'preact';
+import { createPortal } from 'preact/compat';
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { personHue, type Hue } from '../../lib/colors';
 import { initials } from '../../lib/session';
@@ -65,8 +66,21 @@ export interface MenuItem {
  * Row "⋯" menu: a button that opens a small menu (role=menu). Arrow keys move, Enter or
  * Space picks, Escape or a click outside closes and returns focus to the button.
  */
-export function RowMenu({ label, items }: { label: string; items: MenuItem[] }) {
+export function RowMenu({
+  label,
+  items,
+  trigger,
+  floating = false,
+}: {
+  label: string;
+  items: MenuItem[];
+  /** Visible trigger text (a labelled button) instead of the bare "⋯". */
+  trigger?: string;
+  /** Place the list with position: fixed so a scrolling parent (the Kanban) cannot clip it. */
+  floating?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<Record<string, string> | undefined>(undefined);
   const btn = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -80,8 +94,30 @@ export function RowMenu({ label, items }: { label: string; items: MenuItem[] }) 
       if (!menu.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [open]);
+    // A floating list follows its button when the page or the board scrolls.
+    const onMove = () => placeNear();
+    if (floating) {
+      window.addEventListener('scroll', onMove, true);
+      window.addEventListener('resize', onMove);
+    }
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [open, floating]);
+
+  function placeNear() {
+    if (!floating || !btn.current) return;
+    const r = btn.current.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom > 40 + 36 * items.length;
+    const right = `${Math.max(8, window.innerWidth - r.right)}px`;
+    setPlace(below ? { top: `${r.bottom + 4}px`, right } : { bottom: `${window.innerHeight - r.top + 4}px`, right });
+  }
+  const toggle = () => {
+    if (!open) placeNear();
+    setOpen((o) => !o);
+  };
 
   if (!enabled.length) return null;
   const close = (refocus = true) => {
@@ -103,47 +139,60 @@ export function RowMenu({ label, items }: { label: string; items: MenuItem[] }) 
     }
   };
 
+  // Floating lists render on <body>: a transformed ancestor (page motion) would otherwise
+  // become the containing block of position: fixed and shift the list away from its button.
+  const list = (
+    <div class={`row-menu-list${floating ? ' is-floating' : ''}`} style={floating ? place : undefined} role="menu" id={id} aria-label={label} ref={menu} onKeyDown={onKey}>
+      {items.map((it) => (
+        <button
+          type="button"
+          role="menuitem"
+          key={it.label}
+          class={`row-menu-item${it.danger ? ' is-danger' : ''}`}
+          aria-disabled={it.disabled ? 'true' : undefined}
+          tabIndex={-1}
+          onClick={() => {
+            if (it.disabled) return;
+            close();
+            it.onSelect();
+          }}
+        >
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <span class="row-menu">
       <button
         ref={btn}
         type="button"
-        class="icon-btn row-menu-btn"
+        class={trigger ? 'card-actions' : 'icon-btn row-menu-btn'}
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown' && !open) {
             e.preventDefault();
-            setOpen(true);
+            toggle();
           }
         }}
       >
-        <span aria-hidden="true">⋯</span>
+        {trigger ? (
+          <>
+            <span aria-hidden="true">{trigger}</span>
+            <span class="card-actions-chev" aria-hidden="true">
+              ▾
+            </span>
+          </>
+        ) : (
+          <span aria-hidden="true">⋯</span>
+        )}
       </button>
-      {open && (
-        <div class="row-menu-list" role="menu" id={id} aria-label={label} ref={menu} onKeyDown={onKey}>
-          {items.map((it) => (
-            <button
-              type="button"
-              role="menuitem"
-              key={it.label}
-              class={`row-menu-item${it.danger ? ' is-danger' : ''}`}
-              aria-disabled={it.disabled ? 'true' : undefined}
-              tabIndex={-1}
-              onClick={() => {
-                if (it.disabled) return;
-                close();
-                it.onSelect();
-              }}
-            >
-              {it.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {open && (floating && typeof document !== 'undefined' ? createPortal(list, document.body) : list)}
     </span>
   );
 }

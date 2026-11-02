@@ -463,6 +463,10 @@ must(deliveredReq.json.request.stage === 'delivered', 'requester approval delive
 const fromEvent = await call('designRequestCreateFromEvent', { who: officer, params: { id: eventId }, body: { type: 'social' } });
 must(fromEvent.json.request.event?.id === eventId && fromEvent.json.request.title === designDraft.json.draft.title, 'event prefill creates a linked request');
 await call('designRequestDelete', { who: officer, params: { id: fromEvent.json.request.id } });
+must(Array.isArray(designBoard.json.upcomingEvents), 'the board lists upcoming events');
+await call('eventDesignNeed', { who: officer, params: { id: eventId }, body: { designNeed: 'needed' } });
+const skipped = await call('eventDesignNeed', { who: directorA, params: { id: eventId }, body: { designNeed: 'not_needed' } });
+must(skipped.json.event.designNeed === 'not_needed', 'a director marks an event as not needing design', skipped.json.event);
 
 // Membership mirror and disconnected Cloudflare. Remote writes are fake-server tested in Go.
 const member = {person_id:'contract-member',first_name:'Ada',last_name:'Member',preferred_name:null,uw_email:'ada@uw.edu',cs_email:null,personal_email:null,major:'CS',grad_year:'2028',campus:'Seattle',pronouns:null,demographics:null,join_date:'2026-10-31',agreed_to_membership_agreement:1,has_been_cseed_officer:0};

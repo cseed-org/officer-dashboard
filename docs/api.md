@@ -108,6 +108,7 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | GET | `/api/design-files/:id` | officer | — | — | file bytes or Drive redirect |
 | GET | `/api/events/:id/design-request-draft` | officer | — | — | `DesignRequestDraftResponse` |
 | POST | `/api/events/:id/design-requests` | officer | — | `DesignRequestFromEventRequest` (optional) | `DesignRequestResponse` |
+| PUT | `/api/events/:id/design-need` | officer ² | — | `EventDesignNeedRequest` | `EventDesignNeedResponse` |
 | GET | `/api/finance/summary` | officer | `FinanceQuery` | — | `FinanceSummaryResponse` |
 | GET | `/api/finance/reports/:report` | officer | `FinanceReportQuery` | — | `FinanceReportResponse` or CSV ¹ |
 | GET | `/api/finance/budgets` | officer | `FinanceQuery` | — | `BudgetsResponse` |
@@ -137,6 +138,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 ¹ `?format=csv` returns `text/csv`. `:report` is one of `FINANCE_REPORTS` (`src/core/domain.ts`).
 Officers may read `budget-vs-actual` and `fund-balances` (`OFFICER_FINANCE_REPORTS`); the
 other reports return 403 for officers.
+
+² Any officer may set `needed` or `unknown`; `not_needed` needs director+ or the event's host.
 
 ## Search
 
@@ -209,6 +212,16 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
     null for a past event. `POST /api/events/:id/design-requests` creates it directly; any
     supplied field overrides the draft, and the event link is fixed. The Design page also
     opens the prefilled form at `/design?new=1&eventId=<id>`.
+  - **Upcoming events and design needs (V0.4).** `events.design_need` (migration 0013) is
+    `unknown` (the default, treated as needed), `needed` or `not_needed`. Any officer may set
+    `needed`; setting `not_needed` needs director+ or the event's host (403 otherwise), both
+    through `PUT /api/events/:id/design-need` and the `designNeed` field of event create/PATCH
+    (re-sending the stored value is always allowed). Each change is audited as
+    `event.design_need` (or `event.updated` from the editor). `GET /api/design-requests` adds
+    `upcomingEvents`: draft and published events starting within the next six weeks, soonest
+    first, each with an `indicator` derived from `design_need` and its linked requests:
+    `requested` while any linked request is open, `done` once all are delivered, otherwise
+    `not-needed` or `needs-design`. A request on a not-needed event therefore still shows.
 - **Admin users.** Directors may deactivate officers. Deactivating directors or leadership requires leadership; owner accounts additionally require an owner. Deactivating a user deletes their sessions. The last active director can't
   be demoted or deactivated (409).
 - **Service tokens.** The plaintext is returned once by `POST /api/admin/tokens`; only a
@@ -225,7 +238,7 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 | `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
 | `/finance` | officer | Directors see every report; officers see the summary |
 | `/admin/users`, `/admin/tokens` | director | 403 for officers |
-| `/design`, `/design?id=<id>`, `/design?new=1&eventId=<id>` | officer | Design request board (list view on phones); opens a request or the prefilled form |
+| `/design`, `/design?id=<id>`, `/design?new=1&eventId=<id>`, `?view=board\|list\|mine`, `?filter=mine\|unassigned\|due`, `?type=<type>` | officer | Design page: upcoming events with design needs, then the request board (list view on phones) or My work; opens a request or the prefilled form |
 
 
 ## Backend implementation notes

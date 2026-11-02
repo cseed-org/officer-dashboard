@@ -4,7 +4,7 @@
  * designMoveTargets so a card offers the same moves before its detail is loaded.
  */
 import type { Hue } from './colors';
-import type { DesignRequestItem, DesignStage, DesignType } from './contracts';
+import type { DesignIndicator, DesignRequestItem, DesignStage, DesignType, DesignUpcomingEvent } from './contracts';
 import { DESIGN_STAGES } from './contracts';
 import { todayPacific } from './format';
 
@@ -85,3 +85,75 @@ export function designMoveTargets(item: DesignRequestItem, viewer: { id: string;
 }
 
 export const firstName = (name: string) => name.split(/\s+/)[0] ?? name;
+
+/** The rail's design indicator, written out (the dot is never the only signal). */
+export const INDICATOR_LABEL: Record<DesignIndicator, string> = {
+  'needs-design': 'Needs design',
+  requested: 'Requested',
+  'not-needed': 'Not needed',
+  done: 'Done',
+};
+
+/** "In progress · Jordan", "New · unassigned", "2 requests"; empty when there is nothing to add. */
+export function indicatorDetail(e: Pick<DesignUpcomingEvent, 'indicator' | 'requests'>): string {
+  if (e.indicator !== 'requested') return '';
+  const open = e.requests.filter((r) => r.stage !== 'delivered');
+  if (open.length !== 1) return `${open.length} requests open`;
+  const r = open[0]!;
+  return `${STAGE_LABEL[r.stage]} · ${r.assignee ? firstName(r.assignee.name) : 'unassigned'}`;
+}
+
+/** "3 need design · 2 requested · 1 done · 1 not needed" (zero counts left out). */
+export function railSummary(events: Pick<DesignUpcomingEvent, 'indicator'>[]): {
+  needs: number;
+  rest: string;
+} {
+  const n = (k: DesignIndicator) => events.filter((e) => e.indicator === k).length;
+  const rest = [
+    [n('requested'), 'requested'],
+    [n('done'), 'done'],
+    [n('not-needed'), 'not needed'],
+  ]
+    .filter(([c]) => (c as number) > 0)
+    .map(([c, w]) => `${c} ${w}`)
+    .join(' · ');
+  return { needs: n('needs-design'), rest };
+}
+
+export const DESIGN_FILTERS = ['all', 'mine', 'unassigned', 'due'] as const;
+export type DesignFilter = (typeof DESIGN_FILTERS)[number];
+export const FILTER_LABEL: Record<DesignFilter, string> = {
+  all: 'All',
+  mine: 'Mine',
+  unassigned: 'Unassigned',
+  due: 'Due soon',
+};
+
+/** Mine: assigned to me or requested by me. Unassigned and Due soon leave delivered work out. */
+export function matchesFilter(item: DesignRequestItem, filter: DesignFilter, meId: string, today = todayPacific()): boolean {
+  switch (filter) {
+    case 'mine':
+      return item.assignee?.id === meId || item.requester.id === meId;
+    case 'unassigned':
+      return item.assignee === null && item.stage !== 'delivered';
+    case 'due': {
+      const s = dueState(item, today);
+      return s === 'soon' || s === 'overdue';
+    }
+    default:
+      return true;
+  }
+}
+
+/** Nearest due first; undated work last, then most recently updated. */
+export const byDue = (a: DesignRequestItem, b: DesignRequestItem) => (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') || b.updatedAt.localeCompare(a.updatedAt);
+
+/** My work: what is assigned to me (open), what waits on my approval, and what nobody has taken. */
+export function myWork(items: DesignRequestItem[], meId: string) {
+  return {
+    assigned: items.filter((i) => i.assignee?.id === meId && i.stage !== 'delivered').sort(byDue),
+    approve: items.filter((i) => i.requester.id === meId && i.stage === 'in-review').sort(byDue),
+    requested: items.filter((i) => i.requester.id === meId && i.stage !== 'in-review' && i.stage !== 'delivered').sort(byDue),
+    unassigned: items.filter((i) => i.assignee === null && i.stage !== 'delivered').sort(byDue),
+  };
+}
