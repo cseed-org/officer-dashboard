@@ -54,7 +54,7 @@ export const fmtDueLong = (d: string) => longDate.format(new Date(`${d}T00:00:00
 
 export type DueState = 'overdue' | 'soon' | 'ok' | 'none';
 
-/** Overdue or due within three days (Vancouver dates), unless already delivered. */
+/** Overdue or due within three days (selected-zone dates), unless already delivered. */
 export function dueState(item: Pick<DesignRequestItem, 'dueDate' | 'stage'>, today = todayPacific()): DueState {
   if (!item.dueDate) return 'none';
   if (item.stage === 'delivered') return 'ok';

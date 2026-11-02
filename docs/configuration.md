@@ -75,3 +75,11 @@ The container sets `DB_PATH=/data/dashboard.db` and `ADDR=:8090`; systemd sets `
 | `BENCH_LATENCY` | unset | Enables the Go latency-report test. |
 
 `GO`, `VERSION` are Make overrides (default `go` and `git describe --always --dirty`); `CGO_ENABLED=1` is required to build SQLite support. These are build/tooling settings, not application secrets.
+
+## Club location and time zones
+
+In Settings, leadership and owners set the club location label and IANA default time zone. These live in SQLite (`club_settings`, migration 0012), not environment variables. The initial location is University of Washington, Seattle and the zone is `America/Los_Angeles`. Directors and officers see the values read-only; every club change is audited.
+
+Each officer can choose Club default (initial preference), Automatic, or a manual IANA zone in Settings. Automatic reads the browser’s device zone on page load/focus/visibility return and saves it for server emails; if detection is unavailable, the club zone applies. Manual preferences remain fixed when travelling. The current time preview shows the saved effective zone. Club changes affect everyone using Club default immediately on their next page load or focus.
+
+Event times, calendar/editor inputs, outreach, audit logs and widgets share the effective zone. Date-only deadlines and accounting dates retain their original date. Instants remain stored in UTC; changing a preference never moves an event. Fiscal accounting boundaries retain the established Washington rules. ICS invitations contain UTC instants and display-zone metadata; calendar applications control their own display preferences. Go embeds IANA tzdata so minimal containers can resolve saved zones without system zoneinfo.

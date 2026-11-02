@@ -1,3 +1,4 @@
+import { effectiveTimezone } from '../../lib/timezone';
 import { flattenError } from 'zod';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, fieldErrors as apiFieldErrors, isStorageUnavailable } from '../../lib/api/client';
@@ -268,7 +269,7 @@ function Form({ lookups, editing, initial, persist = false, onDone, onCancel }: 
             <input class="input" {...describe('dr-program', errors.program)} value={f.program} maxLength={200} placeholder="e.g. Mentorship program" onInput={(e) => set('program', e.currentTarget.value)} />
           </Field>
         )}
-        <Field id="dr-due" label="Due date" optional error={errors.dueDate} hint="Vancouver date. Leave a week for design and review.">
+        <Field id="dr-due" label="Due date" optional error={errors.dueDate} hint={`Date in ${effectiveTimezone()}. Leave a week for design and review.`}>
           <input class="input" type="date" {...describe('dr-due', errors.dueDate, true)} value={f.dueDate} onInput={(e) => set('dueDate', e.currentTarget.value)} />
         </Field>
         <Field id="dr-urgency" label="Urgency" error={errors.urgency}>

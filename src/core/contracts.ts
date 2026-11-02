@@ -971,7 +971,14 @@ export type HealthResponse = z.infer<typeof HealthResponse>;
 // V0.3: server-backed Home layout and private calendar addresses.
 export const WidgetPlacement = z.object({ id: Id, size: z.enum(['S', 'M', 'L']) });
 export type WidgetPlacement = z.infer<typeof WidgetPlacement>;
-export const WidgetPrefs = z.object({ widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
+export const IanaTimezone = z.string().max(100).refine((v) => {
+  try { return v !== 'Local' && (v === 'UTC' || v.includes('/')) && !!new Intl.DateTimeFormat('en-US', { timeZone: v }); } catch { return false; }
+}, 'Choose an IANA time zone');
+export const ClubSettings = z.object({ clubTimezone: IanaTimezone, location: z.string().trim().min(1).max(200) });
+export type ClubSettings = z.infer<typeof ClubSettings>;
+export const TimezoneMode = z.enum(['club', 'auto', 'manual']);
+export const WidgetPrefs = z.object({ timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
+export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined, 'No preferences supplied');
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
 export type CalendarEmail = z.infer<typeof CalendarEmail>;
@@ -1217,8 +1224,10 @@ export const ENDPOINTS = {
   ownerAdd: { method: 'POST', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
   ownerRemove: { method: 'DELETE', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
   ownerTransfer: { method: 'POST', path: '/api/admin/owners/transfer', auth: 'owner', body: OwnerTransferRequest, response: AdminUsersResponse },
+  clubSettingsGet: { method: 'GET', path: '/api/club/settings', auth: 'officer', response: ClubSettings },
+  clubSettingsPut: { method: 'PUT', path: '/api/club/settings', auth: 'leadership', body: ClubSettings, response: ClubSettings },
   prefsGet: { method: 'GET', path: '/api/me/prefs', auth: 'officer', response: WidgetPrefs },
-  prefsPut: { method: 'PUT', path: '/api/me/prefs', auth: 'officer', body: WidgetPrefs, response: WidgetPrefs },
+  prefsPut: { method: 'PUT', path: '/api/me/prefs', auth: 'officer', body: PrefsUpdate, response: WidgetPrefs },
   calendarEmailsList: { method: 'GET', path: '/api/me/calendar-emails', auth: 'officer', response: CalendarEmailsResponse },
   calendarEmailCreate: { method: 'POST', path: '/api/me/calendar-emails', auth: 'officer', body: CalendarEmailCreateRequest, response: CalendarEmailResponse },
   calendarEmailUpdate: { method: 'PATCH', path: '/api/me/calendar-emails/:id', auth: 'officer', body: CalendarEmailUpdateRequest, response: CalendarEmailResponse },

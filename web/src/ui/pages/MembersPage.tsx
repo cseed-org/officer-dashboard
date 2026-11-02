@@ -1,3 +1,4 @@
+import { fmtDateTime } from '../../lib/format';
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Gate } from "../shell/Gate";
 import { Drawer } from "../components/Drawer";
@@ -27,7 +28,7 @@ const fields = [
   ["pronouns", "Pronouns"],
 ] as const;
 const stamp = (n: number | null) =>
-  n ? new Date(n).toLocaleString() : "never";
+  n ? fmtDateTime(new Date(n).toISOString()) : "never";
 export default function MembersPage() {
   return <Gate label="members">{(me) => <Members me={me} />}</Gate>;
 }
