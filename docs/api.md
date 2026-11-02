@@ -291,7 +291,7 @@ Service tokens cannot use these session-authenticated endpoints.
 
 Contact fields: `id`, `name` (1–200), `org`, `role` (up to 200), `type`
 (`speaker`, `mentor`, `both`), `topics` (up to 30 nonblank strings, 100 characters each),
-`email` (email or empty), `linkedin` (URL or empty), `notes` (up to 10,000),
+`email` (email or empty), `linkedin` (http/https URL or empty), `notes` (up to 10,000),
 `createdAt` and `updatedAt` (epoch milliseconds), `events`, `outreach`, `lastOutreach`.
 Create/PATCH accepts `eventIds` (up to 100 distinct existing event IDs); it replaces the links.
 Empty strings clear optional text fields; empty arrays clear topics/event links. Nulls are rejected.
