@@ -1,0 +1,25 @@
+# Suggested labels for manual setup; this file does not sync GitHub labels.
+- name: bug
+  color: d73a4a
+  description: Reproducible incorrect behavior
+- name: enhancement
+  color: a2eeef
+  description: New or improved behavior
+- name: documentation
+  color: 0075ca
+  description: Documentation corrections and additions
+- name: good first issue
+  color: 7057ff
+  description: Scoped task with clear guidance for a new contributor
+- name: help wanted
+  color: 008672
+  description: Maintainer would welcome a contribution
+- name: 'area: backend'
+  color: 1d76db
+  description: Go API, storage or accounting
+- name: 'area: web'
+  color: 5319e7
+  description: Astro, Preact, accessibility or design
+- name: 'area: contracts'
+  color: fbca04
+  description: Shared zod schemas and API compatibility
