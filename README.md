@@ -34,7 +34,7 @@ V0.3 uses Discord sign-in with leadership, director, and officer roles, plus exp
 | Events | Plan events, generate a Luma handoff kit, import registrations/check-ins and reflections, track metrics. |
 | Finance | Submit and review purchase requests, attach receipts, track budgets, and view double-entry financial reports. |
 | External Contacts | Maintain contacts, track who has spoken for CSEED, and log outreach. |
-| Design Requests | Track work on a Kanban board with assignments, comments, files, and approval. |
+| Design | See which upcoming events still need design, and track requests on a Kanban board (filters, My work) with assignments, comments, files, and approval. |
 | Officers / Settings | Manage access, tokens, audit history, preferences, automatic/manual time zones, club location defaults, and calendar connections. |
 
 > [!NOTE]

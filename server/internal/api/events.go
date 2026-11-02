@@ -97,6 +97,7 @@ type eventInput struct {
 	Capacity      validate.Field[int64]
 	HostSubteamID validate.Field[string]
 	LumaURL       validate.Field[string]
+	DesignNeed    validate.Field[string]
 }
 
 func readEvent(r *validate.Reader, create bool) eventInput {
@@ -113,6 +114,7 @@ func readEvent(r *validate.Reader, create bool) eventInput {
 		Capacity:      r.Int("capacity", validate.I{Null: true, Min: validate.Lo(1), Max: validate.Lo(100000)}),
 		HostSubteamID: r.Str("hostSubteamId", validate.S{Null: true, Min: 1, Max: 64}),
 		LumaURL:       r.Str("lumaUrl", validate.S{Null: true, Max: 300}),
+		DesignNeed:    r.Str("designNeed", validate.S{Enum: store.DesignNeeds, HasDef: create, Default: "unknown"}),
 	}
 	if in.LumaURL.Has() {
 		if norm, err := luma.NormalizeEventURL(in.LumaURL.V); err != nil {
@@ -195,10 +197,13 @@ func (c *Ctx) eventCreate() error {
 		if in.EndsAt.Has() && endsBeforeStarts(in.StartsAt.V, in.EndsAt.V) {
 			return badRequest("Event ends before it starts")
 		}
+		if in.DesignNeed.V == "not_needed" && !canSkipDesign(c.User, ptrIf(in.HostUserID)) {
+			return forbidden(skipDesignDenied)
+		}
 		now := store.Ms(c.S.nowMs())
 		e := store.Event{ID: id, Name: in.Name.V, StartsAt: in.StartsAt.V, EndsAt: ptrIf(in.EndsAt), Location: ptrIf(in.Location), URL: ptrIf(in.URL),
 			LumaID: ptrIf(in.LumaID), HostUserID: ptrIf(in.HostUserID), Status: in.Status.V, Description: ptrIf(in.Description), Capacity: intPtrIf(in.Capacity),
-			HostSubteamID: ptrIf(in.HostSubteamID), LumaURL: ptrIf(in.LumaURL), CreatedAt: now, UpdatedAt: now}
+			HostSubteamID: ptrIf(in.HostSubteamID), LumaURL: ptrIf(in.LumaURL), DesignNeed: in.DesignNeed.V, CreatedAt: now, UpdatedAt: now}
 		// TODO(notion): the stub only hands back a placeholder link. A real client must not
 		// call Notion inside this transaction; queue the draft and store the link afterwards.
 		if page, err := c.S.cfg.Notion.DraftEventPage(ctx, notionEvent(&e)); err != nil {
@@ -263,10 +268,14 @@ func (c *Ctx) eventUpdate() error {
 		if endsAt != nil && endsBeforeStarts(startsAt, *endsAt) {
 			return badRequest("Event ends before it starts")
 		}
+		// Ruling an event out of design is director+ or the host's call (the host as it was).
+		if in.DesignNeed.V == "not_needed" && e.DesignNeed != "not_needed" && !canSkipDesign(c.User, e.HostUserID) {
+			return forbidden(skipDesignDenied)
+		}
 		before := eventSnapshot(e)
 		patch := store.EventPatch{Name: optOf(in.Name), StartsAt: optOf(in.StartsAt), EndsAt: optOf(in.EndsAt), Location: optOf(in.Location),
 			URL: optOf(in.URL), LumaID: optOf(in.LumaID), HostUserID: optOf(in.HostUserID), Status: optOf(in.Status), Description: optOf(in.Description),
-			Capacity: optOf(in.Capacity), HostSubteamID: optOf(in.HostSubteamID), LumaURL: optOf(in.LumaURL)}
+			Capacity: optOf(in.Capacity), HostSubteamID: optOf(in.HostSubteamID), LumaURL: optOf(in.LumaURL), DesignNeed: optOf(in.DesignNeed)}
 		if err := w.UpdateEvent(ctx, id, patch, c.S.nowMs()); err != nil {
 			return err
 		}

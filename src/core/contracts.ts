@@ -209,6 +209,9 @@ export type SearchResponse = z.infer<typeof SearchResponse>;
 /** draft until published by hand in Luma; imports from Luma arrive as published. */
 export const EventStatus = z.enum(['draft', 'published', 'completed', 'cancelled']);
 export type EventStatus = z.infer<typeof EventStatus>;
+/** Whether an event needs design work. Unknown (never decided) counts as needed. */
+export const DesignNeed = z.enum(['unknown', 'needed', 'not_needed']);
+export type DesignNeed = z.infer<typeof DesignNeed>;
 export const SubteamBrief = z.object({ id: Id, name: z.string() });
 export type SubteamBrief = z.infer<typeof SubteamBrief>;
 
@@ -261,6 +264,7 @@ export const EventListItem = z.object({
   /** App path of the cover image (GET, officer session), cache-busted by `v`. */
   coverUrl: z.string().nullable(),
   metrics: EventCounts,
+  designNeed: DesignNeed,
 });
 export type EventListItem = z.infer<typeof EventListItem>;
 
@@ -340,6 +344,8 @@ export const EventUpsertRequest = z.object({
   capacity: z.number().int().min(1).max(100000).nullable().optional(),
   hostSubteamId: Id.nullable().optional(),
   lumaUrl: LumaEventUrl.nullable().optional(),
+  /** Defaults to unknown on create. Setting not_needed is director+ or the event's host (403 otherwise). */
+  designNeed: DesignNeed.optional(),
 });
 export type EventUpsertRequest = z.infer<typeof EventUpsertRequest>;
 export const EventPatchRequest = EventUpsertRequest.partial();
@@ -1116,11 +1122,37 @@ export const DesignRequestDetail = DesignRequestItem.extend({
 });
 export type DesignRequestDetail = z.infer<typeof DesignRequestDetail>;
 
+/**
+ * The Design page's design indicator for an event: requested while any linked request is open,
+ * done once every linked request is delivered, otherwise not-needed or needs-design from designNeed.
+ */
+export const DESIGN_INDICATORS = ['needs-design', 'requested', 'not-needed', 'done'] as const;
+export const DesignIndicator = z.enum(DESIGN_INDICATORS);
+export type DesignIndicator = z.infer<typeof DesignIndicator>;
+/** An event being planned (draft or published, starting within six weeks) and its design state. */
+export const DesignUpcomingEvent = z.object({
+  id: Id,
+  name: z.string(),
+  startsAt: IsoDateTime,
+  status: EventStatus,
+  host: UserSummary.nullable(),
+  hostSubteam: SubteamBrief.nullable(),
+  designNeed: DesignNeed,
+  indicator: DesignIndicator,
+  /** Linked requests, open ones first. */
+  requests: z.array(z.object({ id: Id, title: z.string(), stage: DesignStage, assignee: UserSummary.nullable() })),
+  /** Director+ or the event's host may mark it not needed. */
+  canSetNotNeeded: z.boolean(),
+});
+export type DesignUpcomingEvent = z.infer<typeof DesignUpcomingEvent>;
+
 /** GET /api/design-requests: the whole board (club scale, no paging). */
 export const DesignRequestsListResponse = z.object({
   items: z.array(DesignRequestItem),
   designers: z.array(UserSummary),
   viewer: z.object({ isDesigner: z.boolean(), canAssign: z.boolean() }),
+  /** Draft and published events starting in the next six weeks, soonest first. */
+  upcomingEvents: z.array(DesignUpcomingEvent),
 });
 export type DesignRequestsListResponse = z.infer<typeof DesignRequestsListResponse>;
 export const DesignRequestResponse = z.object({ request: DesignRequestDetail, designers: z.array(UserSummary) });
@@ -1155,6 +1187,10 @@ export type DesignRequestDraft = z.infer<typeof DesignRequestDraft>;
 export const DesignRequestDraftResponse = z.object({ draft: DesignRequestDraft });
 /** POST /api/events/:id/design-requests: every field optional; missing ones come from the draft. The event link is fixed. */
 export const DesignRequestFromEventRequest = DesignRequestCreateRequest.omit({ eventId: true }).partial();
+/** PUT /api/events/:id/design-need: anyone may say needed; not_needed is director+ or the host (403). */
+export const EventDesignNeedRequest = z.object({ designNeed: DesignNeed });
+export const EventDesignNeedResponse = z.object({ event: DesignUpcomingEvent });
+export type EventDesignNeedResponse = z.infer<typeof EventDesignNeedResponse>;
 
 export const OwnerTransferRequest = z.object({ toUserId: Id });
 
@@ -1262,6 +1298,7 @@ export const ENDPOINTS = {
   designFileDownload: { method: 'GET', path: '/api/design-files/:id', auth: 'officer', response: 'binary' },
   designRequestDraftFromEvent: { method: 'GET', path: '/api/events/:id/design-request-draft', auth: 'officer', response: DesignRequestDraftResponse },
   designRequestCreateFromEvent: { method: 'POST', path: '/api/events/:id/design-requests', auth: 'officer', body: DesignRequestFromEventRequest, response: DesignRequestResponse },
+  eventDesignNeed: { method: 'PUT', path: '/api/events/:id/design-need', auth: 'officer', body: EventDesignNeedRequest, response: EventDesignNeedResponse },
 
   health: { method: 'GET', path: '/api/health', auth: 'public', response: HealthResponse },
   me: { method: 'GET', path: '/api/me', auth: 'officer', response: MeResponse },
