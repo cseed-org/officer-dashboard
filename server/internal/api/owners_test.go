@@ -75,3 +75,24 @@ func TestOwnerCanDemoteCoownerButCannotDemoteLastOwner(t *testing.T) {
 		t.Fatal(string(deactivated.Raw))
 	}
 }
+
+func TestDeactivationRequiresLeadershipForDirectorAndLeadershipTargets(t *testing.T) {
+	for _, role := range []string{"officer", "director", "leadership"} {
+		t.Run(role, func(t *testing.T) {
+			e := newEnv(t)
+			leadership := e.as("user-leadership")
+			e.mustOK(e.do("PATCH", "/api/admin/users/user-ava", map[string]any{"role": role}, leadership))
+			targetSession := e.as("user-ava")
+			expected := 403
+			if role == "officer" {
+				expected = 200
+			}
+			expectStatus(t, "director deactivation", e.do("PATCH", "/api/admin/users/user-ava", map[string]any{"active": false}, e.director()), expected)
+			if expected == 403 {
+				expectStatus(t, "denied deactivation keeps session", e.get("/api/me", targetSession), 200)
+				expectStatus(t, "leadership deactivation", e.do("PATCH", "/api/admin/users/user-ava", map[string]any{"active": false}, leadership), 200)
+			}
+			expectStatus(t, "deactivation ends session", e.get("/api/me", targetSession), 401)
+		})
+	}
+}

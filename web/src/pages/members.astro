@@ -1,6 +1,7 @@
 ---
+import MembersPage from '../ui/pages/MembersPage';
 import AppLayout from '../layouts/AppLayout.astro';
 ---
-<AppLayout title="Members" page="members">
-  <section class="block"><header class="block-head"><h2>Members</h2></header><div class="block-body"><p>This workspace is coming soon.</p></div></section>
+<AppLayout title="Members" page="members" customHeader>
+  <MembersPage client:load />
 </AppLayout>
