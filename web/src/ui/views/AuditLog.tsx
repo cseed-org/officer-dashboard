@@ -1,69 +1,11 @@
 import { useMemo, useState } from 'preact/hooks';
-import type { AuditLogEntry, CurrentUser } from '../../lib/contracts';
+import type { AuditLogEntry } from '../../lib/contracts';
 import { api } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import { fmtDateTime, pacificDate, relative } from '../../lib/format';
-import { setParams, useSearch } from '../../lib/nav';
-import type { AdminTab } from '../../lib/routes';
-import { Icon } from '../components/Icon';
-import { Tabs } from '../components/kit';
 import { Avatar } from '../components/people';
 import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
-import AdminTokensView from './AdminTokensView';
-import AdminUsersView from './AdminUsersView';
 import { auditHref, auditSummary } from './HomeView';
-
-const TABS: { key: AdminTab; label: string }[] = [
-  { key: 'users', label: 'officers' },
-  { key: 'tokens', label: 'service tokens' },
-  { key: 'audit', label: 'audit log' },
-];
-
-export default function AdminView({ me }: { me: CurrentUser }) {
-  const search = useSearch();
-  const t = search.get('tab') as AdminTab | null;
-  const tab: AdminTab = t && TABS.some((x) => x.key === t) ? t : 'users';
-  // ?new=1 opens the tab's create drawer (add officer / create token), as on Finance.
-  const creating = search.get('new') === '1';
-  const closeCreate = () => creating && setParams({ new: null });
-
-  if (me.role === 'officer')
-    return (
-      <div class="state state--error" role="alert" data-state="forbidden">
-        <p class="state-title">Directors only</p>
-        <p class="state-body">Officers, service tokens and the audit log are managed by directors. Ask one if something needs changing.</p>
-        <div class="state-action">
-          <a href="/">back home →</a>
-        </div>
-      </div>
-    );
-
-  const action = tab === 'users' ? 'add officer' : tab === 'tokens' ? 'create token' : null;
-
-  return (
-    <div class="stack">
-      <div class="toolbar">
-        <Tabs label="Admin" idPrefix="adm" active={tab} onChange={(k) => setParams({ tab: k === 'users' ? null : k, new: null }, { replace: true })} tabs={TABS} />
-        {action && (
-          <div class="toolbar-actions">
-            <button type="button" class="btn btn--primary" data-admin-create onClick={() => setParams({ new: 1 })}>
-              <Icon name="plus" size={16} /> {action}
-            </button>
-          </div>
-        )}
-      </div>
-      <div key={tab} id="adm-panel" role="tabpanel" aria-labelledby={`adm-tab-${tab}`} class="tab-panel">
-        {tab === 'users' ? (
-          <AdminUsersView isOwner={me.isOwner} canChangeRoles={me.role === 'leadership'} meId={me.id} adding={creating} onCloseAdd={closeCreate} />
-        ) : tab === 'tokens' ? (
-          <AdminTokensView creating={creating} onCloseCreate={closeCreate} />
-        ) : (
-          <AuditLog />
-        )}
-      </div>
-    </div>
-  );
-}
 
 const ENTITY_TYPES: [string, string][] = [
   ['', 'everything'],
@@ -80,7 +22,7 @@ const ENTITY_TYPES: [string, string][] = [
  * the exact time on hover). "What" filters on the server; actor, action and date filter
  * the loaded entries, and "load older" pages further back.
  */
-function AuditLog() {
+export default function AuditLog() {
   const [entityType, setEntityType] = useState('');
   const [actor, setActor] = useState('');
   const [action, setAction] = useState('');

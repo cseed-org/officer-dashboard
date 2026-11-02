@@ -120,7 +120,13 @@ export default function AdminTokensView({ creating, onCloseCreate }: { creating:
         }}
       </Async>
 
-      <Drawer id="create-token" open={creating} onClose={onCloseCreate} title="create a service token">
+      <Drawer
+        id="create-token" open={creating} title="create a service token"
+        onClose={() => {
+          onCloseCreate();
+          if (created) document.getElementById('secret-h')?.focus();
+        }}
+      >
         <CreateToken
           onCancel={onCloseCreate}
           onCreated={(t, plaintext) => {
@@ -128,8 +134,7 @@ export default function AdminTokensView({ creating, onCloseCreate }: { creating:
             setCreated({ id: t.id, name: t.name, plaintext });
             setNotice(null);
             onCloseCreate();
-            // After the drawer returns focus, move it to the one-time secret.
-            setTimeout(() => document.getElementById('secret-h')?.focus(), 50);
+            // The drawer close event moves focus to the one-time secret after restoring its opener.
           }}
         />
       </Drawer>

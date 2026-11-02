@@ -7,7 +7,7 @@
 | [Deployment](deployment.md) | Raspberry Pi/systemd, HTTPS proxy, containers, replication, backups. |
 | [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
 | [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
-| [Roles and permissions](roles-and-permissions.md) | Role matrix, owner provisioning, transfer and recovery. |
+| [Roles and permissions](roles-and-permissions.md) | Officers management tabs, role matrix, owner provisioning, transfer and recovery. |
 | [Accounting](accounting.md) | Ledger, restrictions, purchase lifecycle, Form 990 limits. |
 | [Integrations](integrations.md) | Discord, Cloudflare, Luma CSV, Google Drive and Calendar, Notion status. |
 | [API](api.md) | HTTP endpoints and payloads, including External Contacts and speaking history. |

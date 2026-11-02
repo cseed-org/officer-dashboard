@@ -10,7 +10,7 @@ const PAGES = [
   ['request-detail', '/finance?id=req-0005'],
   ['finance-budgets', '/finance?tab=budgets'],
   ['finance-reports', '/finance?tab=reports'],
-  ['admin', '/admin'],
+  ['admin', '/officers?tab=access'],
   ['settings', '/settings'],
 ] as const;
 

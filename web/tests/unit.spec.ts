@@ -40,10 +40,11 @@ test('P2-3: search results keep only internal dashboard routes', () => {
       r('/requests/2027-0007'),
       r('/events?id=event-hack-night'),
       r('/admin/tokens'),
+      r('/contacts?id=contact-1'),
     ],
     O,
   ).map((x) => x.href);
-  expect(out).toEqual(['/finance?id=2027-0007', '/events?id=event-hack-night', '/admin?tab=tokens']);
+  expect(out).toEqual(['/finance?id=2027-0007', '/events?id=event-hack-night', '/officers?tab=tokens', '/contacts?id=contact-1']);
   expect(internalRoute('/settings', O)).toBe('/settings');
   expect(internalRoute('/favicon.svg', O)).toBeNull();
   expect(normalizeHref('/requests/new?eventId=e1')).toBe('/finance?new=1&eventId=e1');
