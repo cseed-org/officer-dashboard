@@ -1,3 +1,2 @@
-# Placeholder: maintainers must confirm this team exists, is visible, and has
-# explicit write access to this repository before relying on owner reviews.
-* @cseed-org/officers
+# Default owner for every file: the repository maintainer.
+* @lspaya05
