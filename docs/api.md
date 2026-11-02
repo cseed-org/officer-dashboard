@@ -150,7 +150,7 @@ literal) against:
 | --- | --- | --- | --- | --- |
 | `event` | officers, directors | name, location, Luma id | name / `<Pacific date> · <location>` | `/events?id=<id>` |
 | `request` | officers, directors | number, title, vendor | title / `<number> · <vendor> · <status>` | `/finance?id=<id>` |
-| `contact` | all officers | name, organization, role, email, topics | name / `<org> · <role> · <type>` | `/speakers?id=<id>` |
+| `contact` | all officers | name, organization, role, email, topics | name / `<org> · <role> · <type>` | `/contacts?id=<id>` |
 | `user` | directors only | name, email, title | name / `<title> · <role> · <email>` | `/admin` |
 | `account` | directors only | code, name | `<code> <name>` / account type | `/finance?tab=reports&report=trial-balance` |
 
@@ -493,7 +493,7 @@ Cloudflare references: [D1 query API](https://developers.cloudflare.com/api/reso
 [GraphQL datasets](https://developers.cloudflare.com/analytics/graphql-api/features/data-sets/),
 [D1 analytics](https://developers.cloudflare.com/d1/observability/metrics-analytics/).
 
-### Speakers & Mentors
+### External Contacts
 
 All active officers (including director and leadership) may read and edit the shared directory.
 Contact writes, event-link replacements and outreach appends are atomic with their audit records.
@@ -501,7 +501,7 @@ Service tokens cannot use these session-authenticated endpoints.
 
 | Method | Route | Behavior |
 | --- | --- | --- |
-| GET | `/api/contacts?q=&type=&topic=` | `{items: Contact[]}`, ordered by name. Search covers name, organization, role, email and topics. Type `speaker`/`mentor` includes `both`; `both` matches only `both`. Topic is a case-insensitive exact match. |
+| GET | `/api/contacts?q=&type=&topic=&hasSpokenForUs=` | `{items: Contact[]}`, ordered by name. Search covers name, organization, role, email and topics. Type `speaker`/`mentor` includes `both`; `both` matches only `both`. Topic is a case-insensitive exact match. Optional `hasSpokenForUs=true|false` filters speaking history. |
 | POST | `/api/contacts` | Create; requires `name`, `type`. Returns `{contact}`. |
 | GET | `/api/contacts/:id` | `{contact}` or 404. |
 | PATCH | `/api/contacts/:id` | Partial update; omitted fields are preserved. Returns `{contact}`. |
@@ -511,7 +511,7 @@ Service tokens cannot use these session-authenticated endpoints.
 Contact fields: `id`, `name` (1–200), `org`, `role` (up to 200), `type`
 (`speaker`, `mentor`, `both`), `topics` (up to 30 nonblank strings, 100 characters each),
 `email` (email or empty), `linkedin` (http/https URL or empty), `notes` (up to 10,000),
-`createdAt` and `updatedAt` (epoch milliseconds), `events`, `outreach`, `lastOutreach`.
+`hasSpokenForUs` (boolean, editable; defaults to false for new contacts), `createdAt` and `updatedAt` (epoch milliseconds), `events`, `outreach`, `lastOutreach`.
 Create/PATCH accepts `eventIds` (up to 100 distinct existing event IDs); it replaces the links.
 Empty strings clear optional text fields; empty arrays clear topics/event links. Nulls are rejected.
 Topics are trimmed and deduplicated case-insensitively. Linked events carry `id`, `name`, `startsAt`.
@@ -524,10 +524,13 @@ Dates are normalized to UTC; the latest dated entry wins, with creation time the
  tie breakers. Backdated entries remain in the history. `lastOutreach` is null before outreach is logged.
 General contact edits never change the derived last outreach. Outreach is append-only.
 
-`GET /api/search` also returns `kind: "contact"` for all officers, linking to `/speakers?id=…`.
+`GET /api/search` also returns `kind: "contact"` for all officers, linking to `/contacts?id=…`.
+
+External Contacts lives at `/contacts`; `/speakers` permanently redirects there, preserving query parameters. Existing `/api/contacts` endpoints remain unchanged. Migration 0011 initializes `has_spoken_for_us` from linked events whose start time is before migration time. Later event-link edits do not override this manually maintained field. Create/PATCH accepts optional `hasSpokenForUs`; omission on PATCH preserves the value, and changes appear in contact audit before/after records. Types remain `speaker`, `mentor`, and `both`; adding `other` is deferred because the existing database CHECK constraint requires a table rebuild.
 
 ### Club location and time zone
 
 `GET /api/club/settings` returns `{location, clubTimezone}` for every officer. `PUT` requires active leadership (including owners), rechecks permission in the transaction, and records `club_settings.updated` with before/after values. Directors and officers receive 403. Both fields are required; location is 1–200 characters and clubTimezone is a valid IANA name. Defaults: University of Washington, Seattle / America/Los_Angeles.
 
 Automatic mode detects the browser zone on load, focus, and visibility return, persisting changes through `/api/me/prefs` for calendar emails. Until detection is possible it uses the club zone. Date-only deadlines remain calendar dates; timestamps remain UTC instants. Invitations retain UTC DTSTART/DTEND for interoperability and include the recipient’s display zone as `X-CSEED-TIMEZONE` metadata. Email text uses that same zone. Calendar clients choose their own display zone.
+

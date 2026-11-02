@@ -36,6 +36,7 @@ Roles rank `leadership > director > officer`; unknown roles are denied. Owner is
 | Read dashboard, events, contacts, members | Yes | Yes | Yes | Yes |
 | Set own automatic/manual/club time zone | Yes | Yes | Yes | Yes |
 | Change club location and default time zone | No | No | Yes | Yes |
+| Create/edit/delete External Contacts, set speaking history, log outreach | Yes | Yes | Yes | Yes |
 | Manage own profile/calendar and submit purchases | Yes | Yes | Yes | Yes |
 | Approve/settle purchases, manage budgets/periods | No | Yes | Yes | Yes |
 | Officers Access, service tokens, audit history | No | Yes | Yes | Yes |

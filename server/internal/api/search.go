@@ -62,7 +62,7 @@ func (c *Ctx) search() error {
 		r := searchResult{Kind: h.Kind, ID: h.ID}
 		switch h.Kind {
 		case "contact":
-			r.Title, r.Href = h.Primary, "/speakers?id="+h.ID
+			r.Title, r.Href = h.Primary, "/contacts?id="+h.ID
 			r.Subtitle = joinNonEmpty(" · ", h.A, h.B, h.C)
 		case "event":
 			r.Title, r.Href = h.Primary, "/events?id="+h.ID
