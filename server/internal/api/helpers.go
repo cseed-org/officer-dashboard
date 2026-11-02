@@ -198,7 +198,7 @@ func (s *Server) eventItems(ctx context.Context, q *store.Queries, cat *catalog,
 
 func eventItem(cat *catalog, e store.Event, counts *store.Counts) EventListItem {
 	item := EventListItem{ID: e.ID, LumaID: e.LumaID, Name: e.Name, StartsAt: e.StartsAt, EndsAt: e.EndsAt, Location: e.Location, Status: e.Status,
-		Capacity: e.Capacity, LumaURL: e.LumaURL, Metrics: eventCounts(counts)}
+		Capacity: e.Capacity, LumaURL: e.LumaURL, Metrics: eventCounts(counts), DesignNeed: e.DesignNeed}
 	if e.HostUserID != nil {
 		if u := cat.users[*e.HostUserID]; u != nil {
 			s := userSummary(u)
@@ -358,7 +358,7 @@ func eventSnapshot(e *store.Event) map[string]any {
 	return map[string]any{
 		"id": e.ID, "lumaId": e.LumaID, "name": e.Name, "startsAt": e.StartsAt, "endsAt": e.EndsAt, "location": e.Location, "url": e.URL,
 		"hostUserId": e.HostUserID, "status": e.Status, "description": e.Description, "capacity": e.Capacity, "hostSubteamId": e.HostSubteamID,
-		"lumaUrl": e.LumaURL, "notionUrl": e.NotionURL, "hasCover": e.CoverUpdatedAt != nil,
+		"lumaUrl": e.LumaURL, "notionUrl": e.NotionURL, "designNeed": e.DesignNeed, "hasCover": e.CoverUpdatedAt != nil,
 		"createdAt": isoMs(int64(e.CreatedAt)), "updatedAt": isoMs(int64(e.UpdatedAt)),
 	}
 }

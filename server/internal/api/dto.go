@@ -58,6 +58,7 @@ type EventListItem struct {
 	LumaURL     *string       `json:"lumaUrl"`
 	CoverURL    *string       `json:"coverUrl"`
 	Metrics     EventCounts   `json:"metrics"`
+	DesignNeed  string        `json:"designNeed"`
 }
 
 type SubteamBrief struct {

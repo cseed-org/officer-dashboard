@@ -392,7 +392,8 @@ func (c *Ctx) designList() error {
 		}
 		items = append(items, it)
 	}
-	writeJSON(c.W, 200, map[string]any{"items": items, "designers": dc.designerSummaries(), "viewer": DesignViewer{IsDesigner: dc.isDesigner(u.ID), CanAssign: dc.worker()}})
+	writeJSON(c.W, 200, map[string]any{"items": items, "designers": dc.designerSummaries(), "viewer": DesignViewer{IsDesigner: dc.isDesigner(u.ID), CanAssign: dc.worker()},
+		"upcomingEvents": dc.upcomingEvents(c.S.now(), rows)})
 	return nil
 }
 
