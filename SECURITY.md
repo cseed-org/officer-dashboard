@@ -2,11 +2,7 @@
 
 ## Supported versions
 
-| Version | Security support |
-| --- | --- |
-| `main` | Supported |
-| Latest published release | Supported; fixes may require upgrading |
-| Older releases and forks | Not supported |
+Only the `main` branch receives security fixes. Forks are not supported.
 
 ## Report privately
 
@@ -14,9 +10,6 @@ Use [GitHub private vulnerability reporting](https://github.com/cseed-org/office
 Do not publish exploit details, credentials or personal data in public issues.
 If private reporting is unavailable, ask a maintainer for a private channel
 without disclosing the vulnerability publicly.
-
-**Email placeholder — maintainer confirmation required:** `security@cseed.example`
-is not a working reporting address. Use GitHub until a monitored address is published.
 
 Include the affected commit/release, impact, reproduction steps, a minimal proof
 of concept and any relevant redacted logs. Share secrets only through the private
