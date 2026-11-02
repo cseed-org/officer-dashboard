@@ -1,0 +1,189 @@
+{
+  "checks": [
+    "Four role explanations",
+    "Keyboard reorder",
+    "S/M/L resize",
+    "Remove and undo",
+    "Gallery category and add",
+    "Escape and trigger focus restore",
+    "Done feedback",
+    "Role-specific My actions + role captures",
+    "Lifted widget and drop slot",
+    "Loading aria-busy, error boundary, mixed stale",
+    "All widgets across six states",
+    "No horizontal overflow",
+    "Retry",
+    "Empty home",
+    "No script errors"
+  ],
+  "results": [
+    {
+      "width": 1440,
+      "theme": "light",
+      "state": "connected",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "state": "empty",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "state": "loading",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "state": "error",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "state": "mixed",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "light",
+      "state": "disconnected",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "state": "connected",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "state": "empty",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "state": "loading",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "state": "error",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "state": "mixed",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "state": "disconnected",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "state": "connected",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "state": "empty",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "state": "loading",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "state": "error",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "state": "mixed",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "theme": "dark",
+      "state": "disconnected",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "state": "connected",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "state": "empty",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "state": "loading",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "state": "error",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "state": "mixed",
+      "widgets": 10,
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "state": "disconnected",
+      "widgets": 10,
+      "overflow": false
+    }
+  ]
+}
