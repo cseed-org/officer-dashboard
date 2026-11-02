@@ -172,27 +172,16 @@ function Speakers({ me }: { me: CurrentUser }) {
     key: Exclude<keyof Draft, "type" | "eventIds">,
     title: string,
     inputType: "text" | "email" | "url" = "text",
-  ) => (
-    <label class="field">
-      <span class="field-label">{title}</span>
-      <input
-        class="input"
-        type={inputType}
-        value={draft[key]}
-        required={key === "name"}
-        maxLength={
-          key === "name" || key === "org" || key === "role"
-            ? 200
-            : key === "email"
-              ? 254
-              : key === "linkedin"
-                ? 2000
-                : undefined
-        }
-        onInput={(e) => setDraft({ ...draft, [key]: e.currentTarget.value })}
-      />
-    </label>
-  );
+  ) => {
+    const props = {
+      class: "input",
+      value: draft[key],
+      required: key === "name",
+      maxLength: key === "email" ? 254 : key === "linkedin" ? 2000 : key === "topics" ? undefined : 200,
+      onInput: (e: { currentTarget: HTMLInputElement }) => setDraft({ ...draft, [key]: e.currentTarget.value }),
+    };
+    return <label class="field"><span class="field-label">{title}</span>{inputType === "email" ? <input type="email" {...props} /> : inputType === "url" ? <input type="url" {...props} /> : <input type="text" {...props} />}</label>;
+  };
   const [eventCursor, setEventCursor] = useState<string | undefined>();
   const events = useApi("eventsList", {
     query: { limit: 100, when: "all", cursor: eventCursor },
