@@ -35,7 +35,7 @@ func TestSettingsFromEnvAndFlags(t *testing.T) {
 		t.Errorf("defaults/flags %+v", s)
 	}
 	fs = flag.NewFlagSet("t", flag.ContinueOnError)
-	if s, _ = loadSettings(fs, nil, env(nil)); s.Addr != ":8090" {
+	if s, _ = loadSettings(fs, nil, env(nil)); s.Addr != "127.0.0.1:8090" {
 		t.Errorf("default addr %q", s.Addr)
 	}
 }
@@ -191,7 +191,7 @@ func TestDevAuthKeyWiring(t *testing.T) {
 	}
 	want := map[string]int{"/auth/dev?as=director": 404, "/auth/dev/info": 404, "/auth/dev?as=director&key=" + key: 404}
 	if api.DevBuild {
-		want = map[string]int{"/auth/dev?as=director": 404, "/auth/dev/info": 200, "/auth/dev?as=director&key=" + key: 302}
+		want = map[string]int{"/auth/dev?as=director": 404, "/auth/dev/info": 200, "/auth/dev?as=director&key=" + key: 200}
 	}
 	for p, code := range want {
 		if got := get(p); got != code {
@@ -200,5 +200,45 @@ func TestDevAuthKeyWiring(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), key) {
 		t.Errorf("the dev key was logged: %s", logs.String())
+	}
+}
+
+// A server reachable beyond this machine must know its public origin, and a dev build that
+// serves the keyless-or-weak dev login there refuses to start.
+func TestExposureChecks(t *testing.T) {
+	load := func(m map[string]string) settings {
+		t.Helper()
+		s, err := loadSettings(flag.NewFlagSet("t", flag.ContinueOnError), nil, env(m))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	strong := "0123456789abcdef0123"
+	cases := []struct {
+		name     string
+		env      map[string]string
+		devBuild bool
+		wantErr  string
+	}{
+		{"default listens on loopback", nil, false, ""},
+		{"loopback without APP_URL", map[string]string{"ADDR": "127.0.0.1:9000"}, false, ""},
+		{"all interfaces without APP_URL", map[string]string{"ADDR": ":9000"}, false, "APP_URL"},
+		{"public address without APP_URL", map[string]string{"ADDR": "10.0.0.5:9000"}, false, "APP_URL"},
+		{"all interfaces with APP_URL", map[string]string{"ADDR": ":9000", "APP_URL": "https://dash.example.org"}, false, ""},
+		{"dev login on localhost, no key", map[string]string{"DEV_AUTH": "1"}, true, ""},
+		{"dev login public, no key", map[string]string{"DEV_AUTH": "1", "ADDR": ":9000", "APP_URL": "https://test.example.org"}, true, "DEV_AUTH_KEY"},
+		{"dev login public, short key", map[string]string{"DEV_AUTH": "1", "DEV_AUTH_KEY": "short", "ADDR": ":9000", "APP_URL": "https://test.example.org"}, true, "DEV_AUTH_KEY"},
+		{"dev login public, strong key", map[string]string{"DEV_AUTH": "1", "DEV_AUTH_KEY": strong, "ADDR": ":9000", "APP_URL": "https://test.example.org"}, true, ""},
+		{"release build ignores DEV_AUTH", map[string]string{"DEV_AUTH": "1", "ADDR": ":9000", "APP_URL": "https://dash.example.org"}, false, ""},
+	}
+	for _, c := range cases {
+		err := checkExposure(load(c.env), c.devBuild)
+		switch {
+		case c.wantErr == "" && err != nil:
+			t.Errorf("%s: unexpected error %v", c.name, err)
+		case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
+			t.Errorf("%s: error %v, want one naming %s", c.name, err, c.wantErr)
+		}
 	}
 }

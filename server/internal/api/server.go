@@ -47,6 +47,9 @@ type Config struct {
 	// DevAuthKey, when set, gates /auth/dev behind ?key=<DevAuthKey> (or the dev_key cookie).
 	// Dev builds only; never logged.
 	DevAuthKey string
+	// AuthRateLimit and UploadRateLimit are the requests per minute one client IP may make
+	// to /auth/* and to the upload/import routes. 0 uses the defaults; negative disables.
+	AuthRateLimit, UploadRateLimit int
 	// Static serves the front end for every non-API path; nil answers 404 JSON.
 	Static  http.Handler
 	Version string
@@ -60,6 +63,8 @@ type Server struct {
 	log    *slog.Logger
 	secure bool
 	host   string // APP_URL host, for the Origin check
+
+	authLimit, uploadLimit *rateLimiter
 
 	sealer     *calendar.Sealer
 	bg         sync.WaitGroup // background calendar deliveries
@@ -92,6 +97,8 @@ func New(cfg Config) *Server {
 		cfg.Version = "0.1.0"
 	}
 	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log}
+	s.authLimit = newRateLimiter(orDefault(cfg.AuthRateLimit, defaultAuthRateLimit), cfg.Now)
+	s.uploadLimit = newRateLimiter(orDefault(cfg.UploadRateLimit, defaultUploadRateLimit), cfg.Now)
 	if cfg.Google != nil {
 		s.sealer = calendar.NewSealer(cfg.Google.ClientSecret)
 	}
@@ -163,6 +170,7 @@ func (s *Server) Handler() http.Handler {
 	s.routes(mux)
 	var h http.Handler = mux
 	h = s.withAuth(h)
+	h = s.withRateLimit(h)
 	h = s.withAPIHygiene(h)
 	h = s.withRecover(h)
 	return h

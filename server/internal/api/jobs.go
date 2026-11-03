@@ -33,6 +33,15 @@ func (c *Ctx) authenticateToken(scope string) (*store.ServiceToken, error) {
 	if t.RevokedAt != nil || (t.ExpiresAt != nil && *t.ExpiresAt <= c.S.nowMs()) {
 		return nil, fail(401, "unauthenticated", "Invalid or expired service token")
 	}
+	// A token acts with its creator's authority: it dies with that authority, even if the
+	// revocation on deactivation/demotion was somehow missed.
+	creator, err := c.S.db.Read().UserByID(c.Context(), t.CreatedBy)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	if creator == nil || !creator.Active || !auth.HasRole(creator.Role, auth.RoleDirector) {
+		return nil, fail(401, "unauthenticated", "Invalid or expired service token")
+	}
 	has := false
 	for _, s := range t.Scopes {
 		has = has || s == scope

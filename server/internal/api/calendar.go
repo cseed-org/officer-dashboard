@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -182,7 +183,7 @@ func (c *Ctx) googleCallback() error {
 	if q.Get("error") == "access_denied" {
 		return back("cancelled")
 	}
-	if code == "" || state == "" || stored == "" || state != stored || verifier == "" {
+	if code == "" || state == "" || stored == "" || subtle.ConstantTimeCompare([]byte(state), []byte(stored)) != 1 || verifier == "" {
 		return back("failed")
 	}
 	ctx := c.Context()

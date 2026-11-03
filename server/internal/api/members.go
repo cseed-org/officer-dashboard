@@ -59,6 +59,15 @@ func (c *Ctx) membersList() error {
 	for i := range items {
 		items[i].Demographics = nil
 	}
+	// Paging past the first page is how a bulk copy of the member list happens; leave a trace.
+	if f.Offset > 0 {
+		filters := map[string]any{"q": f.Search, "campus": f.Campus, "gradYear": f.GradYear, "officer": f.Officer}
+		if err := c.S.db.Write(c.Context(), func(w *store.Queries) error {
+			return c.audit(c.Context(), w, "members.paged", "members", "", nil, map[string]any{"offset": f.Offset, "limit": f.Limit, "returned": len(items), "filters": filters})
+		}); err != nil {
+			return err
+		}
+	}
 	c.W.Header().Set("Cache-Control", "no-store")
 	writeJSON(c.W, 200, map[string]any{"items": items, "total": total, "limit": f.Limit, "offset": f.Offset, "connected": c.S.cfg.Cloudflare.Client.D1Connected(), "lastSync": last, "syncError": msg, "facets": facets})
 	return nil

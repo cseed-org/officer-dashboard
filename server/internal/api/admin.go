@@ -131,6 +131,18 @@ func (c *Ctx) adminUserUpdate() error {
 				return err
 			}
 		}
+		// Service tokens carry their creator's director authority; losing it revokes them.
+		if (active.Set && !active.V) || (role.Has() && !auth.HasRole(role.V, auth.RoleDirector)) {
+			n, err := w.RevokeUserTokens(ctx, before.ID, c.S.nowMs())
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				if err := c.audit(ctx, w, "token.revoked_with_user", "user", before.ID, nil, map[string]any{"count": n}); err != nil {
+					return err
+				}
+			}
+		}
 		got, err := w.UserByID(ctx, before.ID)
 		if err != nil {
 			return err

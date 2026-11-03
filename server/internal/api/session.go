@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	sessionTTL       = 30 * 24 * time.Hour
-	renewWhenLeft    = 15 * 24 * time.Hour
+	sessionTTL    = 30 * 24 * time.Hour
+	renewWhenLeft = 15 * 24 * time.Hour
+	// sessionMaxAge caps a session however often it is renewed: sign in again after 90 days.
+	sessionMaxAge    = 90 * 24 * time.Hour
 	oauthStateName   = "cseed_oauth_state"
 	oauthVerifier    = "cseed_oauth_verifier"
 	nextCookieName   = "cseed_next"
@@ -55,14 +57,26 @@ func (s *Server) clearCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", HttpOnly: true, Secure: s.secure, SameSite: http.SameSiteLaxMode, MaxAge: -1, Expires: time.Unix(0, 0)})
 }
 
-// createSession stores a session and sets the cookie. Only sha256(token) is kept.
-func (s *Server) createSession(ctx context.Context, w http.ResponseWriter, userID, userAgent string) error {
+// newSession signs this browser in as userID, replacing the session it already had (if any)
+// so a re-login never leaves the old token alive.
+func (c *Ctx) newSession(ctx context.Context, userID string) error {
+	return c.S.createSession(ctx, c.W, userID, c.R.UserAgent(), c.SessionID)
+}
+
+// createSession stores a session and sets the cookie. Only sha256(token) is kept. replaces,
+// when set, is the hash of the browser's previous session, deleted in the same transaction.
+func (s *Server) createSession(ctx context.Context, w http.ResponseWriter, userID, userAgent, replaces string) error {
 	token := auth.RandomToken(32)
 	expires := s.now().Add(sessionTTL)
 	if len(userAgent) > 300 {
 		userAgent = userAgent[:300]
 	}
 	err := s.db.Write(ctx, func(q *store.Queries) error {
+		if replaces != "" {
+			if err := q.DeleteSession(ctx, replaces); err != nil {
+				return err
+			}
+		}
 		return q.InsertSession(ctx, auth.SHA256Hex(token), userID, expires.UnixMilli(), userAgent, s.nowMs())
 	})
 	if err != nil {
@@ -80,11 +94,23 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 		if ck, err := r.Cookie(s.sessionCookieName()); err == nil && ck.Value != "" {
 			id := auth.SHA256Hex(ck.Value)
 			sess, err := s.db.Read().SessionByHash(r.Context(), id, s.nowMs())
+			hardStop := time.UnixMilli(0)
+			if err == nil {
+				hardStop = time.UnixMilli(sess.CreatedAt).Add(sessionMaxAge)
+				if !s.now().Before(hardStop) {
+					// Past the absolute lifetime: the session is over however recently used.
+					_ = s.db.Write(r.Context(), func(q *store.Queries) error { return q.DeleteSession(r.Context(), id) })
+					err = store.ErrNotFound
+				}
+			}
 			switch {
 			case err == nil:
 				p = principal{user: &sess.User, sessionID: id}
 				if time.UnixMilli(sess.ExpiresAt).Sub(s.now()) < renewWhenLeft {
 					exp := s.now().Add(sessionTTL)
+					if exp.After(hardStop) {
+						exp = hardStop
+					}
 					if werr := s.db.Write(r.Context(), func(q *store.Queries) error { return q.ExtendSession(r.Context(), id, exp.UnixMilli()) }); werr == nil {
 						s.setCookie(w, s.sessionCookieName(), ck.Value, exp, 0)
 					}
