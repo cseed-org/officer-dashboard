@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { devLogin, settle } from './helpers';
+import { devLogin, settle, devKeyParam } from './helpers';
 
 test('the theme setting persists across a reload with no flash', async ({ page }) => {
   await devLogin(page, 'director');
@@ -44,14 +44,14 @@ test('signed-out visitors are sent to /login, which links to Discord and back to
   await page.goto('/finance?id=req-0005');
   await expect(page).toHaveURL(/\/login\?next=/);
   await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toHaveAttribute('href', /^\/auth\/login\?next=%2Ffinance/);
-  // Dev builds also show dev sign-in links carrying the same next=; production builds (Go)
-  // don't, so sign in through /auth/dev directly there.
+  // In developer mode the login page may show the skip-Discord panel carrying the same next=;
+  // otherwise (production, or a keyed test build without the key) sign in through /auth/dev.
   const devLink = page.locator('[data-dev-login="officer"]');
   if (await devLink.count()) {
     await expect(devLink).toHaveAttribute('href', /next=%2Ffinance%3Fid%3Dreq-0005/);
     await devLink.click();
   } else {
-    await page.goto(`/auth/dev?as=officer&next=${encodeURIComponent('/finance?id=req-0005')}`);
+    await page.goto(`/auth/dev?as=officer&next=${encodeURIComponent('/finance?id=req-0005')}${devKeyParam}`);
   }
   await expect(page).toHaveURL(/\/finance\?id=req-0005/);
 });

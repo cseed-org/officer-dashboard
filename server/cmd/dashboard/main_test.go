@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"officerdashboard/internal/api"
 	"officerdashboard/internal/store"
 )
 
@@ -159,5 +160,45 @@ func TestAppURLMustBeHTTPSExceptOnLocalhost(t *testing.T) {
 	e := env(map[string]string{"DB_PATH": filepath.Join(t.TempDir(), "d.db"), "APP_URL": "http://officers.cseed.co", "ADDR": "127.0.0.1:0"})
 	if code := run([]string{"serve"}, e, &out, &errb); code != 1 || !strings.Contains(errb.String(), "https") {
 		t.Errorf("serve with an http APP_URL → %d %s", code, errb.String())
+	}
+}
+
+// DEV_AUTH / DEV_AUTH_KEY from the environment: the release build ignores both (no route,
+// no panel probe); the dev build requires the key. The key never reaches the log.
+func TestDevAuthKeyWiring(t *testing.T) {
+	const key = "wiring-key-0123456789abcdef"
+	dir := t.TempDir()
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	s, _ := loadSettings(fs, nil, env(map[string]string{"DB_PATH": filepath.Join(dir, "dash.db"), "DEV_AUTH": "1", "DEV_AUTH_KEY": key}))
+	if s.DevAuthKey != key {
+		t.Fatalf("DEV_AUTH_KEY not read: %+v", s.DevAuthKey)
+	}
+	db, err := openDB(s.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var logs bytes.Buffer
+	srv, err := buildServer(s, db, slog.New(slog.NewTextHandler(&logs, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+	get := func(path string) int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		return rec.Code
+	}
+	want := map[string]int{"/auth/dev?as=director": 404, "/auth/dev/info": 404, "/auth/dev?as=director&key=" + key: 404}
+	if api.DevBuild {
+		want = map[string]int{"/auth/dev?as=director": 404, "/auth/dev/info": 200, "/auth/dev?as=director&key=" + key: 302}
+	}
+	for p, code := range want {
+		if got := get(p); got != code {
+			t.Errorf("DevBuild=%v GET %s → %d want %d", api.DevBuild, p, got, code)
+		}
+	}
+	if strings.Contains(logs.String(), key) {
+		t.Errorf("the dev key was logged: %s", logs.String())
 	}
 }

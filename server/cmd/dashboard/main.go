@@ -91,6 +91,7 @@ type settings struct {
 	ServiceAccountJSON, DriveRoot    string
 	ReceiptsDir                      string
 	DevAuth                          bool
+	DevAuthKey                       string
 	TolerancePercent, ToleranceCents string
 }
 
@@ -123,6 +124,7 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	s.DriveRoot = env("DRIVE_ROOT_FOLDER_ID", env("GOOGLE_DRIVE_FOLDER_ID", ""))
 	s.ReceiptsDir = env("RECEIPTS_DIR", "")
 	s.DevAuth = env("DEV_AUTH", "") == "1"
+	s.DevAuthKey = env("DEV_AUTH_KEY", "")
 	s.TolerancePercent, s.ToleranceCents = env("AGENT_SETTLEMENT_TOLERANCE_PERCENT", ""), env("AGENT_SETTLEMENT_TOLERANCE_CENTS", "")
 	if s.AppURL == "" {
 		port := s.Addr
@@ -166,11 +168,17 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		Cloudflare: &cfsync.Service{Client: cloudflare.New(s.Cloudflare), DB: db, Log: log},
 		DB:         db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
 		Tolerance: purchases.ToleranceFromEnv(s.TolerancePercent, s.ToleranceCents),
-		DevAuth:   s.DevAuth,
+		DevAuth:   s.DevAuth, DevAuthKey: s.DevAuthKey,
 	}
 	if s.DevAuth && !api.DevBuild {
 		log.Warn("DEV_AUTH=1 is ignored: this binary was not built with -tags dev, so /auth/dev does not exist")
 		cfg.DevAuth = false
+	}
+	if !api.DevBuild {
+		cfg.DevAuthKey = ""
+	}
+	if cfg.DevAuth && cfg.DevAuthKey != "" && len(cfg.DevAuthKey) < 16 {
+		log.Warn("DEV_AUTH_KEY is shorter than 16 characters; use a long random value (e.g. openssl rand -hex 24)")
 	}
 	if s.DiscordClientID != "" && s.DiscordSecret != "" {
 		cfg.Discord = auth.NewDiscord(s.DiscordClientID, s.DiscordSecret, s.AppURL+"/auth/callback")
