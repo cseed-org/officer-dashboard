@@ -2,7 +2,12 @@
 
 The Calendar widget combines club events (including Luma-linked events) and open
 design-request deadlines. It appears in the default Home layout and can be added
-to existing layouts through **Edit home → Add widget**.
+to existing layouts through **Edit home → Add widget**. The default keeps Links,
+Recent events and every other dashboard widget. Calendar starts at 4×2 between
+the stat tiles and Recent events/Budget, adding two full-width rows so the desktop
+grid stays a complete 4×7 rectangle. Widgets added from the gallery start at 2×2.
+Drag a resize grip or use Shift+arrow keys to move between Calendar’s 2×1, 2×2
+and 4×2 sizes.
 
 ![Before: separate event and design pages. After: one date-ranged feed powers three widget sizes.](evidence/calendar-widget/overview.png)
 
@@ -77,8 +82,8 @@ Register entries once during startup; do not mutate the registry while serving
 requests. Buildspace can add absences/check-in loaders here later; this PR does
 not add those sources or change their visibility policy.
 
-Migration 0015 is intentionally unchanged; its collision with dashboard-ux will
-be renumbered during merge.
+Calendar settings and date indexes use migration **0016_calendar_widget.sql**,
+after dashboard-ux’s **0015_dashboard.sql**.
 
 ## Current limits
 
@@ -112,3 +117,11 @@ options persistence, source filtering and existing detail-page navigation.
 | ![Phone week dark](evidence/calendar-widget/week-phone-dark.png) | ![Phone small dark](evidence/calendar-widget/small-phone-dark.png) |
 
 ![Phone focus card stays inside the viewport](evidence/calendar-widget/item-focus-phone.png)
+
+## Integrated Home layout
+
+![Full Home layout, light](evidence/calendar-widget/home-light.png)
+
+![Full Home layout, dark](evidence/calendar-widget/home-dark.png)
+
+![Full Home layout, phone](evidence/calendar-widget/home-phone.png)
