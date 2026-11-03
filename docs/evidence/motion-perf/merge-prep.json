@@ -1,0 +1,253 @@
+{
+  "profile": {
+    "runs": 3,
+    "cpuSlowdown": 4,
+    "latencyMs": 40,
+    "downBitsPerSecond": 1600000,
+    "upBitsPerSecond": 750000,
+    "cache": "disabled",
+    "settleMs": 750
+  },
+  "medians": [
+    {
+      "route": "/",
+      "lcp": 1964,
+      "cls": 0.0018393518518518516,
+      "interaction": 112,
+      "jsBytes": 87062
+    },
+    {
+      "route": "/events",
+      "lcp": 1832,
+      "cls": 0,
+      "interaction": 64,
+      "jsBytes": 84517
+    }
+  ],
+  "samples": [
+    {
+      "route": "/",
+      "run": 1,
+      "lcp": 1980,
+      "cls": 0.0018393518518518516,
+      "interaction": 104,
+      "lcpElement": "<span class=\"kpi-sub\">$591 spent \u00b7 $204 committed of $14,300</span>",
+      "shifts": [
+        {
+          "value": 0.0018393518518518516,
+          "time": 2268.099999964237,
+          "sources": [
+            {
+              "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 \u00d7 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
+              "before": {
+                "x": 280,
+                "y": 888.10107421875,
+                "width": 548,
+                "height": 11.89892578125,
+                "top": 888.10107421875,
+                "right": 828,
+                "bottom": 900,
+                "left": 280
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            },
+            {
+              "node": "<li data-widget=\"budget\" data-size=\"2x2\" data-size-label=\"2 \u00d7 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 9;\"><div class=\"blk-body\"><section aria-labelledby=\"budget-h\" data-block=\"budget\" class=\"tile\"><header class=\"tile-head\"><h2 id=\"budget-h\" ",
+              "before": {
+                "x": 844,
+                "y": 888.10107421875,
+                "width": 548,
+                "height": 11.89892578125,
+                "top": 888.10107421875,
+                "right": 1392,
+                "bottom": 900,
+                "left": 844
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 87062
+    },
+    {
+      "route": "/events",
+      "run": 1,
+      "lcp": 1836,
+      "cls": 0,
+      "interaction": 56,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [],
+      "jsBytes": 84517
+    },
+    {
+      "route": "/",
+      "run": 2,
+      "lcp": 1964,
+      "cls": 0.0018393518518518516,
+      "interaction": 112,
+      "lcpElement": "<span class=\"kpi-sub\">$591 spent \u00b7 $204 committed of $14,300</span>",
+      "shifts": [
+        {
+          "value": 0.0018393518518518516,
+          "time": 2286,
+          "sources": [
+            {
+              "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 \u00d7 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
+              "before": {
+                "x": 280,
+                "y": 888.3179931640625,
+                "width": 548,
+                "height": 11.6820068359375,
+                "top": 888.3179931640625,
+                "right": 828,
+                "bottom": 900,
+                "left": 280
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            },
+            {
+              "node": "<li data-widget=\"budget\" data-size=\"2x2\" data-size-label=\"2 \u00d7 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 9;\"><div class=\"blk-body\"><section aria-labelledby=\"budget-h\" data-block=\"budget\" class=\"tile\"><header class=\"tile-head\"><h2 id=\"budget-h\" ",
+              "before": {
+                "x": 844,
+                "y": 888.3179931640625,
+                "width": 548,
+                "height": 11.6820068359375,
+                "top": 888.3179931640625,
+                "right": 1392,
+                "bottom": 900,
+                "left": 844
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 87062
+    },
+    {
+      "route": "/events",
+      "run": 2,
+      "lcp": 1832,
+      "cls": 0,
+      "interaction": 64,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [],
+      "jsBytes": 84517
+    },
+    {
+      "route": "/",
+      "run": 3,
+      "lcp": 1960,
+      "cls": 0.0018393518518518516,
+      "interaction": 120,
+      "lcpElement": "<span class=\"kpi-sub\">$591 spent \u00b7 $204 committed of $14,300</span>",
+      "shifts": [
+        {
+          "value": 0.0018393518518518516,
+          "time": 2307.199999988079,
+          "sources": [
+            {
+              "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 \u00d7 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
+              "before": {
+                "x": 280,
+                "y": 888.258544921875,
+                "width": 548,
+                "height": 11.741455078125,
+                "top": 888.258544921875,
+                "right": 828,
+                "bottom": 900,
+                "left": 280
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            },
+            {
+              "node": "<li data-widget=\"budget\" data-size=\"2x2\" data-size-label=\"2 \u00d7 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 9;\"><div class=\"blk-body\"><section aria-labelledby=\"budget-h\" data-block=\"budget\" class=\"tile\"><header class=\"tile-head\"><h2 id=\"budget-h\" ",
+              "before": {
+                "x": 844,
+                "y": 888.258544921875,
+                "width": 548,
+                "height": 11.741455078125,
+                "top": 888.258544921875,
+                "right": 1392,
+                "bottom": 900,
+                "left": 844
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 87062
+    },
+    {
+      "route": "/events",
+      "run": 3,
+      "lcp": 1824,
+      "cls": 0,
+      "interaction": 64,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [],
+      "jsBytes": 84517
+    }
+  ],
+  "revision": {
+    "base": "d7e7be390db2f8c866f560697a51b0d3750a450b",
+    "runtime": "05f357e",
+    "state": "default merged widget layout; returning director; tutorial seen; seeded local DB"
+  }
+}

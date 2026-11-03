@@ -257,11 +257,10 @@ export default function EventsView() {
         </p>
       )}
 
-      {state.status === 'loading' ? (
-        <Loading rows={6} label="Loading events" />
-      ) : state.status === 'error' ? (
+      {state.status === 'error' ? (
         <ErrorState error={state.error} onRetry={reload} title="Events couldn’t load" />
-      ) : total === 0 ? (
+      ) : <Async state={state} loading={<Loading rows={6} label="Loading events" />}>
+        {() => total === 0 ? (
         <div class="state" data-state="empty">
           <p class="state-title">No events yet</p>
           <p class="state-body">Plan your next CSEED gathering or import an existing Luma event.</p>
@@ -312,6 +311,7 @@ export default function EventsView() {
           {ready!.nextCursor && <p class="muted small">Showing the first {ready!.items.length} events. Narrow the search to find older ones.</p>}
         </section>
       )}
+      </Async>}
 
       {health && state.status === 'ready' && <EventHealth e={health} />}
 

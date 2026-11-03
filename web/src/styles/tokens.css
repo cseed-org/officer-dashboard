@@ -47,6 +47,10 @@
   --dur-1: 120ms;
   --dur-2: 180ms;
   --dur-3: 240ms;
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --motion-distance: 8px;
+  --motion-drawer-distance: 100%;
+  --motion-stagger: 16ms;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;

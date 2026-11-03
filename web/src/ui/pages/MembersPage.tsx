@@ -123,6 +123,9 @@ function Members({ me }: { me: CurrentUser }) {
       setSyncing(false);
     }
   }
+  // Connection state can insert a notice and change the status width. Commit the
+  // initial directory with that state known, rather than moving a painted table.
+  if (!data && loading) return <Loading rows={6} label="Loading members" />;
   return (
     <div class="members-page">
       <header class="page-header">

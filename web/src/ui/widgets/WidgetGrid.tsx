@@ -2,6 +2,7 @@ import DashboardTutorial from './DashboardTutorial';
 import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../../lib/api/client';
+import { timezoneSnapshot } from '../../lib/timezone';
 import { Icon } from '../components/Icon';
 import { Loading } from '../components/states';
 import { blocks, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
@@ -16,7 +17,10 @@ type Drag = { id: string; x: number; y: number; snapshot: Placement[]; over: str
  * (/api/me/prefs); V0.3 S/M/L layouts are migrated on load. `children` renders one widget's tile.
  */
 export default function WidgetGrid({ children }: { children: (id: string, size: BlockSize) => ComponentChildren }) {
-  const [layout, setLayout] = useState<Placement[] | null>(null);
+  const [layout, setLayout] = useState<Placement[] | null>(() => {
+    const prefs = timezoneSnapshot().prefs;
+    return prefs ? migrateLayout(prefs.widgetLayout).layout : null;
+  });
   const [saved, setSaved] = useState<Placement[]>([]);
   const [userEditing, setEditing] = useState(false);
   const [tourEditing, setTourEditing] = useState(false);
@@ -53,7 +57,10 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
   useEffect(() => {
     let alive = true;
     setError('');
-    api('prefsGet').then(
+    // Gate already fetched preferences for timezone initialization. Reuse that snapshot
+    // on first mount; explicit retries still read the server. Drag/resize state is unchanged.
+    const prefs = tick === 0 ? timezoneSnapshot().prefs : null;
+    (prefs ? Promise.resolve(prefs) : api('prefsGet')).then(
       async (p) => {
         if (!alive) return;
         const { layout: l } = migrateLayout(p.widgetLayout);
