@@ -29,7 +29,8 @@ const fallbackSources: CalendarFeedSource[] = [
   { id: 'design', label: 'Design deadlines', icon: 'pen', hue: 'amber' },
 ];
 const safeHue = (hue?: string) => ['blue', 'amber', 'teal', 'coral', 'violet', 'green'].includes(hue ?? '') ? hue! : 'teal';
-const sourceIcon = (source?: CalendarFeedSource) => source?.icon === 'pen' ? 'pen' : source?.icon === 'user' ? 'user' : source?.icon === 'check' ? 'check' : 'calendar';
+const SOURCE_ICONS = ['pen', 'user', 'check', 'wallet'] as const;
+const sourceIcon = (source?: CalendarFeedSource) => SOURCE_ICONS.find(icon => icon === source?.icon) ?? 'calendar';
 function itemHue(item: CalendarFeedItem, by: CalendarWidgetOptions['colourBy'], source?: CalendarFeedSource) {
   if (by === 'source') return safeHue(source?.hue);
   if (item.source === 'events') return item.type === 'cancelled' ? 'coral' : item.type === 'draft' ? 'amber' : 'teal';
@@ -93,6 +94,7 @@ function CalendarChip({ item, source, colourBy }: { item: CalendarFeedItem; sour
       <strong>{item.title}</strong>
       <span>{item.startsAt ? timeRange(item.startsAt, item.endsAt) : 'All day'} · {shortDay(item.date)}</span>
       <span>{item.location || (item.startsAt ? 'Location not set' : 'Deadline')}</span>
+      {item.detail && <span class="cw-popover-detail">{item.detail}</span>}
       <span class="cw-popover-source"><Icon name={sourceIcon(source)} size={13} />{source?.label ?? item.source}</span>
       <a href={item.href}>Open details →</a>
       {item.lumaUrl && <a href={item.lumaUrl} target="_blank" rel="noopener noreferrer">Open in Luma ↗</a>}
@@ -187,6 +189,7 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
       <a href={item.href} class="cw-item-title"><Icon name={sourceIcon(source)} size={13} /> {item.title}</a>
       <span class="cw-item-meta">{item.startsAt ? timeRange(item.startsAt, item.endsAt) : 'All day'} · {source?.label ?? item.source}{options.colourBy === 'type' ? ` · ${item.type}` : ''}{item.type === 'draft' ? ' · Draft' : ''}</span>
       {item.location && <span class="cw-item-meta">{item.location}</span>}
+      {item.detail && <span class="cw-item-meta">{item.detail}</span>}
       {item.lumaUrl && <a class="cw-luma" href={item.lumaUrl} target="_blank" rel="noopener noreferrer">Open in Luma ↗</a>}
     </div>;
   };

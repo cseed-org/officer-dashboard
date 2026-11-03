@@ -14,6 +14,7 @@ import { describe, Field } from '../components/kit';
 import { Async, errorMessage, Loading, Notice } from '../components/states';
 import type { Flash } from './RequestDetail';
 import { bytes, dollarsToCents, fmtDate, formatCents, FUNCTIONAL_LABEL } from '../../lib/format';
+import { pacificToday } from '../../lib/calendar';
 
 interface FormState {
   type: PurchaseType;
@@ -66,7 +67,7 @@ const FRIENDLY: Record<string, string> = {
   expenseAccountId: 'Pick a budget category.',
   fundId: 'Pick the fund that pays for it.',
   justification: 'Explain what it is for, so a director can approve it.',
-  neededBy: 'Use a date.',
+  neededBy: 'Pick a date that is today or later, or leave it blank.',
 };
 
 function toBody(f: FormState, submit: boolean) {
@@ -163,10 +164,13 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
   const save = async (submit: boolean) => {
     setFailure(null);
     const parsed = PurchaseRequestCreateRequest.safeParse(toBody(f, submit));
-    if (!parsed.success) {
-      const flat = flattenError(parsed.error).fieldErrors as Record<string, string[] | undefined>;
+    // Date-only: compare with today on the selected time zone (the server checks the same).
+    const pastDeadline = !!f.neededBy && f.neededBy < pacificToday();
+    if (!parsed.success || pastDeadline) {
+      const flat = parsed.success ? {} : (flattenError(parsed.error).fieldErrors as Record<string, string[] | undefined>);
       const e: Record<string, string> = {};
       for (const k of Object.keys(flat)) if (flat[k]?.length) e[k] = FRIENDLY[k] ?? flat[k]![0]!;
+      if (pastDeadline) e.neededBy = FRIENDLY.neededBy!;
       if (errors.files) e.files = errors.files;
       return showErrors(e);
     }
@@ -320,8 +324,8 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
               ))}
             </select>
           </Field>
-          <Field id="rq-needed" label="needed by" optional error={errors.neededBy}>
-            <input class="input" type="date" {...describe('rq-needed', errors.neededBy)} value={f.neededBy} onInput={(e) => set('neededBy', e.currentTarget.value)} />
+          <Field id="rq-needed" label="needed by" optional error={errors.neededBy} hint="the last day it’s useful; shows on the Home calendar">
+            <input class="input" type="date" min={pacificToday()} {...describe('rq-needed', errors.neededBy, true)} value={f.neededBy} onInput={(e) => set('neededBy', e.currentTarget.value)} />
           </Field>
         </div>
       </fieldset>

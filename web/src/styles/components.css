@@ -633,3 +633,14 @@ td.people-who-cell {min-width:0;}
  .drawer::backdrop, .dialog::backdrop {transition:display var(--dur-2) allow-discrete, overlay var(--dur-2) allow-discrete, opacity var(--dur-2);}
  .drawer:not([open])::backdrop, .dialog:not([open])::backdrop {opacity:0;}
 }
+
+/* Purchase "needed by" deadlines (DueDate). Text carries the urgency; colour reinforces it. */
+.due {display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:0 6px;}
+.due-hint {font-size:12px;color:var(--muted);}
+.due--soon .due-hint, .due-hint.due--soon {color:var(--attention);}
+.due--today .due-hint, .due-hint.due--today, .due--overdue .due-hint, .due-hint.due--overdue {color:var(--negative);font-weight:500;}
+.due--overdue time {color:var(--negative);}
+.due-fact {display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;}
+.due-edit {display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;}
+.due-edit .input {width:auto;min-width:0;max-width:100%;}
+.due-edit .field-error {flex-basis:100%;}
