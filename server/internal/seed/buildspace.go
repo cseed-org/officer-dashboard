@@ -39,9 +39,17 @@ func seedBuildspace(ctx context.Context, q *store.Queries) error {
 	}
 	names := []string{"Alex Kim", "Priya Shah", "Sam Rivera", "Noor Hassan", "Ava Brooks", "Leo Park", "Jamie Wu", "Morgan Lee", "Riley Chen", "Zoe Patel", "Eli Nguyen", "Casey Tran"}
 	projectIDs := []string{"bs-moss", "bs-moss", "bs-sprout", "bs-sprout", "bs-afterimage", "bs-afterimage", "bs-wayfinder", "bs-wayfinder", "bs-pantry", "bs-pantry", "bs-common", "bs-common"}
-	loc, _ := time.LoadLocation("America/Los_Angeles")
-	today := time.Now().In(loc)
-	week := today.AddDate(0, 0, -(int(today.Weekday())+6)%7).Format("2006-01-02")
+	// Demo entries land on the first day of the current check-in week (club time zone,
+	// configured due day), so they age naturally like real check-ins.
+	clock, err := q.BuildspaceClock(ctx, time.Now())
+	if err != nil {
+		return err
+	}
+	rules, err := q.BuildspaceWeekRules(ctx)
+	if err != nil {
+		return err
+	}
+	week := store.BuildspaceWeekOf(rules, clock.Today).Start
 	for i, name := range names {
 		id := fmt.Sprintf("bs-person-%02d", i+1)
 		discord := fmt.Sprintf("1000000000000000%02d", i+1)

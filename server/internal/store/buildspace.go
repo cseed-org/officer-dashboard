@@ -53,7 +53,9 @@ type Buildspace struct {
 	Mentors   []BuildspaceMentor   `json:"mentors"`
 	Activity  []BuildspaceActivity `json:"activity"`
 	WeekStart string               `json:"weekStart"`
+	WeekDue   string               `json:"weekDue"`
 	Today     string               `json:"today"`
+	Schedule  BuildspaceSchedule   `json:"schedule"`
 }
 
 func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {

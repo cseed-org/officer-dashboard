@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import {
   BUILDSPACE_STAGES,
   BUILDSPACE_TRACKS,
@@ -6,11 +6,15 @@ import {
   type BuildspaceProject,
 } from "../../lib/contracts";
 import { useApi } from "../../lib/api/useApi";
+import { fmtShort } from "../../lib/format";
 import { setParams, useSearch } from "../../lib/nav";
 import { Async, Empty, Notice } from "../components/states";
-import { Badge } from "../components/kit";
+import { Badge, Tabs } from "../components/kit";
 import { Icon } from "../components/Icon";
 import { Drawer } from "../components/Drawer";
+import { useCrossfade, useFlip } from "../components/motion";
+import type { CurrentUser } from "../../lib/contracts";
+import { ScheduleMenu, scheduleSummary } from "./buildspace/Schedule";
 import { BuildspaceDetail } from "./buildspace/Detail";
 import { ProjectForm, PersonForm } from "./buildspace/Forms";
 import {
@@ -21,20 +25,61 @@ import {
   trackShort,
 } from "./buildspace/model";
 
-export default function BuildspaceView() {
+export default function BuildspaceView({ me }: { me: CurrentUser }) {
   const state = useApi("buildspaceList");
+  const [notice, setNotice] = useState("");
+  // The intro (the page's LCP text) and its actions need no register data, so they
+  // paint as soon as sign-in resolves instead of waiting for /api/buildspace.
   return (
-    <Async state={state}>
-      {(b) => <BuildspaceContent b={b} reload={state.reload} />}
-    </Async>
+    <div class="buildspace">
+      <div class="bs-intro">
+        <div>
+          <span class="brand-eyebrow">THE BUILDER REGISTER</span>
+          <p>A little progress, every week.</p>
+        </div>
+        <div class="action-row">
+          <ScheduleMenu
+            schedule={state.status === "ready" ? state.data.schedule : null}
+            canEdit={me.role === "leadership" || me.isOwner}
+            saved={() => {
+              state.reload();
+              setNotice("Check-in schedule saved.");
+            }}
+          />
+          <button class="btn" onClick={() => setParams({ new: "person" })}>
+            Add builder
+          </button>
+          <button
+            class="btn btn--primary"
+            onClick={() => setParams({ new: "project" })}
+          >
+            New project
+          </button>
+        </div>
+      </div>
+      <Async state={state}>
+        {(b) => (
+          <BuildspaceContent
+            b={b}
+            reload={state.reload}
+            notice={notice}
+            setNotice={setNotice}
+          />
+        )}
+      </Async>
+    </div>
   );
 }
 function BuildspaceContent({
   b,
   reload,
+  notice,
+  setNotice,
 }: {
   b: BuildspaceData;
   reload: () => void;
+  notice: string;
+  setNotice: (s: string) => void;
 }) {
   const qs = useSearch();
   const tab =
@@ -45,7 +90,22 @@ function BuildspaceContent({
         : "people";
   const view = qs.get("view") || "table",
     group = qs.get("group") || "track";
-  const [notice, setNotice] = useState("");
+  // Whole-view swaps (tab, layout, grouping) crossfade; changes within a view use FLIP.
+  const viewKey = `${tab}|${view}|${view === "cards" ? group : ""}`;
+  const viewRef = useRef<HTMLDivElement>(null),
+    outRef = useRef<HTMLDivElement>(null);
+  useCrossfade(viewRef, outRef, viewKey);
+  useFlip(viewRef, viewKey);
+  const pastDue = b.schedule.pastDue;
+  const weekBadge = (p: BuildspaceData["people"][number]) => (
+    <Badge tone={missed(p, b) ? "attention" : "positive"}>
+      {missed(p, b)
+        ? pastDue
+          ? "Past due"
+          : "Awaiting check-in"
+        : "Checked in"}
+    </Badge>
+  );
   const project = (id: string) => b.projects.find((p) => p.id === id)!;
   const search = (qs.get("q") || "").toLowerCase();
   const flag = qs.get("flag") || "";
@@ -202,8 +262,13 @@ function BuildspaceContent({
       </span>
     );
   };
-  const card = (p: BuildspaceProject) => (
-    <article class="bs-card" key={p.id} data-track={p.track}>
+  const card = (p: BuildspaceProject, scope = "") => (
+    <article
+      class="bs-card"
+      key={p.id}
+      data-flip={scope + p.id}
+      data-track={p.track}
+    >
       <div class="bs-card-top">
         <span class="eyebrow">{trackShort(p.track)}</span>
         {stageBadge(p)}
@@ -241,23 +306,6 @@ function BuildspaceContent({
         : BUILDSPACE_TRACKS.map((t) => ({ id: t, label: t }));
   return (
     <div class="buildspace">
-      <div class="bs-intro">
-        <div>
-          <span class="brand-eyebrow">THE BUILDER REGISTER</span>
-          <p>A little progress, every week.</p>
-        </div>
-        <div class="action-row">
-          <button class="btn" onClick={() => setParams({ new: "person" })}>
-            Add builder
-          </button>
-          <button
-            class="btn btn--primary"
-            onClick={() => setParams({ new: "project" })}
-          >
-            New project
-          </button>
-        </div>
-      </div>
       <section class="bs-summary" aria-label="Buildspace summary">
         {BUILDSPACE_TRACKS.map((t) => (
           <button
@@ -307,18 +355,17 @@ function BuildspaceContent({
       </section>
       {notice && <Notice tone="positive">{notice}</Notice>}
       <div class="bs-toolbar">
-        <div class="segmented" aria-label="Buildspace directory">
-          {(["people", "projects", "mentors"] as const).map((t) => (
-            <button
-              class="segment"
-              aria-pressed={tab === t}
-              onClick={() => setParams({ tab: t })}
-            >
-              {t[0]!.toUpperCase() + t.slice(1)}{" "}
-              <span class="bs-count">{b[t].length}</span>
-            </button>
-          ))}
-        </div>
+        <Tabs
+          label="Buildspace directory"
+          idPrefix="bs"
+          active={tab}
+          onChange={(t) => setParams({ tab: t })}
+          tabs={(["people", "projects", "mentors"] as const).map((t) => ({
+            key: t,
+            label: t[0]!.toUpperCase() + t.slice(1),
+            count: b[t].length,
+          }))}
+        />
         <div class="segmented" aria-label="Layout">
           {["table", "cards", "board"].map((v) => (
             <button
@@ -401,7 +448,7 @@ function BuildspaceContent({
       </div>
       <div class="bs-result">
         <span role="status">
-          {count} {tab} · Week of {b.weekStart}
+          {count} {tab} · Week {fmtShort(b.weekStart)} – {fmtShort(b.weekDue)}
         </span>
         <div class="action-row">
           {view === "cards" && (
@@ -424,286 +471,307 @@ function BuildspaceContent({
           </button>
         </div>
       </div>
-      {!count ? (
-        <Empty title="No matches">
-          Try a different filter, or clear your filters to see everyone.
-        </Empty>
-      ) : view === "board" ? (
-        <>
-          <p class="bs-muted">
-            Projects by stage · select a project to update its stage.
-          </p>
-          <div class="bs-board">
-            {BUILDSPACE_STAGES.map((s) => (
-              <section class="bs-lane">
-                <h3>
-                  {s}
-                  <span>{projects.filter((p) => p.stage === s).length}</span>
-                </h3>
-                {projects.filter((p) => p.stage === s).map(card)}
-                {!projects.some((p) => p.stage === s) && (
-                  <p class="bs-muted">Nothing here yet.</p>
+      <div
+        class="bs-view"
+        id="bs-panel"
+        role="tabpanel"
+        aria-labelledby={`bs-tab-${tab}`}
+      >
+        <div ref={viewRef} class="bs-view-in">
+          {!count ? (
+            <Empty title="No matches">
+              Try a different filter, or clear your filters to see everyone.
+            </Empty>
+          ) : view === "board" ? (
+            <>
+              <p class="bs-muted">
+                Projects by stage · select a project to update its stage.
+              </p>
+              <div class="bs-board">
+                {BUILDSPACE_STAGES.map((s) => (
+                  <section class="bs-lane motion-list" key={s}>
+                    <h3>
+                      {s}
+                      <span>
+                        {projects.filter((p) => p.stage === s).length}
+                      </span>
+                    </h3>
+                    {projects.filter((p) => p.stage === s).map((p) => card(p))}
+                    {!projects.some((p) => p.stage === s) && (
+                      <p class="bs-muted">Nothing here yet.</p>
+                    )}
+                  </section>
+                ))}
+              </div>
+            </>
+          ) : view === "cards" ? (
+            <div class="bs-groups">
+              {groups.map((g) => {
+                const belongs = (p: BuildspaceProject) =>
+                  group === "mentor"
+                    ? g.id === "none"
+                      ? !p.mentorIds.length
+                      : p.mentorIds.includes(g.id)
+                    : group === "project"
+                      ? p.id === g.id
+                      : p.track === g.id;
+                const ps = projects.filter(belongs),
+                  pe = people.filter((p) => belongs(project(p.projectId))),
+                  ms = mentors.filter(
+                    (m) =>
+                      (group !== "mentor" || g.id === m.id) &&
+                      ps.some((p) => p.mentorIds.includes(m.id)),
+                  );
+                if (
+                  !(tab === "people"
+                    ? pe.length
+                    : tab === "projects"
+                      ? ps.length
+                      : ms.length)
+                )
+                  return null;
+                return (
+                  <section class="bs-group" key={g.id}>
+                    <h3>
+                      {g.label}
+                      <span>
+                        {tab === "people"
+                          ? pe.length
+                          : tab === "projects"
+                            ? ps.length
+                            : ms.length}
+                      </span>
+                    </h3>
+                    <div class="bs-cards motion-list">
+                      {tab === "projects"
+                        ? ps.map((p) => card(p, g.id + ":"))
+                        : tab === "people"
+                          ? pe.map((p) => (
+                              <article
+                                class="bs-card"
+                                key={p.id}
+                                data-flip={g.id + ":" + p.id}
+                              >
+                                <span class="eyebrow">
+                                  {trackShort(project(p.projectId).track)}
+                                </span>
+                                <h3>
+                                  <button
+                                    class="bs-title"
+                                    onClick={() => setParams({ person: p.id })}
+                                  >
+                                    {p.name}
+                                  </button>
+                                </h3>
+                                <p>
+                                  <strong>Project</strong>{" "}
+                                  {project(p.projectId).name}
+                                </p>
+                                <p>
+                                  <strong>Mentors</strong>{" "}
+                                  {mentorNames(project(p.projectId))}
+                                </p>
+                                {weekBadge(p)}
+                              </article>
+                            ))
+                          : ms.map((m) => (
+                              <article
+                                class="bs-card"
+                                key={m.id}
+                                data-flip={g.id + ":" + m.id}
+                              >
+                                <h3>{m.name}</h3>
+                                <p>{m.org}</p>
+                                {ps
+                                  .filter((p) => p.mentorIds.includes(m.id))
+                                  .map(projectLink)}
+                              </article>
+                            ))}
+                    </div>
+                  </section>
+                );
+              })}
+              {tab === "mentors" &&
+                mentors.some(
+                  (m) => !b.projects.some((p) => p.mentorIds.includes(m.id)),
+                ) && (
+                  <section class="bs-group" key="unassigned">
+                    <h3>No projects assigned</h3>
+                    <div class="bs-cards motion-list">
+                      {mentors
+                        .filter(
+                          (m) =>
+                            !b.projects.some((p) => p.mentorIds.includes(m.id)),
+                        )
+                        .map((m) => (
+                          <article
+                            class="bs-card"
+                            key={m.id}
+                            data-flip={"unassigned:" + m.id}
+                          >
+                            <h3>{m.name}</h3>
+                            <p>{m.org}</p>
+                            <a
+                              href={`/contacts?id=${encodeURIComponent(m.id)}`}
+                            >
+                              Open mentor contact →
+                            </a>
+                          </article>
+                        ))}
+                    </div>
+                  </section>
                 )}
-              </section>
-            ))}
-          </div>
-        </>
-      ) : view === "cards" ? (
-        <div class="bs-groups">
-          {groups.map((g) => {
-            const belongs = (p: BuildspaceProject) =>
-              group === "mentor"
-                ? g.id === "none"
-                  ? !p.mentorIds.length
-                  : p.mentorIds.includes(g.id)
-                : group === "project"
-                  ? p.id === g.id
-                  : p.track === g.id;
-            const ps = projects.filter(belongs),
-              pe = people.filter((p) => belongs(project(p.projectId))),
-              ms = mentors.filter(
-                (m) =>
-                  (group !== "mentor" || g.id === m.id) &&
-                  ps.some((p) => p.mentorIds.includes(m.id)),
-              );
-            if (
-              !(tab === "people"
-                ? pe.length
-                : tab === "projects"
-                  ? ps.length
-                  : ms.length)
-            )
-              return null;
-            return (
-              <section class="bs-group">
-                <h3>
-                  {g.label}
-                  <span>
-                    {tab === "people"
-                      ? pe.length
+            </div>
+          ) : (
+            <div
+              class="table-wrap"
+              tabIndex={0}
+              aria-label="Buildspace directory"
+            >
+              <table class="bs-table">
+                <thead>
+                  <tr>
+                    {(tab === "people"
+                      ? [
+                          "Builder / project",
+                          "Track",
+                          "Partners",
+                          "Mentors",
+                          "Stage",
+                          "This week",
+                          "Activity",
+                        ]
                       : tab === "projects"
-                        ? ps.length
-                        : ms.length}
-                  </span>
-                </h3>
-                <div class="bs-cards">
-                  {tab === "projects"
-                    ? ps.map(card)
-                    : tab === "people"
-                      ? pe.map((p) => (
-                          <article class="bs-card">
-                            <span class="eyebrow">
-                              {trackShort(project(p.projectId).track)}
-                            </span>
-                            <h3>
+                        ? ["Project", "Track", "Builders", "Mentors", "Stage"]
+                        : ["Mentor", "Focus", "Projects", "Builders"]
+                    ).map((h) => (
+                      <th scope="col">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody class="motion-list">
+                  {tab === "people"
+                    ? people.map((p) => {
+                        const pr = project(p.projectId);
+                        return (
+                          <tr key={p.id} data-flip={p.id}>
+                            <td data-label="Builder / project">
                               <button
                                 class="bs-title"
                                 onClick={() => setParams({ person: p.id })}
                               >
                                 {p.name}
                               </button>
-                            </h3>
-                            <p>
-                              <strong>Project</strong>{" "}
-                              {project(p.projectId).name}
-                            </p>
-                            <p>
-                              <strong>Mentors</strong>{" "}
-                              {mentorNames(project(p.projectId))}
-                            </p>
-                            <Badge
-                              tone={missed(p, b) ? "attention" : "positive"}
+                              <span class="bs-sub">{pr.name}</span>
+                            </td>
+                            <td data-label="Track">
+                              <span class="bs-track" data-track={pr.track}>
+                                {trackShort(pr.track)}
+                              </span>
+                            </td>
+                            <td data-label="Partners">
+                              {projectPeople(pr, b)
+                                .filter((partner) => partner.id !== p.id)
+                                .map((partner) => (
+                                  <button
+                                    class="bs-partner"
+                                    aria-label={`Open partner ${partner.name}`}
+                                    onClick={() =>
+                                      setParams({ person: partner.id })
+                                    }
+                                  >
+                                    {partner.name}
+                                  </button>
+                                ))}
+                              {projectPeople(pr, b).length === 1 && (
+                                <span class="bs-muted">Solo builder</span>
+                              )}
+                            </td>
+                            <td
+                              data-label="Mentors"
+                              class={!pr.mentorIds.length ? "bs-alert" : ""}
                             >
-                              {missed(p, b)
-                                ? "Awaiting check-in"
-                                : "Checked in"}
-                            </Badge>
-                          </article>
+                              {mentorNames(pr)}
+                            </td>
+                            <td data-label="Stage">{stageBadge(pr)}</td>
+                            <td data-label="This week">
+                              {weekBadge(p)}
+                              {b.activity.some(
+                                (a) =>
+                                  a.personId === p.id &&
+                                  a.kind === "absence" &&
+                                  a.date >= b.weekStart &&
+                                  a.date <= b.today,
+                              ) && <span class="bs-sub">Absence logged</span>}
+                            </td>
+                            <td data-label="Activity">
+                              {activityCounts(pr.id, p.id)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    : tab === "projects"
+                      ? projects.map((p) => (
+                          <tr key={p.id} data-flip={p.id}>
+                            <td data-label="Project">
+                              {projectLink(p)}
+                              <span class="bs-sub">{requestCount(p.id)}</span>
+                            </td>
+                            <td data-label="Track">
+                              <span class="bs-track" data-track={p.track}>
+                                {trackShort(p.track)}
+                              </span>
+                            </td>
+                            <td data-label="Builders">
+                              {projectPeople(p, b)
+                                .map((x) => x.name)
+                                .join(", ") || "No builders"}
+                            </td>
+                            <td
+                              data-label="Mentors"
+                              class={!p.mentorIds.length ? "bs-alert" : ""}
+                            >
+                              {mentorNames(p)}
+                            </td>
+                            <td data-label="Stage">{stageBadge(p)}</td>
+                          </tr>
                         ))
-                      : ms.map((m) => (
-                          <article class="bs-card">
-                            <h3>{m.name}</h3>
-                            <p>{m.org}</p>
-                            {ps
-                              .filter((p) => p.mentorIds.includes(m.id))
-                              .map(projectLink)}
-                          </article>
-                        ))}
-                </div>
-              </section>
-            );
-          })}
-          {tab === "mentors" &&
-            mentors.some(
-              (m) => !b.projects.some((p) => p.mentorIds.includes(m.id)),
-            ) && (
-              <section class="bs-group">
-                <h3>No projects assigned</h3>
-                <div class="bs-cards">
-                  {mentors
-                    .filter(
-                      (m) =>
-                        !b.projects.some((p) => p.mentorIds.includes(m.id)),
-                    )
-                    .map((m) => (
-                      <article class="bs-card">
-                        <h3>{m.name}</h3>
-                        <p>{m.org}</p>
-                        <a href={`/contacts?id=${encodeURIComponent(m.id)}`}>
-                          Open mentor contact →
-                        </a>
-                      </article>
-                    ))}
-                </div>
-              </section>
-            )}
-        </div>
-      ) : (
-        <div class="table-wrap" tabIndex={0} aria-label="Buildspace directory">
-          <table class="bs-table">
-            <thead>
-              <tr>
-                {(tab === "people"
-                  ? [
-                      "Builder / project",
-                      "Track",
-                      "Partners",
-                      "Mentors",
-                      "Stage",
-                      "This week",
-                      "Activity",
-                    ]
-                  : tab === "projects"
-                    ? ["Project", "Track", "Builders", "Mentors", "Stage"]
-                    : ["Mentor", "Focus", "Projects", "Builders"]
-                ).map((h) => (
-                  <th scope="col">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {tab === "people"
-                ? people.map((p) => {
-                    const pr = project(p.projectId);
-                    return (
-                      <tr>
-                        <td data-label="Builder / project">
-                          <button
-                            class="bs-title"
-                            onClick={() => setParams({ person: p.id })}
-                          >
-                            {p.name}
-                          </button>
-                          <span class="bs-sub">{pr.name}</span>
-                        </td>
-                        <td data-label="Track">
-                          <span class="bs-track" data-track={pr.track}>
-                            {trackShort(pr.track)}
-                          </span>
-                        </td>
-                        <td data-label="Partners">
-                          {projectPeople(pr, b)
-                            .filter((partner) => partner.id !== p.id)
-                            .map((partner) => (
-                              <button
-                                class="bs-partner"
-                                aria-label={`Open partner ${partner.name}`}
-                                onClick={() =>
-                                  setParams({ person: partner.id })
+                      : mentors.map((m) => {
+                          const ps = b.projects.filter((p) =>
+                            p.mentorIds.includes(m.id),
+                          );
+                          return (
+                            <tr key={m.id} data-flip={m.id}>
+                              <td data-label="Mentor">
+                                <strong>{m.name}</strong>
+                                <span class="bs-sub">{m.org}</span>
+                              </td>
+                              <td data-label="Focus">{m.topics.join(" · ")}</td>
+                              <td data-label="Projects">
+                                {ps.length
+                                  ? ps.map(projectLink)
+                                  : "No projects assigned"}
+                              </td>
+                              <td data-label="Builders">
+                                {
+                                  b.people.filter((p) =>
+                                    ps.some((pr) => pr.id === p.projectId),
+                                  ).length
                                 }
-                              >
-                                {partner.name}
-                              </button>
-                            ))}
-                          {projectPeople(pr, b).length === 1 && (
-                            <span class="bs-muted">Solo builder</span>
-                          )}
-                        </td>
-                        <td
-                          data-label="Mentors"
-                          class={!pr.mentorIds.length ? "bs-alert" : ""}
-                        >
-                          {mentorNames(pr)}
-                        </td>
-                        <td data-label="Stage">{stageBadge(pr)}</td>
-                        <td data-label="This week">
-                          <Badge tone={missed(p, b) ? "attention" : "positive"}>
-                            {missed(p, b) ? "Awaiting check-in" : "Checked in"}
-                          </Badge>
-                          {b.activity.some(
-                            (a) =>
-                              a.personId === p.id &&
-                              a.kind === "absence" &&
-                              a.date >= b.weekStart &&
-                              a.date <= b.today,
-                          ) && <span class="bs-sub">Absence logged</span>}
-                        </td>
-                        <td data-label="Activity">
-                          {activityCounts(pr.id, p.id)}
-                        </td>
-                      </tr>
-                    );
-                  })
-                : tab === "projects"
-                  ? projects.map((p) => (
-                      <tr>
-                        <td data-label="Project">
-                          {projectLink(p)}
-                          <span class="bs-sub">{requestCount(p.id)}</span>
-                        </td>
-                        <td data-label="Track">
-                          <span class="bs-track" data-track={p.track}>
-                            {trackShort(p.track)}
-                          </span>
-                        </td>
-                        <td data-label="Builders">
-                          {projectPeople(p, b)
-                            .map((x) => x.name)
-                            .join(", ") || "No builders"}
-                        </td>
-                        <td
-                          data-label="Mentors"
-                          class={!p.mentorIds.length ? "bs-alert" : ""}
-                        >
-                          {mentorNames(p)}
-                        </td>
-                        <td data-label="Stage">{stageBadge(p)}</td>
-                      </tr>
-                    ))
-                  : mentors.map((m) => {
-                      const ps = b.projects.filter((p) =>
-                        p.mentorIds.includes(m.id),
-                      );
-                      return (
-                        <tr>
-                          <td data-label="Mentor">
-                            <strong>{m.name}</strong>
-                            <span class="bs-sub">{m.org}</span>
-                          </td>
-                          <td data-label="Focus">{m.topics.join(" · ")}</td>
-                          <td data-label="Projects">
-                            {ps.length
-                              ? ps.map(projectLink)
-                              : "No projects assigned"}
-                          </td>
-                          <td data-label="Builders">
-                            {
-                              b.people.filter((p) =>
-                                ps.some((pr) => pr.id === p.projectId),
-                              ).length
-                            }
-                          </td>
-                        </tr>
-                      );
-                    })}
-            </tbody>
-          </table>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
+        <div ref={outRef} class="bs-view-out" />
+      </div>
       <p class="bs-footnote">
-        Check-ins reset on Monday, Pacific time. Awaiting includes this week in
-        progress; absences remain visible. Mentors follow each builder’s
-        project.
+        {scheduleSummary(b.schedule)} Awaiting includes this week in progress;
+        absences remain visible. Mentors follow each builder’s project.
       </p>
       <Drawer
         open={

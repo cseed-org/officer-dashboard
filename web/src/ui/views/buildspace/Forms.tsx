@@ -23,7 +23,7 @@ export function ProjectForm({
   const [stage, setStage] = useState(project?.stage || "Ideating");
   return (
     <form
-      class="bs-form"
+      class="bs-form motion-list"
       onSubmit={async (e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
@@ -154,7 +154,7 @@ export function PersonForm({
   const [projectId, setProjectId] = useState(person?.projectId || "");
   return (
     <form
-      class="bs-form"
+      class="bs-form motion-list"
       onSubmit={async (e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);

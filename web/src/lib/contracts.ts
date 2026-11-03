@@ -1311,10 +1311,21 @@ export const BuildspaceActivity = BuildspaceActivityBody.extend({
  purchaseTitle: z.string().nullable(), purchaseStatus: z.string().nullable(), purchaseNeededBy: IsoDate.nullable(),
 });
 export type BuildspaceActivity = z.infer<typeof BuildspaceActivity>;
+/** Check-in weeks are date ranges in the club time zone; see docs/buildspace.md. */
+export const BuildspaceWeek = z.object({start: IsoDate, due: IsoDate});
+export const DueTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+export const BuildspaceWeekRule = z.object({effectiveFrom: IsoDate, dueWeekday: z.number().int().min(0).max(6), dueTime: DueTime.nullable(), updatedAt: z.number().int(), updatedBy: z.string().nullable()});
+export const BuildspaceSchedule = z.object({
+ timezone: z.string(), today: IsoDate, current: BuildspaceWeekRule, pending: BuildspaceWeekRule.nullable(),
+ week: BuildspaceWeek, dueAt: IsoDateTime, pastDue: z.boolean(), pendingFirstWeek: BuildspaceWeek.nullable(),
+});
+export type BuildspaceSchedule = z.infer<typeof BuildspaceSchedule>;
+export const BuildspaceScheduleBody = z.object({dueWeekday: z.number().int().min(0).max(6), dueTime: DueTime.nullable().optional()});
+export const BuildspaceEntryResponse = z.object({ok: z.literal(true), week: BuildspaceWeek});
 export const BuildspaceResponse = z.object({
  projects: z.array(BuildspaceProject), people: z.array(BuildspacePerson),
  mentors: z.array(z.object({id: Id, name: z.string(), org: z.string(), topics: z.array(z.string())})),
- activity: z.array(BuildspaceActivity), weekStart: IsoDate, today: IsoDate,
+ activity: z.array(BuildspaceActivity), weekStart: IsoDate, weekDue: IsoDate, today: IsoDate, schedule: BuildspaceSchedule,
 });
 export type BuildspaceData = z.infer<typeof BuildspaceResponse>;
 export const BuildspaceIngest = z.object({
@@ -1326,9 +1337,10 @@ export const ENDPOINTS = {
  buildspaceList: {method: 'GET', path: '/api/buildspace', auth: 'officer', response: BuildspaceResponse},
  buildspaceProjectSave: {method: 'PUT', path: '/api/buildspace/projects/:id', auth: 'officer', body: BuildspaceProjectBody, response: z.object({project: BuildspaceProject})},
  buildspacePersonSave: {method: 'PUT', path: '/api/buildspace/people/:id', auth: 'officer', body: BuildspacePersonBody, response: z.object({person: BuildspacePerson})},
- buildspaceActivityCreate: {method: 'POST', path: '/api/buildspace/activity', auth: 'officer', body: BuildspaceActivityBody, response: z.object({ok: z.literal(true)})},
+ buildspaceActivityCreate: {method: 'POST', path: '/api/buildspace/activity', auth: 'officer', body: BuildspaceActivityBody, response: BuildspaceEntryResponse},
  buildspaceActivityResolve: {method: 'POST', path: '/api/buildspace/activity/:id/resolve', auth: 'officer', response: z.object({ok: z.literal(true)})},
- buildspaceIngest: {method: 'POST', path: '/api/ingest/buildspace', auth: 'token:ingest:buildspace', body: BuildspaceIngest, response: z.object({ok: z.literal(true)})},
+ buildspaceIngest: {method: 'POST', path: '/api/ingest/buildspace', auth: 'token:ingest:buildspace', body: BuildspaceIngest, response: BuildspaceEntryResponse},
+ buildspaceSchedulePut: {method: 'PUT', path: '/api/buildspace/schedule', auth: 'leadership', body: BuildspaceScheduleBody, response: BuildspaceSchedule},
   membersList: {method:'GET',path:'/api/members',auth:'officer',query:MembersQuery,response:MembersResponse},
   membersExport: {method:'GET',path:'/api/members/export',auth:'director',query:MembersQuery,response:'csv'},
   memberDetail: {method:'GET',path:'/api/members/:id',auth:'officer',response:MemberResponse},

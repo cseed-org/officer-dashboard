@@ -1,0 +1,197 @@
+{
+ "note": "Interleaved serial samples, /buildspace, director, PERF_RUNS=1 x3 per variant alternating before/after (web/scripts/performance.mjs profile: 1440x900, 4x CPU, 40ms, 1.6/0.75 Mbit/s, cache disabled). Chromium and Go on the Raspberry Pi under shared load.",
+ "before": {
+  "revision": "origin/main 7ba453c",
+  "samples": [
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2076,
+    "cls": 0,
+    "interaction": 208,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 76747
+   },
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2080,
+    "cls": 0,
+    "interaction": 192,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 76747
+   },
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2188,
+    "cls": 0,
+    "interaction": 200,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 76747
+   }
+  ],
+  "median": {
+   "lcp": 2080,
+   "cls": 0,
+   "interaction": 200,
+   "jsBytes": 76747
+  },
+  "range": {
+   "lcp": [
+    2076,
+    2188
+   ],
+   "cls": [
+    0,
+    0
+   ]
+  }
+ },
+ "after_first_cut": {
+  "revision": "motion + due day, intro still inside Async (batch 1, alternated with its own baseline)",
+  "samples": [
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2052,
+    "cls": 0,
+    "interaction": 184,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 79037
+   },
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2364,
+    "cls": 0,
+    "interaction": 224,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 79037
+   },
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2172,
+    "cls": 0,
+    "interaction": 192,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 79037
+   }
+  ],
+  "median": {
+   "lcp": 2172,
+   "cls": 0,
+   "interaction": 192,
+   "jsBytes": 79037
+  },
+  "range": {
+   "lcp": [
+    2052,
+    2364
+   ],
+   "cls": [
+    0,
+    0
+   ]
+  }
+ },
+ "after": {
+  "revision": "final: intro painted before register data",
+  "samples": [
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 1676,
+    "cls": 0,
+    "interaction": 184,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 79108
+   },
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 1784,
+    "cls": 0,
+    "interaction": 248,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 79108
+   },
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 1716,
+    "cls": 0,
+    "interaction": 136,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 79108
+   }
+  ],
+  "median": {
+   "lcp": 1716,
+   "cls": 0,
+   "interaction": 184,
+   "jsBytes": 79108
+  },
+  "range": {
+   "lcp": [
+    1676,
+    1784
+   ],
+   "cls": [
+    0,
+    0
+   ]
+  }
+ },
+ "first_cut_baseline": {
+  "revision": "main 30b1a4b (batch 1)",
+  "samples": [
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2176,
+    "cls": 0,
+    "interaction": 192,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 76747
+   },
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2204,
+    "cls": 0,
+    "interaction": 200,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 76747
+   },
+   {
+    "route": "/buildspace",
+    "run": 1,
+    "lcp": 2104,
+    "cls": 0,
+    "interaction": 192,
+    "lcpElement": "<p>A little progress, every week.</p>",
+    "shifts": [],
+    "jsBytes": 76747
+   }
+  ],
+  "median": {
+   "lcp": 2176,
+   "cls": 0,
+   "interaction": 192,
+   "jsBytes": 76747
+  }
+ }
+}

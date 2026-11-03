@@ -40,33 +40,69 @@ func loadBuildspaceCalendarActivity(ctx context.Context, q *Queries, window Cale
 	return out, rows.Err()
 }
 
-// The optional calendar convention is Sunday due dates for Monday–Sunday weeks.
-// Existing check-ins suppress that week's due item, and shipped projects are excluded.
-// This is independent of the People directory's in-progress “awaiting” signal.
+// Weekly due items follow the configurable due-day rules (buildspace_schedule.go): one
+// item per builder for each week whose due date falls in the window. A dated weekly entry
+// in that week suppresses it; builders not yet joined and shipped projects are excluded.
+// Titles carry the due time when one is set. This is independent of the People
+// directory's in-progress “awaiting” signal.
 func loadBuildspaceWeeklyDue(ctx context.Context, q *Queries, window CalendarRange) ([]CalendarItem, error) {
-	rows, err := q.q.QueryContext(ctx, `WITH RECURSIVE dates(day) AS (
- SELECT ? WHERE ? < ? UNION ALL SELECT date(day,'+1 day') FROM dates WHERE date(day,'+1 day') < ?
- ) SELECT b.id,b.name,p.name,d.day FROM dates d CROSS JOIN buildspace_people b
- JOIN buildspace_projects p ON p.id=b.project_id
- WHERE strftime('%w',d.day)='0' AND b.joined_on<=d.day AND p.stage<>'Shipped'
- AND NOT EXISTS (SELECT 1 FROM buildspace_activity a WHERE a.person_id=b.id AND a.kind='weekly'
- AND a.date>=date(d.day,'-6 days') AND a.date<=d.day) ORDER BY d.day,b.id`, window.FirstDate, window.FirstDate, window.EndDate, window.EndDate)
+	out := []CalendarItem{}
+	rules, err := q.BuildspaceWeekRules(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := []CalendarItem{}
+	weeks := BuildspaceWeeksDue(rules, window.FirstDate, window.EndDate)
+	if len(weeks) == 0 {
+		return out, nil
+	}
+	type builder struct{ id, name, project, joined string }
+	rows, err := q.q.QueryContext(ctx, `SELECT b.id,b.name,p.name,b.joined_on FROM buildspace_people b
+ JOIN buildspace_projects p ON p.id=b.project_id WHERE p.stage<>'Shipped' ORDER BY b.id`)
+	if err != nil {
+		return nil, err
+	}
+	builders := []builder{}
 	for rows.Next() {
-		var v CalendarItem
-		var personID, personName, projectName string
-		if err := rows.Scan(&personID, &personName, &projectName, &v.Date); err != nil {
+		var v builder
+		if err := rows.Scan(&v.id, &v.name, &v.project, &v.joined); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		v.ID = "buildspace-weekly-" + personID + "-" + v.Date
-		v.Type = "weekly-check-in"
-		v.Title = "Weekly check-in due · " + personName + " · " + projectName
-		v.Href = "/buildspace?person=" + url.QueryEscape(personID)
-		out = append(out, v)
+		builders = append(builders, v)
 	}
-	return out, rows.Err()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows, err = q.q.QueryContext(ctx, `SELECT person_id,date FROM buildspace_activity WHERE kind='weekly' AND date>=? AND date<=?`, weeks[0].Start, weeks[len(weeks)-1].Due)
+	if err != nil {
+		return nil, err
+	}
+	done := map[string]bool{}
+	for rows.Next() {
+		var person, date string
+		if err := rows.Scan(&person, &date); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		done[person+"|"+BuildspaceWeekOf(rules, date).Due] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, w := range weeks {
+		label := "Weekly check-in due"
+		if t := BuildspaceRuleFor(rules, w.Due).DueTime; t != nil {
+			label += " " + *t
+		}
+		for _, b := range builders {
+			if b.joined > w.Due || done[b.id+"|"+w.Due] {
+				continue
+			}
+			out = append(out, CalendarItem{ID: "buildspace-weekly-" + b.id + "-" + w.Due, Date: w.Due, Type: "weekly-check-in",
+				Title: label + " · " + b.name + " · " + b.project, Href: "/buildspace?person=" + url.QueryEscape(b.id)})
+		}
+	}
+	return out, nil
 }
