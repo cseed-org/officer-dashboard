@@ -94,7 +94,7 @@ cd server
 make dev
 ```
 
-Open <http://localhost:8090/auth/dev?as=director> or <http://localhost:8090/auth/dev?as=officer>.
+Open <http://localhost:8090/auth/dev?as=director> or <http://localhost:8090/auth/dev?as=officer> and press Continue.
 
 > [!IMPORTANT]
 > `make dev` resets the sample database at `server/data/dev.db`. The dev login requires both a `-tags dev` build and `DEV_AUTH=1`; production builds have no `/auth/dev` route. Test deployments can share keyed links instead: see `DEV_AUTH_KEY` in [docs/development.md](docs/development.md#developer-mode-on-a-test-deployment).
@@ -107,7 +107,7 @@ See [development](docs/development.md) for live front-end development, seeding, 
 
 | Variable | Purpose / default |
 | --- | --- |
-| `ADDR`, `DB_PATH` | Listen on `:8090`; database `./data/dashboard.db`. |
+| `ADDR`, `DB_PATH` | Listen on `127.0.0.1:8090` (beyond loopback needs `APP_URL`); database `./data/dashboard.db`. |
 | `APP_URL` | Public origin for OAuth, cookies, and notification links. |
 | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord OAuth credentials. |
 | `BOOTSTRAP_OWNER_DISCORD_ID` | Provision the initial owner while no owner exists. |

@@ -21,7 +21,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 - Lists take `?cursor=&limit=` (`PageQuery`) and return `{ items, nextCursor }`.
 - Every error is an `ApiError` body: `{ error: { code, message, details? } }`, with status
   400 `bad_request` (zod `flatten()` in `details`), 401 `unauthenticated`, 403 `forbidden`,
-  404 `not_found`, 409 `conflict` / `invalid_transition`, 422 `import_failed`.
+  404 `not_found`, 409 `conflict` / `invalid_transition` / `over_tolerance`, 422 `import_failed`,
+  429 `rate_limited` (with `Retry-After`).
 - Handlers parse input with the request schema and should `.parse()` their own output with
   the response schema in tests.
 
@@ -135,7 +136,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | GET | `/auth/login` | public | — | — | redirect |
 | GET | `/auth/callback` | public | — | — | redirect |
 | POST | `/auth/logout` | officer | — | — | redirect |
-| GET | `/auth/dev` | public | — | — | redirect |
+| GET | `/auth/dev` | public (dev builds) | `as`/`user`/`discord`, `next`, `key` | — | confirmation page (HTML form) |
+| POST | `/auth/dev` | public (dev builds) | — | form: `as`/`user`/`discord`, `next`, `key` | redirect (303) |
 
 ¹ `?format=csv` returns `text/csv`. `:report` is one of `FINANCE_REPORTS` (`src/core/domain.ts`).
 Officers may read `budget-vs-actual` and `fund-balances` (`OFFICER_FINANCE_REPORTS`); the
@@ -169,6 +171,13 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   A director cannot approve their own request (403). `totalCents` is always computed
   server-side. `PurchaseRequestDetail.allowedTransitions` and `canEdit` tell the UI which
   buttons to show for the current user.
+- **No self-payout.** The requester never settles (`fulfilled`, `reimbursed`) or closes their
+  own request, whatever their role (403); another director does. `allowedTransitions` leaves
+  those moves out for the requester.
+- **Settlement ceiling.** A director may record at most the approved estimate plus the agent
+  tolerance (`AGENT_SETTLEMENT_TOLERANCE_*`, default max(estimate × 1.10, estimate + $25));
+  more answers 409 `over_tolerance` and leadership settles it. `PurchaseRequestDetail.maxSettlementCents`
+  carries the viewer's ceiling (null when they cannot settle, or for leadership).
 - **Settlement: the actual amount replaces the estimate.** `totalCents` is the approved
   estimate (quantity × unit cost + tax/shipping). While a request is `approved` or
   `fulfilling`, that estimate counts as *committed* (encumbered) in budget figures. Moving
@@ -228,7 +237,18 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 - **Admin users.** Directors may deactivate officers. Deactivating directors or leadership requires leadership; owner accounts additionally require an owner. Deactivating a user deletes their sessions. The last active director can't
   be demoted or deactivated (409).
 - **Service tokens.** The plaintext is returned once by `POST /api/admin/tokens`; only a
-  SHA-256 hash is stored. Revoking keeps the row for the audit log.
+  SHA-256 hash is stored. Revoking keeps the row for the audit log. A token acts with its
+  creator's authority: it answers 401 once the creator is inactive or below director, and
+  deactivating or demoting the creator below director revokes their tokens
+  (`token.revoked_with_user` in the audit log).
+- **Member paging.** Any officer may list members; reading past the first page
+  (`offset > 0`) writes a `members.paged` audit row (offset, limit, rows returned, filters).
+- **Health.** `GET /api/health` returns `version` only to signed-in callers.
+- **Rate limits.** Per client IP, `/auth/*` and the upload/import routes
+  (`POST /api/requests/:id/attachments`, `POST /api/design-requests/:id/files`,
+  `PUT /api/events/:id/cover`, `POST /api/events/import`, `POST /api/ingest/luma`) allow 30
+  requests a minute each, then answer 429. Behind a reverse proxy on loopback the client is the
+  last `X-Forwarded-For` hop; direct loopback requests (local tools, tests) are not limited.
 - **Audit.** Every state-changing call writes an `audit_log` row (append-only).
 
 ## Pages
@@ -261,8 +281,8 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   Fund-balance rows additionally expose `restrictedEndingCents` and
   `unrestrictedEndingCents`; `releasesCents` is informational and is not subtracted a
   second time from the combined fund roll-forward.
-- `GET /api/attachments/:id` is an officer-only download for local files or a redirect
-  to a Drive link. Production uploads return 503 when Drive is unconfigured.
+- `GET /api/attachments/:id` downloads a local receipt or redirects to its Drive link, for
+  the uploader, the request's requester and directors only (403 for other officers). Production uploads return 503 when Drive is unconfigured.
 - A restricted-fund settlement posts its expense plus an atomic restriction release.
   Expenses appear without donor restriction; grant attribution stays on the original fund.
 - Reimbursement `reimbursed→closed` records payment (debit payable, credit checking).

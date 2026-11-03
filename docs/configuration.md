@@ -4,7 +4,7 @@ Environment variables (flags override where shown):
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `ADDR` (`-addr`) | `:8090` | listen address |
+| `ADDR` (`-addr`) | `127.0.0.1:8090` | listen address. Listening beyond loopback (e.g. `:8090` in a container) requires `APP_URL`; the server refuses to start without it |
 | `DB_PATH` (`-db`) | `./data/dashboard.db` | SQLite file (WAL mode; directory is created) |
 | `APP_URL` (`-app-url`) | `http://localhost:<port>` | public origin: OAuth redirect URI, links in notifications; `https://` turns on `Secure` cookies, the `__Host-` cookie prefix and HSTS |
 | `STATIC_DIR` (`-static`) | embedded build | serve the front end from this directory instead |
@@ -18,11 +18,23 @@ Environment variables (flags override where shown):
 | `RECEIPTS_DIR` | – | receipts on local disk (single box, no Drive). With neither set, uploads answer 503 |
 | `AGENT_SETTLEMENT_TOLERANCE_PERCENT`, `_CENTS` | `10`, `2500` | agent hold ceiling: max(estimate × 1.10, estimate + $25) |
 | `DEV_AUTH` | – | `1` enables `/auth/dev` in a `-tags dev` build only |
-| `DEV_AUTH_KEY` | – | `-tags dev` builds only (ignored otherwise). When set, `/auth/dev` and the login page's Developer mode panel require `key=<DEV_AUTH_KEY>` (or the `dev_key` cookie a keyed visit sets); a wrong or missing key gets the site's 404. Shareable link: `https://<host>/auth/dev?as=leadership\|director\|officer&key=<KEY>[&next=/events]`. **Test deployments only**: the key signs anyone in as any role. Use a long random value (`openssl rand -hex 24`); see [development](development.md#developer-mode-on-a-test-deployment) |
+| `DEV_AUTH_KEY` | – | `-tags dev` builds only (ignored otherwise). When set, every dev sign-in (`POST /auth/dev`), the confirmation page and the login page's Developer mode panel need `key=<DEV_AUTH_KEY>`; nothing remembers it. A wrong or missing key gets the site's 404. Shareable link (opens a confirmation page): `https://<host>/auth/dev?as=leadership\|director\|officer&key=<KEY>[&next=/events]`. **Required, at least 16 characters, whenever `APP_URL` is not loopback**: the server refuses to start otherwise. **Test deployments only**: the key signs anyone in as any role. Use `openssl rand -hex 24`; see [development](development.md#developer-mode-on-a-test-deployment) |
 
 Sessions live in the database (`sessions`, keyed by sha256 of the cookie token, 30-day sliding
-expiry). Service tokens are stored as sha256 hashes. Writes that arrive with a session cookie
+expiry, capped at 90 days after sign-in). Signing in again replaces the browser's previous session. Service tokens are stored as sha256 hashes. Writes that arrive with a session cookie
 and a foreign `Origin` header are refused (403), on top of `SameSite=Lax`.
+
+Every response carries `X-Content-Type-Options: nosniff`, a `Content-Type`, `Permissions-Policy`
+and a `Content-Security-Policy`. HTML pages get a policy that allows same-origin scripts plus
+the page's own inline scripts by sha256 (computed from the built files when served, so a
+rebuild needs no configuration), inline styles, images from this origin, `data:`/`blob:` and
+`cdn.discordapp.com` (avatars), and form posts to this origin, Discord and Google; framing,
+plugins and `<base>` are refused. Every other response (JSON, files, redirects) gets
+`default-src 'none'`.
+
+**Not yet separate:** Google Calendar refresh tokens are sealed with a key derived from
+`GOOGLE_OAUTH_CLIENT_SECRET`. A dedicated `TOKEN_SEAL_KEY` (so rotating the OAuth secret does
+not orphan stored tokens, and one leaked secret does not expose both) is planned, not built.
 
 Static files are served for every path outside `/api/` and `/auth/`, **without** a session:
 the pages are shells and the data behind them is API-protected. (v1 redirected unauthenticated
