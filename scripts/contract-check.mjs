@@ -519,6 +519,31 @@ await call('contactUpdate', { who: officer, params: contactParams, body: { event
 await call('contactDelete', { who: officer, params: contactParams });
 await call('contactDetail', { who: officer, params: contactParams, expect: 404 });
 
+// Buildspace: project membership, manual history, scoped and replay-safe Discord ingestion.
+await call('buildspaceList', { who: officer });
+await call('buildspaceList', { expect: 401 });
+await call('buildspaceProjectSave', {who: officer, params: {id: 'contract-buildspace'}, body: {
+ name: 'Contract garden', description: 'A campus garden prototype', track: 'Hardware', stage: 'Building', links: ['https://example.org/garden'], mentorIds: ['bs-mentor-jordan'],
+}});
+await call('buildspacePersonSave', {who: officer, params: {id: 'contract-builder'}, body: {
+ name: 'Contract builder', projectId: 'contract-buildspace', joinedOn: today, memberId: null, discordId: '123456789012345678',
+}});
+await call('buildspaceActivityCreate', {who: officer, body: {projectId: 'contract-buildspace', personId: 'contract-builder', kind: 'request', date: today, body: 'Need a sensor', status: 'open'}});
+let bs = await call('buildspaceList', {who: officer});
+const bsRequest = bs.json.activity.find(a => a.body === 'Need a sensor');
+await call('buildspaceActivityResolve', {who: officer, params: {id: bsRequest.id}});
+const bsToken = await call('adminTokenCreate', {who: directorA, body: {name: 'Buildspace bot', scopes: ['ingest:buildspace'], expiresInDays: 30}});
+const bsWho = {bearer: bsToken.json.plaintext};
+const bsUpdate = {discordId: '123456789012345678', externalId: 'contract-discord-message-1', kind: 'weekly', date: today, body: 'First working prototype', status: 'on-track'};
+await call('buildspaceIngest', {who: bsWho, body: bsUpdate});
+await call('buildspaceIngest', {who: bsWho, body: bsUpdate});
+await call('buildspaceIngest', {who: bsWho, body: {...bsUpdate, body: 'Conflicting replay'}, expect: 409});
+await call('buildspaceIngest', {who: officer, body: bsUpdate, expect: 401});
+bs = await call('buildspaceList', {who: officer});
+must(bs.json.activity.filter(a => a.externalId === bsUpdate.externalId).length === 1, 'Discord retries do not duplicate check-ins');
+await call('adminTokenRevoke', {who: directorA, params: {id: bsToken.json.token.id}});
+await call('buildspaceIngest', {who: bsWho, body: bsUpdate, expect: 401});
+
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback']); // redirects, and dev-build-only routes: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);

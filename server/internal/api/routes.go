@@ -5,6 +5,13 @@ import "net/http"
 func (s *Server) routes(mux *http.ServeMux) {
 	h := func(pattern string, fn handlerFunc) { mux.HandleFunc(pattern, s.wrap(fn)) }
 
+	h("GET /api/buildspace", (*Ctx).buildspaceList)
+	h("PUT /api/buildspace/projects/{id}", (*Ctx).buildspaceProjectSave)
+	h("PUT /api/buildspace/people/{id}", (*Ctx).buildspacePersonSave)
+	h("POST /api/buildspace/activity", (*Ctx).buildspaceActivityCreate)
+	h("POST /api/buildspace/activity/{id}/resolve", (*Ctx).buildspaceActivityResolve)
+	h("POST /api/ingest/buildspace", (*Ctx).buildspaceIngest)
+
 	h("GET /api/members", (*Ctx).membersList)
 	h("GET /api/members/export", (*Ctx).membersExport)
 	h("GET /api/members/{id}", (*Ctx).memberDetail)

@@ -11,7 +11,7 @@ import (
 	"officerdashboard/internal/validate"
 )
 
-var serviceScopes = []string{"ingest:luma", "agent:jobs"}
+var serviceScopes = []string{"ingest:luma", "ingest:buildspace", "agent:jobs"}
 
 func (c *Ctx) adminUsers() error {
 	if _, err := c.director(); err != nil {

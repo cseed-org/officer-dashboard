@@ -80,7 +80,7 @@ export const CONTRIBUTION_KINDS = ['cash', 'check', 'online', 'in_kind', 'stock'
 export type ContributionKind = (typeof CONTRIBUTION_KINDS)[number];
 
 /** Scopes a director can grant to a service token (agents / scrapers). */
-export const SERVICE_TOKEN_SCOPES = ['ingest:luma', 'agent:jobs'] as const;
+export const SERVICE_TOKEN_SCOPES = ['ingest:luma', 'ingest:buildspace', 'agent:jobs'] as const;
 export type ServiceTokenScope = (typeof SERVICE_TOKEN_SCOPES)[number];
 
 export const CSV_IMPORT_KINDS = ['luma_guests', 'reflections'] as const;
