@@ -24,9 +24,16 @@ async function loadFeed(start: string, end: string, sources: string, zone: strin
   return data;
 }
 const defaults: CalendarWidgetOptions = { view: 'auto', sources: ['events', 'design'], colourBy: 'source', showWeekends: true };
+// Mirrors store.CalendarSources so the legend paints at its final size before the feed's
+// registry metadata arrives (which then replaces it). Unknown future sources still appear
+// once the feed loads.
 const fallbackSources: CalendarFeedSource[] = [
   { id: 'events', label: 'Club events', icon: 'calendar', hue: 'blue' },
   { id: 'design', label: 'Design deadlines', icon: 'pen', hue: 'amber' },
+  { id: 'purchase-deadlines', label: 'Purchase deadlines', icon: 'wallet', hue: 'green' },
+  { id: 'buildspace-absences', label: 'Buildspace absences', icon: 'user', hue: 'coral' },
+  { id: 'buildspace-weekly', label: 'Buildspace weekly check-ins', icon: 'check', hue: 'teal' },
+  { id: 'buildspace-mentor', label: 'Buildspace mentor check-ins', icon: 'user', hue: 'violet' },
 ];
 const safeHue = (hue?: string) => ['blue', 'amber', 'teal', 'coral', 'violet', 'green'].includes(hue ?? '') ? hue! : 'teal';
 const SOURCE_ICONS = ['pen', 'user', 'check', 'wallet'] as const;
@@ -132,6 +139,12 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const popover = useRef<HTMLDetailsElement>(null);
+  const sourcesMenu = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const outside = (e: PointerEvent) => { const menu = sourcesMenu.current; if (menu?.open && !menu.contains(e.target as Node)) menu.open = false; };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, []);
   const [now, setNow] = useState(pacificToday);
   useEffect(() => {
     let alive = true;
@@ -194,6 +207,18 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
     </div>;
   };
   const shownAgenda = selected ? [selected] : agendaDates;
+  // Six source chips need a full-width (4×2) tile; smaller tiles use a compact menu whose
+  // panel floats over the calendar, so opening it never moves the layout.
+  const menuLegend = size !== '4x2';
+  const shownCount = sourceDefs.filter(source => options.sources.includes(source.id)).length;
+  const toggles = <div class="cw-sources" role="group" aria-label="Calendar sources">
+    {sourceDefs.map(source => <button type="button" key={source.id} class="cw-source-toggle" style={{ '--cw-colour': `var(--c-${safeHue(source.hue)})` }}
+      // aria-disabled while saving keeps keyboard focus on the toggle (disabling would drop it).
+      aria-pressed={options.sources.includes(source.id)} disabled={!settingsReady} aria-disabled={saving || undefined}
+      onClick={() => !saving && save({ ...options, sources: options.sources.includes(source.id) ? options.sources.filter(id => id !== source.id) : [...options.sources, source.id] }, false)}>
+      <Icon name={sourceIcon(source)} size={13} />{source.label}
+    </button>)}
+  </div>;
   return <section class={`tile cw cw--${view}${compact ? ' cw--compact' : ''}`} aria-labelledby="calendar-widget-title" data-block="calendar">
     <header class="tile-head">
       <h2 class="tile-title" id="calendar-widget-title">calendar</h2>
@@ -221,12 +246,16 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
       <strong aria-live="polite">{label}</strong>
       <div class="cw-nav" role="group" aria-label="Calendar dates"><button class="btn btn--small" aria-label="Previous calendar period" onClick={() => navigate(-1)}>‹</button><button class="btn btn--small" onClick={() => { setAnchor(pacificToday()); setSelected(null); }}>Today</button><button class="btn btn--small" aria-label="Next calendar period" onClick={() => navigate(1)}>›</button></div>
     </div>
-    <div class="cw-legend" role="group" aria-label="Calendar sources">
-      {sourceDefs.map(source => <button type="button" key={source.id} class="cw-source-toggle" style={{ '--cw-colour': `var(--c-${safeHue(source.hue)})` }}
-        aria-pressed={options.sources.includes(source.id)} disabled={saving || !settingsReady}
-        onClick={() => save({ ...options, sources: options.sources.includes(source.id) ? options.sources.filter(id => id !== source.id) : [...options.sources, source.id] }, false)}>
-        <Icon name={sourceIcon(source)} size={13} />{source.label}
-      </button>)}
+    <div class={`cw-legend${menuLegend ? ' cw-legend--menu' : ''}`}>
+      {menuLegend ? <details class="cw-sources-menu" ref={sourcesMenu}
+        onKeyDown={e => { if (e.key === 'Escape' && sourcesMenu.current?.open) { e.preventDefault(); sourcesMenu.current.open = false; sourcesMenu.current.querySelector('summary')?.focus(); } }}
+        onFocusOut={e => { const next = e.relatedTarget as Node | null; if (next && !sourcesMenu.current?.contains(next)) sourcesMenu.current?.removeAttribute('open'); }}>
+        <summary aria-label={`Calendar sources, ${shownCount} of ${sourceDefs.length} shown`}>
+          <span class="cw-sources-dots" aria-hidden="true">{sourceDefs.filter(source => options.sources.includes(source.id)).slice(0, 4).map(source => <span key={source.id} style={{ '--cw-colour': `var(--c-${safeHue(source.hue)})` }} />)}</span>
+          Sources ({shownCount}/{sourceDefs.length})
+        </summary>
+        <div class="cw-sources-panel">{toggles}</div>
+      </details> : toggles}
       {!compact && <span class="cw-zone">{zone}</span>}
     </div>
     {error ? <p role="alert">{error} <button class="btn btn--small" onClick={() => setTick(t => t + 1)}>Retry</button></p> : <Async state={feed ? { status: 'ready', data: feed } : { status: 'loading' }} loading={<Loading rows={compact ? 1 : 3} label="Loading calendar" />}>{() => <>

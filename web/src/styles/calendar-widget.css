@@ -45,9 +45,26 @@
  .cw-day {min-height: 54px; padding: 2px;}
  .cw-item--mini .cw-item-title {font-size: 9px;}
  .cw-zone {line-height: 1.7;}
+ .cw-legend .cw-zone {line-height: 26px;}
 }
 /* Source controls use both colour and shape; muted sources remain available to enable. */
-.cw-legend {display: flex; align-items: center; gap: 6px; flex-wrap: wrap;}
+/* Chips wrap inside their own box; the time zone keeps its own column (or line), so the
+   two can never overlap however many sources are registered. */
+.cw-legend {display: flex; align-items: flex-start; gap: 6px 12px; flex-wrap: wrap;}
+.cw-sources {display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1 1 320px; min-width: 0;}
+.cw-legend .cw-zone {flex: none; margin-left: auto; white-space: nowrap; line-height: 26px;}
+.cw-source-toggle {white-space: nowrap; max-width: 100%;}
+.cw-source-toggle[aria-disabled="true"] {cursor: progress; opacity: .75;}
+.cw-legend--menu {align-items: center;}
+.cw-sources-menu {position: relative;}
+.cw-sources-menu summary {display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); white-space: nowrap; cursor: pointer; list-style: none; border: 1px solid var(--line); border-radius: var(--radius-control); padding: 4px 8px; min-height: 28px; box-sizing: border-box;}
+.cw-sources-menu summary::-webkit-details-marker {display: none;}
+.cw-sources-menu summary::after {content: '▾'; font-size: 10px; color: var(--muted);}
+.cw-sources-dots {display: inline-flex; gap: 2px;}
+.cw-sources-dots span {width: 6px; height: 6px; border-radius: 50%; background: var(--cw-colour);}
+.cw-sources-panel {position: absolute; left: 0; top: calc(100% + 4px); z-index: 6; width: max-content; max-width: min(260px, calc(100vw - 48px)); padding: 8px; background: var(--surface); border: 1px solid var(--control); border-radius: var(--radius-overlay); box-shadow: var(--block-lift);}
+.cw-sources-panel .cw-sources {flex-direction: column; align-items: stretch; flex-wrap: nowrap;}
+.cw-sources-panel .cw-source-toggle {justify-content: flex-start;}
 .cw-source-toggle {display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 11px; padding: 5px 8px; border: 1px solid var(--cw-colour); border-radius: var(--radius-control); color: var(--text); background: color-mix(in srgb, var(--cw-colour) 15%, var(--surface)); cursor: pointer;}
 .cw-source-toggle .icon {color: var(--cw-colour); flex-shrink: 0;}
 .cw-source-toggle[aria-pressed="false"] {background: var(--surface); border-color: var(--line); color: var(--muted); text-decoration: line-through;}

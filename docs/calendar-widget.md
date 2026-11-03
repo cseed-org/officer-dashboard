@@ -21,7 +21,13 @@ and 4×2 sizes.
 
 Options saves view, sources, colour grouping and weekend visibility to the signed-in
 officer's account. Small widgets always use an agenda; other sizes allow explicit
-agenda, week or month views. Toggle sources directly in the legend; calendar icons mark blue club events and pen
+agenda, week or month views. At 4×2 the legend shows every source as a chip; chips wrap
+inside their own area and the time-zone label keeps its own column (or line on phones), so
+they never overlap. At 2×1 and 2×2 the chips collapse into a **Sources (n/total)** menu whose
+panel floats over the calendar, so opening it moves nothing; Tab reaches the toggles and
+Escape closes it and returns focus. Toggles stay focusable while a change saves. The
+legend's initial source list mirrors the server registry, so it doesn't grow when the
+feed loads. Toggle sources directly in the legend; calendar icons mark blue club events and pen
 icons mark amber design deadlines. Legend changes save immediately. Hover or focus
 a month/week chip to see its time, location, source, detail link and Luma link.
 Timed chips include a compact start time (for example, **6p Hack Night**). Each day

@@ -75,7 +75,7 @@ range query and the deadline sort.
   single day), status filtering, draft privacy, date stability across time zones, and
   role-based defaults.
 - Playwright (`web/tests/purchase-deadline.spec.ts`, phone/tablet/desktop, light and dark):
-  form validation and `min`, list hints and sort, inline edit, another officer can't edit,
+  form validation and `min`, list hints and sort, the calendar legend at 4×2/2×2/2×1 (no time-zone overlap, no layout shift on load or menu open, keyboard toggling), inline edit, another officer can't edit,
   the calendar chip, popover and toggle, My actions hint, and the overdue state.
   `DEADLINE_SHOTS=1` regenerates the screenshots below. The browser clock is fixed at
   2026-11-04 (and 2026-11-08 for overdue).
@@ -92,3 +92,16 @@ range query and the deadline sort.
 | Overdue, phone | ![overdue-phone-light](evidence/purchase-deadlines/overdue-phone-light.png) | ![overdue-phone-dark](evidence/purchase-deadlines/overdue-phone-dark.png) |
 | Detail, desktop | ![detail-desktop-light](evidence/purchase-deadlines/detail-desktop-light.png) | ![detail-desktop-dark](evidence/purchase-deadlines/detail-desktop-dark.png) |
 | Detail, phone | ![detail-phone-light](evidence/purchase-deadlines/detail-phone-light.png) | ![detail-phone-dark](evidence/purchase-deadlines/detail-phone-dark.png) |
+
+### Calendar legend at each size
+
+With six sources, small and medium widgets use a compact **Sources** menu. The full chip row wraps without touching the time-zone label.
+
+| | Light | Dark |
+| --- | --- | --- |
+| 4×2, desktop | ![legend-4x2-desktop-light](evidence/purchase-deadlines/legend-4x2-desktop-light.png) | ![legend-4x2-desktop-dark](evidence/purchase-deadlines/legend-4x2-desktop-dark.png) |
+| 4×2, phone | ![legend-4x2-phone-light](evidence/purchase-deadlines/legend-4x2-phone-light.png) | ![legend-4x2-phone-dark](evidence/purchase-deadlines/legend-4x2-phone-dark.png) |
+| 2×2 (menu open), desktop | ![legend-2x2-desktop-light](evidence/purchase-deadlines/legend-2x2-desktop-light.png) | ![legend-2x2-desktop-dark](evidence/purchase-deadlines/legend-2x2-desktop-dark.png) |
+| 2×2 (menu open), phone | ![legend-2x2-phone-light](evidence/purchase-deadlines/legend-2x2-phone-light.png) | ![legend-2x2-phone-dark](evidence/purchase-deadlines/legend-2x2-phone-dark.png) |
+| 2×1 (menu open), desktop | ![legend-2x1-desktop-light](evidence/purchase-deadlines/legend-2x1-desktop-light.png) | ![legend-2x1-desktop-dark](evidence/purchase-deadlines/legend-2x1-desktop-dark.png) |
+| 2×1 (menu open), phone | ![legend-2x1-phone-light](evidence/purchase-deadlines/legend-2x1-phone-light.png) | ![legend-2x1-phone-dark](evidence/purchase-deadlines/legend-2x1-phone-dark.png) |
