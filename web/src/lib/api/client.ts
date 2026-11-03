@@ -90,19 +90,30 @@ export function endpointUrl<N extends EndpointName>(name: N, opts: Pick<CallOpti
 type Contracts = typeof import('../contracts');
 let contracts: Contracts | null = null;
 let contractsLoading: Promise<Contracts> | null = null;
+let markLoaded!: (c: Contracts) => void;
+/** Resolves when the contract has loaded, without starting the load. */
+const contractsLoaded = new Promise<Contracts>((resolve) => { markLoaded = resolve; });
 /** The zod contract module, imported once. */
 export function loadContracts(): Promise<Contracts> {
-  contractsLoading ??= import('../contracts').then((m) => (contracts = m), (err) => { contractsLoading = null; throw err; });
+  contractsLoading ??= import('../contracts').then(
+    (m) => { contracts = m; markLoaded(m); return m; },
+    (err) => { contractsLoading = null; throw err; },
+  );
   return contractsLoading;
 }
 let scheduled = false;
-/** Load the contract once the page is idle, after the response that is being rendered now. */
+/**
+ * Load the contract after the page's first render: once the document has loaded (its preloaded
+ * modules and images are in) and the main thread is next idle, so evaluating ~350 schemas never
+ * competes with the first paint of data.
+ */
 function loadContractsSoon() {
   if (scheduled || contracts) return;
   scheduled = true;
   const start = () => void loadContracts().catch((err) => { scheduled = false; console.warn('[api] could not load the contract', err); });
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(start, { timeout: 2000 });
-  else setTimeout(start, 200);
+  const idle = () => (typeof requestIdleCallback === 'function' ? requestIdleCallback(start, { timeout: 2000 }) : setTimeout(start, 200));
+  if (document.readyState === 'complete') idle();
+  else window.addEventListener('load', idle, { once: true });
 }
 
 /** A response failed validation after it was already returned: the page Gate shows this error. */
@@ -124,7 +135,7 @@ async function validate<N extends EndpointName>(name: N, method: string, data: u
   if (method !== 'GET') return check(await loadContracts(), name, data);
   // A read before the contract has loaded: render it now, check it once the contract is here.
   loadContractsSoon();
-  void loadContracts().then(
+  void contractsLoaded.then(
     (c) => { try { check(c, name, data); } catch (err) { window.dispatchEvent(new CustomEvent(CONTRACT_ERROR_EVENT, { detail: err })); } },
     () => {},
   );
