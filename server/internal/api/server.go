@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -51,6 +52,9 @@ type Config struct {
 	// AuthRateLimit and UploadRateLimit are the requests per minute one client IP may make
 	// to /auth/* and to the upload/import routes. 0 uses the defaults; negative disables.
 	AuthRateLimit, UploadRateLimit int
+	// TrustedProxies are the peers whose X-Forwarded-For names the client (TRUSTED_PROXIES).
+	// nil means loopback only.
+	TrustedProxies []*net.IPNet
 	// Static serves the front end for every non-API path; nil answers 404 JSON.
 	Static  http.Handler
 	Version string
@@ -66,6 +70,7 @@ type Server struct {
 	host   string // APP_URL host, for the Origin check
 
 	authLimit, uploadLimit *rateLimiter
+	trustedProxies         []*net.IPNet
 
 	sealer     *calendar.Sealer
 	bg         sync.WaitGroup // background calendar deliveries
@@ -98,6 +103,10 @@ func New(cfg Config) *Server {
 		cfg.Version = "0.1.0"
 	}
 	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log}
+	s.trustedProxies = cfg.TrustedProxies
+	if s.trustedProxies == nil {
+		s.trustedProxies = DefaultTrustedProxies()
+	}
 	s.authLimit = newRateLimiter(orDefault(cfg.AuthRateLimit, defaultAuthRateLimit), cfg.Now)
 	s.uploadLimit = newRateLimiter(orDefault(cfg.UploadRateLimit, defaultUploadRateLimit), cfg.Now)
 	if cfg.Google != nil {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -12,7 +13,50 @@ import (
 const (
 	defaultAuthRateLimit   = 30 // /auth/* requests per minute per client IP
 	defaultUploadRateLimit = 30 // upload and import requests per minute per client IP
+	// maxLimiterKeys bounds each limiter's memory: past it, an arbitrary bucket is dropped
+	// for each new client (at worst that client starts over with a full bucket).
+	maxLimiterKeys = 10_000
 )
+
+// DefaultTrustedProxies is loopback: the supported single-host deployments put Caddy or
+// cloudflared on this machine.
+func DefaultTrustedProxies() []*net.IPNet {
+	var out []*net.IPNet
+	for _, c := range []string{"127.0.0.0/8", "::1/128"} {
+		_, n, _ := net.ParseCIDR(c)
+		out = append(out, n)
+	}
+	return out
+}
+
+// ParseTrustedProxies reads TRUSTED_PROXIES: comma-separated CIDRs or bare IPs.
+func ParseTrustedProxies(v string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+	for _, f := range strings.Split(v, ",") {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		if !strings.Contains(f, "/") {
+			ip := net.ParseIP(f)
+			if ip == nil {
+				return nil, fmt.Errorf("TRUSTED_PROXIES: %q is not an IP or CIDR", f)
+			}
+			bits := 128
+			if ip.To4() != nil {
+				ip, bits = ip.To4(), 32
+			}
+			out = append(out, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+			continue
+		}
+		_, n, err := net.ParseCIDR(f)
+		if err != nil {
+			return nil, fmt.Errorf("TRUSTED_PROXIES: %q is not an IP or CIDR", f)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
 
 func orDefault(n, def int) int {
 	if n == 0 {
@@ -27,6 +71,8 @@ type rateLimiter struct {
 	perMinute float64
 	now       func() time.Time
 
+	maxKeys int
+
 	mu        sync.Mutex
 	buckets   map[string]*bucket
 	lastSweep time.Time
@@ -38,7 +84,7 @@ type bucket struct {
 }
 
 func newRateLimiter(perMinute int, now func() time.Time) *rateLimiter {
-	return &rateLimiter{perMinute: float64(perMinute), now: now, buckets: map[string]*bucket{}}
+	return &rateLimiter{perMinute: float64(perMinute), now: now, maxKeys: maxLimiterKeys, buckets: map[string]*bucket{}}
 }
 
 // allow takes one token for key; when none is left it reports how long until one is.
@@ -59,6 +105,12 @@ func (l *rateLimiter) allow(key string) (bool, time.Duration) {
 	}
 	b, ok := l.buckets[key]
 	if !ok {
+		for k := range l.buckets { // map order is random: drop arbitrary entries, O(1) each
+			if len(l.buckets) < l.maxKeys {
+				break
+			}
+			delete(l.buckets, k)
+		}
 		b = &bucket{tokens: l.perMinute, at: now}
 		l.buckets[key] = b
 	}
@@ -74,28 +126,58 @@ func (l *rateLimiter) allow(key string) (bool, time.Duration) {
 	return false, wait
 }
 
-// clientIP is the peer address, or, when the peer is a reverse proxy on this machine (the
-// supported deployments put Caddy or cloudflared on loopback), the last X-Forwarded-For hop,
-// which that proxy appended. A client cannot spoof it: anything it sends comes earlier in
-// the list. Direct loopback requests without the header are local tools and tests.
-func clientIP(r *http.Request) (ip string, local bool) {
+// clientIP is the address a request is limited by. The peer, unless it is a trusted proxy
+// (TRUSTED_PROXIES, loopback by default): then X-Forwarded-For is read from the right,
+// skipping trusted hops, and the first untrusted hop is the client. Each proxy appends the
+// address it received from, so anything the client wrote itself sits further left and is
+// never reached. IPv6 clients are keyed by their /64. A direct loopback request without the
+// header (local tools, tests) is reported as local and not limited.
+func clientIP(r *http.Request, trusted []*net.IPNet) (key string, local bool) {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
 	peer := net.ParseIP(host)
-	if peer == nil || !peer.IsLoopback() {
+	if peer == nil {
 		return host, false
 	}
 	xff := r.Header.Values("X-Forwarded-For")
-	if len(xff) == 0 {
+	if len(xff) == 0 && peer.IsLoopback() {
 		return host, true
 	}
-	hops := strings.Split(xff[len(xff)-1], ",")
-	if last := strings.TrimSpace(hops[len(hops)-1]); net.ParseIP(last) != nil {
-		return last, false
+	if !inNets(peer, trusted) {
+		return ipKey(peer), false
 	}
-	return host, false
+	hops := strings.Split(strings.Join(xff, ","), ",")
+	client := peer
+	for i := len(hops) - 1; i >= 0; i-- {
+		ip := net.ParseIP(strings.TrimSpace(hops[i]))
+		if ip == nil {
+			break // a malformed hop: trust nothing further left
+		}
+		client = ip
+		if !inNets(ip, trusted) {
+			break
+		}
+	}
+	return ipKey(client), false
+}
+
+func inNets(ip net.IP, nets []*net.IPNet) bool {
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// ipKey is the bucket key: the IPv4 address, or the /64 of an IPv6 one.
+func ipKey(ip net.IP) string {
+	if v4 := ip.To4(); v4 != nil {
+		return v4.String()
+	}
+	return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
 }
 
 // limitedRoute names the budget a request draws on: sign-in routes and the upload/import
@@ -129,7 +211,7 @@ func (s *Server) withRateLimit(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ip, local := clientIP(r)
+		ip, local := clientIP(r, s.trustedProxies)
 		if local {
 			next.ServeHTTP(w, r)
 			return

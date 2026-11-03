@@ -229,6 +229,8 @@ func TestExposureChecks(t *testing.T) {
 		{"dev login on localhost, no key", map[string]string{"DEV_AUTH": "1"}, true, ""},
 		{"dev login public, no key", map[string]string{"DEV_AUTH": "1", "ADDR": ":9000", "APP_URL": "https://test.example.org"}, true, "DEV_AUTH_KEY"},
 		{"dev login public, short key", map[string]string{"DEV_AUTH": "1", "DEV_AUTH_KEY": "short", "ADDR": ":9000", "APP_URL": "https://test.example.org"}, true, "DEV_AUTH_KEY"},
+		{"dev login on all interfaces, localhost APP_URL, no key", map[string]string{"DEV_AUTH": "1", "ADDR": ":9000", "APP_URL": "http://localhost:9000"}, true, "DEV_AUTH_KEY"},
+		{"dev login on all interfaces, localhost APP_URL, strong key", map[string]string{"DEV_AUTH": "1", "DEV_AUTH_KEY": strong, "ADDR": ":9000", "APP_URL": "http://localhost:9000"}, true, ""},
 		{"dev login public, strong key", map[string]string{"DEV_AUTH": "1", "DEV_AUTH_KEY": strong, "ADDR": ":9000", "APP_URL": "https://test.example.org"}, true, ""},
 		{"release build ignores DEV_AUTH", map[string]string{"DEV_AUTH": "1", "ADDR": ":9000", "APP_URL": "https://dash.example.org"}, false, ""},
 	}
@@ -240,5 +242,29 @@ func TestExposureChecks(t *testing.T) {
 		case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
 			t.Errorf("%s: error %v, want one naming %s", c.name, err, c.wantErr)
 		}
+	}
+}
+
+// TRUSTED_PROXIES is read from the environment; a malformed entry stops startup.
+func TestTrustedProxiesSetting(t *testing.T) {
+	dir := t.TempDir()
+	build := func(v string) error {
+		s, _ := loadSettings(flag.NewFlagSet("t", flag.ContinueOnError), nil, env(map[string]string{"DB_PATH": filepath.Join(dir, "d.db"), "TRUSTED_PROXIES": v}))
+		if s.TrustedProxies != v {
+			t.Fatalf("TRUSTED_PROXIES not read: %q", s.TrustedProxies)
+		}
+		db, err := openDB(s.DBPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		_, err = buildServer(s, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		return err
+	}
+	if err := build("172.18.0.0/16, 10.0.0.7, ::1"); err != nil {
+		t.Errorf("valid list refused: %v", err)
+	}
+	if err := build("172.18.0.0/16, proxy.local"); err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXIES") {
+		t.Errorf("malformed list → %v", err)
 	}
 }

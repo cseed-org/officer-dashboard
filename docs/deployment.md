@@ -26,7 +26,11 @@ docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile -t o
 ```
 Multi-stage; cross-compiles cgo with an installed cross-gcc; the runtime is
 `debian:bookworm-slim` plus the `litestream` binary, running as a non-root user with a
-`HEALTHCHECK` (`dashboard healthcheck`). **Containers have ephemeral disks**, so the image
+`HEALTHCHECK` (`dashboard healthcheck`). The image listens on `:8090`, so it **refuses to start
+without `APP_URL`** (the public https origin). When the TLS proxy (Caddy, cloudflared) reaches the
+container over the Docker network rather than loopback, set `TRUSTED_PROXIES` to that network
+(for example `172.16.0.0/12`, or the proxy's address): otherwise every user shares the proxy's
+rate-limit budget for sign-in and uploads. **Containers have ephemeral disks**, so the image
 replicates the SQLite file with Litestream when `LITESTREAM_BUCKET` is set:
 
 | Variable | Example |

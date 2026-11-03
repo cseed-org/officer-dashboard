@@ -95,6 +95,7 @@ type settings struct {
 	DevAuth                          bool
 	DevAuthKey                       string
 	TolerancePercent, ToleranceCents string
+	TrustedProxies                   string // TRUSTED_PROXIES: CIDRs/IPs whose X-Forwarded-For is believed
 }
 
 func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (settings, error) {
@@ -127,6 +128,7 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	s.ReceiptsDir = env("RECEIPTS_DIR", "")
 	s.DevAuth = env("DEV_AUTH", "") == "1"
 	s.DevAuthKey = env("DEV_AUTH_KEY", "")
+	s.TrustedProxies = env("TRUSTED_PROXIES", "")
 	s.TolerancePercent, s.ToleranceCents = env("AGENT_SETTLEMENT_TOLERANCE_PERCENT", ""), env("AGENT_SETTLEMENT_TOLERANCE_CENTS", "")
 	s.AppURLSet = s.AppURL != ""
 	if s.AppURL == "" {
@@ -167,9 +169,17 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		log.Warn("bootstrap owner configuration ignored: ownership already belongs to another account")
 	}
 
+	var trusted []*net.IPNet // nil: loopback only
+	if s.TrustedProxies != "" {
+		var err error
+		if trusted, err = api.ParseTrustedProxies(s.TrustedProxies); err != nil {
+			return nil, err
+		}
+	}
 	cfg := api.Config{
-		Cloudflare: &cfsync.Service{Client: cloudflare.New(s.Cloudflare), DB: db, Log: log},
-		DB:         db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
+		TrustedProxies: trusted,
+		Cloudflare:     &cfsync.Service{Client: cloudflare.New(s.Cloudflare), DB: db, Log: log},
+		DB:             db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
 		Tolerance: purchases.ToleranceFromEnv(s.TolerancePercent, s.ToleranceCents),
 		DevAuth:   s.DevAuth, DevAuthKey: s.DevAuthKey,
 	}
@@ -420,16 +430,18 @@ const minDevKeyLen = 16
 // checkExposure refuses configurations that are only safe on this machine:
 //   - listening beyond loopback without APP_URL (the default http://localhost origin would
 //     drop Secure cookies, __Host- and HSTS, and break OAuth redirects);
-//   - a dev build answering DEV_AUTH=1 on a non-loopback APP_URL without a DEV_AUTH_KEY of
-//     at least 16 characters (anyone reaching it could sign in as the owner).
+//   - a dev build answering DEV_AUTH=1 on a non-loopback APP_URL or listen address without a
+//     DEV_AUTH_KEY of at least 16 characters (anyone reaching it could sign in as leadership).
 func checkExposure(s settings, devBuild bool) error {
 	if !s.AppURLSet && !isLoopbackAddr(s.Addr) {
 		return fmt.Errorf("ADDR %q listens beyond loopback but APP_URL is not set; set APP_URL to the public origin, or ADDR=127.0.0.1:<port>", s.Addr)
 	}
 	if devBuild && s.DevAuth && len(s.DevAuthKey) < minDevKeyLen {
+		// Reachable from elsewhere if either the public origin or the listener is: a
+		// localhost APP_URL on ADDR=:8090 (Docker, port mapping) still faces the network.
 		u, err := url.Parse(s.AppURL)
-		if err != nil || !isLoopbackHost(u.Hostname()) {
-			return fmt.Errorf("DEV_AUTH=1 on %s needs DEV_AUTH_KEY of at least %d characters (openssl rand -hex 24)", s.AppURL, minDevKeyLen)
+		if err != nil || !isLoopbackHost(u.Hostname()) || !isLoopbackAddr(s.Addr) {
+			return fmt.Errorf("DEV_AUTH=1 on %s (listening on %s) needs DEV_AUTH_KEY of at least %d characters (openssl rand -hex 24)", s.AppURL, s.Addr, minDevKeyLen)
 		}
 	}
 	return nil
