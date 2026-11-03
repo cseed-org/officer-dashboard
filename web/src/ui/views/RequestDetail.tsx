@@ -349,6 +349,7 @@ function Actions({
           <h2 id="settle-h">{settleTo === 'reimbursed' ? 'record the reimbursement' : 'record the purchase'}</h2>
           <p class="small muted flush">
             The ledger posts what was actually paid, which can differ from the {formatCents(r.totalCents)} estimate. Attach the receipt first.
+            {r.maxSettlementCents !== null && ` You can record up to ${formatCents(r.maxSettlementCents)}; leadership settles anything above that.`}
           </p>
           <div class="grid-fields">
             <Field id="settle-actual" label="actual total" error={actualError}>
@@ -369,6 +370,10 @@ function Actions({
                 const cents = dollarsToCents(actual);
                 if (cents === null || Number.isNaN(cents)) {
                   setActualError('Enter the amount paid, like 95.00.');
+                  return;
+                }
+                if (r.maxSettlementCents !== null && cents > r.maxSettlementCents) {
+                  setActualError(`That is over the ${formatCents(r.maxSettlementCents)} you can record. Ask leadership to settle it.`);
                   return;
                 }
                 setActualError(undefined);

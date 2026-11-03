@@ -260,8 +260,9 @@ const upload = () => {
 };
 const attached = await call('requestAttach', { who: directorA, params: { id }, form: upload() });
 const attachmentId = attached.json.attachment.id;
-const download = await call('attachmentDownload', { who: officer, params: { id: attachmentId } });
+const download = await call('attachmentDownload', { who: directorA, params: { id: attachmentId } });
 must(download.raw?.toString().startsWith('%PDF-1.4'), 'receipt downloads byte for byte');
+await call('attachmentDownload', { who: officer, params: { id: attachmentId }, expect: 403 }); // receipts: requester and directors only
 await call('requestSubmit', { who: directorA, params: { id } });
 await call('requestApprove', { who: directorA, params: { id }, body: {}, expect: 403 }); // no self-approval
 const approved = await call('requestApprove', { who: directorB, params: { id }, body: { comment: 'Looks right.' } });
