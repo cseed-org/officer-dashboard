@@ -13,7 +13,7 @@
 | [Integrations](integrations.md) | Discord, Cloudflare, Luma CSV, Google Drive and Calendar, Notion status. |
 | [API](api.md) | HTTP endpoints and payloads, including External Contacts and speaking history. |
 | [Notion integration](notion-integration.md) | Placeholder behavior and future implementation boundary. |
-| [V0.5 motion/performance draft](motion-performance-v05.md) | Before/after client and API measurements, motion behavior, screenshots, and remaining budgets. |
+| [V0.5 motion/performance](motion-performance-v05.md) | Before/after client and API measurements, motion behavior, screenshots, and remaining budgets. |
 | [Performance](performance.md) | Historical Raspberry Pi measurements and benchmark methodology. |
 
 [Project overview](../README.md) · [Contributing](../CONTRIBUTING.md) · [Security](../SECURITY.md)

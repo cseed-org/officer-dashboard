@@ -21,3 +21,9 @@ outside the repository under `/tmp/codex-pr-diagrams/motion-perf/`.
 
 The four named `motion-*.webm` recordings show Events/drawer, Finance tabs and Members
 at normal speed on Chromium, separate from the throttled performance probe.
+
+Merge preparation on main `d7e7be3` / runtime `05f357e`: `merge-prep.json` contains
+three fresh Home/Events samples with the default Links+Calendar layout. Their eight
+screenshots replace the older Home/Events captures. Four `coachmark-*.png` captures and
+`merge-prep-coachmarks.json` cover normal/reduced motion. Other captures/recordings are
+historical pre-rebase evidence; see the report's current merge-prep section.
