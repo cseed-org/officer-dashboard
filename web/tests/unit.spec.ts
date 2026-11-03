@@ -85,6 +85,24 @@ test('events: the Luma URL rule matches the server', async () => {
     expect(lumaEventUrlProblem(bad), bad).not.toBeNull();
 });
 
+test('URLs: stored links accept http(s) only, like the server (validate.IsURL)', async () => {
+  const { EventUpsertRequest, LumaIngestRequest, PurchaseRequestUpdateRequest } = await import('../src/lib/contracts');
+  const core = await import('../../src/core/contracts');
+  const schemas = [
+    EventUpsertRequest.shape.url,
+    LumaIngestRequest.shape.event.shape.url,
+    PurchaseRequestUpdateRequest.shape.itemUrl,
+    core.EventUpsertRequest.shape.url,
+    core.LumaIngestRequest.shape.event.shape.url,
+    core.PurchaseRequestUpdateRequest.shape.itemUrl,
+  ];
+  for (const schema of schemas) {
+    for (const ok of ['https://www.adafruit.com/', 'http://x.y/path?q=1']) expect(schema.safeParse(ok).success, ok).toBe(true);
+    for (const bad of ['javascript:alert(1)', 'data:text/html,<b>x</b>', 'ftp://x.y/file', 'mailto:a@b.co', 'file:///etc/passwd'])
+      expect(schema.safeParse(bad).success, bad).toBe(false);
+  }
+});
+
 test('V0.4: V0.3 widget layouts migrate to block sizes in place', () => {
   const { layout, changed } = migrateLayout([
     { id: 'activity', size: 'L' },

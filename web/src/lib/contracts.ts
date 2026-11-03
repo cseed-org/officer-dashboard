@@ -308,13 +308,16 @@ export const EventMetricsResponse = z.object({
 });
 export type EventMetricsResponse = z.infer<typeof EventMetricsResponse>;
 
+/** A stored link (event, item, Luma): absolute http(s) only, like the server's validate.IsURL. */
+export const HttpUrl = z.url({ protocol: /^https?$/ });
+
 /** POST /api/events (create manually) and PATCH /api/events/:id (all fields optional). */
 export const EventUpsertRequest = z.object({
   name: z.string().trim().min(1).max(200),
   startsAt: IsoDateTime,
   endsAt: IsoDateTime.nullable().optional(),
   location: z.string().max(200).nullable().optional(),
-  url: z.url().nullable().optional(),
+  url: HttpUrl.nullable().optional(),
   lumaId: z.string().max(100).nullable().optional(),
   hostUserId: Id.nullable().optional(),
   /** Defaults to draft on create. */
@@ -372,7 +375,7 @@ export const LumaIngestRequest = z.object({
     startsAt: IsoDateTime,
     endsAt: IsoDateTime.nullable().optional(),
     location: z.string().nullable().optional(),
-    url: z.url().nullable().optional(),
+    url: HttpUrl.nullable().optional(),
   }),
   guests: z
     .array(
@@ -455,7 +458,7 @@ const PurchaseRequestFields = z.object({
   type: PurchaseType,
   title: z.string().trim().min(1).max(200),
   vendor: z.string().trim().min(1).max(200),
-  itemUrl: z.url().nullable().optional(),
+  itemUrl: HttpUrl.nullable().optional(),
   quantity: z.number().int().min(1).max(10_000),
   unitCostCents: NonNegCents,
   taxShipCents: NonNegCents.default(0),
