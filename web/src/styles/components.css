@@ -237,7 +237,9 @@ a.cell-title:hover {text-decoration:underline;}
 .profile .facts {flex:1;}
 .bare-main {min-height:100vh;display:grid;place-items:center;padding:16px;}
 .auth-card {width:min(420px, 100%);display:grid;gap:16px;padding:28px;background:var(--surface);border:1px solid var(--line);border-radius:4px;}
-.login-dev a {font-weight:600;}
+.dev-panel {display:grid;gap:10px;}
+.dev-panel-title {margin:0;font-size:1rem;}
+.dev-panel-roles {display:grid;gap:8px;}
 .flush {margin:0;}
 .prose-pre {white-space:pre-wrap;max-width:70ch;}
 .stack--loose {gap:calc(var(--gap) * 1.75);}

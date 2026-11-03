@@ -35,18 +35,50 @@ go run -tags dev ./cmd/dashboard seed -reset
 DEV_AUTH=1 STATIC_DIR=../web/dist go run -tags dev ./cmd/dashboard serve
 ```
 
-Open <http://localhost:8090/auth/dev?as=director> (or `as=officer`) to sign in without Discord.
+Open <http://localhost:8090/auth/dev?as=director> (or `as=officer`, `as=leadership`) to sign in
+without Discord, or use the **Developer mode** panel that `/login` shows under the Discord button
+("Skip Discord and continue as" Leadership (owner) / Director / Officer). The panel appears
+whenever the server answers `GET /auth/dev/info` with `authorized: true`, so the same static
+build looks like production everywhere else.
+
+### Developer mode on a test deployment
+
+A shared test deployment can run the dev build so testers skip Discord, gated by a secret:
+
+```sh
+DEV_AUTH=1 DEV_AUTH_KEY=$(openssl rand -hex 24) ./bin/dashboard-dev serve
+```
+
+With `DEV_AUTH_KEY` set, `/auth/dev` and the login panel need the key; without it both look
+exactly like a production build (`/auth/dev` answers the site's 404 page, no hint). Share links
+of the form
+
+```text
+https://<host>/auth/dev?as=leadership&key=<KEY>                 # sign in, land on Home
+https://<host>/auth/dev?as=officer&key=<KEY>&next=/events       # sign in, land on Events
+https://<host>/login?key=<KEY>                                  # show the Developer mode panel
+```
+
+`as` is `leadership`, `director` or `officer`; `next` must be a path on the same site (anything
+else lands on `/`). A valid key also sets a 30-day `dev_key` cookie (HttpOnly, SameSite=Lax,
+Secure over HTTPS; it holds a hash of the key, not the key), so later the login page, including
+the redirect a signed-out visitor gets from any page, shows the panel without the key in the
+URL. Changing `DEV_AUTH_KEY` invalidates every such cookie. The key is never logged (request
+logs record the path only).
+
+**Test deployments only.** Anyone holding the key can sign in as any role, including the owner.
+Never point a dev build at real data, and never deploy one to production.
 
 **The dev login cannot exist in production.** `/auth/dev` is compiled in only with `-tags dev`
 *and* answers only when `DEV_AUTH=1`. The default build has no such route; setting `DEV_AUTH=1`
 on it logs a warning and changes nothing (`TestDefaultBuildHasNoDevLogin` asserts a 404 for
-every variant).
+every variant, including `/auth/dev/info`, a correct `DEV_AUTH_KEY` and a `dev_key` cookie).
 
 ## Tests
 
 ```sh
 go vet ./... && go test ./...            # unit + integration (~10 s, most of it RSA key generation)
-go test -tags dev ./internal/api          # the dev-login build
+go test -tags dev ./internal/api ./cmd/... # the dev-login build
 node ../scripts/contract-check.mjs        # JSON endpoints vs the zod contract (needs `npm ci` at the repo root)
 ```
 

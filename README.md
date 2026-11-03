@@ -97,7 +97,7 @@ make dev
 Open <http://localhost:8090/auth/dev?as=director> or <http://localhost:8090/auth/dev?as=officer>.
 
 > [!IMPORTANT]
-> `make dev` resets the sample database at `server/data/dev.db`. The dev login requires both a `-tags dev` build and `DEV_AUTH=1`; production builds have no `/auth/dev` route.
+> `make dev` resets the sample database at `server/data/dev.db`. The dev login requires both a `-tags dev` build and `DEV_AUTH=1`; production builds have no `/auth/dev` route. Test deployments can share keyed links instead: see `DEV_AUTH_KEY` in [docs/development.md](docs/development.md#developer-mode-on-a-test-deployment).
 
 See [development](docs/development.md) for live front-end development, seeding, and Playwright.
 

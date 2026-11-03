@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { settle, overflow } from './helpers';
+import { settle, overflow, devKeyParam } from './helpers';
 import { mkdirSync } from 'node:fs';
 
 // Exercise the real preference API and browser detection; no mocked API responses.
 test('automatic follows device on focus; manual and club persist independently of widgets', async ({ page }) => {
-  await page.goto('/auth/dev?as=officer');
+  await page.goto(`/auth/dev?as=officer${devKeyParam}`);
   await page.request.put('/api/me/prefs', { data: { timezoneMode: 'club', timezone: '' } });
   await page.goto('/settings');
   await settle(page);
@@ -44,7 +44,7 @@ test('automatic follows device on focus; manual and club persist independently o
 });
 
 test('leadership manages club location; settings fit light and dark screens', async ({ page }, info) => {
-  await page.goto('/auth/dev?as=leadership');
+  await page.goto(`/auth/dev?as=leadership${devKeyParam}`);
   await page.request.put('/api/me/prefs', { data: { timezoneMode: 'club', timezone: '' } });
   await page.goto('/settings');
   await settle(page);
@@ -67,7 +67,7 @@ test('leadership manages club location; settings fit light and dark screens', as
 });
 
 test('event wall time conversion handles selected zone, DST gaps, and date-only values', async ({ page }) => {
-  await page.goto('/auth/dev?as=officer');
+  await page.goto(`/auth/dev?as=officer${devKeyParam}`);
   // A JSON document avoids app hydration/focus refresh changing the test clock.
   await page.goto('/api/health');
   const result = await page.evaluate(async () => {
@@ -89,7 +89,7 @@ test('event wall time conversion handles selected zone, DST gaps, and date-only 
 });
 
 test('automatic zone changes preserve an unsaved event and apply after saving', async ({ page }) => {
-  await page.goto('/auth/dev?as=officer');
+  await page.goto(`/auth/dev?as=officer${devKeyParam}`);
   await page.request.put('/api/me/prefs', { data: { timezoneMode: 'auto', timezone: 'America/Los_Angeles' } });
   await page.goto('/events');
   await settle(page);
@@ -122,7 +122,7 @@ test('automatic zone changes preserve an unsaved event and apply after saving', 
 });
 
 test('a failed save retains edits and the pending zone applies when the drawer closes', async ({ page }) => {
-  await page.goto('/auth/dev?as=officer');
+  await page.goto(`/auth/dev?as=officer${devKeyParam}`);
   await page.request.put('/api/me/prefs', { data: { timezoneMode: 'auto', timezone: 'America/Los_Angeles' } });
   await page.goto('/events');
   await settle(page);
@@ -153,7 +153,7 @@ test('a failed save retains edits and the pending zone applies when the drawer c
 });
 
 test('saving time zone settings keeps another dirty profile form intact', async ({ page }) => {
-  await page.goto('/auth/dev?as=officer');
+  await page.goto(`/auth/dev?as=officer${devKeyParam}`);
   await page.request.put('/api/me/prefs', { data: { timezoneMode: 'club', timezone: '' } });
   await page.goto('/settings');
   await settle(page);
@@ -178,7 +178,7 @@ test('saving time zone settings keeps another dirty profile form intact', async 
 });
 
 test('a dirty budget editor (not a native form) keeps edits until discarded', async ({ page }) => {
-  await page.goto('/auth/dev?as=director');
+  await page.goto(`/auth/dev?as=director${devKeyParam}`);
   await page.request.put('/api/me/prefs', { data: { timezoneMode: 'auto', timezone: 'America/Los_Angeles' } });
   await page.goto('/finance?tab=budgets');
   await settle(page);

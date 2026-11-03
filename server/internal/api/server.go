@@ -44,6 +44,9 @@ type Config struct {
 	AppURL    string
 	// DevAuth enables /auth/dev, but only in binaries built with the `dev` tag.
 	DevAuth bool
+	// DevAuthKey, when set, gates /auth/dev behind ?key=<DevAuthKey> (or the dev_key cookie).
+	// Dev builds only; never logged.
+	DevAuthKey string
 	// Static serves the front end for every non-API path; nil answers 404 JSON.
 	Static  http.Handler
 	Version string

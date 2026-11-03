@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
+import { overflow, settle, THEMES, useTheme, watchErrors, devKeyParam } from './helpers';
 
 /**
  * Design requests against the seeded Go server (DEV_AUTH=1): Priya (officer) requests,
@@ -7,7 +7,7 @@ import { overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
  */
 async function signIn(page: Page, user: 'user-priya' | 'user-riley' | 'user-director') {
   const as = user === 'user-director' ? 'director' : 'officer';
-  const res = await page.goto(`/auth/dev?as=${as}&user=${user}&next=/design`);
+  const res = await page.goto(`/auth/dev?as=${as}&user=${user}&next=/design${devKeyParam}`);
   expect(res?.ok(), 'dev login failed; is the Go server running with DEV_AUTH=1 and the dev build?').toBe(true);
   await settle(page);
 }

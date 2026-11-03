@@ -87,6 +87,10 @@ export type ApiError = z.infer<typeof ApiError>;
 export const OkResponse = z.object({ ok: z.literal(true) });
 export type OkResponse = z.infer<typeof OkResponse>;
 
+/** GET /auth/dev/info (dev builds with DEV_AUTH=1 only; 404 everywhere else). */
+export const DevInfoResponse = z.object({ enabled: z.literal(true), keyRequired: z.boolean(), authorized: z.boolean() });
+export type DevInfoResponse = z.infer<typeof DevInfoResponse>;
+
 // ───────────────────────────── Shared shapes ─────────────────────────────
 
 export const UserSummary = z.object({
@@ -1361,5 +1365,6 @@ export const ENDPOINTS = {
   authCallback: { method: 'GET', path: '/auth/callback', auth: 'public', response: 'redirect' },
   authLogout: { method: 'POST', path: '/auth/logout', auth: 'officer', response: 'redirect' },
   authDev: { method: 'GET', path: '/auth/dev', auth: 'public', response: 'redirect' },
+  authDevInfo: { method: 'GET', path: '/auth/dev/info', auth: 'public', response: DevInfoResponse },
 } as const satisfies Record<string, EndpointSpec>;
 export type EndpointName = keyof typeof ENDPOINTS;
