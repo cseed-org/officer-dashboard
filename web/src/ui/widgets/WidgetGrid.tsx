@@ -1,5 +1,6 @@
+import DashboardTutorial from './DashboardTutorial';
 import type { ComponentChildren } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../../lib/api/client';
 import { Icon } from '../components/Icon';
 import { Loading } from '../components/states';
@@ -17,7 +18,23 @@ type Drag = { id: string; x: number; y: number; snapshot: Placement[]; over: str
 export default function WidgetGrid({ children }: { children: (id: string, size: BlockSize) => ComponentChildren }) {
   const [layout, setLayout] = useState<Placement[] | null>(null);
   const [saved, setSaved] = useState<Placement[]>([]);
-  const [editing, setEditing] = useState(false);
+  const [userEditing, setEditing] = useState(false);
+  const [tourEditing, setTourEditing] = useState(false);
+  const editing = userEditing || tourEditing;
+  const tourSnapshot = useRef<Placement[] | null>(null);
+  const previewTour = useCallback((edit: boolean, active: boolean) => {
+    setTourEditing(edit && active);
+    setLayout(current => {
+      if (active && current && !tourSnapshot.current) {
+        tourSnapshot.current = current;
+        if (!current.some(w => w.id === 'links')) return [...current, { id: 'links', size: '2x1' }];
+      }
+      if (!active && tourSnapshot.current) {
+        const original = tourSnapshot.current; tourSnapshot.current = null; return original;
+      }
+      return current;
+    });
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
@@ -226,17 +243,18 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
   }
 
   return <>
+    {loaded && <DashboardTutorial onPreview={previewTour} />}
     <div class={`blocks-bar${editing ? ' is-editing' : ''}`}>
       {editing ? <>
         <div class="blocks-bar-text"><span class="blocks-bar-title">Arrange your home</span><span class="blocks-bar-hint">Drag a grip, or focus it and use the arrow keys. Drag a corner to resize; Shift + arrow keys also resize.</span></div>
         <div class="blocks-bar-actions">
-          <button class="btn" disabled={busy} onClick={() => gallery.current?.showModal()}>Add widget</button>
+          <button class="btn" data-tour="add" disabled={busy} onClick={() => gallery.current?.showModal()}>Add widget</button>
           <button class="btn" disabled={busy} onClick={cancel}>Cancel</button>
           <button class="btn btn--primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Done'}</button>
         </div>
       </> : <>
         <div class="blocks-bar-text"><span class="blocks-bar-hint">Your layout follows you across devices.</span></div>
-        <div class="blocks-bar-actions"><button class="btn btn--small" disabled={!loaded} onClick={start}>Edit home</button></div>
+        <div class="blocks-bar-actions"><button class="btn btn--small" data-tour="edit" disabled={!loaded} onClick={start}>Edit home</button></div>
       </>}
       {error && <p class="small" role="alert">{error} {!loaded && <>Showing the default home. <button class="btn btn--small" onClick={() => setTick(tick + 1)}>Retry preferences</button></>}</p>}
     </div>
@@ -248,7 +266,7 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
           if (!def && !editing) return null; // keep another feature's widget saved until it ships
           const { w: cw, h: ch } = blocks(w.size);
           const name = title(w.id);
-          return <li key={w.id} class={`blk${drag?.id === w.id ? ' is-dragging' : ''}${resizing?.id === w.id ? ' is-resizing' : ''}${moved === w.id && !drag ? ' is-moved' : ''}`} data-widget={w.id} data-size={w.size} data-w={cw} data-h={ch} style={{ '--i': i }}>
+          return <li key={w.id} class={`blk${drag?.id === w.id ? ' is-dragging' : ''}${resizing?.id === w.id ? ' is-resizing' : ''}${moved === w.id && !drag ? ' is-moved' : ''}`} data-widget={w.id} data-size={w.size} data-size-label={sizeLabel(w.size).replace('×', ' × ')} data-w={cw} data-h={ch} style={{ '--i': i }}>
             <div class="blk-body" inert={editing || undefined}>
               {def ? children(w.id, w.size) : <section class="tile" aria-label={name}><p class="tile-title">{name}</p></section>}
             </div>
@@ -261,7 +279,7 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
               </div>
               {def && def.sizes.length > 1 && <>
                 {(['x', 'y', 'both'] as const).filter(axis => axis === 'both' || def.sizes.some(s => axis === 'x' ? blocks(s).h === ch && blocks(s).w !== cw : blocks(s).w === cw && blocks(s).h !== ch)).map(axis =>
-                  <button type="button" class={`blk-resize blk-resize--${axis}`} disabled={busy} aria-label={`Resize ${name}. Shift and arrow keys change size.`} onKeyDown={e => onHandleKey(e, w.id, i)} onPointerDown={e => beginResize(e, w.id, axis)}>{axis === 'both' ? '⌟' : ''}</button>)}
+                  <button type="button" class={`blk-resize blk-resize--${axis}`} disabled={busy} aria-label={`Resize ${name}. Shift and arrow keys change size.`} onKeyDown={e => onHandleKey(e, w.id, i)} onPointerDown={e => beginResize(e, w.id, axis)}>{axis === 'both' ? <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24"><path d="M6 18 18 6M11 18l7-7M16 18l2-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg> : ''}</button>)}
               </>}
             </div>}
           </li>;

@@ -12,9 +12,9 @@ import (
 
 // Keep defaults aligned with the web widget registry (web/src/ui/widgets/registry.ts). Unknown
 // IDs remain valid so later feature Panes can register widgets without a database migration.
-// Sizes are W×H Home grid blocks; this default fills a clean 4×6 rectangle on desktop.
+// Sizes are W×H Home grid blocks; the Links default uses a compact two-block footprint.
 var defaultWidgets = []store.WidgetPlacement{
-	{ID: "links", Size: "2x2"},
+	{ID: "links", Size: "2x1"},
 	{ID: "kpi-upcoming", Size: "1x1"}, {ID: "kpi-checkin", Size: "1x1"}, {ID: "kpi-reflection", Size: "1x1"}, {ID: "kpi-budget", Size: "1x1"},
 	{ID: "my-action", Size: "2x2"}, {ID: "recent-events", Size: "2x2"},
 	{ID: "budget", Size: "2x2"}, {ID: "activity", Size: "1x2"}, {ID: "kpi-pending", Size: "1x1"}, {ID: "web-analytics", Size: "1x1"},

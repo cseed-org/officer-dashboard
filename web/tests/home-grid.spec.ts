@@ -73,13 +73,24 @@ for (const theme of THEMES) {
   });
 }
 
-test('Default layout packs into a full rectangle: no ragged gaps', async ({ page }, info) => {
+test('Links defaults to a compact card with top-aligned rows', async ({ page }) => {
   await openHome(page);
-  const box = await grid(page).boundingBox();
-  const rects = await grid(page).locator(':scope > li[data-widget]').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right, b: r.bottom })));
-  const bottomAt = (edge: 'l' | 'r', x: number) => Math.max(...rects.filter((r) => Math.abs(r[edge] - x) < 2).map((r) => r.b));
-  // The last block in the left column ends level with the last block in the right column.
-  expect(Math.abs(bottomAt('l', box!.x) - bottomAt('r', box!.x + box!.width))).toBeLessThan(2);
+  const links = widget(page, 'links');
+  await expect(links).toHaveAttribute('data-size', '2x1');
+  const rows = links.locator('.club-link');
+  await expect(rows).toHaveCount(3);
+  const card = (await links.boundingBox())!;
+  const first = (await rows.first().boundingBox())!;
+  expect(first.y - card.y).toBeLessThan(55);
+  expect(first.height).toBeGreaterThanOrEqual(44);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  await expect(links.locator('.tile-head')).not.toBeVisible();
+  const grip = (await links.locator('.blk-handle').boundingBox())!;
+  const title = (await links.locator('.blk-name').boundingBox())!;
+  expect(title.x).toBeGreaterThanOrEqual(grip.x + grip.width);
+  const corner = (await links.locator('.blk-resize--both').boundingBox())!;
+  const action = (await links.locator('.club-link-action').last().boundingBox())!;
+  expect(action.x + action.width).toBeLessThanOrEqual(corner.x);
 });
 
 test('Resize, remove and add widgets; Done persists, Cancel discards', async ({ page }) => {
@@ -245,6 +256,7 @@ test('Corner resize previews supported footprint, Escape restores, Done persists
   await page.mouse.move(handle.x + rect.width + 20, handle.y + rect.height + 20, { steps: 6 });
   await expect(card).toHaveAttribute('data-size', '2x2');
   await expect(card).toHaveClass(/is-resizing/);
+  expect(await card.evaluate(el => getComputedStyle(el, '::after').content)).toContain('2 × 2');
   await page.keyboard.press('Escape');
   await page.mouse.up();
   await expect(card).toHaveAttribute('data-size', '1x1');
@@ -271,6 +283,51 @@ test('Tutorial skips with Escape, stays seen on reload, and replays from Setting
   await page.getByRole('link', { name: 'Replay dashboard tutorial' }).click();
   await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Widgets work for you' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Make it yours' })).toBeVisible();
   await page.getByRole('button', { name: 'Skip tour' }).click();
+});
+
+
+test('Coachmarks spotlight real controls and discard their temporary edit preview', async ({ page }) => {
+  await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }]);
+  const before = await savedLayout(page);
+  await page.goto('/?tutorial=1');
+  const tour = page.locator('.dashboard-tour');
+  await expect(tour).toBeVisible();
+  await expect(widget(page, 'links')).toBeVisible(); // temporary example, never saved
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.locator('[data-tour="edit"]')).toHaveClass(/is-tour-target/);
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(widget(page, 'links').locator('.blk-handle')).toHaveClass(/is-tour-target/);
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  const corner = widget(page, 'links').locator('.blk-resize--both');
+  await expect(corner).toHaveClass(/is-tour-target/);
+  const r = (await corner.boundingBox())!;
+  const hole = await tour.locator('mask .tour-cutout').evaluate(e => ({ x: Number(e.getAttribute('x')), y: Number(e.getAttribute('y')), w: Number(e.getAttribute('width')), h: Number(e.getAttribute('height')) }));
+  expect(hole.w).toBeGreaterThanOrEqual(r.width);
+  expect(hole.h).toBeGreaterThanOrEqual(r.height);
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.locator('[data-tour="add"]')).toHaveClass(/is-tour-target/);
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(widget(page, 'links').locator('.club-links')).toHaveClass(/is-tour-target/);
+  await tour.getByRole('button', { name: 'Finish', exact: true }).click();
+  await expect(tour).not.toBeVisible();
+  await expect(widget(page, 'links')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Edit home' })).toBeVisible();
+  expect(await savedLayout(page)).toEqual(before);
+});
+
+test('Leadership sees large Add link targets, configured links open in new tabs', async ({ page }) => {
+  await devLogin(page, 'leadership');
+  const settings = await (await page.request.get('/api/club/settings')).json();
+  try {
+    await page.request.put('/api/club/settings', { data: { ...settings, websiteUrl: 'https://example.org/club', notionUrl: '', driveUrl: '' } });
+    await openHome(page);
+    const links = widget(page, 'links');
+    const site = links.getByRole('link', { name: /Club website/ });
+    await expect(site).toHaveAttribute('href', 'https://example.org/club');
+    await expect(site).toHaveAttribute('target', '_blank');
+    await expect(links.getByRole('link', { name: /Add link/ })).toHaveCount(2);
+    await expect(links.getByRole('link', { name: /Notion/ })).toHaveAttribute('href', '/settings#club-links');
+  } finally { await page.request.put('/api/club/settings', { data: settings }); }
 });

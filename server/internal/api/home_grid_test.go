@@ -35,13 +35,13 @@ func TestHomeGridBlockSizes(t *testing.T) {
 func TestDashboardTutorialAndLinks(t *testing.T) {
 	e := newEnv(t)
 	initial := e.mustOK(e.get("/api/me/prefs", e.officer()))
-	if !strings.Contains(string(initial.Raw), `"dashboardTutorialSeen":false`) || !strings.Contains(string(initial.Raw), `"id":"links"`) {
+	if !strings.Contains(string(initial.Raw), `"dashboardTutorialSeen":false`) || !strings.Contains(string(initial.Raw), `"id":"links","size":"2x1"`) {
 		t.Fatal(string(initial.Raw))
 	}
 	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"dashboardTutorialSeen": true}, e.officer()))
 	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"timezoneMode": "club"}, e.officer()))
 	got := e.mustOK(e.get("/api/me/prefs", e.officer()))
-	if !strings.Contains(string(got.Raw), `"dashboardTutorialSeen":true`) || !strings.Contains(string(got.Raw), `"id":"links"`) {
+	if !strings.Contains(string(got.Raw), `"dashboardTutorialSeen":true`) || !strings.Contains(string(got.Raw), `"id":"links","size":"2x1"`) {
 		t.Fatal(string(got.Raw))
 	}
 	other := e.mustOK(e.get("/api/me/prefs", e.director()))
