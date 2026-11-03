@@ -30,3 +30,15 @@ test('motion on: the tab underline slides with transform only', async ({ page },
   await expect.poll(() => bar.evaluate((el) => getComputedStyle(el).transform)).not.toBe(before);
   expect(await bar.evaluate((el) => getComputedStyle(el).transitionProperty)).toBe('transform');
 });
+
+test('drawer closes with Escape without blocking the page', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'shared modal behavior');
+  await devLogin(page, 'director');
+  await page.goto('/events?id=event-hack-night');
+  await settle(page);
+  await expect(page.locator('.drawer[open]')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.drawer[open]')).toHaveCount(0);
+  await expect(page.locator('html')).not.toHaveClass(/has-modal/);
+  await expect(page.getByLabel('Search events')).toBeEnabled();
+});

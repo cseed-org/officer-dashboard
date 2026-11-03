@@ -1,0 +1,44 @@
+[
+  {
+    "route": "/",
+    "lcp": 1328,
+    "cls": 0.000487818287037037,
+    "interaction": 224,
+    "jsBytes": 201728
+  },
+  {
+    "route": "/events",
+    "lcp": 1196,
+    "cls": 0.000487818287037037,
+    "interaction": 200,
+    "jsBytes": 224840
+  },
+  {
+    "route": "/members",
+    "lcp": 1288,
+    "cls": 0.000487818287037037,
+    "interaction": 256,
+    "jsBytes": 180102
+  },
+  {
+    "route": "/finance",
+    "lcp": 1540,
+    "cls": 0.000487818287037037,
+    "interaction": 216,
+    "jsBytes": 237913
+  },
+  {
+    "route": "/design",
+    "lcp": 1312,
+    "cls": 0.000487818287037037,
+    "interaction": 912,
+    "jsBytes": 222625
+  },
+  {
+    "route": "/officers",
+    "lcp": 1356,
+    "cls": 0.000487818287037037,
+    "interaction": 312,
+    "jsBytes": 270049
+  }
+]

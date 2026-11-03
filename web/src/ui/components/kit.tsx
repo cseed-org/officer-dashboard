@@ -1,5 +1,5 @@
 import type { ComponentChildren, TargetedKeyboardEvent } from 'preact';
-import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 import { categoryHue, STATUS_HUE, type Hue } from '../../lib/colors';
 import type { PurchaseStatus } from '../../lib/domain';
 import { pct, STATUS_LABEL, STATUS_TONE, type Tone } from '../../lib/format';
@@ -27,41 +27,9 @@ export function CategoryDot({ code }: { code: string }) {
   return <span class="cat-dot" data-hue={categoryHue(code)} aria-hidden="true" />;
 }
 
-const reducedMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-/**
- * "$11,495" / "71%" / 12 counts up from zero once, on first mount (≤ 600ms, ease-out).
- * Text that isn't a single number is shown as is; reduced motion shows the final value.
- */
-export function CountUp({ value, duration = 600 }: { value: string | number; duration?: number }) {
-  const text = String(value);
-  const m = /^([^\d-]*)(-?[\d,]+(?:\.\d+)?)(.*)$/.exec(text);
-  const target = m ? Number(m[2]!.replace(/,/g, '')) : NaN;
-  const decimals = m && m[2]!.includes('.') ? m[2]!.split('.')[1]!.length : 0;
-  const [shown, setShown] = useState<number | null>(() => (Number.isFinite(target) && !reducedMotion() ? 0 : null));
-  const done = useRef(false);
-  useEffect(() => {
-    if (done.current || shown === null || !Number.isFinite(target)) return;
-    done.current = true;
-    const start = performance.now();
-    let raf = 0;
-    const tick = (t: number) => {
-      const k = Math.min(1, (t - start) / duration);
-      const eased = 1 - Math.pow(1 - k, 3);
-      setShown(k >= 1 ? null : target * eased);
-      if (k < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-  if (shown === null || !m) return <>{text}</>;
-  const n = shown.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-  return (
-    <>
-      <span aria-hidden="true">{`${m[1]}${n}${m[3]}`}</span>
-      <span class="visually-hidden">{text}</span>
-    </>
-  );
+/** Keep figures stable and readable at first paint; animate the containing surface instead. */
+export function CountUp({ value }: { value: string | number }) {
+  return <>{value}</>;
 }
 
 /** A tiny trend line (decorative: the tile's text carries the numbers). */

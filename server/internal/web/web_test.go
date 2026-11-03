@@ -1,8 +1,10 @@
 package web
 
 import (
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -113,5 +115,66 @@ func TestHTMLPagesCarryAContentSecurityPolicyWithTheirScriptHashes(t *testing.T)
 	}
 	if bin.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Error("missing nosniff")
+	}
+}
+
+func TestCompressedAssetsAndRevalidation(t *testing.T) {
+	body := strings.Repeat("export const answer = 42;\n", 100)
+	h := Handler(fstest.MapFS{"_astro/app.js": {Data: []byte(body)}}, Options{})
+	req := httptest.NewRequest("GET", "/_astro/app.js", nil)
+	req.Header.Set("Accept-Encoding", "br, gzip")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || rec.Header().Get("Content-Encoding") != "gzip" || rec.Body.Len() >= len(body) {
+		t.Fatalf("compression: %d %v", rec.Code, rec.Header())
+	}
+	z, err := gzip.NewReader(rec.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := io.ReadAll(z)
+	if err != nil || string(decoded) != body {
+		t.Fatal("corrupt gzip response")
+	}
+	z.Close()
+	req.Header.Set("If-None-Match", rec.Header().Get("ETag"))
+	cached := httptest.NewRecorder()
+	h.ServeHTTP(cached, req)
+	if cached.Code != http.StatusNotModified || cached.Body.Len() != 0 {
+		t.Fatalf("revalidation: %d", cached.Code)
+	}
+	for _, encoding := range []string{"", "gzip;q=0", "gzip;q=0.000"} {
+		req := httptest.NewRequest("GET", "/_astro/app.js", nil)
+		req.Header.Set("Accept-Encoding", encoding)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Header().Get("Content-Encoding") != "" || rec.Body.String() != body {
+			t.Fatalf("identity %q", encoding)
+		}
+	}
+	req = httptest.NewRequest("HEAD", "/_astro/app.js", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || rec.Body.Len() != 0 {
+		t.Fatal("HEAD returned body")
+	}
+	req = httptest.NewRequest("GET", "/_astro/app.js", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Range", "bytes=0-5")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 206 || rec.Header().Get("Content-Encoding") != "" || rec.Body.String() != body[:6] {
+		t.Fatal("range did not use identity representation")
+	}
+}
+
+func TestChangedBuildFileIsNotServedFromStartupCache(t *testing.T) {
+	root := site()
+	h := Handler(root, Options{})
+	root["index.html"] = &fstest.MapFile{Data: []byte("rebuilt home page")}
+	rec := get(h, "GET", "/")
+	if rec.Body.String() != "rebuilt home page" || rec.Header().Get("ETag") != "" {
+		t.Fatal("served stale startup bytes")
 	}
 }

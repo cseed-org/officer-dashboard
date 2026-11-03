@@ -1,0 +1,18 @@
+=== RUN   TestLatencyReport
+endpoint (2000 requests, seeded data)                     p50      p95      p99
+/api/me                                                0.19ms   0.64ms   5.40ms
+/api/lookups                                           0.73ms   6.32ms  11.09ms
+/api/overview                                          3.78ms  13.39ms  19.79ms
+/api/events                                            1.83ms   7.43ms  12.73ms
+/api/events/event-kickoff                              1.28ms   4.13ms   8.12ms
+/api/events/event-kickoff/metrics                      1.07ms   3.67ms   7.22ms
+/api/requests?scope=all                                0.93ms   4.28ms   8.75ms
+/api/requests/req-0002                                 1.33ms   9.76ms  14.17ms
+/api/finance/summary                                   1.46ms   6.09ms  10.02ms
+/api/finance/budgets                                   0.73ms   3.16ms   7.70ms
+/api/finance/reports/budget-vs-actual                  1.47ms   5.48ms   9.13ms
+/api/finance/reports/statement-of-activities           1.28ms   5.94ms  11.61ms
+/api/search?q=demo                                     1.57ms   4.52ms   6.93ms
+--- PASS: TestLatencyReport (54.11s)
+PASS
+ok  	officerdashboard/internal/api	54.123s

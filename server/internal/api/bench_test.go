@@ -12,7 +12,7 @@ import (
 // Read and list endpoints on the seeded database, through the whole handler stack
 // (middleware, session lookup, SQL, JSON). `go test -bench . ./internal/api`
 var benchPaths = []string{
-	"/api/me", "/api/lookups", "/api/overview", "/api/events", "/api/events/event-kickoff", "/api/events/event-kickoff/metrics",
+	"/api/members", "/api/me", "/api/lookups", "/api/overview", "/api/events", "/api/events/event-kickoff", "/api/events/event-kickoff/metrics",
 	"/api/requests?scope=all", "/api/requests/req-0002", "/api/finance/summary", "/api/finance/budgets",
 	"/api/finance/reports/budget-vs-actual", "/api/finance/reports/statement-of-activities", "/api/search?q=demo",
 }
