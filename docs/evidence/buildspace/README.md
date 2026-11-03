@@ -1,0 +1,23 @@
+# Buildspace draft evidence
+
+Captured against the seeded Go dev server at `http://127.0.0.1:18145`, branch `v05-buildspace`, 2026-11-03, with system Chromium through Playwright. These are running application captures, with reduced motion enabled. The database was disposable and held only seeded/sample test records.
+
+| Directory | Desktop 1440 × 1000 | Phone 390 × 1000 |
+| --- | --- | --- |
+| People, light | [Screenshot](people-1440-light.png) | [Screenshot](people-390-light.png) |
+| People, dark | [Screenshot](people-1440-dark.png) | [Screenshot](people-390-dark.png) |
+| Project cards by track, light | [Screenshot](projects-1440-light.png) | [Screenshot](projects-390-light.png) |
+| Project cards by track, dark | [Screenshot](projects-1440-dark.png) | [Screenshot](projects-390-dark.png) |
+
+## Proven browser journeys
+
+- People table, grouped project cards, project drawer, Escape dismissal and stage board at both widths in both themes.
+- No horizontal page overflow and no browser script errors.
+- Search filters persist in the URL and survive reloads.
+- Manual weekly entry saved from a person drawer and read back from the API with that builder's ID.
+- Project and builder creation saved and read back through the API.
+- Editing the seeded Hardware / Demo-ready project preselects its saved track and stage; changing its stage to Shipped preserves its two mentors and track.
+
+The captures precede the create/edit tests, so the screenshots show the original seeded cohort. All created test records stayed in `/tmp/buildspace-verify.db`. Browser raw evidence and the temporary runner are under ignored `tmp/verify/buildspace/` in the implementation worktree. No live Discord bot, real member credentials, production database or external delivery was used.
+
+API contracts and focused Go tests additionally cover membership/mentor validation, unsafe links, duplicate mentors, scoped authentication, identity spoofing, duplicate message retries, conflicting replays, wrong scopes, token revocation and Finance status ownership. See [the feature guide](../../buildspace.md) for the bot handoff and draft limits.
