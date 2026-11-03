@@ -566,3 +566,16 @@
     min-height: 44px;
   }
 }
+
+/* Continue the shell background below the sticky sidebar on tall pages. */
+@media (min-width: 768px) {
+  body:has(.app[data-page="buildspace"]) {
+    min-height: 100vh;
+    background: linear-gradient(to right, var(--sunken) 0 var(--sidebar), var(--bg) var(--sidebar) 100%);
+  }
+}
+@media (min-width: 768px) and (max-width: 1099px) {
+  body:has(.app[data-page="buildspace"]) {
+    background: linear-gradient(to right, var(--sunken) 0 64px, var(--bg) 64px 100%);
+  }
+}

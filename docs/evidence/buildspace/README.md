@@ -20,6 +20,12 @@ Captured against the seeded Go dev server at `http://127.0.0.1:18145`, branch `v
 - Project and builder creation saved and read back through the API.
 - Editing the seeded Hardware / Demo-ready project preselects its saved track and stage; changing its stage to Shipped preserves its two mentors and track.
 
-The captures precede the create/edit tests, so the screenshots show the original seeded cohort. All created test records stayed in `/tmp/buildspace-review.db`. Browser raw evidence and the temporary runner are under ignored `tmp/verify/buildspace/` in the implementation worktree. No live Discord bot, real member credentials, production database or external delivery was used.
+The captures precede the create/edit tests, so the screenshots show the original seeded cohort. All created test records stayed in `/tmp/buildspace-merge.db`. Browser raw evidence and the temporary runner are under ignored `tmp/verify/buildspace/` in the implementation worktree. No live Discord bot, real member credentials, production database or external delivery was used.
 
 API contracts and focused Go tests additionally cover membership/mentor validation, unsafe links, duplicate mentors, scoped authentication, identity spoofing, duplicate message retries, conflicting replays, wrong scopes, token revocation and Finance status ownership. See [the feature guide](../../buildspace.md) for the bot handoff and draft limits.
+
+## Merge-preparation verification
+
+Rebased onto the integrated onboarding, security, dashboard and calendar work. The seeded browser journeys use the security hardening’s explicit dev-login confirmation. Desktop/sidebar screenshot pixels now match the rail background at the bottom of the full page in both themes; the white strip is gone.
+
+[Calendar options with the three optional Buildspace sources](calendar-options-1440-light.png): verified all three begin unchecked, can be enabled, and remain enabled after saving and reloading. The screenshot shows them selected before saving. API tests cover exclusive ranges, DST-stable date-only entries, omitted note/reason contents, weekly completion suppression and shipped-project exclusion. Weekly due dates use the documented draft Sunday convention.

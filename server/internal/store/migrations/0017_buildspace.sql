@@ -43,3 +43,5 @@ CREATE TABLE buildspace_activity (
 CREATE INDEX buildspace_activity_project ON buildspace_activity(project_id,date);
 --> statement-breakpoint
 CREATE INDEX buildspace_activity_person ON buildspace_activity(person_id,date);
+--> statement-breakpoint
+CREATE INDEX buildspace_activity_calendar ON buildspace_activity(kind,date);

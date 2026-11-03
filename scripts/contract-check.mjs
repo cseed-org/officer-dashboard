@@ -544,6 +544,13 @@ must(bs.json.activity.filter(a => a.externalId === bsUpdate.externalId).length =
 await call('adminTokenRevoke', {who: directorA, params: {id: bsToken.json.token.id}});
 await call('buildspaceIngest', {who: bsWho, body: bsUpdate, expect: 401});
 
+// Buildspace calendar sources are opt-in and use the same registry/settings contract.
+for (const source of ['buildspace-absences', 'buildspace-weekly', 'buildspace-mentor']) {
+ await call('calendarFeed', {who: officer, query: {start: '2026-11-01', end: '2026-12-01', sources: source}});
+}
+await call('calendarWidgetPut', {who: officer, body: {view:'month', colourBy:'source', showWeekends:true, sources:['buildspace-absences','buildspace-weekly','buildspace-mentor']}});
+await call('calendarWidgetGet', {who: officer});
+
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback']); // redirects, and dev-build-only routes: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);
