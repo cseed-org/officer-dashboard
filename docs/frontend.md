@@ -8,6 +8,16 @@ runtime, same origin, with the session cookie. The Go backend serves `web/dist`.
   `src/lib/domain.ts`). Every response is validated with its zod schema
   (`src/lib/api/client.ts`); drift shows as a "did not match the API contract" error, not a
   blank page. `SearchResponse` is now also defined in the canonical root contract.
+  Since V0.6 the zod contract is not in a page's first JavaScript: `api()` sends requests from
+  `src/lib/endpoints.generated.ts` (method and path only, rewritten from `ENDPOINTS` by every
+  `npm run build`/`npm run dev`; commit it with contract changes), and the schemas load in the
+  background. Reads that arrive before then render at once and are validated when the schemas
+  load (a mismatch replaces the page with the same error); writes and later reads are
+  validated before they return. See [V0.6 Home speed](home-speed-v06.md).
+- Early reads: signed-in pages start `/api/me`, `/api/me/prefs` and `/api/club/settings` (Home
+  also `/api/overview` and `/api/cloudflare/widgets`) from an inline head script
+  (`src/lib/early.ts`); `api()` uses each response once. The build adds low-priority
+  `modulepreload` links for each page's island modules (`integrations/modulepreload.mjs`).
 - Auth: each page calls `GET /api/me`; a 401 sends the browser to `/login?next=<here>`.
   Director-or-higher UI (Officers Access, fiscal periods, director reports, approve/settle) is hidden for
   officers; the server still enforces every rule.

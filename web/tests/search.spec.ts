@@ -16,7 +16,7 @@ test('sidebar search finds a seeded request and opens it', async ({ page }, info
   await expect(option).toBeVisible();
   await expect(page.locator('.palette [data-group="request"]')).toBeVisible();
   // Keyboard: the first result is active; Enter opens it.
-  await expect(page.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.palette').getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
   await box.press('Enter');
   await expect(page).toHaveURL(/\/finance\?id=req-0005/);
   await settle(page);
