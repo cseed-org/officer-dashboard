@@ -47,7 +47,7 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   await page.goto(`/auth/dev?discord=${id}${devKeyParam}`);
   await expect(page).toHaveURL(/\/onboarding$/);
   await settle(page);
-  await expect(page.locator('#step-title')).toContainText('robin');
+  await expect(page.locator('#step-title')).toContainText('Robin'); // names keep their capitals
   await page.locator('[data-onb-next]').click();
   await expect(page.locator('[data-prefill]')).toContainText('Robin Park');
   // Other pages send unfinished invitees back here.
@@ -86,7 +86,7 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   // Widgets, then done.
   await page.getByLabel('Budget vs actual').uncheck();
   await page.locator('[data-onb-next]').click();
-  await expect(page.locator('[data-summary]')).toContainText('Profile complete');
+  await expect(page.locator('[data-summary]')).toContainText('Phone and birthday saved');
   await expect(page.locator('[data-summary]')).toContainText('.ics invites to robin@example.org');
   await page.locator('[data-onb-next]').click();
   await expect(page).toHaveURL(/\/$/);
