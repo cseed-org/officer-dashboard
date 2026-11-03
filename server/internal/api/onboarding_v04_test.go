@@ -177,3 +177,20 @@ func TestCorrectionTextIsNeutralizedAndDeactivatedInvitersAreSkipped(t *testing.
 		t.Fatalf("deactivated inviter %s (DMs %d)", r.Raw, len(dm.sent))
 	}
 }
+
+// A shared browser: someone else is signed in when the invite link opens. Signing out
+// returns to that invite link; any other target falls back to /login.
+func TestLogoutCanReturnToAnInviteLink(t *testing.T) {
+	e := newEnv(t)
+	for next, want := range map[string]string{
+		"/login?invite=abc123": "/login?invite=abc123",
+		"/finance":             "/login",
+		"//evil.example/login": "/login",
+		"":                     "/login",
+	} {
+		r := e.do("POST", "/auth/logout", formBody{fields: map[string]string{"next": next}}, e.officer())
+		if r.Status != 303 || r.Header.Get("Location") != want {
+			t.Errorf("next %q → %d %s, want %s", next, r.Status, r.Header.Get("Location"), want)
+		}
+	}
+}
