@@ -54,4 +54,4 @@ export function personHue(key: string): Hue {
 export const ROLE_HUE = { leadership: 'amber', director: 'violet', officer: 'blue' } as const satisfies Record<string, Hue>;
 
 /** Service-token scopes as small coloured dot-labels. */
-export const SCOPE_HUE: Record<string, Hue> = { 'ingest:luma': 'teal', 'agent:jobs': 'amber' };
+export const SCOPE_HUE: Record<string, Hue> = { 'ingest:buildspace': 'blue', 'ingest:luma': 'teal', 'agent:jobs': 'amber' };
