@@ -1,0 +1,1662 @@
+{
+  "profile": {
+    "runs": 3,
+    "cpuSlowdown": 4,
+    "latencyMs": 40,
+    "downBitsPerSecond": 1600000,
+    "upBitsPerSecond": 750000,
+    "cache": "disabled",
+    "settleMs": 750
+  },
+  "medians": [
+    {
+      "route": "/",
+      "lcp": 2184,
+      "cls": 0.07190258206340021,
+      "interaction": 128,
+      "jsBytes": 74857
+    },
+    {
+      "route": "/events",
+      "lcp": 2216,
+      "cls": 0.000487818287037037,
+      "interaction": 112,
+      "jsBytes": 83627
+    },
+    {
+      "route": "/members",
+      "lcp": 2208,
+      "cls": 0.000487818287037037,
+      "interaction": 72,
+      "jsBytes": 66212
+    },
+    {
+      "route": "/finance",
+      "lcp": 512,
+      "cls": 0.000487818287037037,
+      "interaction": 96,
+      "jsBytes": 86707
+    },
+    {
+      "route": "/design",
+      "lcp": 2016,
+      "cls": 0.000487818287037037,
+      "interaction": 144,
+      "jsBytes": 82624
+    },
+    {
+      "route": "/officers",
+      "lcp": 536,
+      "cls": 0.000487818287037037,
+      "interaction": 104,
+      "jsBytes": 100272
+    }
+  ],
+  "samples": [
+    {
+      "route": "/",
+      "run": 1,
+      "lcp": 2184,
+      "cls": 0.07178068355356225,
+      "interaction": 128,
+      "lcpElement": "<span class=\"cell-sub\">Fri Nov 13, 2026 \u00b7 Engineering Atrium \u00b7 upcoming</span>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 579.5999999642372,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1745.5,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 0.07129286526652522,
+          "time": 2140.899999976158,
+          "sources": [
+            {
+              "node": "<li class=\"blk\" data-widget=\"my-action\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 4;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"my-action-h\" data-block=\"my-action\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"my-act",
+              "before": {
+                "x": 277,
+                "y": 319.52294921875,
+                "width": 554,
+                "height": 326,
+                "top": 319.52294921875,
+                "right": 831,
+                "bottom": 645.52294921875,
+                "left": 277
+              },
+              "after": {
+                "x": 277,
+                "y": 354.71044921875,
+                "width": 554,
+                "height": 498,
+                "top": 354.71044921875,
+                "right": 831,
+                "bottom": 852.71044921875,
+                "left": 277
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"recent-events\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 5;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"recent-events-h\" data-block=\"recent-events\"><header class=\"tile-head\"><h2 class=\"tile-title",
+              "before": {
+                "x": 841,
+                "y": 319.52294921875,
+                "width": 554,
+                "height": 326,
+                "top": 319.52294921875,
+                "right": 1395,
+                "bottom": 645.52294921875,
+                "left": 841
+              },
+              "after": {
+                "x": 841,
+                "y": 354.71044921875,
+                "width": 554,
+                "height": 498,
+                "top": 354.71044921875,
+                "right": 1395,
+                "bottom": 852.71044921875,
+                "left": 841
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"budget\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 6;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"budget-h\" data-block=\"budget\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"budget-h\">budge",
+              "before": {
+                "x": 277,
+                "y": 655.52294921875,
+                "width": 554,
+                "height": 244.47705078125,
+                "top": 655.52294921875,
+                "right": 831,
+                "bottom": 900,
+                "left": 277
+              },
+              "after": {
+                "x": 277,
+                "y": 862.71044921875,
+                "width": 554,
+                "height": 37.28955078125,
+                "top": 862.71044921875,
+                "right": 831,
+                "bottom": 900,
+                "left": 277
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"activity\" data-size=\"1x2\" data-w=\"1\" data-h=\"2\" style=\"--i: 7;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"activity-h\" data-block=\"activity\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"activity-",
+              "before": {
+                "x": 841,
+                "y": 655.52294921875,
+                "width": 272,
+                "height": 244.47705078125,
+                "top": 655.52294921875,
+                "right": 1113,
+                "bottom": 900,
+                "left": 841
+              },
+              "after": {
+                "x": 841,
+                "y": 862.71044921875,
+                "width": 272,
+                "height": 37.28955078125,
+                "top": 862.71044921875,
+                "right": 1113,
+                "bottom": 900,
+                "left": 841
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"kpi-pending\" data-size=\"1x1\" data-w=\"1\" data-h=\"1\" style=\"--i: 8;\"><div class=\"blk-body\"><a class=\"kpi kpi--link tile tile--stat\" href=\"/finance?scope=all&amp;status=pending\"><span class=\"kpi-head\"><span class=\"kpi-chip\" ",
+              "before": {
+                "x": 1123,
+                "y": 655.52294921875,
+                "width": 272,
+                "height": 158,
+                "top": 655.52294921875,
+                "right": 1395,
+                "bottom": 813.52294921875,
+                "left": 1123
+              },
+              "after": {
+                "x": 1123,
+                "y": 862.71044921875,
+                "width": 272,
+                "height": 37.28955078125,
+                "top": 862.71044921875,
+                "right": 1395,
+                "bottom": 900,
+                "left": 1123
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 74857
+    },
+    {
+      "route": "/events",
+      "run": 1,
+      "lcp": 3288,
+      "cls": 0.000487818287037037,
+      "interaction": 168,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 665,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 2756,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 83627
+    },
+    {
+      "route": "/members",
+      "run": 1,
+      "lcp": 2208,
+      "cls": 0.000487818287037037,
+      "interaction": 64,
+      "lcpElement": "<p>Your directory will appear after the first sync.</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 515.4000000357628,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1938.6000000238419,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 66212
+    },
+    {
+      "route": "/finance",
+      "run": 1,
+      "lcp": 512,
+      "cls": 0.000487818287037037,
+      "interaction": 80,
+      "lcpElement": "<h1>Requests &amp; Finance</h1>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 505.80000001192093,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1639.300000011921,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 86707
+    },
+    {
+      "route": "/design",
+      "run": 1,
+      "lcp": 2648,
+      "cls": 0.000487818287037037,
+      "interaction": 216,
+      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">4 open requests \u00b7 0 delivered \u00b7 Shared with everyone \u00b7 Deadlines shown in America/Los_Angeles</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 511.2999999523163,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 2018.199999988079,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 82624
+    },
+    {
+      "route": "/officers",
+      "run": 1,
+      "lcp": 644,
+      "cls": 0.000487818287037037,
+      "interaction": 224,
+      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 610.5,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 2243.399999976158,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 100272
+    },
+    {
+      "route": "/",
+      "run": 2,
+      "lcp": 2768,
+      "cls": 0.07190258206340021,
+      "interaction": 184,
+      "lcpElement": "<span class=\"cell-sub\">Fri Nov 13, 2026 \u00b7 Engineering Atrium \u00b7 upcoming</span>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 748.3000000119209,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 2237.600000023842,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 0.07141476377636317,
+          "time": 2669.600000023842,
+          "sources": [
+            {
+              "node": "<li class=\"blk\" data-widget=\"my-action\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 4;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"my-action-h\" data-block=\"my-action\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"my-act",
+              "before": {
+                "x": 277,
+                "y": 319.00439453125,
+                "width": 554,
+                "height": 326,
+                "top": 319.00439453125,
+                "right": 831,
+                "bottom": 645.00439453125,
+                "left": 277
+              },
+              "after": {
+                "x": 277,
+                "y": 354.19189453125,
+                "width": 554,
+                "height": 498,
+                "top": 354.19189453125,
+                "right": 831,
+                "bottom": 852.19189453125,
+                "left": 277
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"recent-events\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 5;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"recent-events-h\" data-block=\"recent-events\"><header class=\"tile-head\"><h2 class=\"tile-title",
+              "before": {
+                "x": 841,
+                "y": 319.00439453125,
+                "width": 554,
+                "height": 326,
+                "top": 319.00439453125,
+                "right": 1395,
+                "bottom": 645.00439453125,
+                "left": 841
+              },
+              "after": {
+                "x": 841,
+                "y": 354.19189453125,
+                "width": 554,
+                "height": 498,
+                "top": 354.19189453125,
+                "right": 1395,
+                "bottom": 852.19189453125,
+                "left": 841
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"budget\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 6;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"budget-h\" data-block=\"budget\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"budget-h\">budge",
+              "before": {
+                "x": 277,
+                "y": 655.00439453125,
+                "width": 554,
+                "height": 244.99560546875,
+                "top": 655.00439453125,
+                "right": 831,
+                "bottom": 900,
+                "left": 277
+              },
+              "after": {
+                "x": 277,
+                "y": 862.19189453125,
+                "width": 554,
+                "height": 37.80810546875,
+                "top": 862.19189453125,
+                "right": 831,
+                "bottom": 900,
+                "left": 277
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"activity\" data-size=\"1x2\" data-w=\"1\" data-h=\"2\" style=\"--i: 7;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"activity-h\" data-block=\"activity\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"activity-",
+              "before": {
+                "x": 841,
+                "y": 655.00439453125,
+                "width": 272,
+                "height": 244.99560546875,
+                "top": 655.00439453125,
+                "right": 1113,
+                "bottom": 900,
+                "left": 841
+              },
+              "after": {
+                "x": 841,
+                "y": 862.19189453125,
+                "width": 272,
+                "height": 37.80810546875,
+                "top": 862.19189453125,
+                "right": 1113,
+                "bottom": 900,
+                "left": 841
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"kpi-pending\" data-size=\"1x1\" data-w=\"1\" data-h=\"1\" style=\"--i: 8;\"><div class=\"blk-body\"><a class=\"kpi kpi--link tile tile--stat\" href=\"/finance?scope=all&amp;status=pending\"><span class=\"kpi-head\"><span class=\"kpi-chip\" ",
+              "before": {
+                "x": 1123,
+                "y": 655.00439453125,
+                "width": 272,
+                "height": 158,
+                "top": 655.00439453125,
+                "right": 1395,
+                "bottom": 813.00439453125,
+                "left": 1123
+              },
+              "after": {
+                "x": 1123,
+                "y": 862.19189453125,
+                "width": 272,
+                "height": 37.80810546875,
+                "top": 862.19189453125,
+                "right": 1395,
+                "bottom": 900,
+                "left": 1123
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 74857
+    },
+    {
+      "route": "/events",
+      "run": 2,
+      "lcp": 2216,
+      "cls": 0.000487818287037037,
+      "interaction": 112,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 631,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1863.300000011921,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 83627
+    },
+    {
+      "route": "/members",
+      "run": 2,
+      "lcp": 2436,
+      "cls": 0.000487818287037037,
+      "interaction": 168,
+      "lcpElement": "<p>Your directory will appear after the first sync.</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 584.6000000238419,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 2264.100000023842,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 66212
+    },
+    {
+      "route": "/finance",
+      "run": 2,
+      "lcp": 536,
+      "cls": 0.000487818287037037,
+      "interaction": 96,
+      "lcpElement": "<h1>Requests &amp; Finance</h1>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 526.7000000476837,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1696,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 86707
+    },
+    {
+      "route": "/design",
+      "run": 2,
+      "lcp": 2016,
+      "cls": 0.000487818287037037,
+      "interaction": 144,
+      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">4 open requests \u00b7 0 delivered \u00b7 Shared with everyone \u00b7 Deadlines shown in America/Los_Angeles</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 617.8999999761581,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1690.300000011921,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 82624
+    },
+    {
+      "route": "/officers",
+      "run": 2,
+      "lcp": 528,
+      "cls": 0.000487818287037037,
+      "interaction": 104,
+      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 518.9000000357628,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1685,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 100272
+    },
+    {
+      "route": "/",
+      "run": 3,
+      "lcp": 1860,
+      "cls": 0.07190258206340021,
+      "interaction": 88,
+      "lcpElement": "<span class=\"cell-sub\">Fri Nov 13, 2026 \u00b7 Engineering Atrium \u00b7 upcoming</span>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 506.19999998807907,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1528.300000011921,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 0.07141476377636317,
+          "time": 1827.300000011921,
+          "sources": [
+            {
+              "node": "<li class=\"blk\" data-widget=\"my-action\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 4;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"my-action-h\" data-block=\"my-action\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"my-act",
+              "before": {
+                "x": 277,
+                "y": 319.0576171875,
+                "width": 554,
+                "height": 326,
+                "top": 319.0576171875,
+                "right": 831,
+                "bottom": 645.0576171875,
+                "left": 277
+              },
+              "after": {
+                "x": 277,
+                "y": 354.2451171875,
+                "width": 554,
+                "height": 498,
+                "top": 354.2451171875,
+                "right": 831,
+                "bottom": 852.2451171875,
+                "left": 277
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"recent-events\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 5;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"recent-events-h\" data-block=\"recent-events\"><header class=\"tile-head\"><h2 class=\"tile-title",
+              "before": {
+                "x": 841,
+                "y": 319.0576171875,
+                "width": 554,
+                "height": 326,
+                "top": 319.0576171875,
+                "right": 1395,
+                "bottom": 645.0576171875,
+                "left": 841
+              },
+              "after": {
+                "x": 841,
+                "y": 354.2451171875,
+                "width": 554,
+                "height": 498,
+                "top": 354.2451171875,
+                "right": 1395,
+                "bottom": 852.2451171875,
+                "left": 841
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"budget\" data-size=\"2x2\" data-w=\"2\" data-h=\"2\" style=\"--i: 6;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"budget-h\" data-block=\"budget\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"budget-h\">budge",
+              "before": {
+                "x": 277,
+                "y": 655.0576171875,
+                "width": 554,
+                "height": 244.9423828125,
+                "top": 655.0576171875,
+                "right": 831,
+                "bottom": 900,
+                "left": 277
+              },
+              "after": {
+                "x": 277,
+                "y": 862.2451171875,
+                "width": 554,
+                "height": 37.7548828125,
+                "top": 862.2451171875,
+                "right": 831,
+                "bottom": 900,
+                "left": 277
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"activity\" data-size=\"1x2\" data-w=\"1\" data-h=\"2\" style=\"--i: 7;\"><div class=\"blk-body\"><section class=\"tile\" aria-labelledby=\"activity-h\" data-block=\"activity\"><header class=\"tile-head\"><h2 class=\"tile-title\" id=\"activity-",
+              "before": {
+                "x": 841,
+                "y": 655.0576171875,
+                "width": 272,
+                "height": 244.9423828125,
+                "top": 655.0576171875,
+                "right": 1113,
+                "bottom": 900,
+                "left": 841
+              },
+              "after": {
+                "x": 841,
+                "y": 862.2451171875,
+                "width": 272,
+                "height": 37.7548828125,
+                "top": 862.2451171875,
+                "right": 1113,
+                "bottom": 900,
+                "left": 841
+              }
+            },
+            {
+              "node": "<li class=\"blk\" data-widget=\"kpi-pending\" data-size=\"1x1\" data-w=\"1\" data-h=\"1\" style=\"--i: 8;\"><div class=\"blk-body\"><a class=\"kpi kpi--link tile tile--stat\" href=\"/finance?scope=all&amp;status=pending\"><span class=\"kpi-head\"><span class=\"kpi-chip\" ",
+              "before": {
+                "x": 1123,
+                "y": 655.0576171875,
+                "width": 272,
+                "height": 158,
+                "top": 655.0576171875,
+                "right": 1395,
+                "bottom": 813.0576171875,
+                "left": 1123
+              },
+              "after": {
+                "x": 1123,
+                "y": 862.2451171875,
+                "width": 272,
+                "height": 37.7548828125,
+                "top": 862.2451171875,
+                "right": 1395,
+                "bottom": 900,
+                "left": 1123
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 74857
+    },
+    {
+      "route": "/events",
+      "run": 3,
+      "lcp": 1796,
+      "cls": 0.000487818287037037,
+      "interaction": 88,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 490.39999997615814,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1587.5999999642372,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 83627
+    },
+    {
+      "route": "/members",
+      "run": 3,
+      "lcp": 1616,
+      "cls": 0.000487818287037037,
+      "interaction": 72,
+      "lcpElement": "<p>Your directory will appear after the first sync.</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 492,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1489.4000000357628,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 66212
+    },
+    {
+      "route": "/finance",
+      "run": 3,
+      "lcp": 496,
+      "cls": 0.000487818287037037,
+      "interaction": 96,
+      "lcpElement": "<h1>Requests &amp; Finance</h1>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 487.9000000357628,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1585.1000000238419,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 86707
+    },
+    {
+      "route": "/design",
+      "run": 3,
+      "lcp": 1840,
+      "cls": 0.000487818287037037,
+      "interaction": 96,
+      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">4 open requests \u00b7 0 delivered \u00b7 Shared with everyone \u00b7 Deadlines shown in America/Los_Angeles</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 496.10000002384186,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1590.1000000238419,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 82624
+    },
+    {
+      "route": "/officers",
+      "run": 3,
+      "lcp": 536,
+      "cls": 0.000487818287037037,
+      "interaction": 80,
+      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
+      "shifts": [
+        {
+          "value": 0.0004538773148148148,
+          "time": 527.8000000119209,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 839,
+                "width": 207,
+                "height": 49,
+                "top": 839,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        },
+        {
+          "value": 3.394097222222222e-05,
+          "time": 1703.3999999761581,
+          "sources": [
+            {
+              "node": "<div class=\"sidebar-foot\"><a class=\"nav-link\" href=\"/settings\" title=\"Settings\" data-nav=\"settings\"><svg viewBox=\"0 0 24 24\" width=\"18\" height=\"18\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" a",
+              "before": {
+                "x": 12,
+                "y": 795,
+                "width": 207,
+                "height": 93,
+                "top": 795,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              },
+              "after": {
+                "x": 12,
+                "y": 791.8125,
+                "width": 207,
+                "height": 96.1875,
+                "top": 791.8125,
+                "right": 219,
+                "bottom": 888,
+                "left": 12
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 100272
+    }
+  ]
+}
