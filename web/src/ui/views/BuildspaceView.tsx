@@ -9,6 +9,7 @@ import { useApi } from "../../lib/api/useApi";
 import { setParams, useSearch } from "../../lib/nav";
 import { Async, Empty, Notice } from "../components/states";
 import { Badge } from "../components/kit";
+import { Icon } from "../components/Icon";
 import { Drawer } from "../components/Drawer";
 import { BuildspaceDetail } from "./buildspace/Detail";
 import { ProjectForm, PersonForm } from "./buildspace/Forms";
@@ -148,6 +149,59 @@ function BuildspaceContent({
       {p.name}
     </button>
   );
+  const requestCount = (projectId: string) => {
+    const count = b.activity.filter(
+      (a) => a.projectId === projectId && openActivity(a),
+    ).length;
+    return `${count} open ${count === 1 ? "request" : "requests"}`;
+  };
+  const activityCounts = (projectId: string, personId: string) => {
+    const activity = b.activity.filter(
+      (a) =>
+        a.projectId === projectId && (!a.personId || a.personId === personId),
+    );
+    const counts = [
+      {
+        icon: "message",
+        label: "open requests",
+        singular: "open request",
+        count: activity.filter((a) => a.kind === "request" && openActivity(a))
+          .length,
+      },
+      {
+        icon: "wallet",
+        label: "open purchases",
+        singular: "open purchase",
+        count: activity.filter((a) => a.kind === "purchase" && openActivity(a))
+          .length,
+      },
+      {
+        icon: "calendar",
+        label: "absences this week",
+        singular: "absence this week",
+        count: activity.filter(
+          (a) =>
+            a.kind === "absence" && a.date >= b.weekStart && a.date <= b.today,
+        ).length,
+      },
+    ];
+    return (
+      <span class="bs-activity-counts">
+        {counts.map((c) => (
+          <span
+            class={c.count ? "has-activity" : ""}
+            title={`${c.count} ${c.count === 1 ? c.singular : c.label}`}
+          >
+            <Icon name={c.icon} size={14} />
+            <span aria-hidden="true">{c.count}</span>
+            <span class="visually-hidden">
+              {c.count} {c.count === 1 ? c.singular : c.label}
+            </span>
+          </span>
+        ))}
+      </span>
+    );
+  };
   const card = (p: BuildspaceProject) => (
     <article class="bs-card" key={p.id} data-track={p.track}>
       <div class="bs-card-top">
@@ -158,12 +212,13 @@ function BuildspaceContent({
       <p>{p.description}</p>
       <div class="bs-card-foot">
         <span>
+          <strong>Builders</strong>{" "}
           {projectPeople(p, b)
             .map((x) => x.name)
             .join(" · ") || "No builders yet"}
         </span>
         <span class={!p.mentorIds.length ? "bs-alert" : ""}>
-          {mentorNames(p)}
+          <strong>Mentors</strong> {mentorNames(p)}
         </span>
       </div>
       <div class="bs-card-signals">
@@ -171,13 +226,7 @@ function BuildspaceContent({
           {projectPeople(p, b).filter((x) => missed(x, b)).length} awaiting
           check-in
         </span>
-        <span>
-          {
-            b.activity.filter((a) => a.projectId === p.id && openActivity(a))
-              .length
-          }{" "}
-          open requests
-        </span>
+        <span>{requestCount(p.id)}</span>
       </div>
     </article>
   );
@@ -400,7 +449,7 @@ function BuildspaceContent({
           </div>
         </>
       ) : view === "cards" ? (
-        <div>
+        <div class="bs-groups">
           {groups.map((g) => {
             const belongs = (p: BuildspaceProject) =>
               group === "mentor"
@@ -454,8 +503,14 @@ function BuildspaceContent({
                                 {p.name}
                               </button>
                             </h3>
-                            <p>{project(p.projectId).name}</p>
-                            <p>{mentorNames(project(p.projectId))}</p>
+                            <p>
+                              <strong>Project</strong>{" "}
+                              {project(p.projectId).name}
+                            </p>
+                            <p>
+                              <strong>Mentors</strong>{" "}
+                              {mentorNames(project(p.projectId))}
+                            </p>
                             <Badge
                               tone={missed(p, b) ? "attention" : "positive"}
                             >
@@ -512,9 +567,11 @@ function BuildspaceContent({
                   ? [
                       "Builder / project",
                       "Track",
+                      "Partners",
                       "Mentors",
                       "Stage",
                       "This week",
+                      "Activity",
                     ]
                   : tab === "projects"
                     ? ["Project", "Track", "Builders", "Mentors", "Stage"]
@@ -544,6 +601,24 @@ function BuildspaceContent({
                             {trackShort(pr.track)}
                           </span>
                         </td>
+                        <td data-label="Partners">
+                          {projectPeople(pr, b)
+                            .filter((partner) => partner.id !== p.id)
+                            .map((partner) => (
+                              <button
+                                class="bs-partner"
+                                aria-label={`Open partner ${partner.name}`}
+                                onClick={() =>
+                                  setParams({ person: partner.id })
+                                }
+                              >
+                                {partner.name}
+                              </button>
+                            ))}
+                          {projectPeople(pr, b).length === 1 && (
+                            <span class="bs-muted">Solo builder</span>
+                          )}
+                        </td>
                         <td
                           data-label="Mentors"
                           class={!pr.mentorIds.length ? "bs-alert" : ""}
@@ -563,6 +638,9 @@ function BuildspaceContent({
                               a.date <= b.today,
                           ) && <span class="bs-sub">Absence logged</span>}
                         </td>
+                        <td data-label="Activity">
+                          {activityCounts(pr.id, p.id)}
+                        </td>
                       </tr>
                     );
                   })
@@ -571,14 +649,7 @@ function BuildspaceContent({
                       <tr>
                         <td data-label="Project">
                           {projectLink(p)}
-                          <span class="bs-sub">
-                            {
-                              b.activity.filter(
-                                (a) => a.projectId === p.id && openActivity(a),
-                              ).length
-                            }{" "}
-                            open requests
-                          </span>
+                          <span class="bs-sub">{requestCount(p.id)}</span>
                         </td>
                         <td data-label="Track">
                           <span class="bs-track" data-track={p.track}>

@@ -180,8 +180,17 @@
 .bs-track[data-track^="Extended"]:before {
   background: var(--c-violet);
 }
+.bs-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 24px;
+  align-items: start;
+}
 .bs-group {
-  margin-bottom: 28px;
+  min-width: 0;
+}
+.bs-group > h3 {
+  margin-top: 0;
 }
 .bs-group > h3,
 .bs-lane > h3 {
@@ -198,7 +207,7 @@
 }
 .bs-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 16px;
 }
 .bs-card {
@@ -399,9 +408,6 @@
   .bs-summary button {
     border-bottom: 1px solid var(--line);
   }
-  .bs-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .bs-filters .bs-search {
     flex-basis: 100%;
   }
@@ -518,6 +524,45 @@
     margin: 3px 0;
   }
   .bs-table td .bs-title {
+    min-height: 44px;
+  }
+}
+
+.bs-card-foot strong {
+  color: var(--muted);
+  font-weight: 500;
+  margin-right: 4px;
+}
+.bs-activity-counts {
+  display: inline-flex;
+  gap: 10px;
+  white-space: nowrap;
+}
+.bs-activity-counts > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.bs-activity-counts > .has-activity {
+  color: var(--attention);
+}
+.bs-partner {
+  display: block;
+  padding: 3px 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bs-partner:hover {
+  text-decoration: underline;
+}
+@media (max-width: 600px) {
+  .bs-partner {
     min-height: 44px;
   }
 }
