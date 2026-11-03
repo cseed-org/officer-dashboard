@@ -253,10 +253,10 @@ func (w *typedWriter) WriteHeader(code int) {
 }
 
 func (w *typedWriter) Write(b []byte) (int, error) {
-	if !w.wrote {
-		ensureContentType(w.Header())
-		w.wrote = true
-	}
+	// Before the first write this fills a missing type; after it, headers are sent and the
+	// call changes nothing. Either way no body leaves untyped.
+	ensureContentType(w.Header())
+	w.wrote = true
 	return w.ResponseWriter.Write(b)
 }
 

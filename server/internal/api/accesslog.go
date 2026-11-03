@@ -27,9 +27,9 @@ func (w *statusWriter) WriteHeader(code int) {
 // the body can never be sniffed into an HTML document on the way out.
 func (w *statusWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
-		ensureContentType(w.Header())
 		w.status = http.StatusOK
 	}
+	ensureContentType(w.Header())
 	n, err := w.ResponseWriter.Write(b)
 	w.bytes += n
 	return n, err
