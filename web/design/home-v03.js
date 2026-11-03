@@ -16,7 +16,10 @@ const registry=[
 window.homeRegistry=registry;
 let layout=registry.slice(0,7).map(w=>({id:w.id,size:w.size})), editing=false, removed, lifted=null, dragId=null, category='All', slotAt=null, undoTimer;
 const selected=Object.fromEntries(registry.map(w=>[w.id,w.size]));
-$('role').value=params.get('role')||'director';$('state').value=params.get('state')||'disconnected';
+// Only values the pickers offer are accepted from the URL (the preview renders them as markup).
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pick=(sel,v,d)=>[...$(sel).options].some(o=>o.value===v)?v:d;
+$('role').value=pick('role',params.get('role'),'director');$('state').value=pick('state',params.get('state'),'disconnected');
 const role=()=>$('role').value, state=()=>$('state').value, isLead=()=>['leadership','owner'].includes(role());
 const say=t=>$('feedback').textContent=t;
 const SIZE_NAME={s:'Small',m:'Medium',l:'Large'}, SPAN={s:[1,1],m:[2,1],l:[2,2]};
@@ -90,7 +93,8 @@ function render(){
  $('sync-line').textContent='Cloudflare and membership · '+SYNC[state()]+'. All figures are sample data.';
  $('role-note').textContent={officer:'Officer · club metrics and your own follow-ups. Purchase approvals belong to directors and leadership; member records are read-only.',director:'Director · purchase reviews for their scope, invites and member-record edits.',leadership:'Leadership · club-wide approvals, role changes and leadership grants.',owner:'Owner · leadership access plus ownership management. At least one owner must remain.'}[role()];
  document.documentElement.dataset.role=role()==='owner'?'leadership':role();
- document.querySelector('.user-chip-role').innerHTML=`<span class="role-badge" data-role="${role()==='owner'?'leadership':role()}">${role()==='owner'?'Leadership · Owner':role()[0].toUpperCase()+role().slice(1)}</span>`;
+ const r=['officer','director','leadership','owner'].includes(role())?role():'director';
+ document.querySelector('.user-chip-role').innerHTML=`<span class="role-badge" data-role="${r==='owner'?'leadership':r}">${esc(r==='owner'?'Leadership · Owner':r[0].toUpperCase()+r.slice(1))}</span>`;
  if($('tile-add'))$('tile-add').onclick=openGallery;
  renderGallery();
 }
