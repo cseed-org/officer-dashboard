@@ -1,10 +1,31 @@
-# V0.5 motion and performance draft
+# V0.5 motion and performance
 
-This slice makes navigation, content arrival, and modal dismissal consistent while reducing static transfer cost on the Raspberry Pi. It preserves full-page navigation and the existing authentication/island lifecycle. Home drag/resize and Buildspace internals are outside this change.
+This slice makes navigation, content arrival, and modal dismissal consistent while reducing static transfer cost on the Raspberry Pi. It preserves full-page navigation and the existing authentication/island lifecycle. The drag/resize algorithms arrived through the merged dashboard work and are preserved here; only their preference-loading integration is adapted. Buildspace internals are outside this change.
 
 ![Before and after static delivery](evidence/motion-perf/overview.png)
 
-## Review revision: cause and fix
+## Merge preparation on the current main
+
+Rebased onto `d7e7be3`, which includes #42 onboarding, #43 security, #44 dashboard UX and #45 calendar. Current runtime source is `05f357e`. The historical six-page investigation below predates those merges; this section is the fresh Home/Events confirmation on the expanded dashboard.
+
+The preference snapshot still initializes WidgetGrid without another read, and Home still waits for overview before committing its primary grid. Tutorial initialization now reuses the same snapshot too. Drag, resize, temporary tutorial edits and FLIP algorithms are retained. Links uses shared Async/stagger motion and an already-fetched club-settings snapshot for its first paint. Calendar's feed now uses Async; its popovers and agenda adopt the motion tokens. Coachmark position moves use transform rather than animating left/top, step content uses short rise/fade, and the SVG cutout snaps instead of animating geometry. Widget entry starts at nonzero opacity. Reduced motion disables these effects.
+
+Security conflicts were combined with compression: CSP/Permissions-Policy, explicit MIME types and nosniff remain in place alongside gzip/ETags. Browser CSP checks cover every page as officer, director and leadership. A dev-sign-in test-helper race was also fixed by disposing the old document before session rotation; this removes the observed late-401 redirect race during test sign-in.
+
+Three fresh serial samples on the existing profile (Chromium and Go on Pi, 1440×900, 4× CPU, 40ms latency, 1.6Mbit/s down / 750Kbit/s up, cache disabled). The default layout includes Links and the 4×2 Calendar; the director has completed the tutorial. First-visit/replay tour behavior is checked separately, not hidden in the performance sample. Dev sign-in now uses the security branch's POST form, with setup outside page rendering.
+
+| Page | LCP median (min–max) | CLS median (min–max) | Search median | JS response bytes |
+| --- | ---: | ---: | ---: | ---: |
+| / | 1.964s (1.960–1.980) | 0.00184 (0.00184–0.00184) | 112ms | 87,062 |
+| /events | 1.832s (1.824–1.836) | 0.00000 (0.00000–0.00000) | 64ms | 84,517 |
+
+Both median targets hold: LCP <2s and CLS <0.05. The Home range is close to the LCP budget, so these three lab samples are not a device/field guarantee. Search remains a scripted Event Timing sample, not field INP. [Raw samples and shift sources](evidence/motion-perf/merge-prep.json).
+
+Validation passed: `go test ./...`, dev-tag API/cmd tests, Astro check/build (0 errors/warnings; 1 existing hint), contract check (211 responses / 101 endpoints; 0 schema errors), and 45 Home/motion/CSP browser checks at desktop/phone widths (13 intentional skips). Coverage includes drag/corner resize/Escape, FLIP/reordering, calendar view/size persistence, tutorial replay and spotlight geometry, atomic loading and one preference read. Four extra [coachmark/widget style checks](evidence/motion-perf/merge-prep-coachmarks.json) verify normal/reduced motion and one read in each viewport/theme profile.
+
+Home/Events screenshots now show this rebased build; other route captures and recordings remain from the earlier revision. Fresh coachmarks: [desktop light](evidence/motion-perf/coachmark-1440-light-no-preference.png), [phone dark](evidence/motion-perf/coachmark-390-dark-no-preference.png), [desktop reduced motion](evidence/motion-perf/coachmark-1440-dark-reduce.png), [phone reduced motion](evidence/motion-perf/coachmark-390-light-reduce.png).
+
+## Historical pre-merge review: cause and fix
 
 The first report's single samples were unreliable: it opened Search after `networkidle`, which can occur before deferred islands/data finish. First input ends LCP observation. CLS continues, but the probe excludes entries flagged by the browser as associated with recent input. The revised probe disables the browser cache, waits for island hydration, all busy indicators, network idle, and a further 750ms (including main's 600ms count-up) **before the first input**. It records the LCP element and every layout-shift source, not just a total.
 
@@ -28,9 +49,9 @@ Drawers slide from the viewport edge in 240ms with a fading backdrop; dialogs/pa
 
 KPI figures appear at their final value, avoiding frame-by-frame Preact updates and text layout. Skeleton shimmer uses transform without a blur filter.
 
-## Repeatable client measurements
+## Historical six-page measurements (before #42–#45)
 
-Serve each production Astro build with the seeded Go dev binary, then from `web/`:
+Historical runs used the probe and dev sign-in from their recorded revision. The current probe uses POST sign-in and a returning user with the tutorial seen. For current builds, serve production Astro output with the seeded Go dev binary, then from `web/`:
 
 ```sh
 WEB_ORIGIN=http://127.0.0.1:18135 PERF_RUNS=3 PERF_SHOTS=1 \
@@ -50,11 +71,11 @@ Each table cell is the **median of three samples**. Search is the maximum Event 
 | /design | 3.004s (3.000–3.072) | 1.832s (1.832–1.840) | 0.0005 → 0.0000 | 112ms → 80ms | 222,625 → 82,884 |
 | /officers | 0.988s (0.980–1.008) | 0.504s (0.500–0.520) | 0.0005 → 0.0000 | 96ms → 72ms | 270,049 → 100,630 |
 
-All six final medians improve on main, with median LCP below 2s, zero CLS, and the sampled Search interaction below 200ms. This is lab evidence for these routes/states, not field INP or a guarantee for every dataset/device. JavaScript transfer is approximately 63% smaller.
+All six pre-merge final medians improve on the historical main, with median LCP below 2s, zero CLS, and the sampled Search interaction below 200ms. This is lab evidence for these routes/states, not field INP or a guarantee for every dataset/device. JavaScript transfer is approximately 63% smaller.
 
 Raw samples and sources: [main](evidence/motion-perf/before.json), [original PR](evidence/motion-perf/original-pr.json), [original PR without added fades](evidence/motion-perf/without-added-fades.json), [final](evidence/motion-perf/after.json). The [supplemental comparison](evidence/motion-perf/comparison.md) lists all three LCP/CLS values for every variant/page, so variance is visible.
 
-## Server results
+## Historical server results (pre-merge)
 
 `BENCH_LATENCY=1 go test -count=1 -run LatencyReport -v ./internal/api` runs 2,000 authenticated requests per endpoint through session lookup, SQL and JSON using the seeded test harness. It is in-process, not an HTTP load test. The existing repeatable benchmark now also includes Members; use `go test -run '^$' -bench BenchmarkReadEndpoints -benchmem ./internal/api` for allocations.
 
@@ -80,7 +101,7 @@ The repeatable lab interaction is not field INP; a representative-device/field c
 
 Static serving retains startup gzip and weak content ETags for text files up to 2MiB, existing immutable hashed-asset/HTML revalidation policies, identity byte ranges, and live-disk fallback after a rebuild. It excludes API/session responses. Brotli was considered: Go has no standard-library encoder, and adding build-side encoded artifacts would introduce another deployment contract. Gzip already provides approximately 63% less JS transfer here; this revision keeps that simpler path and adds no compression dependency.
 
-## Verification and visual evidence
+## Historical validation and visual evidence (runtime 58c9a79)
 
 Runtime commit `58c9a79`: Go tests (including dev-tag auth), Astro check/build (0 errors/warnings, 2 hints), and contract check (199 responses / 97 endpoints, 0 schema errors) passed. The combined Chromium motion, Home and Members suite passed 33 checks at desktop/phone widths; 9 viewport-specific checks were intentionally skipped. Go vet also passed. Motion checks cover reduced motion, transform-only tab movement, Escape dismissal, paintable first frames, the eight-item cap, stable skeleton overlay removal, and one-read/atomic Home loading. Desktop/phone Home regression checks also cover resize, add/remove, keyboard reorder, pointer drag, migration, and layout. Static-serving tests cover decompression, ETags/304, gzip rejection, HEAD, ranges, and rebuild fallback.
 
