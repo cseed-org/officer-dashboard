@@ -1,8 +1,10 @@
 // Start a local seeded Go dev binary serving a production Astro build first.
 import { chromium } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
-const origin = process.env.WEB_ORIGIN ?? 'http://127.0.0.1:18135';
-if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(origin).hostname)) throw new Error('Performance probe requires a local seeded server');
+// WEB_ORIGINS=a,b compares builds: runs alternate between them (run 1 a, run 1 b, run 2 a, …), so
+// background load on a shared Pi affects each build alike. Screenshots come from the last one.
+const origins = (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? 'http://127.0.0.1:18135').split(',');
+for (const origin of origins) if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(origin).hostname)) throw new Error('Performance probe requires a local seeded server');
 const out = process.env.PERF_OUT ?? 'tmp/verify/motion';
 const runs = Number(process.env.PERF_RUNS ?? 3);
 if (!Number.isInteger(runs) || runs < 1) throw new Error('PERF_RUNS must be a positive integer');
@@ -10,7 +12,7 @@ const routes = (process.env.PERF_ROUTES ?? '/,/events,/members,/finance,/design,
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const samples = [];
-for (let run = 1; run <= runs; run++) for (const route of routes) {
+for (let run = 1; run <= runs; run++) for (const route of routes) for (const origin of origins) {
  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
  const login = await context.request.post(`${origin}/auth/dev`, { form: { as: 'director' }, maxRedirects: 0 });
  if (login.status() !== 303) throw new Error(`Dev sign-in failed: ${login.status()}`);
@@ -39,8 +41,8 @@ for (let run = 1; run <= runs; run++) for (const route of routes) {
  await page.keyboard.press('Escape');
  await page.locator('.palette[open]').waitFor({ state: 'hidden' });
  await page.waitForTimeout(250);
- samples.push({ route, run, ...await page.evaluate(() => ({ ...window.probe, jsBytes: performance.getEntriesByType('resource').filter(e => e.name.endsWith('.js')).reduce((n,e) => n + e.encodedBodySize, 0) })) });
- if (run === runs && process.env.PERF_SHOTS === '1') for (const width of [1440, 390]) for (const theme of ['light', 'dark']) {
+ samples.push({ origin, route, run, ...await page.evaluate(() => ({ ...window.probe, jsBytes: performance.getEntriesByType('resource').filter(e => e.name.endsWith('.js')).reduce((n,e) => n + e.encodedBodySize, 0) })) });
+ if (run === runs && origin === origins.at(-1) && process.env.PERF_SHOTS === '1') for (const width of [1440, 390]) for (const theme of ['light', 'dark']) {
   await page.setViewportSize({ width, height: 900 });
   await page.evaluate(theme => { localStorage.setItem('cseed-theme', theme); document.documentElement.dataset.theme = theme; }, theme);
   await page.screenshot({ path: `${out}/${route.slice(1) || 'home'}-${width}-${theme}.png`, fullPage: true });
@@ -49,6 +51,6 @@ for (let run = 1; run <= runs; run++) for (const route of routes) {
 }
 await browser.close();
 const median = values => values.sort((a,b) => a-b)[Math.floor(values.length / 2)];
-const medians = routes.map(route => ({ route, ...Object.fromEntries(['lcp','cls','interaction','jsBytes'].map(key => [key, median(samples.filter(s => s.route === route).map(s => s[key]))])) }));
+const medians = origins.flatMap(origin => routes.map(route => ({ ...(origins.length > 1 ? { origin } : {}), route, ...Object.fromEntries(['lcp','cls','interaction','jsBytes'].map(key => [key, median(samples.filter(s => s.origin === origin && s.route === route).map(s => s[key]))])) })));
 await writeFile(`${out}/metrics.json`, JSON.stringify({ profile: { runs, cpuSlowdown: 4, latencyMs: 40, downBitsPerSecond: 1600000, upBitsPerSecond: 750000, cache: 'disabled', settleMs: 750 }, medians, samples }, null, 2));
 console.table(medians);
