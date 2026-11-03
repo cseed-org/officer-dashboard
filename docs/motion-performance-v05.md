@@ -23,7 +23,7 @@ WEB_ORIGIN=http://127.0.0.1:18135 PERF_SHOTS=0 \
 # Omit PERF_SHOTS=0 to capture all six pages at 1440px/390px, light/dark.
 ```
 
-Profile: Chromium headless, 1440×900, 4× CPU slowdown, 40ms network latency, 1.6Mbit/s down / 750Kbit/s up, on the Raspberry Pi host. Authentication is established through the request context before navigation so the browser starts cold. Each page uses a fresh browser context. One sample per page; results are directional, not statistical proof of budgets. This host plus 4× slowdown is not a calibrated mid-tier phone.
+Profile: Chromium headless, 1440×900, 4× CPU slowdown, 40ms network latency, 1.6Mbit/s down / 750Kbit/s up, with both Chromium and the Go server running on the Raspberry Pi host. Authentication is established through the request context before navigation so the browser starts cold. Each page uses a fresh browser context. One sample per page; results are directional, not statistical proof of budgets. This host plus 4× slowdown is not a calibrated mid-tier phone.
 
 The probe records LCP and layout shifts before opening/closing Search. The interaction column is the maximum observed Event Timing duration for that small scripted interaction, **not field INP**. CLS is the sum of non-input shifts over this short observation window; it does not implement long-session CLS windows. JavaScript bytes are encoded response bodies (transfer size), excluding HTTP headers. No targets are claimed from skipped/unsupported metrics.
 
@@ -50,7 +50,7 @@ Raw [before](evidence/motion-perf/before.json) and [after](evidence/motion-perf/
 | Finance `/api/requests?scope=all` | 4.28ms | 0.63ms |
 | Finance `/api/finance/summary` | 6.09ms | 1.14ms |
 
-All sampled API p95 values are below 100ms. Query code is unchanged; timing differences reflect host load, not a claimed SQL speedup. Raw reports: [before](evidence/motion-perf/api-before.txt), [after](evidence/motion-perf/api-after.txt). The small seed has six events and six purchase requests; Members may be disconnected/empty. These results do not establish large-directory scaling.
+All sampled API p95 values are below 100ms. Query code is unchanged; these runs do not isolate the cause of the timing differences or demonstrate a SQL speedup. Raw reports: [before](evidence/motion-perf/api-before.txt), [after](evidence/motion-perf/api-after.txt). The small seed has six events and six purchase requests; Members may be disconnected/empty. These results do not establish large-directory scaling.
 
 Query review: purchase lists load their reference catalog once outside the item loop; event metrics aggregate by event; Members uses count plus paginated reads. Existing indexes cover member join-date ordering and campus/grad-year filters, purchase requester/status, and event/email lookups. No speculative migration was added for the small seed. Larger connected-members and concurrent HTTP measurements remain follow-up work.
 
@@ -60,7 +60,7 @@ Page islands are already separate Astro chunks, with small SVG charts rather tha
 
 The authentication gate waits for `/api/me`, then timezone initialization, before page data fetches. This preserves correct timezone display but creates a fetch chain worth profiling separately. Finance and Officers still eagerly import their secondary views; splitting those views is a potential next optimization. Do not interpret gzip transfer reductions as equivalent reductions in JavaScript parse work.
 
-Home CLS is 0.072 in the corrected after run versus 0.0005 before; an earlier browser-login baseline also observed 0.071. This timing-dependent shift is unresolved, and this draft does not meet the Home CLS target. Loading/grid stability should be checked across warm and cold visits with the dashboard-ux worker, without changing its drag/resize internals here. Client budgets not met in the table remain open, including a representative-device/field INP check. True skeleton-to-content overlap is deferred: this slice fades content in rather than retaining duplicate accessible loading/content trees.
+Home CLS is 0.072 in the corrected after run versus 0.0005 before. This loading shift is unresolved, and this draft does not meet the Home CLS target. Loading/grid stability should be checked across warm and cold visits with the dashboard-ux worker, without changing its drag/resize internals here. Client budgets not met in the table remain open, including a representative-device/field INP check. True skeleton-to-content overlap is deferred: this slice fades content in rather than retaining duplicate accessible loading/content trees.
 
 ## Verification and visual evidence
 
