@@ -1,0 +1,465 @@
+{
+  "profile": {
+    "runs": 3,
+    "cpuSlowdown": 4,
+    "latencyMs": 40,
+    "downBitsPerSecond": 1600000,
+    "upBitsPerSecond": 750000,
+    "cache": "disabled",
+    "settleMs": 750
+  },
+  "medians": [
+    {
+      "route": "/",
+      "lcp": 1800,
+      "cls": 0,
+      "interaction": 88,
+      "jsBytes": 75218
+    },
+    {
+      "route": "/events",
+      "lcp": 1832,
+      "cls": 0,
+      "interaction": 56,
+      "jsBytes": 83895
+    },
+    {
+      "route": "/members",
+      "lcp": 1616,
+      "cls": 0.015537197788065844,
+      "interaction": 56,
+      "jsBytes": 66473
+    },
+    {
+      "route": "/finance",
+      "lcp": 504,
+      "cls": 0,
+      "interaction": 56,
+      "jsBytes": 86967
+    },
+    {
+      "route": "/design",
+      "lcp": 1840,
+      "cls": 0,
+      "interaction": 80,
+      "jsBytes": 82884
+    },
+    {
+      "route": "/officers",
+      "lcp": 500,
+      "cls": 0,
+      "interaction": 80,
+      "jsBytes": 100630
+    }
+  ],
+  "samples": [
+    {
+      "route": "/",
+      "run": 1,
+      "lcp": 1820,
+      "cls": 0,
+      "interaction": 88,
+      "lcpElement": "<span class=\"cell-sub\">Fri Nov 13, 2026 \u00b7 Engineering Atrium \u00b7 upcoming</span>",
+      "shifts": [],
+      "jsBytes": 75218
+    },
+    {
+      "route": "/events",
+      "run": 1,
+      "lcp": 1832,
+      "cls": 0,
+      "interaction": 56,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [],
+      "jsBytes": 83895
+    },
+    {
+      "route": "/members",
+      "run": 1,
+      "lcp": 1616,
+      "cls": 0.015537197788065844,
+      "interaction": 56,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [
+        {
+          "value": 0.015537197788065844,
+          "time": 1578.3999999761581,
+          "sources": [
+            {
+              "node": "<section class=\"block\" aria-label=\"Member directory\" aria-busy=\"false\"><form class=\"members-filters\"><label class=\"field members-search\"><span class=\"field-label\">Search members</span><input class=\"input\" type=\"search\" placeholder=\"Name, preferred na",
+              "before": {
+                "x": 280,
+                "y": 187.56893920898438,
+                "width": 1112,
+                "height": 435.0000305175781,
+                "top": 187.56893920898438,
+                "right": 1392,
+                "bottom": 622.5689697265625,
+                "left": 280
+              },
+              "after": {
+                "x": 280,
+                "y": 246.56893920898438,
+                "width": 1112,
+                "height": 373.4687805175781,
+                "top": 246.56893920898438,
+                "right": 1392,
+                "bottom": 620.0377197265625,
+                "left": 280
+              }
+            },
+            {
+              "node": "<span class=\"muted\">Source: cseed-membership \u00b7 People</span>",
+              "before": {
+                "x": 631.328125,
+                "y": 133.74563598632812,
+                "width": 215.453125,
+                "height": 18,
+                "top": 133.74563598632812,
+                "right": 846.78125,
+                "bottom": 151.74563598632812,
+                "left": 631.328125
+              },
+              "after": {
+                "x": 585.359375,
+                "y": 133.74563598632812,
+                "width": 215.453125,
+                "height": 18,
+                "top": 133.74563598632812,
+                "right": 800.8125,
+                "bottom": 151.74563598632812,
+                "left": 585.359375
+              }
+            },
+            {
+              "node": "<span>Synced daily, last never</span>",
+              "before": {
+                "x": 463.34375,
+                "y": 133.74563598632812,
+                "width": 144.578125,
+                "height": 18,
+                "top": 133.74563598632812,
+                "right": 607.921875,
+                "bottom": 151.74563598632812,
+                "left": 463.34375
+              },
+              "after": {
+                "x": 417.375,
+                "y": 133.74563598632812,
+                "width": 144.578125,
+                "height": 18,
+                "top": 133.74563598632812,
+                "right": 561.953125,
+                "bottom": 151.74563598632812,
+                "left": 417.375
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 66473
+    },
+    {
+      "route": "/finance",
+      "run": 1,
+      "lcp": 504,
+      "cls": 0,
+      "interaction": 64,
+      "lcpElement": "<h1>Requests &amp; Finance</h1>",
+      "shifts": [],
+      "jsBytes": 86967
+    },
+    {
+      "route": "/design",
+      "run": 1,
+      "lcp": 1880,
+      "cls": 0,
+      "interaction": 80,
+      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">4 open requests \u00b7 0 delivered \u00b7 Shared with everyone \u00b7 Deadlines shown in America/Los_Angeles</p>",
+      "shifts": [],
+      "jsBytes": 82884
+    },
+    {
+      "route": "/officers",
+      "run": 1,
+      "lcp": 500,
+      "cls": 0,
+      "interaction": 88,
+      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
+      "shifts": [],
+      "jsBytes": 100630
+    },
+    {
+      "route": "/",
+      "run": 2,
+      "lcp": 1800,
+      "cls": 0,
+      "interaction": 80,
+      "lcpElement": "<span class=\"cell-sub\">Fri Nov 13, 2026 \u00b7 Engineering Atrium \u00b7 upcoming</span>",
+      "shifts": [],
+      "jsBytes": 75218
+    },
+    {
+      "route": "/events",
+      "run": 2,
+      "lcp": 1832,
+      "cls": 0,
+      "interaction": 64,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [],
+      "jsBytes": 83895
+    },
+    {
+      "route": "/members",
+      "run": 2,
+      "lcp": 1624,
+      "cls": 0.015537197788065844,
+      "interaction": 56,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [
+        {
+          "value": 0.015537197788065844,
+          "time": 1581.199999988079,
+          "sources": [
+            {
+              "node": "<section class=\"block\" aria-label=\"Member directory\" aria-busy=\"false\"><form class=\"members-filters\"><label class=\"field members-search\"><span class=\"field-label\">Search members</span><input class=\"input\" type=\"search\" placeholder=\"Name, preferred na",
+              "before": {
+                "x": 280,
+                "y": 188.80447387695312,
+                "width": 1112,
+                "height": 434.9999694824219,
+                "top": 188.80447387695312,
+                "right": 1392,
+                "bottom": 623.804443359375,
+                "left": 280
+              },
+              "after": {
+                "x": 280,
+                "y": 247.80447387695312,
+                "width": 1112,
+                "height": 373.4687194824219,
+                "top": 247.80447387695312,
+                "right": 1392,
+                "bottom": 621.273193359375,
+                "left": 280
+              }
+            },
+            {
+              "node": "<span class=\"muted\">Source: cseed-membership \u00b7 People</span>",
+              "before": {
+                "x": 631.328125,
+                "y": 135.90782165527344,
+                "width": 215.453125,
+                "height": 18,
+                "top": 135.90782165527344,
+                "right": 846.78125,
+                "bottom": 153.90782165527344,
+                "left": 631.328125
+              },
+              "after": {
+                "x": 585.359375,
+                "y": 135.90782165527344,
+                "width": 215.453125,
+                "height": 18,
+                "top": 135.90782165527344,
+                "right": 800.8125,
+                "bottom": 153.90782165527344,
+                "left": 585.359375
+              }
+            },
+            {
+              "node": "<span>Synced daily, last never</span>",
+              "before": {
+                "x": 463.34375,
+                "y": 135.90782165527344,
+                "width": 144.578125,
+                "height": 18,
+                "top": 135.90782165527344,
+                "right": 607.921875,
+                "bottom": 153.90782165527344,
+                "left": 463.34375
+              },
+              "after": {
+                "x": 417.375,
+                "y": 135.90782165527344,
+                "width": 144.578125,
+                "height": 18,
+                "top": 135.90782165527344,
+                "right": 561.953125,
+                "bottom": 153.90782165527344,
+                "left": 417.375
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 66473
+    },
+    {
+      "route": "/finance",
+      "run": 2,
+      "lcp": 508,
+      "cls": 0,
+      "interaction": 56,
+      "lcpElement": "<h1>Requests &amp; Finance</h1>",
+      "shifts": [],
+      "jsBytes": 86967
+    },
+    {
+      "route": "/design",
+      "run": 2,
+      "lcp": 1820,
+      "cls": 0,
+      "interaction": 72,
+      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">4 open requests \u00b7 0 delivered \u00b7 Shared with everyone \u00b7 Deadlines shown in America/Los_Angeles</p>",
+      "shifts": [],
+      "jsBytes": 82884
+    },
+    {
+      "route": "/officers",
+      "run": 2,
+      "lcp": 504,
+      "cls": 0,
+      "interaction": 80,
+      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
+      "shifts": [],
+      "jsBytes": 100630
+    },
+    {
+      "route": "/",
+      "run": 3,
+      "lcp": 1792,
+      "cls": 0,
+      "interaction": 88,
+      "lcpElement": "<span class=\"cell-sub\">Fri Nov 13, 2026 \u00b7 Engineering Atrium \u00b7 upcoming</span>",
+      "shifts": [],
+      "jsBytes": 75218
+    },
+    {
+      "route": "/events",
+      "run": 3,
+      "lcp": 1828,
+      "cls": 0,
+      "interaction": 56,
+      "lcpElement": "<h2 id=\"health-h\">Event health \u00b7 Founder Fireside</h2>",
+      "shifts": [],
+      "jsBytes": 83895
+    },
+    {
+      "route": "/members",
+      "run": 3,
+      "lcp": 1608,
+      "cls": 0.015537197788065844,
+      "interaction": 48,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [
+        {
+          "value": 0.015537197788065844,
+          "time": 1561.2999999523163,
+          "sources": [
+            {
+              "node": "<section class=\"block\" aria-label=\"Member directory\" aria-busy=\"false\"><form class=\"members-filters\"><label class=\"field members-search\"><span class=\"field-label\">Search members</span><input class=\"input\" type=\"search\" placeholder=\"Name, preferred na",
+              "before": {
+                "x": 280,
+                "y": 187.57778930664062,
+                "width": 1112,
+                "height": 434.9999694824219,
+                "top": 187.57778930664062,
+                "right": 1392,
+                "bottom": 622.5777587890625,
+                "left": 280
+              },
+              "after": {
+                "x": 280,
+                "y": 246.57778930664062,
+                "width": 1112,
+                "height": 373.4687194824219,
+                "top": 246.57778930664062,
+                "right": 1392,
+                "bottom": 620.0465087890625,
+                "left": 280
+              }
+            },
+            {
+              "node": "<span class=\"muted\">Source: cseed-membership \u00b7 People</span>",
+              "before": {
+                "x": 631.328125,
+                "y": 133.76112365722656,
+                "width": 215.453125,
+                "height": 18,
+                "top": 133.76112365722656,
+                "right": 846.78125,
+                "bottom": 151.76112365722656,
+                "left": 631.328125
+              },
+              "after": {
+                "x": 585.359375,
+                "y": 133.76112365722656,
+                "width": 215.453125,
+                "height": 18,
+                "top": 133.76112365722656,
+                "right": 800.8125,
+                "bottom": 151.76112365722656,
+                "left": 585.359375
+              }
+            },
+            {
+              "node": "<span>Synced daily, last never</span>",
+              "before": {
+                "x": 463.34375,
+                "y": 133.76112365722656,
+                "width": 144.578125,
+                "height": 18,
+                "top": 133.76112365722656,
+                "right": 607.921875,
+                "bottom": 151.76112365722656,
+                "left": 463.34375
+              },
+              "after": {
+                "x": 417.375,
+                "y": 133.76112365722656,
+                "width": 144.578125,
+                "height": 18,
+                "top": 133.76112365722656,
+                "right": 561.953125,
+                "bottom": 151.76112365722656,
+                "left": 417.375
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 66473
+    },
+    {
+      "route": "/finance",
+      "run": 3,
+      "lcp": 496,
+      "cls": 0,
+      "interaction": 56,
+      "lcpElement": "<h1>Requests &amp; Finance</h1>",
+      "shifts": [],
+      "jsBytes": 86967
+    },
+    {
+      "route": "/design",
+      "run": 3,
+      "lcp": 1840,
+      "cls": 0,
+      "interaction": 80,
+      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">4 open requests \u00b7 0 delivered \u00b7 Shared with everyone \u00b7 Deadlines shown in America/Los_Angeles</p>",
+      "shifts": [],
+      "jsBytes": 82884
+    },
+    {
+      "route": "/officers",
+      "run": 3,
+      "lcp": 500,
+      "cls": 0,
+      "interaction": 48,
+      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
+      "shifts": [],
+      "jsBytes": 100630
+    }
+  ]
+}
