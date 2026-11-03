@@ -67,3 +67,7 @@
 
 .cw-item-popover {max-height: calc(100vh - 24px); overflow-y: auto;}
 .cw-item-popover a:focus-visible {outline: 2px solid var(--c-blue); outline-offset: 2px;}
+
+/* Popovers share the motion scale; feed content uses the shared Async crossfade. */
+.cw-popover, .cw-item-popover {animation:pop-in var(--dur-2) var(--ease-out) backwards;}
+.cw .async-content {display:grid;gap:10px;min-width:0;}

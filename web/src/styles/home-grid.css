@@ -173,8 +173,8 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
 .blk-float {width: min(320px, 65vw); max-height: 300px; overflow: hidden; padding: 0;}
 .blk-float > .tile {min-height: 140px;}
 @media (prefers-reduced-motion: no-preference) {
-  .blk-body {animation: blk-enter 180ms ease-out;}
-  @keyframes blk-enter {from {opacity: 0; transform: scale(.97);} to {opacity: 1; transform: scale(1);}}
+  .blk-body {animation: blk-enter var(--dur-2) var(--ease-out) backwards;}
+  @keyframes blk-enter {from {opacity: .7; transform: scale(.97);} to {opacity: 1; transform: scale(1);}}
 }
 
 /* Compact, top-aligned links with generous hit areas. */
@@ -205,7 +205,8 @@ a.club-link:hover, a.club-link:focus-visible {background: var(--hover); outline-
 .tour-card h2 {margin: 8px 0; font-size: 22px;}
 .tour-card p {line-height: 1.6;}
 @media (prefers-reduced-motion: no-preference) {
-  .tour-card {transition: left 220ms ease, top 220ms ease;}
-  .tour-cutout {transition: x 220ms ease, y 220ms ease, width 220ms ease, height 220ms ease;}
+  .tour-card {transition: transform var(--dur-2) var(--ease-out);}
+  .tour-card-content {animation: enter var(--dur-2) var(--ease-out) backwards;}
+  .dashboard-tour[open] .tour-shade {animation: fade-in var(--dur-2) var(--ease-out);}
   .blk-resize--both {transition: opacity 140ms ease, color 140ms ease, background-color 140ms ease;}
 }

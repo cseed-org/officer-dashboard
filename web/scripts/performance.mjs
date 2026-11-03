@@ -12,7 +12,11 @@ const browser = await chromium.launch({ headless: true });
 const samples = [];
 for (let run = 1; run <= runs; run++) for (const route of routes) {
  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
- await context.request.get(`${origin}/auth/dev?as=director`, { maxRedirects: 0 });
+ const login = await context.request.post(`${origin}/auth/dev`, { form: { as: 'director' }, maxRedirects: 0 });
+ if (login.status() !== 303) throw new Error(`Dev sign-in failed: ${login.status()}`);
+ // Measure the returning-user dashboard; first-run coachmarks have their own browser checks.
+ const prefs = await context.request.put(`${origin}/api/me/prefs`, { data: { dashboardTutorialSeen: true } });
+ if (!prefs.ok()) throw new Error(`Preference setup failed: ${prefs.status()}`);
  const page = await context.newPage();
  const cdp = await context.newCDPSession(page);
  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
