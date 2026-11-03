@@ -404,7 +404,7 @@ func TestReissuedInviteLinkReplacesTheOldOneAndCorrectionsAreRateLimited(t *test
 
 func TestDirectorsDeactivateOfficersOnlyLeadershipDeactivatesDirectors(t *testing.T) {
 	e := newEnv(t)
-	second := e.mustOK(e.post("/api/admin/users", map[string]any{"name": "Second Director", "discordId": "100000000000000555", "role": "director"}, e.as("user-leadership"))).str("user", "id")
+	second := e.mustOK(e.post("/api/admin/users", map[string]any{"name": "Second Director", "discordId": "100000000000000555", "role": "director", "subteamId": "team-events"}, e.as("user-leadership"))).str("user", "id")
 	e.mustOK(e.do("PATCH", "/api/admin/users/user-marcus", map[string]any{"active": false}, e.director()))
 	e.mustOK(e.do("PATCH", "/api/admin/users/user-marcus", map[string]any{"active": true}, e.director()))
 	expectStatus(t, "director deactivates director", e.do("PATCH", "/api/admin/users/"+second, map[string]any{"active": false}, e.director()), 403)

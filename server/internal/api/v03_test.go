@@ -19,7 +19,7 @@ func TestV03RoleMatrix(t *testing.T) {
 			expectStatus(t, "grant leadership", e.do("PATCH", "/api/admin/users/user-ava", map[string]any{"role": "leadership"}, e.as(tc.user)), tc.role)
 		})
 	}
-	expectStatus(t, "director cannot create leadership", e.post("/api/admin/users", map[string]any{"name": "Boss", "discordId": "100000000000000099", "role": "leadership"}, e.director()), 403)
+	expectStatus(t, "director cannot create leadership", e.post("/api/admin/users", map[string]any{"name": "Boss", "discordId": "100000000000000099", "role": "leadership", "subteamId": "team-events"}, e.director()), 403)
 	expectStatus(t, "leadership admin", e.get("/api/admin/users", e.as("user-leadership")), 200)
 	expectStatus(t, "leadership finance", e.get("/api/finance/reports/trial-balance", e.as("user-leadership")), 200)
 	var hash string

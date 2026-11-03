@@ -256,6 +256,88 @@ func (c *Ctx) sendInviteDM(i *store.Invite, inviter *store.User, link string) DM
 	return DMResult{Status: "sent", SentAt: &at}
 }
 
+// inviteUpdate fixes the name or subteam of an invite that hasn't finished onboarding:
+// a pending invite keeps its link, and an accepted one also renames the account and moves
+// a saved profile, so the invitee's Confirm step shows the fix straight away.
+func (c *Ctx) inviteUpdate() error {
+	u, err := c.director()
+	if err != nil {
+		return err
+	}
+	var name, subteam validate.Field[string]
+	if err := c.jsonBody(func(r *validate.Reader) {
+		name = r.Str("name", validate.S{Trim: true, Min: 1, Max: 100})
+		subteam = r.Str("subteamId", validate.S{Min: 1, Max: 64})
+	}); err != nil {
+		return err
+	}
+	ctx := c.Context()
+	var out InviteDTO
+	err = c.S.db.Write(ctx, func(q *store.Queries) error {
+		me, err := q.UserByID(ctx, u.ID)
+		if err != nil || !me.Active || !auth.HasRole(me.Role, auth.RoleDirector) {
+			return forbidden("Requires director role")
+		}
+		before, err := q.InviteByID(ctx, c.R.PathValue("id"))
+		if err != nil {
+			return notFoundErr("Invite not found")
+		}
+		if before.OnboardedAt != nil {
+			return conflict("They've finished setup. Edit them on the Officers page instead.")
+		}
+		after := *before
+		if name.Set {
+			after.Name = name.V
+		}
+		if subteam.Set {
+			ok, err := q.SubteamExists(ctx, subteam.V)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				issues := &validate.Issues{}
+				issues.Add("subteamId", "Subteam not found")
+				return validationError(issues)
+			}
+			after.SubteamID = subteam.V
+		}
+		if err := q.UpdateInviteDetails(ctx, before.ID, after.Name, after.SubteamID); err != nil {
+			return err
+		}
+		if before.UserID != nil {
+			if name.Set {
+				if err := q.UpdateUser(ctx, *before.UserID, store.UserPatch{Name: optOf(name)}, c.S.nowMs()); err != nil {
+					return err
+				}
+			}
+			if subteam.Set {
+				if err := q.PatchProfile(ctx, *before.UserID, store.ProfilePatch{SubteamID: optOf(subteam)}); err != nil && !errors.Is(err, store.ErrNotFound) {
+					return err
+				}
+			}
+		}
+		snap := func(i *store.Invite) map[string]any { return map[string]any{"name": i.Name, "subteamId": i.SubteamID} }
+		if err := c.audit(ctx, q, "invite.updated", "invite", before.ID, snap(before), snap(&after)); err != nil {
+			return err
+		}
+		got, err := q.InviteByID(ctx, before.ID)
+		if err != nil {
+			return err
+		}
+		people, err := loadPeople(ctx, q)
+		if err != nil {
+			return err
+		}
+		out = people.invite(got, c.S.nowMs())
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"invite": out})
+	return nil
+}
+
 func (c *Ctx) inviteRevoke() error {
 	if _, err := c.director(); err != nil {
 		return err

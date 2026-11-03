@@ -53,7 +53,7 @@ func TestEntryDatesFollowThePacificCalendar(t *testing.T) {
 // #3: case-insensitive means Unicode, not just ASCII.
 func TestSearchAndFiltersFoldUnicodeCase(t *testing.T) {
 	e := newEnv(t)
-	e.mustOK(e.post("/api/admin/users", map[string]any{"discordId": "100000000000000055", "name": "José Núñez", "title": "Ñandú Lead"}, e.director()))
+	e.mustOK(e.post("/api/admin/users", map[string]any{"discordId": "100000000000000055", "name": "José Núñez", "title": "Ñandú Lead", "subteamId": "team-events"}, e.director()))
 	if r := e.mustOK(e.get("/api/search?q=JOS%C3%89", e.director())); kinds(r)["user"] != 1 {
 		t.Errorf("JOSÉ should find José Núñez: %s", r.Raw)
 	}
