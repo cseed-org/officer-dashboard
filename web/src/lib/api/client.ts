@@ -111,6 +111,8 @@ export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> 
   if (!res.ok) {
     const err = await toApiError(res);
     if (res.status === 401) redirectToLogin();
+    // The server holds invitees on setup until they finish (403 onboarding_required).
+    if (err.code === 'onboarding_required' && typeof location !== 'undefined' && location.pathname !== '/onboarding') location.replace('/onboarding');
     throw err;
   }
   if (res.status === 204) { const result = validate(name, { ok: true }); saved(); return result; }

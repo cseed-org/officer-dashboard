@@ -92,7 +92,7 @@ export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, 
           onCancel={onCloseAdd}
           onAdded={(u) => {
             if (state.status === 'ready') state.set({ users: [...state.data.users, u] });
-            setNotice({ tone: 'positive', text: `${u.name} can now sign in with Discord.`, n: Date.now() });
+            setNotice({ tone: 'positive', text: `${u.name} can now sign in with Discord. They’ll set up their profile first.`, n: Date.now() });
             onCloseAdd();
           }}
         />
@@ -263,7 +263,9 @@ function UserList({
 }
 
 function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolean; onAdded: (u: AdminUser) => void; onCancel: () => void }) {
-  const empty = { discordId: '', name: '', role: 'officer' as Role, title: '', email: '' };
+  const empty = { discordId: '', name: '', subteamId: '', role: 'officer' as Role, title: '', email: '' };
+  const lookups = useApi('lookups');
+  const subteams = lookups.status === 'ready' ? lookups.data.subteams : [];
   const [f, setF] = useState(empty);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -280,16 +282,17 @@ function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolea
         const parsed = AdminUserCreateRequest.safeParse({
           discordId: f.discordId.trim(),
           name: f.name,
+          subteamId: f.subteamId,
           role: f.role,
           title: f.title.trim() || null,
           email: f.email.trim() || null,
         });
         if (!parsed.success) {
           const fe = flattenError(parsed.error).fieldErrors as Record<string, string[] | undefined>;
-          const next = Object.fromEntries(Object.entries(fe).map(([k, v]) => [k, k === 'name' ? 'Enter their name.' : k === 'email' ? 'That is not an email address.' : v![0]!]));
+          const next = Object.fromEntries(Object.entries(fe).map(([k, v]) => [k, k === 'name' ? 'Enter their name.' : k === 'email' ? 'That is not an email address.' : k === 'subteamId' ? 'Choose their subteam.' : v![0]!]));
           setErrors(next);
-          const first = ['discordId', 'name', 'title', 'email'].find((k) => next[k]);
-          if (first) document.getElementById(`au-${first === 'discordId' ? 'discord' : first}`)?.focus();
+          const first = ['discordId', 'name', 'subteamId', 'title', 'email'].find((k) => next[k]);
+          if (first) document.getElementById(`au-${first === 'discordId' ? 'discord' : first === 'subteamId' ? 'subteam' : first}`)?.focus();
           return;
         }
         setErrors({});
@@ -311,6 +314,16 @@ function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolea
       </Field>
       <Field id="au-name" label="name" error={errors.name}>
         <input class="input" autoComplete="off" {...describe('au-name', errors.name)} value={f.name} onInput={(e) => set('name', e.currentTarget.value)} />
+      </Field>
+      <Field id="au-subteam" label="subteam" error={errors.subteamId} hint="They confirm it during setup, before the rest of the dashboard opens.">
+        <select class="select" {...describe('au-subteam', errors.subteamId, true)} value={f.subteamId} onChange={(e) => set('subteamId', e.currentTarget.value)}>
+          <option value="">{lookups.status === 'loading' ? 'Loading subteams…' : 'Choose a subteam'}</option>
+          {subteams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
       </Field>
       <Field id="au-title" label="title" optional error={errors.title}>
         <input class="input" placeholder="e.g. VP Events" {...describe('au-title', errors.title)} value={f.title} onInput={(e) => set('title', e.currentTarget.value)} />

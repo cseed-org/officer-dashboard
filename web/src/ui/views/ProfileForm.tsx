@@ -2,6 +2,7 @@ import { useImperativeHandle, useRef, useState } from 'preact/hooks';
 import type { Ref } from 'preact';
 import { api, ApiCallError, fieldErrors } from '../../lib/api/client';
 import type { MyProfile, ProfileResponse, ProfileUpsertRequest } from '../../lib/contracts';
+import { isGradMonth, isLinkedIn, PROFILE_MAX } from '../../lib/profileRules';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS_IN = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -32,6 +33,8 @@ function initial(p: MyProfile | null): Values {
 
 const OPTIONAL = ['preferredName', 'pronouns', 'personalEmail', 'schoolEmail', 'gradDate', 'title', 'startTerm', 'linkedin'] as const;
 
+const MAX: Partial<Record<keyof Values, number>> = PROFILE_MAX;
+
 /** Client checks with the same copy as the server, so errors read the same either way. */
 function check(v: Values, needsSubteam: boolean): Record<string, string> {
   const e: Record<string, string> = {};
@@ -43,7 +46,8 @@ function check(v: Values, needsSubteam: boolean): Record<string, string> {
   const email = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   if (v.personalEmail && !email.test(v.personalEmail.trim())) e.personalEmail = 'Enter a valid email, like you@example.org';
   if (v.schoolEmail && !email.test(v.schoolEmail.trim())) e.schoolEmail = 'Enter a valid email, like you@school.edu';
-  if (v.linkedin && !/^https:\/\/([a-z0-9-]+\.)*linkedin\.com\//i.test(v.linkedin.trim())) e.linkedin = 'Use your https://linkedin.com/in/… address';
+  if (v.gradDate.trim() && !isGradMonth(v.gradDate.trim())) e.gradDate = 'Enter a month, like 2028-05';
+  if (v.linkedin.trim() && !isLinkedIn(v.linkedin.trim())) e.linkedin = 'Use your https://linkedin.com/in/… address';
   if (needsSubteam && !v.subteamId) e.subteamId = 'Choose your subteam';
   return e;
 }
@@ -51,6 +55,8 @@ function check(v: Values, needsSubteam: boolean): Record<string, string> {
 export interface ProfileFormHandle {
   /** Validates and saves. Resolves true on success. */
   submit: () => Promise<boolean>;
+  /** True when the entries differ from what was last saved. */
+  dirty: () => boolean;
 }
 
 /**
@@ -71,6 +77,7 @@ export function ProfileForm({
   showSave?: boolean;
 }) {
   const [v, setV] = useState<Values>(() => initial(data.profile));
+  const savedValues = useRef<Values>(initial(data.profile));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -121,6 +128,7 @@ export function ProfileForm({
     setBusy(true);
     try {
       const r = await api('profilePut', { body });
+      savedValues.current = v;
       setSaved(true);
       onSaved?.(r);
       return true;
@@ -135,7 +143,8 @@ export function ProfileForm({
       setBusy(false);
     }
   };
-  useImperativeHandle(handle as Ref<ProfileFormHandle>, () => ({ submit }), [v, needsSubteam]);
+  const dirty = () => (Object.keys(v) as (keyof Values)[]).some((k) => v[k].trim() !== savedValues.current[k].trim());
+  useImperativeHandle(handle as Ref<ProfileFormHandle>, () => ({ submit, dirty }), [v, needsSubteam]);
 
   const desc = (id: string, hint = false) => {
     const ids = [hint && `pf-${id}-hint`, errors[id] && `pf-${id}-error`].filter(Boolean).join(' ');
@@ -152,7 +161,7 @@ export function ProfileForm({
       <label class="field-label" for={`pf-${id}`}>
         {label}
       </label>
-      <input class="input" id={`pf-${id}`} type={type as "text"} autocomplete={auto} value={v[id]} onInput={set(id)} {...desc(id)} />
+      <input class="input" id={`pf-${id}`} type={type as "text"} autocomplete={auto} maxLength={MAX[id]} value={v[id]} onInput={set(id)} {...desc(id)} />
       {err(id)}
     </div>
   );
@@ -180,7 +189,7 @@ export function ProfileForm({
           <label class="field-label" for="pf-phone">
             Phone · required
           </label>
-          <input class="input" id="pf-phone" type="tel" autocomplete="tel" value={v.phone} onInput={set('phone')} required {...desc('phone', true)} />
+          <input class="input" id="pf-phone" type="tel" autocomplete="tel" maxLength={MAX.phone} value={v.phone} onInput={set('phone')} required {...desc('phone', true)} />
           <p class="field-hint" id="pf-phone-hint">
             Visible to directors and leadership only (including owners).
           </p>
@@ -245,7 +254,10 @@ export function ProfileForm({
             <label class="field-label" for="pf-gradDate">
               Graduation date
             </label>
-            <input class="input" id="pf-gradDate" type="month" value={v.gradDate} onInput={set('gradDate')} {...desc('gradDate')} />
+            <input class="input" id="pf-gradDate" type="month" placeholder="2028-05" maxLength={7} value={v.gradDate} onInput={set('gradDate')} {...desc('gradDate', true)} />
+            <p class="field-hint" id="pf-gradDate-hint">
+              Month and year, like 2028-05.
+            </p>
             {err('gradDate')}
           </div>
           {text('title', 'Title', 'text', 'organization-title')}
