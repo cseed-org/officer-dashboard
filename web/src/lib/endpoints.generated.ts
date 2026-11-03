@@ -8,6 +8,7 @@ const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   buildspaceActivityCreate: { method: 'POST', path: '/api/buildspace/activity' },
   buildspaceActivityResolve: { method: 'POST', path: '/api/buildspace/activity/:id/resolve' },
   buildspaceIngest: { method: 'POST', path: '/api/ingest/buildspace' },
+  buildspaceSchedulePut: { method: 'PUT', path: '/api/buildspace/schedule' },
   membersList: { method: 'GET', path: '/api/members' },
   membersExport: { method: 'GET', path: '/api/members/export' },
   memberDetail: { method: 'GET', path: '/api/members/:id' },
