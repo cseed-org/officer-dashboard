@@ -4,9 +4,20 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
+
+// devPost signs in through the dev login form.
+func (e *testEnv) devPost(form url.Values, who actor) reply {
+	e.t.Helper()
+	return e.do("POST", "/auth/dev", form, who)
+}
+
+func sessionFrom(e *testEnv, r reply) actor {
+	return actor{cookie: cookieNamed(setCookies(r), e.srv.sessionCookieName())}
+}
 
 func TestDevLoginNeedsTheDevBuildAndDEV_AUTH(t *testing.T) {
 	if !DevBuild {
@@ -14,105 +25,152 @@ func TestDevLoginNeedsTheDevBuildAndDEV_AUTH(t *testing.T) {
 	}
 	off := newEnv(t, func(c *Config) { c.DevAuth = false })
 	expectStatus(t, "DEV_AUTH unset", off.get("/auth/dev?as=director", anon), 404)
+	expectStatus(t, "DEV_AUTH unset POST", off.devPost(url.Values{"as": {"director"}}, anon), 404)
 
 	e := newEnv(t, func(c *Config) { c.DevAuth = true })
-	expectStatus(t, "bad role", e.get("/auth/dev?as=root", anon), 400)
-	r := e.get("/auth/dev?as=director&next=/finance", anon)
-	if r.Status != 302 || r.Header.Get("Location") != "/finance" {
+	expectStatus(t, "bad role", e.devPost(url.Values{"as": {"root"}}, anon), 400)
+	r := e.devPost(url.Values{"as": {"director"}, "next": {"/finance"}}, anon)
+	if r.Status != 303 || r.Header.Get("Location") != "/finance" {
 		t.Fatalf("dev login → %d %s", r.Status, r.Header.Get("Location"))
 	}
-	session := cookieNamed(setCookies(r), e.srv.sessionCookieName())
-	if session == nil {
-		t.Fatal("no session cookie")
-	}
-	me := e.get("/api/me", actor{cookie: session})
+	me := e.get("/api/me", sessionFrom(e, r))
 	if me.str("user", "role") != "director" || me.str("user", "id") != "user-director" {
 		t.Errorf("me %s", me.Raw)
 	}
-	r = e.get("/auth/dev?as=officer&next=//evil.example", anon)
-	if r.Header.Get("Location") != "/" {
+	if r := e.devPost(url.Values{"as": {"officer"}, "next": {"//evil.example"}}, anon); r.Header.Get("Location") != "/" {
 		t.Errorf("open redirect: %s", r.Header.Get("Location"))
 	}
-	r = e.get("/auth/dev?as=officer&user=user-riley", anon)
-	if me := e.get("/api/me", actor{cookie: cookieNamed(setCookies(r), e.srv.sessionCookieName())}); me.str("user", "id") != "user-riley" {
+	r = e.devPost(url.Values{"as": {"officer"}, "user": {"user-riley"}}, anon)
+	if me := e.get("/api/me", sessionFrom(e, r)); me.str("user", "id") != "user-riley" {
 		t.Errorf("dev login as a chosen user: %s", me.Raw)
 	}
-	expectStatus(t, "chosen user with another role", e.get("/auth/dev?as=director&user=user-riley", anon), 400)
+	expectStatus(t, "chosen user with another role", e.devPost(url.Values{"as": {"director"}, "user": {"user-riley"}}, anon), 400)
+}
+
+// A GET never signs anyone in: a link (or an <img> on another site) only shows a
+// confirmation page whose button posts the form.
+func TestDevLoginGETOnlyConfirms(t *testing.T) {
+	e := newEnv(t, keyed)
+	r := e.get("/auth/dev?as=officer&key="+testDevKey+"&next=/events", anon)
+	if r.Status != 200 || !strings.HasPrefix(r.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("confirm page → %d %s", r.Status, r.Header.Get("Content-Type"))
+	}
+	if len(setCookies(r)) != 0 || e.scalar(`SELECT count(*) FROM sessions`) != int64(0) {
+		t.Fatal("a GET created a session or set cookies")
+	}
+	if csp := r.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self'") || strings.Contains(csp, "script-src") {
+		t.Errorf("confirm page CSP %q", csp)
+	}
+	body := string(r.Raw)
+	for _, want := range []string{`method="post"`, `action="/auth/dev"`, `name="as" value="officer"`, `name="next" value="/events"`, `name="key"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("confirm page lacks %s:\n%s", want, body)
+		}
+	}
+	// Values are escaped, never reflected raw.
+	r = e.get("/auth/dev?as=officer&key="+testDevKey+"&next=/%22%3E%3Cscript%3Ealert(1)%3C/script%3E", anon)
+	if strings.Contains(string(r.Raw), "<script>alert(1)") {
+		t.Errorf("reflected markup: %s", r.Raw)
+	}
+	expectStatus(t, "confirm without the key", e.get("/auth/dev?as=officer", anon), 404)
 }
 
 const testDevKey = "test-dev-key-0123456789abcdef"
 
 func keyed(c *Config) { c.DevAuth, c.DevAuthKey = true, testDevKey }
 
-// With DEV_AUTH_KEY set, /auth/dev needs the key: a missing or wrong key looks exactly like
-// a release build (404, no cookies, no session, no hint).
-func TestDevLoginKeyRequired(t *testing.T) {
+// With DEV_AUTH_KEY set, every dev login must carry the key: a missing or wrong key looks
+// exactly like a release build (no cookies, no session, no hint), and there is no
+// remembered-key cookie any more.
+func TestDevLoginKeyRequiredEveryTime(t *testing.T) {
 	e := newEnv(t, keyed)
-	for _, p := range []string{
-		"/auth/dev?as=director",
-		"/auth/dev?as=director&key=",
-		"/auth/dev?as=director&key=wrong",
-		"/auth/dev?as=director&key=" + testDevKey + "x",
-		"/auth/dev?discord=000000000000000001",
+	for _, f := range []url.Values{
+		{"as": {"director"}},
+		{"as": {"director"}, "key": {""}},
+		{"as": {"director"}, "key": {"wrong"}},
+		{"as": {"director"}, "key": {testDevKey + "x"}},
+		{"discord": {"000000000000000001"}},
 	} {
-		r := e.get(p, anon)
+		r := e.devPost(f, anon)
 		if r.Status != 404 || len(setCookies(r)) != 0 {
-			t.Errorf("GET %s → %d cookies %v, want a bare 404", p, r.Status, setCookies(r))
+			t.Errorf("POST %v → %d cookies %v, want the release build's 404", f, r.Status, setCookies(r))
 		}
 		if strings.Contains(string(r.Raw), "DEV_AUTH") || strings.Contains(strings.ToLower(string(r.Raw)), "key") {
-			t.Errorf("GET %s leaks a hint: %s", p, r.Raw)
+			t.Errorf("POST %v leaks a hint: %s", f, r.Raw)
 		}
 	}
-	// A wrong cookie is refused too.
-	if r := e.get("/auth/dev?as=director", actor{cookies: []*http.Cookie{{Name: devKeyCookie, Value: devKeyDigest("nope")}}}); r.Status != 404 {
-		t.Errorf("wrong dev_key cookie → %d", r.Status)
-	}
+	// The old remembered-key cookie no longer authorizes anything.
+	old := actor{cookies: []*http.Cookie{{Name: "dev_key", Value: devKeyDigest(testDevKey)}}}
+	expectStatus(t, "dev_key cookie", e.devPost(url.Values{"as": {"director"}}, old), 404)
 	if n := e.scalar(`SELECT count(*) FROM sessions`); n != int64(0) {
 		t.Fatalf("%v sessions created without the key", n)
 	}
 
-	// The right key signs in, keeps next (SafeNext still applies) and remembers the key.
-	r := e.get("/auth/dev?as=officer&key="+testDevKey+"&next=/events", anon)
-	if r.Status != 302 || r.Header.Get("Location") != "/events" {
+	r := e.devPost(url.Values{"as": {"officer"}, "key": {testDevKey}, "next": {"/events"}}, anon)
+	if r.Status != 303 || r.Header.Get("Location") != "/events" {
 		t.Fatalf("keyed dev login → %d %s", r.Status, r.Header.Get("Location"))
 	}
-	if cookieNamed(setCookies(r), e.srv.sessionCookieName()) == nil {
-		t.Fatal("no session cookie")
+	for _, c := range setCookies(r) {
+		if strings.Contains(c.Name, "dev_key") {
+			t.Errorf("dev login set %s", c.Name)
+		}
 	}
-	dk := cookieNamed(setCookies(r), devKeyCookie)
-	if dk == nil || !dk.HttpOnly || dk.SameSite != http.SameSiteLaxMode || dk.Path != "/" || dk.MaxAge != 30*24*3600 {
-		t.Fatalf("dev_key cookie %+v", dk)
-	}
-	if dk.Value == testDevKey || strings.Contains(dk.Value, testDevKey) {
-		t.Error("the dev_key cookie must not carry the key itself")
-	}
-	if r := e.get("/auth/dev?as=officer&key="+testDevKey+"&next=//evil.example", anon); r.Header.Get("Location") != "/" {
-		t.Errorf("open redirect: %s", r.Header.Get("Location"))
-	}
-
-	// Later, the cookie alone is enough to switch roles.
-	r = e.get("/auth/dev?as=director&next=/finance", actor{cookies: []*http.Cookie{dk}})
-	if r.Status != 302 || r.Header.Get("Location") != "/finance" {
-		t.Fatalf("cookie dev login → %d %s", r.Status, r.Header.Get("Location"))
-	}
-	me := e.get("/api/me", actor{cookie: cookieNamed(setCookies(r), e.srv.sessionCookieName())})
-	if me.str("user", "role") != "director" {
+	if me := e.get("/api/me", sessionFrom(e, r)); me.str("user", "role") != "officer" {
 		t.Errorf("me %s", me.Raw)
-	}
-
-	// A different key invalidates old cookies.
-	e2 := newEnv(t, func(c *Config) { c.DevAuth, c.DevAuthKey = true, "another-key-0123456789" })
-	if r := e2.get("/auth/dev?as=director", actor{cookies: []*http.Cookie{dk}}); r.Status != 404 {
-		t.Errorf("cookie for an old key → %d", r.Status)
 	}
 }
 
-func TestDevKeyCookieSecureOverHTTPS(t *testing.T) {
+// Login CSRF: another site cannot post the form to sign a visitor in as someone else.
+func TestDevLoginRefusesCrossSitePosts(t *testing.T) {
+	e := newEnv(t, keyed)
+	form := url.Values{"as": {"director"}, "key": {testDevKey}}
+	for _, h := range []map[string]string{
+		{"Origin": "https://evil.example"},
+		{"Sec-Fetch-Site": "cross-site"},
+	} {
+		r := e.devPost(form, actor{headers: h})
+		expectStatus(t, "cross-site "+strings.Join(mapKeys(h), ","), r, 403)
+		if len(setCookies(r)) != 0 {
+			t.Errorf("cross-site post set cookies")
+		}
+	}
+	expectStatus(t, "same-origin", e.devPost(form, actor{headers: map[string]string{"Origin": "http://localhost:8090", "Sec-Fetch-Site": "same-origin"}}), 303)
+}
+
+func mapKeys(m map[string]string) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// ?discord= signs in as a Discord account the way /auth/callback would, but never as an
+// owner or leadership account: those keep needing real Discord sign-in.
+func TestDevLoginByDiscordCannotTargetLeadership(t *testing.T) {
+	e := newEnv(t, keyed)
+	for _, id := range []string{"100000000000000005"} { // user-leadership, the owner
+		r := e.devPost(url.Values{"discord": {id}, "key": {testDevKey}}, anon)
+		expectStatus(t, "discord= leadership", r, 403)
+		if len(setCookies(r)) != 0 {
+			t.Error("refused discord= login set cookies")
+		}
+	}
+	r := e.devPost(url.Values{"discord": {"100000000000000002"}, "key": {testDevKey}}, anon)
+	if r.Status != 303 {
+		t.Fatalf("discord= officer → %d %s", r.Status, r.Raw)
+	}
+	if me := e.get("/api/me", sessionFrom(e, r)); me.str("user", "id") != "user-priya" {
+		t.Errorf("me %s", me.Raw)
+	}
+}
+
+func TestDevCookieSecureOverHTTPS(t *testing.T) {
 	e := newEnv(t, keyed, func(c *Config) { c.AppURL = "https://dash.example.org" })
-	r := e.get("/auth/dev?as=officer&key="+testDevKey, anon)
-	dk := cookieNamed(setCookies(r), "__Host-"+devKeyCookie)
-	if r.Status != 302 || dk == nil || !dk.Secure {
-		t.Fatalf("https dev login → %d cookie %+v", r.Status, dk)
+	r := e.do("POST", "/auth/dev", url.Values{"as": {"officer"}, "key": {testDevKey}}, actor{headers: map[string]string{"Origin": "https://dash.example.org"}})
+	s := cookieNamed(setCookies(r), "__Host-cseed_session")
+	if r.Status != 303 || s == nil || !s.Secure {
+		t.Fatalf("https dev login → %d cookie %+v", r.Status, s)
 	}
 }
 
@@ -140,17 +198,54 @@ func TestDevInfo(t *testing.T) {
 		t.Errorf("keyed, wrong key: %s", r.Raw)
 	}
 	r := e.get("/auth/dev/info?key="+testDevKey, anon)
-	if read(r) != (info{true, true, true}) {
-		t.Errorf("keyed, right key: %s", r.Raw)
-	}
-	dk := cookieNamed(setCookies(r), devKeyCookie)
-	if dk == nil {
-		t.Fatal("info with the key should remember it")
-	}
-	if r := e.get("/auth/dev/info", actor{cookies: []*http.Cookie{dk}}); read(r) != (info{true, true, true}) {
-		t.Errorf("keyed, cookie: %s", r.Raw)
+	if read(r) != (info{true, true, true}) || len(setCookies(r)) != 0 {
+		t.Errorf("keyed, right key: %s cookies %v", r.Raw, setCookies(r))
 	}
 	if strings.Contains(string(r.Raw), testDevKey) {
 		t.Error("info echoes the key")
+	}
+}
+
+// Dev login never signs in as an owner: as=leadership picks (or creates) a leadership
+// account without ownership, and user= cannot name an owner.
+func TestDevLoginNeverSignsInAsAnOwner(t *testing.T) {
+	e := newEnv(t, keyed)
+	r := e.devPost(url.Values{"as": {"leadership"}, "key": {testDevKey}}, anon)
+	if r.Status != 303 {
+		t.Fatalf("as=leadership → %d %s", r.Status, r.Raw)
+	}
+	me := e.get("/api/me", sessionFrom(e, r))
+	if me.str("user", "role") != "leadership" || me.at("user", "isOwner") == true || me.str("user", "id") == "user-leadership" {
+		t.Errorf("as=leadership signed in as %s", me.Raw)
+	}
+	// Again: the same non-owner account, not a new one each time.
+	again := e.get("/api/me", sessionFrom(e, e.devPost(url.Values{"as": {"leadership"}, "key": {testDevKey}}, anon)))
+	if again.str("user", "id") != me.str("user", "id") {
+		t.Errorf("second leadership login %s, first %s", again.str("user", "id"), me.str("user", "id"))
+	}
+	r = e.devPost(url.Values{"as": {"leadership"}, "user": {"user-leadership"}, "key": {testDevKey}}, anon)
+	expectStatus(t, "user= an owner", r, 403)
+	if len(setCookies(r)) != 0 {
+		t.Error("refused owner login set cookies")
+	}
+}
+
+// Owner controls still need e2e coverage, so a local dev server (no DEV_AUTH_KEY, which the
+// startup check confines to loopback) may sign in with as=owner. A keyed, shared test
+// deployment never can.
+func TestDevLoginAsOwnerOnlyOnALocalUnkeyedServer(t *testing.T) {
+	local := newEnv(t, func(c *Config) { c.DevAuth = true })
+	r := local.devPost(url.Values{"as": {"owner"}}, anon)
+	if r.Status != 303 {
+		t.Fatalf("local as=owner → %d %s", r.Status, r.Raw)
+	}
+	if me := local.get("/api/me", sessionFrom(local, r)); me.at("user", "isOwner") != true {
+		t.Errorf("as=owner signed in as %s", me.Raw)
+	}
+	shared := newEnv(t, keyed)
+	r = shared.devPost(url.Values{"as": {"owner"}, "key": {testDevKey}}, anon)
+	expectStatus(t, "keyed as=owner", r, 403)
+	if len(setCookies(r)) != 0 {
+		t.Error("refused owner login set cookies")
 	}
 }

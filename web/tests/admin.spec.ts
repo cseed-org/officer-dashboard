@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { devLogin, openDialog, overflow, settle, watchErrors } from './helpers';
+import { devLogin, devLoginOwner, openDialog, overflow, ownerLoginAvailable, settle, watchErrors } from './helpers';
 
 /** Admin flows (adopted from the integration QA run). Each run adds an officer and a revoked token. */
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'creates records; one viewport is enough'));
@@ -7,7 +7,9 @@ const stamp = () => Date.now().toString(36);
 
 test('admin: add an officer in the drawer, change their role, deactivate and reactivate them', async ({ page }) => {
   const errors = watchErrors(page);
-  await devLogin(page, 'leadership');
+  // The owner sees the full menu (co-owner first); keyed test servers only offer leadership.
+  if (ownerLoginAvailable) await devLoginOwner(page);
+  else await devLogin(page, 'leadership');
   await page.goto('/officers?tab=access');
   await settle(page);
   await expect(page.locator('[data-officer-count]')).toContainText(/active officers?/);
@@ -50,7 +52,7 @@ test('admin: add an officer in the drawer, change their role, deactivate and rea
 
   // Deactivate from the ⋯ menu (keyboard), then it is hidden until "show deactivated".
   await row.getByRole('button', { name: `Actions for ${name}` }).click();
-  await expect(page.getByRole('menuitem', { name: 'Make co-owner' })).toBeFocused();
+  if (ownerLoginAvailable) await expect(page.getByRole('menuitem', { name: 'Make co-owner' })).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await expect(page.getByRole('menuitem', { name: 'deactivate' })).toBeFocused();
   page.once('dialog', (d) => void d.accept());

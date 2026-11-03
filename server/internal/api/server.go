@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"officerdashboard/internal/notion"
 	"officerdashboard/internal/purchases"
 	"officerdashboard/internal/store"
+	"officerdashboard/internal/web"
 )
 
 // Config wires the server to its collaborators.
@@ -47,6 +49,12 @@ type Config struct {
 	// DevAuthKey, when set, gates /auth/dev behind ?key=<DevAuthKey> (or the dev_key cookie).
 	// Dev builds only; never logged.
 	DevAuthKey string
+	// AuthRateLimit and UploadRateLimit are the requests per minute one client IP may make
+	// to /auth/* and to the upload/import routes. 0 uses the defaults; negative disables.
+	AuthRateLimit, UploadRateLimit int
+	// TrustedProxies are the peers whose X-Forwarded-For names the client (TRUSTED_PROXIES).
+	// nil means loopback only.
+	TrustedProxies []*net.IPNet
 	// Static serves the front end for every non-API path; nil answers 404 JSON.
 	Static  http.Handler
 	Version string
@@ -60,6 +68,9 @@ type Server struct {
 	log    *slog.Logger
 	secure bool
 	host   string // APP_URL host, for the Origin check
+
+	authLimit, uploadLimit *rateLimiter
+	trustedProxies         []*net.IPNet
 
 	sealer     *calendar.Sealer
 	bg         sync.WaitGroup // background calendar deliveries
@@ -92,6 +103,12 @@ func New(cfg Config) *Server {
 		cfg.Version = "0.1.0"
 	}
 	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log}
+	s.trustedProxies = cfg.TrustedProxies
+	if s.trustedProxies == nil {
+		s.trustedProxies = DefaultTrustedProxies()
+	}
+	s.authLimit = newRateLimiter(orDefault(cfg.AuthRateLimit, defaultAuthRateLimit), cfg.Now)
+	s.uploadLimit = newRateLimiter(orDefault(cfg.UploadRateLimit, defaultUploadRateLimit), cfg.Now)
 	if cfg.Google != nil {
 		s.sealer = calendar.NewSealer(cfg.Google.ClientSecret)
 	}
@@ -163,6 +180,7 @@ func (s *Server) Handler() http.Handler {
 	s.routes(mux)
 	var h http.Handler = mux
 	h = s.withAuth(h)
+	h = s.withRateLimit(h)
 	h = s.withAPIHygiene(h)
 	h = s.withRecover(h)
 	return h
@@ -202,6 +220,15 @@ func (s *Server) withAPIHygiene(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
+		// Nothing but a page may load or run anything; the static handler replaces this with
+		// the page policy (script hashes) on HTML documents.
+		h.Set("Content-Security-Policy", apiCSP)
+		h.Set("Permissions-Policy", web.PermissionsPolicy)
+		// A body is never sent untyped: Go would sniff it, and a sniffed text/html body is a
+		// reflected-XSS vector. Every handler sets its real type with Set, which replaces this
+		// default; one that forgot sends inert bytes. Setting it up front (rather than wrapping
+		// the writer) keeps response bytes flowing straight to the real ResponseWriter.
+		h.Set("Content-Type", "application/octet-stream")
 		if s.secure {
 			h.Set("Strict-Transport-Security", "max-age=31536000")
 		}
@@ -213,6 +240,9 @@ func (s *Server) withAPIHygiene(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// apiCSP is the policy of every non-page response (JSON, files, redirects, errors).
+const apiCSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 
 // requireLeadership protects role assignment, including promotions to leadership.
 func (c *Ctx) requireLeadership() (*store.User, error) {

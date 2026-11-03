@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -98,6 +99,7 @@ type actor struct {
 	token   string
 	cookies []*http.Cookie
 	headers map[string]string
+	remote  string // RemoteAddr; httptest's default is 192.0.2.1:1234
 }
 
 func (e *testEnv) as(userID string) actor { return actor{cookie: e.login(userID)} }
@@ -171,6 +173,8 @@ func (e *testEnv) do(method, path string, body any, who actor) reply {
 		}
 		_ = mw.Close()
 		rd, ctype = &buf, mw.FormDataContentType()
+	case url.Values:
+		rd, ctype = strings.NewReader(b.Encode()), "application/x-www-form-urlencoded"
 	case string:
 		rd, ctype = strings.NewReader(b), "application/json"
 	default:
@@ -195,6 +199,9 @@ func (e *testEnv) do(method, path string, body any, who actor) reply {
 	}
 	if who.token != "" {
 		req.Header.Set("Authorization", "Bearer "+who.token)
+	}
+	if who.remote != "" {
+		req.RemoteAddr = who.remote
 	}
 	rec := httptest.NewRecorder()
 	e.h.ServeHTTP(rec, req)

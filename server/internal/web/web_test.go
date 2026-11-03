@@ -1,6 +1,8 @@
 package web
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -73,5 +75,43 @@ func TestUnknownPathsGetTheFallbackAndNeverLeakDotfilesOrEscapeTheRoot(t *testin
 	}
 	if rec := get(h, "HEAD", "/nope"); rec.Code != 404 || rec.Body.Len() != 0 {
 		t.Errorf("HEAD fallback → %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+// Every HTML page gets a Content-Security-Policy that allows exactly its own inline
+// scripts (by sha256) and nothing inline beyond them; other files get a type and nosniff.
+func TestHTMLPagesCarryAContentSecurityPolicyWithTheirScriptHashes(t *testing.T) {
+	inline := "console.log('prepaint')"
+	fs := site()
+	fs["app.html"] = &fstest.MapFile{Data: []byte("<!doctype html><script>" + inline + "</script><script type=\"module\" src=\"/_astro/app.abc123.js\"></script><h1>app</h1>")}
+	fs["weird.bin"] = &fstest.MapFile{Data: []byte("<html><script>alert(1)</script>")}
+	h := Handler(fs, Options{})
+	rec := get(h, "GET", "/app")
+	csp := rec.Header().Get("Content-Security-Policy")
+	sum := sha256.Sum256([]byte(inline))
+	hash := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+	for _, want := range []string{"default-src 'self'", "script-src 'self' " + hash, "img-src 'self' data: blob: https://cdn.discordapp.com",
+		"object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "form-action 'self' https://discord.com https://accounts.google.com"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP lacks %q: %s", want, csp)
+		}
+	}
+	if strings.Contains(csp, "unsafe-inline';") && strings.Contains(csp, "script-src 'self' 'unsafe-inline'") || strings.Contains(csp, "unsafe-eval") {
+		t.Errorf("CSP allows arbitrary inline script: %s", csp)
+	}
+	if pp := rec.Header().Get("Permissions-Policy"); !strings.Contains(pp, "camera=()") || !strings.Contains(pp, "geolocation=()") {
+		t.Errorf("Permissions-Policy %q", pp)
+	}
+	// The 404 page is HTML too.
+	if nf := get(h, "GET", "/missing"); nf.Header().Get("Content-Security-Policy") == "" || !strings.HasPrefix(nf.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("404 headers %v", nf.Header())
+	}
+	// Unknown types are never sniffed into HTML.
+	bin := get(h, "GET", "/weird.bin")
+	if ct := bin.Header().Get("Content-Type"); strings.HasPrefix(ct, "text/html") || ct == "" {
+		t.Errorf("unknown file served as %q", ct)
+	}
+	if bin.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("missing nosniff")
 	}
 }

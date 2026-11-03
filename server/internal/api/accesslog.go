@@ -6,10 +6,11 @@ import (
 	"time"
 )
 
+// statusWriter records the status a handler sends. It only observes WriteHeader: response
+// bytes go straight to the underlying writer (the embedded Write), never through this code.
 type statusWriter struct {
 	http.ResponseWriter
 	status int
-	bytes  int
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -17,15 +18,6 @@ func (w *statusWriter) WriteHeader(code int) {
 		w.status = code
 	}
 	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *statusWriter) Write(b []byte) (int, error) {
-	if w.status == 0 {
-		w.status = http.StatusOK
-	}
-	n, err := w.ResponseWriter.Write(b)
-	w.bytes += n
-	return n, err
 }
 
 // Unwrap lets http.ResponseController reach the underlying writer.
@@ -42,6 +34,10 @@ func AccessLog(next http.Handler, log *slog.Logger) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r)
-		log.Info("request", "method", r.Method, "path", r.URL.Path, "status", sw.status, "ms", float64(time.Since(start).Microseconds())/1000, "bytes", sw.bytes)
+		status := sw.status
+		if status == 0 {
+			status = http.StatusOK // the handler wrote a body without calling WriteHeader
+		}
+		log.Info("request", "method", r.Method, "path", r.URL.Path, "status", status, "ms", float64(time.Since(start).Microseconds())/1000)
 	})
 }

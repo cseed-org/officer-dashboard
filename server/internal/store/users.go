@@ -102,9 +102,10 @@ func (q *Queries) Users(ctx context.Context) ([]User, error) {
 	return out, rows.Err()
 }
 
-// FirstActiveUserWithRole is the dev-login pick: oldest active user with the role.
+// FirstActiveUserWithRole is the dev-login pick: oldest active user with the role who is not
+// a dashboard owner (dev login never grants ownership).
 func (q *Queries) FirstActiveUserWithRole(ctx context.Context, role string) (*User, error) {
-	u, err := scanUser(q.q.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE role = ? AND active = 1 ORDER BY created_at, id LIMIT 1`, role))
+	u, err := scanUser(q.q.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE role = ? AND active = 1 AND is_owner = 0 ORDER BY created_at, id LIMIT 1`, role))
 	return u, notFound(err)
 }
 
@@ -156,6 +157,7 @@ func (q *Queries) SetAvatar(ctx context.Context, id string, avatar *string) erro
 type Session struct {
 	ID        string
 	ExpiresAt int64
+	CreatedAt int64 // sign-in time; bounds the session's absolute lifetime
 	User      User
 }
 
@@ -174,16 +176,16 @@ func (q *Queries) InsertSession(ctx context.Context, idHash, userID string, expi
 
 // SessionByHash returns the live session and its active user, or ErrNotFound.
 func (q *Queries) SessionByHash(ctx context.Context, idHash string, now int64) (*Session, error) {
-	row := q.q.QueryRowContext(ctx, `SELECT s.id, s.expires_at, u.id, u.discord_id, u.name, u.email, u.avatar_url, u.role, u.is_owner, u.active, u.title, u.last_login_at, u.created_at, u.updated_at
+	row := q.q.QueryRowContext(ctx, `SELECT s.id, s.expires_at, s.created_at, u.id, u.discord_id, u.name, u.email, u.avatar_url, u.role, u.is_owner, u.active, u.title, u.last_login_at, u.created_at, u.updated_at
 		FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > ? AND u.active = 1`, idHash, now)
 	var s Session
 	var last *Ms
-	var exp Ms
-	err := row.Scan(&s.ID, &exp, &s.User.ID, &s.User.DiscordID, &s.User.Name, &s.User.Email, &s.User.AvatarURL, &s.User.Role, &s.User.IsOwner, &s.User.Active, &s.User.Title, &last, &s.User.CreatedAt, &s.User.UpdatedAt)
+	var exp, created Ms
+	err := row.Scan(&s.ID, &exp, &created, &s.User.ID, &s.User.DiscordID, &s.User.Name, &s.User.Email, &s.User.AvatarURL, &s.User.Role, &s.User.IsOwner, &s.User.Active, &s.User.Title, &last, &s.User.CreatedAt, &s.User.UpdatedAt)
 	if err != nil {
 		return nil, notFound(err)
 	}
-	s.ExpiresAt = int64(exp)
+	s.ExpiresAt, s.CreatedAt = int64(exp), int64(created)
 	return &s, nil
 }
 

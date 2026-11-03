@@ -87,6 +87,15 @@ func (q *Queries) RevokeToken(ctx context.Context, id string, now int64) error {
 	return err
 }
 
+// RevokeUserTokens revokes every live token a user created (deactivation or demotion).
+func (q *Queries) RevokeUserTokens(ctx context.Context, userID string, now int64) (int64, error) {
+	res, err := q.q.ExecContext(ctx, `UPDATE service_tokens SET revoked_at = ? WHERE created_by = ? AND revoked_at IS NULL`, now, userID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // TouchToken records that a token was used.
 func (q *Queries) TouchToken(ctx context.Context, id string, now int64) error {
 	_, err := q.q.ExecContext(ctx, `UPDATE service_tokens SET last_used_at = ? WHERE id = ?`, now, id)

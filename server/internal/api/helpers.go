@@ -309,12 +309,19 @@ func attachmentDTO(a *store.Attachment, cat *catalog) (AttachmentDTO, error) {
 }
 
 // requestDetail is what GET /api/requests/:id and every action endpoint return.
-func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store.Request, viewer *store.User) (RequestDetail, error) {
+func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store.Request, viewer *store.User, tol purchases.Tolerance) (RequestDetail, error) {
 	core, err := requestCore(ctx, q, cat, r)
 	if err != nil {
 		return RequestDetail{}, err
 	}
 	d := RequestDetail{RequestCore: core, AllowedTransitions: []string{}}
+	// Every officer may read the request, but only those allowed to open its receipts get
+	// their links (a Drive webViewLink would otherwise sidestep GET /api/attachments/:id).
+	for i := range d.Attachments {
+		if !canOpenReceipt(viewer, d.Attachments[i].UploadedBy.ID, r.RequesterID) {
+			d.Attachments[i].URL = nil
+		}
+	}
 	d.CanEdit = viewer != nil && viewer.ID == r.RequesterID && r.Status == "draft"
 	for _, to := range purchases.NextStatuses(r.Type, r.Status) {
 		ok := false
@@ -324,14 +331,34 @@ func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store
 			ok = viewer.ID == r.RequesterID
 		case to == "approved":
 			ok = auth.HasRole(viewer.Role, auth.RoleDirector) && viewer.ID != r.RequesterID
+		case paysOut(to):
+			ok = auth.HasRole(viewer.Role, auth.RoleDirector) && viewer.ID != r.RequesterID
 		default:
 			ok = auth.HasRole(viewer.Role, auth.RoleDirector)
 		}
 		if ok {
 			d.AllowedTransitions = append(d.AllowedTransitions, to)
+			if to == "fulfilled" || to == "reimbursed" {
+				d.MaxSettlementCents = settlementCeiling(viewer, r, tol)
+			}
 		}
 	}
 	return d, nil
+}
+
+// paysOut reports whether moving a request to `to` books or pays out money: settling a
+// purchase or reimbursement, or closing it (which pays a reimbursement). The requester may
+// never make these moves on their own request, whatever their role.
+func paysOut(to string) bool { return to == "fulfilled" || to == "reimbursed" || to == "closed" }
+
+// settlementCeiling is the most a viewer may record as the actual total: directors get
+// the approved estimate plus the agent tolerance, leadership is uncapped (nil).
+func settlementCeiling(viewer *store.User, r *store.Request, tol purchases.Tolerance) *int64 {
+	if auth.HasRole(viewer.Role, auth.RoleLeadership) {
+		return nil
+	}
+	c := purchases.MaxAgentSettlementCents(r.TotalCents, tol)
+	return &c
 }
 
 // requestSnapshot is the audit image of a request (camelCase, like the v1 rows), and what
@@ -372,4 +399,13 @@ func userSnapshot(u *store.User) map[string]any {
 
 func optOf[T any](f validate.Field[T]) store.Opt[T] {
 	return store.Opt[T]{V: f.V, Set: f.Set, Null: f.Null}
+}
+
+// canOpenReceipt: receipts carry card digits and addresses, so the uploader, the request's
+// requester and directors may open them; other officers see only the file's metadata.
+func canOpenReceipt(viewer *store.User, uploadedBy, requesterID string) bool {
+	if viewer == nil {
+		return false
+	}
+	return auth.HasRole(viewer.Role, auth.RoleDirector) || viewer.ID == uploadedBy || viewer.ID == requesterID
 }

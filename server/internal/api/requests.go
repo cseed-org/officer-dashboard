@@ -112,7 +112,7 @@ func (c *Ctx) requestDetail() error {
 	if err != nil {
 		return err
 	}
-	d, err := requestDetail(ctx, q, cat, r, u)
+	d, err := requestDetail(ctx, q, cat, r, u, c.S.cfg.Tolerance)
 	if err != nil {
 		return err
 	}
@@ -248,7 +248,7 @@ func (c *Ctx) requestCreate() error {
 		if err != nil {
 			return err
 		}
-		detail, err = requestDetail(ctx, w, cat, &r, u)
+		detail, err = requestDetail(ctx, w, cat, &r, u, c.S.cfg.Tolerance)
 		return err
 	})
 	if err != nil {
@@ -341,7 +341,7 @@ func (c *Ctx) requestUpdate() error {
 		if err != nil {
 			return err
 		}
-		detail, err = requestDetail(ctx, w, cat, &next, u)
+		detail, err = requestDetail(ctx, w, cat, &next, u, c.S.cfg.Tolerance)
 		return err
 	})
 	if err != nil {
@@ -490,13 +490,24 @@ func (c *Ctx) requestAttach() error {
 var unsafeFilename = regexp.MustCompile(`[^\w.\- ]+`)
 
 func (c *Ctx) attachmentDownload() error {
-	if _, err := c.officer(); err != nil {
+	u, err := c.officer()
+	if err != nil {
 		return err
 	}
 	ctx := c.Context()
-	a, err := c.S.db.Read().AttachmentByID(ctx, c.R.PathValue("id"))
+	q := c.S.db.Read()
+	a, err := q.AttachmentByID(ctx, c.R.PathValue("id"))
 	if err != nil {
 		return notFoundErr("Record not found")
+	}
+	requesterID := ""
+	if a.RequestID != nil {
+		if r, err := q.RequestByID(ctx, *a.RequestID); err == nil {
+			requesterID = r.RequesterID
+		}
+	}
+	if !canOpenReceipt(u, a.UploadedBy, requesterID) {
+		return forbidden("Only the requester and directors may open receipts")
 	}
 	if a.Storage == "drive" {
 		if a.WebViewLink == nil {
@@ -834,7 +845,14 @@ func (c *Ctx) lifecycle(action string) error {
 		if !purchases.CanTransition(r.Type, r.Status, in.To) {
 			return fail(409, "invalid_transition", fmt.Sprintf("Cannot move %s to %s", r.Status, in.To))
 		}
+		if paysOut(in.To) && r.RequesterID == u.ID {
+			return forbidden("Another director must settle or close your own request")
+		}
 		if in.Settle != nil {
+			if ceiling := settlementCeiling(u, r, c.S.cfg.Tolerance); ceiling != nil && in.Settle.ActualCents > *ceiling {
+				return fail(409, "over_tolerance", fmt.Sprintf("Actual %s exceeds the approved %s plus tolerance (max %s); leadership must settle it",
+					money.Format(in.Settle.ActualCents), money.Format(r.TotalCents), money.Format(*ceiling)))
+			}
 			if err := c.settleWrites(ctx, w, r, *in.Settle); err != nil {
 				return err
 			}
@@ -900,7 +918,7 @@ func (c *Ctx) lifecycle(action string) error {
 		if err != nil {
 			return err
 		}
-		detail, err = requestDetail(ctx, w, cat, updated, u)
+		detail, err = requestDetail(ctx, w, cat, updated, u, c.S.cfg.Tolerance)
 		return err
 	})
 	if err != nil {

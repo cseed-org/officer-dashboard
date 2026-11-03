@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { devLogin, openDialog, overflow, settle, THEMES, useTheme, watchErrors, devKeyParam } from './helpers';
+import { devLogin, openDialog, overflow, settle, THEMES, useTheme, watchErrors, devSignIn } from './helpers';
 
 /**
  * Officers and onboarding against the Go server (API_ORIGIN, DEV_AUTH=1, seeded). No
@@ -44,7 +44,7 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
 
   // Sign in as the invitee: their account is created and onboarding starts.
   await page.context().clearCookies();
-  await page.goto(`/auth/dev?discord=${id}${devKeyParam}`);
+  await devSignIn(page, { discord: id });
   await expect(page).toHaveURL(/\/onboarding$/);
   await settle(page);
   await expect(page.locator('#step-title')).toContainText('Robin'); // names keep their capitals
@@ -120,7 +120,7 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
 });
 
 test('an unknown account from an invite link sees the unavailable screen', async ({ page }) => {
-  await page.goto(`/auth/dev?discord=${inviteeId()}${devKeyParam}`);
+  await devSignIn(page, { discord: inviteeId() });
   await expect(page).toHaveURL(/error=not_allowlisted/);
   await page.goto('/onboarding?unavailable=1');
   await expect(page.locator('#step-title')).toHaveText('Let’s get you a fresh start.');

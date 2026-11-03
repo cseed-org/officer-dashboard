@@ -36,6 +36,10 @@ import {
   STORAGE_BACKENDS,
 } from './domain';
 
+// Zod's JIT probes `Function('')`, which the pages' Content-Security-Policy (no 'unsafe-eval')
+// refuses and reports as a violation; the interpreter is fast enough for these payloads.
+z.config({ jitless: true });
+
 // ───────────────────────────── Primitives ─────────────────────────────
 
 export const Id = z.string().min(1).max(64);
@@ -308,13 +312,16 @@ export const EventMetricsResponse = z.object({
 });
 export type EventMetricsResponse = z.infer<typeof EventMetricsResponse>;
 
+/** A stored link (event, item, Luma): absolute http(s) only, like the server's validate.IsURL. */
+export const HttpUrl = z.url({ protocol: /^https?$/ });
+
 /** POST /api/events (create manually) and PATCH /api/events/:id (all fields optional). */
 export const EventUpsertRequest = z.object({
   name: z.string().trim().min(1).max(200),
   startsAt: IsoDateTime,
   endsAt: IsoDateTime.nullable().optional(),
   location: z.string().max(200).nullable().optional(),
-  url: z.url().nullable().optional(),
+  url: HttpUrl.nullable().optional(),
   lumaId: z.string().max(100).nullable().optional(),
   hostUserId: Id.nullable().optional(),
   /** Defaults to draft on create. */
@@ -372,7 +379,7 @@ export const LumaIngestRequest = z.object({
     startsAt: IsoDateTime,
     endsAt: IsoDateTime.nullable().optional(),
     location: z.string().nullable().optional(),
-    url: z.url().nullable().optional(),
+    url: HttpUrl.nullable().optional(),
   }),
   guests: z
     .array(
@@ -455,7 +462,7 @@ const PurchaseRequestFields = z.object({
   type: PurchaseType,
   title: z.string().trim().min(1).max(200),
   vendor: z.string().trim().min(1).max(200),
-  itemUrl: z.url().nullable().optional(),
+  itemUrl: HttpUrl.nullable().optional(),
   quantity: z.number().int().min(1).max(10_000),
   unitCostCents: NonNegCents,
   taxShipCents: NonNegCents.default(0),
@@ -505,6 +512,11 @@ export const PurchaseRequestDetail = PurchaseRequestListItem.extend({
   allowedTransitions: z.array(PurchaseStatus),
   /** Whether the current user may edit (draft + requester). */
   canEdit: z.boolean(),
+  /**
+   * Most this viewer may record as the actual total when settling (approved estimate plus
+   * the agent tolerance). null when they cannot settle, or are leadership (uncapped).
+   */
+  maxSettlementCents: z.number().int().nullable(),
   /**
    * Set while the purchasing agent's settlement is held for director review (it
    * reported more than the approved estimate plus tolerance). A director clears it
@@ -917,7 +929,7 @@ export const FulfillmentJob = z.object({
   id: Id,
   status: z.enum(FULFILLMENT_JOB_STATUSES),
   attempts: z.number().int().nonnegative(),
-  request: PurchaseRequestDetail.omit({ allowedTransitions: true, canEdit: true }),
+  request: PurchaseRequestDetail.omit({ allowedTransitions: true, canEdit: true, maxSettlementCents: true }),
   createdAt: IsoDateTime,
   claimedAt: IsoDateTime.nullable(),
 });
@@ -950,7 +962,8 @@ export type AgentJobCompleteRequest = z.infer<typeof AgentJobCompleteRequest>;
 // ───────────────────────────── Health ─────────────────────────────
 
 /** GET /api/health (public) */
-export const HealthResponse = z.object({ ok: z.literal(true), db: z.boolean(), version: z.string() });
+/** `version` is shown to signed-in callers only. */
+export const HealthResponse = z.object({ ok: z.literal(true), db: z.boolean(), version: z.string().optional() });
 export type HealthResponse = z.infer<typeof HealthResponse>;
 
 // ───────────────────────────── Search (Go backend, v2) ─────────────────────────────
@@ -1365,7 +1378,7 @@ export const ENDPOINTS = {
   authLogin: { method: 'GET', path: '/auth/login', auth: 'public', response: 'redirect' },
   authCallback: { method: 'GET', path: '/auth/callback', auth: 'public', response: 'redirect' },
   authLogout: { method: 'POST', path: '/auth/logout', auth: 'officer', response: 'redirect' },
-  // authDev (GET /auth/dev) and authDevInfo (GET /auth/dev/info) are deliberately left out of the web copy: dev-only, never called
+  // authDev (POST /auth/dev) and authDevInfo (GET /auth/dev/info) are deliberately left out of the web copy: dev-only, never called
   // through api(), and its path shouldn't ship in the production bundle.
 } as const satisfies Record<string, EndpointSpec>;
 export type EndpointName = keyof typeof ENDPOINTS;

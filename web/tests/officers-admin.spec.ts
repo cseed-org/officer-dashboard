@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { devLogin, overflow, settle, THEMES, useTheme } from './helpers';
+import { devLogin, devLoginOwner, overflow, ownerLoginAvailable, settle, THEMES, useTheme } from './helpers';
 
 for (const theme of THEMES) {
   test(`combined Officers controls and owner menu (${theme})`, async ({ page }, info) => {
+    test.skip(!ownerLoginAvailable, 'owner sign-in needs a local dev server without DEV_AUTH_KEY');
     await useTheme(page, theme);
-    await devLogin(page, 'leadership');
+    await devLoginOwner(page);
     await page.goto('/officers');
     await settle(page);
     await expect(page.getByRole('tab', { name: 'Directory', exact: true })).toHaveAttribute('aria-selected', 'true');

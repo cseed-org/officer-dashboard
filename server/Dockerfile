@@ -45,6 +45,9 @@ COPY --from=build /out/dashboard /app/dashboard
 COPY server/deploy/litestream.yml /etc/litestream.yml
 COPY server/deploy/entrypoint.sh /app/entrypoint.sh
 USER dashboard
+# Listening on all interfaces, the server refuses to start without APP_URL (the public https
+# origin). Behind a proxy on the Docker network, set TRUSTED_PROXIES (e.g. 172.16.0.0/12) so
+# rate limits key each client by X-Forwarded-For instead of by the proxy's address.
 ENV ADDR=:8090 DB_PATH=/data/dashboard.db
 EXPOSE 8090
 VOLUME ["/data"]

@@ -85,7 +85,8 @@ if (byId('officer-data')) {
   const owners = new Set(data.owners);
   const find = id => people.find(p => p.id === id);
   const me = () => find(data.viewers[role()]);
-  const badge = r => `<span class="role-badge" data-role="${r}">${cap(r)}</span>`;
+  const ROLES = ['officer', 'director', 'leadership'];
+  const badge = r => { const k = ROLES.includes(r) ? r : 'officer'; return `<span class="role-badge" data-role="${k}">${esc(cap(k))}</span>`; };
   const ownerBadge = '<span class="badge badge--neutral">Owner</span>';
   const statusBadge = s => s === 'Active' ? '<span class="badge badge--positive">Active</span>' : '<span class="badge badge--neutral">Deactivated</span>';
   let current = null;
@@ -107,12 +108,12 @@ if (byId('officer-data')) {
       const rows = people.filter(p => p.team === team && matches(p));
       if (!rows.length) continue;
       shown += rows.length;
-      html += `<section class="stack people-group" data-team="${team}"><div class="section-head"><h2>${team}</h2><span class="muted small">${rows.length} ${rows.length === 1 ? 'officer' : 'officers'}</span></div>`
+      html += `<section class="stack people-group" data-team="${esc(team)}"><div class="section-head"><h2>${esc(team)}</h2><span class="muted small">${rows.length} ${rows.length === 1 ? 'officer' : 'officers'}</span></div>`
         + tableHTML(headers, rows.map(p => rowHTML(headers, [
-          `<button class="linkish cell-title" data-person="${p.id}">${esc(p.name)}</button><span class="cell-sub">@${esc(p.handle)} · ${esc(p.title)}</span>`,
+          `<button class="linkish cell-title" data-person="${esc(p.id)}">${esc(p.name)}</button><span class="cell-sub">@${esc(p.handle)} · ${esc(p.title)}</span>`,
           badge(p.role) + (owners.has(p.id) ? ' ' + ownerBadge : ''),
           statusBadge(p.status),
-        ], `data-id="${p.id}"`)), team + ' officers') + '</section>';
+        ], `data-id="${esc(p.id)}"`)), esc(team) + ' officers') + '</section>';
     }
     const dir = byId('directory');
     dir.innerHTML = html;
@@ -223,7 +224,7 @@ if (byId('officer-data')) {
     confirmStep({
       title: `Change ${p.pref}’s role?`, action: 'Change role',
       body: `${p.name} goes from ${cap(p.role)} to ${next}. Their access changes the next time they load a page.` + (next === 'Leadership' ? ' Leadership can manage roles and deactivate officers.' : ''),
-      run: () => { p.role = next.toLowerCase(); }, done: `${p.name} is now ${next}.`,
+      run: () => { if (ROLES.includes(next.toLowerCase())) p.role = next.toLowerCase(); }, done: `${p.name} is now ${next}.`,
     });
   };
   byId('deactivate').onclick = () => {
@@ -412,10 +413,10 @@ if (byId('member-data')) {
   function renderTable() {
     const rows = members.filter(matches);
     byId('member-table').innerHTML = tableHTML(headers, rows.map(m => rowHTML(headers, [
-      `<button class="linkish cell-title" data-member="${m.id}">${esc(m.name)}</button><span class="cell-sub">Preferred: ${esc(m.pref)}</span>`,
+      `<button class="linkish cell-title" data-member="${esc(m.id)}">${esc(m.name)}</button><span class="cell-sub">Preferred: ${esc(m.pref)}</span>`,
       `${esc(m.uw)}<span class="cell-sub">CS: ${esc(m.cs || 'Not provided')}</span>`,
-      `${esc(m.major)}<span class="cell-sub">Class of ${m.grad} · ${m.campus}</span>`,
-      fmtDate(m.joined), m.officer,
+      `${esc(m.major)}<span class="cell-sub">Class of ${esc(m.grad)} · ${esc(m.campus)}</span>`,
+      esc(fmtDate(m.joined)), esc(m.officer),
     ])), 'Members from website signups');
     $$('[data-member]').forEach(b => b.onclick = () => openMember(b.dataset.member, b));
     const total = data.total, pages = Math.ceil(total / data.pageSize);
@@ -487,7 +488,7 @@ if (byId('member-data')) {
   byId('review-changes').onclick = e => {
     const list = diffs();
     if (!list.length) return;
-    byId('d1-target').innerHTML = `Update <strong>${esc(current.name)}</strong> (${current.id}) in <span class="mono">cseed-membership → People</span>? Only these fields change:`;
+    byId('d1-target').innerHTML = `Update <strong>${esc(current.name)}</strong> (${esc(current.id)}) in <span class="mono">cseed-membership → People</span>? Only these fields change:`;
     byId('d1-diff').innerHTML = list.map(d => `<tr><td data-label="Field" class="dt-primary">${fieldLabels[d.key]}</td><td data-label="Current">${esc(show(d.key, d.from))}</td><td data-label="New"><strong>${esc(show(d.key, d.to))}</strong></td></tr>`).join('');
     byId('d1-audit').textContent = `Audit note: “${byId('audit-note').value.trim()}”`;
     byId('d1-actor').textContent = `Recorded as ${viewerName()} · ${NOW}. If the write fails, nothing is saved and your edits stay in the form.`;

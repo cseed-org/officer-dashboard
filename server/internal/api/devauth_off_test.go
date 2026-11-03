@@ -4,6 +4,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"testing"
 )
 
@@ -26,6 +27,14 @@ func TestDefaultBuildHasNoDevLogin(t *testing.T) {
 			if len(setCookies(r)) != 0 {
 				t.Errorf("GET %s set cookies: %v", p, setCookies(r))
 			}
+		}
+	}
+	// Nor does the form post.
+	for _, devAuth := range []bool{false, true} {
+		e := newEnv(t, func(c *Config) { c.DevAuth, c.DevAuthKey = devAuth, key })
+		r := e.do("POST", "/auth/dev", url.Values{"as": {"leadership"}, "key": {key}}, anon)
+		if r.Status != 404 || len(setCookies(r)) != 0 {
+			t.Errorf("DevAuth=%v POST /auth/dev → %d", devAuth, r.Status)
 		}
 	}
 	// The route is not registered, so even the static fallback answers it.

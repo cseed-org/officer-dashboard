@@ -156,6 +156,9 @@ type RequestDetail struct {
 	RequestCore
 	AllowedTransitions []string `json:"allowedTransitions"`
 	CanEdit            bool     `json:"canEdit"`
+	// MaxSettlementCents caps the actual total this viewer may record when settling; null
+	// when they cannot settle or are uncapped (leadership).
+	MaxSettlementCents *int64 `json:"maxSettlementCents"`
 }
 
 type FulfillmentJob struct {

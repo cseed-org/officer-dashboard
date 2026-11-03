@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"regexp"
@@ -11,8 +12,12 @@ import (
 )
 
 func (c *Ctx) health() error {
-	db := c.S.db.Ping(c.Context()) == nil
-	writeJSON(c.W, 200, map[string]any{"ok": true, "db": db, "version": c.S.cfg.Version})
+	body := map[string]any{"ok": true, "db": c.S.db.Ping(c.Context()) == nil}
+	// The build version helps attackers match known bugs; only signed-in users see it.
+	if c.User != nil {
+		body["version"] = c.S.cfg.Version
+	}
+	writeJSON(c.W, 200, body)
 	return nil
 }
 
@@ -76,7 +81,7 @@ func (c *Ctx) authCallback() error {
 	for _, n := range []string{oauthStateName, oauthVerifier, nextCookieName, inviteCookieName} {
 		c.S.clearCookie(c.W, c.S.hostPrefixed(n))
 	}
-	if code == "" || state == "" || storedState == "" || verifier == "" || state != storedState {
+	if code == "" || state == "" || storedState == "" || verifier == "" || subtle.ConstantTimeCompare([]byte(state), []byte(storedState)) != 1 {
 		return c.loginRedirect("state")
 	}
 	d := c.S.cfg.Discord
@@ -141,7 +146,7 @@ func (c *Ctx) authCallback() error {
 	if denied != "" {
 		return c.loginRedirect(denied)
 	}
-	if err := c.S.createSession(ctx, c.W, userID, c.R.UserAgent()); err != nil {
+	if err := c.newSession(ctx, userID); err != nil {
 		c.S.log.Error("create session failed", "error", err)
 		return c.loginRedirect("discord")
 	}

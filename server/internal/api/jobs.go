@@ -33,6 +33,15 @@ func (c *Ctx) authenticateToken(scope string) (*store.ServiceToken, error) {
 	if t.RevokedAt != nil || (t.ExpiresAt != nil && *t.ExpiresAt <= c.S.nowMs()) {
 		return nil, fail(401, "unauthenticated", "Invalid or expired service token")
 	}
+	// A token acts with its creator's authority: it dies with that authority, even if the
+	// revocation on deactivation/demotion was somehow missed.
+	creator, err := c.S.db.Read().UserByID(c.Context(), t.CreatedBy)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	if creator == nil || !creator.Active || !auth.HasRole(creator.Role, auth.RoleDirector) {
+		return nil, fail(401, "unauthenticated", "Invalid or expired service token")
+	}
 	has := false
 	for _, s := range t.Scopes {
 		has = has || s == scope
@@ -59,7 +68,8 @@ func (c *Ctx) jobView(cat *catalog, q *store.Queries, j *store.Job) (Fulfillment
 }
 
 func (c *Ctx) agentJobs() error {
-	if _, err := c.authenticateToken("agent:jobs"); err != nil {
+	tok, err := c.authenticateToken("agent:jobs")
+	if err != nil {
 		return err
 	}
 	var status string
@@ -83,6 +93,10 @@ func (c *Ctx) agentJobs() error {
 		v, err := c.jobView(cat, q, &jobs[i])
 		if err != nil {
 			return err
+		}
+		// Jobs for the token creator's own requests are not this token's to buy (claim refuses).
+		if v.Request.Requester.ID == tok.CreatedBy {
+			continue
 		}
 		out = append(out, v)
 	}
@@ -147,6 +161,9 @@ func (c *Ctx) agentJobClaim() error {
 		if j.Attempts >= 3 {
 			return conflict("Job reached three attempts; a director must resolve the request manually")
 		}
+		if r.RequesterID == tok.CreatedBy {
+			return conflict("This token's creator requested the purchase; another director's token must buy it")
+		}
 		now := c.S.nowMs()
 		before := jobSnapshot(j)
 		j.Status, j.ClaimedByTokenID, j.ClaimedAt, j.Attempts, j.UpdatedAt = "claimed", &tok.ID, &now, j.Attempts+1, store.Ms(now)
@@ -206,6 +223,21 @@ func (c *Ctx) agentJobComplete() error {
 		before := jobSnapshot(j)
 		raw, _ := json.Marshal(in.Raw)
 		result := string(raw)
+		// The requester never settles their own request (M1), including through a token they
+		// created. Claims refuse this; one made before that rule is held for another director.
+		if r.RequesterID == tok.CreatedBy {
+			heldMsg = "This token's creator requested the purchase; held for another director to settle"
+			j.Status, j.ClaimedByTokenID, j.ClaimedAt, j.LastError, j.ResultJSON, j.UpdatedAt = "held", nil, nil, &heldMsg, &result, store.Ms(now)
+			if err := w.SaveJob(ctx, *j); err != nil {
+				return err
+			}
+			if err := c.audit(ctx, w, "job.held_for_review", "fulfillment_job", j.ID, before, jobSnapshot(j)); err != nil {
+				return err
+			}
+			heldNote = &notify.Event{Type: "request.held", RequestID: r.ID, Number: r.Number, Title: r.Title,
+				AttemptedCents: notify.Cents(in.Done.ActualCents), ApprovedCents: notify.Cents(r.TotalCents), Reason: heldMsg}
+			return nil // commit the hold, then answer 409 below
+		}
 		if in.Outcome == "done" {
 			// Automation may not book more than the approved estimate plus tolerance. The
 			// attempt is recorded and the request stays `fulfilling` for a director to settle.

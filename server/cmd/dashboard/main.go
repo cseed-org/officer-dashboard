@@ -16,6 +16,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -78,6 +79,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 type settings struct {
 	Cloudflare                       cloudflare.Config
 	Addr, DBPath, AppURL, StaticDir  string
+	AppURLSet                        bool // APP_URL came from the environment or a flag
 	StaticFallback                   string
 	StaticFallbackStatus             int
 	DiscordClientID, DiscordSecret   string
@@ -93,6 +95,7 @@ type settings struct {
 	DevAuth                          bool
 	DevAuthKey                       string
 	TolerancePercent, ToleranceCents string
+	TrustedProxies                   string // TRUSTED_PROXIES: CIDRs/IPs whose X-Forwarded-For is believed
 }
 
 func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (settings, error) {
@@ -103,7 +106,7 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 		return def
 	}
 	s := settings{Cloudflare: cloudflare.FromEnv(getenv)}
-	fs.StringVar(&s.Addr, "addr", env("ADDR", ":8090"), "listen address (ADDR)")
+	fs.StringVar(&s.Addr, "addr", env("ADDR", "127.0.0.1:8090"), "listen address (ADDR); bind beyond loopback only with APP_URL set")
 	fs.StringVar(&s.DBPath, "db", env("DB_PATH", "./data/dashboard.db"), "SQLite file (DB_PATH)")
 	fs.StringVar(&s.AppURL, "app-url", env("APP_URL", ""), "public origin, used for OAuth redirects and links (APP_URL)")
 	fs.StringVar(&s.StaticDir, "static", env("STATIC_DIR", ""), "serve the front end from this directory instead of the embedded build (STATIC_DIR)")
@@ -125,7 +128,9 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	s.ReceiptsDir = env("RECEIPTS_DIR", "")
 	s.DevAuth = env("DEV_AUTH", "") == "1"
 	s.DevAuthKey = env("DEV_AUTH_KEY", "")
+	s.TrustedProxies = env("TRUSTED_PROXIES", "")
 	s.TolerancePercent, s.ToleranceCents = env("AGENT_SETTLEMENT_TOLERANCE_PERCENT", ""), env("AGENT_SETTLEMENT_TOLERANCE_CENTS", "")
+	s.AppURLSet = s.AppURL != ""
 	if s.AppURL == "" {
 		port := s.Addr
 		if i := strings.LastIndex(port, ":"); i >= 0 {
@@ -164,9 +169,17 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		log.Warn("bootstrap owner configuration ignored: ownership already belongs to another account")
 	}
 
+	var trusted []*net.IPNet // nil: loopback only
+	if s.TrustedProxies != "" {
+		var err error
+		if trusted, err = api.ParseTrustedProxies(s.TrustedProxies); err != nil {
+			return nil, err
+		}
+	}
 	cfg := api.Config{
-		Cloudflare: &cfsync.Service{Client: cloudflare.New(s.Cloudflare), DB: db, Log: log},
-		DB:         db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
+		TrustedProxies: trusted,
+		Cloudflare:     &cfsync.Service{Client: cloudflare.New(s.Cloudflare), DB: db, Log: log},
+		DB:             db, Now: time.Now, AppURL: s.AppURL, Version: version, Log: log,
 		Tolerance: purchases.ToleranceFromEnv(s.TolerancePercent, s.ToleranceCents),
 		DevAuth:   s.DevAuth, DevAuthKey: s.DevAuthKey,
 	}
@@ -177,7 +190,7 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 	if !api.DevBuild {
 		cfg.DevAuthKey = ""
 	}
-	if cfg.DevAuth && cfg.DevAuthKey != "" && len(cfg.DevAuthKey) < 16 {
+	if cfg.DevAuth && cfg.DevAuthKey != "" && len(cfg.DevAuthKey) < minDevKeyLen {
 		log.Warn("DEV_AUTH_KEY is shorter than 16 characters; use a long random value (e.g. openssl rand -hex 24)")
 	}
 	if s.DiscordClientID != "" && s.DiscordSecret != "" {
@@ -248,6 +261,9 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		return err
 	}
 	if err := validateAppURL(s.AppURL); err != nil {
+		return err
+	}
+	if err := checkExposure(s, api.DevBuild); err != nil {
 		return err
 	}
 	db, err := openDB(s.DBPath)
@@ -402,11 +418,47 @@ func validateAppURL(raw string) error {
 	if u.Scheme == "https" {
 		return nil
 	}
-	switch u.Hostname() {
-	case "localhost", "127.0.0.1", "::1":
-		if u.Scheme == "http" {
-			return nil
-		}
+	if isLoopbackHost(u.Hostname()) && u.Scheme == "http" {
+		return nil
 	}
 	return fmt.Errorf("APP_URL %q must be https (plain http is allowed only for localhost): cookies would lose Secure, __Host- and HSTS", raw)
+}
+
+// minDevKeyLen is the shortest DEV_AUTH_KEY a dev build accepts on a non-loopback APP_URL.
+const minDevKeyLen = 16
+
+// checkExposure refuses configurations that are only safe on this machine:
+//   - listening beyond loopback without APP_URL (the default http://localhost origin would
+//     drop Secure cookies, __Host- and HSTS, and break OAuth redirects);
+//   - a dev build answering DEV_AUTH=1 on a non-loopback APP_URL or listen address without a
+//     DEV_AUTH_KEY of at least 16 characters (anyone reaching it could sign in as leadership).
+func checkExposure(s settings, devBuild bool) error {
+	if !s.AppURLSet && !isLoopbackAddr(s.Addr) {
+		return fmt.Errorf("ADDR %q listens beyond loopback but APP_URL is not set; set APP_URL to the public origin, or ADDR=127.0.0.1:<port>", s.Addr)
+	}
+	if devBuild && s.DevAuth && len(s.DevAuthKey) < minDevKeyLen {
+		// Reachable from elsewhere if either the public origin or the listener is: a
+		// localhost APP_URL on ADDR=:8090 (Docker, port mapping) still faces the network.
+		u, err := url.Parse(s.AppURL)
+		if err != nil || !isLoopbackHost(u.Hostname()) || !isLoopbackAddr(s.Addr) {
+			return fmt.Errorf("DEV_AUTH=1 on %s (listening on %s) needs DEV_AUTH_KEY of at least %d characters (openssl rand -hex 24)", s.AppURL, s.Addr, minDevKeyLen)
+		}
+	}
+	return nil
+}
+
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	return isLoopbackHost(host)
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
