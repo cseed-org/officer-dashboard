@@ -114,6 +114,8 @@ export default function OnboardingPage() {
   stepRef.current = step;
   const hasProfileRef = useRef(false);
   const done = useRef(false);
+  const popping = useRef(false); // a popstate is being handled (it may await a profile save)
+  const restoring = useRef(false); // our own history.go() to undo a refused move
   const saves = useRef<Promise<unknown>>(Promise.resolve());
 
   /** Saves the step to resume at. Saves run one after another, in the order asked. */
@@ -181,20 +183,36 @@ export default function OnboardingPage() {
         location.replace('/');
         return;
       }
+      if (restoring.current) {
+        restoring.current = false;
+        return;
+      }
       const raw = (e.state as { step?: number } | null)?.step;
       if (!raw || raw < 1 || raw > 5) return;
       const from = stepRef.current;
-      if (raw < from) pushed.current = Math.max(0, pushed.current - 1);
-      else if (raw > from) pushed.current++;
-      // Never past the profile until it's saved.
-      const s = hasProfileRef.current ? raw : Math.min(raw, 3);
-      if (s !== from && !(await leaveProfile())) {
-        // The entries don't validate: stay on the profile with its inline errors showing.
-        history.pushState({ step: 3 }, '', location.pathname);
-        pushed.current++;
-        setStepError({ text: 'Your profile changes aren’t saved yet. Fix the highlighted fields, then continue.' });
+      if (popping.current) {
+        // Still saving the profile from the last move: undo this one instead of racing it.
+        restoring.current = true;
+        history.go(raw < from ? 1 : -1);
         return;
       }
+      popping.current = true;
+      try {
+        // Never past the profile until it's saved.
+        const s = hasProfileRef.current ? raw : Math.min(raw, 3);
+        if (s !== from && !(await leaveProfile())) {
+          // The entries don't validate: step the browser back onto the profile entry
+          // (keeping the forward history) and show the inline errors.
+          restoring.current = true;
+          history.go(raw < from ? 1 : -1);
+          setStepError({ text: 'Your profile changes aren’t saved yet. Fix the highlighted fields, then continue.' });
+          return;
+        }
+      } finally {
+        popping.current = false;
+      }
+      if (raw < from) pushed.current = Math.max(0, pushed.current - 1);
+      else if (raw > from) pushed.current++;
       const to = hasProfileRef.current ? raw : Math.min(raw, 3);
       if (to !== raw) history.replaceState({ step: to }, '', location.pathname);
       if (to !== from) show(to, from);

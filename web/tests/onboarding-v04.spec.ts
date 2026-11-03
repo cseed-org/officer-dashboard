@@ -45,6 +45,9 @@ test('gate, correction, inviter edit, history and finish', async ({ page, browse
   const gated = await page.request.get('/api/events');
   expect(gated.status()).toBe(403);
   expect((await gated.json()).error.code).toBe('onboarding_required');
+  // Reopening your own invite link mid-setup resumes setup (not "for someone else").
+  await page.goto('/login?invite=my-own-link');
+  await expect(page).toHaveURL(/\/onboarding$/);
   await page.goto('/events');
   await expect(page).toHaveURL(/\/onboarding$/);
   await settle(page);
@@ -91,6 +94,8 @@ test('gate, correction, inviter edit, history and finish', async ({ page, browse
   await expect(page.locator('[data-profile-form]')).toBeVisible();
   await expect(page.locator('#pf-phone-error')).toBeVisible();
   await expect(page.locator('[data-step-error]')).toContainText('aren’t saved yet');
+  // The refused Back didn't drop history: Back still reaches Confirm once the entries are fixed.
+  await expect(page).toHaveURL(/\/onboarding$/);
   // A refresh resumes at the profile, never past it.
   await page.goto('/onboarding');
   await settle(page);
