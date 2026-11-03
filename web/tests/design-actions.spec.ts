@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
-import { overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
+import { overflow, settle, THEMES, useTheme, watchErrors, devKeyParam } from './helpers';
 
 async function login(page: Page, role: string, user?: string) {
-  await page.goto(`/auth/dev?as=${role}${user ? `&user=${user}` : ''}&next=/design`);
+  await page.goto(`/auth/dev?as=${role}${user ? `&user=${user}` : ''}&next=/design${devKeyParam}`);
   await settle(page);
 }
 async function create(page: Page, title: string) {
