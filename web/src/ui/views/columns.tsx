@@ -3,6 +3,7 @@ import { fmtDate, fmtWeekday, formatCents, pct, TYPE_LABEL } from '../../lib/for
 import { href } from '../../lib/routes';
 import type { Hue } from '../../lib/colors';
 import { CategoryDot, type Column, Meter, StatusBadge } from '../components/kit';
+import { DueDate } from '../components/DueDate';
 
 const upcoming = (e: EventListItem, now: number) => new Date(e.startsAt).getTime() > now;
 
@@ -85,5 +86,6 @@ export const requestColumns = (opts: { showRequester?: boolean; compact?: boolea
             {r.expenseAccount.name} · {r.fund.code}
           </span> }]),
   { key: 'status', label: 'status', render: (r) => <StatusBadge status={r.status} /> },
+  { key: 'due', label: 'needed by', render: (r) => <DueDate date={r.neededBy} status={r.status} short /> },
   { key: 'total', label: 'total', num: true, render: (r) => formatCents(r.totalCents) },
 ];

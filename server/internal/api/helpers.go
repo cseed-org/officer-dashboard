@@ -229,7 +229,7 @@ func requestItem(r *store.Request, cat *catalog) (RequestListItem, error) {
 	return RequestListItem{
 		ID: r.ID, Number: r.Number, Title: r.Title, Vendor: r.Vendor, Type: r.Type, Status: r.Status, TotalCents: r.TotalCents,
 		Requester: userSummary(req), ExpenseAccount: acct.Brief(), Fund: fund.Brief(),
-		EventID: r.EventID, SubmittedAt: isoPtr(r.SubmittedAt), UpdatedAt: isoMs(int64(r.UpdatedAt)),
+		EventID: r.EventID, SubmittedAt: isoPtr(r.SubmittedAt), UpdatedAt: isoMs(int64(r.UpdatedAt)), NeededBy: r.NeededBy,
 	}, nil
 }
 
@@ -257,7 +257,7 @@ func requestCore(ctx context.Context, q *store.Queries, cat *catalog, r *store.R
 	}
 	core := RequestCore{
 		RequestListItem: item, ItemURL: r.ItemURL, Quantity: r.Quantity, UnitCostCents: r.UnitCostCents, TaxShipCents: r.TaxShipCents,
-		ActualTotalCents: r.ActualTotalCents, FunctionalClass: r.FunctionalClass, Justification: r.Justification, NeededBy: r.NeededBy,
+		ActualTotalCents: r.ActualTotalCents, FunctionalClass: r.FunctionalClass, Justification: r.Justification,
 		DecidedAt: isoPtr(r.DecidedAt), CreatedAt: isoMs(int64(r.CreatedAt)),
 		Approvals: []ApprovalDTO{}, Attachments: []AttachmentDTO{}, JournalEntryIDs: entries,
 	}

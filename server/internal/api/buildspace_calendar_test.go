@@ -3,6 +3,8 @@ package api
 import (
 	"strings"
 	"testing"
+
+	"officerdashboard/internal/store"
 )
 
 func TestBuildspaceCalendarOptInDatesAndNotes(t *testing.T) {
@@ -24,7 +26,7 @@ func TestBuildspaceCalendarOptInDatesAndNotes(t *testing.T) {
 		t.Fatal(string(defaults.Raw))
 	}
 	feed := e.mustOK(e.get(path, who))
-	if len(feed.list("sources")) != 5 {
+	if len(feed.list("sources")) != len(store.CalendarSources) {
 		t.Fatal("missing source metadata")
 	}
 	for _, v := range feed.list("items") {

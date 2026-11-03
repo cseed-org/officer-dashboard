@@ -1,3 +1,5 @@
+import { DueDate } from "../../components/DueDate";
+import type { PurchaseStatus } from "../../../lib/domain";
 import { useState } from "preact/hooks";
 import type {
   BuildspaceActivity,
@@ -371,6 +373,16 @@ export function BuildspaceDetail({
                 >
                   {a.purchaseStatus || a.status}
                 </Badge>
+                {a.purchaseNeededBy && (
+                  <span class="bs-due">
+                    needed by{" "}
+                    <DueDate
+                      date={a.purchaseNeededBy}
+                      status={(a.purchaseStatus ?? "closed") as PurchaseStatus}
+                      short
+                    />
+                  </span>
+                )}
                 <span>
                   {a.personId
                     ? b.people.find((p) => p.id === a.personId)?.name

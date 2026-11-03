@@ -174,6 +174,7 @@ function RequestsPanel({ director, tick }: { director: boolean; tick: number }) 
   const scope: Scope = (search.get('scope') as Scope | null) ?? (director ? 'all' : 'mine');
   const s = search.get('status') as StatusFilter | null;
   const status: StatusFilter = s && FILTERS.some((f) => f.key === s) ? s : 'any';
+  const sort: 'newest' | 'deadline' = search.get('sort') === 'deadline' ? 'deadline' : 'newest';
   const [q, setQ] = useState('');
   const [debounced, setDebounced] = useState('');
   useEffect(() => {
@@ -181,7 +182,7 @@ function RequestsPanel({ director, tick }: { director: boolean; tick: number }) 
     return () => clearTimeout(t);
   }, [q]);
 
-  const state = useApi('requestsList', { query: { scope, status: status === 'any' ? undefined : status, q: debounced || undefined, limit: 100 } }, { scope, status, debounced, tick });
+  const state = useApi('requestsList', { query: { scope, status: status === 'any' ? undefined : status, q: debounced || undefined, sort, limit: 100 } }, { scope, status, debounced, sort, tick });
   const counts = state.status === 'ready' ? state.data.counts : {};
   const countFor = (f: (typeof FILTERS)[number]) =>
     f.key === 'any' ? Object.values(counts).reduce((a, b) => a + (b ?? 0), 0) : f.statuses.reduce((a, st) => a + (counts[st] ?? 0), 0);
@@ -204,6 +205,15 @@ function RequestsPanel({ director, tick }: { director: boolean; tick: number }) 
           </label>
           <input id="req-search" class="input" type="search" placeholder="search title, vendor or #" value={q} onInput={(e) => setQ(e.currentTarget.value)} />
         </div>
+        <div class="field field--inline">
+          <label class="field-label" for="req-sort">
+            sort
+          </label>
+          <select id="req-sort" class="select" value={sort} onChange={(e) => setParams({ sort: e.currentTarget.value === 'deadline' ? 'deadline' : null }, { replace: true })}>
+            <option value="newest">newest first</option>
+            <option value="deadline">needed by, soonest first</option>
+          </select>
+        </div>
       </div>
       <div class="chips" role="group" aria-label="Filter by status">
         {visibleFilters.map((f) => (
@@ -217,7 +227,7 @@ function RequestsPanel({ director, tick }: { director: boolean; tick: number }) 
       <Async state={state} loading={<Loading rows={6} label="Loading requests" />}>
         {(d) =>
           d.items.length === 0 ? (
-            status !== 'any' || debounced ? (
+            status !== 'any' || debounced || sort === 'deadline' ? (
               <Empty
                 title="Nothing matches"
                 action={
@@ -225,7 +235,7 @@ function RequestsPanel({ director, tick }: { director: boolean; tick: number }) 
                     type="button"
                     class="linkish"
                     onClick={() => {
-                      setStatus('any');
+                      setParams({ status: null, sort: null }, { replace: true });
                       setQ('');
                     }}
                   >
@@ -233,7 +243,7 @@ function RequestsPanel({ director, tick }: { director: boolean; tick: number }) 
                   </button>
                 }
               >
-                No {status === 'any' ? '' : FILTERS.find((f) => f.key === status)?.label} requests{debounced ? ` match “${debounced}”` : ''}.
+                No {status === 'any' ? '' : FILTERS.find((f) => f.key === status)?.label} requests{sort === 'deadline' ? ' with a needed-by date' : ''}{debounced ? ` match “${debounced}”` : ''}.
               </Empty>
             ) : scope === 'mine' ? (
               <Empty title="You haven't asked for anything yet" action={<a class="btn btn--primary" href="/finance?new=1">new purchase request</a>}>

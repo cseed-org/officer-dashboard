@@ -85,8 +85,9 @@ func TestCalendarWidgetSettingsArePrivateAndValidated(t *testing.T) {
 	if got.str("view") != "month" || got.at("showWeekends") != false || len(got.list("sources")) != 1 {
 		t.Fatal(string(got.Raw))
 	}
+	// Directors also get purchase deadlines by default.
 	other := e.mustOK(e.get("/api/me/calendar-widget", e.director()))
-	if other.str("view") != "auto" || len(other.list("sources")) != 2 {
+	if other.str("view") != "auto" || len(other.list("sources")) != 3 {
 		t.Fatal(string(other.Raw))
 	}
 	body["view"] = "bad"

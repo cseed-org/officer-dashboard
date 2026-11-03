@@ -21,7 +21,13 @@ and 4×2 sizes.
 
 Options saves view, sources, colour grouping and weekend visibility to the signed-in
 officer's account. Small widgets always use an agenda; other sizes allow explicit
-agenda, week or month views. Toggle sources directly in the legend; calendar icons mark blue club events and pen
+agenda, week or month views. At 4×2 the legend shows every source as a chip; chips wrap
+inside their own area and the time-zone label keeps its own column (or line on phones), so
+they never overlap. At 2×1 and 2×2 the chips collapse into a **Sources (n/total)** menu whose
+panel floats over the calendar, so opening it moves nothing; Tab reaches the toggles and
+Escape closes it and returns focus. Toggles stay focusable while a change saves. The
+legend's initial source list mirrors the server registry, so it doesn't grow when the
+feed loads. Toggle sources directly in the legend; calendar icons mark blue club events and pen
 icons mark amber design deadlines. Legend changes save immediately. Hover or focus
 a month/week chip to see its time, location, source, detail link and Luma link.
 Timed chips include a compact start time (for example, **6p Hack Night**). Each day
@@ -77,16 +83,26 @@ Registry metadata is returned even when every source is hidden. It drives the
 legend, options, source colours/icons and source validation. Current icon hints
 are calendar, pen, user and check; other values use a calendar fallback. Hues use
 the existing blue/amber/teal/coral/violet/green tokens. A saved account opts into
-new sources via its legend/options; defaults for new accounts include entries without `DisabledByDefault`.
+new sources via its legend/options; defaults for accounts without saved options include
+entries without `DisabledByDefault` whose optional `DefaultRole` the account holds
+(`auth.HasRole`, so leadership inherits director defaults). Optional `Detail` text on an
+item appears in the popover and agenda (for example an amount and status).
 Register entries once during startup; do not mutate the registry while serving
-requests. Buildspace registers three optional sources: absences, weekly check-in due dates and mentor check-ins. All are off by default and toggleable in Options or the legend. See [Buildspace calendar policy](buildspace.md#home-calendar-sources) for dates, visibility and note redaction.
+requests. **Purchase deadlines** (`purchase-deadlines`, wallet icon, green) shows open
+purchase requests with a `needed by` date: submitted, approved and buying, plus the
+viewer's own drafts. Denied, cancelled, bought, paid-out and closed requests are hidden.
+Each item shows the title, request number, amount and status and links to the request
+detail. It is on by default for directors and leadership (who approve and buy) and off
+for officers, who can turn it on in the legend or Options. See
+[Purchase deadlines](purchase-deadlines.md). Buildspace registers three optional sources: absences, weekly check-in due dates and mentor check-ins. All are off by default and toggleable in Options or the legend. See [Buildspace calendar policy](buildspace.md#home-calendar-sources) for dates, visibility and note redaction.
 
 Calendar settings and date indexes use migration **0016_calendar_widget.sql**,
-after dashboard-ux’s **0015_dashboard.sql**.
+after dashboard-ux’s **0015_dashboard.sql**. The purchase-deadline index is
+**0018_purchase_deadline.sql**.
 
 ## Current limits
 
-Purchases have no dated deadline field; general officer availability has no data model. Buildspace absences are separate cohort records. Existing Google/ICS integration sends club events out and does not read
+General officer availability has no data model. Buildspace absences are separate cohort records. Existing Google/ICS integration sends club events out and does not read
 personal subscriptions. Those sources need separate data support before they can
 appear here. No external calendar credentials or network calls are introduced.
 

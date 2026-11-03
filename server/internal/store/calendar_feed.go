@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"net/url"
+
+	"officerdashboard/internal/auth"
 )
 
 // CalendarItem retains date-only deadlines separately from event instants.
@@ -19,6 +21,9 @@ type CalendarItem struct {
 	Location *string `json:"location"`
 	Href     string  `json:"href"`
 	LumaURL  *string `json:"lumaUrl"`
+	// Detail is an optional one-line summary for the item's popover (for example
+	// "$45.00 · approved"). Loaders must only put viewer-visible data here.
+	Detail *string `json:"detail"`
 }
 
 // CalendarRange carries both UTC boundaries and local dates. Loaders must scope
@@ -30,26 +35,31 @@ type CalendarRange struct {
 // CalendarSource is the extension point for new dated sources. Register loaders here
 // at startup; metadata drives the widget's source controls without a UI source switch.
 type CalendarSource struct {
-	DisabledByDefault bool                                                                   `json:"-"`
-	ID                string                                                                 `json:"id"`
-	Label             string                                                                 `json:"label"`
-	Icon              string                                                                 `json:"icon"`
-	Hue               string                                                                 `json:"hue"`
-	Load              func(context.Context, *Queries, CalendarRange) ([]CalendarItem, error) `json:"-"`
+	DisabledByDefault bool `json:"-"`
+	// DefaultRole, when set, turns the source on by default only for accounts holding
+	// at least this role (auth.HasRole); everyone else can still opt in.
+	DefaultRole string                                                                 `json:"-"`
+	ID          string                                                                 `json:"id"`
+	Label       string                                                                 `json:"label"`
+	Icon        string                                                                 `json:"icon"`
+	Hue         string                                                                 `json:"hue"`
+	Load        func(context.Context, *Queries, CalendarRange) ([]CalendarItem, error) `json:"-"`
 }
 
 var CalendarSources = []CalendarSource{
 	{ID: "events", Label: "Club events", Icon: "calendar", Hue: "blue", Load: loadCalendarEvents},
 	{ID: "design", Label: "Design deadlines", Icon: "pen", Hue: "amber", Load: loadCalendarDesign},
+	{ID: "purchase-deadlines", Label: "Purchase deadlines", Icon: "wallet", Hue: "green", DefaultRole: auth.RoleDirector, Load: loadPurchaseDeadlines},
 	{ID: "buildspace-absences", Label: "Buildspace absences", Icon: "user", Hue: "coral", DisabledByDefault: true, Load: loadBuildspaceAbsences},
 	{ID: "buildspace-weekly", Label: "Buildspace weekly check-ins", Icon: "check", Hue: "teal", DisabledByDefault: true, Load: loadBuildspaceWeeklyDue},
 	{ID: "buildspace-mentor", Label: "Buildspace mentor check-ins", Icon: "user", Hue: "violet", DisabledByDefault: true, Load: loadBuildspaceMentorCheckIns},
 }
 
-func DefaultCalendarSourceIDs() []string {
+// DefaultCalendarSourceIDs lists the sources a new account with this role sees.
+func DefaultCalendarSourceIDs(role string) []string {
 	ids := []string{}
 	for _, source := range CalendarSources {
-		if !source.DisabledByDefault {
+		if !source.DisabledByDefault && (source.DefaultRole == "" || auth.HasRole(role, source.DefaultRole)) {
 			ids = append(ids, source.ID)
 		}
 	}

@@ -9,6 +9,7 @@
 | [Buildspace](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
 | [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
 | [Roles and permissions](roles-and-permissions.md) | Officers management tabs, role matrix, owner provisioning, transfer and recovery. |
+| [Purchase deadlines](purchase-deadlines.md) | Optional “needed by” dates on purchase requests, due hints, deadline sort and the Home calendar source. |
 | [Accounting](accounting.md) | Ledger, restrictions, purchase lifecycle, Form 990 limits. |
 | [Integrations](integrations.md) | Discord, Cloudflare, Luma CSV, Google Drive and Calendar, Notion status. |
 | [API](api.md) | HTTP endpoints and payloads, including External Contacts and speaking history. |

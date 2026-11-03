@@ -172,6 +172,13 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   A director cannot approve their own request (403). `totalCents` is always computed
   server-side. `PurchaseRequestDetail.allowedTransitions` and `canEdit` tell the UI which
   buttons to show for the current user.
+- **Purchase deadlines.** `neededBy` is an optional date-only `YYYY-MM-DD` (list items and
+  detail both carry it). On create, and whenever an edit changes it, it must not be before
+  today on the officer's effective time zone (400 with a `neededBy` field error); an
+  unchanged deadline that has since passed may stay. Edits follow the draft rule above and
+  are audited in `request.updated`. `GET /api/requests?sort=deadline` lists only requests
+  with a deadline, soonest first (cursor `YYYY-MM-DD|id`); the default `sort=newest` is
+  unchanged. See [Purchase deadlines](purchase-deadlines.md).
 - **No self-payout.** The requester never settles (`fulfilled`, `reimbursed`) or closes their
   own request, whatever their role (403); another director does. `allowedTransitions` leaves
   those moves out for the requester. The same holds for the purchasing agent: a token never

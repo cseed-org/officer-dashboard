@@ -35,7 +35,7 @@ func (c *Ctx) requestsList() error {
 	}
 	var cursor string
 	var limit int
-	var scope, status string
+	var scope, status, sortBy string
 	var eventID, qtext validate.Field[string]
 	if err := c.query(func(r *validate.Reader) {
 		cursor, limit = pageQuery(r)
@@ -43,10 +43,11 @@ func (c *Ctx) requestsList() error {
 		status = r.Str("status", validate.S{Enum: append([]string{"pending"}, purchaseStatuses...)}).V
 		eventID = r.Str("eventId", validate.S{Min: 1, Max: 64})
 		qtext = r.Str("q", validate.S{Max: 100})
+		sortBy = r.Str("sort", validate.S{Enum: []string{"newest", "deadline"}, HasDef: true, Default: "newest"}).V
 	}); err != nil {
 		return err
 	}
-	f := store.RequestFilter{EventID: eventID.V, Q: qtext.V}
+	f := store.RequestFilter{EventID: eventID.V, Q: qtext.V, ByDeadline: sortBy == "deadline"}
 	if scope == "mine" {
 		f.RequesterID = u.ID
 	}
@@ -61,7 +62,13 @@ func (c *Ctx) requestsList() error {
 	}
 	f.Status = status
 	f.Limit = limit + 1
-	if cursor != "" {
+	if cursor != "" && f.ByDeadline {
+		date, id, ok := strings.Cut(cursor, "|")
+		if !ok || !validate.IsDate(date) || id == "" {
+			return badRequest("Invalid cursor")
+		}
+		f.HasCursor, f.CursorDate, f.CursorID = true, date, id
+	} else if cursor != "" {
 		ms, id, err := parseCursor(cursor)
 		if err != nil {
 			return err
@@ -84,6 +91,9 @@ func (c *Ctx) requestsList() error {
 	for i := range rows {
 		if i == limit {
 			next := cursorKey(int64(rows[limit-1].CreatedAt), rows[limit-1].ID)
+			if f.ByDeadline {
+				next = *rows[limit-1].NeededBy + "|" + rows[limit-1].ID
+			}
 			out.NextCursor = &next
 			break
 		}
@@ -208,6 +218,11 @@ func (c *Ctx) requestCreate() error {
 	var detail RequestDetail
 	var created *store.Request
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
+		if in.NeededBy.Has() {
+			if err := c.checkNeededBy(ctx, w, u.ID, in.NeededBy.V); err != nil {
+				return err
+			}
+		}
 		if err := validateCategory(ctx, w, in.ExpenseAccount.V, in.FundID.V, ptrIf(in.EventID)); err != nil {
 			return err
 		}
@@ -323,6 +338,12 @@ func (c *Ctx) requestUpdate() error {
 		}
 		if in.NeededBy.Set {
 			next.NeededBy = ptrIf(in.NeededBy)
+			// An unchanged deadline that has since passed may stay; a new one must not be past.
+			if in.NeededBy.Has() && (r.NeededBy == nil || *r.NeededBy != in.NeededBy.V) {
+				if err := c.checkNeededBy(ctx, w, u.ID, in.NeededBy.V); err != nil {
+					return err
+				}
+			}
 		}
 		if err := validateCategory(ctx, w, next.ExpenseAccountID, next.FundID, next.EventID); err != nil {
 			return err
@@ -348,6 +369,22 @@ func (c *Ctx) requestUpdate() error {
 		return err
 	}
 	writeJSON(c.W, 200, map[string]any{"request": detail})
+	return nil
+}
+
+// checkNeededBy rejects a "needed by" date before today. Deadlines are date-only, so
+// "today" is the calendar date on the officer's effective time zone (Settings), the same
+// wall clock the form's date picker and the Home calendar use.
+func (c *Ctx) checkNeededBy(ctx context.Context, q *store.Queries, userID, date string) error {
+	zone, err := q.EffectiveTimezone(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if date < c.S.now().In(zone).Format("2006-01-02") {
+		issues := &validate.Issues{}
+		issues.Add("neededBy", "Choose today or a later date")
+		return validationError(issues)
+	}
 	return nil
 }
 

@@ -123,6 +123,15 @@ var Requests = []Request{
 	{"req-0006", "2027-0006", "user-marcus", "club_purchase", "Hack Night prizes", "Amazon", "", 3, 5000, 0, "5900", "fund-general", "event-hack-night", "program", "Gift cards for top three teams", "draft", "", "", nil},
 }
 
+// RequestNeededBy gives some seeded requests a date-only "needed by" deadline, so the
+// Finance list and the Home calendar's purchase-deadlines source have data.
+var RequestNeededBy = map[string]string{
+	"req-0001": "2026-09-12", // reimbursed: hidden from the calendar
+	"req-0004": "2026-11-06",
+	"req-0005": "2026-11-12",
+	"req-0006": "2026-11-20", // draft: only its requester sees it on the calendar
+}
+
 type Budget struct {
 	Account, Fund string // Fund "" = all funds
 	AmountCents   int64

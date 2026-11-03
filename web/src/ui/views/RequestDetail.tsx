@@ -11,6 +11,8 @@ import { bytes, safeUrl, dollarsToCents, fmtDate, fmtDateTime, formatCents, FUNC
 import { Dropzone } from './RequestForm';
 import { href } from '../../lib/routes';
 import { SettlementHoldNotice } from '../components/SettlementHoldNotice';
+import { DueDate } from '../components/DueDate';
+import { pacificToday } from '../../lib/calendar';
 
 export interface Flash {
   created?: 'submitted' | 'draft' | null;
@@ -134,7 +136,15 @@ export default function RequestDetail({
             <Fact label="fund">{r.fund.name}</Fact>
             <Fact label="event">{r.event ? <a href={href.event(r.event.id)}>{r.event.name}</a> : '—'}</Fact>
             <Fact label="functional class">{FUNCTIONAL_LABEL[r.functionalClass]}</Fact>
-            <Fact label="needed by">{fmtDate(r.neededBy)}</Fact>
+            <Fact label="needed by">
+              <NeededBy
+                r={r}
+                onSaved={(next) => {
+                  state.set({ request: next });
+                  onChanged?.();
+                }}
+              />
+            </Fact>
             <Fact label="requested by">{r.requester.name}</Fact>
           </dl>
           <div>
@@ -173,6 +183,89 @@ const hostOf = (u: string) => {
     return u;
   }
 };
+
+/** The deadline, with an inline editor for whoever may edit the request (its requester, while a draft). */
+function NeededBy({ r, onSaved }: { r: PurchaseRequestDetail; onSaved: (r: PurchaseRequestDetail) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(r.neededBy ?? '');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) input.current?.focus();
+  }, [editing]);
+  if (!editing)
+    return (
+      <span class="due-fact">
+        <DueDate date={r.neededBy} status={r.status} />
+        {r.canEdit && (
+          <button
+            type="button"
+            class="linkish small"
+            onClick={() => {
+              setValue(r.neededBy ?? '');
+              setError('');
+              setEditing(true);
+            }}
+          >
+            {r.neededBy ? 'change' : 'add a date'}
+          </button>
+        )}
+      </span>
+    );
+  const today = pacificToday();
+  const save = async () => {
+    // An unchanged past deadline may stay; a new one must be today or later (the server agrees).
+    if (value && value !== r.neededBy && value < today) return setError('Pick a date that is today or later, or leave it blank.');
+    setBusy(true);
+    try {
+      const { request } = await api('requestUpdate', { params: { id: r.id }, body: { neededBy: value || null } });
+      setEditing(false);
+      onSaved(request);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form
+      class="due-edit"
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <label class="visually-hidden" for="rq-needed-edit">
+        needed by
+      </label>
+      <input
+        ref={input}
+        class="input"
+        type="date"
+        min={r.neededBy && r.neededBy < today ? r.neededBy : today}
+        value={value}
+        onInput={(e) => setValue(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        {...describe('rq-needed-edit', error || undefined)}
+      />
+      <button class="btn btn--small btn--primary" disabled={busy}>
+        {busy ? 'saving…' : 'save'}
+      </button>
+      <button type="button" class="linkish small" onClick={() => setEditing(false)}>
+        cancel
+      </button>
+      {error && (
+        <span class="field-error" id="rq-needed-edit-error" role="alert">
+          {error}
+        </span>
+      )}
+    </form>
+  );
+}
 
 function Fact({ label, children }: { label: string; children: ComponentChildren }) {
   return (

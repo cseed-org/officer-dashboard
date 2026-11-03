@@ -1,3 +1,5 @@
+import { DueDate } from '../components/DueDate';
+import { isDueSoon } from '../../lib/deadline';
 import CalendarWidget from '../widgets/CalendarWidget';
 import LinksWidget from '../widgets/LinksWidget';
 import CloudflareWidget, { cloudflareIds } from '../widgets/CloudflareWidget';
@@ -142,6 +144,12 @@ function RequestList({ items, showRequester }: { items: PurchaseRequestListItem[
             <span class="cell-sub">
               <span class="mono">#{r.number}</span>
               {showRequester ? ` · ${r.requester.name}` : ''} · {relative(r.submittedAt ?? r.updatedAt)}
+              {isDueSoon(r) && (
+                <>
+                  {' · '}
+                  <DueDate date={r.neededBy} status={r.status} hintOnly />
+                </>
+              )}
             </span>
           </div>
           <div class="list-side">
