@@ -4,6 +4,7 @@ import CloudflareWidget, { cloudflareIds } from '../widgets/CloudflareWidget';
 import WidgetGrid from '../widgets/WidgetGrid';
 import { kpiIds, widgetDef, type BlockSize } from '../widgets/registry';
 import type { ComponentChildren } from 'preact';
+import { useRef } from 'preact/hooks';
 import type { AuditLogEntry, CurrentUser, PurchaseRequestListItem } from '../../lib/contracts';
 import type { PurchaseStatus } from '../../lib/domain';
 import { useApi } from '../../lib/api/useApi';
@@ -46,6 +47,11 @@ export default function HomeView({ me }: { me: CurrentUser }) {
   const overview = useApi('overview');
   const cloudflare = useApi('cloudflareWidgets');
   const fy = overview.status === 'ready' ? overview.data.fiscalYear : undefined;
+  // Commit the primary grid in one layout: loading stat cards and a short table skeleton
+  // otherwise grow different shared grid tracks when overview arrives.
+  const committed = useRef(false);
+  if (overview.status !== 'loading') committed.current = true;
+  if (!committed.current) return <Loading rows={6} label="Loading home" />;
 
   /** One stat tile per key figure (formerly one "Key figures" row). */
   function stat(id: string) {
