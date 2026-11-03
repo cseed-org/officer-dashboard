@@ -4,7 +4,9 @@
  * Without it the browser discovers island code one import level at a time (island loader →
  * component → its imports → theirs), and only after the stylesheets, because the island loader
  * is an inline script that waits for them. The links go after the stylesheet links so CSS is
- * still requested first. Links are not scripts, so the page CSP (#43) is unchanged.
+ * still requested first, and they are low priority so the stylesheets (which gate first paint)
+ * keep the bandwidth: high-priority preloads delayed the CSS and slowed shell-painted pages like
+ * Finance by ~50ms. Links are not scripts, so the page CSP (#43) is unchanged.
  */
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, posix } from 'node:path';
@@ -33,7 +35,7 @@ export async function moduleGraph(dist, entries) {
 export async function addPreloads(dist, html) {
   const entries = [...new Set([...html.matchAll(ISLAND_URL)].map((m) => m[1]))];
   if (!entries.length || html.includes('rel="modulepreload"')) return html;
-  const links = (await moduleGraph(dist, entries)).map((u) => `<link rel="modulepreload" href="${u}">`).join('');
+  const links = (await moduleGraph(dist, entries)).map((u) => `<link rel="modulepreload" fetchpriority="low" href="${u}">`).join('');
   return LAST_STYLESHEET.test(html) ? html.replace(LAST_STYLESHEET, `$1${links}`) : html.replace('</head>', `${links}</head>`);
 }
 

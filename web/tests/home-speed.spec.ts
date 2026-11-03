@@ -50,7 +50,13 @@ test.describe('Home', () => {
     test.skip(info.project.name !== 'desktop', 'one viewport is enough');
     // The early head-script read gets the broken body too: route() sees every request.
     await page.route('**/api/cloudflare/widgets', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ unexpected: true }) }));
+    // Hold the contract module until Home has rendered, so the broken read is used unvalidated first.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(/\/contracts[.\w-]*\.(js|ts)(\?.*)?$/, async (route) => { await held; await route.continue(); });
     await devLogin(page, 'director');
+    await expect(page.getByRole('list', { name: 'Home widgets' })).toBeVisible();
+    release();
     const alert = page.getByRole('alert');
     await expect(alert).toContainText('did not match the API contract');
     await expect(alert.getByRole('button')).toBeVisible();
@@ -61,8 +67,8 @@ test.describe('Home', () => {
     const html = await (await page.request.get('/')).text();
     const preload = html.indexOf('rel="modulepreload"');
     expect(preload).toBeGreaterThan(html.lastIndexOf('rel="stylesheet"'));
-    for (const m of html.matchAll(/component-url="([^"]+)"/g)) expect(html).toContain(`<link rel="modulepreload" href="${m[1]}">`);
+    for (const m of html.matchAll(/component-url="([^"]+)"/g)) expect(html).toContain(`<link rel="modulepreload" fetchpriority="low" href="${m[1]}">`);
     // The zod contract is not among them: it loads after the first data.
-    expect(html).not.toMatch(/modulepreload" href="\/_astro\/contracts\./);
+    expect(html).not.toMatch(/modulepreload" fetchpriority="low" href="\/_astro\/contracts\./);
   });
 });
