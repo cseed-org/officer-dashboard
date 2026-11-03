@@ -238,8 +238,16 @@ await call('lookups', { expect: 401 });
 }
 
 // ───────────── 3. purchase lifecycle: club purchase settled below the estimate ─────────────
-const createdB = await call('adminUserCreate', { who: leadership, body: { discordId: '100000000000000077', name: 'Second Director', role: 'director', title: 'Treasurer', email: 'second@example.org' } });
+const createdB = await call('adminUserCreate', { who: leadership, body: { discordId: '100000000000000077', name: 'Second Director', subteamId: 'team-operations', role: 'director', title: 'Treasurer', email: 'second@example.org' } });
 const directorB = sessionFor(createdB.json.user.id);
+// Accounts added from Access finish setup before the rest of the API opens (V0.4).
+{
+  const gated = await call('eventsList', { who: directorB, expect: 403 });
+  must(gated.json.error.code === 'onboarding_required', 'new account is held on setup', gated.json);
+  must((await call('me', { who: directorB })).json.onboarding?.subteam?.id === 'team-operations', 'admin-created account has an onboarding invite');
+  await call('profilePut', { who: directorB, body: { phone: '+1 206 555 0123', birthday: '01-15' } });
+  await call('onboardingComplete', { who: directorB });
+}
 await call('adminUserUpdate', { who: directorA, params: { id: createdB.json.user.id }, body: { title: 'Co-director' } });
 
 const account = lookups.json.expenseAccounts.find((a) => a.code === '5100').id;
@@ -417,6 +425,9 @@ must(dmLess.json.dm.status === 'not_configured' && dmLess.json.link.includes('/l
 await call('inviteCreate', { who: directorA, body: { name:'Priya again',discordId:'100000000000000002',subteamId:'team-events' }, expect: 409 });
 must((await call('invitesList', { who: directorA })).json.invites.length >= 2, 'invites listed');
 await call('invitesList', { who: officer, expect: 403 });
+await call('inviteUpdate', { who: officer, params: { id: invited.json.invite.id }, body: { name: 'x' }, expect: 403 });
+const edited = await call('inviteUpdate', { who: directorA, params: { id: invited.json.invite.id }, body: { name: 'New officer (fixed)', subteamId: 'team-build' } });
+must(edited.json.invite.name === 'New officer (fixed)' && edited.json.invite.subteam?.id === 'team-build', 'invite details edited', edited.json.invite);
 await call('inviteRevoke', { who: directorA, params: { id: dmLess.json.invite.id } });
 const officersOfficer = await call('officersList', { who: officer });
 must(officersOfficer.json.officers.every((o) => o.phone === undefined), 'officers never see phone');

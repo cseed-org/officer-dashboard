@@ -22,6 +22,10 @@ test('admin: add an officer in the drawer, change their role, deactivate and rea
   await expect(drawer.getByLabel('Discord user id')).toBeFocused();
   await drawer.getByLabel('Discord user id').fill(discordId);
   await drawer.getByLabel('name', { exact: true }).fill(name);
+  // A subteam is required: the new account goes through setup like an invitee.
+  await drawer.getByRole('button', { name: 'add officer' }).click();
+  await expect(drawer.getByLabel('subteam')).toBeFocused();
+  await drawer.getByLabel('subteam').selectOption({ label: 'Events' });
   await drawer.getByLabel('title').fill('QA');
   // One column at the standard control height.
   const heights = await drawer.locator('.input').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));

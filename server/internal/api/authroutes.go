@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
 
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/store"
@@ -153,12 +154,21 @@ func (c *Ctx) authCallback() error {
 }
 
 // authLogout is POST-only (a form button), so a cross-site link can't sign people out.
+// A form field next=/login?invite=<token> returns there afterwards (an invite link opened in a browser
+// where someone else was signed in); anything else lands on /login.
 func (c *Ctx) authLogout() error {
 	if c.SessionID != "" {
 		ctx := context.WithoutCancel(c.Context())
 		_ = c.S.db.Write(ctx, func(w *store.Queries) error { return w.DeleteSession(ctx, c.SessionID) })
 	}
 	c.S.clearCookie(c.W, c.S.sessionCookieName())
-	http.Redirect(c.W, c.R, "/login", http.StatusSeeOther)
+	target := "/login"
+	if next := c.R.PostFormValue("next"); inviteLoginRE.MatchString(next) {
+		target = next
+	}
+	http.Redirect(c.W, c.R, target, http.StatusSeeOther)
 	return nil
 }
+
+// inviteLoginRE is the one place logout may return to besides /login: an invite link.
+var inviteLoginRE = regexp.MustCompile(`^/login\?invite=[A-Za-z0-9_-]{1,128}$`)

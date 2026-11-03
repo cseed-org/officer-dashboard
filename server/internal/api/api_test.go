@@ -316,7 +316,7 @@ func TestDeniesAndCancelsRequestsAndInvalidatesDeactivatedSessions(t *testing.T)
 	if s := e.scalar(`SELECT status FROM fulfillment_jobs WHERE request_id = ?`, cid); s != "cancelled" {
 		t.Errorf("job status %v", s)
 	}
-	created := e.mustOK(e.post("/api/admin/users", map[string]any{"discordId": "100000000000000099", "name": "Session test"}, e.director()))
+	created := e.mustOK(e.post("/api/admin/users", map[string]any{"discordId": "100000000000000099", "name": "Session test", "subteamId": "team-events"}, e.director()))
 	uid := created.str("user", "id")
 	victim := e.as(uid)
 	expectStatus(t, "new user can read", e.get("/api/me", victim), 200)
@@ -325,7 +325,7 @@ func TestDeniesAndCancelsRequestsAndInvalidatesDeactivatedSessions(t *testing.T)
 		t.Errorf("sessions left: %v", n)
 	}
 	expectStatus(t, "deactivated user", e.get("/api/me", victim), 401)
-	expectStatus(t, "duplicate Discord ID", e.post("/api/admin/users", map[string]any{"discordId": "100000000000000099", "name": "Dup"}, e.director()), 409)
+	expectStatus(t, "duplicate Discord ID", e.post("/api/admin/users", map[string]any{"discordId": "100000000000000099", "name": "Dup", "subteamId": "team-events"}, e.director()), 409)
 	expectStatus(t, "bad Discord ID", e.post("/api/admin/users", map[string]any{"discordId": "12", "name": "Dup"}, e.director()), 400)
 }
 

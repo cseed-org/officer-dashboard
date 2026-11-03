@@ -82,6 +82,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 
 	h("GET /api/invites", (*Ctx).invitesList)
 	h("POST /api/invites", (*Ctx).inviteCreate)
+	h("PATCH /api/invites/{id}", (*Ctx).inviteUpdate)
 	h("DELETE /api/invites/{id}", (*Ctx).inviteRevoke)
 	h("GET /api/officers", (*Ctx).officersList)
 	h("GET /api/officers/{id}", (*Ctx).officerDetail)

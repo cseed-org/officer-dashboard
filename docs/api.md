@@ -57,6 +57,7 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | DELETE | `/api/me/calendar-emails/:id` | officer | — | — | `OkResponse` |
 | GET | `/api/invites` | director | — | — | `InvitesResponse` |
 | POST | `/api/invites` | director | — | `InviteCreateRequest` | `InviteResponse` |
+| PATCH | `/api/invites/:id` | director | — | `InviteUpdateRequest` | `InviteUpdateResponse` |
 | DELETE | `/api/invites/:id` | director | — | — | `OkResponse` |
 | GET | `/api/officers` | officer | — | — | `OfficersResponse` |
 | GET | `/api/officers/:id` | officer | — | — | `OfficerResponse` |
@@ -373,6 +374,16 @@ SHA-256 is stored. Invites expire after 7 days.
   subteam, inviter and expiry; the old link and DM status are cleared.
 - GET lists the newest 200 invites with `status` pending | expired | accepted |
   onboarded and `dmConfigured`. DELETE revokes a pending invite (409 once accepted).
+- PATCH `/api/invites/:id {name?, subteamId?}` fixes the details of any invite that is
+  not yet onboarded: pending, expired or accepted (409 once onboarded). The link, token
+  and Discord ID stay the same. When the account it created is leadership or an owner,
+  only leadership may edit it (403 for directors), as on PATCH `/api/officers/:id`. For an accepted invite it also renames the account
+  and moves a saved profile to the new subteam, so the invitee's Confirm step shows the
+  fix at once. Audited as `invite.updated`.
+- POST `/api/admin/users` (Access tab, "add officer") now requires `subteamId` and
+  records an accepted invite for the new account, so it goes through the same setup as
+  an invitee. A Discord ID with a pending invite is refused (409): revoke the invite or
+  let them accept it.
 - DMs go through the Discord bot API (`DISCORD_BOT_TOKEN`, `notify.DiscordBot`). The bot
   must share a server with the invitee. Without the token, `dm.status` is
   `not_configured`.
@@ -387,13 +398,30 @@ an invite link must carry the invite's current token: a re-invite makes older li
 "invitation unavailable", while signing in directly with the invited account still works. Until onboarding is
 complete, every sign-in lands on `/onboarding`.
 
-**Onboarding** is for invitees only. `/api/me` carries `onboarding` (step to resume,
-invited name and subteam, inviter, `hasProfile`, `correctionsByDm`) or `null`. PUT
+**Setup gate.** Until onboarding is complete, the server answers every API call outside
+`/api/me` and `/api/me/*` (profile, prefs, calendar, calendar emails, onboarding),
+`GET /api/club/settings` and `/api/health` with **403 `onboarding_required`**. The web
+client sends the browser to `/onboarding` when it sees that code. Accounts with no invite
+row (seeded, bootstrap, created before V0.4) are never gated.
+
+**Signing out to an invite.** POST `/auth/logout` accepts a form field
+`next=/login?invite=<token>` and returns there; any other value lands on `/login`. The
+sign-in page uses it when an invite link opens in a browser where someone else is
+signed in: it shows "Signed in as X" with a sign-out button instead of continuing as X.
+
+**Onboarding** is for invitees and admin-created accounts. `/api/me` carries `onboarding`
+(step to resume, the account's current name and subteam, inviter, `hasProfile`,
+`correctionsByDm`, `correctionPending`) or `null`. `correctionPending` is true after a
+correction until the inviter edits the invite. PUT
 `/api/me/onboarding {step}` saves where to resume ("Finish later"). POST
 `/api/me/onboarding/correction {message}` DMs the inviter that the pre-filled name or
 subteam is wrong; without a bot it returns `not_configured` plus the inviter's Discord
-ID so the client can open a DM. Corrections are limited to one a minute and five per
-invite (409). POST `/api/me/onboarding/complete` requires a saved
+ID so the client can open a DM. Corrections are limited to one a minute and five
+delivered DMs per invite (409); the slot is reserved inside one write transaction before
+the DM goes out, so parallel requests can't slip past the limit, and failed DMs don't
+count toward five. A deactivated inviter gets no DM (`dm.status` `skipped`, with advice to
+ask leadership). The relayed text has URL schemes broken and markdown and mentions
+escaped, so the bot never posts a live link. POST `/api/me/onboarding/complete` requires a saved
 profile (409 otherwise) and is idempotent; non-invitees get 409.
 
 **Profiles.** PUT `/api/me/profile` replaces the caller's profile. Required: `phone`
@@ -401,7 +429,8 @@ profile (409 otherwise) and is idempotent; non-invitees get 409.
 collected; Feb 29 allowed). Optional (null or omitted clears): preferredName, pronouns,
 personalEmail, schoolEmail (lower-cased), gradDate (`YYYY-MM`), title (also the
 user's display title), startTerm, linkedin (https on linkedin.com). The subteam comes
-from the invite or existing profile; changing it is 403 ("ask a director"). Officers
+from the invite while onboarding (so an inviter's fix applies), then from the existing
+profile; changing it is 403 ("ask a director"). Officers
 with neither pick one with `subteamId` on first save. Phone is redacted from the audit log.
 
 **Officers directory.** GET `/api/officers` lists active officers (director+ also see
