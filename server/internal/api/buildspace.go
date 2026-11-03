@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
-	"time"
 
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/store"
@@ -18,16 +17,83 @@ func (c *Ctx) buildspaceList() error {
 	if _, err := c.officer(); err != nil {
 		return err
 	}
-	b, err := c.S.db.Read().Buildspace(c.Context())
+	q := c.S.db.Read()
+	b, err := q.Buildspace(c.Context())
 	if err != nil {
 		return err
 	}
-	loc, _ := time.LoadLocation("America/Los_Angeles")
-	today := c.S.now().In(loc)
-	day := (int(today.Weekday()) + 6) % 7
-	b.WeekStart = today.AddDate(0, 0, -day).Format("2006-01-02")
-	b.Today = today.Format("2006-01-02")
+	if b.Schedule, err = c.buildspaceSchedule(q); err != nil {
+		return err
+	}
+	b.WeekStart, b.WeekDue, b.Today = b.Schedule.Week.Start, b.Schedule.Week.Due, b.Schedule.Today
 	writeJSON(c.W, 200, b)
+	return nil
+}
+
+// buildspaceSchedule reads the due-day rules and the club-time-zone clock together.
+func (c *Ctx) buildspaceSchedule(q *store.Queries) (store.BuildspaceSchedule, error) {
+	rules, err := q.BuildspaceWeekRules(c.Context())
+	if err != nil {
+		return store.BuildspaceSchedule{}, err
+	}
+	clock, err := q.BuildspaceClock(c.Context(), c.S.now())
+	if err != nil {
+		return store.BuildspaceSchedule{}, err
+	}
+	return store.BuildspaceScheduleAt(rules, clock), nil
+}
+
+var hhmm = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
+
+// buildspaceSchedulePut changes the weekly check-in due day. Leadership only, audited.
+func (c *Ctx) buildspaceSchedulePut() error {
+	if _, err := c.requireLeadership(); err != nil {
+		return err
+	}
+	var weekday int
+	var dueTime *string
+	if err := c.jsonBody(func(r *validate.Reader) {
+		weekday = int(r.Int("dueWeekday", validate.I{Req: true, Min: validate.Lo(0), Max: validate.Lo(6)}).V)
+		t := r.Str("dueTime", validate.S{Max: 5, Null: true}).V
+		if t != "" {
+			dueTime = &t
+			if !hhmm.MatchString(t) {
+				r.Issues.Add("dueTime", "Use a 24-hour HH:MM time")
+			}
+		}
+	}); err != nil {
+		return err
+	}
+	var out store.BuildspaceSchedule
+	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
+		u, err := c.requireLeadershipIn(q)
+		if err != nil {
+			return err
+		}
+		before, err := c.buildspaceSchedule(q)
+		if err != nil {
+			return err
+		}
+		clock, err := q.BuildspaceClock(c.Context(), c.S.now())
+		if err != nil {
+			return err
+		}
+		changed, err := q.SetBuildspaceDue(c.Context(), clock, weekday, dueTime, u.ID, c.S.nowMs())
+		if err != nil {
+			return err
+		}
+		if out, err = c.buildspaceSchedule(q); err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		return c.audit(c.Context(), q, "buildspace.schedule.updated", "buildspace_schedule", "weekly", before, out)
+	})
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, out)
 	return nil
 }
 func (c *Ctx) buildspaceProjectSave() error {
@@ -204,11 +270,19 @@ func (c *Ctx) buildspaceActivitySave(ingest bool) error {
 	if !validate.IsDate(a.Date) {
 		return badRequest("Invalid activity date")
 	}
+	// Every entry belongs to the check-in week containing its date under the due-day rules
+	// (club time zone). The response tells the caller (and the Discord bot) which week.
+	var week store.BuildspaceWeek
 	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
 		b, err := q.Buildspace(c.Context())
 		if err != nil {
 			return err
 		}
+		rules, err := q.BuildspaceWeekRules(c.Context())
+		if err != nil {
+			return err
+		}
+		week = store.BuildspaceWeekOf(rules, a.Date)
 		if ingest {
 			a.PersonID, a.MentorID, a.PurchaseID = nil, nil, nil
 			for _, p := range b.People {
@@ -287,7 +361,7 @@ func (c *Ctx) buildspaceActivitySave(ingest bool) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(c.W, 200, map[string]any{"ok": true})
+	writeJSON(c.W, 200, map[string]any{"ok": true, "week": week})
 	return nil
 }
 func (c *Ctx) buildspaceActivityResolve() error {

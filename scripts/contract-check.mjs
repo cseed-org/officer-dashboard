@@ -538,7 +538,8 @@ await call('buildspaceActivityResolve', {who: officer, params: {id: bsRequest.id
 const bsToken = await call('adminTokenCreate', {who: directorA, body: {name: 'Buildspace bot', scopes: ['ingest:buildspace'], expiresInDays: 30}});
 const bsWho = {bearer: bsToken.json.plaintext};
 const bsUpdate = {discordId: '123456789012345678', externalId: 'contract-discord-message-1', kind: 'weekly', date: today, body: 'First working prototype', status: 'on-track'};
-await call('buildspaceIngest', {who: bsWho, body: bsUpdate});
+const bsIngested = await call('buildspaceIngest', {who: bsWho, body: bsUpdate});
+must(bsIngested.json.week.start <= today && today <= bsIngested.json.week.due, 'Ingest reports the check-in week containing its date');
 await call('buildspaceIngest', {who: bsWho, body: bsUpdate});
 await call('buildspaceIngest', {who: bsWho, body: {...bsUpdate, body: 'Conflicting replay'}, expect: 409});
 await call('buildspaceIngest', {who: officer, body: bsUpdate, expect: 401});
@@ -546,6 +547,15 @@ bs = await call('buildspaceList', {who: officer});
 must(bs.json.activity.filter(a => a.externalId === bsUpdate.externalId).length === 1, 'Discord retries do not duplicate check-ins');
 await call('adminTokenRevoke', {who: directorA, params: {id: bsToken.json.token.id}});
 await call('buildspaceIngest', {who: bsWho, body: bsUpdate, expect: 401});
+
+// The check-in due day is a leadership-only, audited Buildspace setting.
+await call('buildspaceSchedulePut', {who: officer, body: {dueWeekday: 3}, expect: 403});
+await call('buildspaceSchedulePut', {who: directorA, body: {dueWeekday: 3}, expect: 403});
+await call('buildspaceSchedulePut', {who: leadership, body: {dueWeekday: 3, dueTime: '25:00'}, expect: 400});
+const bsSchedule = await call('buildspaceSchedulePut', {who: leadership, body: {dueWeekday: 3, dueTime: '18:00'}});
+must(bsSchedule.json.pending?.dueWeekday === 3 && bsSchedule.json.pending.effectiveFrom > bsSchedule.json.week.due, 'A due-day change starts after the current week');
+const bsReverted = await call('buildspaceSchedulePut', {who: leadership, body: {dueWeekday: bsSchedule.json.current.dueWeekday, dueTime: bsSchedule.json.current.dueTime}});
+must(bsReverted.json.pending === null, 'Choosing the current due day cancels a pending change');
 
 // Buildspace calendar sources are opt-in and use the same registry/settings contract.
 const purchaseFeed = await call('calendarFeed', {who: officer, query: {start: '2026-11-01', end: '2026-12-01', sources: 'purchase-deadlines'}});

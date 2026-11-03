@@ -11,6 +11,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("POST /api/buildspace/activity", (*Ctx).buildspaceActivityCreate)
 	h("POST /api/buildspace/activity/{id}/resolve", (*Ctx).buildspaceActivityResolve)
 	h("POST /api/ingest/buildspace", (*Ctx).buildspaceIngest)
+	h("PUT /api/buildspace/schedule", (*Ctx).buildspaceSchedulePut)
 
 	h("GET /api/members", (*Ctx).membersList)
 	h("GET /api/members/export", (*Ctx).membersExport)

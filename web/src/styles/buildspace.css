@@ -579,3 +579,31 @@
     background: linear-gradient(to right, var(--sunken) 0 64px, var(--bg) 64px 100%);
   }
 }
+
+/* V0.6 motion parity: shared tokens and utilities (docs/motion-performance-v05.md).
+   Views crossfade through the shared .async-outgoing overlay; the incoming view owns
+   layout, so the overlay never resizes the page. Lists/cards use .motion-list stagger. */
+.bs-view {position: relative; min-width: 0;}
+.bs-view-in {min-width: 0;}
+.bs-view-out .async-outgoing {z-index: 1;}
+.bs-view-out .async-outgoing * {animation: none !important;}
+.bs-toolbar .tabs {border-bottom: 0;}
+.bs-detail-panel {display: grid; gap: 24px; min-width: 0;}
+
+/* Check-in schedule popover (same pattern as the calendar Options popover). */
+.bs-schedule {position: relative;}
+.bs-schedule > summary {list-style: none;}
+.bs-schedule > summary::-webkit-details-marker {display: none;}
+.bs-schedule-panel {position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(340px, calc(100vw - 32px)); display: grid; gap: 12px; padding: 16px; border: 1px solid var(--control); border-radius: var(--radius-overlay); background: var(--surface); color: var(--text); box-shadow: var(--block-lift); font-size: 13px; animation: pop-in var(--dur-2) var(--ease-out) backwards;}
+.bs-intro .bs-schedule-panel p {margin: 0; font-size: 13px; line-height: 1.5; letter-spacing: 0;}
+.bs-intro .bs-schedule-panel p.small {font-size: 12px;}
+.bs-schedule-title {font-size: 14px; margin: 0;}
+.bs-schedule-pending {padding: 8px 10px; border-radius: var(--radius-control); background: var(--sunken);}
+.bs-schedule-form {gap: 12px;}
+.bs-schedule-form .action-row {justify-content: flex-end;}
+/* Phones: the panel opens in flow under its button, so it can never leave the gutter. */
+@media (max-width: 600px) {
+  .bs-schedule[open] {flex: 1 1 100%;}
+  .bs-schedule-panel {position: static; width: auto; margin-top: 8px;}
+}
+.bs-toolbar .tab-count {margin-left: 6px;}
