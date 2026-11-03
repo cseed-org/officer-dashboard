@@ -374,9 +374,10 @@ SHA-256 is stored. Invites expire after 7 days.
   subteam, inviter and expiry; the old link and DM status are cleared.
 - GET lists the newest 200 invites with `status` pending | expired | accepted |
   onboarded and `dmConfigured`. DELETE revokes a pending invite (409 once accepted).
-- PATCH `/api/invites/:id {name?, subteamId?}` fixes the details of an invite that hasn't
-  finished onboarding (pending, expired or accepted; 409 once onboarded). The link,
-  token and Discord ID stay the same. For an accepted invite it also renames the account
+- PATCH `/api/invites/:id {name?, subteamId?}` fixes the details of any invite that is
+  not yet onboarded: pending, expired or accepted (409 once onboarded). The link, token
+  and Discord ID stay the same. When the account it created is leadership or an owner,
+  only leadership may edit it (403 for directors), as on PATCH `/api/officers/:id`. For an accepted invite it also renames the account
   and moves a saved profile to the new subteam, so the invitee's Confirm step shows the
   fix at once. Audited as `invite.updated`.
 - POST `/api/admin/users` (Access tab, "add officer") now requires `subteamId` and

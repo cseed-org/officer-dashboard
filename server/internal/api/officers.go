@@ -619,8 +619,9 @@ func (c *Ctx) onboardingComplete() error {
 //
 // The bot DMs a real person, so it allows one correction a minute and five delivered DMs
 // per invite. The slot is reserved (an onboarding.correction audit row) inside one write
-// transaction before the DM goes out, so parallel requests can't all pass the check; only
-// DMs Discord accepted (onboarding.correction.sent) count toward the five.
+// transaction before the DM goes out, so parallel requests can't all pass the check. All
+// reservations count toward the five unless their result shows no DM was delivered
+// (failed, not_configured, skipped), so a DM still in flight holds its slot.
 func (c *Ctx) onboardingCorrection() error {
 	u, err := c.officer()
 	if err != nil {
@@ -644,11 +645,21 @@ func (c *Ctx) onboardingCorrection() error {
 		if err != nil {
 			return err
 		}
-		sent, _, err := q.AuditCountSince(ctx, "onboarding.correction.sent", inv.ID, 0)
+		// Every reservation counts unless its result says no DM was delivered, so a DM
+		// still in flight (or one whose result write failed) holds its slot.
+		reserved, _, err := q.AuditCountSince(ctx, "onboarding.correction", inv.ID, 0)
 		if err != nil {
 			return err
 		}
-		if sent >= 5 {
+		undelivered := 0
+		for _, a := range []string{"onboarding.correction.failed", "onboarding.correction.not_configured", "onboarding.correction.skipped"} {
+			n, _, err := q.AuditCountSince(ctx, a, inv.ID, 0)
+			if err != nil {
+				return err
+			}
+			undelivered += n
+		}
+		if reserved-undelivered >= 5 {
 			return conflict("You've sent five corrections already. Message your inviter on Discord directly.")
 		}
 		if recent > 0 {
@@ -669,8 +680,12 @@ func (c *Ctx) onboardingCorrection() error {
 		dm = DMResult{Status: "skipped", Message: &msg}
 	case c.S.cfg.DM != nil:
 		content := fmt.Sprintf("%s (Discord %s) is setting up their CSEED dashboard account and says their invite details need a fix:\n\n> %s\n\nYou invited them as \"%s\". Update it on the Officers page.",
-			u.Name, u.DiscordID, strings.ReplaceAll(neutralizeDM(message), "\n", "\n> "), inv.Name)
-		if err := c.S.cfg.DM.SendDM(ctx, inviter.DiscordID, content); err != nil {
+			neutralizeDM(u.Name), u.DiscordID, strings.ReplaceAll(neutralizeDM(message), "\n", "\n> "), neutralizeDM(inv.Name))
+		// Bounded well under the one-minute cooldown.
+		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := c.S.cfg.DM.SendDM(sendCtx, inviter.DiscordID, content)
+		cancel()
+		if err != nil {
 			msg := "Discord didn't deliver it. Message " + inviter.Name + " on Discord directly."
 			var de *notify.DMError
 			if errors.As(err, &de) && de.Code == 50007 {

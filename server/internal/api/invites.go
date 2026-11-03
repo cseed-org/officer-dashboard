@@ -285,6 +285,18 @@ func (c *Ctx) inviteUpdate() error {
 		if before.OnboardedAt != nil {
 			return conflict("They've finished setup. Edit them on the Officers page instead.")
 		}
+		// Only leadership edits leadership (and owners), as on PATCH /api/officers/:id.
+		if before.UserID != nil {
+			target, err := q.UserByID(ctx, *before.UserID)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return err
+			}
+			if target != nil && (target.Role == auth.RoleLeadership || target.IsOwner) {
+				if _, err := c.requireLeadershipIn(q); err != nil {
+					return err
+				}
+			}
+		}
 		after := *before
 		if name.Set {
 			after.Name = name.V

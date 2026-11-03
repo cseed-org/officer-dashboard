@@ -50,7 +50,7 @@ Roles rank `leadership > director > officer`; unknown roles are denied. Owner is
 | Manage own profile/calendar and submit purchases | Yes | Yes | Yes | Yes |
 | Approve/settle purchases, manage budgets/periods | No | Yes | Yes | Yes |
 | Officers Access, service tokens, audit history | No | Yes | Yes | Yes |
-| Invite officers, fix an unfinished invite's name/subteam, manage officer subteam/title | No | Yes, except leadership targets | Yes | Yes |
+| Invite officers, fix a not-yet-onboarded invite's name/subteam, manage officer subteam/title | No | Yes, except leadership targets | Yes | Yes |
 | Change roles / director active status / edit leadership | No | No | Yes | Yes |
 | Manage ownership or demote/deactivate owners | No | No | No | Yes, with last-owner protection |
 

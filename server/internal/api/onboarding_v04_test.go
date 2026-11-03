@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"officerdashboard/internal/notify"
+	"officerdashboard/internal/store"
 )
 
 // newInvitee invites inviteeID as Alex Chen (Events) and signs them in through Discord.
@@ -191,6 +193,53 @@ func TestLogoutCanReturnToAnInviteLink(t *testing.T) {
 		r := e.do("POST", "/auth/logout", formBody{fields: map[string]string{"next": next}}, e.officer())
 		if r.Status != 303 || r.Header.Get("Location") != want {
 			t.Errorf("next %q → %d %s, want %s", next, r.Status, r.Header.Get("Location"), want)
+		}
+	}
+}
+
+// Only leadership edits leadership: an invite PATCH can't rename or move a leadership
+// account that is still in setup (the same rule as PATCH /api/officers/:id).
+func TestDirectorsCannotEditALeadershipAccountsInvite(t *testing.T) {
+	e := newEnv(t)
+	created := e.mustOK(e.post("/api/admin/users", map[string]any{"discordId": "100000000000000099", "name": "Lee Boss", "subteamId": "team-build", "role": "leadership"}, e.as("user-leadership")))
+	uid := created.str("user", "id")
+	invID := e.scalar(`SELECT id FROM invites WHERE user_id=?`, uid).(string)
+	expectStatus(t, "director edits leadership invite", e.do("PATCH", "/api/invites/"+invID, map[string]any{"name": "Renamed"}, e.director()), 403)
+	if n := e.scalar(`SELECT name FROM users WHERE id=?`, uid); n != "Lee Boss" {
+		t.Fatalf("renamed anyway: %v", n)
+	}
+	e.mustOK(e.do("PATCH", "/api/invites/"+invID, map[string]any{"name": "Lee Boss Jr"}, e.as("user-leadership")))
+}
+
+// A DM still in flight (its result not recorded yet) holds one of the five slots, so a
+// slow Discord call can't let a sixth correction through.
+func TestInFlightCorrectionsCountTowardTheCap(t *testing.T) {
+	dm := &fakeDM{}
+	e, alex, id := newInvitee(t, dm)
+	for i := 0; i < 5; i++ {
+		err := e.db.Write(context.Background(), func(w *store.Queries) error {
+			return w.Exec(context.Background(), `INSERT INTO audit_log(id,action,entity_type,entity_id,created_at) VALUES(?,?,?,?,?)`, "res-"+string(rune('a'+i)), "onboarding.correction", "invite", id, e.clock.Add(-time.Hour).UnixMilli())
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	expectStatus(t, "sixth while five are in flight", e.post("/api/me/onboarding/correction", map[string]any{"message": "hi"}, alex), 409)
+	if len(dm.sent) != 0 {
+		t.Fatalf("DMs %d", len(dm.sent))
+	}
+}
+
+// Names in the relayed DM are neutralized like the message.
+func TestCorrectionDMNeutralizesNames(t *testing.T) {
+	dm := &fakeDM{}
+	e, alex, id := newInvitee(t, dm)
+	e.mustOK(e.do("PATCH", "/api/invites/"+id, map[string]any{"name": "**Alex** [x](https://evil.example)"}, e.director()))
+	e.mustOK(e.post("/api/me/onboarding/correction", map[string]any{"message": "hello"}, alex))
+	got := dm.sent[0].content
+	for _, bad := range []string{"https://", "**Alex**", "]("} {
+		if strings.Contains(got, bad) {
+			t.Errorf("DM contains %q: %s", bad, got)
 		}
 	}
 }
