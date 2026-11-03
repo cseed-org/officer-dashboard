@@ -1281,7 +1281,49 @@ export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: Outr
  * Machine-readable index of every endpoint; docs/api.md is the human version and a test
  * keeps the two in sync.
  */
+export const BUILDSPACE_TRACKS = ['Software', 'Hardware', 'Creative', 'Extended Virtual Reality (XR)'] as const;
+export const BUILDSPACE_STAGES = ['Ideating', 'Building', 'Demo-ready', 'Shipped', 'At risk'] as const;
+export const BuildspaceProjectBody = z.object({
+ name: z.string().trim().min(1).max(200), description: z.string().max(10000),
+ track: z.enum(BUILDSPACE_TRACKS), stage: z.enum(BUILDSPACE_STAGES),
+ links: z.array(z.url().refine(s => /^https?:\/\//.test(s))).max(10), mentorIds: z.array(Id).max(2),
+});
+export const BuildspaceProject = BuildspaceProjectBody.extend({id: Id, updatedAt: z.number().int()});
+export type BuildspaceProject = z.infer<typeof BuildspaceProject>;
+export const BuildspacePersonBody = z.object({
+ name: z.string().trim().min(1).max(200), memberId: Id.nullable().optional(), discordId: DiscordId.nullable().optional(), projectId: Id, joinedOn: IsoDate,
+});
+export const BuildspacePerson = BuildspacePersonBody.extend({id: Id, memberId: Id.nullable(), discordId: DiscordId.nullable()});
+export type BuildspacePerson = z.infer<typeof BuildspacePerson>;
+export const BuildspaceActivityBody = z.object({
+ projectId: Id, personId: Id.nullable().optional(), mentorId: Id.nullable().optional(),
+ kind: z.enum(['weekly','mentor','request','purchase','absence']), date: IsoDate,
+ body: z.string().trim().min(1).max(10000), status: z.enum(['open','resolved','on-track','needs-help']), purchaseId: Id.nullable().optional(),
+});
+export const BuildspaceActivity = BuildspaceActivityBody.extend({
+ id: Id, personId: Id.nullable(), mentorId: Id.nullable(), purchaseId: Id.nullable(),
+ source: z.enum(['manual','discord']), externalId: z.string().nullable(), createdAt: z.number().int(),
+ purchaseTitle: z.string().nullable(), purchaseStatus: z.string().nullable(),
+});
+export type BuildspaceActivity = z.infer<typeof BuildspaceActivity>;
+export const BuildspaceResponse = z.object({
+ projects: z.array(BuildspaceProject), people: z.array(BuildspacePerson),
+ mentors: z.array(z.object({id: Id, name: z.string(), org: z.string(), topics: z.array(z.string())})),
+ activity: z.array(BuildspaceActivity), weekStart: IsoDate, today: IsoDate,
+});
+export type BuildspaceData = z.infer<typeof BuildspaceResponse>;
+export const BuildspaceIngest = z.object({
+ discordId: DiscordId, externalId: z.string().trim().min(1).max(100), kind: z.literal('weekly'), date: IsoDate,
+ body: z.string().trim().min(1).max(10000), status: z.enum(['open','resolved','on-track','needs-help']),
+});
+
 export const ENDPOINTS = {
+ buildspaceList: {method: 'GET', path: '/api/buildspace', auth: 'officer', response: BuildspaceResponse},
+ buildspaceProjectSave: {method: 'PUT', path: '/api/buildspace/projects/:id', auth: 'officer', body: BuildspaceProjectBody, response: z.object({project: BuildspaceProject})},
+ buildspacePersonSave: {method: 'PUT', path: '/api/buildspace/people/:id', auth: 'officer', body: BuildspacePersonBody, response: z.object({person: BuildspacePerson})},
+ buildspaceActivityCreate: {method: 'POST', path: '/api/buildspace/activity', auth: 'officer', body: BuildspaceActivityBody, response: z.object({ok: z.literal(true)})},
+ buildspaceActivityResolve: {method: 'POST', path: '/api/buildspace/activity/:id/resolve', auth: 'officer', response: z.object({ok: z.literal(true)})},
+ buildspaceIngest: {method: 'POST', path: '/api/ingest/buildspace', auth: 'token:ingest:buildspace', body: BuildspaceIngest, response: z.object({ok: z.literal(true)})},
   membersList: {method:'GET',path:'/api/members',auth:'officer',query:MembersQuery,response:MembersResponse},
   membersExport: {method:'GET',path:'/api/members/export',auth:'director',query:MembersQuery,response:'csv'},
   memberDetail: {method:'GET',path:'/api/members/:id',auth:'officer',response:MemberResponse},

@@ -12,6 +12,7 @@ import { DotLabel, RowMenu } from '../components/people';
 import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
 
 const SCOPE_INFO: Record<ServiceTokenScope, string> = {
+  'ingest:buildspace': 'post builder weekly check-ins (Discord bot)',
   'ingest:luma': 'push Luma events and guests (scraper)',
   'agent:jobs': 'claim and complete approved purchases (buying agent)',
 };

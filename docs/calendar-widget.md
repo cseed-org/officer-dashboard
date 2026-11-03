@@ -43,7 +43,7 @@ from the feed.
   returns items tagged by source and type, their local detail href and optional
   location/Luma URL, plus the effective time zone and source registry metadata.
   The end date is exclusive; the range must be 1–93 calendar days.
-  Omitting sources selects both; an empty sources value (or `none`) selects none.
+  Omitting sources selects the default sources (events and design); an empty sources value (or `none`) selects none.
 - `GET /api/me/calendar-widget` returns the user's options.
 - `PUT /api/me/calendar-widget` replaces options with
   `{view, colourBy, showWeekends, sources: string[]}`. The original
@@ -67,7 +67,7 @@ stable ID, label, icon, hue, and loader:
 
 The loader receives a context, queries, and `CalendarRange` containing UTC Start/End,
 local FirstDate/EndDate (exclusive), and the signed-in UserID. Filter in SQL before
-returning, and scope personal information to that UserID. Return `CalendarItem`
+returning, and respect the source’s access policy for personal information. Return `CalendarItem`
 values with stable ID, type, title, local detail Href, and either Date (a date-only
 deadline) or StartsAt/EndsAt (ISO instants). Location and LumaURL are optional.
 The dispatcher assigns Source; the API normalizes timed items' Date and sorts
@@ -77,18 +77,16 @@ Registry metadata is returned even when every source is hidden. It drives the
 legend, options, source colours/icons and source validation. Current icon hints
 are calendar, pen, user and check; other values use a calendar fallback. Hues use
 the existing blue/amber/teal/coral/violet/green tokens. A saved account opts into
-new sources via its legend/options; defaults for new accounts include the registry.
+new sources via its legend/options; defaults for new accounts include entries without `DisabledByDefault`.
 Register entries once during startup; do not mutate the registry while serving
-requests. Buildspace can add absences/check-in loaders here later; this PR does
-not add those sources or change their visibility policy.
+requests. Buildspace registers three optional sources: absences, weekly check-in due dates and mentor check-ins. All are off by default and toggleable in Options or the legend. See [Buildspace calendar policy](buildspace.md#home-calendar-sources) for dates, visibility and note redaction.
 
 Calendar settings and date indexes use migration **0016_calendar_widget.sql**,
 after dashboard-ux’s **0015_dashboard.sql**.
 
 ## Current limits
 
-Purchases have no dated deadline field; officer availability/absences have no data
-model. Existing Google/ICS integration sends club events out and does not read
+Purchases have no dated deadline field; general officer availability has no data model. Buildspace absences are separate cohort records. Existing Google/ICS integration sends club events out and does not read
 personal subscriptions. Those sources need separate data support before they can
 appear here. No external calendar credentials or network calls are introduced.
 

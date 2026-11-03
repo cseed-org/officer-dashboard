@@ -1,0 +1,745 @@
+import { useState } from "preact/hooks";
+import {
+  BUILDSPACE_STAGES,
+  BUILDSPACE_TRACKS,
+  type BuildspaceData,
+  type BuildspaceProject,
+} from "../../lib/contracts";
+import { useApi } from "../../lib/api/useApi";
+import { setParams, useSearch } from "../../lib/nav";
+import { Async, Empty, Notice } from "../components/states";
+import { Badge } from "../components/kit";
+import { Icon } from "../components/Icon";
+import { Drawer } from "../components/Drawer";
+import { BuildspaceDetail } from "./buildspace/Detail";
+import { ProjectForm, PersonForm } from "./buildspace/Forms";
+import {
+  missed,
+  openActivity,
+  projectMentors,
+  projectPeople,
+  trackShort,
+} from "./buildspace/model";
+
+export default function BuildspaceView() {
+  const state = useApi("buildspaceList");
+  return (
+    <Async state={state}>
+      {(b) => <BuildspaceContent b={b} reload={state.reload} />}
+    </Async>
+  );
+}
+function BuildspaceContent({
+  b,
+  reload,
+}: {
+  b: BuildspaceData;
+  reload: () => void;
+}) {
+  const qs = useSearch();
+  const tab =
+    qs.get("tab") === "projects"
+      ? "projects"
+      : qs.get("tab") === "mentors"
+        ? "mentors"
+        : "people";
+  const view = qs.get("view") || "table",
+    group = qs.get("group") || "track";
+  const [notice, setNotice] = useState("");
+  const project = (id: string) => b.projects.find((p) => p.id === id)!;
+  const search = (qs.get("q") || "").toLowerCase();
+  const flag = qs.get("flag") || "";
+  const matches = (p: BuildspaceProject, personId?: string) => {
+    const people = projectPeople(p, b),
+      mentors = projectMentors(p, b);
+    const activities = b.activity.filter(
+      (a) =>
+        a.projectId === p.id &&
+        (!personId || !a.personId || a.personId === personId),
+    );
+    return (
+      (!qs.get("track") || p.track === qs.get("track")) &&
+      (!qs.get("mentor") || p.mentorIds.includes(qs.get("mentor")!)) &&
+      (!qs.get("stage") || p.stage === qs.get("stage")) &&
+      (!search ||
+        [
+          p.name,
+          p.description,
+          ...people
+            .filter((x) => !personId || x.id === personId)
+            .map((x) => x.name),
+          ...mentors.map((x) => x.name),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(search)) &&
+      (!flag ||
+        (flag === "unmentored" && p.mentorIds.length === 0) ||
+        (flag === "missed" &&
+          people.some(
+            (x) => (!personId || x.id === personId) && missed(x, b),
+          )) ||
+        (flag === "requests" && activities.some(openActivity)) ||
+        (flag === "purchases" &&
+          activities.some((a) => a.kind === "purchase" && openActivity(a))) ||
+        (flag === "absences" &&
+          activities.some(
+            (a) =>
+              a.kind === "absence" &&
+              a.date >= b.weekStart &&
+              a.date <= b.today,
+          )))
+    );
+  };
+  const projects = b.projects.filter((p) => matches(p));
+  const people = b.people.filter((p) => matches(project(p.projectId), p.id));
+  const mentors = b.mentors.filter((m) => {
+    const assigned = b.projects.filter((p) => p.mentorIds.includes(m.id));
+    if (qs.get("mentor") && qs.get("mentor") !== m.id) return false;
+    if (!assigned.length)
+      return (
+        !qs.get("track") &&
+        !qs.get("stage") &&
+        !flag &&
+        (!search ||
+          [m.name, m.org, ...m.topics].join(" ").toLowerCase().includes(search))
+      );
+    return assigned.some((p) => matches(p));
+  });
+  const detailPerson = b.people.find((p) => p.id === qs.get("person"));
+  const detailProject = b.projects.find((p) => p.id === qs.get("project"));
+  const close = () =>
+    setParams({ person: null, project: null, new: null, edit: null });
+  const saved = () => {
+    reload();
+    close();
+    setNotice("Saved to Buildspace.");
+  };
+  const edit = qs.get("edit");
+  const editingPerson = edit === "person" ? detailPerson : undefined;
+  const editingProject = edit === "project" ? detailProject : undefined;
+  const form = qs.get("new") || edit;
+  const reset = () =>
+    setParams({ q: null, track: null, mentor: null, stage: null, flag: null });
+  const count =
+    tab === "people"
+      ? people.length
+      : tab === "projects"
+        ? projects.length
+        : mentors.length;
+  const stageBadge = (p: BuildspaceProject) => (
+    <Badge
+      tone={
+        p.stage === "At risk"
+          ? "attention"
+          : p.stage === "Shipped"
+            ? "positive"
+            : "neutral"
+      }
+    >
+      {p.stage}
+    </Badge>
+  );
+  const mentorNames = (p: BuildspaceProject) =>
+    projectMentors(p, b)
+      .map((m) => m.name)
+      .join(", ") || "No mentor assigned";
+  const projectLink = (p: BuildspaceProject) => (
+    <button class="bs-title" onClick={() => setParams({ project: p.id })}>
+      {p.name}
+    </button>
+  );
+  const requestCount = (projectId: string) => {
+    const count = b.activity.filter(
+      (a) => a.projectId === projectId && openActivity(a),
+    ).length;
+    return `${count} open ${count === 1 ? "request" : "requests"}`;
+  };
+  const activityCounts = (projectId: string, personId: string) => {
+    const activity = b.activity.filter(
+      (a) =>
+        a.projectId === projectId && (!a.personId || a.personId === personId),
+    );
+    const counts = [
+      {
+        icon: "message",
+        label: "open requests",
+        singular: "open request",
+        count: activity.filter((a) => a.kind === "request" && openActivity(a))
+          .length,
+      },
+      {
+        icon: "wallet",
+        label: "open purchases",
+        singular: "open purchase",
+        count: activity.filter((a) => a.kind === "purchase" && openActivity(a))
+          .length,
+      },
+      {
+        icon: "calendar",
+        label: "absences this week",
+        singular: "absence this week",
+        count: activity.filter(
+          (a) =>
+            a.kind === "absence" && a.date >= b.weekStart && a.date <= b.today,
+        ).length,
+      },
+    ];
+    return (
+      <span class="bs-activity-counts">
+        {counts.map((c) => (
+          <span
+            class={c.count ? "has-activity" : ""}
+            title={`${c.count} ${c.count === 1 ? c.singular : c.label}`}
+          >
+            <Icon name={c.icon} size={14} />
+            <span aria-hidden="true">{c.count}</span>
+            <span class="visually-hidden">
+              {c.count} {c.count === 1 ? c.singular : c.label}
+            </span>
+          </span>
+        ))}
+      </span>
+    );
+  };
+  const card = (p: BuildspaceProject) => (
+    <article class="bs-card" key={p.id} data-track={p.track}>
+      <div class="bs-card-top">
+        <span class="eyebrow">{trackShort(p.track)}</span>
+        {stageBadge(p)}
+      </div>
+      <h3>{projectLink(p)}</h3>
+      <p>{p.description}</p>
+      <div class="bs-card-foot">
+        <span>
+          <strong>Builders</strong>{" "}
+          {projectPeople(p, b)
+            .map((x) => x.name)
+            .join(" · ") || "No builders yet"}
+        </span>
+        <span class={!p.mentorIds.length ? "bs-alert" : ""}>
+          <strong>Mentors</strong> {mentorNames(p)}
+        </span>
+      </div>
+      <div class="bs-card-signals">
+        <span>
+          {projectPeople(p, b).filter((x) => missed(x, b)).length} awaiting
+          check-in
+        </span>
+        <span>{requestCount(p.id)}</span>
+      </div>
+    </article>
+  );
+  const groups =
+    group === "mentor"
+      ? [
+          ...b.mentors.map((m) => ({ id: m.id, label: m.name })),
+          { id: "none", label: "No mentor assigned" },
+        ]
+      : group === "project"
+        ? projects.map((p) => ({ id: p.id, label: p.name }))
+        : BUILDSPACE_TRACKS.map((t) => ({ id: t, label: t }));
+  return (
+    <div class="buildspace">
+      <div class="bs-intro">
+        <div>
+          <span class="brand-eyebrow">THE BUILDER REGISTER</span>
+          <p>A little progress, every week.</p>
+        </div>
+        <div class="action-row">
+          <button class="btn" onClick={() => setParams({ new: "person" })}>
+            Add builder
+          </button>
+          <button
+            class="btn btn--primary"
+            onClick={() => setParams({ new: "project" })}
+          >
+            New project
+          </button>
+        </div>
+      </div>
+      <section class="bs-summary" aria-label="Buildspace summary">
+        {BUILDSPACE_TRACKS.map((t) => (
+          <button
+            key={t}
+            aria-pressed={qs.get("track") === t}
+            onClick={() =>
+              setParams({ track: qs.get("track") === t ? null : t })
+            }
+          >
+            <strong>
+              {b.people.filter((x) => project(x.projectId).track === t).length}
+            </strong>
+            <span>{trackShort(t)} builders</span>
+          </button>
+        ))}
+        <button
+          aria-pressed={flag === "missed"}
+          onClick={() =>
+            setParams({ flag: flag === "missed" ? null : "missed" })
+          }
+        >
+          <strong class="bs-alert">
+            {b.people.filter((p) => missed(p, b)).length}
+          </strong>
+          <span>Awaiting this week</span>
+        </button>
+        <button
+          aria-pressed={flag === "requests"}
+          onClick={() =>
+            setParams({ flag: flag === "requests" ? null : "requests" })
+          }
+        >
+          <strong>{b.activity.filter(openActivity).length}</strong>
+          <span>Open requests</span>
+        </button>
+        <button
+          aria-pressed={flag === "unmentored"}
+          onClick={() =>
+            setParams({ flag: flag === "unmentored" ? null : "unmentored" })
+          }
+        >
+          <strong class="bs-alert">
+            {b.projects.filter((p) => !p.mentorIds.length).length}
+          </strong>
+          <span>Unmentored projects</span>
+        </button>
+      </section>
+      {notice && <Notice tone="positive">{notice}</Notice>}
+      <div class="bs-toolbar">
+        <div class="segmented" aria-label="Buildspace directory">
+          {(["people", "projects", "mentors"] as const).map((t) => (
+            <button
+              class="segment"
+              aria-pressed={tab === t}
+              onClick={() => setParams({ tab: t })}
+            >
+              {t[0]!.toUpperCase() + t.slice(1)}{" "}
+              <span class="bs-count">{b[t].length}</span>
+            </button>
+          ))}
+        </div>
+        <div class="segmented" aria-label="Layout">
+          {["table", "cards", "board"].map((v) => (
+            <button
+              class="segment"
+              aria-pressed={view === v}
+              onClick={() => setParams({ view: v })}
+            >
+              {v[0]!.toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div class="bs-filters">
+        <label class="bs-search">
+          <span class="visually-hidden">Search Buildspace</span>
+          <input
+            class="input"
+            type="search"
+            placeholder="Search builders, projects, mentors…"
+            value={qs.get("q") || ""}
+            onInput={(e) =>
+              setParams({ q: e.currentTarget.value }, { replace: true })
+            }
+          />
+        </label>
+        <label>
+          <span>Track</span>
+          <select
+            class="select"
+            value={qs.get("track") || ""}
+            onChange={(e) => setParams({ track: e.currentTarget.value })}
+          >
+            <option value="">All tracks</option>
+            {BUILDSPACE_TRACKS.map((t) => (
+              <option>{t}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Mentor</span>
+          <select
+            class="select"
+            value={qs.get("mentor") || ""}
+            onChange={(e) => setParams({ mentor: e.currentTarget.value })}
+          >
+            <option value="">All mentors</option>
+            {b.mentors.map((m) => (
+              <option value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Stage</span>
+          <select
+            class="select"
+            value={qs.get("stage") || ""}
+            onChange={(e) => setParams({ stage: e.currentTarget.value })}
+          >
+            <option value="">All stages</option>
+            {BUILDSPACE_STAGES.map((s) => (
+              <option>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Attention</span>
+          <select
+            class="select"
+            value={flag}
+            onChange={(e) => setParams({ flag: e.currentTarget.value })}
+          >
+            <option value="">Everything</option>
+            <option value="requests">Open requests / purchases</option>
+            <option value="purchases">Open purchases</option>
+            <option value="missed">Awaiting weekly check-in</option>
+            <option value="absences">Absences this week</option>
+            <option value="unmentored">No mentor assigned</option>
+          </select>
+        </label>
+      </div>
+      <div class="bs-result">
+        <span role="status">
+          {count} {tab} · Week of {b.weekStart}
+        </span>
+        <div class="action-row">
+          {view === "cards" && (
+            <label>
+              Group by{" "}
+              <select
+                class="select"
+                aria-label="Group by"
+                value={group}
+                onChange={(e) => setParams({ group: e.currentTarget.value })}
+              >
+                <option value="track">Track</option>
+                <option value="mentor">Mentor</option>
+                <option value="project">Project</option>
+              </select>
+            </label>
+          )}
+          <button class="linkish" onClick={reset}>
+            Clear filters
+          </button>
+        </div>
+      </div>
+      {!count ? (
+        <Empty title="No matches">
+          Try a different filter, or clear your filters to see everyone.
+        </Empty>
+      ) : view === "board" ? (
+        <>
+          <p class="bs-muted">
+            Projects by stage · select a project to update its stage.
+          </p>
+          <div class="bs-board">
+            {BUILDSPACE_STAGES.map((s) => (
+              <section class="bs-lane">
+                <h3>
+                  {s}
+                  <span>{projects.filter((p) => p.stage === s).length}</span>
+                </h3>
+                {projects.filter((p) => p.stage === s).map(card)}
+                {!projects.some((p) => p.stage === s) && (
+                  <p class="bs-muted">Nothing here yet.</p>
+                )}
+              </section>
+            ))}
+          </div>
+        </>
+      ) : view === "cards" ? (
+        <div class="bs-groups">
+          {groups.map((g) => {
+            const belongs = (p: BuildspaceProject) =>
+              group === "mentor"
+                ? g.id === "none"
+                  ? !p.mentorIds.length
+                  : p.mentorIds.includes(g.id)
+                : group === "project"
+                  ? p.id === g.id
+                  : p.track === g.id;
+            const ps = projects.filter(belongs),
+              pe = people.filter((p) => belongs(project(p.projectId))),
+              ms = mentors.filter(
+                (m) =>
+                  (group !== "mentor" || g.id === m.id) &&
+                  ps.some((p) => p.mentorIds.includes(m.id)),
+              );
+            if (
+              !(tab === "people"
+                ? pe.length
+                : tab === "projects"
+                  ? ps.length
+                  : ms.length)
+            )
+              return null;
+            return (
+              <section class="bs-group">
+                <h3>
+                  {g.label}
+                  <span>
+                    {tab === "people"
+                      ? pe.length
+                      : tab === "projects"
+                        ? ps.length
+                        : ms.length}
+                  </span>
+                </h3>
+                <div class="bs-cards">
+                  {tab === "projects"
+                    ? ps.map(card)
+                    : tab === "people"
+                      ? pe.map((p) => (
+                          <article class="bs-card">
+                            <span class="eyebrow">
+                              {trackShort(project(p.projectId).track)}
+                            </span>
+                            <h3>
+                              <button
+                                class="bs-title"
+                                onClick={() => setParams({ person: p.id })}
+                              >
+                                {p.name}
+                              </button>
+                            </h3>
+                            <p>
+                              <strong>Project</strong>{" "}
+                              {project(p.projectId).name}
+                            </p>
+                            <p>
+                              <strong>Mentors</strong>{" "}
+                              {mentorNames(project(p.projectId))}
+                            </p>
+                            <Badge
+                              tone={missed(p, b) ? "attention" : "positive"}
+                            >
+                              {missed(p, b)
+                                ? "Awaiting check-in"
+                                : "Checked in"}
+                            </Badge>
+                          </article>
+                        ))
+                      : ms.map((m) => (
+                          <article class="bs-card">
+                            <h3>{m.name}</h3>
+                            <p>{m.org}</p>
+                            {ps
+                              .filter((p) => p.mentorIds.includes(m.id))
+                              .map(projectLink)}
+                          </article>
+                        ))}
+                </div>
+              </section>
+            );
+          })}
+          {tab === "mentors" &&
+            mentors.some(
+              (m) => !b.projects.some((p) => p.mentorIds.includes(m.id)),
+            ) && (
+              <section class="bs-group">
+                <h3>No projects assigned</h3>
+                <div class="bs-cards">
+                  {mentors
+                    .filter(
+                      (m) =>
+                        !b.projects.some((p) => p.mentorIds.includes(m.id)),
+                    )
+                    .map((m) => (
+                      <article class="bs-card">
+                        <h3>{m.name}</h3>
+                        <p>{m.org}</p>
+                        <a href={`/contacts?id=${encodeURIComponent(m.id)}`}>
+                          Open mentor contact →
+                        </a>
+                      </article>
+                    ))}
+                </div>
+              </section>
+            )}
+        </div>
+      ) : (
+        <div class="table-wrap" tabIndex={0} aria-label="Buildspace directory">
+          <table class="bs-table">
+            <thead>
+              <tr>
+                {(tab === "people"
+                  ? [
+                      "Builder / project",
+                      "Track",
+                      "Partners",
+                      "Mentors",
+                      "Stage",
+                      "This week",
+                      "Activity",
+                    ]
+                  : tab === "projects"
+                    ? ["Project", "Track", "Builders", "Mentors", "Stage"]
+                    : ["Mentor", "Focus", "Projects", "Builders"]
+                ).map((h) => (
+                  <th scope="col">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tab === "people"
+                ? people.map((p) => {
+                    const pr = project(p.projectId);
+                    return (
+                      <tr>
+                        <td data-label="Builder / project">
+                          <button
+                            class="bs-title"
+                            onClick={() => setParams({ person: p.id })}
+                          >
+                            {p.name}
+                          </button>
+                          <span class="bs-sub">{pr.name}</span>
+                        </td>
+                        <td data-label="Track">
+                          <span class="bs-track" data-track={pr.track}>
+                            {trackShort(pr.track)}
+                          </span>
+                        </td>
+                        <td data-label="Partners">
+                          {projectPeople(pr, b)
+                            .filter((partner) => partner.id !== p.id)
+                            .map((partner) => (
+                              <button
+                                class="bs-partner"
+                                aria-label={`Open partner ${partner.name}`}
+                                onClick={() =>
+                                  setParams({ person: partner.id })
+                                }
+                              >
+                                {partner.name}
+                              </button>
+                            ))}
+                          {projectPeople(pr, b).length === 1 && (
+                            <span class="bs-muted">Solo builder</span>
+                          )}
+                        </td>
+                        <td
+                          data-label="Mentors"
+                          class={!pr.mentorIds.length ? "bs-alert" : ""}
+                        >
+                          {mentorNames(pr)}
+                        </td>
+                        <td data-label="Stage">{stageBadge(pr)}</td>
+                        <td data-label="This week">
+                          <Badge tone={missed(p, b) ? "attention" : "positive"}>
+                            {missed(p, b) ? "Awaiting check-in" : "Checked in"}
+                          </Badge>
+                          {b.activity.some(
+                            (a) =>
+                              a.personId === p.id &&
+                              a.kind === "absence" &&
+                              a.date >= b.weekStart &&
+                              a.date <= b.today,
+                          ) && <span class="bs-sub">Absence logged</span>}
+                        </td>
+                        <td data-label="Activity">
+                          {activityCounts(pr.id, p.id)}
+                        </td>
+                      </tr>
+                    );
+                  })
+                : tab === "projects"
+                  ? projects.map((p) => (
+                      <tr>
+                        <td data-label="Project">
+                          {projectLink(p)}
+                          <span class="bs-sub">{requestCount(p.id)}</span>
+                        </td>
+                        <td data-label="Track">
+                          <span class="bs-track" data-track={p.track}>
+                            {trackShort(p.track)}
+                          </span>
+                        </td>
+                        <td data-label="Builders">
+                          {projectPeople(p, b)
+                            .map((x) => x.name)
+                            .join(", ") || "No builders"}
+                        </td>
+                        <td
+                          data-label="Mentors"
+                          class={!p.mentorIds.length ? "bs-alert" : ""}
+                        >
+                          {mentorNames(p)}
+                        </td>
+                        <td data-label="Stage">{stageBadge(p)}</td>
+                      </tr>
+                    ))
+                  : mentors.map((m) => {
+                      const ps = b.projects.filter((p) =>
+                        p.mentorIds.includes(m.id),
+                      );
+                      return (
+                        <tr>
+                          <td data-label="Mentor">
+                            <strong>{m.name}</strong>
+                            <span class="bs-sub">{m.org}</span>
+                          </td>
+                          <td data-label="Focus">{m.topics.join(" · ")}</td>
+                          <td data-label="Projects">
+                            {ps.length
+                              ? ps.map(projectLink)
+                              : "No projects assigned"}
+                          </td>
+                          <td data-label="Builders">
+                            {
+                              b.people.filter((p) =>
+                                ps.some((pr) => pr.id === p.projectId),
+                              ).length
+                            }
+                          </td>
+                        </tr>
+                      );
+                    })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p class="bs-footnote">
+        Check-ins reset on Monday, Pacific time. Awaiting includes this week in
+        progress; absences remain visible. Mentors follow each builder’s
+        project.
+      </p>
+      <Drawer
+        open={
+          !!form ||
+          !!detailPerson ||
+          !!detailProject ||
+          !!qs.get("person") ||
+          !!qs.get("project")
+        }
+        onClose={close}
+        id="buildspace-detail"
+        size="lg"
+        title={
+          form
+            ? (edit ? "Edit " : "New ") +
+              (form === "person" ? "builder" : "project")
+            : detailPerson?.name || detailProject?.name || "Record not found"
+        }
+        eyebrow="Buildspace"
+      >
+        {form === "project" ? (
+          <ProjectForm b={b} project={editingProject} saved={saved} />
+        ) : form === "person" ? (
+          <PersonForm b={b} person={editingPerson} saved={saved} />
+        ) : detailPerson || detailProject ? (
+          <BuildspaceDetail
+            key={detailPerson?.id || detailProject?.id}
+            b={b}
+            person={detailPerson}
+            project={detailProject || project(detailPerson!.projectId)}
+            reload={reload}
+          />
+        ) : (
+          <Empty title="This record could not be found" />
+        )}
+      </Drawer>
+    </div>
+  );
+}

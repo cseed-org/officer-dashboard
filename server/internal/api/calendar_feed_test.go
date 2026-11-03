@@ -112,7 +112,7 @@ func TestCalendarSourceRegistryExtension(t *testing.T) {
 		},
 	})
 	result := e.mustOK(e.get("/api/calendar/feed?start=2026-11-01&end=2026-11-02&sources=extension", e.officer()))
-	if calls != 1 || len(result.list("items")) != 1 || result.list("items")[0].(map[string]any)["source"] != "extension" || len(result.list("sources")) != 3 {
+	if calls != 1 || len(result.list("items")) != 1 || result.list("items")[0].(map[string]any)["source"] != "extension" || len(result.list("sources")) != len(prior)+1 {
 		t.Fatal(string(result.Raw))
 	}
 	e.mustOK(e.do("PUT", "/api/me/calendar-widget", map[string]any{"view": "auto", "colourBy": "source", "showWeekends": true, "sources": []string{"extension"}}, e.officer()))

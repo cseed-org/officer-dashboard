@@ -18,7 +18,7 @@ type calendarWidgetOptions struct {
 }
 
 func defaultCalendarOptions() calendarWidgetOptions {
-	return calendarWidgetOptions{"auto", store.CalendarSourceIDs(), "source", true}
+	return calendarWidgetOptions{"auto", store.DefaultCalendarSourceIDs(), "source", true}
 }
 func (c *Ctx) calendarWidgetGet() error {
 	u, err := c.officer()
@@ -117,7 +117,7 @@ func (c *Ctx) calendarFeed() error {
 		known[source.ID] = true
 	}
 	if !query.Has("sources") {
-		for id := range known {
+		for _, id := range store.DefaultCalendarSourceIDs() {
 			selected[id] = true
 		}
 	} else if sources != "" && sources != "none" {

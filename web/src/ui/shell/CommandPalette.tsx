@@ -17,6 +17,7 @@ const GROUP_ORDER: Kind[] = ['request', 'event', 'user', 'account', 'contact', '
 const pages = (director: boolean): Item[] => [
   { kind: 'page', id: 'new-request', title: 'New purchase request', subtitle: 'finance', href: href.newRequest() },
   { kind: 'page', id: 'home', title: 'Home', subtitle: 'overview', href: href.home },
+  { kind: 'page', id: 'buildspace', title: 'Buildspace', subtitle: 'builders, projects and mentors', href: '/buildspace' },
   { kind: 'page', id: 'events', title: 'Events', subtitle: 'turnout and guests', href: href.events() },
   { kind: 'page', id: 'import', title: 'Import a Luma CSV', subtitle: 'events', href: href.eventImport() },
   { kind: 'page', id: 'finance', title: 'Requests & finance', subtitle: 'requests, budgets, reports', href: href.finance() },

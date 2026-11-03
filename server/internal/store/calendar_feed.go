@@ -30,16 +30,30 @@ type CalendarRange struct {
 // CalendarSource is the extension point for new dated sources. Register loaders here
 // at startup; metadata drives the widget's source controls without a UI source switch.
 type CalendarSource struct {
-	ID    string                                                                 `json:"id"`
-	Label string                                                                 `json:"label"`
-	Icon  string                                                                 `json:"icon"`
-	Hue   string                                                                 `json:"hue"`
-	Load  func(context.Context, *Queries, CalendarRange) ([]CalendarItem, error) `json:"-"`
+	DisabledByDefault bool                                                                   `json:"-"`
+	ID                string                                                                 `json:"id"`
+	Label             string                                                                 `json:"label"`
+	Icon              string                                                                 `json:"icon"`
+	Hue               string                                                                 `json:"hue"`
+	Load              func(context.Context, *Queries, CalendarRange) ([]CalendarItem, error) `json:"-"`
 }
 
 var CalendarSources = []CalendarSource{
 	{ID: "events", Label: "Club events", Icon: "calendar", Hue: "blue", Load: loadCalendarEvents},
 	{ID: "design", Label: "Design deadlines", Icon: "pen", Hue: "amber", Load: loadCalendarDesign},
+	{ID: "buildspace-absences", Label: "Buildspace absences", Icon: "user", Hue: "coral", DisabledByDefault: true, Load: loadBuildspaceAbsences},
+	{ID: "buildspace-weekly", Label: "Buildspace weekly check-ins", Icon: "check", Hue: "teal", DisabledByDefault: true, Load: loadBuildspaceWeeklyDue},
+	{ID: "buildspace-mentor", Label: "Buildspace mentor check-ins", Icon: "user", Hue: "violet", DisabledByDefault: true, Load: loadBuildspaceMentorCheckIns},
+}
+
+func DefaultCalendarSourceIDs() []string {
+	ids := []string{}
+	for _, source := range CalendarSources {
+		if !source.DisabledByDefault {
+			ids = append(ids, source.ID)
+		}
+	}
+	return ids
 }
 
 func CalendarSourceIDs() []string {

@@ -11,7 +11,7 @@ import { Icon, type IconName } from '../ui/components/Icon';
 import CommandPalette from '../ui/shell/CommandPalette';
 import UserChip from '../ui/shell/UserChip';
 
-export type PageKey = 'home' | 'events' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'contacts' | 'design';
+export type PageKey = 'buildspace' | 'home' | 'events' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'contacts' | 'design';
 interface Props {
   title: string;
   customHeader?: boolean;
@@ -24,6 +24,7 @@ const { title, page, bare = false, customHeader = false, description = 'CSEED of
 
 const NAV: { key: PageKey; label: string; href: string; icon: IconName; directorOnly?: boolean }[] = [
   { key: 'home', label: 'Home', href: '/', icon: 'home' },
+  { key: 'buildspace', label: 'Buildspace', href: '/buildspace', icon: 'blocks' },
   { key: 'events', label: 'Events', href: '/events', icon: 'calendar' },
   { key: 'finance', label: 'Requests & Finance', href: '/finance', icon: 'wallet' },
   { key: 'officers', label: 'Officers', href: '/officers', icon: 'user' },

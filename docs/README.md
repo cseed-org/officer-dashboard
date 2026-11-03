@@ -6,6 +6,7 @@
 | [Configuration](configuration.md) | Server environment variables, club location/time zone, aliases, container and tooling settings. |
 | [Deployment](deployment.md) | Raspberry Pi/systemd, HTTPS proxy, containers, replication, backups. |
 | [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
+| [Buildspace](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
 | [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
 | [Roles and permissions](roles-and-permissions.md) | Officers management tabs, role matrix, owner provisioning, transfer and recovery. |
 | [Accounting](accounting.md) | Ledger, restrictions, purchase lifecycle, Form 990 limits. |

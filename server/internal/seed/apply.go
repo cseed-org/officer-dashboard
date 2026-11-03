@@ -248,7 +248,7 @@ func apply(ctx context.Context, w *store.Queries) error {
 		"design-comment-1", "design-kickoff-recap", "user-riley", "Draft is up. Ready for your review.", now+300_000); err != nil {
 		return err
 	}
-	return nil
+	return seedBuildspace(ctx, w)
 }
 
 func b2i(b bool) int {
