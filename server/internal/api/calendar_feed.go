@@ -18,7 +18,7 @@ type calendarWidgetOptions struct {
 }
 
 func defaultCalendarOptions() calendarWidgetOptions {
-	return calendarWidgetOptions{"auto", []string{"events", "design"}, "source", true}
+	return calendarWidgetOptions{"auto", store.CalendarSourceIDs(), "source", true}
 }
 func (c *Ctx) calendarWidgetGet() error {
 	u, err := c.officer()
@@ -53,18 +53,24 @@ func (c *Ctx) calendarWidgetPut() error {
 		if !b.Set {
 			r.Issues.Add("showWeekends", "Required")
 		}
-		// Source flags keep validation bounded and allow an intentionally empty feed.
-		events := r.BoolField("events")
-		design := r.BoolField("design")
-		if !events.Set || !design.Set {
-			r.Issues.Add("sources", "Choose source flags")
-		}
-		out.Sources = []string{}
-		if events.V {
-			out.Sources = append(out.Sources, "events")
-		}
-		if design.V {
-			out.Sources = append(out.Sources, "design")
+		if r.Has("sources") {
+			out.Sources = r.Strings("sources", true, 0, 32, store.CalendarSourceIDs(), 64)
+			if out.Sources == nil {
+				out.Sources = []string{}
+			}
+		} else {
+			// Legacy clients may still send the original two source flags.
+			events, design := r.BoolField("events"), r.BoolField("design")
+			if !events.Set || !design.Set {
+				r.Issues.Add("sources", "Choose sources")
+			}
+			out.Sources = []string{}
+			if events.V {
+				out.Sources = append(out.Sources, "events")
+			}
+			if design.V {
+				out.Sources = append(out.Sources, "design")
+			}
 		}
 	}); err != nil {
 		return err
@@ -105,22 +111,27 @@ func (c *Ctx) calendarFeed() error {
 		return badRequest("Choose a date range of 1–93 days (YYYY-MM-DD, exclusive end)")
 	}
 	sources := query.Get("sources")
-	events, design := false, false
+	selected := map[string]bool{}
+	known := map[string]bool{}
+	for _, source := range store.CalendarSources {
+		known[source.ID] = true
+	}
 	if !query.Has("sources") {
-		events, design = true, true
+		for id := range known {
+			selected[id] = true
+		}
 	} else if sources != "" && sources != "none" {
-		for _, source := range strings.Split(sources, ",") {
-			switch source {
-			case "events":
-				events = true
-			case "design":
-				design = true
-			default:
+		for _, id := range strings.Split(sources, ",") {
+			if !known[id] {
 				return badRequest("Unknown calendar source")
 			}
+			selected[id] = true
 		}
 	}
-	items, err := c.S.db.Read().CalendarItems(c.Context(), start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339), query.Get("start"), query.Get("end"), events, design)
+	items, err := c.S.db.Read().CalendarItems(c.Context(), store.CalendarRange{
+		Start: start.UTC().Format(time.RFC3339), End: end.UTC().Format(time.RFC3339),
+		FirstDate: query.Get("start"), EndDate: query.Get("end"), UserID: u.ID,
+	}, selected)
 	if err != nil {
 		return err
 	}
@@ -159,6 +170,6 @@ func (c *Ctx) calendarFeed() error {
 		return items[i].ID < items[j].ID
 	})
 	c.W.Header().Set("Cache-Control", "private, no-store")
-	writeJSON(c.W, 200, map[string]any{"items": items, "timezone": zone.String()})
+	writeJSON(c.W, 200, map[string]any{"items": items, "timezone": zone.String(), "sources": store.CalendarSources})
 	return nil
 }

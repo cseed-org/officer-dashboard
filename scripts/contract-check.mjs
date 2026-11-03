@@ -450,6 +450,7 @@ await call('onboardingComplete', { who: invitee, expect: 409 });
 await call('profilePut', { who: invitee, body: { phone: '+1 206 555 0123', birthday: '12-01' } });
 await call('calendarFeed', { who: invitee, query: { start: '2026-11-01', end: '2026-12-01' } });
 await call('calendarWidgetGet', { who: invitee });
+await call('calendarWidgetPut', { who: invitee, body: { view: 'month', colourBy: 'source', showWeekends: true, sources: [] } });
 await call('calendarWidgetPut', { who: invitee, body: { view: 'week', colourBy: 'source', showWeekends: false, events: true, design: true } });
 await call('calendarGet', { who: invitee });
 await call('calendarPut', { who: invitee, body: { mode: 'ics' } });

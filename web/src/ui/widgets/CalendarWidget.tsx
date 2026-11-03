@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { api } from '../../lib/api/client';
-import type { CalendarFeedItem, CalendarWidgetOptions } from '../../lib/contracts';
+import { api, endpointUrl } from '../../lib/api/client';
+import type { CalendarFeedItem, CalendarFeedSource, CalendarWidgetOptions } from '../../lib/contracts';
 import { addDays, addMonths, dayNumber, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, shortDay, timeRange, weekdayIndex, weekdayShort, weekDays, weekLabel } from '../../lib/calendar';
 import { effectiveTimezone } from '../../lib/timezone';
 import { href } from '../../lib/routes';
 import type { BlockSize } from './registry';
+import { Icon } from '../components/Icon';
+import { useApi } from '../../lib/api/useApi';
+import { createPortal } from 'preact/compat';
+import { useId } from 'preact/hooks';
 import '../../styles/calendar-widget.css';
 
 type Feed = Awaited<ReturnType<typeof loadFeed>>;
-const cache = new Map<string, { at: number; data: { items: CalendarFeedItem[]; timezone: string } }>();
+const cache = new Map<string, { at: number; data: { items: CalendarFeedItem[]; timezone: string; sources: CalendarFeedSource[] } }>();
 async function loadFeed(start: string, end: string, sources: string, zone: string, fresh = false) {
   const key = JSON.stringify([start, end, sources, zone]);
   const hit = cache.get(key);
@@ -19,12 +23,95 @@ async function loadFeed(start: string, end: string, sources: string, zone: strin
   return data;
 }
 const defaults: CalendarWidgetOptions = { view: 'auto', sources: ['events', 'design'], colourBy: 'source', showWeekends: true };
-const itemHref = (item: CalendarFeedItem) => item.source === 'events' ? href.event(item.id) : href.designRequest(item.id);
-const sourceLabel = (item: CalendarFeedItem) => item.source === 'events' ? 'Club event' : 'Design deadline';
-function itemHue(item: CalendarFeedItem, by: CalendarWidgetOptions['colourBy']) {
-  if (by === 'source') return item.source === 'events' ? 'blue' : 'violet';
+const fallbackSources: CalendarFeedSource[] = [
+  { id: 'events', label: 'Club events', icon: 'calendar', hue: 'blue' },
+  { id: 'design', label: 'Design deadlines', icon: 'pen', hue: 'amber' },
+];
+const safeHue = (hue?: string) => ['blue', 'amber', 'teal', 'coral', 'violet', 'green'].includes(hue ?? '') ? hue! : 'teal';
+const sourceIcon = (source?: CalendarFeedSource) => source?.icon === 'pen' ? 'pen' : source?.icon === 'user' ? 'user' : source?.icon === 'check' ? 'check' : 'calendar';
+function itemHue(item: CalendarFeedItem, by: CalendarWidgetOptions['colourBy'], source?: CalendarFeedSource) {
+  if (by === 'source') return safeHue(source?.hue);
   if (item.source === 'events') return item.type === 'cancelled' ? 'coral' : item.type === 'draft' ? 'amber' : 'teal';
-  return ({ poster: 'violet', social: 'blue', slides: 'teal', merch: 'amber', video: 'coral' } as Record<string, string>)[item.type] ?? 'green';
+  return ({ poster: 'violet', social: 'blue', slides: 'teal', merch: 'amber', video: 'coral' } as Record<string, string>)[item.type] ?? safeHue(source?.hue);
+}
+const shortTime = (iso: string) => {
+  const minutes = pacificParts(iso).minutes;
+  const hour = Math.floor(minutes / 60);
+  return `${hour % 12 || 12}${minutes % 60 ? ':' + String(minutes % 60).padStart(2, '0') : ''}${hour < 12 ? 'a' : 'p'}`;
+};
+
+function CalendarChip({ item, source, colourBy }: { item: CalendarFeedItem; source?: CalendarFeedSource; colourBy: CalendarWidgetOptions['colourBy'] }) {
+  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLAnchorElement>(null);
+  const card = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current); };
+  useEffect(() => () => cancelClose(), []);
+  const contains = (node: Node | null) => !!node && (!!wrapper.current?.contains(node) || !!card.current?.contains(node));
+  const leave = () => { cancelClose(); closeTimer.current = setTimeout(() => { if (!contains(document.activeElement)) setPosition(null); }, 180); };
+  const blur = (event: FocusEvent) => { if (!contains(event.relatedTarget as Node | null)) setPosition(null); };
+  const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); cancelClose(); trigger.current?.focus(); setPosition(null); } };
+  const open = () => {
+    cancelClose();
+    const rect = trigger.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = Math.min(280, window.innerWidth - 24);
+    const top = rect.bottom + 200 > window.innerHeight ? Math.max(12, rect.top - 190) : rect.bottom + 5;
+    setPosition({ top, left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)) });
+  };
+  useEffect(() => {
+    if (!position) return;
+    const close = () => setPosition(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [!!position]);
+  return <div ref={wrapper} class="cw-item cw-item--mini" style={{ '--cw-colour': `var(--c-${itemHue(item, colourBy, source)})` }}
+    onMouseEnter={open} onMouseLeave={leave}
+    onFocusIn={open} onFocusOut={blur} onKeyDown={e => {
+      if (e.key === 'Tab' && !e.shiftKey && position && e.target === trigger.current) { e.preventDefault(); card.current?.querySelector<HTMLAnchorElement>('a')?.focus(); }
+      else escape(e);
+    }}>
+    <a ref={trigger} href={item.href} class="cw-item-title" aria-describedby={position ? id : undefined}>
+      <Icon name={sourceIcon(source)} size={11} />
+      {item.startsAt && <time dateTime={item.startsAt} class="cw-chip-time">{shortTime(item.startsAt)}</time>}
+      <span class="cw-chip-name">{item.title}</span>
+    </a>
+    {position && createPortal(<div ref={card} id={id} class="cw-item-popover" onMouseEnter={cancelClose} onMouseLeave={leave} onFocusIn={cancelClose} onFocusOut={blur} onKeyDown={e => {
+        const links = card.current?.querySelectorAll('a');
+        if (e.key === 'Tab' && e.shiftKey && e.target === links?.[0]) { e.preventDefault(); trigger.current?.focus(); }
+        else if (e.key === 'Tab' && !e.shiftKey && e.target === links?.[links.length - 1]) {
+          const stops = [...document.querySelectorAll<HTMLElement>('a[href],button:not(:disabled),summary,select,input,[tabindex="0"]')].filter(el => el.getClientRects().length && !card.current?.contains(el));
+          const next = stops[stops.indexOf(trigger.current!) + 1];
+          if (next) { e.preventDefault(); next.focus(); setPosition(null); }
+        } else escape(e);
+      }}
+      style={{ top: `${position.top}px`, left: `${position.left}px`, '--cw-colour': `var(--c-${itemHue(item, colourBy, source)})` }} role="group" aria-label={`${item.title} details`}>
+      <strong>{item.title}</strong>
+      <span>{item.startsAt ? timeRange(item.startsAt, item.endsAt) : 'All day'} · {shortDay(item.date)}</span>
+      <span>{item.location || (item.startsAt ? 'Location not set' : 'Deadline')}</span>
+      <span class="cw-popover-source"><Icon name={sourceIcon(source)} size={13} />{source?.label ?? item.source}</span>
+      <a href={item.href}>Open details →</a>
+      {item.lumaUrl && <a href={item.lumaUrl} target="_blank" rel="noopener noreferrer">Open in Luma ↗</a>}
+    </div>, document.body)}
+  </div>;
+}
+
+function SubscribeLinks() {
+  const state = useApi('calendarGet');
+  if (state.status === 'loading') return <p class="small" role="status">Loading delivery options…</p>;
+  if (state.status === 'error') return <p class="small">Delivery options couldn’t load. <a href="/settings#calendar">Open calendar settings →</a></p>;
+  const settings = state.data;
+  return <div class="cw-subscribe">
+    <p>Club events can arrive as ICS email invitations or sync to Google Calendar.</p>
+    <a href="/settings#calendar">Manage ICS invitations &amp; calendar delivery →</a>
+    {settings.google.configured && <a href={settings.google.connected ? '/settings#calendar' : endpointUrl('googleConnect') + '?next=%2F'}>
+      {settings.google.connected ? 'Manage Google Calendar sync →' : 'Connect Google Calendar →'}
+    </a>}
+    {!settings.ics.configured && !settings.google.configured && <span class="muted">Calendar delivery isn’t configured yet.</span>}
+  </div>;
 }
 
 export default function CalendarWidget({ size }: { size: BlockSize }) {
@@ -32,10 +119,12 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
   const [draft, setDraft] = useState(defaults);
   const [settingsReady, setSettingsReady] = useState(false);
   const [settingsError, setSettingsError] = useState('');
+  const [subscribe, setSubscribe] = useState(false);
   const [saving, setSaving] = useState(false);
   const [anchor, setAnchor] = useState(pacificToday);
   const [zone, setZone] = useState(effectiveTimezone);
   const [feed, setFeed] = useState<Feed | null>(null);
+  const [sourceDefs, setSourceDefs] = useState(fallbackSources);
   const [error, setError] = useState('');
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -58,18 +147,19 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
   const start = view === 'month' ? grid[0]!.date : view === 'week' ? mondayOf(anchor) : anchor;
   const end = view === 'month' ? addDays(grid[grid.length - 1]!.date, 1) : addDays(start, view === 'week' ? 7 : compact ? 1 : 7);
   const sources = options.sources.join(',');
+
   useEffect(() => {
     let alive = true;
     setFeed(null); setError('');
-    loadFeed(start, end, sources, zone, tick > 0).then(d => { if (alive) setFeed(d); }).catch(() => { if (alive) setError('Couldn’t load the calendar.'); });
+    loadFeed(start, end, sources, zone, tick > 0).then(d => { if (alive) { setFeed(d); setSourceDefs(d.sources); } }).catch(() => { if (alive) setError('Couldn’t load the calendar.'); });
     return () => { alive = false; };
   }, [start, end, sources, zone, tick]);
 
-  async function save() {
+  async function save(next = draft, close = true) {
     setSaving(true); setSettingsError('');
     try {
-      const p = await api('calendarWidgetPut', { body: { view: draft.view, colourBy: draft.colourBy, showWeekends: draft.showWeekends, events: draft.sources.includes('events'), design: draft.sources.includes('design') } });
-      setOptions(p); popover.current?.removeAttribute('open');
+      const p = await api('calendarWidgetPut', { body: next });
+      setOptions(p); setDraft(p); if (close) popover.current?.removeAttribute('open');
     } catch { setSettingsError('Couldn’t save options. Please try again.'); }
     finally { setSaving(false); }
   }
@@ -89,11 +179,16 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
     setSelected(null);
     setAnchor(view === 'month' ? addMonths(month, n) + '-01' : addDays(start, n * (compact ? 1 : 7)));
   };
-  const renderItem = (item: CalendarFeedItem, mini = false) => <div class={`cw-item${mini ? ' cw-item--mini' : ''}`} style={{ '--cw-colour': `var(--c-${itemHue(item, options.colourBy)})` }} key={item.source + item.id}>
-    <a href={itemHref(item)} class="cw-item-title">{item.title}</a>
-    {!mini && <span class="cw-item-meta">{item.startsAt ? timeRange(item.startsAt, item.endsAt) : 'All day'} · {sourceLabel(item)}{options.colourBy === 'type' ? ` · ${item.type}` : ''}{item.type === 'draft' ? ' · Draft' : ''}</span>}
-    {!mini && item.lumaUrl && <a class="cw-luma" href={item.lumaUrl} target="_blank" rel="noopener noreferrer">Open in Luma ↗</a>}
-  </div>;
+  const renderItem = (item: CalendarFeedItem, mini = false) => {
+    const source = sourceDefs.find(s => s.id === item.source);
+    if (mini) return <CalendarChip key={item.source + item.id} item={item} source={source} colourBy={options.colourBy} />;
+    return <div class="cw-item" style={{ '--cw-colour': `var(--c-${itemHue(item, options.colourBy, source)})` }} key={item.source + item.id}>
+      <a href={item.href} class="cw-item-title"><Icon name={sourceIcon(source)} size={13} /> {item.title}</a>
+      <span class="cw-item-meta">{item.startsAt ? timeRange(item.startsAt, item.endsAt) : 'All day'} · {source?.label ?? item.source}{options.colourBy === 'type' ? ` · ${item.type}` : ''}{item.type === 'draft' ? ' · Draft' : ''}</span>
+      {item.location && <span class="cw-item-meta">{item.location}</span>}
+      {item.lumaUrl && <a class="cw-luma" href={item.lumaUrl} target="_blank" rel="noopener noreferrer">Open in Luma ↗</a>}
+    </div>;
+  };
   const shownAgenda = selected ? [selected] : agendaDates;
   return <section class={`tile cw cw--${view}${compact ? ' cw--compact' : ''}`} aria-labelledby="calendar-widget-title" data-block="calendar">
     <header class="tile-head">
@@ -102,15 +197,18 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
       <details class="cw-settings" ref={popover} onKeyDown={e => { if (e.key === 'Escape') { popover.current?.removeAttribute('open'); popover.current?.querySelector('summary')?.focus(); } }}>
         <summary aria-label="Calendar options" onClick={() => setDraft(options)}>Options</summary>
         <div class="cw-popover">
+          <details class="cw-subscribe-menu" onToggle={e => setSubscribe(e.currentTarget.open)}>
+            <summary>Subscribe</summary>{subscribe && <SubscribeLinks />}
+          </details>
           <label>View<select value={draft.view} disabled={saving} onChange={e => setDraft({ ...draft, view: e.currentTarget.value as CalendarWidgetOptions['view'] })}>
             <option value="auto">Fit widget size</option><option value="agenda">Agenda</option><option value="week">Week</option><option value="month">Month</option>
           </select></label>
           {compact && <p class="small muted">Small widgets show a one-day agenda.</p>}
-          <fieldset disabled={saving}><legend>Sources</legend>{(['events', 'design'] as const).map(source => <label key={source} class="cw-check"><input type="checkbox" checked={draft.sources.includes(source)} onChange={e => setDraft({ ...draft, sources: e.currentTarget.checked ? [...draft.sources, source] : draft.sources.filter(s => s !== source) })} />{source === 'events' ? 'Club events · includes Luma' : 'Design deadlines'}</label>)}</fieldset>
+          <fieldset disabled={saving}><legend>Sources</legend>{sourceDefs.map(source => <label key={source.id} class="cw-check"><input type="checkbox" checked={draft.sources.includes(source.id)} onChange={e => setDraft({ ...draft, sources: e.currentTarget.checked ? [...draft.sources, source.id] : draft.sources.filter(s => s !== source.id) })} />{source.label}</label>)}</fieldset>
           <label>Colour by<select value={draft.colourBy} disabled={saving} onChange={e => setDraft({ ...draft, colourBy: e.currentTarget.value as CalendarWidgetOptions['colourBy'] })}><option value="source">Source</option><option value="type">Type / event status</option></select></label>
           <label class="cw-check"><input type="checkbox" disabled={saving} checked={draft.showWeekends} onChange={e => setDraft({ ...draft, showWeekends: e.currentTarget.checked })} />Show weekends</label>
           <p class="small muted">Time zone: {zone}. Change it in <a href={href.settings}>Settings</a>.</p>
-          <button class="btn btn--small btn--primary" disabled={saving || !settingsReady} onClick={save}>{saving ? 'Saving…' : 'Save options'}</button>
+          <button class="btn btn--small btn--primary" disabled={saving || !settingsReady} onClick={() => save()}>{saving ? 'Saving…' : 'Save options'}</button>
         </div>
       </details>
     </header>
@@ -119,7 +217,14 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
       <strong aria-live="polite">{label}</strong>
       <div class="cw-nav" role="group" aria-label="Calendar dates"><button class="btn btn--small" aria-label="Previous calendar period" onClick={() => navigate(-1)}>‹</button><button class="btn btn--small" onClick={() => { setAnchor(pacificToday()); setSelected(null); }}>Today</button><button class="btn btn--small" aria-label="Next calendar period" onClick={() => navigate(1)}>›</button></div>
     </div>
-    {!compact && <p class="cw-zone">{zone} · <span class="cw-key cw-key--events">Club events</span> · <span class="cw-key cw-key--design">Design deadlines</span></p>}
+    <div class="cw-legend" role="group" aria-label="Calendar sources">
+      {sourceDefs.map(source => <button type="button" key={source.id} class="cw-source-toggle" style={{ '--cw-colour': `var(--c-${safeHue(source.hue)})` }}
+        aria-pressed={options.sources.includes(source.id)} disabled={saving || !settingsReady}
+        onClick={() => save({ ...options, sources: options.sources.includes(source.id) ? options.sources.filter(id => id !== source.id) : [...options.sources, source.id] }, false)}>
+        <Icon name={sourceIcon(source)} size={13} />{source.label}
+      </button>)}
+      {!compact && <span class="cw-zone">{zone}</span>}
+    </div>
     {error ? <p role="alert">{error} <button class="btn btn--small" onClick={() => setTick(t => t + 1)}>Retry</button></p> : !feed ? <p class="small muted" role="status">Loading calendar…</p> : <>
       {view !== 'agenda' && <div class={`cw-grid${options.showWeekends ? '' : ' cw-grid--weekdays'}`} role="group" aria-label={label}>
         {(options.showWeekends ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']).map(day => <span class="cw-dow" key={day}>{day}</span>)}
@@ -140,7 +245,7 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
         </div>)}
         {shownAgenda.every(date => !onDate(date).length) && <div class="cw-empty"><strong>{sources ? 'A little breathing room' : 'No sources selected'}</strong><span>{sources ? 'Nothing scheduled for these dates.' : 'Choose sources in Options.'}</span></div>}
       </div>}
-      {view === 'month' && !selected && <p class="cw-footnote">Select a date for times and Luma links.</p>}
+      {view === 'month' && !selected && <p class="cw-footnote">Hover or focus an item for details. Select a date for its agenda.</p>}
     </>}
   </section>;
 }

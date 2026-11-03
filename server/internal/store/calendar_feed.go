@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/url"
 )
 
 // CalendarItem retains date-only deadlines separately from event instants.
@@ -15,50 +16,93 @@ type CalendarItem struct {
 	Date     string  `json:"date"`
 	StartsAt *string `json:"startsAt"`
 	EndsAt   *string `json:"endsAt"`
+	Location *string `json:"location"`
+	Href     string  `json:"href"`
 	LumaURL  *string `json:"lumaUrl"`
 }
 
-func (q *Queries) CalendarItems(ctx context.Context, start, end, firstDate, endDate string, events, design bool) ([]CalendarItem, error) {
-	out := []CalendarItem{}
-	if events {
-		rows, err := q.q.QueryContext(ctx, `SELECT id,name,starts_at,ends_at,luma_url,status FROM events
-   WHERE julianday(starts_at)<julianday(?) AND
-   (julianday(starts_at)>=julianday(?) OR julianday(ends_at)>julianday(?))
-   ORDER BY julianday(starts_at),id`, end, start, start)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			v := CalendarItem{Source: "events"}
-			if err := rows.Scan(&v.ID, &v.Title, &v.StartsAt, &v.EndsAt, &v.LumaURL, &v.Type); err != nil {
-				return nil, err
-			}
-			out = append(out, v)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-		rows.Close()
+// CalendarRange carries both UTC boundaries and local dates. Loaders must scope
+// personal data to UserID and return only items overlapping this exclusive range.
+type CalendarRange struct {
+	Start, End, FirstDate, EndDate, UserID string
+}
+
+// CalendarSource is the extension point for new dated sources. Register loaders here
+// at startup; metadata drives the widget's source controls without a UI source switch.
+type CalendarSource struct {
+	ID    string                                                                 `json:"id"`
+	Label string                                                                 `json:"label"`
+	Icon  string                                                                 `json:"icon"`
+	Hue   string                                                                 `json:"hue"`
+	Load  func(context.Context, *Queries, CalendarRange) ([]CalendarItem, error) `json:"-"`
+}
+
+var CalendarSources = []CalendarSource{
+	{ID: "events", Label: "Club events", Icon: "calendar", Hue: "blue", Load: loadCalendarEvents},
+	{ID: "design", Label: "Design deadlines", Icon: "pen", Hue: "amber", Load: loadCalendarDesign},
+}
+
+func CalendarSourceIDs() []string {
+	ids := make([]string, 0, len(CalendarSources))
+	for _, source := range CalendarSources {
+		ids = append(ids, source.ID)
 	}
-	if design {
-		rows, err := q.q.QueryContext(ctx, `SELECT id,title,due_date,type FROM design_requests WHERE due_date>=? AND due_date<? AND stage<>'delivered' ORDER BY due_date,id`, firstDate, endDate)
+	return ids
+}
+
+func (q *Queries) CalendarItems(ctx context.Context, window CalendarRange, selected map[string]bool) ([]CalendarItem, error) {
+	out := []CalendarItem{}
+	for _, source := range CalendarSources {
+		if !selected[source.ID] {
+			continue
+		}
+		items, err := source.Load(ctx, q, window)
 		if err != nil {
 			return nil, err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			v := CalendarItem{Source: "design"}
-			if err := rows.Scan(&v.ID, &v.Title, &v.Date, &v.Type); err != nil {
-				return nil, err
-			}
-			out = append(out, v)
+		for i := range items {
+			items[i].Source = source.ID
 		}
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+		out = append(out, items...)
 	}
 	return out, nil
+}
+func loadCalendarEvents(ctx context.Context, q *Queries, window CalendarRange) ([]CalendarItem, error) {
+	rows, err := q.q.QueryContext(ctx, `SELECT id,name,starts_at,ends_at,luma_url,status,location FROM events
+ WHERE julianday(starts_at)<julianday(?) AND
+ (julianday(starts_at)>=julianday(?) OR julianday(ends_at)>julianday(?))
+ ORDER BY julianday(starts_at),id`, window.End, window.Start, window.Start)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CalendarItem{}
+	for rows.Next() {
+		var v CalendarItem
+		if err := rows.Scan(&v.ID, &v.Title, &v.StartsAt, &v.EndsAt, &v.LumaURL, &v.Type, &v.Location); err != nil {
+			return nil, err
+		}
+		v.Href = "/events?id=" + url.QueryEscape(v.ID)
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+func loadCalendarDesign(ctx context.Context, q *Queries, window CalendarRange) ([]CalendarItem, error) {
+	rows, err := q.q.QueryContext(ctx, `SELECT id,title,due_date,type FROM design_requests WHERE due_date>=? AND due_date<? AND stage<>'delivered' ORDER BY due_date,id`, window.FirstDate, window.EndDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CalendarItem{}
+	for rows.Next() {
+		var v CalendarItem
+		if err := rows.Scan(&v.ID, &v.Title, &v.Date, &v.Type); err != nil {
+			return nil, err
+		}
+		v.Href = "/design?id=" + url.QueryEscape(v.ID)
+		out = append(out, v)
+	}
+	return out, rows.Err()
 }
 
 func (q *Queries) CalendarWidgetSettings(ctx context.Context, userID string) (string, error) {

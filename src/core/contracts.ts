@@ -1013,18 +1013,20 @@ export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).extend(
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 export const CalendarWidgetOptions = z.object({
   view: z.enum(['auto', 'agenda', 'week', 'month']),
-  sources: z.array(z.enum(['events', 'design'])).max(2),
+  sources: z.array(Id).max(32),
   colourBy: z.enum(['source', 'type']),
   showWeekends: z.boolean(),
 });
 export type CalendarWidgetOptions = z.infer<typeof CalendarWidgetOptions>;
-export const CalendarWidgetUpdate = CalendarWidgetOptions.omit({ sources: true }).extend({ events: z.boolean(), design: z.boolean() });
+export const CalendarWidgetUpdate = z.union([CalendarWidgetOptions, CalendarWidgetOptions.omit({ sources: true }).extend({ events: z.boolean(), design: z.boolean() })]);
 export const CalendarFeedItem = z.object({
-  id: Id, source: z.enum(['events', 'design']), type: z.string(), title: z.string(),
-  date: z.string(), startsAt: IsoDateTime.nullable(), endsAt: IsoDateTime.nullable(), lumaUrl: z.string().nullable(),
+  id: Id, source: Id, type: z.string(), title: z.string(),
+  date: z.string(), startsAt: IsoDateTime.nullable(), endsAt: IsoDateTime.nullable(), lumaUrl: z.string().nullable(), location: z.string().nullable(), href: z.string().startsWith('/'),
 });
 export type CalendarFeedItem = z.infer<typeof CalendarFeedItem>;
-export const CalendarFeed = z.object({ items: z.array(CalendarFeedItem), timezone: IanaTimezone });
+export const CalendarFeedSource = z.object({ id: Id, label: z.string(), icon: z.string(), hue: z.string() });
+export type CalendarFeedSource = z.infer<typeof CalendarFeedSource>;
+export const CalendarFeed = z.object({ items: z.array(CalendarFeedItem), timezone: IanaTimezone, sources: z.array(CalendarFeedSource) });
 export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
 export type CalendarEmail = z.infer<typeof CalendarEmail>;
 export const CalendarEmailsResponse = z.object({ emails: z.array(CalendarEmail).max(5) });

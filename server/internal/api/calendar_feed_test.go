@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"fmt"
+	"officerdashboard/internal/store"
 	"testing"
 )
 
@@ -12,7 +14,7 @@ func TestCalendarFeedRangesSourcesAndTimezones(t *testing.T) {
 	for i, stamp := range []string{"2026-11-01T01:30:00-07:00", "2026-11-01T01:30:00-08:00", "2026-11-02T00:00:00-08:00", "2026-10-31T23:59:00-07:00"} {
 		e.mustOK(e.post("/api/events", map[string]any{"name": fmt.Sprintf("boundary-%d", i), "startsAt": stamp}, officer))
 	}
-	e.mustOK(e.post("/api/events", map[string]any{"name": "overnight", "startsAt": "2026-10-31T23:00:00-07:00", "endsAt": "2026-11-01T02:00:00-08:00", "lumaUrl": "https://lu.ma/calendar-test"}, officer))
+	e.mustOK(e.post("/api/events", map[string]any{"name": "overnight", "startsAt": "2026-10-31T23:00:00-07:00", "endsAt": "2026-11-01T02:00:00-08:00", "lumaUrl": "https://lu.ma/calendar-test", "location": "Atrium"}, officer))
 	e.mustOK(e.post("/api/design-requests", map[string]any{"title": "calendar-deadline", "type": "poster", "brief": "A dated poster request", "dueDate": "2026-11-01"}, officer))
 	path := "/api/calendar/feed?start=2026-11-01&end=2026-11-02"
 	feed := e.mustOK(e.get(path, officer))
@@ -21,7 +23,7 @@ func TestCalendarFeedRangesSourcesAndTimezones(t *testing.T) {
 		item := v.(map[string]any)
 		name := item["title"].(string)
 		counts[name]++
-		if name == "overnight" && (item["date"] != "2026-10-31" || item["lumaUrl"] != "https://lu.ma/calendar-test") {
+		if name == "overnight" && (item["date"] != "2026-10-31" || item["lumaUrl"] != "https://lu.ma/calendar-test" || item["location"] != "Atrium" || item["href"] == "") {
 			t.Fatal(item)
 		}
 		if name == "calendar-deadline" && (item["date"] != "2026-11-01" || item["startsAt"] != nil) {
@@ -90,4 +92,37 @@ func TestCalendarWidgetSettingsArePrivateAndValidated(t *testing.T) {
 	body["view"] = "bad"
 	expectStatus(t, "invalid settings", e.do("PUT", "/api/me/calendar-widget", body, e.officer()), 400)
 	expectStatus(t, "anonymous settings", e.get("/api/me/calendar-widget", anon), 401)
+}
+
+// A source registered by another feature must participate without modifying the API
+// source switch, settings validation, or metadata response.
+func TestCalendarSourceRegistryExtension(t *testing.T) {
+	e := newEnv(t)
+	prior := store.CalendarSources
+	defer func() { store.CalendarSources = prior }()
+	var calls int
+	store.CalendarSources = append(append([]store.CalendarSource{}, prior...), store.CalendarSource{
+		ID: "extension", Label: "Extension dates", Icon: "check", Hue: "teal",
+		Load: func(ctx context.Context, q *store.Queries, window store.CalendarRange) ([]store.CalendarItem, error) {
+			calls++
+			if window.UserID != "user-priya" || window.FirstDate != "2026-11-01" || window.EndDate != "2026-11-02" {
+				t.Fatalf("loader scope: %+v", window)
+			}
+			return []store.CalendarItem{{ID: "demo", Title: "Extension date", Date: window.FirstDate, Type: "due", Href: "/buildspace"}}, nil
+		},
+	})
+	result := e.mustOK(e.get("/api/calendar/feed?start=2026-11-01&end=2026-11-02&sources=extension", e.officer()))
+	if calls != 1 || len(result.list("items")) != 1 || result.list("items")[0].(map[string]any)["source"] != "extension" || len(result.list("sources")) != 3 {
+		t.Fatal(string(result.Raw))
+	}
+	e.mustOK(e.do("PUT", "/api/me/calendar-widget", map[string]any{"view": "auto", "colourBy": "source", "showWeekends": true, "sources": []string{"extension"}}, e.officer()))
+	settings := e.mustOK(e.get("/api/me/calendar-widget", e.officer()))
+	if settings.list("sources")[0] != "extension" {
+		t.Fatal(string(settings.Raw))
+	}
+	e.mustOK(e.get("/api/calendar/feed?start=2026-11-01&end=2026-11-02&sources=none", e.officer()))
+	if calls != 1 {
+		t.Fatal("disabled source was queried")
+	}
+	expectStatus(t, "unknown source preference", e.do("PUT", "/api/me/calendar-widget", map[string]any{"view": "auto", "colourBy": "source", "showWeekends": true, "sources": []string{"missing"}}, e.officer()), 400)
 }
