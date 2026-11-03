@@ -17,8 +17,8 @@ type calendarWidgetOptions struct {
 	ShowWeekends bool     `json:"showWeekends"`
 }
 
-func defaultCalendarOptions() calendarWidgetOptions {
-	return calendarWidgetOptions{"auto", store.DefaultCalendarSourceIDs(), "source", true}
+func defaultCalendarOptions(role string) calendarWidgetOptions {
+	return calendarWidgetOptions{"auto", store.DefaultCalendarSourceIDs(role), "source", true}
 }
 func (c *Ctx) calendarWidgetGet() error {
 	u, err := c.officer()
@@ -29,7 +29,7 @@ func (c *Ctx) calendarWidgetGet() error {
 	if err != nil {
 		return err
 	}
-	out := defaultCalendarOptions()
+	out := defaultCalendarOptions(u.Role)
 	if raw != "" {
 		if err := json.Unmarshal([]byte(raw), &out); err != nil {
 			return err
@@ -43,7 +43,7 @@ func (c *Ctx) calendarWidgetPut() error {
 	if err != nil {
 		return err
 	}
-	out := defaultCalendarOptions()
+	out := defaultCalendarOptions(u.Role)
 	if err := c.jsonBody(func(r *validate.Reader) {
 		out.View = r.Str("view", validate.S{Req: true, Enum: []string{"auto", "agenda", "week", "month"}}).V
 		out.ColourBy = r.Str("colourBy", validate.S{Req: true, Enum: []string{"source", "type"}}).V
@@ -117,7 +117,7 @@ func (c *Ctx) calendarFeed() error {
 		known[source.ID] = true
 	}
 	if !query.Has("sources") {
-		for _, id := range store.DefaultCalendarSourceIDs() {
+		for _, id := range store.DefaultCalendarSourceIDs(u.Role) {
 			selected[id] = true
 		}
 	} else if sources != "" && sources != "none" {

@@ -44,6 +44,8 @@ type BuildspaceActivity struct {
 	CreatedAt      int64   `json:"createdAt"`
 	PurchaseTitle  *string `json:"purchaseTitle"`
 	PurchaseStatus *string `json:"purchaseStatus"`
+	// PurchaseNeededBy is the linked finance request's date-only deadline.
+	PurchaseNeededBy *string `json:"purchaseNeededBy"`
 }
 type Buildspace struct {
 	Projects  []BuildspaceProject  `json:"projects"`
@@ -139,13 +141,13 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 	if err != nil {
 		return b, err
 	}
-	rows, err = q.q.QueryContext(ctx, `SELECT a.id,a.project_id,a.person_id,a.mentor_id,a.kind,a.date,a.body,a.status,a.purchase_id,a.source,a.external_id,a.created_at,p.title,p.status FROM buildspace_activity a LEFT JOIN purchase_requests p ON p.id=a.purchase_id ORDER BY a.date DESC,a.created_at DESC,a.id`)
+	rows, err = q.q.QueryContext(ctx, `SELECT a.id,a.project_id,a.person_id,a.mentor_id,a.kind,a.date,a.body,a.status,a.purchase_id,a.source,a.external_id,a.created_at,p.title,p.status,p.needed_by FROM buildspace_activity a LEFT JOIN purchase_requests p ON p.id=a.purchase_id ORDER BY a.date DESC,a.created_at DESC,a.id`)
 	if err != nil {
 		return b, err
 	}
 	for rows.Next() {
 		var a BuildspaceActivity
-		if err = rows.Scan(&a.ID, &a.ProjectID, &a.PersonID, &a.MentorID, &a.Kind, &a.Date, &a.Body, &a.Status, &a.PurchaseID, &a.Source, &a.ExternalID, &a.CreatedAt, &a.PurchaseTitle, &a.PurchaseStatus); err != nil {
+		if err = rows.Scan(&a.ID, &a.ProjectID, &a.PersonID, &a.MentorID, &a.Kind, &a.Date, &a.Body, &a.Status, &a.PurchaseID, &a.Source, &a.ExternalID, &a.CreatedAt, &a.PurchaseTitle, &a.PurchaseStatus, &a.PurchaseNeededBy); err != nil {
 			rows.Close()
 			return b, err
 		}

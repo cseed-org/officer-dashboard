@@ -435,6 +435,8 @@ export const PurchaseRequestListItem = z.object({
   expenseAccount: AccountOption.pick({ id: true, code: true, name: true }),
   fund: FundOption.pick({ id: true, code: true, name: true }),
   eventId: Id.nullable(),
+  /** Optional date-only purchase deadline ("needed by"). */
+  neededBy: IsoDate.nullable(),
   submittedAt: IsoDateTime.nullable(),
   updatedAt: IsoDateTime,
 });
@@ -449,6 +451,8 @@ export const PurchaseRequestsListQuery = PageQuery.extend({
     .describe('`pending` = submitted (awaiting a director)'),
   eventId: Id.optional(),
   q: z.string().max(100).optional(),
+  /** `deadline` lists only requests with a needed-by date, soonest first. */
+  sort: z.enum(['newest', 'deadline']).default('newest'),
 });
 export type PurchaseRequestsListQuery = z.infer<typeof PurchaseRequestsListQuery>;
 
@@ -500,7 +504,6 @@ export const PurchaseRequestDetail = PurchaseRequestListItem.extend({
   actualTotalCents: NonNegCents.nullable(),
   functionalClass: FunctionalClass,
   justification: z.string(),
-  neededBy: IsoDate.nullable(),
   event: z.object({ id: Id, name: z.string() }).nullable(),
   decidedAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
@@ -1016,6 +1019,8 @@ export const CalendarWidgetUpdate = z.union([CalendarWidgetOptions, CalendarWidg
 export const CalendarFeedItem = z.object({
   id: Id, source: Id, type: z.string(), title: z.string(),
   date: z.string(), startsAt: IsoDateTime.nullable(), endsAt: IsoDateTime.nullable(), lumaUrl: z.string().nullable(), location: z.string().nullable(), href: z.string().startsWith('/'),
+  /** Optional one-line summary for the popover, e.g. "#2027-0004 · $45.00 · approved". */
+  detail: z.string().nullable().optional(),
 });
 export type CalendarFeedItem = z.infer<typeof CalendarFeedItem>;
 export const CalendarFeedSource = z.object({ id: Id, label: z.string(), icon: z.string(), hue: z.string() });
@@ -1303,7 +1308,7 @@ export const BuildspaceActivityBody = z.object({
 export const BuildspaceActivity = BuildspaceActivityBody.extend({
  id: Id, personId: Id.nullable(), mentorId: Id.nullable(), purchaseId: Id.nullable(),
  source: z.enum(['manual','discord']), externalId: z.string().nullable(), createdAt: z.number().int(),
- purchaseTitle: z.string().nullable(), purchaseStatus: z.string().nullable(),
+ purchaseTitle: z.string().nullable(), purchaseStatus: z.string().nullable(), purchaseNeededBy: IsoDate.nullable(),
 });
 export type BuildspaceActivity = z.infer<typeof BuildspaceActivity>;
 export const BuildspaceResponse = z.object({

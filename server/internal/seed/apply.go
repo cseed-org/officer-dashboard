@@ -167,8 +167,8 @@ func apply(ctx context.Context, w *store.Queries) error {
 		if r.DecidedAt != "" {
 			decided = ms(r.DecidedAt)
 		}
-		if err := insert(ctx, w, "purchase_requests", "id, number, requester_id, type, title, vendor, item_url, quantity, unit_cost_cents, tax_ship_cents, total_cents, expense_account_id, fund_id, event_id, functional_class, justification, status, submitted_at, decided_at, created_at, updated_at",
-			r.ID, r.Number, r.Requester, r.Type, r.Title, r.Vendor, nullable(r.ItemURL), r.Quantity, r.UnitCostCents, r.TaxShipCents, total, AccountID(r.Account), r.Fund, nullable(r.Event), r.FunctionalClass, r.Justification, r.Status, submitted, decided, created, now); err != nil {
+		if err := insert(ctx, w, "purchase_requests", "id, number, requester_id, type, title, vendor, item_url, quantity, unit_cost_cents, tax_ship_cents, total_cents, expense_account_id, fund_id, event_id, functional_class, justification, needed_by, status, submitted_at, decided_at, created_at, updated_at",
+			r.ID, r.Number, r.Requester, r.Type, r.Title, r.Vendor, nullable(r.ItemURL), r.Quantity, r.UnitCostCents, r.TaxShipCents, total, AccountID(r.Account), r.Fund, nullable(r.Event), r.FunctionalClass, r.Justification, nullable(RequestNeededBy[r.ID]), r.Status, submitted, decided, created, now); err != nil {
 			return err
 		}
 		if r.Decision != nil && r.DecidedAt != "" {

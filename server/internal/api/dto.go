@@ -97,6 +97,8 @@ type RequestListItem struct {
 	EventID        *string      `json:"eventId"`
 	SubmittedAt    *string      `json:"submittedAt"`
 	UpdatedAt      string       `json:"updatedAt"`
+	// NeededBy is the optional date-only (YYYY-MM-DD) purchase deadline.
+	NeededBy *string `json:"neededBy"`
 }
 
 type ApprovalDTO struct {
@@ -141,7 +143,6 @@ type RequestCore struct {
 	ActualTotalCents *int64          `json:"actualTotalCents"`
 	FunctionalClass  string          `json:"functionalClass"`
 	Justification    string          `json:"justification"`
-	NeededBy         *string         `json:"neededBy"`
 	Event            *EventRef       `json:"event"`
 	DecidedAt        *string         `json:"decidedAt"`
 	CreatedAt        string          `json:"createdAt"`

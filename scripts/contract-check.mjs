@@ -192,6 +192,9 @@ const eventId = events.json.items[0].id;
 await call('eventDetail', { who: officer, params: { id: eventId } });
 await call('eventMetrics', { who: officer, params: { id: 'event-kickoff' } });
 const requests = await call('requestsList', { who: officer, query: { scope: 'all', limit: '50' } });
+const byDeadline = await call('requestsList', { who: officer, query: { scope: 'all', sort: 'deadline', limit: '2' } });
+must(byDeadline.json.items.every((r) => r.neededBy) && byDeadline.json.nextCursor, 'deadline sort lists dated requests with a date cursor');
+await call('requestsList', { who: officer, query: { scope: 'all', sort: 'deadline', limit: '2', cursor: byDeadline.json.nextCursor } });
 for (const r of requests.json.items.slice(0, 6)) await call('requestDetail', { who: officer, params: { id: r.id } });
 await call('financeSummary', { who: officer, query: { fiscalYear: '2027', asOf: '2026-10-31' } });
 await call('budgetsGet', { who: officer, query: { fiscalYear: '2027' } });
@@ -545,6 +548,8 @@ await call('adminTokenRevoke', {who: directorA, params: {id: bsToken.json.token.
 await call('buildspaceIngest', {who: bsWho, body: bsUpdate, expect: 401});
 
 // Buildspace calendar sources are opt-in and use the same registry/settings contract.
+const purchaseFeed = await call('calendarFeed', {who: officer, query: {start: '2026-11-01', end: '2026-12-01', sources: 'purchase-deadlines'}});
+must(purchaseFeed.json.items.some(i => i.source === 'purchase-deadlines' && i.detail), 'purchase deadlines carry an amount/status detail');
 for (const source of ['buildspace-absences', 'buildspace-weekly', 'buildspace-mentor']) {
  await call('calendarFeed', {who: officer, query: {start: '2026-11-01', end: '2026-12-01', sources: source}});
 }

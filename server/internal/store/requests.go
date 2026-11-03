@@ -64,6 +64,10 @@ type RequestFilter struct {
 	Q           string // case-insensitive substring of title, vendor or number
 	Status      string // "" = any
 	Limit       int    // 0 = no limit
+	// ByDeadline lists only requests with a needed-by date, soonest first
+	// (needed_by, id); its cursor uses CursorDate and CursorID.
+	ByDeadline bool
+	CursorDate string
 	// Cursor continues after this (created_at, id), newest first.
 	CursorCreatedAt int64
 	CursorID        string
@@ -93,7 +97,13 @@ func (f RequestFilter) where(withStatus bool) (string, []any) {
 		conds = append(conds, "status = ?")
 		args = append(args, f.Status)
 	}
-	if withStatus && f.HasCursor {
+	if f.ByDeadline {
+		conds = append(conds, "needed_by IS NOT NULL")
+	}
+	if withStatus && f.HasCursor && f.ByDeadline {
+		conds = append(conds, "(needed_by > ? OR (needed_by = ? AND id > ?))")
+		args = append(args, f.CursorDate, f.CursorDate, f.CursorID)
+	} else if withStatus && f.HasCursor {
 		conds = append(conds, "(created_at < ? OR (created_at = ? AND id < ?))")
 		args = append(args, f.CursorCreatedAt, f.CursorCreatedAt, f.CursorID)
 	}
@@ -123,10 +133,14 @@ func (q *Queries) RequestCounts(ctx context.Context, f RequestFilter) (map[strin
 	return out, rows.Err()
 }
 
-// Requests lists requests newest first.
+// Requests lists requests newest first, or soonest deadline first with ByDeadline.
 func (q *Queries) Requests(ctx context.Context, f RequestFilter) ([]Request, error) {
 	where, args := f.where(true)
-	query := `SELECT ` + requestCols + ` FROM purchase_requests` + where + ` ORDER BY created_at DESC, id DESC`
+	order := ` ORDER BY created_at DESC, id DESC`
+	if f.ByDeadline {
+		order = ` ORDER BY needed_by, id`
+	}
+	query := `SELECT ` + requestCols + ` FROM purchase_requests` + where + order
 	if f.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", f.Limit)
 	}

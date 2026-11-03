@@ -64,6 +64,9 @@ func TestBuildspaceMembershipActivityAndValidation(t *testing.T) {
 	if linked.PurchaseStatus == nil || *linked.PurchaseStatus != "submitted" {
 		t.Fatal("finance status not joined")
 	}
+	if linked.PurchaseNeededBy == nil || *linked.PurchaseNeededBy != "2026-11-12" {
+		t.Fatal("finance deadline not joined")
+	}
 	expectStatus(t, "finance owns linked status", e.post("/api/buildspace/activity/"+linked.ID+"/resolve", nil, officer), 400)
 	a["kind"] = "request"
 	a["purchaseId"] = nil
