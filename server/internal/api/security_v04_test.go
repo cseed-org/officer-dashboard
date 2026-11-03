@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -312,28 +311,31 @@ func TestEveryResponseIsTypedAndCarriesACSP(t *testing.T) {
 			t.Errorf("%s: non-page CSP %q", c.label, h.Get("Content-Security-Policy"))
 		}
 	}
-	// A handler that forgets its Content-Type gets bytes, not a sniffed document.
+	// A handler that forgets its Content-Type gets bytes, not a sniffed document, whether it
+	// writes straight away or after WriteHeader.
+	for _, status := range []int{0, 400} {
+		rec := httptest.NewRecorder()
+		e.srv.withAPIHygiene(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if status != 0 {
+				w.WriteHeader(status)
+			}
+			_, _ = w.Write([]byte("<html><script>alert(1)</script>"))
+		})).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+		if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Errorf("untyped body (status %d) served as %q", status, ct)
+		}
+	}
+	// A handler's own type replaces the default.
+	if ct := e.get("/api/health", anon).Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("health served as %q", ct)
+	}
+	// The access log records the status without touching the body.
+	var logs strings.Builder
 	rec := httptest.NewRecorder()
-	withContentType(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("<html><script>alert(1)</script>"))
-	})).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
-	if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" {
-		t.Errorf("untyped body served as %q", ct)
-	}
-	rec = httptest.NewRecorder()
-	withContentType(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(400)
-		_, _ = w.Write([]byte("<html><script>alert(1)</script>"))
-	})).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
-	if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" {
-		t.Errorf("untyped body after WriteHeader served as %q", ct)
-	}
-	// The access log's writer does the same for the outermost layer.
-	rec = httptest.NewRecorder()
 	AccessLog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("<html><script>alert(1)</script>"))
-	}), slog.New(slog.NewTextHandler(io.Discard, nil))).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
-	if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
-		t.Errorf("access log passthrough served %q", ct)
+		_, _ = w.Write([]byte("ok"))
+	}), slog.New(slog.NewTextHandler(&logs, nil))).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	if rec.Body.String() != "ok" || !strings.Contains(logs.String(), "status=200") {
+		t.Errorf("access log: body %q log %q", rec.Body.String(), logs.String())
 	}
 }
