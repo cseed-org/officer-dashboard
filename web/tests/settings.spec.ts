@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { devLogin, settle, devKeyParam } from './helpers';
+import { devLogin, settle, devSignIn } from './helpers';
 
 test('the theme setting persists across a reload with no flash', async ({ page }) => {
   await devLogin(page, 'director');
@@ -50,8 +50,10 @@ test('signed-out visitors are sent to /login, which links to Discord and back to
   if (await devLink.count()) {
     await expect(devLink).toHaveAttribute('href', /next=%2Ffinance%3Fid%3Dreq-0005/);
     await devLink.click();
+    // The link opens the confirmation page; its button posts the sign-in form.
+    await page.getByRole('button', { name: 'Continue' }).click();
   } else {
-    await page.goto(`/auth/dev?as=officer&next=${encodeURIComponent('/finance?id=req-0005')}${devKeyParam}`);
+    await devSignIn(page, { as: 'officer' }, '/finance?id=req-0005');
   }
   await expect(page).toHaveURL(/\/finance\?id=req-0005/);
 });

@@ -126,7 +126,10 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 		hdr := c.W.Header()
 		hdr.Set("Content-Type", "text/html; charset=utf-8")
 		hdr.Set("Cache-Control", "no-store")
-		hdr.Set("Referrer-Policy", "no-referrer")
+		// (Referrer-Policy stays same-origin: no-referrer would make the form post send
+		// Origin: null, which devSameOrigin rightly refuses.)
+		// No script at all; the inline <style> and the same-origin form post are all it needs.
+		hdr.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 		return devConfirmPage.Execute(c.W, map[string]any{"Who": who, "Next": next, "Fields": fields})
 	})
 	h("POST /auth/dev", func(c *Ctx) error {

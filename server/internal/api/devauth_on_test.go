@@ -58,6 +58,9 @@ func TestDevLoginGETOnlyConfirms(t *testing.T) {
 	if len(setCookies(r)) != 0 || e.scalar(`SELECT count(*) FROM sessions`) != int64(0) {
 		t.Fatal("a GET created a session or set cookies")
 	}
+	if csp := r.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self'") || strings.Contains(csp, "script-src") {
+		t.Errorf("confirm page CSP %q", csp)
+	}
 	body := string(r.Raw)
 	for _, want := range []string{`method="post"`, `action="/auth/dev"`, `name="as" value="officer"`, `name="next" value="/events"`, `name="key"`} {
 		if !strings.Contains(body, want) {

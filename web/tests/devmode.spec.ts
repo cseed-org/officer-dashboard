@@ -39,34 +39,36 @@ test('with the key, the panel skips Discord: Director lands on Home', async ({ p
   await expect(panel(page)).toBeVisible();
   await expect(panel(page).getByText('Skip Discord and continue as')).toBeVisible();
   await expect(panel(page).getByText(/test build/)).toBeVisible();
-  // The key leaves the address bar once the browser remembers it.
+  // The key leaves the address bar once the panel is built.
   await expect(page).not.toHaveURL(/key=/);
   await panel(page).getByRole('link', { name: 'Director' }).click();
+  // A link only reaches the confirmation page; its button posts the sign-in.
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page).toHaveURL(/\/$/);
   await settle(page);
   expect(await role(page)).toBe('director');
   expect(errors).toEqual([]);
 });
 
-test('a keyed deep link signs in and keeps the destination; the cookie brings the panel back', async ({ page, context }) => {
+test('a keyed deep link confirms, signs in and keeps the destination; nothing remembers the key', async ({ page, context }) => {
   const errors = watchErrors(page);
   await page.goto(`/auth/dev?as=officer&key=${encodeURIComponent(KEY)}&next=/events`);
+  expect(await role(page)).toBeNull();
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page).toHaveURL(/\/events$/);
   await settle(page);
   expect(await role(page)).toBe('officer');
   const cookies = await context.cookies();
-  const devKey = cookies.find((c) => c.name.endsWith('dev_key'));
-  expect(devKey?.httpOnly).toBe(true);
-  expect(devKey?.value).not.toContain(KEY);
+  expect(cookies.find((c) => c.name.endsWith('dev_key'))).toBeUndefined();
 
-  // Signed out (session gone, dev_key kept): any page sends to /login, which offers the panel.
-  await context.clearCookies({ name: cookies.find((c) => c.name.endsWith('cseed_session'))!.name });
+  // Signed out, the login page shows no panel without the key, and a post without it fails.
+  await context.clearCookies();
   await page.goto('/events');
   await expect(page).toHaveURL(/\/login\?next=%2Fevents/);
-  await expect(panel(page)).toBeVisible();
   await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
-  await panel(page).getByRole('link', { name: 'Leadership (owner)' }).click();
-  await expect(page).toHaveURL(/\/events$/);
-  expect(await role(page)).toBe('leadership');
+  await expect(panel(page)).toHaveCount(0);
+  const refused = await page.request.post('/auth/dev', { form: { as: 'leadership' }, maxRedirects: 0 });
+  expect(refused.status()).not.toBe(303);
+  expect(await role(page)).toBeNull();
   expect(errors).toEqual([]);
 });

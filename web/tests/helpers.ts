@@ -20,9 +20,22 @@ export async function useTheme(page: Page, theme: Theme) {
 /** A test deployment's DEV_AUTH_KEY, when the server under test requires one. */
 export const devKeyParam = process.env.E2E_DEV_AUTH_KEY ? `&key=${encodeURIComponent(process.env.E2E_DEV_AUTH_KEY)}` : '';
 
+/**
+ * Sign in through the dev login form (POST /auth/dev; a GET only shows a confirmation page)
+ * with `as`/`user` or `discord`, then open where the server redirected. The key, when the
+ * server needs one, goes with every sign-in.
+ */
+export async function devSignIn(page: Page, fields: { as?: string; user?: string; discord?: string }, next = '/') {
+  const form: Record<string, string> = { ...fields, next } as Record<string, string>;
+  if (process.env.E2E_DEV_AUTH_KEY) form.key = process.env.E2E_DEV_AUTH_KEY;
+  const res = await page.request.post('/auth/dev', { form, maxRedirects: 0 });
+  // 303 after a sign-in; 302 to /login?error=… when the account is refused.
+  expect([302, 303], `dev login ${JSON.stringify(fields)} failed; is the API (API_ORIGIN) running with DEV_AUTH?`).toContain(res.status());
+  return page.goto(res.headers()['location'] ?? '/');
+}
+
 export async function devLogin(page: Page, as: 'director' | 'officer' | 'leadership') {
-  const res = await page.goto(`/auth/dev?as=${as}${devKeyParam}`);
-  expect(res?.ok(), `dev login as ${as} failed; is the API (API_ORIGIN) running with DEV_AUTH?`).toBe(true);
+  await devSignIn(page, { as });
   await expect(page).toHaveURL(/\/$/);
 }
 
