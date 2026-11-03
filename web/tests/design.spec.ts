@@ -14,7 +14,8 @@ async function signIn(page: Page, user: 'user-priya' | 'user-riley' | 'user-dire
 
 const card = (page: Page, title: string) => page.locator('.kanban-card', { hasText: title });
 
-test('a design request moves across the board', async ({ page }, info) => {
+for (const theme of THEMES) test(`a design request moves across the board (${theme})`, async ({ page }, info) => {
+  await useTheme(page, theme);
   const errors = watchErrors(page);
   const title = `E2E poster ${info.project.name} ${Date.now()}`;
   const phone = info.project.name === 'phone';
@@ -65,7 +66,20 @@ test('a design request moves across the board', async ({ page }, info) => {
   await expect(page.locator('dialog[open] [data-design-detail]')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Approve this version' })).toHaveCount(0);
 
-  // The requester approves; that delivers it.
+  // The requester asks for changes; the designer returns a revised version to review.
+  await signIn(page, 'user-priya');
+  await page.goto('/design');
+  await settle(page);
+  await page.getByRole('link', { name: title }).first().click();
+  await page.getByRole('button', { name: 'Request changes' }).click();
+  await expect(page.locator('dialog[open] [data-design-detail]')).toHaveAttribute('data-stage', 'in-progress');
+  await signIn(page, 'user-riley');
+  await page.goto('/design?view=board');
+  await settle(page);
+  await card(page, title).getByRole('button', { name: `Actions for ${title}` }).click();
+  await page.getByRole('menuitem', { name: 'Move to In review', exact: true }).click();
+  await expect(page.locator('.kanban-col[data-stage="in-review"]')).toContainText(title);
+  // The requester approves the revision; that delivers it.
   await signIn(page, 'user-priya');
   await page.goto('/design');
   await settle(page);
@@ -140,7 +154,17 @@ test('upcoming events show their design needs on the Design page', async ({ page
     await tile.getByRole('button', { name: 'Request design' }).click();
     const form = page.locator('dialog[open] [data-design-form]');
     await expect(form.getByLabel('Title')).toHaveValue(`${name} promo`);
+    await form.getByRole('button', { name: 'Submit design request' }).click();
+    const createdDetail = page.locator('[data-design-detail]');
+    await expect(createdDetail).toBeVisible();
+    const requestId = await createdDetail.getAttribute('data-design-detail');
     await page.keyboard.press('Escape');
+    await expect(tile.locator('[data-indicator]')).toHaveAttribute('data-indicator', 'requested');
+    await tile.getByRole('button', { name: 'Request another' }).click();
+    await expect(form.getByLabel('Title')).toHaveValue(`${name} promo`);
+    await expect(form.getByLabel('Linked event or program')).toHaveValue(eventId);
+    await page.keyboard.press('Escape');
+    await page.request.delete(`/api/design-requests/${requestId}`);
 
     // The editor carries the same switch.
     await page.goto(`/events?edit=${eventId}`);

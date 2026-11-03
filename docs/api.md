@@ -190,12 +190,13 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   users whose officer profile is on the subteam named **Design** (migration 0008 creates it).
   - Designers assign any designer (themselves included) and move cards between New,
     Accepted, In progress and In review. Moving an unassigned card past New assigns the
-    designer who moved it. Past New a card always has an assignee, so unassigning requires
-    moving it back to New first (409). Directors and leadership have the same assign and
-    move powers as an administrative override, but can only assign designers (400).
-  - **Delivered is reached only by `POST /approve`**, and only by the requester while the
-    card is In review. Rank gives no shortcut: a director, leadership or the designer gets
-    403. The requester can instead send it back with `move` → `in-progress` ("Request
+    designer who moved it. Designers must move work back to New before unassigning (409).
+    Directors and leadership can move unassigned work and assign or unassign at any stage,
+    but can only assign designers (400).
+  - **Requester approval uses `POST /approve`** while the card is In review; other users get
+    403. Leadership alone may instead use `POST /move` with `stage: "delivered"` and
+    `confirmDeliveryOverride: true`. This writes a `design_request.delivery_overridden` audit
+    entry and leaves requester approval metadata empty. Directors cannot override delivery. The requester can instead send it back with `move` → `in-progress` ("Request
     changes"). Designers can reopen a delivered card to In progress, which clears the approval.
   - The requester (or a director) edits the fields until delivery (409 after). The requester
     can withdraw (`DELETE`) while the card is New; directors can delete any time.

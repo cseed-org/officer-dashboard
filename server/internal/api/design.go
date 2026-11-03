@@ -20,7 +20,7 @@ import (
 
 // Design requests: one board every officer sees. Members of the Design subteam (and
 // director+, as an administrative override) assign and move work; only the requester
-// approves a version in review, which is the one way a card reaches Delivered.
+// approves a version in review. Leadership may explicitly confirm an audited delivery override.
 
 // ─── DTOs (DesignRequest* in src/core/contracts.ts) ───
 
@@ -115,7 +115,7 @@ type designCtx struct {
 
 func (d *designCtx) isDesigner(id string) bool { return slices.Contains(d.designers, id) }
 
-// staff is director+: an administrative override for assignment and moves, never for approval.
+// staff is director+: an administrative override for assignment and moves, never for requester approval.
 func (d *designCtx) staff() bool { return auth.HasRole(d.viewer.Role, auth.RoleDirector) }
 
 func (d *designCtx) worker() bool { return d.isDesigner(d.viewer.ID) || d.staff() }
@@ -170,17 +170,14 @@ func (d *designCtx) permissions(r *store.DesignRequest) DesignPermissions {
 	p := DesignPermissions{MoveTo: []string{}, UploadKinds: []string{}}
 	p.CanEdit = open && (requester || d.staff())
 	p.CanDelete = (requester && r.Stage == "new") || d.staff()
-	p.CanAssign = open && d.worker()
+	p.CanAssign = d.staff() || (open && d.worker())
 	p.CanAssignSelf = open && d.isDesigner(v.ID) && (r.AssigneeID == nil || *r.AssigneeID != v.ID)
 	p.CanApprove = requester && r.Stage == "in-review"
 	p.CanRequestChanges = p.CanApprove
 	if d.worker() {
-		for _, s := range designMoveTargets(r.Stage) {
-			// Moving past New needs a designer: the mover self-assigns if they are one.
-			if s != "new" && r.AssigneeID == nil && !d.isDesigner(v.ID) {
-				continue
-			}
-			p.MoveTo = append(p.MoveTo, s)
+		p.MoveTo = designMoveTargets(r.Stage)
+		if d.viewer.Role == auth.RoleLeadership && r.Stage != "delivered" {
+			p.MoveTo = append(p.MoveTo, "delivered")
 		}
 	} else if p.CanRequestChanges {
 		p.MoveTo = append(p.MoveTo, "in-progress")
@@ -545,7 +542,7 @@ func (c *Ctx) designAssign() error {
 			return forbidden("Only the design team can assign requests")
 		}
 		if !assignee.Has() {
-			if r.Stage != "new" {
+			if r.Stage != "new" && !dc.staff() {
 				return conflict("Move the request back to New before unassigning it")
 			}
 			r.AssigneeID = nil
@@ -564,12 +561,18 @@ func (c *Ctx) designAssign() error {
 
 func (c *Ctx) designMove() error {
 	var to string
+	var override bool
 	if err := c.jsonBody(func(r *validate.Reader) {
 		to = r.Str("stage", validate.S{Req: true, Enum: store.DesignStages}).V
+		override = r.Bool("confirmDeliveryOverride", false)
 	}); err != nil {
 		return err
 	}
-	return c.designMutate("design_request.moved", func(dc *designCtx, r *store.DesignRequest) error {
+	action := "design_request.moved"
+	if to == "delivered" {
+		action = "design_request.delivery_overridden"
+	}
+	return c.designMutate(action, func(dc *designCtx, r *store.DesignRequest) error {
 		if to == r.Stage {
 			if !dc.worker() && !dc.permissions(r).CanRequestChanges {
 				return forbidden("Only the design team can move requests")
@@ -577,7 +580,9 @@ func (c *Ctx) designMove() error {
 			return nil
 		}
 		if to == "delivered" {
-			return conflict("A request is delivered when its requester approves it in review")
+			if dc.viewer.Role != auth.RoleLeadership || !override {
+				return conflict("Delivery follows requester approval; leadership must confirm a delivery override")
+			}
 		}
 		if !slices.Contains(dc.permissions(r).MoveTo, to) {
 			if !dc.worker() {
@@ -585,7 +590,7 @@ func (c *Ctx) designMove() error {
 			}
 			return conflict("Assign a designer before moving this request")
 		}
-		if to != "new" && r.AssigneeID == nil {
+		if to != "new" && r.AssigneeID == nil && dc.isDesigner(dc.viewer.ID) {
 			id := dc.viewer.ID // a designer moving an unassigned card takes it
 			r.AssigneeID = &id
 		}

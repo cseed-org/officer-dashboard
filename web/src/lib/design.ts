@@ -74,14 +74,14 @@ export function dueText(item: Pick<DesignRequestItem, 'dueDate' | 'stage' | 'urg
 
 /**
  * Where the viewer may move a card: mirrors designMoveTargets + permissions in the Go API.
- * Designers and director+ ("workers") move between the four working stages; an unassigned card
- * leaves New only with a designer (who then takes it). Delivered only follows approval; a
- * delivered card can be reopened. The requester may send a card in review back to In progress.
+ * Designers and director+ move work; designers take unassigned work when moving it.
+ * Leadership may deliver with explicit confirmation. Other delivery follows requester approval.
+ * A delivered card can be reopened; requesters may send work in review back to In progress.
  */
-export function designMoveTargets(item: DesignRequestItem, viewer: { id: string; isDesigner: boolean; isWorker: boolean }): DesignStage[] {
+export function designMoveTargets(item: DesignRequestItem, viewer: { id: string; isDesigner: boolean; isWorker: boolean; isLeadership?: boolean }): DesignStage[] {
   if (!viewer.isWorker) return item.stage === 'in-review' && item.requester.id === viewer.id ? ['in-progress'] : [];
   if (item.stage === 'delivered') return ['in-progress'];
-  return DESIGN_STAGES.filter((s) => s !== item.stage && s !== 'delivered' && (s === 'new' || item.assignee !== null || viewer.isDesigner));
+  return DESIGN_STAGES.filter((s) => s !== item.stage && (s !== 'delivered' || viewer.isLeadership));
 }
 
 export const firstName = (name: string) => name.split(/\s+/)[0] ?? name;

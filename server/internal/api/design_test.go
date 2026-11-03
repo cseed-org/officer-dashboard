@@ -53,8 +53,9 @@ func TestDesignRequestLifecycle(t *testing.T) {
 	expectStatus(t, "officer moves", e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "accepted"}, ava), 403)
 	expectStatus(t, "officer assigns", e.post("/api/design-requests/"+id+"/assign", map[string]any{"assigneeId": "user-ava"}, ava), 403)
 	expectStatus(t, "assignee off the team", e.post("/api/design-requests/"+id+"/assign", map[string]any{"assigneeId": "user-ava"}, director), 400)
-	// A director who is not a designer cannot move an unassigned card past New.
-	expectStatus(t, "director moves unassigned", e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "accepted"}, director), 409)
+	// Director+ can move unassigned work without being made its designer.
+	e.mustOK(e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "accepted"}, director))
+	e.mustOK(e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "new"}, director))
 
 	// A designer moving an unassigned card takes it.
 	moved := e.mustOK(e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "accepted"}, riley))
@@ -187,4 +188,30 @@ func TestDesignRequestFromEvent(t *testing.T) {
 		t.Fatalf("long event: title %d runes", n)
 	}
 	expectStatus(t, "bad override", e.post("/api/events/event-hack-night/design-requests", map[string]any{"type": "banner"}, e.officer()), 400)
+}
+
+func TestLeadershipDesignOverride(t *testing.T) {
+	e := newEnv(t)
+	lead, director := e.as("user-leadership"), e.director()
+	id := e.mustOK(e.post("/api/design-requests", designBody(), e.officer())).str("request", "id")
+	path := "/api/design-requests/" + id
+	moved := e.mustOK(e.post(path+"/move", map[string]any{"stage": "in-review"}, lead))
+	if moved.at("request", "assignee") != nil {
+		t.Fatal("leadership must not become the designer")
+	}
+	expectStatus(t, "override needs confirmation", e.post(path+"/move", map[string]any{"stage": "delivered"}, lead), 409)
+	expectStatus(t, "director cannot override", e.post(path+"/move", map[string]any{"stage": "delivered", "confirmDeliveryOverride": true}, director), 409)
+	out := e.mustOK(e.post(path+"/move", map[string]any{"stage": "delivered", "confirmDeliveryOverride": true}, lead))
+	if out.str("request", "stage") != "delivered" || out.at("request", "approvedBy") != nil {
+		t.Fatal("override must not impersonate requester approval")
+	}
+	if e.auditCount("design_request.moved", id) != 1 || e.auditCount("design_request.delivery_overridden", id) != 1 {
+		t.Fatal("moves must be audited")
+	}
+	e.mustOK(e.post(path+"/assign", map[string]any{"assigneeId": "user-riley"}, director))
+	e.mustOK(e.post(path+"/assign", map[string]any{"assigneeId": nil}, lead))
+	if e.auditCount("design_request.assigned", id) != 2 {
+		t.Fatal("staff assignment changes must be audited")
+	}
+	e.mustOK(e.post(path+"/move", map[string]any{"stage": "in-progress"}, director))
 }
