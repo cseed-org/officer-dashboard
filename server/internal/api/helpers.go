@@ -309,7 +309,7 @@ func attachmentDTO(a *store.Attachment, cat *catalog) (AttachmentDTO, error) {
 }
 
 // requestDetail is what GET /api/requests/:id and every action endpoint return.
-func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store.Request, viewer *store.User) (RequestDetail, error) {
+func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store.Request, viewer *store.User, tol purchases.Tolerance) (RequestDetail, error) {
 	core, err := requestCore(ctx, q, cat, r)
 	if err != nil {
 		return RequestDetail{}, err
@@ -324,14 +324,34 @@ func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store
 			ok = viewer.ID == r.RequesterID
 		case to == "approved":
 			ok = auth.HasRole(viewer.Role, auth.RoleDirector) && viewer.ID != r.RequesterID
+		case paysOut(to):
+			ok = auth.HasRole(viewer.Role, auth.RoleDirector) && viewer.ID != r.RequesterID
 		default:
 			ok = auth.HasRole(viewer.Role, auth.RoleDirector)
 		}
 		if ok {
 			d.AllowedTransitions = append(d.AllowedTransitions, to)
+			if to == "fulfilled" || to == "reimbursed" {
+				d.MaxSettlementCents = settlementCeiling(viewer, r, tol)
+			}
 		}
 	}
 	return d, nil
+}
+
+// paysOut reports whether moving a request to `to` books or pays out money: settling a
+// purchase or reimbursement, or closing it (which pays a reimbursement). The requester may
+// never make these moves on their own request, whatever their role.
+func paysOut(to string) bool { return to == "fulfilled" || to == "reimbursed" || to == "closed" }
+
+// settlementCeiling is the most a viewer may record as the actual total: directors get
+// the approved estimate plus the agent tolerance, leadership is uncapped (nil).
+func settlementCeiling(viewer *store.User, r *store.Request, tol purchases.Tolerance) *int64 {
+	if auth.HasRole(viewer.Role, auth.RoleLeadership) {
+		return nil
+	}
+	c := purchases.MaxAgentSettlementCents(r.TotalCents, tol)
+	return &c
 }
 
 // requestSnapshot is the audit image of a request (camelCase, like the v1 rows), and what

@@ -33,10 +33,15 @@ func IsDateTime(s string) bool {
 	return m != nil && IsDate(m[1])
 }
 
-// IsURL accepts anything with a scheme that net/url can parse, like `new URL()`.
+// IsURL accepts absolute http(s) URLs with a host. Stored URLs end up in links and image
+// sources, so javascript:, data:, file: and every other scheme are refused.
 func IsURL(s string) bool {
 	u, err := url.Parse(strings.TrimSpace(s))
-	return err == nil && u.Scheme != "" && (u.Host != "" || u.Opaque != "")
+	if err != nil || u.Host == "" {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	return scheme == "http" || scheme == "https"
 }
 
 // IsDiscordID is 17–20 digits.

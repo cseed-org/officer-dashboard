@@ -432,8 +432,10 @@ func TestHoldsAnAgentSettlementAboveTheEstimatePlusToleranceForDirectorReview(t 
 	if fields["Agent reported"] != "$125.01" || fields["Approved"] != "$100.00" {
 		t.Errorf("webhook fields %v", fields)
 	}
-	// The director settles the held request at the real amount, which clears the hold.
-	settled := e.post("/api/requests/"+id+"/transition", map[string]any{"to": "fulfilled", "actualTotalCents": 12501}, e.director())
+	// A director cannot book more than the ceiling either; leadership settles the held
+	// request at the real amount, which clears the hold.
+	expectStatus(t, "director over the ceiling", e.post("/api/requests/"+id+"/transition", map[string]any{"to": "fulfilled", "actualTotalCents": 12501}, e.director()), 409)
+	settled := e.post("/api/requests/"+id+"/transition", map[string]any{"to": "fulfilled", "actualTotalCents": 12501}, e.as("user-leadership"))
 	if settled.Status != 200 || settled.num("request", "actualTotalCents") != 12501 || settled.at("request", "settlementHold") != nil {
 		t.Errorf("director settlement %d %s", settled.Status, settled.Raw)
 	}

@@ -20,6 +20,6 @@ func TestFormats(t *testing.T) {
 		[]string{"2026-11-01T10:00:00Z", "2026-09-18T18:00:00-07:00", "2026-11-01T10:00:00.123Z"},
 		[]string{"2026-11-01T10:00Z", "2026-11-01T10:00:00", "2026-11-01 10:00:00Z", "2026-11-01T10:00:00-0700", "2026-02-30T10:00:00Z"})
 	check("email", IsEmail, []string{"a@example.org", "a.b+c@x.co"}, []string{"x", "a@b", "a@@b.org", ".a@b.org", ""})
-	check("url", IsURL, []string{"https://www.adafruit.com/", "http://x.y"}, []string{"adafruit", "/path", ""})
+	check("url", IsURL, []string{"https://www.adafruit.com/", "http://x.y"}, []string{"adafruit", "/path", "", "javascript:alert(1)", "JavaScript://x.y/%0aalert(1)", "data:text/html,<script>alert(1)</script>", "vbscript:msgbox", "ftp://x.y/file", "file:///etc/passwd", "mailto:a@b.co", "http:///nohost"})
 	check("discord", IsDiscordID, []string{"100000000000000001"}, []string{"123", "abc", ""})
 }
