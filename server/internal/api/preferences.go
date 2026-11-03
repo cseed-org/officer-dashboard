@@ -12,8 +12,9 @@ import (
 
 // Keep defaults aligned with the web widget registry (web/src/ui/widgets/registry.ts). Unknown
 // IDs remain valid so later feature Panes can register widgets without a database migration.
-// Sizes are W×H Home grid blocks; this default fills a clean 4×5 rectangle on desktop.
+// Sizes are W×H Home grid blocks; this default fills a clean 4×6 rectangle on desktop.
 var defaultWidgets = []store.WidgetPlacement{
+	{ID: "links", Size: "2x2"},
 	{ID: "kpi-upcoming", Size: "1x1"}, {ID: "kpi-checkin", Size: "1x1"}, {ID: "kpi-reflection", Size: "1x1"}, {ID: "kpi-budget", Size: "1x1"},
 	{ID: "my-action", Size: "2x2"}, {ID: "recent-events", Size: "2x2"},
 	{ID: "budget", Size: "2x2"}, {ID: "activity", Size: "1x2"}, {ID: "kpi-pending", Size: "1x1"}, {ID: "web-analytics", Size: "1x1"},
@@ -48,7 +49,11 @@ func (c *Ctx) writePrefs(userID string) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(c.W, 200, map[string]any{"widgetLayout": json.RawMessage(raw), "timezoneMode": pref.Mode, "timezone": pref.Zone, "effectiveTimezone": zone.String()})
+	tutorialSeen, err := q.DashboardTutorialSeen(ctx, userID)
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"dashboardTutorialSeen": tutorialSeen, "widgetLayout": json.RawMessage(raw), "timezoneMode": pref.Mode, "timezone": pref.Zone, "effectiveTimezone": zone.String()})
 	return nil
 }
 func (c *Ctx) prefsPut() error {
@@ -59,8 +64,10 @@ func (c *Ctx) prefsPut() error {
 	layout := []store.WidgetPlacement{}
 	seen := map[string]bool{}
 	var hasLayout bool
+	var tutorialSeen validate.Field[bool]
 	var mode, zone validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
+		tutorialSeen = r.BoolField("dashboardTutorialSeen")
 		hasLayout = r.Has("widgetLayout")
 		r.Objects("widgetLayout", false, 50, func(_ int, sub *validate.Reader) {
 			id := sub.Str("id", validate.S{Req: true, Min: 1, Max: 64}).V
@@ -82,7 +89,7 @@ func (c *Ctx) prefsPut() error {
 		if zone.Set && !mode.Set {
 			r.Issues.Add("timezoneMode", "Specify the time zone mode")
 		}
-		if !hasLayout && !mode.Set {
+		if !hasLayout && !mode.Set && !tutorialSeen.Set {
 			r.Issues.AddForm("No preferences supplied")
 		}
 	}); err != nil {
@@ -106,6 +113,11 @@ func (c *Ctx) prefsPut() error {
 			}
 			raw, _ := json.Marshal(widgets)
 			if err := q.SaveWidgetLayout(ctx, u.ID, string(raw), c.S.nowMs()); err != nil {
+				return err
+			}
+		}
+		if tutorialSeen.Set {
+			if err := q.SaveDashboardTutorialSeen(ctx, u.ID, tutorialSeen.V); err != nil {
 				return err
 			}
 		}

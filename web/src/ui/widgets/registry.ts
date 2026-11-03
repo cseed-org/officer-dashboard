@@ -15,6 +15,7 @@ export interface WidgetDef {
 
 /** Feature Panes can extend this registry. Keep defaults in step with server/internal/api/preferences.go. */
 export const widgetRegistry: WidgetDef[] = [
+  { id: 'links', title: 'Links', sizes: ['2x1', '2x2', '4x1'], size: '2x1' },
   { id: 'kpi-upcoming', title: 'Upcoming events', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
   { id: 'kpi-checkin', title: 'Avg check-in rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
   { id: 'kpi-reflection', title: 'Reflection rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
@@ -35,8 +36,9 @@ export const widgetRegistry: WidgetDef[] = [
 export const KPI_GROUP_ID = 'kpis';
 export const kpiIds = widgetRegistry.filter((w) => w.group === 'kpis').map((w) => w.id);
 
-/** A clean 4×5 rectangle on four columns; pairs up cleanly on two. */
+/** A clean 4×6 rectangle on four columns; pairs up cleanly on two. */
 export const defaultWidgetLayout: { id: string; size: BlockSize }[] = [
+  { id: 'links', size: '2x2' },
   { id: 'kpi-upcoming', size: '1x1' },
   { id: 'kpi-checkin', size: '1x1' },
   { id: 'kpi-reflection', size: '1x1' },

@@ -118,14 +118,9 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
 .blk-handle {width: 32px; height: 32px; border-radius: 9px; background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--line), var(--block-shadow); cursor: grab; touch-action: none;}
 .blk-handle:hover {background: var(--hover);}
 .blk-remove {width: 28px; height: 28px; border-radius: 50%; background: var(--text); color: var(--bg);}
-.blk-sizes {align-self: center; display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 2px; padding: 2px; border-radius: 999px; background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--block-shadow);}
-.blk-size {min-width: 36px; min-height: 28px; padding: 0 8px; border: 0; border-radius: 999px; background: transparent; font: inherit; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted); cursor: pointer;}
-.blk-size:hover {color: var(--text); background: var(--hover);}
-.blk-size[aria-pressed="true"] {background: var(--text); color: var(--bg);}
 @media (max-width: 767px) {
   .blk-handle {width: 40px; height: 40px;}
   .blk-remove {width: 36px; height: 36px;}
-  .blk-size {min-height: 36px;}
 }
 
 /* Dragging: the widget's own cell becomes the drop target, a soft filled highlight; a lifted card
@@ -165,3 +160,24 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
   .blk-gallery-list {grid-template-columns: 1fr;}
   .blk-gallery .btn {min-height: 44px;}
 }
+
+/* Edit overlays preserve each tile's footprint and content context. */
+.blocks.is-editing .blk-body {animation: none;}
+.blocks.is-editing .tile > * {opacity: .65;}
+.blk-resize {position: absolute; border: 0; background: transparent; color: var(--text); touch-action: none; pointer-events: auto; padding: 0;}
+.blk-resize--both {right: 0; bottom: 0; width: 44px; height: 44px; cursor: nwse-resize; font-size: 32px; border-radius: 12px; background: var(--surface);}
+.blk-resize--x {right: 0; top: 48px; bottom: 44px; width: 14px; cursor: ew-resize;}
+.blk-resize--y {bottom: 0; left: 16px; right: 44px; height: 14px; cursor: ns-resize;}
+.blk.is-resizing {outline: 3px solid var(--c-blue); outline-offset: 3px; background: var(--block-drop);}
+.blk.is-resizing::after {content: attr(data-size); position: absolute; bottom: 12px; left: 12px; padding: 4px 8px; background: var(--surface); border-radius: 8px; pointer-events: none;}
+.blk-float {width: min(320px, 65vw); max-height: 300px; overflow: hidden; padding: 0;}
+.blk-float > .tile {min-height: 140px;}
+@media (prefers-reduced-motion: no-preference) {
+  .blk-body {animation: blk-enter 180ms ease-out;}
+  @keyframes blk-enter {from {opacity: 0; transform: scale(.97);} to {opacity: 1; transform: scale(1);}}
+}
+.dashboard-tour {position: fixed; inset: auto 16px 24px auto; margin: 0; width: min(440px, calc(100vw - 32px)); padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-overlay); background: var(--surface); color: var(--text); box-shadow: var(--block-lift);}
+.dashboard-tour::backdrop {background: rgb(0 0 0 / .2);}
+.dashboard-tour h2 {margin: 8px 0;}
+.dashboard-tour p {line-height: 1.6;}
+.tutorial-spotlight {outline: 3px solid var(--c-blue); outline-offset: 5px;}

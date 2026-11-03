@@ -1,3 +1,5 @@
+import LinksWidget from '../widgets/LinksWidget';
+import DashboardTutorial from '../widgets/DashboardTutorial';
 import CloudflareWidget, { cloudflareIds } from '../widgets/CloudflareWidget';
 import WidgetGrid from '../widgets/WidgetGrid';
 import { kpiIds, widgetDef, type BlockSize } from '../widgets/registry';
@@ -74,11 +76,12 @@ export default function HomeView({ me }: { me: CurrentUser }) {
   }
 
   return (
-    <WidgetGrid>
+    <><DashboardTutorial /><WidgetGrid>
       {(id, size) => {
         if (cloudflareIds.includes(id)) return <CloudflareWidget id={id} size={size} state={cloudflare} />;
         if (kpiIds.includes(id)) return stat(id);
         switch (id) {
+          case 'links': return <LinksWidget />;
           case 'my-action':
             return (
               <Block id="my-action" title={director ? 'awaiting your approval' : 'my open requests'} action={<a href={href.newRequest()}>new request →</a>}>
@@ -116,7 +119,7 @@ export default function HomeView({ me }: { me: CurrentUser }) {
         }
         return null;
       }}
-    </WidgetGrid>
+    </WidgetGrid></>
   );
 }
 

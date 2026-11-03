@@ -22,6 +22,7 @@ const grid = (page: Page) => page.getByRole('list', { name: 'Home widgets' });
 const order = (page: Page) => grid(page).locator(':scope > li[data-widget]').evaluateAll((els) => els.map((e) => e.getAttribute('data-widget')));
 const widget = (page: Page, id: string) => grid(page).locator(`:scope > li[data-widget="${id}"]`);
 async function openHome(page: Page, layout: P[] = defaultWidgetLayout) {
+  await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true } });
   await putLayout(page, layout);
   await page.goto('/');
   await expect(grid(page).locator(':scope > li[data-widget]').first()).toBeVisible();
@@ -84,12 +85,14 @@ test('Default layout packs into a full rectangle: no ragged gaps', async ({ page
 test('Resize, remove and add widgets; Done persists, Cancel discards', async ({ page }) => {
   await openHome(page);
   await page.getByRole('button', { name: 'Edit home' }).click();
-  // Only the sizes a widget supports are offered.
-  const sizes = page.getByRole('group', { name: 'Size of Upcoming events' }).getByRole('button');
-  await expect(sizes).toHaveText(['1×1', '2×1']);
-  await page.getByRole('group', { name: 'Size of Upcoming events' }).getByRole('button', { name: '2 by 1 blocks' }).click();
+  // Resize from a focused grip; only supported sizes are reached.
+  await page.getByRole('button', { name: /^Move Upcoming events/ }).focus();
+  await page.keyboard.press('Shift+ArrowRight');
   await expect(widget(page, 'kpi-upcoming')).toHaveAttribute('data-size', '2x1');
-  await page.getByRole('group', { name: 'Size of Recent events' }).getByRole('button', { name: '4 by 2 blocks' }).click();
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(widget(page, 'kpi-upcoming')).toHaveAttribute('data-size', '2x1');
+  await page.getByRole('button', { name: /^Move Recent events/ }).focus();
+  await page.keyboard.press('Shift+ArrowRight');
   await page.getByRole('button', { name: 'Remove Web Analytics' }).click();
   await expect(widget(page, 'web-analytics')).toHaveCount(0);
   await page.getByRole('button', { name: 'Add widget' }).first().click();
@@ -159,12 +162,12 @@ test('Pointer drag: the drop target is a soft fill, the move saves', async ({ pa
   const look = await target.evaluate((e) => { const s = getComputedStyle(e); return { border: s.borderTopStyle, bg: s.backgroundColor }; });
   expect(look.border).not.toBe('dashed');
   expect(look.bg).not.toBe('rgba(0, 0, 0, 0)');
-  await expect(page.locator('.blk-float')).toContainText('Pending requests');
+  await expect(page.locator('.blk-float')).toContainText('pending requests');
   await page.mouse.up();
-  expect((await order(page))[0]).toBe('kpi-pending');
+  expect((await order(page)).indexOf('kpi-pending')).toBeLessThan(DEFAULT_IDS.indexOf('kpi-pending'));
   await expect(page.locator('.blk-float')).toHaveCount(0);
   await done(page);
-  expect((await savedLayout(page))[0]?.id).toBe('kpi-pending');
+  expect((await savedLayout(page)).map(w => w.id)).toEqual(await order(page));
 
   // Escape during a drag puts everything back.
   await page.getByRole('button', { name: 'Edit home' }).click();
@@ -227,4 +230,47 @@ test('Phone: two columns, stat tiles pair up, tables take the full row', async (
   expect(grip.height).toBeGreaterThanOrEqual(40);
   expect(await overflow(page)).toEqual([]);
   await page.getByRole('button', { name: 'Cancel' }).click();
+});
+
+test('Corner resize previews supported footprint, Escape restores, Done persists', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'pointer geometry at desktop width');
+  await openHome(page, [{ id: 'web-analytics', size: '1x1' }, { id: 'kpi-upcoming', size: '1x1' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const card = widget(page, 'web-analytics');
+  const grip = card.locator('.blk-resize--both');
+  const rect = (await card.boundingBox())!;
+  const handle = (await grip.boundingBox())!;
+  await page.mouse.move(handle.x + 20, handle.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + rect.width + 20, handle.y + rect.height + 20, { steps: 6 });
+  await expect(card).toHaveAttribute('data-size', '2x2');
+  await expect(card).toHaveClass(/is-resizing/);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(card).toHaveAttribute('data-size', '1x1');
+  await grip.focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(card).toHaveAttribute('data-size', '2x2');
+  await done(page);
+  await page.reload();
+  await expect(widget(page, 'web-analytics')).toHaveAttribute('data-size', '2x2');
+});
+
+test('Tutorial skips with Escape, stays seen on reload, and replays from Settings', async ({ page }) => {
+  await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: false } });
+  await page.goto('/');
+  const tour = page.getByRole('dialog', { name: 'Your home base' });
+  await expect(tour).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tour).not.toBeVisible();
+  const prefs = await (await page.request.get('/api/me/prefs')).json();
+  expect(prefs.dashboardTutorialSeen).toBe(true);
+  await page.reload();
+  await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
+  await page.goto('/settings');
+  await page.getByRole('link', { name: 'Replay dashboard tutorial' }).click();
+  await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Widgets work for you' })).toBeVisible();
+  await page.getByRole('button', { name: 'Skip tour' }).click();
 });

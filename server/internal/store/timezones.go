@@ -10,6 +10,9 @@ import (
 const DefaultTimezone = "America/Los_Angeles"
 
 type ClubSettings struct {
+	WebsiteURL   string `json:"websiteUrl"`
+	NotionURL    string `json:"notionUrl"`
+	DriveURL     string `json:"driveUrl"`
 	ClubTimezone string `json:"clubTimezone"`
 	Location     string `json:"location"`
 }
@@ -20,11 +23,11 @@ type TimezonePref struct {
 
 func (q *Queries) ClubSettings(ctx context.Context) (ClubSettings, error) {
 	var s ClubSettings
-	err := q.q.QueryRowContext(ctx, `SELECT club_timezone,location FROM club_settings WHERE id=1`).Scan(&s.ClubTimezone, &s.Location)
+	err := q.q.QueryRowContext(ctx, `SELECT club_timezone,location,website_url,notion_url,drive_url FROM club_settings WHERE id=1`).Scan(&s.ClubTimezone, &s.Location, &s.WebsiteURL, &s.NotionURL, &s.DriveURL)
 	return s, err
 }
 func (q *Queries) SaveClubSettings(ctx context.Context, s ClubSettings) error {
-	return q.Exec(ctx, `UPDATE club_settings SET club_timezone=?,location=? WHERE id=1`, s.ClubTimezone, s.Location)
+	return q.Exec(ctx, `UPDATE club_settings SET club_timezone=?,location=?,website_url=?,notion_url=?,drive_url=? WHERE id=1`, s.ClubTimezone, s.Location, s.WebsiteURL, s.NotionURL, s.DriveURL)
 }
 func (q *Queries) TimezonePref(ctx context.Context, userID string) (TimezonePref, error) {
 	p := TimezonePref{Mode: "club"}

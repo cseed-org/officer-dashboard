@@ -55,3 +55,15 @@ func (q *Queries) SaveCalendarEmail(ctx context.Context, userID string, e Calend
 func (q *Queries) DeleteCalendarEmail(ctx context.Context, userID, id string) error {
 	return q.Exec(ctx, `DELETE FROM calendar_emails WHERE user_id=? AND id=?`, userID, id)
 }
+
+func (q *Queries) DashboardTutorialSeen(ctx context.Context, userID string) (bool, error) {
+	var seen bool
+	err := q.q.QueryRowContext(ctx, `SELECT dashboard_tutorial_seen FROM user_prefs WHERE user_id=?`, userID).Scan(&seen)
+	if notFound(err) == ErrNotFound {
+		return false, nil
+	}
+	return seen, err
+}
+func (q *Queries) SaveDashboardTutorialSeen(ctx context.Context, userID string, seen bool) error {
+	return q.Exec(ctx, `UPDATE user_prefs SET dashboard_tutorial_seen=? WHERE user_id=?`, seen, userID)
+}

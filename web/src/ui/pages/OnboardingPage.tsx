@@ -349,7 +349,7 @@ export default function OnboardingPage() {
       return;
     }
     if (step === 6) {
-      location.replace('/');
+      location.replace('/?tutorial=onboarding');
       return;
     }
     goTo(step + 1);
