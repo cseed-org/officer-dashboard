@@ -398,14 +398,25 @@ func (c *Ctx) profilePut() error {
 			return err
 		}
 		created = before == nil
+		inv, invErr := q.InviteForUser(ctx, u.ID)
+		onboarding := invErr == nil && inv.OnboardedAt == nil
 		switch {
+		case onboarding:
+			// During setup the invite holds the subteam; an inviter's fix moves it.
+			if subteam.Set && subteam.V != inv.SubteamID {
+				return forbidden("Your subteam was set by your invite. Ask your inviter to change it.")
+			}
+			p.SubteamID, p.DeliveryMode = inv.SubteamID, "ics"
+			if before != nil {
+				p.DeliveryMode = before.DeliveryMode
+			}
 		case before != nil:
 			if subteam.Set && subteam.V != before.SubteamID {
 				return forbidden("Ask a director to change your subteam")
 			}
 			p.SubteamID, p.DeliveryMode = before.SubteamID, before.DeliveryMode
 		default:
-			if inv, err := q.InviteForUser(ctx, u.ID); err == nil {
+			if invErr == nil {
 				if subteam.Set && subteam.V != inv.SubteamID {
 					return forbidden("Your subteam was set by your invite. Ask your inviter to change it.")
 				}
@@ -490,6 +501,9 @@ type OnboardingState struct {
 	InviterDiscordID *string `json:"inviterDiscordId"`
 	HasProfile       bool    `json:"hasProfile"`
 	CorrectionsByDM  bool    `json:"correctionsByDm"`
+	// CorrectionPending: they reported a problem with these details and the inviter
+	// hasn't edited the invite since.
+	CorrectionPending bool `json:"correctionPending"`
 }
 
 func (s *Server) onboardingState(ctx context.Context, q *store.Queries, userID string) (*OnboardingState, error) {
@@ -507,15 +521,25 @@ func (s *Server) onboardingState(ctx context.Context, q *store.Queries, userID s
 	if err != nil {
 		return nil, err
 	}
+	// The live account name and subteam, so an inviter's fix shows up on Confirm at once.
 	st := &OnboardingState{Step: inv.Step, Name: inv.Name, Subteam: people.subteam(inv.SubteamID), CorrectionsByDM: s.cfg.DM != nil}
+	if u, ok := people.users[userID]; ok {
+		st.Name = u.Name
+	}
+	latest, err := q.LatestAuditAction(ctx, inv.ID, "onboarding.correction", "invite.updated")
+	if err != nil {
+		return nil, err
+	}
+	st.CorrectionPending = latest == "onboarding.correction"
 	if u, ok := people.users[inv.InvitedBy]; ok {
 		sum := userSummary(u)
 		st.InvitedBy = &sum
 		d := u.DiscordID
 		st.InviterDiscordID = &d
 	}
-	if _, err := q.ProfileByUser(ctx, userID); err == nil {
+	if p, err := q.ProfileByUser(ctx, userID); err == nil {
 		st.HasProfile = true
+		st.Subteam = people.subteam(p.SubteamID)
 	}
 	return st, nil
 }
@@ -592,6 +616,12 @@ func (c *Ctx) onboardingComplete() error {
 }
 
 // onboardingCorrection sends "my name/subteam is wrong" to the inviter over Discord.
+//
+// The bot DMs a real person, so it allows one correction a minute and five delivered DMs
+// per invite. The slot is reserved (an onboarding.correction audit row) inside one write
+// transaction before the DM goes out, so parallel requests can't all pass the check. All
+// reservations count toward the five unless their result shows no DM was delivered
+// (failed, not_configured, skipped), so a DM still in flight holds its slot.
 func (c *Ctx) onboardingCorrection() error {
 	u, err := c.officer()
 	if err != nil {
@@ -604,31 +634,58 @@ func (c *Ctx) onboardingCorrection() error {
 		return err
 	}
 	ctx := c.Context()
-	q := c.S.db.Read()
-	inv, err := c.onboardingInvite(ctx, q)
+	var inv *store.Invite
+	var inviter *store.User
+	err = c.S.db.Write(ctx, func(q *store.Queries) error {
+		var err error
+		if inv, err = c.onboardingInvite(ctx, q); err != nil {
+			return err
+		}
+		_, recent, err := q.AuditCountSince(ctx, "onboarding.correction", inv.ID, c.S.nowMs()-60_000)
+		if err != nil {
+			return err
+		}
+		// Every reservation counts unless its result says no DM was delivered, so a DM
+		// still in flight (or one whose result write failed) holds its slot.
+		reserved, _, err := q.AuditCountSince(ctx, "onboarding.correction", inv.ID, 0)
+		if err != nil {
+			return err
+		}
+		undelivered := 0
+		for _, a := range []string{"onboarding.correction.failed", "onboarding.correction.not_configured", "onboarding.correction.skipped"} {
+			n, _, err := q.AuditCountSince(ctx, a, inv.ID, 0)
+			if err != nil {
+				return err
+			}
+			undelivered += n
+		}
+		if reserved-undelivered >= 5 {
+			return conflict("You've sent five corrections already. Message your inviter on Discord directly.")
+		}
+		if recent > 0 {
+			return conflict("Give your inviter a minute before sending another correction.")
+		}
+		if inviter, err = q.UserByID(ctx, inv.InvitedBy); err != nil {
+			return notFoundErr("Your inviter's account is gone. Ask leadership on Discord.")
+		}
+		return c.audit(ctx, q, "onboarding.correction", "invite", inv.ID, nil, map[string]any{"message": message})
+	})
 	if err != nil {
 		return err
-	}
-	// The bot DMs a real person: at most one correction a minute and five per invite.
-	total, recent, err := q.AuditCountSince(ctx, "onboarding.correction", inv.ID, c.S.nowMs()-60_000)
-	if err != nil {
-		return err
-	}
-	if total >= 5 {
-		return conflict("You've sent five corrections already. Message your inviter on Discord directly.")
-	}
-	if recent > 0 {
-		return conflict("Give your inviter a minute before sending another correction.")
-	}
-	inviter, err := q.UserByID(ctx, inv.InvitedBy)
-	if err != nil {
-		return notFoundErr("Your inviter's account is gone. Ask leadership on Discord.")
 	}
 	dm := DMResult{Status: "not_configured"}
-	if c.S.cfg.DM != nil {
+	switch {
+	case !inviter.Active:
+		msg := inviter.Name + " no longer has a dashboard account. Ask leadership on Discord to fix your details."
+		dm = DMResult{Status: "skipped", Message: &msg}
+	case c.S.cfg.DM != nil:
 		content := fmt.Sprintf("%s (Discord %s) is setting up their CSEED dashboard account and says their invite details need a fix:\n\n> %s\n\nYou invited them as \"%s\". Update it on the Officers page.",
-			u.Name, u.DiscordID, strings.ReplaceAll(message, "\n", "\n> "), inv.Name)
-		if err := c.S.cfg.DM.SendDM(ctx, inviter.DiscordID, content); err != nil {
+			neutralizeDM(u.Name), u.DiscordID, strings.ReplaceAll(neutralizeDM(message), "\n", "\n> "), neutralizeDM(inv.Name))
+		// Bounded well under the one-minute cooldown.
+		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		err := c.S.cfg.DM.SendDM(sendCtx, inviter.DiscordID, content)
+		cancel()
+		if err != nil {
 			msg := "Discord didn't deliver it. Message " + inviter.Name + " on Discord directly."
 			var de *notify.DMError
 			if errors.As(err, &de) && de.Code == 50007 {
@@ -642,11 +699,24 @@ func (c *Ctx) onboardingCorrection() error {
 	}
 	wctx := context.WithoutCancel(ctx)
 	err = c.S.db.Write(wctx, func(w *store.Queries) error {
-		return c.audit(wctx, w, "onboarding.correction", "invite", inv.ID, nil, map[string]any{"message": message, "dm": dm.Status})
+		return c.audit(wctx, w, "onboarding.correction."+dm.Status, "invite", inv.ID, nil, map[string]any{"dm": dm.Status})
 	})
 	if err != nil {
 		return err
 	}
 	writeJSON(c.W, 200, map[string]any{"dm": dm, "inviter": userSummary(inviter), "inviterDiscordId": inviter.DiscordID})
 	return nil
+}
+
+var (
+	dmSchemeRE   = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*)://`)
+	dmMarkdownRE = regexp.MustCompile("([\\\\*_~`|>\\[\\]()#<])")
+)
+
+// neutralizeDM makes relayed text inert in Discord: URL schemes are broken so nothing
+// links or embeds, markdown characters are escaped, and @ mentions can't ping.
+func neutralizeDM(s string) string {
+	s = dmSchemeRE.ReplaceAllString(s, "$1[:]//")
+	s = dmMarkdownRE.ReplaceAllString(s, `\$1`)
+	return strings.ReplaceAll(s, "@", "@\u200b")
 }

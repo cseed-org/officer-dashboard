@@ -315,6 +315,99 @@ function InviteDialog({
   );
 }
 
+// ─────────────────────────── edit invite details ───────────────────────────
+
+/** Fix the name or subteam of an invite before setup is finished (an invitee's correction). */
+function InviteEditDialog({ invite, subteams, onClose, onSaved }: { invite: Invite | null; subteams: Subteam[]; onClose: () => void; onSaved: (i: Invite) => void }) {
+  const [name, setName] = useState('');
+  const [subteamId, setSubteamId] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!invite) return;
+    setName(invite.name);
+    setSubteamId(invite.subteam?.id ?? subteams[0]?.id ?? '');
+    setErrors({});
+    setError(null);
+  }, [invite?.id]);
+  const save = async (e: Event) => {
+    e.preventDefault();
+    if (!invite) return;
+    if (!name.trim()) {
+      setErrors({ name: 'Enter their name' });
+      document.getElementById('inv-edit-name')?.focus();
+      return;
+    }
+    setErrors({});
+    setError(null);
+    setBusy(true);
+    try {
+      const r = await api('inviteUpdate', { params: { id: invite.id }, body: { name: name.trim(), subteamId } });
+      onSaved(r.invite);
+    } catch (err) {
+      const fe = fieldErrors(err);
+      if (Object.keys(fe).length) setErrors(fe);
+      else setError(errText(err, 'The invite could not be updated.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const d = (id: string) => ({ 'aria-invalid': errors[id] ? true : undefined, 'aria-describedby': errors[id] ? `inv-edit-${id}-error` : undefined });
+  const fe = (id: string) =>
+    errors[id] ? (
+      <p class="field-error" id={`inv-edit-${id}-error`}>
+        {errors[id]}
+      </p>
+    ) : null;
+  return (
+    <Drawer open={!!invite} onClose={onClose} id="invite-edit" kind="dialog" title="Edit invite details">
+      <form class="stack" onSubmit={save} noValidate data-invite-edit-form>
+        <p class="small muted">
+          {invite?.status === 'accepted'
+            ? 'They’re setting up now. Their Confirm step updates as soon as you save; the link and Discord ID stay the same.'
+            : 'The invite link and Discord ID stay the same.'}
+        </p>
+        <div class="grid-fields">
+          <div class="field">
+            <label class="field-label" for="inv-edit-name">
+              Name
+            </label>
+            <input class="input" id="inv-edit-name" value={name} maxLength={100} autocomplete="off" onInput={(e) => setName((e.target as HTMLInputElement).value)} {...d('name')} />
+            {fe('name')}
+          </div>
+          <div class="field">
+            <label class="field-label" for="inv-edit-team">
+              Subteam
+            </label>
+            <select class="select" id="inv-edit-team" value={subteamId} onChange={(e) => setSubteamId((e.target as HTMLSelectElement).value)} {...d('subteamId')}>
+              {subteams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            {fe('subteamId')}
+          </div>
+        </div>
+        {error && (
+          <p class="notice notice--negative" role="alert">
+            {error}
+          </p>
+        )}
+        <div class="action-row">
+          <button class="btn btn--primary" type="submit" disabled={busy} data-invite-edit-save>
+            {busy ? 'Saving…' : 'Save details'}
+          </button>
+          <button class="btn btn--text" type="button" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Drawer>
+  );
+}
+
 // ─────────────────────────── invites list ───────────────────────────
 
 function inviteStatus(i: Invite) {
@@ -343,14 +436,17 @@ function InvitesSection({
   onChanged,
   onResend,
   confirm,
+  subteams,
 }: {
   invites: Invite[];
   dmConfigured: boolean;
   onChanged: () => void;
   onResend: (i: Invite) => void;
   confirm: (c: Confirm) => void;
+  subteams: Subteam[];
 }) {
   const [note, setNote] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Invite | null>(null);
   const [freshLink, setFreshLink] = useState<{ id: string; link: string } | null>(null);
   const recent = invites.filter((i) => i.status !== 'onboarded' || Date.now() - Date.parse(i.onboardedAt ?? i.createdAt) < 14 * 864e5);
   const counts = { pending: 0, expired: 0, accepted: 0 };
@@ -431,8 +527,17 @@ function InvitesSection({
                   </td>
                   <td data-label="Actions">
                     <span class="people-cell">
-                      {i.status === 'pending' || i.status === 'expired' ? (
+                      {i.status === 'accepted' ? (
                         <span class="action-row">
+                          <button class="btn btn--small" onClick={() => setEditing(i)} data-invite-edit>
+                            Edit details
+                          </button>
+                        </span>
+                      ) : i.status === 'pending' || i.status === 'expired' ? (
+                        <span class="action-row">
+                          <button class="btn btn--small" onClick={() => setEditing(i)} data-invite-edit>
+                            Edit details
+                          </button>
                           {i.status === 'expired' && (
                             <button class="btn btn--small" onClick={() => onResend(i)}>
                               Resend
@@ -478,6 +583,16 @@ function InvitesSection({
         </div>
       )}
       <p class="small muted">Invites expire after 7 days. Only the matching Discord account can accept, then completes onboarding after sign-in.</p>
+      <InviteEditDialog
+        invite={editing}
+        subteams={subteams}
+        onClose={() => setEditing(null)}
+        onSaved={(i) => {
+          setEditing(null);
+          setNote(`Saved ${i.name}’s details${i.status === 'accepted' ? '. Their setup shows the change now.' : '.'}`);
+          onChanged();
+        }}
+      />
     </section>
   );
 }
@@ -973,6 +1088,7 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
           dmConfigured={invites.dmConfigured}
           onChanged={refresh}
           confirm={setConfirm}
+          subteams={subteams}
           onResend={(i) => {
             setPrefill({ name: i.name, discordId: i.discordId, subteamId: i.subteam?.id ?? '' });
             setInviteOpen(true);

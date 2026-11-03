@@ -27,6 +27,16 @@ recovery with `provision-leadership --owner` remains available even when owners 
 exist: shell/database administrators can intentionally add an owner, and this action
 is audited. Discord login itself never creates users or grants leadership/ownership.
 
+## Setup before access
+
+Everyone who joins through an invite, and every account added from Officers → Access,
+finishes the six-step setup before the rest of the dashboard opens. Until then the server
+refuses every API call except their own account (`/api/me*`: profile, preferences,
+calendar, setup), the club time zone and health, with 403 `onboarding_required`, whatever
+their role. Leadership or director accounts created from Access go through the same
+setup. Accounts with no invite record (seeded, bootstrap owner, created before V0.4)
+are not affected.
+
 ## Permission matrix
 
 Roles rank `leadership > director > officer`; unknown roles are denied. Owner is an additional flag on an active leadership account. A higher role inherits lower-role permissions; resource-specific rules still apply.
@@ -40,7 +50,7 @@ Roles rank `leadership > director > officer`; unknown roles are denied. Owner is
 | Manage own profile/calendar and submit purchases | Yes | Yes | Yes | Yes |
 | Approve/settle purchases, manage budgets/periods | No | Yes | Yes | Yes |
 | Officers Access, service tokens, audit history | No | Yes | Yes | Yes |
-| Invite officers, manage officer subteam/title | No | Yes, except leadership targets | Yes | Yes |
+| Invite officers, fix a not-yet-onboarded invite's name/subteam, manage officer subteam/title | No | Yes, except leadership targets | Yes | Yes |
 | Change roles / director active status / edit leadership | No | No | Yes | Yes |
 | Manage ownership or demote/deactivate owners | No | No | No | Yes, with last-owner protection |
 

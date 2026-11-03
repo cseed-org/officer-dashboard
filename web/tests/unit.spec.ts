@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { isGradMonth, isLinkedIn } from '../src/lib/profileRules';
 import { normalizeHref } from '../src/lib/routes';
 import { sanitizeResults } from '../src/lib/search';
 import { internalPath, internalRoute, safeImageUrl, safeUrl } from '../src/lib/url';
@@ -138,4 +139,13 @@ test('V0.4: moveTo clamps and keeps the array when nothing moves', () => {
 test('V0.4: onboarding Key figures expands to the five stat tiles in default order', () => {
   const l = layoutForChoices(new Set(['kpis', 'member-signups']));
   expect(l.map((w) => w.id)).toEqual(['kpi-upcoming', 'kpi-checkin', 'kpi-reflection', 'kpi-budget', 'kpi-pending', 'member-signups']);
+});
+
+test('V0.4: profile rules match the server (isLinkedIn, YYYY-MM graduation month)', () => {
+  for (const ok of ['https://linkedin.com', 'https://www.linkedin.com/in/casey', 'https://LinkedIn.com/in/x', 'https://uk.linkedin.com/in/x'])
+    expect(isLinkedIn(ok), ok).toBe(true);
+  for (const bad of ['http://linkedin.com/in/x', 'https://evil.example/in/x', 'https://linkedin.com.evil.example/', 'https://notlinkedin.com/in/x', 'javascript:alert(1)', 'linkedin.com/in/x'])
+    expect(isLinkedIn(bad), bad).toBe(false);
+  for (const ok of ['2028-05', '2030-12']) expect(isGradMonth(ok), ok).toBe(true);
+  for (const bad of ['2028-13', '2028-00', '28-05', '2028-5', 'May 2028']) expect(isGradMonth(bad), bad).toBe(false);
 });

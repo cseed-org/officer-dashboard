@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError } from '../../lib/api/client';
-import type { CalendarSettings, CurrentUser, OnboardingState, ProfileResponse, WidgetPlacement } from '../../lib/contracts';
+import type { CalendarSettings, CurrentUser, MyProfile, OnboardingState, ProfileResponse, WidgetPlacement } from '../../lib/contracts';
 import { clearCachedRole } from '../../lib/session';
 import { choiceOf, layoutForChoices, onboardingChoices } from '../widgets/registry';
 import { Icon } from '../components/Icon';
@@ -17,8 +17,16 @@ const WIDGET_SUB: Record<string, string> = {
 };
 
 type Loaded = { user: CurrentUser; onboarding: OnboardingState };
+/** An inline, persistent error with one action (Retry, Leave without saving). */
+type StepError = { text: string; action?: { label: string; run: () => void } };
 
-const firstName = (s: string) => s.trim().split(/\s+/)[0]!.toLowerCase();
+/** First word of the name as written: "McKenzie" stays "McKenzie". */
+const firstName = (s: string) => s.trim().split(/\s+/)[0] ?? '';
+/** The done-step line for the saved profile: required fields plus how many optional ones. */
+function profileSummary(p: MyProfile): string {
+  const extras = [p.preferredName, p.pronouns, p.personalEmail, p.schoolEmail, p.gradDate, p.title, p.startTerm, p.linkedin].filter(Boolean).length;
+  return `Phone and birthday saved${extras ? ` · ${extras} more detail${extras === 1 ? '' : 's'}` : ''}`;
+}
 const roleLabel = (u: CurrentUser) => (u.isOwner ? 'Leadership · Owner' : u.role[0]!.toUpperCase() + u.role.slice(1));
 const ROLE_NOTE: Record<string, string> = {
   officer: 'Officers work on events, contacts and design requests.',
@@ -26,7 +34,38 @@ const ROLE_NOTE: Record<string, string> = {
   leadership: 'Leadership manages all access, including leadership grants.',
 };
 
+/** Moves focus to the screen's heading once, so screen readers start there. */
+function useFocusOnMount() {
+  const ref = useRef<HTMLHeadingElement>(null);
+  useEffect(() => ref.current?.focus(), []);
+  return ref;
+}
+
+function LoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const ref = useFocusOnMount();
+  return (
+    <div class="onb">
+      <div class="onb-main onb-main--single">
+        <section class="onb-step">
+          <h1 class="display display--l onb-title" id="step-title" tabIndex={-1} ref={ref}>
+            We couldn’t load your setup.
+          </h1>
+          <p class="notice notice--negative" role="alert">
+            {error instanceof Error ? error.message : 'Check your connection and try again.'}
+          </p>
+          <div class="action-row">
+            <button class="btn" onClick={onRetry}>
+              Try again
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function Unavailable() {
+  const ref = useFocusOnMount();
   return (
     <div class="onb">
       <header class="onb-top">
@@ -35,7 +74,7 @@ function Unavailable() {
       <div class="onb-main onb-main--single">
         <section class="onb-step">
           <p class="brand-eyebrow">invitation unavailable</p>
-          <h1 class="display display--l onb-title" id="step-title" tabIndex={-1}>
+          <h1 class="display display--l onb-title" id="step-title" tabIndex={-1} ref={ref}>
             Let’s get you a fresh start.
           </h1>
           <p class="brand-lede">This invitation has expired or isn’t valid. Ask the person who invited you for a new link.</p>
@@ -59,7 +98,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [dir, setDir] = useState<1 | -1>(1);
   const [busy, setBusy] = useState(false);
-  const [stepError, setStepError] = useState<string | null>(null);
+  const [stepError, setStepError] = useState<StepError | null>(null);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [cal, setCal] = useState<CalendarSettings | null>(null);
   const [picked, setPicked] = useState<Set<string> | null>(null);
@@ -70,6 +109,43 @@ export default function OnboardingPage() {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const focusNext = useRef(false);
   const pushed = useRef(0); // history entries this page added, so Back never leaves setup
+  // The popstate listener is installed once, so it reads the live values through refs.
+  const stepRef = useRef(step);
+  stepRef.current = step;
+  const hasProfileRef = useRef(false);
+  const done = useRef(false);
+  const popping = useRef(false); // a popstate is being handled (it may await a profile save)
+  const restoring = useRef(false); // our own history.go() to undo a refused move
+  const saves = useRef<Promise<unknown>>(Promise.resolve());
+
+  /** Saves the step to resume at. Saves run one after another, in the order asked. */
+  const saveStep = (s: number) => {
+    const p = saves.current.catch(() => {}).then(() => api('onboardingSave', { body: { step: Math.min(s, 5) } }));
+    saves.current = p;
+    return p;
+  };
+
+  const show = (s: number, from: number) => {
+    setStepError(null);
+    setDir(s >= from ? 1 : -1);
+    focusNext.current = true;
+    setStep(s);
+  };
+
+  const markProfileSaved = () => {
+    hasProfileRef.current = true;
+    setData((d) => (d ? { ...d, onboarding: { ...d.onboarding, hasProfile: true } } : d));
+  };
+
+  /** Leaving the profile step: save edits first. Resolves false when they don't validate. */
+  const leaveProfile = async (): Promise<boolean> => {
+    if (stepRef.current !== 3 || !profileRef.current?.dirty()) return true;
+    setBusy(true);
+    const ok = await profileRef.current.submit();
+    setBusy(false);
+    if (ok) markProfileSaved();
+    return ok;
+  };
 
   const load = () => {
     setLoadError(null);
@@ -80,13 +156,16 @@ export default function OnboardingPage() {
           return;
         }
         setData({ user: me.user, onboarding: me.onboarding });
+        hasProfileRef.current = me.onboarding.hasProfile;
         setProfile(p);
         setPicked(new Set(prefs.widgetLayout.map((w) => choiceOf(w.id)).filter((id): id is string => !!id)));
-        // Resume at the saved step; Google consent returns to the calendar step.
+        // Resume at the saved step, never past the profile until it's saved. Google consent
+        // returns to the calendar step (or to the profile if that isn't saved yet).
         const back = new URLSearchParams(location.search).get('google');
-        const s = back ? 4 : Math.min(me.onboarding.step, me.onboarding.hasProfile ? 6 : 3);
-        setStep(s === 6 ? 5 : s);
-        history.replaceState({ step: s === 6 ? 5 : s }, '', back ? location.pathname + location.search : location.pathname);
+        const cap = me.onboarding.hasProfile ? 5 : 3;
+        const s = Math.min(back ? 4 : me.onboarding.step, cap);
+        setStep(s);
+        history.replaceState({ step: s }, '', back && s === 4 ? location.pathname + location.search : location.pathname);
       },
       (e) => setLoadError(e),
     );
@@ -98,14 +177,48 @@ export default function OnboardingPage() {
       return;
     }
     load();
-    const onPop = (e: PopStateEvent) => {
-      const s = (e.state as { step?: number } | null)?.step;
-      pushed.current = Math.max(0, pushed.current - 1);
-      if (s && s >= 1 && s <= 5) {
-        setDir(-1);
-        focusNext.current = true;
-        setStep(s);
+    const onPop = async (e: PopStateEvent) => {
+      // After setup is done, Back leaves for Home instead of replaying the steps.
+      if (done.current) {
+        location.replace('/');
+        return;
       }
+      if (restoring.current) {
+        restoring.current = false;
+        return;
+      }
+      const raw = (e.state as { step?: number } | null)?.step;
+      if (!raw || raw < 1 || raw > 5) return;
+      const from = stepRef.current;
+      if (popping.current) {
+        // Still saving the profile from the last move: undo this one instead of racing it.
+        restoring.current = true;
+        history.go(raw < from ? 1 : -1);
+        return;
+      }
+      popping.current = true;
+      try {
+        // Never past the profile until it's saved.
+        const s = hasProfileRef.current ? raw : Math.min(raw, 3);
+        if (s !== from && !(await leaveProfile())) {
+          // The entries don't validate: step the browser back onto the profile entry
+          // (keeping the forward history) and show the inline errors.
+          restoring.current = true;
+          history.go(raw < from ? 1 : -1);
+          setStepError({ text: 'Your profile changes aren’t saved yet. Fix the highlighted fields, then continue.' });
+          return;
+        }
+      } finally {
+        popping.current = false;
+      }
+      if (raw < from) pushed.current = Math.max(0, pushed.current - 1);
+      else if (raw > from) pushed.current++;
+      const to = hasProfileRef.current ? raw : Math.min(raw, 3);
+      if (to !== raw) history.replaceState({ step: to }, '', location.pathname);
+      if (to !== from) show(to, from);
+      saveStep(to).catch(() =>
+        setStepError({ text: 'We couldn’t save your place. If you leave now, setup resumes at an earlier step.', action: { label: 'Try again', run: () => void saveStep(to).then(() => setStepError(null), () => {}) } }),
+      );
     };
     addEventListener('popstate', onPop);
     return () => removeEventListener('popstate', onPop);
@@ -118,25 +231,27 @@ export default function OnboardingPage() {
     }
   }, [step]);
 
+  // Confirm shows the live name and subteam: refresh when it's shown and when the
+  // invitee comes back to the tab (e.g. after their inviter fixed something).
+  useEffect(() => {
+    if (step !== 2) return;
+    const refresh = () =>
+      Promise.all([api('me'), api('profileGet')]).then(
+        ([me, p]) => {
+          if (!me.onboarding) return;
+          setData({ user: me.user, onboarding: me.onboarding });
+          setProfile(p); // the profile step's subteam note follows an inviter's fix too
+        },
+        () => {},
+      );
+    refresh();
+    const onVisible = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [step]);
+
   if (unavailable) return <Unavailable />;
-  if (loadError)
-    return (
-      <div class="onb">
-        <div class="onb-main onb-main--single">
-          <section class="onb-step">
-            <h1 class="display display--l onb-title">We couldn’t load your setup.</h1>
-            <p class="notice notice--negative" role="alert">
-              {loadError instanceof Error ? loadError.message : 'Check your connection and try again.'}
-            </p>
-            <div class="action-row">
-              <button class="btn" onClick={load}>
-                Try again
-              </button>
-            </div>
-          </section>
-        </div>
-      </div>
-    );
+  if (loadError) return <LoadError error={loadError} onRetry={load} />;
   if (!data || !profile || !picked)
     return (
       <div class="onb" aria-busy="true">
@@ -155,24 +270,48 @@ export default function OnboardingPage() {
   const inviter = ob.invitedBy?.name ?? 'your inviter';
   const team = ob.subteam?.name ?? 'the officer team';
 
-  const goTo = (s: number) => {
+  /** Saves the new step, then shows it. A failed save keeps you here with a Retry. */
+  const goTo = async (s: number) => {
+    const from = stepRef.current;
     setStepError(null);
-    setDir(s > step ? 1 : -1);
-    focusNext.current = true;
-    setStep(s);
-    if (s > step) {
+    setBusy(true);
+    try {
+      await saveStep(s);
+    } catch (e) {
+      setStepError({ text: e instanceof ApiCallError ? e.message : 'We couldn’t save your progress. Check your connection and try again.', action: { label: 'Try again', run: () => void goTo(s) } });
+      return;
+    } finally {
+      setBusy(false);
+    }
+    show(s, from);
+    if (s > from) {
       history.pushState({ step: s }, '', location.pathname);
       pushed.current++;
     } else history.replaceState({ step: s }, '', location.pathname);
-    if (s <= 5) api('onboardingSave', { body: { step: s } }).catch(() => {});
   };
 
-  const finishLater = async () => {
+  const back = async () => {
+    if (pushed.current > 0) {
+      history.back(); // popstate saves profile edits and the step
+      return;
+    }
+    if (await leaveProfile()) void goTo(step - 1);
+  };
+
+  /** Saves the place (and any profile edits) before signing out; a failed save keeps you signed in. */
+  const finishLater = async (discardProfile = false) => {
+    setStepError(null);
+    if (!discardProfile && !(await leaveProfile())) {
+      setStepError({ text: 'Your profile entries aren’t saved yet. Fix the highlighted fields to keep them, or leave without them.', action: { label: 'Leave without saving', run: () => void finishLater(true) } });
+      return;
+    }
     setBusy(true);
     try {
-      await api('onboardingSave', { body: { step } });
+      await saveStep(step);
     } catch {
-      /* best effort: sign-in resumes at the last saved step */
+      setBusy(false);
+      setStepError({ text: 'We couldn’t save your place, so you’re still signed in. Check your connection and try again.', action: { label: 'Try again', run: () => void finishLater(discardProfile) } });
+      return;
     }
     clearCachedRole();
     const f = document.createElement('form');
@@ -189,7 +328,7 @@ export default function OnboardingPage() {
       const ok = await profileRef.current?.submit();
       setBusy(false);
       if (!ok) return;
-      setData({ user, onboarding: { ...ob, hasProfile: true } });
+      markProfileSaved();
       return goTo(4);
     }
     if (step === 5) {
@@ -198,18 +337,19 @@ export default function OnboardingPage() {
         const layout: WidgetPlacement[] = layoutForChoices(picked);
         await api('prefsPut', { body: { widgetLayout: layout } });
         await api('onboardingComplete');
-        setDir(1);
-        focusNext.current = true;
-        setStep(6);
+        done.current = true;
+        // Setup is finished: the steps' history entries now lead Home (see onPop).
+        history.replaceState({ done: true }, '', location.pathname);
+        show(6, 5);
       } catch (e) {
-        setStepError(e instanceof ApiCallError ? e.message : 'We couldn’t save this step. Your choices are still here. Try again.');
+        setStepError({ text: e instanceof ApiCallError ? e.message : 'We couldn’t save this step. Your choices are still here. Try again.', action: { label: 'Try again', run: () => void next() } });
       } finally {
         setBusy(false);
       }
       return;
     }
     if (step === 6) {
-      location.assign('/');
+      location.replace('/');
       return;
     }
     goTo(step + 1);
@@ -223,7 +363,10 @@ export default function OnboardingPage() {
       const r = await api('onboardingCorrection', { body: { message: correction.trim() } });
       if (r.dm.status === 'sent') setCorrectionResult({ ok: true, text: `Sent to ${r.inviter.name} on Discord. You can keep going; they’ll fix it from the Officers page.` });
       else setCorrectionResult({ ok: false, text: r.dm.message ?? `Discord DMs aren’t set up here. Message ${r.inviter.name} on Discord directly.` });
-      if (r.dm.status === 'sent') setCorrecting(false);
+      // It's recorded either way; the notice below says what happens next.
+      setCorrecting(false);
+      setCorrection('');
+      setData((d) => (d ? { ...d, onboarding: { ...d.onboarding, correctionPending: true } } : d));
     } catch (err) {
       setCorrectionResult({ ok: false, text: err instanceof Error ? err.message : 'Couldn’t send that.' });
     } finally {
@@ -326,8 +469,13 @@ export default function OnboardingPage() {
             .
           </p>
         )}
+        {ob.correctionPending && !correcting && (
+          <p class="notice notice--attention" data-correction-pending>
+            You asked {inviter} to fix these details, and they haven’t changed them yet. You can keep going: this page updates when they do, and you can change your profile later.
+          </p>
+        )}
         {correctionResult && (
-          <p class={`notice${correctionResult.ok ? ' notice--positive' : ''}`} role="status">
+          <p class={`notice${correctionResult.ok ? ' notice--positive' : ' notice--negative'}`} role={correctionResult.ok ? 'status' : 'alert'} key={correctionResult.text}>
             {correctionResult.text}
             {!correctionResult.ok && ob.inviterDiscordId && (
               <>
@@ -398,7 +546,7 @@ export default function OnboardingPage() {
     body = (
       <ul class="onb-checks" data-summary>
         {ok(`${ob.name} · ${team}`)}
-        {ok('Profile complete')}
+        {profile.profile ? ok(profileSummary(profile.profile)) : later('Profile not saved yet')}
         {cal?.mode === 'google'
           ? cal.google.connected
             ? ok(`Google Calendar connected${cal.google.accountEmail ? ` as ${cal.google.accountEmail}` : ''}`)
@@ -442,11 +590,13 @@ export default function OnboardingPage() {
           <p class="brand-lede onb-lede">{ledes[step - 1]}</p>
           {body}
           {stepError && (
-            <div class="notice notice--negative" role="alert">
-              {stepError}{' '}
-              <button class="btn btn--small" onClick={next}>
-                Try again
-              </button>
+            <div class="notice notice--negative" role="alert" data-step-error>
+              {stepError.text}{' '}
+              {stepError.action && (
+                <button class="btn btn--small" type="button" onClick={stepError.action.run} disabled={busy}>
+                  {stepError.action.label}
+                </button>
+              )}
             </div>
           )}
         </section>
@@ -464,11 +614,11 @@ export default function OnboardingPage() {
         )}
       </div>
       <footer class="onb-foot">
-        <button class="btn btn--text" type="button" onClick={() => (pushed.current > 0 ? history.back() : goTo(step - 1))} disabled={step === 1 || step === 6 || busy} data-onb-back>
+        <button class="btn btn--text" type="button" onClick={() => void back()} disabled={step === 1 || step === 6 || busy} data-onb-back>
           ← Back
         </button>
         {step < 6 && (
-          <button class="btn btn--text onb-skip" type="button" onClick={finishLater} disabled={busy} data-finish-later>
+          <button class="btn btn--text onb-skip" type="button" onClick={() => void finishLater()} disabled={busy} data-finish-later>
             Finish later
           </button>
         )}

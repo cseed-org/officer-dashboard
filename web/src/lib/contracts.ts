@@ -84,6 +84,8 @@ export const ApiError = z.object({
       'invalid_transition',
       'import_failed',
       'internal',
+      /** 403 while an invited officer hasn't finished setup; only /api/me* is open. */
+      'onboarding_required',
     ]),
     message: z.string(),
     /** Field errors (from zod `flatten()`), or per-row import errors. */
@@ -166,6 +168,8 @@ export const OnboardingState = z.object({
   hasProfile: z.boolean(),
   /** false when the Discord bot isn't configured: corrections open a Discord DM instead. */
   correctionsByDm: z.boolean(),
+  /** They reported a problem with these details and the inviter hasn't edited the invite since. */
+  correctionPending: z.boolean(),
 });
 export type OnboardingState = z.infer<typeof OnboardingState>;
 export const MeResponse = z.object({ user: CurrentUser, onboarding: OnboardingState.nullable() });
@@ -841,6 +845,8 @@ export type AdminUsersResponse = z.infer<typeof AdminUsersResponse>;
 export const AdminUserCreateRequest = z.object({
   discordId: DiscordId,
   name: z.string().trim().min(1).max(100),
+  /** The account goes through onboarding with this subteam, like an invitee. */
+  subteamId: Id,
   role: Role.default('officer'),
   title: z.string().trim().max(100).nullable().optional(),
   email: z.email().nullable().optional(),
@@ -1019,6 +1025,9 @@ export type DMResult = z.infer<typeof DMResult>;
 export const InviteResponse = z.object({ invite: Invite, token: z.string(), link: z.url(), reinvited: z.boolean(), dm: DMResult });
 export type InviteResponse = z.infer<typeof InviteResponse>;
 export const InvitesResponse = z.object({ invites: z.array(Invite), dmConfigured: z.boolean() });
+/** PATCH /api/invites/:id — fix the details of an invite that hasn't finished onboarding. */
+export const InviteUpdateRequest = z.object({ name: z.string().trim().min(1).max(100).optional(), subteamId: Id.optional() });
+export const InviteUpdateResponse = z.object({ invite: Invite });
 
 /** Birthday is month-day (MM-DD); no year is collected. */
 export const MonthDay = z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'Enter a month and day, like 04-21');
@@ -1282,6 +1291,7 @@ export const ENDPOINTS = {
   calendarEmailDelete: { method: 'DELETE', path: '/api/me/calendar-emails/:id', auth: 'officer', response: OkResponse },
   invitesList: { method: 'GET', path: '/api/invites', auth: 'director', response: InvitesResponse },
   inviteCreate: { method: 'POST', path: '/api/invites', auth: 'director', body: InviteCreateRequest, response: InviteResponse },
+  inviteUpdate: { method: 'PATCH', path: '/api/invites/:id', auth: 'director', body: InviteUpdateRequest, response: InviteUpdateResponse },
   inviteRevoke: { method: 'DELETE', path: '/api/invites/:id', auth: 'director', response: OkResponse },
   officersList: { method: 'GET', path: '/api/officers', auth: 'officer', response: OfficersResponse },
   officerDetail: { method: 'GET', path: '/api/officers/:id', auth: 'officer', response: OfficerResponse },

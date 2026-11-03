@@ -140,6 +140,17 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 					return
 				}
 			}
+			if p.user != nil && !onboardingOpenPath(r.Method, path) {
+				pending, err := s.onboardingPending(r.Context(), p.user.ID)
+				if err != nil {
+					writeError(w, toAPIError(err, s.log))
+					return
+				}
+				if pending {
+					writeError(w, fail(403, "onboarding_required", "Finish setting up your account first"))
+					return
+				}
+			}
 		}
 		if p.user != nil && !s.originOK(r) {
 			writeError(w, forbidden("Cross-origin request blocked"))
@@ -174,4 +185,30 @@ func (s *Server) originOK(r *http.Request) bool {
 // cleanPath collapses repeated slashes and resolves dot segments, keeping a rooted path.
 func cleanPath(p string) string {
 	return path.Clean("/" + p)
+}
+
+// onboardingOpenPath lists the API an invitee may use before finishing setup: their own
+// account (/api/me and everything under it: profile, prefs, calendar, onboarding), the club
+// time zone the app shell reads, and health. Everything else answers 403 onboarding_required.
+func onboardingOpenPath(method, p string) bool {
+	switch {
+	case p == "/api/me", strings.HasPrefix(p, "/api/me/"), p == "/api/health":
+		return true
+	case p == "/api/club/settings":
+		return method == http.MethodGet || method == http.MethodHead
+	}
+	return false
+}
+
+// onboardingPending reports whether the user came in through an invite (or was created
+// by an admin) and hasn't finished setup yet.
+func (s *Server) onboardingPending(ctx context.Context, userID string) (bool, error) {
+	inv, err := s.db.Read().InviteForUser(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return inv.OnboardedAt == nil, nil
 }

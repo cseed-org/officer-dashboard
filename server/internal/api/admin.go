@@ -33,11 +33,12 @@ func (c *Ctx) adminUserCreate() error {
 	if _, err := c.director(); err != nil {
 		return err
 	}
-	var discordID, name, role string
+	var discordID, name, role, subteamID string
 	var title, email validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		discordID = r.Str("discordId", validate.S{Req: true, Format: "discord"}).V
 		name = r.Str("name", validate.S{Req: true, Trim: true, Min: 1, Max: 100}).V
+		subteamID = r.Str("subteamId", validate.S{Req: true, Min: 1, Max: 64}).V
 		role = r.Str("role", validate.S{Enum: []string{"leadership", "director", "officer"}, HasDef: true, Default: "officer"}).V
 		title = r.Str("title", validate.S{Null: true, Trim: true, Max: 100})
 		email = r.Str("email", validate.S{Null: true, Format: "email"})
@@ -57,13 +58,41 @@ func (c *Ctx) adminUserCreate() error {
 			if _, err := c.requireLeadershipIn(w); err != nil {
 				return err
 			}
+		} else if me, err := w.UserByID(ctx, c.User.ID); err != nil || !me.Active || !auth.HasRole(me.Role, auth.RoleDirector) {
+			return forbidden("Requires director role")
+		}
+		if ok, err := w.SubteamExists(ctx, subteamID); err != nil {
+			return err
+		} else if !ok {
+			issues := &validate.Issues{}
+			issues.Add("subteamId", "Subteam not found")
+			return validationError(issues)
+		}
+		if _, err := w.PendingInviteByDiscordID(ctx, discordID); err == nil {
+			return conflict("That Discord account has a pending invite. Revoke it on the Officers page first, or let them accept it.")
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if _, err := w.UserByDiscordID(ctx, discordID); err == nil {
+			return conflict("That Discord account already has a dashboard account.")
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
 		}
 		now := store.Ms(c.S.nowMs())
+		// An accepted invite row puts admin-created accounts through the same setup as
+		// invitees (profile, calendar, widgets) before the rest of the API opens up.
+		inv := store.Invite{ID: auth.UUID(), Name: name, DiscordID: discordID, SubteamID: subteamID, InvitedBy: c.User.ID, Method: "link", TokenHash: auth.SHA256Hex(auth.RandomToken(32))}
+		if err := w.InsertInvite(ctx, inv, int64(now)); err != nil {
+			return err
+		}
 		u := store.User{ID: id, DiscordID: discordID, Name: name, Role: role, Active: true, Title: ptrIf(title), Email: ptrIf(email), CreatedAt: now, UpdatedAt: now}
 		if err := w.InsertUser(ctx, u); err != nil {
 			return err
 		}
-		if err := c.audit(ctx, w, "user.created", "user", id, nil, map[string]any{"discordId": discordID, "name": name, "role": role, "title": u.Title, "email": u.Email}); err != nil {
+		if err := w.AcceptInvite(ctx, inv.ID, id, int64(now)); err != nil {
+			return err
+		}
+		if err := c.audit(ctx, w, "user.created", "user", id, nil, map[string]any{"discordId": discordID, "name": name, "role": role, "title": u.Title, "email": u.Email, "subteamId": subteamID, "inviteId": inv.ID}); err != nil {
 			return err
 		}
 		got, err := w.UserByID(ctx, id)
