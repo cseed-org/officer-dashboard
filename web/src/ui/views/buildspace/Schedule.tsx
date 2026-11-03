@@ -41,6 +41,26 @@ export function ScheduleMenu({
   canEdit,
   saved,
 }: {
+  schedule: BuildspaceSchedule | null;
+  canEdit: boolean;
+  saved: () => void;
+}) {
+  // Same box before the register loads, so the intro row never shifts.
+  if (!schedule)
+    return (
+      <button type="button" class="btn" disabled>
+        Check-in schedule
+      </button>
+    );
+  return (
+    <ScheduleDetails schedule={schedule} canEdit={canEdit} saved={saved} />
+  );
+}
+function ScheduleDetails({
+  schedule,
+  canEdit,
+  saved,
+}: {
   schedule: BuildspaceSchedule;
   canEdit: boolean;
   saved: () => void;

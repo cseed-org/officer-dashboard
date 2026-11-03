@@ -27,20 +27,59 @@ import {
 
 export default function BuildspaceView({ me }: { me: CurrentUser }) {
   const state = useApi("buildspaceList");
+  const [notice, setNotice] = useState("");
+  // The intro (the page's LCP text) and its actions need no register data, so they
+  // paint as soon as sign-in resolves instead of waiting for /api/buildspace.
   return (
-    <Async state={state}>
-      {(b) => <BuildspaceContent b={b} me={me} reload={state.reload} />}
-    </Async>
+    <div class="buildspace">
+      <div class="bs-intro">
+        <div>
+          <span class="brand-eyebrow">THE BUILDER REGISTER</span>
+          <p>A little progress, every week.</p>
+        </div>
+        <div class="action-row">
+          <ScheduleMenu
+            schedule={state.status === "ready" ? state.data.schedule : null}
+            canEdit={me.role === "leadership" || me.isOwner}
+            saved={() => {
+              state.reload();
+              setNotice("Check-in schedule saved.");
+            }}
+          />
+          <button class="btn" onClick={() => setParams({ new: "person" })}>
+            Add builder
+          </button>
+          <button
+            class="btn btn--primary"
+            onClick={() => setParams({ new: "project" })}
+          >
+            New project
+          </button>
+        </div>
+      </div>
+      <Async state={state}>
+        {(b) => (
+          <BuildspaceContent
+            b={b}
+            reload={state.reload}
+            notice={notice}
+            setNotice={setNotice}
+          />
+        )}
+      </Async>
+    </div>
   );
 }
 function BuildspaceContent({
   b,
-  me,
   reload,
+  notice,
+  setNotice,
 }: {
   b: BuildspaceData;
-  me: CurrentUser;
   reload: () => void;
+  notice: string;
+  setNotice: (s: string) => void;
 }) {
   const qs = useSearch();
   const tab =
@@ -51,7 +90,6 @@ function BuildspaceContent({
         : "people";
   const view = qs.get("view") || "table",
     group = qs.get("group") || "track";
-  const [notice, setNotice] = useState("");
   // Whole-view swaps (tab, layout, grouping) crossfade; changes within a view use FLIP.
   const viewKey = `${tab}|${view}|${view === "cards" ? group : ""}`;
   const viewRef = useRef<HTMLDivElement>(null),
@@ -268,31 +306,6 @@ function BuildspaceContent({
         : BUILDSPACE_TRACKS.map((t) => ({ id: t, label: t }));
   return (
     <div class="buildspace">
-      <div class="bs-intro">
-        <div>
-          <span class="brand-eyebrow">THE BUILDER REGISTER</span>
-          <p>A little progress, every week.</p>
-        </div>
-        <div class="action-row">
-          <ScheduleMenu
-            schedule={b.schedule}
-            canEdit={me.role === "leadership" || me.isOwner}
-            saved={() => {
-              reload();
-              setNotice("Check-in schedule saved.");
-            }}
-          />
-          <button class="btn" onClick={() => setParams({ new: "person" })}>
-            Add builder
-          </button>
-          <button
-            class="btn btn--primary"
-            onClick={() => setParams({ new: "project" })}
-          >
-            New project
-          </button>
-        </div>
-      </div>
       <section class="bs-summary" aria-label="Buildspace summary">
         {BUILDSPACE_TRACKS.map((t) => (
           <button
