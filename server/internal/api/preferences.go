@@ -21,6 +21,7 @@ var defaultWidgets = []store.WidgetPlacement{
 	{ID: "kpi-budget", Size: "1x1"},
 	{ID: "kpi-pending", Size: "1x1"},
 	{ID: "web-analytics", Size: "1x1"},
+	{ID: "calendar", Size: "4x2"},
 	{ID: "recent-events", Size: "2x2"},
 	{ID: "budget", Size: "2x2"},
 	{ID: "my-action", Size: "2x1"},

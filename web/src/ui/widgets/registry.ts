@@ -15,6 +15,7 @@ export interface WidgetDef {
 
 /** Feature Panes can extend this registry. Keep defaults in step with server/internal/api/preferences.go. */
 export const widgetRegistry: WidgetDef[] = [
+  { id: 'calendar', title: 'Calendar', sizes: ['2x1', '2x2', '4x2'], size: '2x2' },
   { id: 'links', title: 'Links', sizes: ['2x1', '1x2', '2x2'], size: '2x1' },
   { id: 'kpi-upcoming', title: 'Upcoming events', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
   { id: 'kpi-checkin', title: 'Avg check-in rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
@@ -36,7 +37,7 @@ export const widgetRegistry: WidgetDef[] = [
 export const KPI_GROUP_ID = 'kpis';
 export const kpiIds = widgetRegistry.filter((w) => w.group === 'kpis').map((w) => w.id);
 
-/** Twenty blocks: a complete 4×5 rectangle, or ten full rows on phone. */
+/** Calendar adds two full desktop rows to the existing packed layout. */
 export const defaultWidgetLayout: { id: string; size: BlockSize }[] = [
   { id: 'links', size: '2x1' },
   { id: 'kpi-upcoming', size: '1x1' },
@@ -45,6 +46,7 @@ export const defaultWidgetLayout: { id: string; size: BlockSize }[] = [
   { id: 'kpi-budget', size: '1x1' },
   { id: 'kpi-pending', size: '1x1' },
   { id: 'web-analytics', size: '1x1' },
+  { id: 'calendar', size: '4x2' },
   { id: 'recent-events', size: '2x2' },
   { id: 'budget', size: '2x2' },
   { id: 'my-action', size: '2x1' },
