@@ -12,9 +12,9 @@
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/",
-      "lcp": 2012,
+      "lcp": 2000,
       "cls": 0.0023169420867626884,
-      "interaction": 128,
+      "interaction": 112,
       "jsBytes": 89172
     },
     {
@@ -22,21 +22,21 @@
       "route": "/events",
       "lcp": 1876,
       "cls": 0,
-      "interaction": 64,
+      "interaction": 56,
       "jsBytes": 86127
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/members",
-      "lcp": 1612,
+      "lcp": 1596,
       "cls": 0,
-      "interaction": 56,
+      "interaction": 48,
       "jsBytes": 68074
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/buildspace",
-      "lcp": 1608,
+      "lcp": 1616,
       "cls": 0,
       "interaction": 160,
       "jsBytes": 79108
@@ -44,7 +44,7 @@
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/design",
-      "lcp": 1888,
+      "lcp": 1856,
       "cls": 0,
       "interaction": 80,
       "jsBytes": 84621
@@ -52,7 +52,7 @@
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/finance",
-      "lcp": 496,
+      "lcp": 500,
       "cls": 0,
       "interaction": 64,
       "jsBytes": 91452
@@ -68,58 +68,58 @@
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/",
-      "lcp": 1080,
+      "lcp": 1076,
       "cls": 0.0023169420867626884,
-      "interaction": 120,
-      "jsBytes": 82178
+      "interaction": 112,
+      "jsBytes": 82235
     },
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/events",
       "lcp": 1316,
       "cls": 0,
-      "interaction": 72,
-      "jsBytes": 79219
+      "interaction": 64,
+      "jsBytes": 79269
     },
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/members",
-      "lcp": 860,
+      "lcp": 836,
       "cls": 0,
-      "interaction": 64,
-      "jsBytes": 63132
+      "interaction": 48,
+      "jsBytes": 63182
     },
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/buildspace",
-      "lcp": 1088,
+      "lcp": 1076,
       "cls": 0,
-      "interaction": 152,
-      "jsBytes": 72839
+      "interaction": 160,
+      "jsBytes": 72886
     },
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/design",
-      "lcp": 1304,
+      "lcp": 1308,
       "cls": 0,
-      "interaction": 72,
-      "jsBytes": 77809
+      "interaction": 88,
+      "jsBytes": 77861
     },
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/finance",
-      "lcp": 440,
+      "lcp": 420,
       "cls": 0,
-      "interaction": 72,
-      "jsBytes": 83460
+      "interaction": 64,
+      "jsBytes": 83509
     },
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/officers",
-      "lcp": 456,
+      "lcp": 460,
       "cls": 0,
-      "interaction": 72,
-      "jsBytes": 103644
+      "interaction": 88,
+      "jsBytes": 103695
     }
   ],
   "samples": [
@@ -127,14 +127,14 @@
       "origin": "http://127.0.0.1:18148",
       "route": "/",
       "run": 1,
-      "lcp": 2256,
+      "lcp": 2100,
       "cls": 0.0023169420867626884,
       "interaction": 104,
       "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
       "shifts": [
         {
           "value": 0.0023169420867626884,
-          "time": 2682.399999976158,
+          "time": 2575.100000023842,
           "sources": [
             {
               "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
@@ -191,23 +191,23 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/",
       "run": 1,
-      "lcp": 1096,
-      "cls": 0.0023169420867626884,
-      "interaction": 120,
+      "lcp": 1068,
+      "cls": 0.0021533757716049383,
+      "interaction": 112,
       "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
       "shifts": [
         {
-          "value": 0.0023169420867626884,
-          "time": 1729.3999999761581,
+          "value": 0.0021533757716049383,
+          "time": 1498.800000011921,
           "sources": [
             {
               "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
               "before": {
                 "x": 277,
-                "y": 886.4375,
+                "y": 886.948974609375,
                 "width": 554,
-                "height": 13.5625,
-                "top": 886.4375,
+                "height": 13.051025390625,
+                "top": 886.948974609375,
                 "right": 831,
                 "bottom": 900,
                 "left": 277
@@ -227,10 +227,10 @@
               "node": "<li data-widget=\"budget\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 9;\"><div class=\"blk-body\"><section aria-labelledby=\"budget-h\" data-block=\"budget\" class=\"tile\"><header class=\"tile-head\"><h2 id=\"budget-h\" ",
               "before": {
                 "x": 841,
-                "y": 886.4375,
+                "y": 886.948974609375,
                 "width": 554,
-                "height": 13.5625,
-                "top": 886.4375,
+                "height": 13.051025390625,
+                "top": 886.948974609375,
                 "right": 1395,
                 "bottom": 900,
                 "left": 841
@@ -249,15 +249,15 @@
           ]
         }
       ],
-      "jsBytes": 82178
+      "jsBytes": 82235
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/events",
       "run": 1,
-      "lcp": 1896,
+      "lcp": 1908,
       "cls": 0,
-      "interaction": 64,
+      "interaction": 72,
       "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
       "shifts": [],
       "jsBytes": 86127
@@ -266,42 +266,42 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/events",
       "run": 1,
-      "lcp": 1316,
+      "lcp": 1388,
       "cls": 0,
-      "interaction": 56,
+      "interaction": 64,
       "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
       "shifts": [],
-      "jsBytes": 79219
+      "jsBytes": 79269
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/members",
+      "run": 1,
+      "lcp": 1628,
+      "cls": 0,
+      "interaction": 48,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [],
+      "jsBytes": 68074
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/members",
+      "run": 1,
+      "lcp": 840,
+      "cls": 0,
+      "interaction": 48,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [],
+      "jsBytes": 63182
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/buildspace",
       "run": 1,
       "lcp": 1620,
       "cls": 0,
-      "interaction": 48,
-      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
-      "shifts": [],
-      "jsBytes": 68074
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/members",
-      "run": 1,
-      "lcp": 872,
-      "cls": 0,
-      "interaction": 56,
-      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
-      "shifts": [],
-      "jsBytes": 63132
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/buildspace",
-      "run": 1,
-      "lcp": 1604,
-      "cls": 0,
-      "interaction": 160,
+      "interaction": 144,
       "lcpElement": "<p>A little progress, every week.</p>",
       "shifts": [],
       "jsBytes": 79108
@@ -312,16 +312,16 @@
       "run": 1,
       "lcp": 1072,
       "cls": 0,
-      "interaction": 184,
+      "interaction": 160,
       "lcpElement": "<p>A little progress, every week.</p>",
       "shifts": [],
-      "jsBytes": 72839
+      "jsBytes": 72886
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/design",
       "run": 1,
-      "lcp": 1948,
+      "lcp": 1880,
       "cls": 0,
       "interaction": 80,
       "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
@@ -332,20 +332,20 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/design",
       "run": 1,
-      "lcp": 1272,
+      "lcp": 1336,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 64,
       "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
       "shifts": [],
-      "jsBytes": 77809
+      "jsBytes": 77861
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/finance",
       "run": 1,
-      "lcp": 488,
+      "lcp": 496,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 64,
       "lcpElement": "<h1>Requests &amp; Finance</h1>",
       "shifts": [],
       "jsBytes": 91452
@@ -354,20 +354,20 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/finance",
       "run": 1,
-      "lcp": 448,
+      "lcp": 404,
       "cls": 0,
-      "interaction": 64,
+      "interaction": 72,
       "lcpElement": "<h1>Requests &amp; Finance</h1>",
       "shifts": [],
-      "jsBytes": 83460
+      "jsBytes": 83509
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/officers",
       "run": 1,
-      "lcp": 524,
+      "lcp": 544,
       "cls": 0,
-      "interaction": 80,
+      "interaction": 72,
       "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
       "shifts": [],
       "jsBytes": 114312
@@ -376,25 +376,25 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/officers",
       "run": 1,
-      "lcp": 484,
+      "lcp": 456,
       "cls": 0,
-      "interaction": 80,
+      "interaction": 96,
       "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
       "shifts": [],
-      "jsBytes": 103644
+      "jsBytes": 103695
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/",
       "run": 2,
-      "lcp": 1972,
+      "lcp": 1996,
       "cls": 0.0023169420867626884,
-      "interaction": 136,
+      "interaction": 112,
       "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
       "shifts": [
         {
           "value": 0.0023169420867626884,
-          "time": 2468,
+          "time": 2411.599999964237,
           "sources": [
             {
               "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
@@ -451,14 +451,14 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/",
       "run": 2,
-      "lcp": 1120,
+      "lcp": 1076,
       "cls": 0.0023169420867626884,
-      "interaction": 120,
+      "interaction": 96,
       "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
       "shifts": [
         {
           "value": 0.0023169420867626884,
-          "time": 1788.5999999642372,
+          "time": 1734.300000011921,
           "sources": [
             {
               "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
@@ -509,15 +509,15 @@
           ]
         }
       ],
-      "jsBytes": 82178
+      "jsBytes": 82235
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/events",
       "run": 2,
-      "lcp": 1896,
+      "lcp": 1876,
       "cls": 0,
-      "interaction": 80,
+      "interaction": 48,
       "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
       "shifts": [],
       "jsBytes": 86127
@@ -526,41 +526,41 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/events",
       "run": 2,
-      "lcp": 1328,
+      "lcp": 1308,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 64,
       "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
       "shifts": [],
-      "jsBytes": 79219
+      "jsBytes": 79269
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/members",
+      "run": 2,
+      "lcp": 1580,
+      "cls": 0,
+      "interaction": 48,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [],
+      "jsBytes": 68074
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/members",
+      "run": 2,
+      "lcp": 836,
+      "cls": 0,
+      "interaction": 48,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [],
+      "jsBytes": 63182
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/buildspace",
       "run": 2,
       "lcp": 1616,
       "cls": 0,
-      "interaction": 56,
-      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
-      "shifts": [],
-      "jsBytes": 68074
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/members",
-      "run": 2,
-      "lcp": 840,
-      "cls": 0,
-      "interaction": 64,
-      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
-      "shifts": [],
-      "jsBytes": 63132
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/buildspace",
-      "run": 2,
-      "lcp": 1592,
-      "cls": 0,
       "interaction": 152,
       "lcpElement": "<p>A little progress, every week.</p>",
       "shifts": [],
@@ -570,280 +570,20 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/buildspace",
       "run": 2,
-      "lcp": 1200,
+      "lcp": 1088,
       "cls": 0,
-      "interaction": 152,
+      "interaction": 176,
       "lcpElement": "<p>A little progress, every week.</p>",
       "shifts": [],
-      "jsBytes": 72839
+      "jsBytes": 72886
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/design",
       "run": 2,
-      "lcp": 1952,
-      "cls": 0,
-      "interaction": 72,
-      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
-      "shifts": [],
-      "jsBytes": 84621
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/design",
-      "run": 2,
-      "lcp": 1300,
-      "cls": 0,
-      "interaction": 72,
-      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
-      "shifts": [],
-      "jsBytes": 77809
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/finance",
-      "run": 2,
-      "lcp": 496,
-      "cls": 0,
-      "interaction": 64,
-      "lcpElement": "<h1>Requests &amp; Finance</h1>",
-      "shifts": [],
-      "jsBytes": 91452
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/finance",
-      "run": 2,
-      "lcp": 416,
-      "cls": 0,
-      "interaction": 72,
-      "lcpElement": "<h1>Requests &amp; Finance</h1>",
-      "shifts": [],
-      "jsBytes": 83460
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/officers",
-      "run": 2,
-      "lcp": 516,
-      "cls": 0,
-      "interaction": 64,
-      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
-      "shifts": [],
-      "jsBytes": 114312
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/officers",
-      "run": 2,
-      "lcp": 448,
-      "cls": 0,
-      "interaction": 72,
-      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
-      "shifts": [],
-      "jsBytes": 103644
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/",
-      "run": 3,
-      "lcp": 2024,
-      "cls": 0.0023169420867626884,
-      "interaction": 104,
-      "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
-      "shifts": [
-        {
-          "value": 0.0023169420867626884,
-          "time": 2498.399999976158,
-          "sources": [
-            {
-              "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
-              "before": {
-                "x": 277,
-                "y": 886.4375,
-                "width": 554,
-                "height": 13.5625,
-                "top": 886.4375,
-                "right": 831,
-                "bottom": 900,
-                "left": 277
-              },
-              "after": {
-                "x": 0,
-                "y": 0,
-                "width": 0,
-                "height": 0,
-                "top": 0,
-                "right": 0,
-                "bottom": 0,
-                "left": 0
-              }
-            },
-            {
-              "node": "<li data-widget=\"budget\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 9;\"><div class=\"blk-body\"><section aria-labelledby=\"budget-h\" data-block=\"budget\" class=\"tile\"><header class=\"tile-head\"><h2 id=\"budget-h\" ",
-              "before": {
-                "x": 841,
-                "y": 886.4375,
-                "width": 554,
-                "height": 13.5625,
-                "top": 886.4375,
-                "right": 1395,
-                "bottom": 900,
-                "left": 841
-              },
-              "after": {
-                "x": 0,
-                "y": 0,
-                "width": 0,
-                "height": 0,
-                "top": 0,
-                "right": 0,
-                "bottom": 0,
-                "left": 0
-              }
-            }
-          ]
-        }
-      ],
-      "jsBytes": 89172
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/",
-      "run": 3,
-      "lcp": 1068,
-      "cls": 0.0023169420867626884,
-      "interaction": 104,
-      "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
-      "shifts": [
-        {
-          "value": 0.0023169420867626884,
-          "time": 1775.3999999761581,
-          "sources": [
-            {
-              "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
-              "before": {
-                "x": 277,
-                "y": 886.4375,
-                "width": 554,
-                "height": 13.5625,
-                "top": 886.4375,
-                "right": 831,
-                "bottom": 900,
-                "left": 277
-              },
-              "after": {
-                "x": 0,
-                "y": 0,
-                "width": 0,
-                "height": 0,
-                "top": 0,
-                "right": 0,
-                "bottom": 0,
-                "left": 0
-              }
-            },
-            {
-              "node": "<li data-widget=\"budget\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 9;\"><div class=\"blk-body\"><section aria-labelledby=\"budget-h\" data-block=\"budget\" class=\"tile\"><header class=\"tile-head\"><h2 id=\"budget-h\" ",
-              "before": {
-                "x": 841,
-                "y": 886.4375,
-                "width": 554,
-                "height": 13.5625,
-                "top": 886.4375,
-                "right": 1395,
-                "bottom": 900,
-                "left": 841
-              },
-              "after": {
-                "x": 0,
-                "y": 0,
-                "width": 0,
-                "height": 0,
-                "top": 0,
-                "right": 0,
-                "bottom": 0,
-                "left": 0
-              }
-            }
-          ]
-        }
-      ],
-      "jsBytes": 82178
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/events",
-      "run": 3,
       "lcp": 1848,
       "cls": 0,
-      "interaction": 56,
-      "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
-      "shifts": [],
-      "jsBytes": 86127
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/events",
-      "run": 3,
-      "lcp": 1308,
-      "cls": 0,
-      "interaction": 56,
-      "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
-      "shifts": [],
-      "jsBytes": 79219
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/members",
-      "run": 3,
-      "lcp": 1600,
-      "cls": 0,
-      "interaction": 56,
-      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
-      "shifts": [],
-      "jsBytes": 68074
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/members",
-      "run": 3,
-      "lcp": 848,
-      "cls": 0,
-      "interaction": 48,
-      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
-      "shifts": [],
-      "jsBytes": 63132
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/buildspace",
-      "run": 3,
-      "lcp": 1628,
-      "cls": 0,
-      "interaction": 160,
-      "lcpElement": "<p>A little progress, every week.</p>",
-      "shifts": [],
-      "jsBytes": 79108
-    },
-    {
-      "origin": "http://127.0.0.1:18147",
-      "route": "/buildspace",
-      "run": 3,
-      "lcp": 1072,
-      "cls": 0,
-      "interaction": 168,
-      "lcpElement": "<p>A little progress, every week.</p>",
-      "shifts": [],
-      "jsBytes": 72839
-    },
-    {
-      "origin": "http://127.0.0.1:18148",
-      "route": "/design",
-      "run": 3,
-      "lcp": 1856,
-      "cls": 0,
-      "interaction": 80,
+      "interaction": 72,
       "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
       "shifts": [],
       "jsBytes": 84621
@@ -851,21 +591,21 @@
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/design",
-      "run": 3,
+      "run": 2,
       "lcp": 1308,
       "cls": 0,
       "interaction": 88,
       "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
       "shifts": [],
-      "jsBytes": 77809
+      "jsBytes": 77861
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/finance",
-      "run": 3,
-      "lcp": 496,
+      "run": 2,
+      "lcp": 500,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 64,
       "lcpElement": "<h1>Requests &amp; Finance</h1>",
       "shifts": [],
       "jsBytes": 91452
@@ -873,19 +613,19 @@
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/finance",
-      "run": 3,
-      "lcp": 416,
+      "run": 2,
+      "lcp": 432,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 64,
       "lcpElement": "<h1>Requests &amp; Finance</h1>",
       "shifts": [],
-      "jsBytes": 83460
+      "jsBytes": 83509
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/officers",
-      "run": 3,
-      "lcp": 516,
+      "run": 2,
+      "lcp": 520,
       "cls": 0,
       "interaction": 72,
       "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
@@ -895,26 +635,26 @@
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/officers",
-      "run": 3,
-      "lcp": 456,
+      "run": 2,
+      "lcp": 460,
       "cls": 0,
-      "interaction": 88,
+      "interaction": 96,
       "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
       "shifts": [],
-      "jsBytes": 103644
+      "jsBytes": 103695
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/",
-      "run": 4,
-      "lcp": 1976,
+      "run": 3,
+      "lcp": 1984,
       "cls": 0.0023169420867626884,
-      "interaction": 128,
+      "interaction": 112,
       "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
       "shifts": [
         {
           "value": 0.0023169420867626884,
-          "time": 2373.199999988079,
+          "time": 2406.400000035763,
           "sources": [
             {
               "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
@@ -970,15 +710,15 @@
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/",
-      "run": 4,
-      "lcp": 1052,
+      "run": 3,
+      "lcp": 1080,
       "cls": 0.0023169420867626884,
       "interaction": 120,
       "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
       "shifts": [
         {
           "value": 0.0023169420867626884,
-          "time": 1743.5999999642372,
+          "time": 1515.5,
           "sources": [
             {
               "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
@@ -1029,15 +769,15 @@
           ]
         }
       ],
-      "jsBytes": 82178
+      "jsBytes": 82235
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/events",
-      "run": 4,
-      "lcp": 1872,
+      "run": 3,
+      "lcp": 1856,
       "cls": 0,
-      "interaction": 64,
+      "interaction": 48,
       "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
       "shifts": [],
       "jsBytes": 86127
@@ -1045,18 +785,18 @@
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/events",
-      "run": 4,
-      "lcp": 1352,
+      "run": 3,
+      "lcp": 1296,
       "cls": 0,
-      "interaction": 80,
+      "interaction": 64,
       "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
       "shifts": [],
-      "jsBytes": 79219
+      "jsBytes": 79269
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/members",
-      "run": 4,
+      "run": 3,
       "lcp": 1596,
       "cls": 0,
       "interaction": 56,
@@ -1067,19 +807,279 @@
     {
       "origin": "http://127.0.0.1:18147",
       "route": "/members",
-      "run": 4,
-      "lcp": 868,
+      "run": 3,
+      "lcp": 836,
       "cls": 0,
-      "interaction": 64,
+      "interaction": 80,
       "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
       "shifts": [],
-      "jsBytes": 63132
+      "jsBytes": 63182
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/buildspace",
+      "run": 3,
+      "lcp": 1616,
+      "cls": 0,
+      "interaction": 160,
+      "lcpElement": "<p>A little progress, every week.</p>",
+      "shifts": [],
+      "jsBytes": 79108
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/buildspace",
+      "run": 3,
+      "lcp": 1060,
+      "cls": 0,
+      "interaction": 144,
+      "lcpElement": "<p>A little progress, every week.</p>",
+      "shifts": [],
+      "jsBytes": 72886
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/design",
+      "run": 3,
+      "lcp": 1856,
+      "cls": 0,
+      "interaction": 72,
+      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
+      "shifts": [],
+      "jsBytes": 84621
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/design",
+      "run": 3,
+      "lcp": 1316,
+      "cls": 0,
+      "interaction": 88,
+      "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
+      "shifts": [],
+      "jsBytes": 77861
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/finance",
+      "run": 3,
+      "lcp": 492,
+      "cls": 0,
+      "interaction": 64,
+      "lcpElement": "<h1>Requests &amp; Finance</h1>",
+      "shifts": [],
+      "jsBytes": 91452
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/finance",
+      "run": 3,
+      "lcp": 420,
+      "cls": 0,
+      "interaction": 64,
+      "lcpElement": "<h1>Requests &amp; Finance</h1>",
+      "shifts": [],
+      "jsBytes": 83509
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/officers",
+      "run": 3,
+      "lcp": 516,
+      "cls": 0,
+      "interaction": 72,
+      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
+      "shifts": [],
+      "jsBytes": 114312
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/officers",
+      "run": 3,
+      "lcp": 472,
+      "cls": 0,
+      "interaction": 88,
+      "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
+      "shifts": [],
+      "jsBytes": 103695
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/",
+      "run": 4,
+      "lcp": 2000,
+      "cls": 0.0023169420867626884,
+      "interaction": 112,
+      "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
+      "shifts": [
+        {
+          "value": 0.0023169420867626884,
+          "time": 2430,
+          "sources": [
+            {
+              "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
+              "before": {
+                "x": 277,
+                "y": 886.4375,
+                "width": 554,
+                "height": 13.5625,
+                "top": 886.4375,
+                "right": 831,
+                "bottom": 900,
+                "left": 277
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            },
+            {
+              "node": "<li data-widget=\"budget\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 9;\"><div class=\"blk-body\"><section aria-labelledby=\"budget-h\" data-block=\"budget\" class=\"tile\"><header class=\"tile-head\"><h2 id=\"budget-h\" ",
+              "before": {
+                "x": 841,
+                "y": 886.4375,
+                "width": 554,
+                "height": 13.5625,
+                "top": 886.4375,
+                "right": 1395,
+                "bottom": 900,
+                "left": 841
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 89172
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/",
+      "run": 4,
+      "lcp": 1116,
+      "cls": 0.0023169420867626884,
+      "interaction": 128,
+      "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
+      "shifts": [
+        {
+          "value": 0.0023169420867626884,
+          "time": 1605.0999999642372,
+          "sources": [
+            {
+              "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
+              "before": {
+                "x": 277,
+                "y": 886.4375,
+                "width": 554,
+                "height": 13.5625,
+                "top": 886.4375,
+                "right": 831,
+                "bottom": 900,
+                "left": 277
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            },
+            {
+              "node": "<li data-widget=\"budget\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 9;\"><div class=\"blk-body\"><section aria-labelledby=\"budget-h\" data-block=\"budget\" class=\"tile\"><header class=\"tile-head\"><h2 id=\"budget-h\" ",
+              "before": {
+                "x": 841,
+                "y": 886.4375,
+                "width": 554,
+                "height": 13.5625,
+                "top": 886.4375,
+                "right": 1395,
+                "bottom": 900,
+                "left": 841
+              },
+              "after": {
+                "x": 0,
+                "y": 0,
+                "width": 0,
+                "height": 0,
+                "top": 0,
+                "right": 0,
+                "bottom": 0,
+                "left": 0
+              }
+            }
+          ]
+        }
+      ],
+      "jsBytes": 82235
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/events",
+      "run": 4,
+      "lcp": 1860,
+      "cls": 0,
+      "interaction": 56,
+      "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
+      "shifts": [],
+      "jsBytes": 86127
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/events",
+      "run": 4,
+      "lcp": 1320,
+      "cls": 0,
+      "interaction": 120,
+      "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
+      "shifts": [],
+      "jsBytes": 79269
+    },
+    {
+      "origin": "http://127.0.0.1:18148",
+      "route": "/members",
+      "run": 4,
+      "lcp": 1596,
+      "cls": 0,
+      "interaction": 48,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [],
+      "jsBytes": 68074
+    },
+    {
+      "origin": "http://127.0.0.1:18147",
+      "route": "/members",
+      "run": 4,
+      "lcp": 820,
+      "cls": 0,
+      "interaction": 48,
+      "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
+      "shifts": [],
+      "jsBytes": 63182
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/buildspace",
       "run": 4,
-      "lcp": 1608,
+      "lcp": 1588,
       "cls": 0,
       "interaction": 160,
       "lcpElement": "<p>A little progress, every week.</p>",
@@ -1090,20 +1090,20 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/buildspace",
       "run": 4,
-      "lcp": 1088,
+      "lcp": 1100,
       "cls": 0,
-      "interaction": 152,
+      "interaction": 160,
       "lcpElement": "<p>A little progress, every week.</p>",
       "shifts": [],
-      "jsBytes": 72839
+      "jsBytes": 72886
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/design",
       "run": 4,
-      "lcp": 1888,
+      "lcp": 1868,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 88,
       "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
       "shifts": [],
       "jsBytes": 84621
@@ -1112,18 +1112,18 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/design",
       "run": 4,
-      "lcp": 1308,
+      "lcp": 1304,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 88,
       "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
       "shifts": [],
-      "jsBytes": 77809
+      "jsBytes": 77861
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/finance",
       "run": 4,
-      "lcp": 520,
+      "lcp": 508,
       "cls": 0,
       "interaction": 64,
       "lcpElement": "<h1>Requests &amp; Finance</h1>",
@@ -1134,20 +1134,20 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/finance",
       "run": 4,
-      "lcp": 456,
+      "lcp": 420,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 64,
       "lcpElement": "<h1>Requests &amp; Finance</h1>",
       "shifts": [],
-      "jsBytes": 83460
+      "jsBytes": 83509
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/officers",
       "run": 4,
-      "lcp": 520,
+      "lcp": 536,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 88,
       "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
       "shifts": [],
       "jsBytes": 114312
@@ -1156,25 +1156,25 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/officers",
       "run": 4,
-      "lcp": 472,
+      "lcp": 484,
       "cls": 0,
-      "interaction": 72,
+      "interaction": 80,
       "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
       "shifts": [],
-      "jsBytes": 103644
+      "jsBytes": 103695
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/",
       "run": 5,
-      "lcp": 2012,
+      "lcp": 2024,
       "cls": 0.0023169420867626884,
-      "interaction": 144,
+      "interaction": 104,
       "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
       "shifts": [
         {
           "value": 0.0023169420867626884,
-          "time": 2467.899999976158,
+          "time": 2469.100000023842,
           "sources": [
             {
               "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
@@ -1231,14 +1231,14 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/",
       "run": 5,
-      "lcp": 1080,
+      "lcp": 1036,
       "cls": 0.0023169420867626884,
-      "interaction": 88,
+      "interaction": 104,
       "lcpElement": "<span class=\"kpi-sub\">$591 spent · $204 committed of $14,300</span>",
       "shifts": [
         {
           "value": 0.0023169420867626884,
-          "time": 1774.4000000357628,
+          "time": 1450.300000011921,
           "sources": [
             {
               "node": "<li data-widget=\"recent-events\" data-size=\"2x2\" data-size-label=\"2 × 2\" data-w=\"2\" data-h=\"2\" class=\"blk\" style=\"--i: 8;\"><div class=\"blk-body\"><section aria-labelledby=\"recent-events-h\" data-block=\"recent-events\" class=\"tile\"><header class=\"tile-hea",
@@ -1289,15 +1289,15 @@
           ]
         }
       ],
-      "jsBytes": 82178
+      "jsBytes": 82235
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/events",
       "run": 5,
-      "lcp": 1876,
+      "lcp": 1884,
       "cls": 0,
-      "interaction": 56,
+      "interaction": 64,
       "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
       "shifts": [],
       "jsBytes": 86127
@@ -1306,18 +1306,18 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/events",
       "run": 5,
-      "lcp": 1292,
+      "lcp": 1316,
       "cls": 0,
       "interaction": 72,
       "lcpElement": "<h2 id=\"health-h\">Event health · Founder Fireside</h2>",
       "shifts": [],
-      "jsBytes": 79219
+      "jsBytes": 79269
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/members",
       "run": 5,
-      "lcp": 1612,
+      "lcp": 1588,
       "cls": 0,
       "interaction": 56,
       "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
@@ -1328,20 +1328,20 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/members",
       "run": 5,
-      "lcp": 860,
+      "lcp": 832,
       "cls": 0,
-      "interaction": 64,
+      "interaction": 56,
       "lcpElement": "<p class=\"notice\">Cloudflare is not connected. A director can add the server credentials to begin daily sync.</p>",
       "shifts": [],
-      "jsBytes": 63132
+      "jsBytes": 63182
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/buildspace",
       "run": 5,
-      "lcp": 1632,
+      "lcp": 1604,
       "cls": 0,
-      "interaction": 160,
+      "interaction": 168,
       "lcpElement": "<p>A little progress, every week.</p>",
       "shifts": [],
       "jsBytes": 79108
@@ -1350,20 +1350,20 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/buildspace",
       "run": 5,
-      "lcp": 1096,
+      "lcp": 1076,
       "cls": 0,
-      "interaction": 144,
+      "interaction": 168,
       "lcpElement": "<p>A little progress, every week.</p>",
       "shifts": [],
-      "jsBytes": 72839
+      "jsBytes": 72886
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/design",
       "run": 5,
-      "lcp": 1848,
+      "lcp": 1852,
       "cls": 0,
-      "interaction": 80,
+      "interaction": 88,
       "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
       "shifts": [],
       "jsBytes": 84621
@@ -1377,15 +1377,15 @@
       "interaction": 72,
       "lcpElement": "<p data-board-meta=\"true\" class=\"small muted design-meta\">3 open requests · 0 delivered · Shared with everyone · Deadlines shown in America/Los_Angeles</p>",
       "shifts": [],
-      "jsBytes": 77809
+      "jsBytes": 77861
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/finance",
       "run": 5,
-      "lcp": 508,
+      "lcp": 504,
       "cls": 0,
-      "interaction": 56,
+      "interaction": 72,
       "lcpElement": "<h1>Requests &amp; Finance</h1>",
       "shifts": [],
       "jsBytes": 91452
@@ -1394,18 +1394,18 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/finance",
       "run": 5,
-      "lcp": 440,
+      "lcp": 420,
       "cls": 0,
-      "interaction": 48,
+      "interaction": 56,
       "lcpElement": "<h1>Requests &amp; Finance</h1>",
       "shifts": [],
-      "jsBytes": 83460
+      "jsBytes": 83509
     },
     {
       "origin": "http://127.0.0.1:18148",
       "route": "/officers",
       "run": 5,
-      "lcp": 520,
+      "lcp": 516,
       "cls": 0,
       "interaction": 80,
       "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
@@ -1416,12 +1416,12 @@
       "origin": "http://127.0.0.1:18147",
       "route": "/officers",
       "run": 5,
-      "lcp": 448,
+      "lcp": 460,
       "cls": 0,
-      "interaction": 64,
+      "interaction": 80,
       "lcpElement": "<p class=\"page-sub\">The people making CSEED happen.</p>",
       "shifts": [],
-      "jsBytes": 103644
+      "jsBytes": 103695
     }
   ]
 }

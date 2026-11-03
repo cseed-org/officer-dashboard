@@ -1,6 +1,6 @@
 # V0.6 Home speed
 
-Home's median LCP on the Pi probe profile goes from **2.012s to 1.080s** (target ≤1.5s). Every other measured page is faster too, CLS is unchanged, and the Search interaction sample is unchanged. Drag/resize, the tour, the calendar, Links and the #43 CSP are untouched (no CSP policy change: the one new inline script is hashed like the others).
+Home's median LCP on the Pi probe profile goes from **2.000s to 1.076s** (target ≤1.5s). Every other measured page is faster too, CLS is unchanged, and the Search interaction sample is unchanged. Drag/resize, the tour, the calendar, Links and the #43 CSP are untouched (no CSP policy change: the one new inline script is hashed like the others).
 
 Research came first, in two read-only notes: [client and rendering](research/home-speed-client.md) and [data path and server](research/home-speed-data.md). Both found the same chain. Home's critical data waited on three API round trips (`/api/me` → prefs/club settings → overview). Those round trips started only after all island JavaScript had downloaded, one import level at a time, and been evaluated. About half of that JavaScript was the zod contract. Two 640×147 logos competed with all of it for the 1.6Mbit link. Server time is under 3% of the chain (overview p95 ~7ms), so no bootstrap endpoint or Go concurrency work was worth it.
 
@@ -16,14 +16,14 @@ Research came first, in two read-only notes: [client and rendering](research/hom
 | Static gzip at best compression (once, at startup) | `server/internal/web/web.go` | About 12% fewer JS/CSS bytes; startup stays under 100ms on the Pi. |
 | The probe can interleave several builds run by run (`WEB_ORIGINS=a,b`) | `web/scripts/performance.mjs` | Other Panes share the Pi; alternating builds makes before/after comparable. |
 
-Not done, from the ranked ideas: inline per-request JSON bootstrap from Go (it would save ~100ms more but needs per-user HTML and a new caching model), Brotli, `zod/mini`, splitting `AppLayout.css`, cheaper first-render FLIP measurement, and `client:idle` for the command palette. Each remains open if more budget is needed as widgets grow.
+Also seen, not changed: Home's calendar fetches its feed twice (about 0.5s apart), after LCP, on main and here. Not done, from the ranked ideas: inline per-request JSON bootstrap from Go (it would save ~100ms more but needs per-user HTML and a new caching model), Brotli, `zod/mini`, splitting `AppLayout.css`, cheaper first-render FLIP measurement, and `client:idle` for the command palette. Each remains open if more budget is needed as widgets grow.
 
 ## Contract validation
 
 Every response is still validated against its zod schema. What changed is when:
 
 - **Writes** (non-GET) and **any read once the schemas have loaded** are validated before `api()` returns, exactly as before.
-- **Reads that arrive before the schemas have loaded** (a page's first data) render at once and are validated when the schemas load, which `api()` starts at the first idle moment. A mismatch logs the issues and replaces the page with the same "did not match the API contract" error state, with a reload button.
+- **Reads that arrive before the schemas have loaded** (a page's first data) render at once and are validated when the schemas load. `api()` starts that load after the page's `load` event, at the next idle moment, so evaluating the schemas never competes with the first render. A mismatch logs the issues and replaces the page with the same "did not match the API contract" error state, with a reload button.
 - Responses are used as sent rather than as zod's parsed output. The response schemas that use defaults (`dashboardTutorialSeen`, club links) are always sent by the Go server, and `contract-check` in CI still checks every response.
 
 `src/lib/endpoints.generated.ts` is rewritten from `ENDPOINTS` by every `npm run build` and `npm run dev`. Commit it with contract changes; `tests/home-speed.spec.ts` fails when the committed copy is stale. Endpoint entries must stay on one line as `name: { method: '…', path: '…', … }`, and the build stops with a message if one doesn't.
@@ -40,15 +40,15 @@ WEB_ORIGINS=http://127.0.0.1:18148,http://127.0.0.1:18147 PERF_RUNS=5 PERF_SHOTS
 
 | Page | LCP main, median (range) | LCP branch, median (range) | Δ | CLS main → branch | Search main → branch | JS bytes main → branch |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| / (Home) | 2.012s (1.972–2.256) | **1.080s** (1.052–1.120) | −932ms | 0.0023 → 0.0023 | 128 → 120ms | 89,172 → 82,178 |
-| /events | 1.876s (1.848–1.896) | 1.316s (1.292–1.352) | −560ms | 0 → 0 | 64 → 72ms | 86,127 → 79,219 |
-| /members | 1.612s (1.596–1.620) | 0.860s (0.840–0.872) | −752ms | 0 → 0 | 56 → 64ms | 68,074 → 63,132 |
-| /buildspace | 1.608s (1.592–1.632) | 1.088s (1.072–1.200) | −520ms | 0 → 0 | 160 → 152ms | 79,108 → 72,839 |
-| /design | 1.888s (1.848–1.952) | 1.304s (1.272–1.308) | −584ms | 0 → 0 | 80 → 72ms | 84,621 → 77,809 |
-| /finance | 0.496s (0.488–0.520) | 0.440s (0.416–0.456) | −56ms | 0 → 0 | 64 → 72ms | 91,452 → 83,460 |
-| /officers | 0.520s (0.516–0.524) | 0.456s (0.448–0.484) | −64ms | 0 → 0 | 72 → 72ms | 114,312 → 103,644 |
+| / (Home) | 2.000s (1.984–2.100) | **1.076s** (1.036–1.116) | −924ms | 0.0023 → 0.0023 | 112 → 112ms | 89,172 → 82,235 |
+| /events | 1.876s (1.856–1.908) | 1.316s (1.296–1.388) | −560ms | 0 → 0 | 56 → 64ms | 86,127 → 79,269 |
+| /members | 1.596s (1.580–1.628) | 0.836s (0.820–0.840) | −760ms | 0 → 0 | 48 → 48ms | 68,074 → 63,182 |
+| /buildspace | 1.616s (1.588–1.620) | 1.076s (1.060–1.100) | −540ms | 0 → 0 | 160 → 160ms | 79,108 → 72,886 |
+| /design | 1.856s (1.848–1.880) | 1.308s (1.304–1.336) | −548ms | 0 → 0 | 80 → 88ms | 84,621 → 77,861 |
+| /finance | 0.500s (0.492–0.508) | 0.420s (0.404–0.432) | −80ms | 0 → 0 | 64 → 64ms | 91,452 → 83,509 |
+| /officers | 0.520s (0.516–0.544) | 0.460s (0.456–0.484) | −60ms | 0 → 0 | 72 → 88ms | 114,312 → 103,695 |
 
-No ranges overlap. JS bytes are encoded bytes, including the contract chunk that now loads after the first data. Search is the scripted Event Timing sample, not field INP; changes of ±8ms are within its 8ms resolution. Raw samples and LCP elements: [metrics.json](evidence/home-speed-v06/metrics.json).
+No ranges overlap. JS bytes are encoded bytes, including the contract chunk that now loads after the first data. Search is the scripted Event Timing sample, not field INP; changes of 8–16ms are one or two steps of its 8ms resolution. Raw samples and LCP elements: [metrics.json](evidence/home-speed-v06/metrics.json).
 
 ### Step by step (Home)
 
@@ -63,6 +63,7 @@ Each step is cumulative on the pre-#49 base (`30b1a4b`), served from its own por
 | + modulepreload (high priority) | 1.616s | 532ms | 769ms | **866ms** |
 | + zod contract off the first paint | **1.116s** | 512ms | 643ms | 936ms |
 | + modulepreload at low priority (separate run) | 1.088s vs 1.156s | 436ms vs 504ms | 236ms vs 642ms | 897ms vs 936ms |
+| + contract loads after the `load` event (separate run, 7 runs) | 1.096s vs 1.124s | 416ms vs 420ms | 236ms vs 236ms | contract now finishes at ~1.9s |
 
 \* A load spike: in a quiet two-way run the logo step alone measured 2.000s → 1.876s (FCP 504 → 400ms). Finance in the low-priority run: 544ms → 432ms (main 492ms).
 
