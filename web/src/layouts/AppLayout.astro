@@ -10,6 +10,7 @@ import '../styles/v03.css';
 import { Icon, type IconName } from '../ui/components/Icon';
 import CommandPalette from '../ui/shell/CommandPalette';
 import UserChip from '../ui/shell/UserChip';
+import { EARLY_PAGE, EARLY_SHARED, earlyScript } from '../lib/early';
 
 export type PageKey = 'buildspace' | 'home' | 'events' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'contacts' | 'design';
 interface Props {
@@ -21,6 +22,9 @@ interface Props {
   description?: string;
 }
 const { title, page, bare = false, customHeader = false, description = 'CSEED officer dashboard' } = Astro.props;
+
+// Signed-in pages start their first API reads while the HTML parses (lib/early.ts).
+const EARLY = bare ? null : earlyScript([...EARLY_SHARED, ...((page && EARLY_PAGE[page]) ?? [])]);
 
 const NAV: { key: PageKey; label: string; href: string; icon: IconName; directorOnly?: boolean }[] = [
   { key: 'home', label: 'Home', href: '/', icon: 'home' },
@@ -87,6 +91,7 @@ const NAVSCRIPT = `(function () {
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script is:inline set:html={PREPAINT} />
+    {EARLY && <script is:inline set:html={EARLY} />}
   </head>
   <body class={bare ? 'is-bare' : undefined}>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -102,8 +107,8 @@ const NAVSCRIPT = `(function () {
               <Icon name="menu" />
             </button>
             <a class="wordmark wordmark--top" href="/" aria-label="CSEED officers, home">
-              <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-logo.png" alt="" width="78" height="18" />
-              <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-logo-white.png" alt="" width="78" height="18" />
+              <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-wordmark.png" alt="" width="78" height="18" />
+              <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-wordmark-white.png" alt="" width="78" height="18" />
             </a>
             <button type="button" class="icon-btn" data-open-search aria-label="Search">
               <Icon name="search" />
@@ -117,8 +122,8 @@ const NAVSCRIPT = `(function () {
             <a class="wordmark" href="/" aria-label="CSEED officers, home">
               <span class="wordmark-mark" aria-hidden="true">C</span>
               <span class="wordmark-text">
-                <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-logo.png" alt="" width="78" height="18" />
-                <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-logo-white.png" alt="" width="78" height="18" />
+                <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-wordmark.png" alt="" width="78" height="18" />
+                <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-wordmark-white.png" alt="" width="78" height="18" />
                 <span class="wordmark-sub">officers</span>
               </span>
             </a>

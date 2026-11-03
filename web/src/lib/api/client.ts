@@ -4,12 +4,20 @@ import { savingForm } from '../unsaved';
  * src/core/contracts.ts, so the path, method, body and response types all come from the
  * contract, and responses are validated with the contract's zod schema (contract drift
  * shows up as a ContractError instead of a blank page).
+ *
+ * The zod contract is about half of a page's JavaScript, and no request needs it to be sent,
+ * so it loads in the background after the page's first data (`loadContracts`). Until then a
+ * GET response is used as it arrives and validated as soon as the contract has loaded; a
+ * mismatch raises the same ContractError, which the page Gate shows as its error state.
+ * Writes, and every read once the contract is loaded, are validated before they return.
  */
 import type { z } from 'zod';
-import { ApiError, ENDPOINTS, type EndpointName } from '../contracts';
+import type { ApiError, ENDPOINTS as Contract, EndpointName } from '../contracts';
+import ENDPOINTS from '../endpoints.generated';
 import { href } from '../routes';
+import { takeEarly } from '../early';
 
-type Spec<N extends EndpointName> = (typeof ENDPOINTS)[N];
+type Spec<N extends EndpointName> = (typeof Contract)[N];
 
 export type ResponseOf<N extends EndpointName> = Spec<N>['response'] extends z.ZodType ? z.output<Spec<N>['response']> : never;
 export type BodyOf<N extends EndpointName> = Spec<N> extends { body: infer B }
@@ -79,8 +87,29 @@ export function endpointUrl<N extends EndpointName>(name: N, opts: Pick<CallOpti
   return buildPath(ENDPOINTS[name].path, opts.params as Record<string, string> | undefined, opts.query as Record<string, unknown> | undefined);
 }
 
-function validate<N extends EndpointName>(name: N, data: unknown): ResponseOf<N> {
-  const schema = ENDPOINTS[name].response;
+type Contracts = typeof import('../contracts');
+let contracts: Contracts | null = null;
+let contractsLoading: Promise<Contracts> | null = null;
+/** The zod contract module, imported once. */
+export function loadContracts(): Promise<Contracts> {
+  contractsLoading ??= import('../contracts').then((m) => (contracts = m), (err) => { contractsLoading = null; throw err; });
+  return contractsLoading;
+}
+let scheduled = false;
+/** Load the contract once the page is idle, after the response that is being rendered now. */
+function loadContractsSoon() {
+  if (scheduled || contracts) return;
+  scheduled = true;
+  const start = () => void loadContracts().catch((err) => { scheduled = false; console.warn('[api] could not load the contract', err); });
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(start, { timeout: 2000 });
+  else setTimeout(start, 200);
+}
+
+/** A response failed validation after it was already returned: the page Gate shows this error. */
+export const CONTRACT_ERROR_EVENT = 'cseed-contract-error';
+
+function check<N extends EndpointName>(c: Contracts, name: N, data: unknown): ResponseOf<N> {
+  const schema = c.ENDPOINTS[name].response;
   if (typeof schema === 'string') return data as ResponseOf<N>;
   const parsed = (schema as z.ZodType).safeParse(data);
   if (!parsed.success) {
@@ -88,6 +117,18 @@ function validate<N extends EndpointName>(name: N, data: unknown): ResponseOf<N>
     throw new ContractError(name, parsed.error.issues);
   }
   return parsed.data as ResponseOf<N>;
+}
+
+async function validate<N extends EndpointName>(name: N, method: string, data: unknown): Promise<ResponseOf<N>> {
+  if (contracts) return check(contracts, name, data);
+  if (method !== 'GET') return check(await loadContracts(), name, data);
+  // A read before the contract has loaded: render it now, check it once the contract is here.
+  loadContractsSoon();
+  void loadContracts().then(
+    (c) => { try { check(c, name, data); } catch (err) { window.dispatchEvent(new CustomEvent(CONTRACT_ERROR_EVENT, { detail: err })); } },
+    () => {},
+  );
+  return data as ResponseOf<N>;
 }
 
 export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> = {}): Promise<ResponseOf<N>> {
@@ -103,7 +144,9 @@ export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> 
   const saved = spec.method === 'GET' ? () => {} : savingForm();
   let res: Response;
   try {
-    res = await fetch(url, init);
+    // A read the page's head script already started (lib/early.ts) is used once, as is.
+    const early = spec.method === 'GET' && !opts.signal?.aborted ? takeEarly(url) : undefined;
+    res = await (early ?? fetch(url, init));
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
     throw new ApiCallError(0, 'internal', 'Could not reach the server. Check your connection and try again.');
@@ -115,10 +158,10 @@ export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> 
     if (err.code === 'onboarding_required' && typeof location !== 'undefined' && location.pathname !== '/onboarding') location.replace('/onboarding');
     throw err;
   }
-  if (res.status === 204) { const result = validate(name, { ok: true }); saved(); return result; }
+  if (res.status === 204) { const result = await validate(name, spec.method, { ok: true }); saved(); return result; }
   const ct = res.headers.get('content-type') ?? '';
   if (!ct.includes('json')) throw new ApiCallError(res.status, 'internal', `Unexpected ${ct || 'empty'} response from ${spec.path}`);
-  const result = validate(name, await res.json());
+  const result = await validate(name, spec.method, await res.json());
   saved();
   return result;
 }
@@ -138,8 +181,10 @@ export function redirectToLogin() {
 
 async function toApiError(res: Response): Promise<ApiCallError> {
   try {
-    const parsed = ApiError.safeParse(await res.json());
-    if (parsed.success) return new ApiCallError(res.status, parsed.data.error.code, parsed.data.error.message, parsed.data.error.details);
+    // The ApiError shape, checked by hand so error handling never waits for the zod contract.
+    const body = (await res.json()) as Partial<ApiError> | null;
+    const e = body?.error;
+    if (e && typeof e.code === 'string' && typeof e.message === 'string') return new ApiCallError(res.status, e.code, e.message, e.details);
   } catch {
     /* not JSON */
   }
