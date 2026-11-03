@@ -503,7 +503,7 @@ await call('contactDelete', { who: officer, params: contactParams });
 await call('contactDetail', { who: officer, params: contactParams, expect: 404 });
 
 // Everything with a zod response schema must have been exercised.
-const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'googleConnect', 'googleCallback']); // redirects: covered by the Go tests
+const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback']); // redirects, and dev-build-only routes: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);
 if (missed.length) fail('coverage', `endpoints never called: ${missed.join(', ')}`);
 

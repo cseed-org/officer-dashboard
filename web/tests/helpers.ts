@@ -17,17 +17,21 @@ export async function useTheme(page: Page, theme: Theme) {
   }, theme);
 }
 
+/** A test deployment's DEV_AUTH_KEY, when the server under test requires one. */
+export const devKeyParam = process.env.E2E_DEV_AUTH_KEY ? `&key=${encodeURIComponent(process.env.E2E_DEV_AUTH_KEY)}` : '';
+
 export async function devLogin(page: Page, as: 'director' | 'officer' | 'leadership') {
-  const res = await page.goto(`/auth/dev?as=${as}`);
+  const res = await page.goto(`/auth/dev?as=${as}${devKeyParam}`);
   expect(res?.ok(), `dev login as ${as} failed; is the API (API_ORIGIN) running with DEV_AUTH?`).toBe(true);
   await expect(page).toHaveURL(/\/$/);
 }
 
 /**
  * Expected HTTP failures: /api/search is 404 on the v1 backend (the palette then falls back
- * to the list endpoints), and /login probes /api/me while signed out.
+ * to the list endpoints), /login probes /api/me while signed out, and /login probes
+ * /auth/dev/info, which only dev builds with DEV_AUTH=1 answer.
  */
-const EXPECTED_FAILURES = [/\/api\/search\b.*→ 404$/, /\/api\/me → 401$/];
+const EXPECTED_FAILURES = [/\/api\/search\b.*→ 404$/, /\/api\/me → 401$/, /\/auth\/dev\/info\b.*→ 404$/];
 
 /** Collect console errors, uncaught exceptions and unexpected failed requests. */
 export function watchErrors(page: Page): string[] {

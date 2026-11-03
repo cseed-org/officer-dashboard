@@ -34,7 +34,9 @@ Report vulnerabilities in the dashboard and its supported deployment paths, incl
   of builds without the `dev` tag: see [release registration](server/internal/api/devauth_off.go)
   and its [regression test](server/internal/api/devauth_off_test.go).
   The [Docker build](server/Dockerfile) and [release target](server/Makefile)
-  use `embedweb`, not `dev`. Never deploy a build made with `-tags dev`.
+  use `embedweb`, not `dev`. Never deploy a build made with `-tags dev` to production.
+  A test deployment that runs one (developer mode, `/auth/dev/info` and the login page's
+  skip-Discord panel) must set `DEV_AUTH_KEY`; reports of key bypass on such a build are in scope.
 
 ## Out of scope
 

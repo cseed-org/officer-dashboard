@@ -2,17 +2,24 @@
 
 package api
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+)
 
 // The default (release) build has no dev login at all: DEV_AUTH=1 cannot bring it back.
 func TestDefaultBuildHasNoDevLogin(t *testing.T) {
 	if DevBuild {
 		t.Fatal("DevBuild must be false without -tags dev")
 	}
+	// Even with DEV_AUTH_KEY, the right key, and a dev_key cookie, nothing answers.
+	const key = "release-key-0123456789"
+	cookie := actor{cookies: []*http.Cookie{{Name: "dev_key", Value: "anything"}}}
 	for _, devAuth := range []bool{false, true} {
-		e := newEnv(t, func(c *Config) { c.DevAuth = devAuth })
-		for _, p := range []string{"/auth/dev?as=director", "/auth/dev?as=officer", "/auth/dev", "/auth/dev/"} {
-			r := e.get(p, anon)
+		e := newEnv(t, func(c *Config) { c.DevAuth, c.DevAuthKey = devAuth, key })
+		for _, p := range []string{"/auth/dev?as=director", "/auth/dev?as=officer", "/auth/dev", "/auth/dev/",
+			"/auth/dev?as=leadership&key=" + key, "/auth/dev/info", "/auth/dev/info?key=" + key} {
+			r := e.get(p, cookie)
 			if r.Status != 404 {
 				t.Errorf("DevAuth=%v GET %s → %d, want 404", devAuth, p, r.Status)
 			}

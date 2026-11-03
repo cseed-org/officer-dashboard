@@ -18,6 +18,7 @@ Environment variables (flags override where shown):
 | `RECEIPTS_DIR` | – | receipts on local disk (single box, no Drive). With neither set, uploads answer 503 |
 | `AGENT_SETTLEMENT_TOLERANCE_PERCENT`, `_CENTS` | `10`, `2500` | agent hold ceiling: max(estimate × 1.10, estimate + $25) |
 | `DEV_AUTH` | – | `1` enables `/auth/dev` in a `-tags dev` build only |
+| `DEV_AUTH_KEY` | – | `-tags dev` builds only (ignored otherwise). When set, `/auth/dev` and the login page's Developer mode panel require `key=<DEV_AUTH_KEY>` (or the `dev_key` cookie a keyed visit sets); a wrong or missing key gets the site's 404. Shareable link: `https://<host>/auth/dev?as=leadership\|director\|officer&key=<KEY>[&next=/events]`. **Test deployments only**: the key signs anyone in as any role. Use a long random value (`openssl rand -hex 24`); see [development](development.md#developer-mode-on-a-test-deployment) |
 
 Sessions live in the database (`sessions`, keyed by sha256 of the cookie token, 30-day sliding
 expiry). Service tokens are stored as sha256 hashes. Writes that arrive with a session cookie
