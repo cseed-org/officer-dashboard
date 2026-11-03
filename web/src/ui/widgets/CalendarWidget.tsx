@@ -6,6 +6,7 @@ import { effectiveTimezone } from '../../lib/timezone';
 import { href } from '../../lib/routes';
 import type { BlockSize } from './registry';
 import { Icon } from '../components/Icon';
+import { Async, Loading } from '../components/states';
 import { useApi } from '../../lib/api/useApi';
 import { createPortal } from 'preact/compat';
 import { useId } from 'preact/hooks';
@@ -225,7 +226,7 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
       </button>)}
       {!compact && <span class="cw-zone">{zone}</span>}
     </div>
-    {error ? <p role="alert">{error} <button class="btn btn--small" onClick={() => setTick(t => t + 1)}>Retry</button></p> : !feed ? <p class="small muted" role="status">Loading calendar…</p> : <>
+    {error ? <p role="alert">{error} <button class="btn btn--small" onClick={() => setTick(t => t + 1)}>Retry</button></p> : <Async state={feed ? { status: 'ready', data: feed } : { status: 'loading' }} loading={<Loading rows={compact ? 1 : 3} label="Loading calendar" />}>{() => <>
       {view !== 'agenda' && <div class={`cw-grid${options.showWeekends ? '' : ' cw-grid--weekdays'}`} role="group" aria-label={label}>
         {(options.showWeekends ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']).map(day => <span class="cw-dow" key={day}>{day}</span>)}
         {dates.map(date => {
@@ -239,13 +240,13 @@ export default function CalendarWidget({ size }: { size: BlockSize }) {
         })}
       </div>}
       {(view !== 'month' || selected) && <div class="cw-agenda" aria-label="Calendar agenda">
-        {shownAgenda.filter(date => onDate(date).length).map(date => <div key={date} class="cw-agenda-day">
+        {shownAgenda.filter(date => onDate(date).length).map(date => <div key={date} class="cw-agenda-day motion-list">
           {!compact && <h3>{date === now ? 'Today' : weekdayShort(date)} <span>{shortDay(date)}</span></h3>}
           {onDate(date).map(item => renderItem(item))}
         </div>)}
         {shownAgenda.every(date => !onDate(date).length) && <div class="cw-empty"><strong>{sources ? 'A little breathing room' : 'No sources selected'}</strong><span>{sources ? 'Nothing scheduled for these dates.' : 'Choose sources in Options.'}</span></div>}
       </div>}
       {view === 'month' && !selected && <p class="cw-footnote">Hover or focus an item for details. Select a date for its agenda.</p>}
-    </>}
+    </>}</Async>}
   </section>;
 }

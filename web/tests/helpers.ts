@@ -26,6 +26,9 @@ export const devKeyParam = process.env.E2E_DEV_AUTH_KEY ? `&key=${encodeURICompo
  * server needs one, goes with every sign-in.
  */
 export async function devSignIn(page: Page, fields: { as?: string; user?: string; discord?: string }, next = '/') {
+  // Session rotation invalidates the previous page's in-flight API calls. Dispose that
+  // document first so a late 401 cannot redirect the newly authenticated page.
+  if (page.url() !== 'about:blank') await page.goto('about:blank');
   const form: Record<string, string> = { ...fields, next } as Record<string, string>;
   if (process.env.E2E_DEV_AUTH_KEY) form.key = process.env.E2E_DEV_AUTH_KEY;
   const res = await page.request.post('/auth/dev', { form, maxRedirects: 0 });

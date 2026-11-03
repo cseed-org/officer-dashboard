@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { devLogin, settle } from './helpers';
 
+// Motion checks cover returning users; tutorial behavior is exercised in home-grid.spec.
+test.beforeEach(async ({ page }) => {
+  await page.request.post('/auth/dev', { form: { as: 'director', ...(process.env.E2E_DEV_AUTH_KEY ? { key: process.env.E2E_DEV_AUTH_KEY } : {}) }, maxRedirects: 0 });
+  await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true } });
+});
+
 test('reduced motion: no entry animations and KPI figures appear at their final value', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'one viewport is enough');
   await page.emulateMedia({ reducedMotion: 'reduce' });

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../../lib/api/client';
+import { timezoneSnapshot } from '../../lib/timezone';
 
 const steps = [
   { title: 'Your home base', text: 'Your widgets bring club activity and next actions into one place. This short tour shows how to make Home yours.', target: '[data-widget="links"]', edit: false },
@@ -27,7 +28,8 @@ export default function DashboardTutorial({ onPreview }: { onPreview: (editing: 
   useEffect(() => {
     let alive = true;
     const replay = new URLSearchParams(location.search).get('tutorial') === '1';
-    api('prefsGet').then(p => { if (alive && (replay || !p.dashboardTutorialSeen)) setActive(true); }).catch(() => {});
+    const prefs = timezoneSnapshot().prefs;
+    (prefs ? Promise.resolve(prefs) : api('prefsGet')).then(p => { if (alive && (replay || !p.dashboardTutorialSeen)) setActive(true); }).catch(() => {});
     return () => { alive = false; };
   }, []);
   useEffect(() => {
@@ -104,11 +106,13 @@ export default function DashboardTutorial({ onPreview }: { onPreview: (editing: 
       <rect width="100%" height="100%" fill="rgb(0 0 0 / .62)" mask={`url(#${maskId})`} />
       {target && <rect class="tour-cutout" x={target.x} y={target.y} width={target.width} height={target.height} rx="12" fill="none" stroke="var(--c-blue)" stroke-width="3" />}
     </svg>
-    <div ref={card} class="tour-card" style={{ left: `${position.left}px`, top: `${position.top}px` }} data-tour-step={step + 1}>
+    <div ref={card} class="tour-card" style={{ left: 0, top: 0, transform: `translate(${position.left}px, ${position.top}px)` }} data-tour-step={step + 1}>
+      <div class="tour-card-content" key={step}>
       <p class="small muted">Dashboard tour · {step + 1} of {steps.length}</p>
       <h2 ref={heading} tabIndex={-1} id="tour-title">{steps[step]!.title}</h2><p>{steps[step]!.text}</p>
       {error && <p role="alert">{error}</p>}
       <div class="action-row"><button class="btn" disabled={saving} onClick={finish}>Skip tour</button><button class="btn" disabled={saving || step === 0} onClick={() => setStep(step - 1)}>Back</button><button class="btn btn--primary" disabled={saving} onClick={() => step === steps.length - 1 ? void finish() : setStep(step + 1)}>{step === steps.length - 1 ? 'Finish' : 'Next'}</button></div>
+      </div>
     </div>
   </dialog>;
 }
