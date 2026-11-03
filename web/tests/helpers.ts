@@ -34,6 +34,16 @@ export async function devSignIn(page: Page, fields: { as?: string; user?: string
   return page.goto(res.headers()['location'] ?? '/');
 }
 
+/**
+ * Sign in as the dashboard owner (owner controls). Dev login hands out ownership only on a
+ * local server without DEV_AUTH_KEY, so tests that need it skip on keyed test deployments.
+ */
+export const ownerLoginAvailable = !process.env.E2E_DEV_AUTH_KEY;
+export async function devLoginOwner(page: Page) {
+  await devSignIn(page, { as: 'owner' });
+  await expect(page).toHaveURL(/\/$/);
+}
+
 export async function devLogin(page: Page, as: 'director' | 'officer' | 'leadership') {
   await devSignIn(page, { as });
   await expect(page).toHaveURL(/\/$/);

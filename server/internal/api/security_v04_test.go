@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -176,6 +177,19 @@ func TestReceiptDownloadIsLimitedToRequesterAndDirectors(t *testing.T) {
 	expectStatus(t, "requester", e.get(url, e.officer()), 200)
 	expectStatus(t, "director", e.get(url, e.director()), 200)
 	expectStatus(t, "another officer", e.get(url, e.as("user-marcus")), 403)
+
+	// The request detail doesn't hand out the link either (a Drive receipt's link would
+	// bypass the download check); the requester and directors still get it.
+	for who, want := range map[string]bool{"user-priya": true, "user-director": true, "user-marcus": false} {
+		d := e.mustOK(e.get("/api/requests/"+id, e.as(who)))
+		got := d.at("request", "attachments", 0, "url")
+		if (got != nil) != want {
+			t.Errorf("%s sees attachment url %v, want shown=%v", who, got, want)
+		}
+		if d.str("request", "attachments", 0, "filename") != "r.pdf" {
+			t.Errorf("%s: attachment metadata missing: %s", who, d.Raw)
+		}
+	}
 }
 
 // Owner changes answer with a clear message instead of a raw constraint error: a missing
@@ -338,4 +352,95 @@ func TestEveryResponseIsTypedAndCarriesACSP(t *testing.T) {
 	if rec.Body.String() != "ok" || !strings.Contains(logs.String(), "status=200") {
 		t.Errorf("access log: body %q log %q", rec.Body.String(), logs.String())
 	}
+}
+
+// Behind a proxy on another host (the container topology), TRUSTED_PROXIES names it, so
+// each forwarded client gets its own budget. Untrusted peers' X-Forwarded-For is ignored.
+func TestRateLimitTrustsConfiguredProxies(t *testing.T) {
+	_, docker, _ := net.ParseCIDR("172.18.0.0/16")
+	e := newEnv(t, func(c *Config) { c.AuthRateLimit, c.TrustedProxies = 2, []*net.IPNet{docker} })
+	via := func(peer, xff string) actor {
+		return actor{remote: peer + ":40000", headers: map[string]string{"X-Forwarded-For": xff}}
+	}
+	for i := 0; i < 2; i++ {
+		expectStatus(t, "client A", e.get("/auth/login", via("172.18.0.5", "203.0.113.1")), 503)
+	}
+	expectStatus(t, "client A over", e.get("/auth/login", via("172.18.0.5", "203.0.113.1")), 429)
+	expectStatus(t, "client B through the same proxy", e.get("/auth/login", via("172.18.0.5", "203.0.113.2")), 503)
+	// Two trusted hops (e.g. cloudflared → Caddy): the client is the last untrusted hop, and
+	// whatever the client itself put first is ignored.
+	expectStatus(t, "client B behind two proxies", e.get("/auth/login", via("172.18.0.5", "198.51.100.66, 203.0.113.2, 172.18.0.9")), 503)
+	expectStatus(t, "client B over", e.get("/auth/login", via("172.18.0.5", "203.0.113.2")), 429)
+	// An untrusted peer cannot pick its key with the header.
+	for i := 0; i < 2; i++ {
+		e.get("/auth/login", via("198.51.100.7", "203.0.113.50"))
+	}
+	expectStatus(t, "untrusted peer, fresh XFF", e.get("/auth/login", via("198.51.100.7", "203.0.113.51")), 429)
+	// Loopback stays trusted only when listed: with this list it is a plain peer.
+	for i := 0; i < 2; i++ {
+		e.get("/auth/login", via("127.0.0.1", "203.0.113.60"))
+	}
+	expectStatus(t, "loopback not in TRUSTED_PROXIES", e.get("/auth/login", via("127.0.0.1", "203.0.113.61")), 429)
+}
+
+// IPv6 clients are limited per /64 (one host usually owns the whole prefix), and the
+// bucket map never grows past its cap however many addresses an attacker rotates through.
+func TestRateLimiterKeysIPv6By64AndCapsItsMemory(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.AuthRateLimit = 2 })
+	for i, addr := range []string{"[2001:db8:1:2::1]:1", "[2001:db8:1:2::ffff]:1"} {
+		expectStatus(t, fmt.Sprintf("v6 %d", i), e.get("/auth/login", actor{remote: addr}), 503)
+	}
+	expectStatus(t, "same /64", e.get("/auth/login", actor{remote: "[2001:db8:1:2:dead::beef]:1"}), 429)
+	expectStatus(t, "another /64", e.get("/auth/login", actor{remote: "[2001:db8:1:3::1]:1"}), 503)
+
+	l := newRateLimiter(5, time.Now)
+	l.maxKeys = 100
+	for i := 0; i < 1000; i++ {
+		l.allow(fmt.Sprintf("k%d", i))
+		if n := len(l.buckets); n > 100 {
+			t.Fatalf("limiter holds %d keys, cap 100", n)
+		}
+	}
+}
+
+// M1 through the agent: a director's own service token cannot buy-and-settle the
+// director's own request. The job is hidden from that token and refused on claim; a
+// completion that somehow arrives is held for another director instead of settling.
+func TestAgentTokenCannotFulfilTheCreatorsOwnRequest(t *testing.T) {
+	e := newEnv(t)
+	dir, lead := e.director(), e.as("user-leadership")
+	own := e.mustOK(e.post("/api/admin/tokens", map[string]any{"name": "mine", "scopes": []string{"agent:jobs"}}, dir)).str("plaintext")
+	other := e.mustOK(e.post("/api/admin/tokens", map[string]any{"name": "lead", "scopes": []string{"agent:jobs"}}, lead)).str("plaintext")
+	id := e.mustOK(e.post("/api/requests", with(purchase, "submit", true), dir)).str("request", "id")
+	e.mustOK(e.post("/api/requests/"+id+"/approve", map[string]any{}, lead))
+
+	if j := findJob(e.get("/api/agent/jobs", bearer(own)), id); j != "" {
+		t.Error("the requester's own token is offered the job")
+	}
+	job := findJob(e.get("/api/agent/jobs", bearer(other)), id)
+	if job == "" {
+		t.Fatal("another director's token is not offered the job")
+	}
+	expectStatus(t, "claim with the requester's token", e.post("/api/agent/jobs/"+job+"/claim", nil, bearer(own)), 409)
+	if s := e.scalar(`SELECT status FROM fulfillment_jobs WHERE id = ?`, job); s != "queued" {
+		t.Fatalf("job after refused claim: %v", s)
+	}
+
+	// A claim recorded for the requester's token (e.g. before this rule) cannot complete.
+	ownID := e.scalar(`SELECT id FROM service_tokens WHERE name = 'mine'`)
+	if _, err := e.db.W.Exec(`UPDATE fulfillment_jobs SET status='claimed', claimed_by_token_id=?, attempts=1 WHERE id=?`, ownID, job); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.W.Exec(`UPDATE purchase_requests SET status='fulfilling' WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	expectStatus(t, "complete with the requester's token", e.post("/api/agent/jobs/"+job+"/complete", map[string]any{"outcome": "done", "actualTotalCents": 9000}, bearer(own)), 409)
+	if s := e.scalar(`SELECT status FROM fulfillment_jobs WHERE id = ?`, job); s != "held" {
+		t.Errorf("job after refused completion: %v, want held", s)
+	}
+	if s := e.scalar(`SELECT status FROM purchase_requests WHERE id = ?`, id); s != "fulfilling" {
+		t.Errorf("request after refused completion: %v", s)
+	}
+	// Another director settles it.
+	e.mustOK(e.post("/api/requests/"+id+"/transition", map[string]any{"to": "fulfilled", "actualTotalCents": 9000}, lead))
 }

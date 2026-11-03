@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME_TYPES, type PurchaseRequestDetail } from '../../lib/contracts';
 import type { PurchaseStatus } from '../../lib/domain';
-import { api, endpointUrl, isStorageUnavailable, STORAGE_UNAVAILABLE_MESSAGE } from '../../lib/api/client';
+import { api, isStorageUnavailable, STORAGE_UNAVAILABLE_MESSAGE } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import { useUnsavedEdits } from '../../lib/unsaved';
 import { describe, Field, Section, StatusBadge } from '../components/kit';
@@ -160,8 +160,11 @@ export default function RequestDetail({
   );
 }
 
-/** GET /api/attachments/:id serves local files and redirects Drive files to their webViewLink. */
-const attachmentHref = (a: { id: string; url: string | null }) => safeUrl(a.url ?? endpointUrl('attachmentDownload', { params: { id: a.id } }));
+/**
+ * The server sends `url` only to viewers who may open the receipt (uploader, requester,
+ * directors): /api/attachments/:id for local files, the Drive link otherwise. null → no link.
+ */
+const attachmentHref = (a: { url: string | null }) => (a.url ? safeUrl(a.url) : null);
 
 const hostOf = (u: string) => {
   try {
@@ -528,6 +531,7 @@ function Attachments({ r, onUploaded }: { r: PurchaseRequestDetail; onUploaded: 
               </span>
               <span class="file-meta">
                 {a.kind} · {bytes(a.sizeBytes)} · {fmtDate(a.createdAt)}
+                {!a.url && ' · requester and directors only'}
               </span>
             </li>
           ))}

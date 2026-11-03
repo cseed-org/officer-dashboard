@@ -82,9 +82,11 @@ type devField struct{ Name, Value string }
 // with DEV_AUTH_KEY set, the key on every request.
 //
 //   - POST /auth/dev (form: as=leadership|director|officer [user=<id>] | discord=<id>,
-//     next, key) signs in. as= picks the oldest active user with that role (creating a
-//     placeholder on an empty database) or the given user; discord= signs in as that
-//     Discord account the way /auth/callback would, never as leadership or an owner.
+//     next, key) signs in. as= picks the oldest active non-owner user with that role
+//     (creating a placeholder when there is none) or the given user, never an owner;
+//     discord= signs in as that Discord account the way /auth/callback would, never as
+//     leadership or an owner. as=owner (the owner UI's e2e tests) works only without
+//     DEV_AUTH_KEY, i.e. on a loopback-only local server.
 //   - GET /auth/dev?… only shows a confirmation page whose button posts that form, so a
 //     shared link still works but a link or image elsewhere cannot sign anyone in.
 //   - GET /auth/dev/info tells the static login page whether to show the developer panel.
@@ -184,6 +186,34 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 			return nil
 		}
 		as := f.Get("as")
+		if as == "owner" {
+			// Owner controls need e2e coverage, but only on a developer's own machine: no
+			// DEV_AUTH_KEY means checkExposure kept this server on loopback. A keyed (shared)
+			// test deployment never hands out ownership.
+			if c.S.cfg.DevAuthKey != "" {
+				return forbidden("Developer sign-in cannot target a dashboard owner")
+			}
+			owners, err := c.S.db.Read().Owners(ctx)
+			if err != nil {
+				return err
+			}
+			var owner *store.User
+			for i := range owners {
+				if owners[i].Active {
+					owner = &owners[i]
+					break
+				}
+			}
+			if owner == nil {
+				return badRequest("No active owner to sign in as")
+			}
+			c.S.log.Warn("[dev-auth] signing in", "as", "owner", "user", owner.ID)
+			if err := c.newSession(ctx, owner.ID); err != nil {
+				return err
+			}
+			http.Redirect(c.W, c.R, next, http.StatusSeeOther)
+			return nil
+		}
 		if as != auth.RoleDirector && as != auth.RoleOfficer && as != auth.RoleLeadership {
 			http.Error(c.W, "as must be leadership, director or officer", http.StatusBadRequest)
 			return nil
@@ -194,6 +224,9 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 				u, err := w.UserByID(ctx, id)
 				if err != nil || !u.Active || u.Role != as {
 					return badRequest("user must be an active " + as)
+				}
+				if u.IsOwner {
+					return forbidden("Developer sign-in cannot target a dashboard owner")
 				}
 				userID = u.ID
 				return nil

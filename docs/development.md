@@ -38,7 +38,7 @@ DEV_AUTH=1 STATIC_DIR=../web/dist go run -tags dev ./cmd/dashboard serve
 Open <http://localhost:8090/auth/dev?as=director> (or `as=officer`, `as=leadership`) and press
 **Continue** to sign in without Discord (a GET only shows that confirmation; the button posts the
 sign-in form, so a link or image on another site cannot sign anyone in), or use the **Developer mode** panel that `/login` shows under the Discord button
-("Skip Discord and continue as" Leadership (owner) / Director / Officer). The panel appears
+("Skip Discord and continue as" Leadership / Director / Officer; never an owner account). The panel appears
 whenever the server answers `GET /auth/dev/info` with `authorized: true`, so the same static
 build looks like production everywhere else.
 
@@ -67,7 +67,9 @@ https://<host>/login?key=<KEY>                                  # show the Devel
 else lands on `/`). Every sign-in carries the key (the confirmation page and the panel post it
 with the form); nothing remembers it, so a signed-out visitor needs a keyed link again. A form
 posted from another site is refused (403), and `discord=<id>` sign-ins cannot target leadership
-or owner accounts. The key is never logged (request logs record the path only).
+or owner accounts. Dev login never signs in as a dashboard owner: `as=leadership` picks the oldest
+non-owner leadership account (creating a "Dev leadership" placeholder if there is none), and
+`user=<owner id>` is refused (403). The key is never logged (request logs record the path only).
 
 **Test deployments only.** Anyone holding the key can sign in as any role, including the owner.
 Never point a dev build at real data, and never deploy one to production.

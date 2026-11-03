@@ -500,18 +500,14 @@ func (c *Ctx) attachmentDownload() error {
 	if err != nil {
 		return notFoundErr("Record not found")
 	}
-	// Receipts carry card digits and addresses: the uploader, the request's requester and
-	// directors may open them, other officers may not.
-	if !auth.HasRole(u.Role, auth.RoleDirector) && a.UploadedBy != u.ID {
-		allowed := false
-		if a.RequestID != nil {
-			if r, err := q.RequestByID(ctx, *a.RequestID); err == nil && r.RequesterID == u.ID {
-				allowed = true
-			}
+	requesterID := ""
+	if a.RequestID != nil {
+		if r, err := q.RequestByID(ctx, *a.RequestID); err == nil {
+			requesterID = r.RequesterID
 		}
-		if !allowed {
-			return forbidden("Only the requester and directors may open receipts")
-		}
+	}
+	if !canOpenReceipt(u, a.UploadedBy, requesterID) {
+		return forbidden("Only the requester and directors may open receipts")
 	}
 	if a.Storage == "drive" {
 		if a.WebViewLink == nil {

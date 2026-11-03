@@ -79,12 +79,14 @@ test('a failed optimistic move rolls back with a visible error', async ({ page }
 });
 
 for (const theme of THEMES) {
-  for (const [role, user] of [['leadership', 'user-leadership'], ['director', 'user-director'], ['officer', 'user-ava'], ['officer', 'user-riley'], ['officer', 'user-priya']]) {
-    test(`design flows ${user} ${theme}`, async ({ page }, info) => {
+  // Leadership: whichever non-owner leadership account dev login picks (it never signs in as an owner).
+  for (const [role, user] of [['leadership', ''], ['director', 'user-director'], ['officer', 'user-ava'], ['officer', 'user-riley'], ['officer', 'user-priya']]) {
+    const who = user || role!;
+    test(`design flows ${who} ${theme}`, async ({ page }, info) => {
       const errors = watchErrors(page);
       await useTheme(page, theme);
-      await login(page, role!, user);
-      const title = `QA ${user} ${theme} ${info.project.name} ${Date.now()}`;
+      await login(page, role!, user || undefined);
+      const title = `QA ${who} ${theme} ${info.project.name} ${Date.now()}`;
       await page.goto('/design?new=1');
       await settle(page);
       const form = page.locator('[data-design-form]');
@@ -92,7 +94,7 @@ for (const theme of THEMES) {
       expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
       await form.getByLabel('Title', { exact: true }).fill(title);
       await form.getByLabel('Brief', { exact: true }).fill('Include date, place and RSVP.');
-      await page.screenshot({ path: `test-results/design-form-${user}-${info.project.name}-${theme}.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/design-form-${who}-${info.project.name}-${theme}.png`, fullPage: true });
       await form.getByRole('button', { name: 'Submit design request' }).click();
       const detail = page.locator('[data-design-detail]');
       await expect(detail).toBeVisible();
@@ -144,11 +146,12 @@ for (const theme of THEMES) {
         await actions.getByRole('button', { name: 'Update request' }).click();
         await expect(detail).toHaveAttribute('data-stage', 'new');
       }
-      await page.screenshot({ path: `test-results/design-detail-${user}-${info.project.name}-${theme}.png`, fullPage: true });
+      await page.screenshot({ path: `test-results/design-detail-${who}-${info.project.name}-${theme}.png`, fullPage: true });
       page.once('dialog', d => d.accept());
       await detail.getByRole('button', { name: 'Withdraw request' }).click();
       await expect(detail).toHaveCount(0);
-      const eventResponse = await page.request.post('/api/events', { data: { name: `${title} event`, startsAt: new Date(Date.now() + 9 * 86400000).toISOString(), hostUserId: user } });
+      const meId = ((await (await page.request.get('/api/me')).json()) as { user: { id: string } }).user.id;
+      const eventResponse = await page.request.post('/api/events', { data: { name: `${title} event`, startsAt: new Date(Date.now() + 9 * 86400000).toISOString(), hostUserId: meId } });
       expect(eventResponse.ok()).toBe(true);
       const eventId = (await eventResponse.json()).event.id;
       await page.goto('/design?view=board');
@@ -182,7 +185,7 @@ for (const theme of THEMES) {
       for (const view of ['board', 'list', 'mine']) {
         await page.locator(`[data-view="${view}"]`).click();
         expect(await overflow(page)).toEqual([]);
-        await page.screenshot({ path: `test-results/design-${view}-${user}-${info.project.name}-${theme}.png`, fullPage: true });
+        await page.screenshot({ path: `test-results/design-${view}-${who}-${info.project.name}-${theme}.png`, fullPage: true });
       }
       expect(errors).toEqual([]);
     });

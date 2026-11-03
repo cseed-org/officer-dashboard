@@ -315,6 +315,13 @@ func requestDetail(ctx context.Context, q *store.Queries, cat *catalog, r *store
 		return RequestDetail{}, err
 	}
 	d := RequestDetail{RequestCore: core, AllowedTransitions: []string{}}
+	// Every officer may read the request, but only those allowed to open its receipts get
+	// their links (a Drive webViewLink would otherwise sidestep GET /api/attachments/:id).
+	for i := range d.Attachments {
+		if !canOpenReceipt(viewer, d.Attachments[i].UploadedBy.ID, r.RequesterID) {
+			d.Attachments[i].URL = nil
+		}
+	}
 	d.CanEdit = viewer != nil && viewer.ID == r.RequesterID && r.Status == "draft"
 	for _, to := range purchases.NextStatuses(r.Type, r.Status) {
 		ok := false
@@ -392,4 +399,13 @@ func userSnapshot(u *store.User) map[string]any {
 
 func optOf[T any](f validate.Field[T]) store.Opt[T] {
 	return store.Opt[T]{V: f.V, Set: f.Set, Null: f.Null}
+}
+
+// canOpenReceipt: receipts carry card digits and addresses, so the uploader, the request's
+// requester and directors may open them; other officers see only the file's metadata.
+func canOpenReceipt(viewer *store.User, uploadedBy, requesterID string) bool {
+	if viewer == nil {
+		return false
+	}
+	return auth.HasRole(viewer.Role, auth.RoleDirector) || viewer.ID == uploadedBy || viewer.ID == requesterID
 }

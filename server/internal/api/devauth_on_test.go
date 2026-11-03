@@ -205,3 +205,47 @@ func TestDevInfo(t *testing.T) {
 		t.Error("info echoes the key")
 	}
 }
+
+// Dev login never signs in as an owner: as=leadership picks (or creates) a leadership
+// account without ownership, and user= cannot name an owner.
+func TestDevLoginNeverSignsInAsAnOwner(t *testing.T) {
+	e := newEnv(t, keyed)
+	r := e.devPost(url.Values{"as": {"leadership"}, "key": {testDevKey}}, anon)
+	if r.Status != 303 {
+		t.Fatalf("as=leadership → %d %s", r.Status, r.Raw)
+	}
+	me := e.get("/api/me", sessionFrom(e, r))
+	if me.str("user", "role") != "leadership" || me.at("user", "isOwner") == true || me.str("user", "id") == "user-leadership" {
+		t.Errorf("as=leadership signed in as %s", me.Raw)
+	}
+	// Again: the same non-owner account, not a new one each time.
+	again := e.get("/api/me", sessionFrom(e, e.devPost(url.Values{"as": {"leadership"}, "key": {testDevKey}}, anon)))
+	if again.str("user", "id") != me.str("user", "id") {
+		t.Errorf("second leadership login %s, first %s", again.str("user", "id"), me.str("user", "id"))
+	}
+	r = e.devPost(url.Values{"as": {"leadership"}, "user": {"user-leadership"}, "key": {testDevKey}}, anon)
+	expectStatus(t, "user= an owner", r, 403)
+	if len(setCookies(r)) != 0 {
+		t.Error("refused owner login set cookies")
+	}
+}
+
+// Owner controls still need e2e coverage, so a local dev server (no DEV_AUTH_KEY, which the
+// startup check confines to loopback) may sign in with as=owner. A keyed, shared test
+// deployment never can.
+func TestDevLoginAsOwnerOnlyOnALocalUnkeyedServer(t *testing.T) {
+	local := newEnv(t, func(c *Config) { c.DevAuth = true })
+	r := local.devPost(url.Values{"as": {"owner"}}, anon)
+	if r.Status != 303 {
+		t.Fatalf("local as=owner → %d %s", r.Status, r.Raw)
+	}
+	if me := local.get("/api/me", sessionFrom(local, r)); me.at("user", "isOwner") != true {
+		t.Errorf("as=owner signed in as %s", me.Raw)
+	}
+	shared := newEnv(t, keyed)
+	r = shared.devPost(url.Values{"as": {"owner"}, "key": {testDevKey}}, anon)
+	expectStatus(t, "keyed as=owner", r, 403)
+	if len(setCookies(r)) != 0 {
+		t.Error("refused owner login set cookies")
+	}
+}

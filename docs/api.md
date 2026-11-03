@@ -173,7 +173,9 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   buttons to show for the current user.
 - **No self-payout.** The requester never settles (`fulfilled`, `reimbursed`) or closes their
   own request, whatever their role (403); another director does. `allowedTransitions` leaves
-  those moves out for the requester.
+  those moves out for the requester. The same holds for the purchasing agent: a token never
+  sees or claims (409) a job for a request its creator filed, and a completion that arrives
+  anyway is held (`job.held_for_review`, 409) for another director to settle.
 - **Settlement ceiling.** A director may record at most the approved estimate plus the agent
   tolerance (`AGENT_SETTLEMENT_TOLERANCE_*`, default max(estimate × 1.10, estimate + $25));
   more answers 409 `over_tolerance` and leadership settles it. `PurchaseRequestDetail.maxSettlementCents`
@@ -247,8 +249,10 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 - **Rate limits.** Per client IP, `/auth/*` and the upload/import routes
   (`POST /api/requests/:id/attachments`, `POST /api/design-requests/:id/files`,
   `PUT /api/events/:id/cover`, `POST /api/events/import`, `POST /api/ingest/luma`) allow 30
-  requests a minute each, then answer 429. Behind a reverse proxy on loopback the client is the
-  last `X-Forwarded-For` hop; direct loopback requests (local tools, tests) are not limited.
+  requests a minute each, then answer 429. Behind a trusted proxy (`TRUSTED_PROXIES`, loopback by
+  default) the client is the right-most `X-Forwarded-For` hop that is not itself a trusted proxy;
+  IPv6 clients share a budget per /64; each limiter tracks at most 10,000 clients. Direct loopback
+  requests without the header (local tools, tests) are not limited.
 - **Audit.** Every state-changing call writes an `audit_log` row (append-only).
 
 ## Pages
@@ -282,7 +286,9 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   `unrestrictedEndingCents`; `releasesCents` is informational and is not subtracted a
   second time from the combined fund roll-forward.
 - `GET /api/attachments/:id` downloads a local receipt or redirects to its Drive link, for
-  the uploader, the request's requester and directors only (403 for other officers). Production uploads return 503 when Drive is unconfigured.
+  the uploader, the request's requester and directors only (403 for other officers). For other
+  officers, `PurchaseRequestDetail.attachments[].url` is `null` (the metadata stays visible), so
+  a Drive link is never handed out either. Production uploads return 503 when Drive is unconfigured.
 - A restricted-fund settlement posts its expense plus an atomic restriction release.
   Expenses appear without donor restriction; grant attribution stays on the original fund.
 - Reimbursement `reimbursed→closed` records payment (debit payable, credit checking).

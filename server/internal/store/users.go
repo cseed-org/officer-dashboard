@@ -102,9 +102,10 @@ func (q *Queries) Users(ctx context.Context) ([]User, error) {
 	return out, rows.Err()
 }
 
-// FirstActiveUserWithRole is the dev-login pick: oldest active user with the role.
+// FirstActiveUserWithRole is the dev-login pick: oldest active user with the role who is not
+// a dashboard owner (dev login never grants ownership).
 func (q *Queries) FirstActiveUserWithRole(ctx context.Context, role string) (*User, error) {
-	u, err := scanUser(q.q.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE role = ? AND active = 1 ORDER BY created_at, id LIMIT 1`, role))
+	u, err := scanUser(q.q.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE role = ? AND active = 1 AND is_owner = 0 ORDER BY created_at, id LIMIT 1`, role))
 	return u, notFound(err)
 }
 
