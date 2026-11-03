@@ -9,6 +9,10 @@ import (
 
 const DefaultTimezone = "America/Los_Angeles"
 
+const DefaultWebsiteURL = "https://cseed.co"
+const DefaultNotionURL = "https://app.notion.com/p/cseed/cseed-8c884a7f9dbe4bffa58718820e00cc10"
+const DefaultDriveURL = "https://drive.google.com/drive/folders/0ABwfOblCw9EvUk9PVA?dmr=1&ec=wgc-drive-hero-goto"
+
 type ClubSettings struct {
 	WebsiteURL   string `json:"websiteUrl"`
 	NotionURL    string `json:"notionUrl"`
@@ -16,6 +20,21 @@ type ClubSettings struct {
 	ClubTimezone string `json:"clubTimezone"`
 	Location     string `json:"location"`
 }
+
+// Blank settings use the club-supplied defaults; leadership can replace each URL.
+func (s ClubSettings) WithDefaultLinks() ClubSettings {
+	if s.WebsiteURL == "" {
+		s.WebsiteURL = DefaultWebsiteURL
+	}
+	if s.NotionURL == "" {
+		s.NotionURL = DefaultNotionURL
+	}
+	if s.DriveURL == "" {
+		s.DriveURL = DefaultDriveURL
+	}
+	return s
+}
+
 type TimezonePref struct {
 	Mode string `json:"timezoneMode"`
 	Zone string `json:"timezone"`
@@ -24,7 +43,7 @@ type TimezonePref struct {
 func (q *Queries) ClubSettings(ctx context.Context) (ClubSettings, error) {
 	var s ClubSettings
 	err := q.q.QueryRowContext(ctx, `SELECT club_timezone,location,website_url,notion_url,drive_url FROM club_settings WHERE id=1`).Scan(&s.ClubTimezone, &s.Location, &s.WebsiteURL, &s.NotionURL, &s.DriveURL)
-	return s, err
+	return s.WithDefaultLinks(), err
 }
 func (q *Queries) SaveClubSettings(ctx context.Context, s ClubSettings) error {
 	return q.Exec(ctx, `UPDATE club_settings SET club_timezone=?,location=?,website_url=?,notion_url=?,drive_url=? WHERE id=1`, s.ClubTimezone, s.Location, s.WebsiteURL, s.NotionURL, s.DriveURL)

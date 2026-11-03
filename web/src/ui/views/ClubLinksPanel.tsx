@@ -21,7 +21,7 @@ export function ClubLinksPanel({ me }: { me: CurrentUser }) {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   return <Section title="club links" id="club-links">
-    <p class="small muted">Shared on everyone’s Links widget. Leadership manages these URLs.</p>
+    <p class="small muted">Shared on everyone’s Links widget. Leadership manages these URLs. Leave a field blank to restore its club default.</p>
     {error && <p role="alert">{error} <button class="btn" onClick={load}>Retry</button></p>}
     {settings && (me.role === 'leadership' || me.isOwner ? <form class="form" onSubmit={save}>
       {([['websiteUrl', 'Club website'], ['notionUrl', 'Notion'], ['driveUrl', 'Google Drive']] as const).map(([key, label]) => <label class="field" key={key}>{label}<input class="input" type="url" placeholder="https://… (optional)" value={settings[key]} maxLength={2048} disabled={busy} onInput={e => setSettings({ ...settings, [key]: e.currentTarget.value })} /></label>)}

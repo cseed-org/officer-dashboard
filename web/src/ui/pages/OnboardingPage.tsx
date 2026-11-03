@@ -180,7 +180,7 @@ export default function OnboardingPage() {
     const onPop = async (e: PopStateEvent) => {
       // After setup is done, Back leaves for Home instead of replaying the steps.
       if (done.current) {
-        location.replace('/');
+        location.replace('/?tutorial=onboarding');
         return;
       }
       if (restoring.current) {

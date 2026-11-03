@@ -72,6 +72,7 @@ func (c *Ctx) clubSettingsPut() error {
 		if drive.Set {
 			s.DriveURL = drive.V
 		}
+		s = s.WithDefaultLinks()
 		if err = q.SaveClubSettings(ctx, s); err != nil {
 			return err
 		}

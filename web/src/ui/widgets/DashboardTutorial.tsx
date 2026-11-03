@@ -26,7 +26,7 @@ export default function DashboardTutorial({ onPreview }: { onPreview: (editing: 
 
   useEffect(() => {
     let alive = true;
-    const replay = new URLSearchParams(location.search).has('tutorial');
+    const replay = new URLSearchParams(location.search).get('tutorial') === '1';
     api('prefsGet').then(p => { if (alive && (replay || !p.dashboardTutorialSeen)) setActive(true); }).catch(() => {});
     return () => { alive = false; };
   }, []);

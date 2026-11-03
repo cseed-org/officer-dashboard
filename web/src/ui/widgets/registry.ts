@@ -21,10 +21,10 @@ export const widgetRegistry: WidgetDef[] = [
   { id: 'kpi-reflection', title: 'Reflection rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
   { id: 'kpi-budget', title: 'Budget remaining', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
   { id: 'kpi-pending', title: 'Pending requests', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'my-action', title: 'My actions', sizes: ['2x2', '4x2'], size: '2x2' },
+  { id: 'my-action', title: 'My actions', sizes: ['2x1', '2x2', '4x2'], size: '2x1' },
   { id: 'recent-events', title: 'Recent events', sizes: ['2x2', '4x2'], size: '2x2' },
   { id: 'budget', title: 'Budget vs actual', sizes: ['2x2', '4x2'], size: '2x2' },
-  { id: 'activity', title: 'Activity', sizes: ['1x2', '2x2', '4x2'], size: '1x2' },
+  { id: 'activity', title: 'Activity', sizes: ['2x1', '1x2', '2x2', '4x2'], size: '2x1' },
   { id: 'web-analytics', title: 'Web Analytics', sizes: ['1x1', '2x2', '4x2'], size: '1x1' },
   { id: 'traffic-security', title: 'Traffic & security', sizes: ['1x1', '2x2'], size: '1x1' },
   { id: 'performance', title: 'Performance', sizes: ['1x1', '2x2'], size: '1x1' },
@@ -36,19 +36,19 @@ export const widgetRegistry: WidgetDef[] = [
 export const KPI_GROUP_ID = 'kpis';
 export const kpiIds = widgetRegistry.filter((w) => w.group === 'kpis').map((w) => w.id);
 
-/** Compact defaults; pairs up cleanly on two columns. */
+/** Twenty blocks: a complete 4×5 rectangle, or ten full rows on phone. */
 export const defaultWidgetLayout: { id: string; size: BlockSize }[] = [
   { id: 'links', size: '2x1' },
   { id: 'kpi-upcoming', size: '1x1' },
   { id: 'kpi-checkin', size: '1x1' },
   { id: 'kpi-reflection', size: '1x1' },
   { id: 'kpi-budget', size: '1x1' },
-  { id: 'my-action', size: '2x2' },
-  { id: 'recent-events', size: '2x2' },
-  { id: 'budget', size: '2x2' },
-  { id: 'activity', size: '1x2' },
   { id: 'kpi-pending', size: '1x1' },
   { id: 'web-analytics', size: '1x1' },
+  { id: 'recent-events', size: '2x2' },
+  { id: 'budget', size: '2x2' },
+  { id: 'my-action', size: '2x1' },
+  { id: 'activity', size: '2x1' },
 ];
 
 export const widgetDef = (id: string) => widgetRegistry.find((w) => w.id === id);

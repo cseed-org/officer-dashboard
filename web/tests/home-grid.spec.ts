@@ -317,7 +317,7 @@ test('Coachmarks spotlight real controls and discard their temporary edit previe
   expect(await savedLayout(page)).toEqual(before);
 });
 
-test('Leadership sees large Add link targets, configured links open in new tabs', async ({ page }) => {
+test('Leadership overrides club defaults; blank values restore the supplied URLs', async ({ page }) => {
   await devLogin(page, 'leadership');
   const settings = await (await page.request.get('/api/club/settings')).json();
   try {
@@ -327,7 +327,47 @@ test('Leadership sees large Add link targets, configured links open in new tabs'
     const site = links.getByRole('link', { name: /Club website/ });
     await expect(site).toHaveAttribute('href', 'https://example.org/club');
     await expect(site).toHaveAttribute('target', '_blank');
-    await expect(links.getByRole('link', { name: /Add link/ })).toHaveCount(2);
-    await expect(links.getByRole('link', { name: /Notion/ })).toHaveAttribute('href', '/settings#club-links');
+    await page.context().route('https://example.org/club', route => route.fulfill({ contentType: 'text/html', body: '<h1>Club destination</h1>' }));
+    const opened = page.waitForEvent('popup');
+    await site.click();
+    const destination = await opened;
+    await expect(destination).toHaveURL('https://example.org/club');
+    await expect(destination.getByRole('heading', { name: 'Club destination' })).toBeVisible();
+    await destination.close();
+    await expect(links.getByRole('link', { name: /Add link/ })).toHaveCount(0);
+    await expect(links.getByRole('link', { name: /Notion/ })).toHaveAttribute('href', 'https://app.notion.com/p/cseed/cseed-8c884a7f9dbe4bffa58718820e00cc10');
+    await expect(links.getByRole('link', { name: /Google Drive/ })).toHaveAttribute('href', 'https://drive.google.com/drive/folders/0ABwfOblCw9EvUk9PVA?dmr=1&ec=wgc-drive-hero-goto');
   } finally { await page.request.put('/api/club/settings', { data: settings }); }
+});
+
+
+test('Default widgets fill a complete rectangle without an oversized actions card', async ({ page }) => {
+  await openHome(page);
+  await expect(widget(page, 'my-action')).toHaveAttribute('data-size', '2x1');
+  await expect(widget(page, 'activity')).toHaveAttribute('data-size', '2x1');
+  await expect(widget(page, 'recent-events').locator('tbody tr')).toHaveCount(3);
+  const box = (await grid(page).boundingBox())!;
+  const rects = await grid(page).locator(':scope > li[data-widget]').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x:r.x, y:r.y, right:r.right, bottom:r.bottom, area:r.width*r.height }; }));
+  const leftBottom = Math.max(...rects.filter(r => Math.abs(r.x-box.x)<2).map(r=>r.bottom));
+  const rightBottom = Math.max(...rects.filter(r => Math.abs(r.right-box.x-box.width)<2).map(r=>r.bottom));
+  expect(Math.abs(leftBottom-rightBottom)).toBeLessThan(2);
+  // Every row across the grid must be occupied, apart from the grid gap between cells.
+  const gap = await grid(page).evaluate(el => parseFloat(getComputedStyle(el).columnGap));
+  for(let y=box.y+2; y<box.y+box.height-2; y+=8) {
+    const row = rects.filter(r=>r.y<=y && r.bottom>=y).sort((a,b)=>a.x-b.x);
+    if (!row.length) continue;
+    expect(Math.abs(row[0]!.x-box.x)).toBeLessThan(2);
+    expect(Math.abs(row.at(-1)!.right-box.x-box.width)).toBeLessThan(2);
+    for(let i=1;i<row.length;i++) expect(row[i]!.x-row[i-1]!.right).toBeLessThanOrEqual(gap+2);
+  }
+});
+
+test('An onboarding landing starts the tour once, without forcing a replay', async ({ page }) => {
+  await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: false } });
+  await page.goto('/?tutorial=onboarding');
+  await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
+  await page.getByRole('button', { name: 'Skip tour' }).click();
+  await page.goto('/?tutorial=onboarding');
+  await expect(page.getByRole('button', { name: 'Edit home' })).toBeEnabled();
+  await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
 });

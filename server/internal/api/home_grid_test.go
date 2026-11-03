@@ -1,6 +1,7 @@
 package api
 
 import (
+	"officerdashboard/internal/store"
 	"strings"
 	"testing"
 )
@@ -48,6 +49,10 @@ func TestDashboardTutorialAndLinks(t *testing.T) {
 	if !strings.Contains(string(other.Raw), `"dashboardTutorialSeen":false`) {
 		t.Fatal("tutorial status leaked", string(other.Raw))
 	}
+	defaults := e.mustOK(e.get("/api/club/settings", e.officer()))
+	if defaults.str("websiteUrl") != store.DefaultWebsiteURL || defaults.str("notionUrl") != store.DefaultNotionURL || defaults.str("driveUrl") != store.DefaultDriveURL {
+		t.Fatal("missing club defaults", string(defaults.Raw))
+	}
 	body := map[string]any{"clubTimezone": "UTC", "location": "Club", "websiteUrl": "https://example.org/club", "notionUrl": "", "driveUrl": ""}
 	expectStatus(t, "officer cannot change links", e.do("PUT", "/api/club/settings", body, e.officer()), 403)
 	e.mustOK(e.do("PUT", "/api/club/settings", body, e.as("user-leadership")))
@@ -55,6 +60,14 @@ func TestDashboardTutorialAndLinks(t *testing.T) {
 	links := e.mustOK(e.get("/api/club/settings", e.officer()))
 	if links.str("websiteUrl") != "https://example.org/club" {
 		t.Fatal("timezone update erased links", string(links.Raw))
+	}
+	if links.str("notionUrl") != store.DefaultNotionURL || links.str("driveUrl") != store.DefaultDriveURL {
+		t.Fatal("blank links must use defaults", string(links.Raw))
+	}
+	body["websiteUrl"] = ""
+	reset := e.mustOK(e.do("PUT", "/api/club/settings", body, e.as("user-leadership")))
+	if reset.str("websiteUrl") != store.DefaultWebsiteURL {
+		t.Fatal("clear must restore default", string(reset.Raw))
 	}
 	for _, bad := range []string{"javascript:alert(1)", "/relative", "https://user:pass@example.org", "https:///missing-host"} {
 		body["websiteUrl"] = bad

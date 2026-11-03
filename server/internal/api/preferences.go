@@ -15,9 +15,16 @@ import (
 // Sizes are W×H Home grid blocks; the Links default uses a compact two-block footprint.
 var defaultWidgets = []store.WidgetPlacement{
 	{ID: "links", Size: "2x1"},
-	{ID: "kpi-upcoming", Size: "1x1"}, {ID: "kpi-checkin", Size: "1x1"}, {ID: "kpi-reflection", Size: "1x1"}, {ID: "kpi-budget", Size: "1x1"},
-	{ID: "my-action", Size: "2x2"}, {ID: "recent-events", Size: "2x2"},
-	{ID: "budget", Size: "2x2"}, {ID: "activity", Size: "1x2"}, {ID: "kpi-pending", Size: "1x1"}, {ID: "web-analytics", Size: "1x1"},
+	{ID: "kpi-upcoming", Size: "1x1"},
+	{ID: "kpi-checkin", Size: "1x1"},
+	{ID: "kpi-reflection", Size: "1x1"},
+	{ID: "kpi-budget", Size: "1x1"},
+	{ID: "kpi-pending", Size: "1x1"},
+	{ID: "web-analytics", Size: "1x1"},
+	{ID: "recent-events", Size: "2x2"},
+	{ID: "budget", Size: "2x2"},
+	{ID: "my-action", Size: "2x1"},
+	{ID: "activity", Size: "2x1"},
 }
 
 // widgetSizes lists V0.4 block sizes, then the V0.3 S/M/L sizes. Layouts saved before V0.4 keep
