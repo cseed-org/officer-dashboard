@@ -1,5 +1,7 @@
 import { defineConfig } from 'astro/config';
 import preact from '@astrojs/preact';
+import modulepreload from './integrations/modulepreload.mjs';
+import endpoints from './integrations/endpoints.mjs';
 
 /**
  * Static build (web/dist) served by the Go backend. All data comes from /api/* at runtime.
@@ -28,7 +30,7 @@ const proxy = {
 
 export default defineConfig({
   output: 'static',
-  integrations: [preact()],
+  integrations: [endpoints(), preact(), modulepreload()],
   // /events and /events/ both resolve; the Go server serves <path>/index.html.
   trailingSlash: 'ignore',
   build: { format: 'directory' },

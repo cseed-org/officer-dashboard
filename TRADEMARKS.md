@@ -11,6 +11,7 @@ These files under `web/public/` are reserved brand assets:
 
 - `images/cseed-logo.png`
 - `images/cseed-logo-white.png`
+- `images/cseed-wordmark.png` and `images/cseed-wordmark-white.png` (the same logos at 2× display size, 156×36)
 - `favicon.svg`
 - `favicon.ico`
 - `apple-touch-icon.png`
