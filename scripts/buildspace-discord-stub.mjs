@@ -2,6 +2,8 @@
  * Adapter stub for the existing Discord bot. This module opens no Discord connection.
  * Call from a weekly-check-in slash command or a dedicated-channel message handler.
  * Store DASHBOARD_URL and BUILDSPACE_INGEST_TOKEN in the bot's server environment.
+ * `date` is the check-in date in the club time zone. Resolves to `{ok, week: {start, due}}`,
+ * the check-in week the dashboard assigned under its configurable due day.
  */
 export async function postWeeklyCheckIn(
   { messageId, discordId, body, date, needsHelp = false },
