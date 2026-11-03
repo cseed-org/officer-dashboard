@@ -1,6 +1,7 @@
 package api
 
 import (
+	"officerdashboard/internal/store"
 	"strings"
 	"testing"
 )
@@ -29,5 +30,47 @@ func TestHomeGridBlockSizes(t *testing.T) {
 	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"widgetLayout": []any{map[string]any{"id": "kpis", "size": "L"}}}, e.officer()))
 	for _, bad := range []string{"3x1", "2x3", "XL", "1X1", ""} {
 		expectStatus(t, "size "+bad, e.do("PUT", "/api/me/prefs", map[string]any{"widgetLayout": []any{map[string]any{"id": "budget", "size": bad}}}, e.officer()), 400)
+	}
+}
+
+func TestDashboardTutorialAndLinks(t *testing.T) {
+	e := newEnv(t)
+	initial := e.mustOK(e.get("/api/me/prefs", e.officer()))
+	if !strings.Contains(string(initial.Raw), `"dashboardTutorialSeen":false`) || !strings.Contains(string(initial.Raw), `"id":"links","size":"2x1"`) {
+		t.Fatal(string(initial.Raw))
+	}
+	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"dashboardTutorialSeen": true}, e.officer()))
+	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"timezoneMode": "club"}, e.officer()))
+	got := e.mustOK(e.get("/api/me/prefs", e.officer()))
+	if !strings.Contains(string(got.Raw), `"dashboardTutorialSeen":true`) || !strings.Contains(string(got.Raw), `"id":"links","size":"2x1"`) {
+		t.Fatal(string(got.Raw))
+	}
+	other := e.mustOK(e.get("/api/me/prefs", e.director()))
+	if !strings.Contains(string(other.Raw), `"dashboardTutorialSeen":false`) {
+		t.Fatal("tutorial status leaked", string(other.Raw))
+	}
+	defaults := e.mustOK(e.get("/api/club/settings", e.officer()))
+	if defaults.str("websiteUrl") != store.DefaultWebsiteURL || defaults.str("notionUrl") != store.DefaultNotionURL || defaults.str("driveUrl") != store.DefaultDriveURL {
+		t.Fatal("missing club defaults", string(defaults.Raw))
+	}
+	body := map[string]any{"clubTimezone": "UTC", "location": "Club", "websiteUrl": "https://example.org/club", "notionUrl": "", "driveUrl": ""}
+	expectStatus(t, "officer cannot change links", e.do("PUT", "/api/club/settings", body, e.officer()), 403)
+	e.mustOK(e.do("PUT", "/api/club/settings", body, e.as("user-leadership")))
+	e.mustOK(e.do("PUT", "/api/club/settings", map[string]any{"clubTimezone": "UTC", "location": "New club"}, e.as("user-leadership")))
+	links := e.mustOK(e.get("/api/club/settings", e.officer()))
+	if links.str("websiteUrl") != "https://example.org/club" {
+		t.Fatal("timezone update erased links", string(links.Raw))
+	}
+	if links.str("notionUrl") != store.DefaultNotionURL || links.str("driveUrl") != store.DefaultDriveURL {
+		t.Fatal("blank links must use defaults", string(links.Raw))
+	}
+	body["websiteUrl"] = ""
+	reset := e.mustOK(e.do("PUT", "/api/club/settings", body, e.as("user-leadership")))
+	if reset.str("websiteUrl") != store.DefaultWebsiteURL {
+		t.Fatal("clear must restore default", string(reset.Raw))
+	}
+	for _, bad := range []string{"javascript:alert(1)", "/relative", "https://user:pass@example.org", "https:///missing-host"} {
+		body["websiteUrl"] = bad
+		expectStatus(t, "unsafe link", e.do("PUT", "/api/club/settings", body, e.as("user-leadership")), 400)
 	}
 }

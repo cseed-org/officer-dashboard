@@ -1,3 +1,4 @@
+import LinksWidget from '../widgets/LinksWidget';
 import CloudflareWidget, { cloudflareIds } from '../widgets/CloudflareWidget';
 import WidgetGrid from '../widgets/WidgetGrid';
 import { kpiIds, widgetDef, type BlockSize } from '../widgets/registry';
@@ -79,10 +80,11 @@ export default function HomeView({ me }: { me: CurrentUser }) {
         if (cloudflareIds.includes(id)) return <CloudflareWidget id={id} size={size} state={cloudflare} />;
         if (kpiIds.includes(id)) return stat(id);
         switch (id) {
+          case 'links': return <LinksWidget me={me} />;
           case 'my-action':
             return (
               <Block id="my-action" title={director ? 'awaiting your approval' : 'my open requests'} action={<a href={href.newRequest()}>new request →</a>}>
-                <MyAction me={me} />
+                <MyAction me={me} limit={size === '2x1' ? 2 : 6} />
               </Block>
             );
           case 'recent-events':
@@ -95,7 +97,7 @@ export default function HomeView({ me }: { me: CurrentUser }) {
                         Events appear here once a Luma guest list is imported.
                       </Empty>
                     ) : (
-                      <DataTable rows={d.recentEvents.slice(0, 5)} columns={eventColumns(Date.now(), { compact: !wide(size) })} rowKey={(e) => e.id} caption="Recent events" dense />
+                      <DataTable rows={d.recentEvents.slice(0, wide(size) ? 5 : 3)} columns={eventColumns(Date.now(), { compact: !wide(size) })} rowKey={(e) => e.id} caption="Recent events" dense />
                     )
                   }
                 </Async>
@@ -110,7 +112,7 @@ export default function HomeView({ me }: { me: CurrentUser }) {
           case 'activity':
             return (
               <Block id="activity" title={director ? 'recent activity' : 'latest requests'} action={director ? <a href={href.admin('audit')}>audit log →</a> : <a href={href.requests({ scope: 'all' })}>all requests →</a>}>
-                {director ? <AuditFeed limit={size === '1x2' ? 5 : 8} /> : <RequestFeed limit={size === '1x2' ? 4 : 6} />}
+                {director ? <AuditFeed limit={size === '2x1' ? 2 : size === '1x2' ? 5 : 8} /> : <RequestFeed limit={size === '2x1' ? 2 : size === '1x2' ? 4 : 6} />}
               </Block>
             );
         }
@@ -144,13 +146,13 @@ function RequestList({ items, showRequester }: { items: PurchaseRequestListItem[
   );
 }
 
-function MyAction({ me }: { me: CurrentUser }) {
+function MyAction({ me, limit }: { me: CurrentUser; limit: number }) {
   const director = me.role !== 'officer';
-  const state = useApi('requestsList', { query: director ? { scope: 'all', status: 'pending', limit: 6 } : { scope: 'mine', limit: 50 } });
+  const state = useApi('requestsList', { query: director ? { scope: 'all', status: 'pending', limit } : { scope: 'mine', limit: 50 } });
   return (
     <Async state={state} loading={<Loading rows={3} label="Loading requests" />}>
       {(d) => {
-        const items = director ? d.items : d.items.filter((r) => OPEN.includes(r.status)).slice(0, 6);
+        const items = (director ? d.items : d.items.filter((r) => OPEN.includes(r.status))).slice(0, limit);
         if (!items.length)
           return director ? (
             <Empty title="Nothing to approve">New requests from officers land here.</Empty>
@@ -162,7 +164,7 @@ function MyAction({ me }: { me: CurrentUser }) {
         return (
           <>
             <RequestList items={items} showRequester={director} />
-            {director && d.items.length >= 6 && (
+            {director && d.items.length >= limit && (
               <p class="small">
                 <a href={href.requests({ scope: 'all', status: 'pending' })}>see every pending request →</a>
               </p>

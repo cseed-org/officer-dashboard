@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net/url"
 	"officerdashboard/internal/store"
 	"officerdashboard/internal/validate"
 	"strings"
@@ -31,7 +32,19 @@ func (c *Ctx) clubSettingsPut() error {
 		return err
 	}
 	var s store.ClubSettings
+	var website, notion, drive validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
+		website = r.Str("websiteUrl", validate.S{Max: 2048, Trim: true})
+		notion = r.Str("notionUrl", validate.S{Max: 2048, Trim: true})
+		drive = r.Str("driveUrl", validate.S{Max: 2048, Trim: true})
+		for key, field := range map[string]validate.Field[string]{"websiteUrl": website, "notionUrl": notion, "driveUrl": drive} {
+			if field.V != "" {
+				u, err := url.Parse(field.V)
+				if err != nil || u.Hostname() == "" || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil {
+					r.Issues.Add(key, "Use an http or https URL")
+				}
+			}
+		}
 		s.ClubTimezone = r.Str("clubTimezone", validate.S{Req: true, Max: 100}).V
 		s.Location = r.Str("location", validate.S{Req: true, Trim: true, Min: 1, Max: 200}).V
 		if !validTimezone(s.ClubTimezone) {
@@ -49,6 +62,17 @@ func (c *Ctx) clubSettingsPut() error {
 		if err != nil {
 			return err
 		}
+		s.WebsiteURL, s.NotionURL, s.DriveURL = prior.WebsiteURL, prior.NotionURL, prior.DriveURL
+		if website.Set {
+			s.WebsiteURL = website.V
+		}
+		if notion.Set {
+			s.NotionURL = notion.V
+		}
+		if drive.Set {
+			s.DriveURL = drive.V
+		}
+		s = s.WithDefaultLinks()
 		if err = q.SaveClubSettings(ctx, s); err != nil {
 			return err
 		}

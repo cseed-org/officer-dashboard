@@ -1,3 +1,4 @@
+import { ClubLinksPanel } from './ClubLinksPanel';
 import { TimezonePanel } from './TimezonePanel';
 import { useState } from 'preact/hooks';
 import type { CurrentUser } from '../../lib/contracts';
@@ -74,6 +75,8 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
       </Section>
 
       <TimezonePanel me={me} />
+      <ClubLinksPanel me={me} />
+      <Section title="dashboard" id="dashboard"><a class="btn" href="/?tutorial=1">Replay dashboard tutorial</a></Section>
 
       <Section title="your profile" id="profile">
         <div class="profile">

@@ -998,11 +998,12 @@ export type WidgetPlacement = z.infer<typeof WidgetPlacement>;
 export const IanaTimezone = z.string().max(100).refine((v) => {
   try { return v !== 'Local' && (v === 'UTC' || v.includes('/')) && !!new Intl.DateTimeFormat('en-US', { timeZone: v }); } catch { return false; }
 }, 'Choose an IANA time zone');
-export const ClubSettings = z.object({ clubTimezone: IanaTimezone, location: z.string().trim().min(1).max(200) });
+const ClubLink = z.string().max(2048).refine(v => { if (!v) return true; try { const u = new URL(v); return ['http:', 'https:'].includes(u.protocol) && !!u.hostname && !u.username && !u.password; } catch { return false; } }, 'Use an http or https URL').default('');
+export const ClubSettings = z.object({ websiteUrl: ClubLink, notionUrl: ClubLink, driveUrl: ClubLink, clubTimezone: IanaTimezone, location: z.string().trim().min(1).max(200) });
 export type ClubSettings = z.infer<typeof ClubSettings>;
 export const TimezoneMode = z.enum(['club', 'auto', 'manual']);
-export const WidgetPrefs = z.object({ timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
-export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined, 'No preferences supplied');
+export const WidgetPrefs = z.object({ dashboardTutorialSeen: z.boolean().default(false), timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
+export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).extend({ dashboardTutorialSeen: z.boolean() }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined || p.dashboardTutorialSeen !== undefined, 'No preferences supplied');
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
 export type CalendarEmail = z.infer<typeof CalendarEmail>;

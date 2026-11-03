@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { devKeyParam, devLogin, openDialog, settle, watchErrors } from './helpers';
+import { devLogin, devSignIn, openDialog, settle, watchErrors } from './helpers';
 
 /**
  * V0.4 onboarding: the server gate, the correction loop (invitee → inviter edits → Confirm
@@ -27,7 +27,7 @@ async function signOut(page: Page) {
 }
 
 async function signInAs(page: Page, id: string) {
-  await page.goto(`/auth/dev?discord=${id}${devKeyParam}`);
+  await devSignIn(page, { discord: id });
   await expect(page).toHaveURL(/\/onboarding$/);
   await settle(page);
 }
@@ -138,8 +138,12 @@ test('gate, correction, inviter edit, history and finish', async ({ page, browse
   await expect(page.locator('[data-summary]')).toContainText('Phone and birthday saved');
   // After setup, Back leaves for Home instead of replaying the steps.
   await page.goBack();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/\?tutorial=onboarding$/);
   await settle(page);
+  await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
+  await page.getByRole('button', { name: 'Skip tour' }).click();
+  await page.reload();
+  await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
   expect((await page.request.get('/api/events')).status()).toBe(200);
   expect(errors.filter((e) => !/\/api\/events → 403$/.test(e))).toEqual([]);
 });
@@ -178,4 +182,25 @@ test('an invite link in a browser where someone else is signed in', async ({ pag
   await expect(page.locator('[data-login]')).toBeVisible();
   await expect(page.locator('[data-invite-note]')).toBeVisible();
   expect((await page.request.get('/api/me')).status()).toBe(401);
+});
+
+test('final Done lands on Home and starts the dashboard tour once', async ({ page }) => {
+  const id = discordId();
+  await inviteAsDirector(page, 'Tour merge check', id);
+  await signInAs(page, id);
+  const profile = await page.request.put('/api/me/profile', { data: { phone: '+1 206 555 0199', birthday: '11-03' } });
+  expect(profile.ok()).toBe(true);
+  expect((await page.request.put('/api/me/onboarding', { data: { step: 5 } })).ok()).toBe(true);
+  await page.goto('/onboarding');
+  await expect(page.locator('.onb[data-step="5"]')).toBeVisible();
+  await next(page).click();
+  await expect(page.locator('[data-summary]')).toBeVisible();
+  await next(page).click();
+  await expect(page).toHaveURL(/\/\?tutorial=onboarding$/);
+  await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
+  await page.getByRole('button', { name: 'Skip tour' }).click();
+  expect((await (await page.request.get('/api/me/prefs')).json()).dashboardTutorialSeen).toBe(true);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Edit home' })).toBeEnabled();
+  await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
 });

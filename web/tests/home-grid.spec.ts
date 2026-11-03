@@ -22,6 +22,7 @@ const grid = (page: Page) => page.getByRole('list', { name: 'Home widgets' });
 const order = (page: Page) => grid(page).locator(':scope > li[data-widget]').evaluateAll((els) => els.map((e) => e.getAttribute('data-widget')));
 const widget = (page: Page, id: string) => grid(page).locator(`:scope > li[data-widget="${id}"]`);
 async function openHome(page: Page, layout: P[] = defaultWidgetLayout) {
+  await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true } });
   await putLayout(page, layout);
   await page.goto('/');
   await expect(grid(page).locator(':scope > li[data-widget]').first()).toBeVisible();
@@ -72,24 +73,37 @@ for (const theme of THEMES) {
   });
 }
 
-test('Default layout packs into a full rectangle: no ragged gaps', async ({ page }, info) => {
+test('Links defaults to a compact card with top-aligned rows', async ({ page }) => {
   await openHome(page);
-  const box = await grid(page).boundingBox();
-  const rects = await grid(page).locator(':scope > li[data-widget]').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right, b: r.bottom })));
-  const bottomAt = (edge: 'l' | 'r', x: number) => Math.max(...rects.filter((r) => Math.abs(r[edge] - x) < 2).map((r) => r.b));
-  // The last block in the left column ends level with the last block in the right column.
-  expect(Math.abs(bottomAt('l', box!.x) - bottomAt('r', box!.x + box!.width))).toBeLessThan(2);
+  const links = widget(page, 'links');
+  await expect(links).toHaveAttribute('data-size', '2x1');
+  const rows = links.locator('.club-link');
+  await expect(rows).toHaveCount(3);
+  const card = (await links.boundingBox())!;
+  const first = (await rows.first().boundingBox())!;
+  expect(first.y - card.y).toBeLessThan(55);
+  expect(first.height).toBeGreaterThanOrEqual(44);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  await expect(links.locator('.tile-head')).not.toBeVisible();
+  const grip = (await links.locator('.blk-handle').boundingBox())!;
+  const title = (await links.locator('.blk-name').boundingBox())!;
+  expect(title.x).toBeGreaterThanOrEqual(grip.x + grip.width);
+  const corner = (await links.locator('.blk-resize--both').boundingBox())!;
+  const action = (await links.locator('.club-link-action').last().boundingBox())!;
+  expect(action.x + action.width).toBeLessThanOrEqual(corner.x);
 });
 
 test('Resize, remove and add widgets; Done persists, Cancel discards', async ({ page }) => {
   await openHome(page);
   await page.getByRole('button', { name: 'Edit home' }).click();
-  // Only the sizes a widget supports are offered.
-  const sizes = page.getByRole('group', { name: 'Size of Upcoming events' }).getByRole('button');
-  await expect(sizes).toHaveText(['1×1', '2×1']);
-  await page.getByRole('group', { name: 'Size of Upcoming events' }).getByRole('button', { name: '2 by 1 blocks' }).click();
+  // Resize from a focused grip; only supported sizes are reached.
+  await page.getByRole('button', { name: /^Move Upcoming events/ }).focus();
+  await page.keyboard.press('Shift+ArrowRight');
   await expect(widget(page, 'kpi-upcoming')).toHaveAttribute('data-size', '2x1');
-  await page.getByRole('group', { name: 'Size of Recent events' }).getByRole('button', { name: '4 by 2 blocks' }).click();
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(widget(page, 'kpi-upcoming')).toHaveAttribute('data-size', '2x1');
+  await page.getByRole('button', { name: /^Move Recent events/ }).focus();
+  await page.keyboard.press('Shift+ArrowRight');
   await page.getByRole('button', { name: 'Remove Web Analytics' }).click();
   await expect(widget(page, 'web-analytics')).toHaveCount(0);
   await page.getByRole('button', { name: 'Add widget' }).first().click();
@@ -159,12 +173,12 @@ test('Pointer drag: the drop target is a soft fill, the move saves', async ({ pa
   const look = await target.evaluate((e) => { const s = getComputedStyle(e); return { border: s.borderTopStyle, bg: s.backgroundColor }; });
   expect(look.border).not.toBe('dashed');
   expect(look.bg).not.toBe('rgba(0, 0, 0, 0)');
-  await expect(page.locator('.blk-float')).toContainText('Pending requests');
+  await expect(page.locator('.blk-float')).toContainText('pending requests');
   await page.mouse.up();
-  expect((await order(page))[0]).toBe('kpi-pending');
+  expect((await order(page)).indexOf('kpi-pending')).toBeLessThan(DEFAULT_IDS.indexOf('kpi-pending'));
   await expect(page.locator('.blk-float')).toHaveCount(0);
   await done(page);
-  expect((await savedLayout(page))[0]?.id).toBe('kpi-pending');
+  expect((await savedLayout(page)).map(w => w.id)).toEqual(await order(page));
 
   // Escape during a drag puts everything back.
   await page.getByRole('button', { name: 'Edit home' }).click();
@@ -227,4 +241,133 @@ test('Phone: two columns, stat tiles pair up, tables take the full row', async (
   expect(grip.height).toBeGreaterThanOrEqual(40);
   expect(await overflow(page)).toEqual([]);
   await page.getByRole('button', { name: 'Cancel' }).click();
+});
+
+test('Corner resize previews supported footprint, Escape restores, Done persists', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'pointer geometry at desktop width');
+  await openHome(page, [{ id: 'web-analytics', size: '1x1' }, { id: 'kpi-upcoming', size: '1x1' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const card = widget(page, 'web-analytics');
+  const grip = card.locator('.blk-resize--both');
+  const rect = (await card.boundingBox())!;
+  const handle = (await grip.boundingBox())!;
+  await page.mouse.move(handle.x + 20, handle.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + rect.width + 20, handle.y + rect.height + 20, { steps: 6 });
+  await expect(card).toHaveAttribute('data-size', '2x2');
+  await expect(card).toHaveClass(/is-resizing/);
+  expect(await card.evaluate(el => getComputedStyle(el, '::after').content)).toContain('2 × 2');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(card).toHaveAttribute('data-size', '1x1');
+  await grip.focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(card).toHaveAttribute('data-size', '2x2');
+  await done(page);
+  await page.reload();
+  await expect(widget(page, 'web-analytics')).toHaveAttribute('data-size', '2x2');
+});
+
+test('Tutorial skips with Escape, stays seen on reload, and replays from Settings', async ({ page }) => {
+  await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: false } });
+  await page.goto('/');
+  const tour = page.getByRole('dialog', { name: 'Your home base' });
+  await expect(tour).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tour).not.toBeVisible();
+  const prefs = await (await page.request.get('/api/me/prefs')).json();
+  expect(prefs.dashboardTutorialSeen).toBe(true);
+  await page.reload();
+  await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
+  await page.goto('/settings');
+  await page.getByRole('link', { name: 'Replay dashboard tutorial' }).click();
+  await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Make it yours' })).toBeVisible();
+  await page.getByRole('button', { name: 'Skip tour' }).click();
+});
+
+
+test('Coachmarks spotlight real controls and discard their temporary edit preview', async ({ page }) => {
+  await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }]);
+  const before = await savedLayout(page);
+  await page.goto('/?tutorial=1');
+  const tour = page.locator('.dashboard-tour');
+  await expect(tour).toBeVisible();
+  await expect(widget(page, 'links')).toBeVisible(); // temporary example, never saved
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.locator('[data-tour="edit"]')).toHaveClass(/is-tour-target/);
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(widget(page, 'links').locator('.blk-handle')).toHaveClass(/is-tour-target/);
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  const corner = widget(page, 'links').locator('.blk-resize--both');
+  await expect(corner).toHaveClass(/is-tour-target/);
+  const r = (await corner.boundingBox())!;
+  const hole = await tour.locator('mask .tour-cutout').evaluate(e => ({ x: Number(e.getAttribute('x')), y: Number(e.getAttribute('y')), w: Number(e.getAttribute('width')), h: Number(e.getAttribute('height')) }));
+  expect(hole.w).toBeGreaterThanOrEqual(r.width);
+  expect(hole.h).toBeGreaterThanOrEqual(r.height);
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.locator('[data-tour="add"]')).toHaveClass(/is-tour-target/);
+  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(widget(page, 'links').locator('.club-links')).toHaveClass(/is-tour-target/);
+  await tour.getByRole('button', { name: 'Finish', exact: true }).click();
+  await expect(tour).not.toBeVisible();
+  await expect(widget(page, 'links')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Edit home' })).toBeVisible();
+  expect(await savedLayout(page)).toEqual(before);
+});
+
+test('Leadership overrides club defaults; blank values restore the supplied URLs', async ({ page }) => {
+  await devLogin(page, 'leadership');
+  const settings = await (await page.request.get('/api/club/settings')).json();
+  try {
+    await page.request.put('/api/club/settings', { data: { ...settings, websiteUrl: 'https://example.org/club', notionUrl: '', driveUrl: '' } });
+    await openHome(page);
+    const links = widget(page, 'links');
+    const site = links.getByRole('link', { name: /Club website/ });
+    await expect(site).toHaveAttribute('href', 'https://example.org/club');
+    await expect(site).toHaveAttribute('target', '_blank');
+    await page.context().route('https://example.org/club', route => route.fulfill({ contentType: 'text/html', body: '<h1>Club destination</h1>' }));
+    const opened = page.waitForEvent('popup');
+    await site.click();
+    const destination = await opened;
+    await expect(destination).toHaveURL('https://example.org/club');
+    await expect(destination.getByRole('heading', { name: 'Club destination' })).toBeVisible();
+    await destination.close();
+    await expect(links.getByRole('link', { name: /Add link/ })).toHaveCount(0);
+    await expect(links.getByRole('link', { name: /Notion/ })).toHaveAttribute('href', 'https://app.notion.com/p/cseed/cseed-8c884a7f9dbe4bffa58718820e00cc10');
+    await expect(links.getByRole('link', { name: /Google Drive/ })).toHaveAttribute('href', 'https://drive.google.com/drive/folders/0ABwfOblCw9EvUk9PVA?dmr=1&ec=wgc-drive-hero-goto');
+  } finally { await page.request.put('/api/club/settings', { data: settings }); }
+});
+
+
+test('Default widgets fill a complete rectangle without an oversized actions card', async ({ page }) => {
+  await openHome(page);
+  await expect(widget(page, 'my-action')).toHaveAttribute('data-size', '2x1');
+  await expect(widget(page, 'activity')).toHaveAttribute('data-size', '2x1');
+  await expect(widget(page, 'recent-events').locator('tbody tr')).toHaveCount(3);
+  const box = (await grid(page).boundingBox())!;
+  const rects = await grid(page).locator(':scope > li[data-widget]').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x:r.x, y:r.y, right:r.right, bottom:r.bottom, area:r.width*r.height }; }));
+  const leftBottom = Math.max(...rects.filter(r => Math.abs(r.x-box.x)<2).map(r=>r.bottom));
+  const rightBottom = Math.max(...rects.filter(r => Math.abs(r.right-box.x-box.width)<2).map(r=>r.bottom));
+  expect(Math.abs(leftBottom-rightBottom)).toBeLessThan(2);
+  // Every row across the grid must be occupied, apart from the grid gap between cells.
+  const gap = await grid(page).evaluate(el => parseFloat(getComputedStyle(el).columnGap));
+  for(let y=box.y+2; y<box.y+box.height-2; y+=8) {
+    const row = rects.filter(r=>r.y<=y && r.bottom>=y).sort((a,b)=>a.x-b.x);
+    if (!row.length) continue;
+    expect(Math.abs(row[0]!.x-box.x)).toBeLessThan(2);
+    expect(Math.abs(row.at(-1)!.right-box.x-box.width)).toBeLessThan(2);
+    for(let i=1;i<row.length;i++) expect(row[i]!.x-row[i-1]!.right).toBeLessThanOrEqual(gap+2);
+  }
+});
+
+test('An onboarding landing starts the tour once, without forcing a replay', async ({ page }) => {
+  await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: false } });
+  await page.goto('/?tutorial=onboarding');
+  await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
+  await page.getByRole('button', { name: 'Skip tour' }).click();
+  await page.goto('/?tutorial=onboarding');
+  await expect(page.getByRole('button', { name: 'Edit home' })).toBeEnabled();
+  await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
 });
