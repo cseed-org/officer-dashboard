@@ -1,3 +1,4 @@
+import CalendarWidget from '../widgets/CalendarWidget';
 import LinksWidget from '../widgets/LinksWidget';
 import CloudflareWidget, { cloudflareIds } from '../widgets/CloudflareWidget';
 import WidgetGrid from '../widgets/WidgetGrid';
@@ -79,6 +80,7 @@ export default function HomeView({ me }: { me: CurrentUser }) {
       {(id, size) => {
         if (cloudflareIds.includes(id)) return <CloudflareWidget id={id} size={size} state={cloudflare} />;
         if (kpiIds.includes(id)) return stat(id);
+        if (id === 'calendar') return <CalendarWidget size={size} />;
         switch (id) {
           case 'links': return <LinksWidget me={me} />;
           case 'my-action':

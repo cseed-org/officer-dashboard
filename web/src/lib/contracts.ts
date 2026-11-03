@@ -1005,6 +1005,22 @@ export const TimezoneMode = z.enum(['club', 'auto', 'manual']);
 export const WidgetPrefs = z.object({ dashboardTutorialSeen: z.boolean().default(false), timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
 export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).extend({ dashboardTutorialSeen: z.boolean() }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined || p.dashboardTutorialSeen !== undefined, 'No preferences supplied');
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
+export const CalendarWidgetOptions = z.object({
+  view: z.enum(['auto', 'agenda', 'week', 'month']),
+  sources: z.array(Id).max(32),
+  colourBy: z.enum(['source', 'type']),
+  showWeekends: z.boolean(),
+});
+export type CalendarWidgetOptions = z.infer<typeof CalendarWidgetOptions>;
+export const CalendarWidgetUpdate = z.union([CalendarWidgetOptions, CalendarWidgetOptions.omit({ sources: true }).extend({ events: z.boolean(), design: z.boolean() })]);
+export const CalendarFeedItem = z.object({
+  id: Id, source: Id, type: z.string(), title: z.string(),
+  date: z.string(), startsAt: IsoDateTime.nullable(), endsAt: IsoDateTime.nullable(), lumaUrl: z.string().nullable(), location: z.string().nullable(), href: z.string().startsWith('/'),
+});
+export type CalendarFeedItem = z.infer<typeof CalendarFeedItem>;
+export const CalendarFeedSource = z.object({ id: Id, label: z.string(), icon: z.string(), hue: z.string() });
+export type CalendarFeedSource = z.infer<typeof CalendarFeedSource>;
+export const CalendarFeed = z.object({ items: z.array(CalendarFeedItem), timezone: IanaTimezone, sources: z.array(CalendarFeedSource) });
 export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
 export type CalendarEmail = z.infer<typeof CalendarEmail>;
 export const CalendarEmailsResponse = z.object({ emails: z.array(CalendarEmail).max(5) });
@@ -1302,6 +1318,9 @@ export const ENDPOINTS = {
   onboardingSave: { method: 'PUT', path: '/api/me/onboarding', auth: 'officer', body: OnboardingSaveRequest, response: OnboardingResponse },
   onboardingComplete: { method: 'POST', path: '/api/me/onboarding/complete', auth: 'officer', response: OnboardingCompleteResponse },
   onboardingCorrection: { method: 'POST', path: '/api/me/onboarding/correction', auth: 'officer', body: OnboardingCorrectionRequest, response: OnboardingCorrectionResponse },
+  calendarFeed: { method: 'GET', path: '/api/calendar/feed', auth: 'officer', query: z.object({ start: z.string(), end: z.string(), sources: z.string().optional() }), response: CalendarFeed },
+  calendarWidgetGet: { method: 'GET', path: '/api/me/calendar-widget', auth: 'officer', response: CalendarWidgetOptions },
+  calendarWidgetPut: { method: 'PUT', path: '/api/me/calendar-widget', auth: 'officer', body: CalendarWidgetUpdate, response: CalendarWidgetOptions },
   calendarGet: { method: 'GET', path: '/api/me/calendar', auth: 'officer', response: CalendarSettings },
   calendarPut: { method: 'PUT', path: '/api/me/calendar', auth: 'officer', body: CalendarModeRequest, response: CalendarSettings },
   calendarTest: { method: 'POST', path: '/api/me/calendar/test', auth: 'officer', response: CalendarTestResponse },

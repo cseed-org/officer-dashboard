@@ -371,3 +371,51 @@ test('An onboarding landing starts the tour once, without forcing a replay', asy
   await expect(page.getByRole('button', { name: 'Edit home' })).toBeEnabled();
   await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
 });
+
+
+test('Calendar resize grips reach every supported view and persist', async ({ page }) => {
+  await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }]);
+  const calendar = widget(page, 'calendar');
+  await expect(calendar.locator('.cw--compact')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const grip = calendar.locator('.blk-resize--both');
+  await grip.focus();
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(calendar).toHaveAttribute('data-size', '2x2');
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(calendar).toHaveAttribute('data-size', '4x2');
+  await done(page);
+  await expect(calendar.locator('.cw--month')).toBeVisible();
+  await page.reload();
+  await expect(calendar).toHaveAttribute('data-size', '4x2');
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  await calendar.locator('.blk-resize--both').focus();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect(calendar).toHaveAttribute('data-size', '2x2');
+  await done(page);
+  await expect(calendar.locator('.cw--week')).toBeVisible();
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  await calendar.locator('.blk-resize--both').focus();
+  await page.keyboard.press('Shift+ArrowUp');
+  await expect(calendar).toHaveAttribute('data-size', '2x1');
+  await done(page);
+  await expect(calendar.locator('.cw--compact')).toBeVisible();
+  expect((await savedLayout(page)).find(w => w.id === 'calendar')?.size).toBe('2x1');
+});
+
+test('Calendar corner drag previews its large footprint and Escape restores', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'pointer geometry at desktop width');
+  await openHome(page, [{ id: 'calendar', size: '2x1' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const calendar = widget(page, 'calendar');
+  const box = (await calendar.boundingBox())!;
+  const grip = (await calendar.locator('.blk-resize--both').boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + box.width, grip.y + grip.height / 2 + box.height, { steps: 8 });
+  await expect(calendar).toHaveAttribute('data-size', '4x2');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(calendar).toHaveAttribute('data-size', '2x1');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+});
