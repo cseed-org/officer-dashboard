@@ -175,3 +175,14 @@
   .design-type .select {flex:1;min-height:40px;}
   .mywork-list {grid-template-columns:1fr;}
 }
+
+/* Keep labels and controls aligned even when one field has a hint. */
+[data-design-form] .grid-fields > .field {align-content:start;grid-template-rows:auto 44px;}
+[data-design-form] .grid-fields .input, [data-design-form] .grid-fields .select {height:44px;min-height:44px;}
+.kanban-col.is-target {outline:2px dashed var(--control);outline-offset:-2px;}
+.kanban-col.is-unavailable {opacity:.55;}
+.kanban-card[data-movable=true] {cursor:grab;}
+.kanban-card:focus-visible {outline:2px solid var(--text);outline-offset:3px;}
+
+.kanban:has(.is-dragging) {scroll-snap-type:none;}
+.design-drag-handle {justify-self:start;min-height:32px;cursor:grab;}

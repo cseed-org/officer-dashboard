@@ -1172,7 +1172,7 @@ export type DesignRequestCreateRequest = z.infer<typeof DesignRequestCreateReque
 export const DesignRequestUpdateRequest = DesignRequestCreateRequest.partial();
 export type DesignRequestUpdateRequest = z.infer<typeof DesignRequestUpdateRequest>;
 export const DesignAssignRequest = z.object({ assigneeId: Id.nullable() });
-export const DesignMoveRequest = z.object({ stage: DesignStage });
+export const DesignMoveRequest = z.object({ stage: DesignStage, confirmDeliveryOverride: z.boolean().optional() });
 export const DesignCommentRequest = z.object({ body: z.string().trim().min(1).max(4000) });
 /** multipart fields of POST /api/design-requests/:id/files, plus `file` (PDF, PNG, JPEG, WebP, HEIC; ≤ 10 MB). */
 export const DesignFileUploadFields = z.object({ kind: DesignFileKind.default('reference') });

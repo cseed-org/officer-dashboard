@@ -217,8 +217,9 @@ function Body({ data, me, onUpdate, onDeleted }: { data: DesignRequestResponse; 
         </section>
       )}
 
-      {(p.canAssign || p.canAssignSelf) && <DesignerActions r={r} designers={data.designers} me={me} busy={!!busy} run={run} onStep={onUpdate} />}
+      {(p.canAssign || p.canAssignSelf || (p.moveTo.length > 0 && !p.canRequestChanges)) && <DesignerActions r={r} designers={data.designers} me={me} busy={!!busy} run={run} onStep={onUpdate} />}
 
+      {!p.canAssign && !p.canAssignSelf && p.moveTo.length === 0 && <p class="small muted">Stage: {STAGE_LABEL[r.stage]}. Only designers and directors can move requests. The requester can approve or request changes during review.</p>}
       {p.uploadKinds.length > 0 && <Upload r={r} kinds={p.uploadKinds} onUpdate={onUpdate} />}
 
       <Comments r={r} me={me} onUpdate={onUpdate} />
@@ -246,7 +247,7 @@ function FileList({ files, label }: { files: DesignFile[]; label: string }) {
 
 type Run = (label: string, fn: () => Promise<DesignRequestResponse>, done: string) => Promise<void>;
 
-/** Assignee + stage: the keyboard/touch alternative to dragging (and the only path on phones). */
+/** Assignee + stage: an explicit alternative to dragging. */
 function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; designers: UserSummary[]; me: CurrentUser; busy: boolean; run: Run; onStep: (d: DesignRequestResponse) => void }) {
   const p = r.permissions;
   const [assignee, setAssignee] = useState(r.assignee?.id ?? '');
@@ -262,6 +263,7 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
   // Past New a card keeps its designer, so "Unassigned + New" moves first, then unassigns.
   const unassignAfterMove = !assignee && current !== '' && stage === 'new' && r.stage !== 'new';
   const apply = () => {
+    if (stage === 'delivered' && !confirm('Deliver without the requester’s approval? This leadership override will be recorded in the audit log.')) return;
     const done = [
       assignee !== current ? (assignee ? `Assigned to ${designers.find((d) => d.id === assignee)?.name ?? 'the designer'}` : 'Unassigned') : '',
       stage !== r.stage ? `Moved to ${STAGE_LABEL[stage]}` : '',
@@ -276,7 +278,7 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
           onStep(res);
         };
         if (assignee !== current && !unassignAfterMove) await step(api('designRequestAssign', { params: { id: r.id }, body: { assigneeId: assignee || null } }));
-        if (stage !== r.stage) await step(api('designRequestMove', { params: { id: r.id }, body: { stage } }));
+        if (stage !== r.stage) await step(api('designRequestMove', { params: { id: r.id }, body: { stage, confirmDeliveryOverride: stage === 'delivered' } }));
         if (unassignAfterMove) await step(api('designRequestAssign', { params: { id: r.id }, body: { assigneeId: null } }));
         return res!;
       },
@@ -288,8 +290,8 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
     <section class="design-worker" aria-labelledby="dr-worker-h" data-designer-actions>
       <h3 id="dr-worker-h">Designer actions</h3>
       <div class="grid-fields">
-        <Field id="dr-assignee" label="Assignee" hint={stage !== 'new' && !assignee ? (current ? 'Work past New keeps a designer: move it to New to unassign.' : 'Work past New needs a designer; moving it assigns you.') : undefined}>
-          <select class="select" {...describe('dr-assignee', undefined, stage !== 'new' && !assignee)} aria-label="Assignee" value={assignee} disabled={busy || (!p.canAssign && !p.canAssignSelf)} onChange={(e) => setAssignee(e.currentTarget.value)}>
+        <Field id="dr-assignee" label="Assignee" hint={me.role === 'officer' && stage !== 'new' && !assignee ? (current ? 'Work past New keeps a designer: move it to New to unassign.' : 'Work past New needs a designer; moving it assigns you.') : undefined}>
+          <select class="select" {...describe('dr-assignee', undefined, me.role === 'officer' && stage !== 'new' && !assignee)} aria-label="Assignee" value={assignee} disabled={busy || (!p.canAssign && !p.canAssignSelf)} onChange={(e) => setAssignee(e.currentTarget.value)}>
             <option value="">Unassigned</option>
             {options.map((d) => (
               <option value={d.id} key={d.id}>
@@ -311,7 +313,7 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
         </Field>
       </div>
       <div class="design-actions">
-        <button type="button" class="btn btn--primary" disabled={busy || !changed || (stage !== 'new' && !assignee && (current !== '' || !meDesigner))} onClick={() => void apply()}>
+        <button type="button" class="btn btn--primary" disabled={busy || !changed || (me.role === 'officer' && stage !== 'new' && !assignee && (current !== '' || !meDesigner))} onClick={() => void apply()}>
           Update request
         </button>
         {p.canAssignSelf && !changed && (
@@ -320,7 +322,8 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
           </button>
         )}
       </div>
-      <p class="small muted">Designers self-assign and move work. Delivery follows the requester's approval.</p>
+      {!changed && <p class="small muted">Choose a different assignee or stage to update the request.</p>}
+      <p class="small muted">Designers self-assign and move work. Directors can assign and move any request. Delivery follows the requester's approval; leadership can confirm an override.</p>
     </section>
   );
 }

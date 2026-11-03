@@ -78,19 +78,32 @@ export default function DesignView({ me }: { me: CurrentUser }) {
     id: me.id,
     isDesigner: d.viewer.isDesigner,
     isWorker: d.viewer.canAssign,
+    isLeadership: me.role === 'leadership',
   });
 
+  const moving = useRef(false);
+  const [movePending, setMovePending] = useState(false);
   const move = async (item: DesignRequestItem, to: DesignStage) => {
+    if (to === 'delivered' && !confirm('Deliver without the requester’s approval? This leadership override will be recorded in the audit log.')) return;
+    if (state.status !== 'ready' || moving.current) return;
+    moving.current = true;
+    setMovePending(true);
+    const restoreFocus = document.activeElement?.getAttribute('data-request') === item.id;
+    const focusCard = () => { if (restoreFocus) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-request="${item.id}"]`)?.focus()); };
+    const before = state.data;
+    focusCard();
+    state.set({ ...before, items: before.items.map((i) => i.id === item.id ? { ...i, stage: to } : i) });
     try {
       await api('designRequestMove', {
         params: { id: item.id },
-        body: { stage: to },
+        body: { stage: to, confirmDeliveryOverride: to === 'delivered' },
       });
       setLive(`${item.title} moved to ${STAGE_LABEL[to]}.`);
       state.reload();
     } catch (err) {
+      state.set(before);
       setToast(`Couldn't move “${item.title}”: ${errorMessage(err)}`);
-    }
+    } finally { moving.current = false; setMovePending(false); focusCard(); }
   };
   const assignMe = async (item: DesignRequestItem) => {
     try {
@@ -130,10 +143,14 @@ export default function DesignView({ me }: { me: CurrentUser }) {
         label: 'Review and approve',
         onSelect: () => setParams({ id: item.id }),
       });
-    if (!d.viewer.canAssign) return items;
+    if (!d.viewer.canAssign) {
+      items.push({ label: 'Only designers and directors can move requests', disabled: true, onSelect: () => {} });
+      return items;
+    }
     for (const s of designMoveTargets(item, viewer(d)))
       items.push({
         label: `Move to ${STAGE_LABEL[s]}`,
+        disabled: movePending,
         onSelect: () => void move(item, s),
       });
     return items;
@@ -241,7 +258,7 @@ export default function DesignView({ me }: { me: CurrentUser }) {
                       </div>
                     </div>
                   ) : view === 'board' ? (
-                    <Board data={d} items={shown} me={me} menu={menu} onMove={move} />
+                    <Board pending={movePending} data={d} items={shown} me={me} menu={menu} onMove={move} />
                   ) : (
                     <List data={d} items={shown} menu={menu} />
                   )}
@@ -452,12 +469,14 @@ function CardBody({ item, menu }: { item: DesignRequestItem; menu: MenuItem[] })
 }
 
 function Board({
+  pending,
   data,
   items: all,
   me,
   menu,
   onMove,
 }: {
+  pending: boolean;
   data: DesignRequestsListResponse;
   items: DesignRequestItem[];
   me: CurrentUser;
@@ -471,17 +490,22 @@ function Board({
     id: me.id,
     isDesigner: data.viewer.isDesigner,
     isWorker: data.viewer.canAssign || isDirector(me),
+    isLeadership: me.role === 'leadership',
   };
+  const [announcement, setAnnouncement] = useState('');
   const targets = dragged.current ? designMoveTargets(dragged.current, viewer) : [];
 
   return (
-    <div class="kanban" role="region" tabIndex={0} aria-label="Design request board" data-board>
+    <div class="kanban" role="region" tabIndex={0} aria-label="Design request board" aria-busy={pending} data-board>
+      <p class="visually-hidden" id="design-drag-help">Space to pick up a card, arrow keys to choose a stage, Space to drop, Escape to cancel.</p>
+      <p class="visually-hidden" role="status">{announcement}</p>
       {DESIGN_STAGES.map((stage) => {
         const items = all.filter((i) => i.stage === stage);
         const canDrop = dragging !== null && targets.includes(stage);
         return (
           <section
-            class={`kanban-col${over === stage && canDrop ? ' is-over' : ''}`}
+            class={`kanban-col${over === stage && canDrop ? ' is-over' : ''}${dragging ? canDrop ? ' is-target' : ' is-unavailable' : ''}`}
+            data-drop-allowed={dragging ? String(canDrop) : undefined}
             data-stage={stage}
             key={stage}
             aria-labelledby={`col-${stage}`}
@@ -517,8 +541,37 @@ function Board({
                     class={`kanban-card${dragging === item.id ? ' is-dragging' : ''}${item.assignee?.id === me.id ? ' is-mine' : ''}`}
                     key={item.id}
                     data-request={item.id}
-                    draggable={movable}
+                    tabIndex={movable ? 0 : undefined}
+                    aria-label={movable ? `${item.title}, ${STAGE_LABEL[item.stage]}` : undefined}
+                    aria-describedby={movable ? 'design-drag-help' : undefined}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget || !movable || pending) return;
+                      if (e.key === 'Escape') {
+                        e.preventDefault(); dragged.current = null; setDragging(null); setOver(null); setAnnouncement('Move cancelled.');
+                      } else if (e.key === ' ') {
+                        e.preventDefault();
+                        if (dragging === item.id) {
+                          const destination = over;
+                          dragged.current = null; setDragging(null); setOver(null);
+                          if (destination && targets.includes(destination)) void onMove(item, destination);
+                          else setAnnouncement('Move cancelled.');
+                        } else {
+                          dragged.current = item; setDragging(item.id); setOver(null);
+                          setAnnouncement(`${item.title} picked up. Use arrow keys to choose a stage.`);
+                        }
+                      } else if (dragging === item.id && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+                        e.preventDefault();
+                        const delta = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1;
+                        const index = over ? targets.indexOf(over) : delta > 0 ? -1 : 0;
+                        const destination = targets[(index + delta + targets.length) % targets.length]!;
+                        setOver(destination); setAnnouncement(`${STAGE_LABEL[destination]}. Space to drop.`);
+                        document.getElementById(`col-${destination}`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                      }
+                    }}
+                    data-movable={movable}
+                    draggable={movable && !pending}
                     onDragStart={(e) => {
+                      if (!movable || pending || dragged.current) { e.preventDefault(); return; }
                       dragged.current = item;
                       setDragging(item.id);
                       e.dataTransfer?.setData('text/plain', item.id);
@@ -529,6 +582,34 @@ function Board({
                       setOver(null);
                     }}
                   >
+                    {movable && <button type="button" class="linkish design-drag-handle" disabled={pending} tabIndex={-1} aria-label={`Drag ${item.title}`} style={{ touchAction: 'none' }}
+                      onPointerDown={(e) => {
+                        if (e.button !== 0) return;
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        dragged.current = item; setDragging(item.id); setOver(null);
+                      }}
+                      onPointerMove={(e) => {
+                        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                        const board = e.currentTarget.closest<HTMLElement>('.kanban');
+                        if (board) {
+                          const rect = board.getBoundingClientRect();
+                          if (e.clientX > Math.min(rect.right, innerWidth) - 32) board.scrollLeft += 24;
+                          else if (e.clientX < Math.max(rect.left, 0) + 32) board.scrollLeft -= 24;
+                        }
+                        const col = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('.kanban-col');
+                        const target = col?.dataset.stage as DesignStage | undefined;
+                        setOver(target && targets.includes(target) ? target : null);
+                      }}
+                      onPointerUp={(e) => {
+                        if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+                        e.currentTarget.releasePointerCapture(e.pointerId);
+                        const col = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('.kanban-col');
+                        const target = col?.dataset.stage as DesignStage | undefined;
+                        dragged.current = null; setDragging(null); setOver(null);
+                        if (target && targets.includes(target)) void onMove(item, target);
+                      }}
+                      onPointerCancel={() => { dragged.current = null; setDragging(null); setOver(null); }}
+                    >⠿ <span class="small">Drag</span></button>}
                     <CardBody item={item} menu={menu(item, data)} />
                   </li>
                 );
