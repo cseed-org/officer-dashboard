@@ -15,12 +15,19 @@ type statusWriter struct {
 func (w *statusWriter) WriteHeader(code int) {
 	if w.status == 0 {
 		w.status = code
+		if code != http.StatusNoContent && code != http.StatusNotModified {
+			ensureContentType(w.Header())
+		}
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// Write passes the handler's bytes through unchanged. The first write also makes sure the
+// response is typed and nosniff (the inner handler normally has; see withContentType), so
+// the body can never be sniffed into an HTML document on the way out.
 func (w *statusWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
+		ensureContentType(w.Header())
 		w.status = http.StatusOK
 	}
 	n, err := w.ResponseWriter.Write(b)

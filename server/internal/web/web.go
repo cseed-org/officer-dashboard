@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -30,6 +31,7 @@ func Handler(root fs.FS, opt Options) http.Handler {
 	if opt.FallbackStatus == 0 {
 		opt.FallbackStatus = http.StatusNotFound
 	}
+	pc := &policies{}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, HEAD")
@@ -39,17 +41,17 @@ func Handler(root fs.FS, opt Options) http.Handler {
 		clean := path.Clean("/" + r.URL.Path)
 		for _, seg := range strings.Split(clean, "/") {
 			if strings.HasPrefix(seg, ".") && seg != "" {
-				notFound(w, r, root, opt)
+				notFound(w, r, pc, root, opt)
 				return
 			}
 		}
 		name := strings.TrimPrefix(clean, "/")
 		for _, cand := range candidates(root, name) {
-			if serveFile(w, r, root, cand, http.StatusOK) {
+			if serveFile(w, r, pc, root, cand, http.StatusOK) {
 				return
 			}
 		}
-		notFound(w, r, root, opt)
+		notFound(w, r, pc, root, opt)
 	})
 }
 
@@ -71,13 +73,13 @@ func candidates(root fs.FS, name string) []string {
 	return out
 }
 
-func notFound(w http.ResponseWriter, r *http.Request, root fs.FS, opt Options) {
-	if !serveFile(w, r, root, opt.Fallback, opt.FallbackStatus) {
+func notFound(w http.ResponseWriter, r *http.Request, pc *policies, root fs.FS, opt Options) {
+	if !serveFile(w, r, pc, root, opt.Fallback, opt.FallbackStatus) {
 		http.NotFound(w, r)
 	}
 }
 
-func serveFile(w http.ResponseWriter, r *http.Request, root fs.FS, name string, status int) bool {
+func serveFile(w http.ResponseWriter, r *http.Request, pc *policies, root fs.FS, name string, status int) bool {
 	f, err := root.Open(name)
 	if err != nil {
 		return false
@@ -88,6 +90,17 @@ func serveFile(w http.ResponseWriter, r *http.Request, root fs.FS, name string, 
 		return false
 	}
 	h := w.Header()
+	// Never let a browser guess a type: an unknown file is bytes, not HTML.
+	h.Set("Content-Type", contentType(name))
+	h.Set("X-Content-Type-Options", "nosniff")
+	if strings.HasSuffix(name, ".html") {
+		csp, err := pc.pagePolicy(root, name, info)
+		if err != nil {
+			return false
+		}
+		h.Set("Content-Security-Policy", csp)
+		h.Set("Permissions-Policy", PermissionsPolicy)
+	}
 	switch {
 	case strings.HasPrefix(name, "_astro/"):
 		// Content-hashed build output never changes under the same name.
@@ -99,9 +112,6 @@ func serveFile(w http.ResponseWriter, r *http.Request, root fs.FS, name string, 
 	}
 	if status != http.StatusOK {
 		// ServeContent would turn this into a 200; write the fallback by hand.
-		if ct := contentType(name); ct != "" {
-			h.Set("Content-Type", ct)
-		}
 		body, err := io.ReadAll(f)
 		if err != nil {
 			return false
@@ -126,13 +136,19 @@ func serveFile(w http.ResponseWriter, r *http.Request, root fs.FS, name string, 
 }
 
 func contentType(name string) string {
-	switch path.Ext(name) {
+	switch ext := path.Ext(name); ext {
 	case ".html":
 		return "text/html; charset=utf-8"
 	case ".json":
 		return "application/json"
 	case ".txt":
 		return "text/plain; charset=utf-8"
+	case ".webmanifest":
+		return "application/manifest+json"
+	default:
+		if t := mime.TypeByExtension(ext); t != "" {
+			return t
+		}
 	}
-	return ""
+	return "application/octet-stream"
 }

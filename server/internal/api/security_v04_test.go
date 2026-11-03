@@ -2,10 +2,17 @@ package api
 
 import (
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
+
+	"officerdashboard/internal/web"
 )
 
 // M1: a director who files a request cannot pay it out to themselves. Settling
@@ -264,5 +271,69 @@ func TestAuthAndUploadRoutesAreRateLimitedPerIP(t *testing.T) {
 	// Ordinary API reads are not limited.
 	for i := 0; i < 5; i++ {
 		expectStatus(t, "reads", e.get("/api/requests/"+id, actor{cookie: e.login("user-priya"), remote: "198.51.100.20:1"}), 200)
+	}
+}
+
+// M3 / CodeQL #1: every response is typed and nosniff. Pages get the front end's CSP with
+// script hashes; everything else (JSON, files, errors, redirects) gets a CSP that allows
+// nothing, so a response that is somehow rendered as a document cannot run script.
+func TestEveryResponseIsTypedAndCarriesACSP(t *testing.T) {
+	site := fstest.MapFS{
+		"index.html": {Data: []byte("<!doctype html><script>document.documentElement.dataset.x='1'</script><h1>home</h1>")},
+		"404.html":   {Data: []byte("<h1>nope</h1>")},
+	}
+	e := newEnv(t, func(c *Config) { c.Static = web.Handler(site, web.Options{}) })
+	home := e.get("/", anon)
+	if csp := home.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self' 'sha256-") || !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("home CSP %q", csp)
+	}
+	if home.Header.Get("Permissions-Policy") == "" {
+		t.Error("home lacks Permissions-Policy")
+	}
+	for _, c := range []struct {
+		label string
+		r     reply
+	}{
+		{"api json", e.get("/api/health", anon)},
+		{"api 404", e.get("/api/nope", anon)},
+		{"api 401", e.get("/api/me", anon)},
+		{"redirect", e.get("/speakers?x=1", anon)},
+		{"auth 503", e.get("/auth/login", anon)},
+		{"page 404", e.get("/nope", anon)},
+	} {
+		h := c.r.Header
+		if h.Get("Content-Type") == "" && len(c.r.Raw) > 0 {
+			t.Errorf("%s: body without Content-Type", c.label)
+		}
+		if h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Content-Security-Policy") == "" {
+			t.Errorf("%s: headers %v", c.label, h)
+		}
+		if !strings.HasPrefix(h.Get("Content-Type"), "text/html") && !strings.Contains(h.Get("Content-Security-Policy"), "default-src 'none'") {
+			t.Errorf("%s: non-page CSP %q", c.label, h.Get("Content-Security-Policy"))
+		}
+	}
+	// A handler that forgets its Content-Type gets bytes, not a sniffed document.
+	rec := httptest.NewRecorder()
+	withContentType(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("<html><script>alert(1)</script>"))
+	})).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("untyped body served as %q", ct)
+	}
+	rec = httptest.NewRecorder()
+	withContentType(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte("<html><script>alert(1)</script>"))
+	})).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("untyped body after WriteHeader served as %q", ct)
+	}
+	// The access log's writer does the same for the outermost layer.
+	rec = httptest.NewRecorder()
+	AccessLog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("<html><script>alert(1)</script>"))
+	}), slog.New(slog.NewTextHandler(io.Discard, nil))).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
+	if ct := rec.Header().Get("Content-Type"); ct != "application/octet-stream" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("access log passthrough served %q", ct)
 	}
 }

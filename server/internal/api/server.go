@@ -20,6 +20,7 @@ import (
 	"officerdashboard/internal/notion"
 	"officerdashboard/internal/purchases"
 	"officerdashboard/internal/store"
+	"officerdashboard/internal/web"
 )
 
 // Config wires the server to its collaborators.
@@ -210,6 +211,10 @@ func (s *Server) withAPIHygiene(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
+		// Nothing but a page may load or run anything; the static handler replaces this with
+		// the page policy (script hashes) on HTML documents.
+		h.Set("Content-Security-Policy", apiCSP)
+		h.Set("Permissions-Policy", web.PermissionsPolicy)
 		if s.secure {
 			h.Set("Strict-Transport-Security", "max-age=31536000")
 		}
@@ -218,8 +223,51 @@ func (s *Server) withAPIHygiene(next http.Handler) http.Handler {
 			r2.URL.Path = strings.TrimRight(p, "/")
 			r = r2
 		}
-		next.ServeHTTP(w, r)
+		withContentType(next).ServeHTTP(w, r)
 	})
+}
+
+// apiCSP is the policy of every non-page response (JSON, files, redirects, errors).
+const apiCSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+
+// withContentType guarantees a body never goes out untyped: Go would sniff it, and a
+// sniffed text/html body is a reflected-XSS vector. Handlers set their own types; this
+// only catches one that forgot (application/octet-stream plus nosniff renders nothing).
+func withContentType(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(&typedWriter{ResponseWriter: w}, r)
+	})
+}
+
+type typedWriter struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (w *typedWriter) WriteHeader(code int) {
+	if !w.wrote && code != http.StatusNoContent && code != http.StatusNotModified {
+		ensureContentType(w.Header())
+	}
+	w.wrote = true
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *typedWriter) Write(b []byte) (int, error) {
+	if !w.wrote {
+		ensureContentType(w.Header())
+		w.wrote = true
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (w *typedWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func ensureContentType(h http.Header) {
+	if h.Get("Content-Type") == "" {
+		h.Set("Content-Type", "application/octet-stream")
+	}
+	h.Set("X-Content-Type-Options", "nosniff")
 }
 
 // requireLeadership protects role assignment, including promotions to leadership.
