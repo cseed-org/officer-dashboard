@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'preact/hooks';
-import type { ClubSettings, CurrentUser } from '../../lib/contracts';
-import { api } from '../../lib/api/client';
-import type { Loadable } from '../../lib/api/useApi';
-import { timezoneSnapshot } from '../../lib/timezone';
-import { Async, Loading } from '../components/states';
+import type { ClubSettings, CurrentUser } from '../../../lib/contracts';
+import { api } from '../../../lib/api/client';
+import type { Loadable } from '../../../lib/api/useApi';
+import { timezoneSnapshot } from '../../../lib/timezone';
+import { Async, Loading } from '../../components/states';
 
 export default function LinksWidget({ me }: { me: CurrentUser }) {
   // The timezone gate already read the club settings for this page (and rereads them on focus);

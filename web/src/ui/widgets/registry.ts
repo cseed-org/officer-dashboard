@@ -1,3 +1,20 @@
+import type { ComponentType } from 'preact';
+import type { CurrentUser } from '../../lib/contracts';
+import type { useApi } from '../../lib/api/useApi';
+import CalendarWidget from './calendar/CalendarWidget';
+import LinksWidget from './links/LinksWidget';
+import KpiWidget from './kpi/KpiWidget';
+import MyActionWidget from './my-action/MyActionWidget';
+import RecentEventsWidget from './recent-events/RecentEventsWidget';
+import BudgetWidget from './budget/BudgetWidget';
+import ActivityWidget from './activity/ActivityWidget';
+import WebAnalyticsWidget from './cloudflare/WebAnalyticsWidget';
+import TrafficSecurityWidget from './cloudflare/TrafficSecurityWidget';
+import PerformanceWidget from './cloudflare/PerformanceWidget';
+import WorkersD1Widget from './cloudflare/WorkersD1Widget';
+import MemberSignupsWidget from './cloudflare/MemberSignupsWidget';
+
+export interface WidgetProps { id: string; size: BlockSize; me: CurrentUser; overview: ReturnType<typeof useApi<'overview'>>; cloudflare: ReturnType<typeof useApi<'cloudflareWidgets'>>; }
 import type { WidgetBlockSize } from '../../lib/contracts';
 
 export type BlockSize = WidgetBlockSize;
@@ -5,6 +22,7 @@ export interface WidgetDef {
   /** Stable ID: part of the persisted contract (user_prefs). */
   id: string;
   title: string;
+  component: ComponentType<WidgetProps>;
   /** Sizes this widget supports, smallest first. */
   sizes: BlockSize[];
   /** Size used when the widget is added. */
@@ -15,22 +33,22 @@ export interface WidgetDef {
 
 /** Feature Panes can extend this registry. Keep defaults in step with server/internal/api/preferences.go. */
 export const widgetRegistry: WidgetDef[] = [
-  { id: 'calendar', title: 'Calendar', sizes: ['2x1', '2x2', '4x2'], size: '2x2' },
-  { id: 'links', title: 'Links', sizes: ['2x1', '1x2', '2x2'], size: '2x1' },
-  { id: 'kpi-upcoming', title: 'Upcoming events', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'kpi-checkin', title: 'Avg check-in rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'kpi-reflection', title: 'Reflection rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'kpi-budget', title: 'Budget remaining', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'kpi-pending', title: 'Pending requests', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'my-action', title: 'My actions', sizes: ['2x1', '2x2', '4x2'], size: '2x1' },
-  { id: 'recent-events', title: 'Recent events', sizes: ['2x2', '4x2'], size: '2x2' },
-  { id: 'budget', title: 'Budget vs actual', sizes: ['2x2', '4x2'], size: '2x2' },
-  { id: 'activity', title: 'Activity', sizes: ['2x1', '1x2', '2x2', '4x2'], size: '2x1' },
-  { id: 'web-analytics', title: 'Web Analytics', sizes: ['1x1', '2x2', '4x2'], size: '1x1' },
-  { id: 'traffic-security', title: 'Traffic & security', sizes: ['1x1', '2x2'], size: '1x1' },
-  { id: 'performance', title: 'Performance', sizes: ['1x1', '2x2'], size: '1x1' },
-  { id: 'workers-d1', title: 'Workers/D1 usage', sizes: ['1x1', '2x2'], size: '1x1' },
-  { id: 'member-signups', title: 'Member signups', sizes: ['1x1', '2x2'], size: '1x1' },
+  { id: 'calendar', component: CalendarWidget, title: 'Calendar', sizes: ['2x1', '2x2', '4x2'], size: '2x2' },
+  { id: 'links', component: LinksWidget, title: 'Links', sizes: ['2x1', '1x2', '2x2'], size: '2x1' },
+  { id: 'kpi-upcoming', component: KpiWidget, title: 'Upcoming events', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'kpi-checkin', component: KpiWidget, title: 'Avg check-in rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'kpi-reflection', component: KpiWidget, title: 'Reflection rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'kpi-budget', component: KpiWidget, title: 'Budget remaining', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'kpi-pending', component: KpiWidget, title: 'Pending requests', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
+  { id: 'my-action', component: MyActionWidget, title: 'My actions', sizes: ['2x1', '2x2', '4x2'], size: '2x1' },
+  { id: 'recent-events', component: RecentEventsWidget, title: 'Recent events', sizes: ['2x2', '4x2'], size: '2x2' },
+  { id: 'budget', component: BudgetWidget, title: 'Budget vs actual', sizes: ['2x2', '4x2'], size: '2x2' },
+  { id: 'activity', component: ActivityWidget, title: 'Activity', sizes: ['2x1', '1x2', '2x2', '4x2'], size: '2x1' },
+  { id: 'web-analytics', component: WebAnalyticsWidget, title: 'Web Analytics', sizes: ['1x1', '2x2', '4x2'], size: '1x1' },
+  { id: 'traffic-security', component: TrafficSecurityWidget, title: 'Traffic & security', sizes: ['1x1', '2x2'], size: '1x1' },
+  { id: 'performance', component: PerformanceWidget, title: 'Performance', sizes: ['1x1', '2x2'], size: '1x1' },
+  { id: 'workers-d1', component: WorkersD1Widget, title: 'Workers/D1 usage', sizes: ['1x1', '2x2'], size: '1x1' },
+  { id: 'member-signups', component: MemberSignupsWidget, title: 'Member signups', sizes: ['1x1', '2x2'], size: '1x1' },
 ];
 
 /** The old single "Key figures" widget, split into one stat tile per figure in V0.4. */

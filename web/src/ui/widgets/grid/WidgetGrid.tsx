@@ -1,13 +1,13 @@
-import DashboardTutorial from './DashboardTutorial';
+import DashboardTutorial from '../DashboardTutorial';
 import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { api } from '../../lib/api/client';
-import { timezoneSnapshot } from '../../lib/timezone';
-import { Icon } from '../components/Icon';
-import { Loading } from '../components/states';
+import { api } from '../../../lib/api/client';
+import { timezoneSnapshot } from '../../../lib/timezone';
+import { Icon } from '../../components/Icon';
+import { Loading } from '../../components/states';
 import { blocks, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
-import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from './registry';
-import '../../styles/home-grid.css';
+import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from '../registry';
+import '../../../styles/home-grid.css';
 
 type Resize = { id: string; x: number; y: number; size: BlockSize; snapshot: Placement[]; axis: string; width: number; height: number };
 type Drag = { id: string; x: number; y: number; snapshot: Placement[]; over: string | null };

@@ -1,9 +1,8 @@
-import { fmtDateTime } from '../../lib/format';
-import { useApi } from "../../lib/api/useApi";
-import type { ResponseOf } from "../../lib/api/client";
-import { widgetRegistry, type BlockSize } from "./registry";
-import { Icon } from "../components/Icon";
-import "../../styles/cloudflare-widgets.css";
+import { fmtDateTime } from '../../../lib/format';
+import { useApi } from "../../../lib/api/useApi";
+import type { ResponseOf } from "../../../lib/api/client";
+import { widgetRegistry, type BlockSize } from "../registry";
+import { Icon } from "../../components/Icon";
 export const cloudflareIds = [
   "web-analytics",
   "traffic-security",

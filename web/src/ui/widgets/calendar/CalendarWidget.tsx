@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { api, endpointUrl } from '../../lib/api/client';
-import type { CalendarFeedItem, CalendarFeedSource, CalendarWidgetOptions } from '../../lib/contracts';
-import { addDays, addMonths, dayNumber, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, shortDay, timeRange, weekdayIndex, weekdayShort, weekDays, weekLabel } from '../../lib/calendar';
-import { effectiveTimezone } from '../../lib/timezone';
-import { href } from '../../lib/routes';
-import type { BlockSize } from './registry';
-import { Icon } from '../components/Icon';
-import { Async, Loading } from '../components/states';
-import { useApi } from '../../lib/api/useApi';
+import { api, endpointUrl } from '../../../lib/api/client';
+import type { CalendarFeedItem, CalendarFeedSource, CalendarWidgetOptions } from '../../../lib/contracts';
+import { addDays, addMonths, dayNumber, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, shortDay, timeRange, weekdayIndex, weekdayShort, weekDays, weekLabel } from '../../../lib/calendar';
+import { effectiveTimezone } from '../../../lib/timezone';
+import { href } from '../../../lib/routes';
+import type { BlockSize } from '../registry';
+import { Icon } from '../../components/Icon';
+import { Async, Loading } from '../../components/states';
+import { useApi } from '../../../lib/api/useApi';
 import { createPortal } from 'preact/compat';
 import { useId } from 'preact/hooks';
-import '../../styles/calendar-widget.css';
 
 type Feed = Awaited<ReturnType<typeof loadFeed>>;
 const cache = new Map<string, { at: number; data: { items: CalendarFeedItem[]; timezone: string; sources: CalendarFeedSource[] } }>();
