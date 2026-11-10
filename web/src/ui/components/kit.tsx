@@ -32,21 +32,22 @@ export function CountUp({ value }: { value: string | number }) {
   return <>{value}</>;
 }
 
-/** A tiny trend line (decorative: the tile's text carries the numbers). */
-export function Sparkline({ values, hue }: { values: (number | null)[]; hue: Hue }) {
+/** A tiny trend line (decorative: the tile's text carries the numbers). `width`/`height` let a
+ *  widget scale it to the space it has; the stroke and end dot stay the same size. */
+export function Sparkline({ values, hue, width = 96, height = 28 }: { values: (number | null)[]; hue: Hue; width?: number; height?: number }) {
   const pts = values.filter((v): v is number => v !== null && Number.isFinite(v));
   if (pts.length < 2) return null;
-  const W = 96;
-  const H = 28;
+  const W = Math.max(24, Math.round(width));
+  const H = Math.max(16, Math.round(height));
   const lo = Math.min(...pts);
   const hi = Math.max(...pts);
   const span = hi - lo || 1;
-  const xy = pts.map((v, i) => [(i / (pts.length - 1)) * (W - 4) + 2, H - 3 - ((v - lo) / span) * (H - 6)] as const);
+  const xy = pts.map((v, i) => [(i / (pts.length - 1)) * (W - 6) + 3, H - 4 - ((v - lo) / span) * (H - 8)] as const);
   const d = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
   const [lx, ly] = xy[xy.length - 1]!;
   return (
     <svg class="sparkline" data-hue={hue} viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true" focusable="false">
-      <path d={d} class="sparkline-line" />
+      <path d={d} class="sparkline-line" pathLength={1} />
       <circle cx={lx} cy={ly} r={2.5} class="sparkline-dot" />
     </svg>
   );

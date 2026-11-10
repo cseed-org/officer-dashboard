@@ -14,8 +14,12 @@ import PerformanceWidget from './cloudflare/PerformanceWidget';
 import WorkersD1Widget from './cloudflare/WorkersD1Widget';
 import MemberSignupsWidget from './cloudflare/MemberSignupsWidget';
 
-export interface WidgetProps { id: string; size: BlockSize; me: CurrentUser; overview: ReturnType<typeof useApi<'overview'>>; cloudflare: ReturnType<typeof useApi<'cloudflareWidgets'>>; }
 import type { WidgetBlockSize } from '../../lib/contracts';
+import type { Hue } from '../../lib/colors';
+import type { IconName } from '../components/Icon';
+import { href } from '../../lib/routes';
+
+export interface WidgetProps { id: string; size: BlockSize; me: CurrentUser; overview: ReturnType<typeof useApi<'overview'>>; cloudflare: ReturnType<typeof useApi<'cloudflareWidgets'>>; }
 
 export type BlockSize = WidgetBlockSize;
 export interface WidgetDef {
@@ -29,26 +33,38 @@ export interface WidgetDef {
   size: BlockSize;
   /** Widgets offered together as one onboarding choice (the old "Key figures" row). */
   group?: 'kpis';
+  /** Title chip icon and accent (design/mockups/home-v07-notes.md § Per widget). */
+  icon: IconName;
+  accent: Hue;
+  /** Where the whole card goes; null means the card has no card link (only its rows link). */
+  href: (me: CurrentUser) => string | null;
+  /** The card link opens another site in a new tab. */
+  external?: boolean;
 }
+
+const leadership = (me: CurrentUser) => me.role === 'leadership' || me.isOwner;
+const director = (me: CurrentUser) => me.role !== 'officer';
+const CLOUDFLARE = 'https://dash.cloudflare.com';
+const pending = () => href.requests({ scope: 'all', status: 'pending' });
 
 /** Feature Panes can extend this registry. Keep defaults in step with server/internal/api/preferences.go. */
 export const widgetRegistry: WidgetDef[] = [
-  { id: 'calendar', component: CalendarWidget, title: 'Calendar', sizes: ['2x1', '2x2', '4x2'], size: '2x2' },
-  { id: 'links', component: LinksWidget, title: 'Links', sizes: ['2x1', '1x2', '2x2'], size: '2x1' },
-  { id: 'kpi-upcoming', component: KpiWidget, title: 'Upcoming events', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'kpi-checkin', component: KpiWidget, title: 'Avg check-in rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'kpi-reflection', component: KpiWidget, title: 'Reflection rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'kpi-budget', component: KpiWidget, title: 'Budget remaining', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'kpi-pending', component: KpiWidget, title: 'Pending requests', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis' },
-  { id: 'my-action', component: MyActionWidget, title: 'My actions', sizes: ['2x1', '2x2', '4x2'], size: '2x1' },
-  { id: 'recent-events', component: RecentEventsWidget, title: 'Recent events', sizes: ['2x2', '4x2'], size: '2x2' },
-  { id: 'budget', component: BudgetWidget, title: 'Budget vs actual', sizes: ['2x2', '4x2'], size: '2x2' },
-  { id: 'activity', component: ActivityWidget, title: 'Activity', sizes: ['2x1', '1x2', '2x2', '4x2'], size: '2x1' },
-  { id: 'web-analytics', component: WebAnalyticsWidget, title: 'Web Analytics', sizes: ['1x1', '2x2', '4x2'], size: '1x1' },
-  { id: 'traffic-security', component: TrafficSecurityWidget, title: 'Traffic & security', sizes: ['1x1', '2x2'], size: '1x1' },
-  { id: 'performance', component: PerformanceWidget, title: 'Performance', sizes: ['1x1', '2x2'], size: '1x1' },
-  { id: 'workers-d1', component: WorkersD1Widget, title: 'Workers/D1 usage', sizes: ['1x1', '2x2'], size: '1x1' },
-  { id: 'member-signups', component: MemberSignupsWidget, title: 'Member signups', sizes: ['1x1', '2x2'], size: '1x1' },
+  { id: 'calendar', component: CalendarWidget, title: 'Calendar', sizes: ['2x1', '2x2', '4x2'], size: '2x2', icon: 'calendar', accent: 'blue', href: () => href.events() },
+  { id: 'links', component: LinksWidget, title: 'Links', sizes: ['2x1', '1x2', '2x2'], size: '2x1', icon: 'link', accent: 'teal', href: (me) => (leadership(me) ? '/settings#club-links' : null) },
+  { id: 'kpi-upcoming', component: KpiWidget, title: 'Upcoming events', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis', icon: 'clock', accent: 'blue', href: () => href.events({ when: 'upcoming' }) },
+  { id: 'kpi-checkin', component: KpiWidget, title: 'Avg check-in rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis', icon: 'check', accent: 'teal', href: () => href.events({ when: 'past' }) },
+  { id: 'kpi-reflection', component: KpiWidget, title: 'Reflection rate', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis', icon: 'message', accent: 'violet', href: () => href.events({ when: 'past' }) },
+  { id: 'kpi-budget', component: KpiWidget, title: 'Budget remaining', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis', icon: 'wallet', accent: 'green', href: () => href.finance('budgets') },
+  { id: 'kpi-pending', component: KpiWidget, title: 'Pending requests', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis', icon: 'inbox', accent: 'amber', href: pending },
+  { id: 'my-action', component: MyActionWidget, title: 'My actions', sizes: ['2x1', '2x2', '4x2'], size: '2x1', icon: 'flag', accent: 'amber', href: (me) => (director(me) ? pending() : href.requests({ scope: 'mine' })) },
+  { id: 'recent-events', component: RecentEventsWidget, title: 'Recent events', sizes: ['2x2', '4x2'], size: '2x2', icon: 'ticket', accent: 'blue', href: () => href.events() },
+  { id: 'budget', component: BudgetWidget, title: 'Budget vs actual', sizes: ['2x2', '4x2'], size: '2x2', icon: 'pie', accent: 'green', href: () => href.finance('budgets') },
+  { id: 'activity', component: ActivityWidget, title: 'Activity', sizes: ['2x1', '1x2', '2x2', '4x2'], size: '2x1', icon: 'activity', accent: 'coral', href: (me) => (director(me) ? href.admin('audit') : href.requests({ scope: 'all' })) },
+  { id: 'web-analytics', component: WebAnalyticsWidget, title: 'Web Analytics', sizes: ['1x1', '2x2', '4x2'], size: '1x1', icon: 'globe', accent: 'blue', href: () => CLOUDFLARE, external: true },
+  { id: 'traffic-security', component: TrafficSecurityWidget, title: 'Traffic & security', sizes: ['1x1', '2x2'], size: '1x1', icon: 'shield', accent: 'coral', href: () => CLOUDFLARE, external: true },
+  { id: 'performance', component: PerformanceWidget, title: 'Performance', sizes: ['1x1', '2x2'], size: '1x1', icon: 'gauge', accent: 'teal', href: () => CLOUDFLARE, external: true },
+  { id: 'workers-d1', component: WorkersD1Widget, title: 'Workers/D1 usage', sizes: ['1x1', '2x2'], size: '1x1', icon: 'database', accent: 'violet', href: () => CLOUDFLARE, external: true },
+  { id: 'member-signups', component: MemberSignupsWidget, title: 'Member signups', sizes: ['1x1', '2x2'], size: '1x1', icon: 'users', accent: 'violet', href: () => '/members' },
 ];
 
 /** The old single "Key figures" widget, split into one stat tile per figure in V0.4. */

@@ -1,0 +1,121 @@
+/* CSEED dashboard · V0.7 widget card. Design: web/design/mockups/home-v07.html + home-v07-notes.md.
+   The grid (tracks, breakpoints, edit tools) stays in styles/home-grid.css; this file is the card
+   surface and the shared widget content (rows, stat figures, charts, empty states). */
+
+/* ───────────── Card shell ───────────── */
+.wc {
+  position: relative; flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--block-radius, 16px);
+  box-shadow: var(--block-shadow); overflow: hidden; color: var(--text);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out);
+}
+.wc-head {display: flex; align-items: center; gap: 8px; min-width: 0; height: 24px; flex: none;}
+.wc-chip {flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--hue); background: color-mix(in srgb, var(--hue) var(--tint), var(--surface));}
+.wc-title {min-width: 0; margin: 0; font-size: 13px; font-weight: 600; line-height: 1.2; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.wc-link {color: inherit; text-decoration: none;}
+.wc-link::after {content: ""; position: absolute; inset: 0; z-index: 0; border-radius: inherit;}
+.wc-link:focus-visible {outline: none;}
+.wc:has(.wc-link:focus-visible) {outline: 2px solid var(--c-blue); outline-offset: 2px;}
+.wc-aside {margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; min-width: 0;}
+.wc-go {flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--muted); opacity: 0; transform: translate(-3px, 3px); transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-2) var(--ease-out);}
+/* Size containment: the body never grows the grid row. Content fits the space the tile has
+   (lists drop rows, charts scale), so a sparse widget fills its tile and a busy one never overflows. */
+.wc-body {position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; container: wc / size;}
+.wc-body > .async-state, .wc-body > .async-state > .async-content {flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px;}
+.wc-foot {flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+/* Anything interactive inside the card sits above the stretched card link. */
+.wc a:not(.wc-link), .wc button, .wc summary, .wc input, .wc select {position: relative; z-index: 1;}
+@media (hover: hover) {
+  .wc:not(.wc--nolink):hover {transform: translateY(-2px); box-shadow: var(--overlay-shadow); border-color: color-mix(in srgb, var(--control) 40%, var(--line));}
+  .wc:hover .wc-go {opacity: 1; transform: none;}
+}
+.wc:has(.wc-link:focus-visible) .wc-go {opacity: 1; transform: none;}
+.wc-loading {display: grid; gap: 8px; align-content: start;}
+.wc-error {margin: 0; font-size: 12px; color: var(--muted);}
+
+/* ───────────── Compact rows (replace tables) ───────────── */
+.wc-fit {flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2px; overflow: hidden;}
+.rows {display: grid; gap: 2px; list-style: none; margin: 0 -8px; padding: 0; align-content: start; min-width: 0;}
+.rows--2 {grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px;}
+.rows > li {min-width: 0;}
+.row {display: flex; align-items: center; gap: 10px; min-width: 0; padding: 5px 8px; border-radius: 8px; color: inherit; text-decoration: none;}
+a.row:hover, a.row:focus-visible {background: var(--hover);}
+a.row:focus-visible {outline: 2px solid var(--c-blue); outline-offset: -2px;}
+.row-main {flex: 1; min-width: 0; display: grid;}
+.row-title {font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.row-title b {font-weight: 600;}
+.row-title .row-what {font-weight: 400;}
+.row-meta {font-size: 12px; line-height: 16px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;}
+.row-side {flex: none; display: grid; justify-items: end; gap: 1px; text-align: right;}
+.row-side--bar {grid-template-columns: 96px 3.5em; align-items: center; column-gap: 8px;}
+.row-amt {font-size: 13px; line-height: 18px; font-weight: 500; font-variant-numeric: tabular-nums;}
+.row-side .badge {font-size: 12px; line-height: 16px;}
+.row-more {flex: none; font-size: 12px; line-height: 14px; color: var(--muted); margin-top: auto;}
+.sep {padding: 0 4px; opacity: .6;}
+.st-dot {display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;}
+.st-dot::before {content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--hue, var(--control));}
+.dot {flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--hue, var(--control));}
+.avatar {flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 10px; font-weight: 700; color: var(--hue); background: color-mix(in srgb, var(--hue) var(--tint), var(--surface));}
+.day-label {font-size: 11px; line-height: 16px; font-weight: 600; color: var(--muted); margin: 0;}
+
+/* ───────────── Stat tiles ───────────── */
+.stat {flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 6px; min-width: 0;}
+.stat-row {display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; min-width: 0;}
+.stat-value, .wc .kpi-value {font-size: 2rem; font-weight: 500; letter-spacing: -.04em; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap;}
+.stat-value--negative {color: var(--negative);}
+.stat-sub {font-size: 12px; color: var(--muted); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;}
+.stat-split {flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; min-height: 0;}
+.stat-split > div {display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; min-width: 0; min-height: 0;}
+/* 2×1: the figure centres in its half and grows with the tile height. */
+.stat-split > .stat-main {justify-content: center;}
+.stat-split .stat-value {font-size: clamp(2rem, 34cqh, 3rem);}
+.stat-chart {flex: 1; min-height: 28px; min-width: 0;}
+.stat-chart .sparkline {display: block;}
+.mini {display: grid; gap: 3px; font-size: 12px; min-width: 0; align-content: center; flex: 1;}
+.mini > a, .mini > span {display: flex; gap: 6px; min-width: 0; white-space: nowrap; color: inherit; text-decoration: none; border-radius: 6px; padding: 1px 4px; margin: 0 -4px;}
+.mini > a:hover {background: var(--hover);}
+.mini b {font-weight: 500; overflow: hidden; text-overflow: ellipsis;}
+.mini i {font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; min-width: 3.2em;}
+.split-legend {display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted);}
+.split-legend span {display: inline-flex; gap: 6px; align-items: center;}
+
+/* ───────────── Charts ───────────── */
+.wc .sparkline {flex: none; overflow: visible;}
+.wc .progress {display: block; width: 100%; min-width: 48px; height: 6px; border-radius: 999px; overflow: hidden; background: var(--hover);}
+.wc .progress-fill {display: block; height: 100%; border-radius: inherit; background: var(--hue); transform-origin: 0 50%;}
+.bars {display: flex; align-items: flex-end; gap: 3px; flex: 1; min-height: 32px; max-height: 120px;}
+.bars i {flex: 1; min-width: 3px; border-radius: 3px 3px 1px 1px; background: var(--hue); opacity: .85; transform-origin: 50% 100%;}
+.bars i:last-child {opacity: 1;}
+.chart-block {flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px;}
+
+/* ───────────── Empty state ───────────── */
+.wc-empty {flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; text-align: center; color: var(--muted); font-size: 13px; padding: 4px 8px;}
+.wc-empty svg {color: var(--control); opacity: .8;}
+.wc-empty--row {grid-auto-flow: column; gap: 10px; align-items: center;}
+
+/* ───────────── Edit mode (the grid's tools sit on top; see home-grid.css) ───────────── */
+.blocks.is-editing .wc {box-shadow: 0 0 0 2px var(--block-ring), var(--block-shadow); transform: none;}
+.blocks.is-editing .wc-body, .blocks.is-editing .wc-foot {opacity: .55; pointer-events: none; user-select: none;}
+.blocks.is-editing .wc-go, .blocks.is-editing .wc-aside {display: none;}
+.blocks.is-editing .wc-link {pointer-events: none;}
+.blocks.is-editing .blk:hover .wc {box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-blue) 55%, transparent), var(--block-shadow);}
+.blk-float .wc {box-shadow: var(--block-lift), 0 0 0 2px var(--block-ring);}
+.blk-float .wc-body, .blk-float .wc-foot {opacity: 1;}
+
+/* ───────────── Phone (Home under 600px) ───────────── */
+@container blocks (max-width: 599px) {
+  .wc {padding: 14px;}
+  .stat-value, .wc .kpi-value {font-size: 1.5rem;}
+  .stat-split .stat-value {font-size: clamp(1.5rem, 30cqh, 2.25rem);}
+  .rows--2 {grid-template-columns: minmax(0, 1fr);}
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wc, .wc-go {transition: none;}
+}
+
+/* Activity 4×2: two columns grouped by day. */
+.wc-cols {display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; align-content: start;}
+.wc-col {min-width: 0; display: flex; flex-direction: column; gap: 2px;}
+@container blocks (max-width: 599px) {.wc-cols {grid-template-columns: minmax(0, 1fr);} .wc-col + .wc-col {display: none;}}
+

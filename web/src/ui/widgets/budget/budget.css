@@ -1,0 +1,25 @@
+/* Budget vs actual: donut + blegend (notes § Per widget, budget). */
+.donut-wrap {flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center;}
+.donut-wrap--wide {gap: 32px;}
+.donut {position: relative; display: grid; place-items: center;}
+.donut svg {display: block; transform: rotate(-90deg);}
+.donut-track {fill: none; stroke: var(--hover);}
+.donut-seg {fill: none; stroke: var(--hue);}
+.donut-center {position: absolute; inset: 0; display: grid; place-content: center; text-align: center; line-height: 1.15;}
+.donut-center b {font-size: 22px; font-weight: 500; letter-spacing: -.03em; font-variant-numeric: tabular-nums;}
+.donut-center > span {font-size: 11px; color: var(--muted);}
+.blegend-col {align-self: stretch; min-height: 0; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; overflow: hidden;}
+.blegend {display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; min-width: 0; font-size: 12px;}
+.blegend--2 {grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; row-gap: 10px;}
+.blegend li {display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; min-width: 0; line-height: 18px;}
+.blegend li > b {font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.blegend li > span:last-of-type {color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap;}
+.blegend li .progress {grid-column: 2 / -1; height: 4px;}
+.blegend .blegend-more > span:nth-child(2) {color: var(--muted);}
+.blegend-total {display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; font-size: 12px; color: var(--muted); padding-top: 8px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums;}
+.blegend-total b {color: var(--text); font-weight: 500;}
+.over {color: var(--negative);}
+@container blocks (max-width: 599px) {
+  .blegend--2 {grid-template-columns: minmax(0, 1fr);}
+  .donut-wrap {gap: 14px;}
+}

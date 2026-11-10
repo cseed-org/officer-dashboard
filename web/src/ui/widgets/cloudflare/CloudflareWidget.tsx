@@ -1,8 +1,12 @@
-import { fmtDateTime } from '../../../lib/format';
+import type { ComponentChildren } from "preact";
+import { fmtTime } from "../../../lib/format";
 import { useApi } from "../../../lib/api/useApi";
 import type { ResponseOf } from "../../../lib/api/client";
-import { widgetRegistry, type BlockSize } from "../registry";
-import { Icon } from "../../components/Icon";
+import type { CurrentUser } from "../../../lib/contracts";
+import { widgetDef, type BlockSize } from "../registry";
+import { CountUp } from "../../components/kit";
+import WidgetCard, { WidgetEmpty, WidgetState } from "../shell/WidgetCard";
+
 export const cloudflareIds = [
   "web-analytics",
   "traffic-security",
@@ -14,187 +18,150 @@ type CloudflareState = ReturnType<typeof useApi<"cloudflareWidgets">>;
 /** Detail level by footprint: 1×1 summary, 2×2 principal metrics, 4×2 adds breakdowns. */
 export const detailLevel = (size: BlockSize): "S" | "M" | "L" =>
   size === "1x1" ? "S" : size.startsWith("4") ? "L" : "M";
+
+const ASIDE: Record<string, string> = {
+  "web-analytics": "Last 7 days",
+  "traffic-security": "Last 24 hours",
+  performance: "p75 · last 24 hours",
+  "workers-d1": "Last 24 hours",
+  "member-signups": "Directory",
+};
+/** Core Web Vitals "good" thresholds (ms, ms, unitless). */
+const VITALS: Record<string, { name: string; good: number; poor: number; limit: string }> = {
+  "LCP · p75": { name: "Largest paint (LCP)", good: 2_500_000, poor: 4_000_000, limit: "≤ 2.5 s" },
+  "INP · p75": { name: "Interaction (INP)", good: 200_000, poor: 500_000, limit: "≤ 200 ms" },
+  "CLS · p75": { name: "Layout shift (CLS)", good: 0.1, poor: 0.25, limit: "≤ 0.1" },
+};
+const vitalChip = (label: string, n: number) => {
+  const v = VITALS[label];
+  if (!v) return null;
+  const [text, hue] = n <= v.good ? ["Good", "green"] : n <= v.poor ? ["Needs work", "amber"] : ["Poor", "coral"];
+  return <span class="st-dot" data-hue={hue}>{text}</span>;
+};
+
 export default function CloudflareWidget({
   id,
   size: blockSize,
   state,
+  me,
 }: {
   id: string;
   size: BlockSize;
   state: CloudflareState;
+  me: CurrentUser;
 }) {
   const size = detailLevel(blockSize);
-  const title = widgetRegistry.find((w) => w.id === id)?.title ?? id;
+  const icon = widgetDef(id)?.icon ?? "activity";
   const widget =
     state.status === "ready"
       ? state.data.widgets.find((w) => w.id === id)
       : undefined;
   const metrics = widget ? extractMetrics(widget) : [];
-  const stale =
+  const stale = !!(
     widget?.lastSync &&
-    (Date.now() - widget.lastSync > 36 * 60 * 60 * 1000 || widget.error);
+    (Date.now() - widget.lastSync > 36 * 60 * 60 * 1000 || widget.error)
+  );
+  const synced = widget?.lastSync ? fmtTime(new Date(widget.lastSync).toISOString()) : null;
+  const ready = !!widget?.connected && !!widget.data && metrics.length > 0;
+  const foot = ready && synced ? (size === "S" ? synced : `Synced daily, last ${synced}`) : null;
+  const aside = stale ? <span class="cf-stale">Stale</span> : ready && size !== "S" ? ASIDE[id] : null;
+  const empty = (line: ComponentChildren, detail?: ComponentChildren) => (
+    <>
+      <WidgetEmpty icon={icon} size={blockSize}>{line}</WidgetEmpty>
+      {detail && size !== "S" && detail}
+    </>
+  );
+  let body: ComponentChildren;
+  if (state.status !== "ready") body = <WidgetState state={state} label="analytics" />;
+  else if (!widget?.connected)
+    body = empty(
+      id === "member-signups" ? "No members yet" : "Not connected yet",
+      <details class="cf-details">
+        <summary>Connection details</summary>
+        <p>
+          A director configures Cloudflare on the server. Daily sync keeps this
+          widget up to date; no credentials are stored in your browser.
+        </p>
+      </details>,
+    );
+  else if (!widget.data)
+    body = empty(widget.error ? "Sync unavailable · check Cloudflare permissions" : "Waiting for first sync");
+  else if (!metrics.length) body = empty("No data for this period");
+  else {
+    const [first] = metrics;
+    const value = (v: string) => <CountUp value={v} />;
+    if (size === "S") {
+      const sub =
+        id === "member-signups"
+          ? `members · +${metrics[1]?.[1] ?? 0} in 7 days`
+          : id === "traffic-security"
+            ? `requests${metrics.find(([l]) => l === "Security events") ? ` · ${metrics.find(([l]) => l === "Security events")![1]} security events` : ""}`
+            : id === "web-analytics"
+              ? `${first![0].toLowerCase()} · last 7 days`
+              : id === "workers-d1"
+                ? "worker requests · 24 h"
+                : <>LCP p75 · {vitalChip(first![0], first![2])}</>;
+      body = (
+        <div class="stat">
+          <span class="kpi-value stat-value">{value(first![1])}</span>
+          <span class="stat-sub">{sub}</span>
+        </div>
+      );
+    } else if (id === "performance") {
+      body = (
+        <div class="vitals">
+          {metrics.map(([label, text, n]) => (
+            <div class="vital" key={label}>
+              <b>{VITALS[label]?.name ?? label}</b>
+              <span>{text}</span>
+              <span class="vital-chip">{vitalChip(label, n)}</span>
+              <small>{VITALS[label]?.limit ?? ""}</small>
+            </div>
+          ))}
+        </div>
+      );
+    } else {
+      const shown = metrics
+        .filter(
+          ([label]) =>
+            id !== "workers-d1" || size === "L" ||
+            ["Worker requests", "CPU time · p50", "D1 rows read", "D1 rows written"].includes(label),
+        )
+        .slice(0, size === "M" ? 4 : 8);
+      body = (
+        <>
+          <div class={`metrics${size === "L" && shown.length > 2 ? " metrics--4" : ""}`}>
+            {shown.map(([label, text]) => (
+              <div class="metric" key={label}>
+                <span class="metric-label">{label}</span>
+                <span class="metric-value">{value(text)}</span>
+              </div>
+            ))}
+          </div>
+          {id === "web-analytics" && <Breakdowns data={widget.data} only={size === "M" ? 1 : 3} />}
+          {widget.error && <p class="stat-sub" role="status">Latest sync failed · showing saved data</p>}
+        </>
+      );
+    }
+  }
   return (
-    <section
-      class={`tile cf-widget widget--${size.toLowerCase()}`}
-      aria-label={title}
-    >
-      <header class="widget-head">
-        <span class="widget-icon">
-          <Icon name={id === "member-signups" ? "user" : "activity"} />
-        </span>
-        <h2 class="widget-title">{title}</h2>
-        {stale && <span class="widget-stale">Stale</span>}
-        {id === "member-signups" && (
-          <a class="widget-link" href="/members">
-            Members →
-          </a>
-        )}
-      </header>
-      <div class="widget-body">
-        {state.status === "loading" ? (
-          <p role="status">Loading analytics…</p>
-        ) : state.status === "error" ? (
-          <div class="widget-state">
-            <h3 class="widget-state-title">Could not load analytics</h3>
-            <button class="btn" onClick={state.reload}>
-              Retry
-            </button>
-          </div>
-        ) : !widget?.connected ? (
-          <div class="widget-state">
-            <h3 class="widget-state-title">Not connected</h3>
-            <p class="widget-state-body">
-              {size === "S"
-                ? "Ask a director to connect it."
-                : "Cloudflare credentials haven’t been added. Ask a director to connect this source."}
-            </p>
-            {size !== "S" && (
-              <details>
-                <summary>Connection details</summary>
-                <p class="widget-state-body">
-                  A director configures Cloudflare on the server. Daily sync
-                  keeps this widget up to date; no credentials are stored in
-                  your browser.
-                </p>
-              </details>
-            )}
-            {size === "L" && (
-              <ul class="widget-ghost" aria-label="Available after connection">
-                {(id === "web-analytics"
-                  ? [
-                      "Visits and page views",
-                      "Top pages",
-                      "Referrers and countries",
-                    ]
-                  : ["Daily metrics", "Source breakdown"]
-                ).map((label) => (
-                  <li key={label}>
-                    {label}
-                    <span>—</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : !widget.data ? (
-          <div class="widget-state">
-            <h3 class="widget-state-title">
-              {widget.error ? "Sync unavailable" : "Waiting for first sync"}
-            </h3>
-            <p class="widget-state-body">
-              {widget.error
-                ? "Check Cloudflare permissions, then sync again."
-                : "Your data will appear after the daily sync."}
-            </p>
-          </div>
-        ) : metrics.length === 0 ? (
-          <div class="widget-state">
-            <h3 class="widget-state-title">No data for this period</h3>
-            <p class="widget-state-body">
-              No measurements were returned for this period.
-            </p>
-          </div>
-        ) : (
-          <>
-            <p class="widget-sub">
-              {id === "member-signups"
-                ? "Membership directory"
-                : id === "workers-d1"
-                  ? "Workers: last 24 hours · D1: previous UTC day"
-                  : id === "web-analytics"
-                    ? "Last 7 days · account analytics"
-                    : id === "traffic-security"
-                      ? "Last 24 hours · configured zone"
-                      : "Last 24 hours · account analytics"}
-            </p>
-            {size === "S" ? (
-              <>
-                <p class="widget-figure">{metrics[0]?.[1]}</p>
-                <p class="widget-sub">{metrics[0]?.[0]}</p>
-                {id === "member-signups" && (
-                  <p class="widget-sub">+{metrics[1]?.[1]} joined in 7 days</p>
-                )}
-              </>
-            ) : (
-              <ul class="widget-list">
-                {metrics
-                  .filter(
-                    ([label]) =>
-                      size !== "M" ||
-                      id !== "workers-d1" ||
-                      [
-                        "Worker requests",
-                        "CPU time · p50",
-                        "D1 rows read",
-                        "D1 rows written",
-                      ].includes(label),
-                  )
-                  .slice(
-                    0,
-                    size === "M"
-                      ? id === "traffic-security" || id === "workers-d1"
-                        ? 4
-                        : 3
-                      : metrics.length,
-                  )
-                  .map(([label, value]) => (
-                    <li key={label}>
-                      <span>{label}</span>
-                      <strong>{value}</strong>
-                    </li>
-                  ))}
-              </ul>
-            )}
-            {size === "L" && <Breakdowns data={widget.data} />}
-            {widget.error && (
-              <p class="widget-sub" role="status">
-                Latest sync failed · showing saved data
-              </p>
-            )}
-          </>
-        )}
-      </div>
-      <footer class="widget-foot">
-        {size === "S" ? "Last sync " : "Synced daily, last "}
-        {widget?.lastSync
-          ? fmtDateTime(new Date(widget.lastSync).toISOString())
-          : "never"}
-      </footer>
-    </section>
+    <WidgetCard id={id} me={me} aside={aside} foot={foot} class={`cf-widget widget--${size.toLowerCase()}`}>
+      {body}
+    </WidgetCard>
   );
 }
 type Widget = ResponseOf<"cloudflareWidgets">["widgets"][number];
 // Only expected numeric aggregates are displayed. Raw response objects never enter markup.
-function extractMetrics(w: Widget): [string, string][] {
+function extractMetrics(w: Widget): [string, string, number][] {
   const data = w.data as Record<string, unknown> | null;
   if (!data) return [];
   if (w.id === "member-signups")
-    return [
-      ["Total members", Number(data.members ?? 0).toLocaleString()],
-      ["Joined in 7 days", Number(data.last7Days ?? 0).toLocaleString()],
-      ["Joined today", Number(data.today ?? 0).toLocaleString()],
-      ["Joined in 30 days", Number(data.last30Days ?? 0).toLocaleString()],
-    ];
+    return ([
+      ["Total members", data.members],
+      ["Joined in 7 days", data.last7Days],
+      ["Joined today", data.today],
+      ["Joined in 30 days", data.last30Days],
+    ] as const).map(([label, v]): [string, string, number] => [label, Number(v ?? 0).toLocaleString("en-US"), Number(v ?? 0)]);
   const wanted: Record<string, string> =
     w.id === "web-analytics"
       ? { count: "Page views", visits: "Visits" }
@@ -259,22 +226,21 @@ function extractMetrics(w: Widget): [string, string][] {
     ?.count;
   if (requests && typeof cached === "number")
     values.set("Cache hit", (cached / requests) * 100);
-  return [...values].map(([label, n]) => {
+  return [...values].map(([label, n]): [string, string, number] => [label, formatMetric(label, n), n]);
+}
+
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+function formatMetric(label: string, n: number): string {
     if (label === "Bandwidth" || label === "Largest D1 database")
-      return [label, formatBytes(n)];
+      return formatBytes(n);
+    if (label === "LCP · p75" && n >= 1_000_000)
+      return (n / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 1 }) + " s";
     if (["LCP · p75", "INP · p75", "CPU time · p50"].includes(label))
-      return [
-        label,
-        (n / 1000).toLocaleString(undefined, { maximumFractionDigits: 1 }) +
-          " ms",
-      ];
+      return (n / 1000).toLocaleString("en-US", { maximumFractionDigits: 1 }) + " ms";
     if (label === "Cache hit")
-      return [
-        label,
-        n.toLocaleString(undefined, { maximumFractionDigits: 1 }) + "%",
-      ];
-    return [label, n.toLocaleString(undefined, { maximumFractionDigits: 3 })];
-  });
+      return n.toLocaleString("en-US", { maximumFractionDigits: 1 }) + "%";
+    if (label === "CLS · p75") return n.toLocaleString("en-US", { maximumFractionDigits: 3 });
+    return n >= 10_000 ? compact.format(n).toLowerCase() : n.toLocaleString("en-US", { maximumFractionDigits: 3 });
 }
 
 function formatBytes(n: number) {
@@ -287,31 +253,33 @@ function formatBytes(n: number) {
   }
   return "";
 }
-function Breakdowns({ data }: { data: unknown }) {
+function Breakdowns({ data, only }: { data: unknown; only: number }) {
   const account = (
     data as { viewer?: { accounts?: Record<string, unknown>[] } }
   )?.viewer?.accounts?.[0];
   if (!account) return null;
+  const sections = [
+    ["topPages", "Top pages", "requestPath"],
+    ["referrers", "Referrers", "refererHost"],
+    ["countries", "Countries", "countryName"],
+  ].slice(0, only);
   return (
-    <div class="home-details">
-      {[
-        ["topPages", "Top pages", "requestPath"],
-        ["referrers", "Referrers", "refererHost"],
-        ["countries", "Countries", "countryName"],
-      ].map(([key, label, dim]) => {
+    <div class={`breakdowns${only === 1 ? " breakdowns--1" : ""}`}>
+      {sections.map(([key, label, dim]) => {
         const rows = account[key!] as
-          { count?: number; dimensions?: Record<string, string> }[] | undefined;
+          | { count?: number; dimensions?: Record<string, string> }[]
+          | undefined;
         return rows?.length ? (
           <section key={key}>
-            <h3 class="widget-sub">{label}</h3>
-            <ul class="widget-list">
+            {only > 1 && <h3>{label}</h3>}
+            <ul class="kv" aria-label={label}>
               {rows.map((row, i) => (
                 <li key={i}>
                   <span>
                     {row.dimensions?.[dim!] ||
                       (key === "referrers" ? "Direct" : "Unknown")}
                   </span>
-                  <strong>{row.count?.toLocaleString() ?? "—"}</strong>
+                  <span>{row.count?.toLocaleString("en-US") ?? "—"}</span>
                 </li>
               ))}
             </ul>

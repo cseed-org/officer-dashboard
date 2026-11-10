@@ -1,81 +1,46 @@
 import { DueDate } from '../../components/DueDate';
 import { isDueSoon } from '../../../lib/deadline';
-import type { CurrentUser, PurchaseRequestListItem } from '../../../lib/contracts';
+import type { PurchaseRequestListItem } from '../../../lib/contracts';
 import type { PurchaseStatus } from '../../../lib/domain';
 import { useApi } from '../../../lib/api/useApi';
-import { formatCents, relative } from '../../../lib/format';
+import { dollars, fmtShort, formatCents, relative } from '../../../lib/format';
 import { href } from '../../../lib/routes';
+import { categoryHue } from '../../../lib/colors';
 import { StatusBadge } from '../../components/kit';
-import { Async, Empty, Loading } from '../../components/states';
-
-import Block from '../shell/WidgetCard';
+import WidgetCard, { WidgetEmpty, WidgetState } from '../shell/WidgetCard';
+import { FitList, Meta, Row, ROW_2 } from '../shell/rows';
 import type { WidgetProps } from '../registry';
+
 const OPEN: PurchaseStatus[] = ['draft', 'submitted', 'approved', 'fulfilling', 'fulfilled', 'reimbursed'];
-export default function MyActionWidget({ me, size }: WidgetProps) {
- const director = me.role !== 'officer';
-  return (
-              <Block id="my-action" title={director ? 'awaiting your approval' : 'my open requests'} action={<a href={href.newRequest()}>new request →</a>}>
-                <MyAction me={me} limit={size === '2x1' ? 2 : 6} />
-              </Block>
-            );
-}
-export function RequestList({ items, showRequester }: { items: PurchaseRequestListItem[]; showRequester?: boolean }) {
-  return (
-    <ul class="list">
-      {items.map((r) => (
-        <li class="list-row" key={r.id}>
-          <div class="list-main">
-            <a class="cell-title" href={href.request(r.id)} data-request-link={r.number}>
-              {r.title}
-            </a>
-            <span class="cell-sub">
-              <span class="mono">#{r.number}</span>
-              {showRequester ? ` · ${r.requester.name}` : ''} · {relative(r.submittedAt ?? r.updatedAt)}
-              {isDueSoon(r) && (
-                <>
-                  {' · '}
-                  <DueDate date={r.neededBy} status={r.status} hintOnly />
-                </>
-              )}
-            </span>
-          </div>
-          <div class="list-side">
-            <span class="num">{formatCents(r.totalCents)}</span>
-            <StatusBadge status={r.status} />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
+
+/** A request as a compact row. `rich` (4×2) adds the number, category and requester. */
+export function RequestRow({ r, showRequester, rich }: { r: PurchaseRequestListItem; showRequester?: boolean; rich?: boolean }) {
+  const due = isDueSoon(r) ? <DueDate date={r.neededBy} status={r.status} hintOnly /> : r.neededBy ? `needed ${fmtShort(r.neededBy)}` : null;
+  const when = relative(r.submittedAt ?? r.updatedAt);
+  const meta = rich
+    ? <Meta parts={[<span class="mono">#{r.number}</span>, showRequester && r.requester.name, <span class="st-dot" data-hue={categoryHue(r.expenseAccount.code)}>{r.expenseAccount.name}</span>, due, when]} />
+    : <Meta parts={[showRequester ? r.requester.name : <span class="mono">#{r.number}</span>, when, due]} />;
+  return <Row href={href.request(r.id)} attrs={{ 'data-request-link': r.number }} title={r.title} meta={meta}
+    side={<><span class="row-amt">{formatCents(r.totalCents)}</span><StatusBadge status={r.status} /></>} />;
 }
 
-function MyAction({ me, limit }: { me: CurrentUser; limit: number }) {
+const sum = (items: PurchaseRequestListItem[]) => items.reduce((a, r) => a + r.totalCents, 0);
+
+export default function MyActionWidget({ me, size, overview }: WidgetProps) {
   const director = me.role !== 'officer';
-  const state = useApi('requestsList', { query: director ? { scope: 'all', status: 'pending', limit } : { scope: 'mine', limit: 50 } });
+  const state = useApi('requestsList', { query: director ? { scope: 'all', status: 'pending', limit: 30 } : { scope: 'mine', limit: 50 } });
+  const items = state.status === 'ready' ? (director ? state.data.items : state.data.items.filter((r) => OPEN.includes(r.status))) : [];
+  // Directors: the overview's pending count covers requests beyond the fetched page.
+  const total = director && overview.status === 'ready' ? Math.max(overview.data.kpis.pendingRequests, items.length) : items.length;
+  const wide = size === '4x2';
+  const aside = state.status === 'ready' && total ? `${total} waiting${wide ? ` · ${dollars(director && overview.status === 'ready' ? overview.data.kpis.pendingRequestsCents : sum(items))}` : ''}` : null;
   return (
-    <Async state={state} loading={<Loading rows={3} label="Loading requests" />}>
-      {(d) => {
-        const items = (director ? d.items : d.items.filter((r) => OPEN.includes(r.status))).slice(0, limit);
-        if (!items.length)
-          return director ? (
-            <Empty title="Nothing to approve">New requests from officers land here.</Empty>
-          ) : (
-            <Empty title="No open requests" action={<a class="btn btn--small" href={href.newRequest()}>new purchase request</a>}>
-              Need supplies, food or a reimbursement? Ask here and a director will review it.
-            </Empty>
-          );
-        return (
-          <>
-            <RequestList items={items} showRequester={director} />
-            {director && d.items.length >= limit && (
-              <p class="small">
-                <a href={href.requests({ scope: 'all', status: 'pending' })}>see every pending request →</a>
-              </p>
-            )}
-          </>
-        );
-      }}
-    </Async>
+    <WidgetCard id="my-action" me={me} title={director ? 'Awaiting your approval' : 'My open requests'} aside={director ? aside : aside?.replace('waiting', 'open')}>
+      {state.status !== 'ready' ? <WidgetState state={state} label="requests" />
+        : !items.length ? <WidgetEmpty icon="flag" size={size}>{director ? 'Nothing to approve' : 'No open requests'}</WidgetEmpty>
+          : <FitList items={items} row={ROW_2} columns={wide ? 2 : 1} fallback={size === '2x1' ? 2 : wide ? 10 : 5} hiddenBeyond={total - items.length}
+            render={(r) => <RequestRow key={r.id} r={r} showRequester={director} rich={wide} />}
+            more={(hidden, count) => `+${count} more${hidden.length === count ? ` · ${dollars(sum(hidden))}` : ''}`} />}
+    </WidgetCard>
   );
 }
-

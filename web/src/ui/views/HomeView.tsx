@@ -1,5 +1,9 @@
-import '../../styles/calendar-widget.css';
-import '../../styles/cloudflare-widgets.css';
+// Widget stylesheets load here, not from the widget modules: tests import registry.ts in Node.
+import '../widgets/shell/widget.css';
+import '../widgets/calendar/calendar.css';
+import '../widgets/links/links.css';
+import '../widgets/budget/budget.css';
+import '../widgets/cloudflare/cloudflare.css';
 import { useRef } from 'preact/hooks';
 import type { CurrentUser } from '../../lib/contracts';
 import { useApi } from '../../lib/api/useApi';

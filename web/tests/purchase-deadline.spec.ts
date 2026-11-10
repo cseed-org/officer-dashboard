@@ -95,14 +95,12 @@ for (const theme of THEMES) {
     await page.clock.setFixedTime(FIXED);
     await useTheme(page, theme);
     await devLogin(page, 'director');
-    await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true } });
-    // A known widget state: month view, default sources for a director plus the source toggle.
-    await page.request.put('/api/me/calendar-widget', { data: { view: 'auto', colourBy: 'source', showWeekends: true, sources: ['events', 'design', 'purchase-deadlines'] } });
+    // V0.7: the Home calendar has no source controls; directors see the role's default sources,
+    // which include purchase deadlines. The 2×2 week (Nov 2–8) has room for Nov 6's items.
+    await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true, widgetLayout: [{ id: 'calendar', size: '2x2' }, { id: 'links', size: '2x1' }] } });
     await page.goto('/');
     await settle(page);
-    const toggle = page.getByRole('group', { name: 'Calendar sources' }).getByRole('button', { name: /Purchase deadlines/ });
-    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-    const chip = page.locator('.cw-item-title', { hasText: 'BuildHer workshop snacks' }).first();
+    const chip = page.locator('a.cal-chip', { hasText: 'BuildHer workshop snacks' }).first();
     await expect(chip).toBeVisible();
     await chip.focus();
     const popover = page.getByRole('group', { name: 'BuildHer workshop snacks details' });
@@ -112,14 +110,8 @@ for (const theme of THEMES) {
     await expect(popover.getByRole('link', { name: 'Open details →' })).toHaveAttribute('href', /\/finance\?id=req-0004/);
     expect(await overflow(page)).toEqual([]);
     if (SHOTS && info.project.name !== 'tablet') await page.screenshot({ path: `${shotDir}/calendar-${info.project.name}-${theme}.png` });
-
-    // Toggling the source off hides the chips (and saves the choice).
-    const put = page.waitForResponse((r) => r.url().endsWith('/api/me/calendar-widget') && r.request().method() === 'PUT');
     await page.keyboard.press('Escape');
-    await toggle.click();
-    expect((await put).ok()).toBe(true);
-    await expect(page.locator('.cw-item-title', { hasText: 'BuildHer workshop snacks' })).toHaveCount(0);
-    await page.request.put('/api/me/calendar-widget', { data: { view: 'auto', colourBy: 'source', showWeekends: true, sources: ['events', 'design', 'purchase-deadlines'] } });
+    await page.request.put('/api/me/prefs', { data: { widgetLayout: defaultWidgetLayout } });
     expect(errors).toEqual([]);
   });
 
@@ -162,75 +154,33 @@ for (const theme of THEMES) {
   });
 }
 
-/** Rectangles of the legend's chips/summary and the time-zone label. */
-const legendBoxes = (page: Page) =>
-  page.locator('.cw-legend').evaluate((legend) => {
-    const r = (el: Element) => { const b = el.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; };
-    return {
-      legend: r(legend),
-      items: [...legend.querySelectorAll(':scope > .cw-sources > .cw-source-toggle, :scope > .cw-sources-menu > summary')].map(r),
-      zone: legend.querySelector(':scope > .cw-zone') ? r(legend.querySelector(':scope > .cw-zone')!) : null,
-    };
-  });
-const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) =>
-  a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 && a.y < b.y + b.h - 0.5 && b.y < a.y + a.h - 0.5;
-
 for (const theme of THEMES) {
   for (const size of ['4x2', '2x2', '2x1'] as const) {
-    test(`calendar legend fits at ${size} without overlap or layout shift · ${theme}`, async ({ page }, info) => {
+    test(`calendar at ${size}: no controls, no overflow, no layout shift when the feed loads · ${theme}`, async ({ page }, info) => {
       const errors = watchErrors(page);
       await page.clock.setFixedTime(FIXED);
       await useTheme(page, theme);
       await devLogin(page, 'director');
       await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true, widgetLayout: [{ id: 'calendar', size }, { id: 'links', size: '2x1' }] } });
-      await page.request.put('/api/me/calendar-widget', { data: { view: 'auto', colourBy: 'source', showWeekends: true, sources: ['events', 'design', 'purchase-deadlines'] } });
-      // Hold the feed so the legend's first paint (before registry metadata) can be measured.
+      // Hold the feed so the grid's first paint (before items arrive) can be measured.
       let release!: () => void;
       const held = new Promise<void>((r) => (release = r));
       await page.route('**/api/calendar/feed**', async (route) => { await held; await route.continue(); });
       await page.goto('/');
       const widget = page.locator('section[data-block="calendar"]');
-      await expect(widget.locator('.cw-legend')).toBeVisible();
-      const before = await legendBoxes(page);
+      const grid = widget.locator(size === '4x2' ? '.calm' : '.hcal');
+      await expect(grid).toBeVisible();
+      const before = await widget.boundingBox();
       release();
-      await expect(widget.locator('.cw-grid, .cw-agenda, .cw-empty').first()).toBeVisible();
+      // Phone-width month cells show dots instead of chips.
+      await expect(widget.locator(size === '4x2' && info.project.name === 'phone' ? '.cal-dot' : 'a.cal-chip').first()).toBeVisible();
       await settle(page);
-      const after = await legendBoxes(page);
-      expect(after.legend.h, 'legend height is stable once sources load').toBeCloseTo(before.legend.h, 0);
-      if (after.zone) for (const item of after.items) expect(overlaps(item, after.zone), 'time zone overlaps a source control').toBe(false);
-      for (const item of after.items) expect(item.x + item.w).toBeLessThanOrEqual(after.legend.x + after.legend.w + 0.5);
+      const after = (await widget.boundingBox())!;
+      for (const k of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(after[k] - before![k]), `the tile keeps its ${k} once items load`).toBeLessThan(1);
+      await expect(widget.getByRole('button')).toHaveCount(0);
+      await expect(widget.locator('select, details, summary')).toHaveCount(0);
       expect(await overflow(page)).toEqual([]);
-
-      if (size === '4x2') {
-        await expect(widget.locator('.cw-sources-menu')).toHaveCount(0);
-        await expect(widget.getByRole('group', { name: 'Calendar sources' }).getByRole('button')).toHaveCount(6);
-      } else {
-        const summary = widget.locator('.cw-sources-menu summary');
-        await expect(summary).toHaveText(/Sources \(3\/6\)/);
-        const gridBox = await widget.locator('.cw-legend').evaluate((el) => el.nextElementSibling?.getBoundingClientRect().top ?? 0);
-        await summary.focus();
-        await page.keyboard.press('Enter');
-        const toggle = widget.getByRole('group', { name: 'Calendar sources' }).getByRole('button', { name: /Purchase deadlines/ });
-        await expect(toggle).toBeVisible();
-        expect(await widget.locator('.cw-legend').evaluate((el) => el.nextElementSibling?.getBoundingClientRect().top ?? 0), 'opening the menu moves nothing').toBeCloseTo(gridBox, 0);
-        // The floating panel sits above neighbouring widgets: its last toggle receives pointer hits.
-        await widget.locator('.cw-sources-panel button').last().click({ trial: true, timeout: 5_000 });
-        expect(await overflow(page)).toEqual([]);
-        if (SHOTS && info.project.name !== 'tablet') await widget.screenshot({ path: `${shotDir}/legend-${size}-${info.project.name}-${theme}.png` });
-        // Keyboard: Tab moves from the summary into the panel's toggles.
-        await page.keyboard.press('Tab');
-        await expect(widget.locator('.cw-sources-panel button').first()).toBeFocused();
-        await toggle.focus();
-        const put = page.waitForResponse((r) => r.url().endsWith('/api/me/calendar-widget') && r.request().method() === 'PUT');
-        await page.keyboard.press('Enter');
-        expect((await put).ok()).toBe(true);
-        await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-        await expect(summary).toHaveText(/Sources \(2\/6\)/);
-        await page.keyboard.press('Escape');
-        await expect(toggle).toBeHidden();
-        await expect(summary).toBeFocused();
-      }
-      if (SHOTS && info.project.name !== 'tablet' && size === '4x2') await widget.screenshot({ path: `${shotDir}/legend-${size}-${info.project.name}-${theme}.png` });
+      if (SHOTS && info.project.name !== 'tablet') await widget.screenshot({ path: `${shotDir}/calendar-${size}-${info.project.name}-${theme}.png` });
       await page.request.put('/api/me/prefs', { data: { widgetLayout: defaultWidgetLayout } });
       expect(errors).toEqual([]);
     });
