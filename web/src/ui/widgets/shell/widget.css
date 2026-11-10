@@ -119,3 +119,22 @@ a.row:focus-visible {outline: 2px solid var(--c-blue); outline-offset: -2px;}
 .wc-col {min-width: 0; display: flex; flex-direction: column; gap: 2px;}
 @container blocks (max-width: 599px) {.wc-cols {grid-template-columns: minmax(0, 1fr);} .wc-col + .wc-col {display: none;}}
 
+/* ───────────── Load motion (shell/entrance.ts: first Home visit per browser session) ─────────────
+   ~0.85s with 12 tiles: tiles fade up 40ms apart, then charts draw, bars grow, the donut sweeps and
+   CountUp counts. `li.blk` outranks the grid's older .blocks.is-entering > .blk rule. */
+.count-up {font-variant-numeric: tabular-nums;}
+@media (prefers-reduced-motion: no-preference) {
+  .blocks.is-entering > li.blk {--enter: calc(min(var(--i, 0), 10) * var(--home-stagger)); animation: wc-in var(--dur-step) var(--ease-soft) backwards; animation-delay: var(--enter);}
+  .is-entering .wc .sparkline-line {stroke-dasharray: 1; animation: wc-draw var(--dur-chart) var(--ease-out) backwards; animation-delay: calc(var(--enter, 0ms) + 40ms);}
+  .is-entering .wc .sparkline-dot {animation: wc-fade var(--dur-2) var(--ease-out) backwards; animation-delay: calc(var(--enter, 0ms) + 40ms + var(--dur-chart) - 80ms);}
+  .is-entering .wc .progress-fill {animation: wc-grow-x var(--dur-chart) var(--ease-out) backwards; animation-delay: calc(var(--enter, 0ms) + 40ms);}
+  .is-entering .wc .bars i {animation: wc-grow-y var(--dur-chart) var(--ease-out) backwards; animation-delay: calc(var(--enter, 0ms) + 40ms + var(--b, 0) * 8ms);}
+  .is-entering .wc .donut-sweep {animation: wc-sweep var(--dur-chart) var(--ease-out) backwards; animation-delay: calc(var(--enter, 0ms) + 40ms);}
+  .is-entering .wc .cal-chip {animation: wc-fade var(--dur-3) var(--ease-out) backwards; animation-delay: calc(var(--enter, 0ms) + 80ms + min(var(--c, 0), 10) * 12ms);}
+}
+@keyframes wc-in {from {opacity: 0; transform: translateY(var(--motion-distance));} to {opacity: 1; transform: none;}}
+@keyframes wc-draw {from {stroke-dashoffset: 1;} to {stroke-dashoffset: 0;}}
+@keyframes wc-grow-x {from {transform: scaleX(0);} to {transform: scaleX(1);}}
+@keyframes wc-grow-y {from {transform: scaleY(0);} to {transform: scaleY(1);}}
+@keyframes wc-sweep {from {stroke-dashoffset: 100;} to {stroke-dashoffset: 0;}}
+@keyframes wc-fade {from {opacity: 0;} to {opacity: 1;}}
