@@ -81,7 +81,7 @@ test('Links defaults to a compact card with accessible edit controls', async ({ 
     await expect(links.getByRole('link', { name: new RegExp(name) })).toBeVisible();
   }
   await page.getByRole('button', { name: 'Edit home' }).click();
-  await expect(links.locator('.tile-head, .wc-head')).toBeVisible();
+  await expect(links.locator('.wc-head')).toBeVisible();
   await links.locator('.blk-handle').focus();
   await expect(links.locator('.blk-handle')).toBeFocused();
   const corner = (await links.locator('.blk-resize--both').boundingBox())!;
@@ -113,7 +113,7 @@ test('Resize, remove and add widgets; Done persists, Cancel discards', async ({ 
 
   const expected = [...DEFAULT_IDS.filter((id) => id !== 'web-analytics'), 'member-signups'];
   await page.reload();
-  await expect(widget(page, 'member-signups')).toContainText('Not connected');
+  await expect(widget(page, 'member-signups')).toContainText('No members yet');
   expect(await order(page)).toEqual(expected);
   await expect(widget(page, 'kpi-upcoming')).toHaveAttribute('data-size', '2x1');
   await expect(widget(page, 'recent-events')).toHaveAttribute('data-size', '4x2');
@@ -217,7 +217,7 @@ test('V0.3 S/M/L layouts migrate to blocks without losing anything', async ({ pa
   expect(saved.at(-1)?.id).toBe('future-widget');
 });
 
-test('Phone: two columns, stat tiles pair up, tables take the full row', async ({ page }, info) => {
+test('Phone: two columns, stat tiles pair up, large widgets take the full row', async ({ page }, info) => {
   test.skip(info.project.name !== 'phone', 'phone layout');
   await openHome(page);
   const g = (await grid(page).boundingBox())!;
@@ -370,13 +370,18 @@ test('An onboarding landing starts the tour once, without forcing a replay', asy
 test('Calendar resize grips reach every supported footprint and persist', async ({ page }) => {
   await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }]);
   const calendar = widget(page, 'calendar');
+  await expect(calendar.locator('.cw--week')).toBeVisible();
+  await expect(calendar.locator('.hcal > .hcal-day')).toHaveCount(7);
+  await expect(calendar.getByRole('button')).toHaveCount(0);
   await page.getByRole('button', { name: 'Edit home' }).click();
   const grip = calendar.locator('.blk-resize--both');
   await grip.focus();
   await page.keyboard.press('Shift+ArrowDown');
   await expect(calendar).toHaveAttribute('data-size', '2x2');
+  await expect(calendar.locator('.cw--week')).toBeVisible();
   await page.keyboard.press('Shift+ArrowRight');
   await expect(calendar).toHaveAttribute('data-size', '4x2');
+  await expect(calendar.locator('.cw--month')).toBeVisible();
   await done(page);
   await page.reload();
   await expect(calendar).toHaveAttribute('data-size', '4x2');
@@ -518,4 +523,16 @@ test('Explicit edit positions adapt when Home changes from four columns to two',
   expect(c.y).toBeGreaterThan(a.y + a.height);
   expect(Math.abs(c.x - a.x)).toBeLessThan(2);
   expect(await overflow(page)).toEqual([]);
+});
+
+
+test('A whole-card click without dragging navigates in view mode', async ({ page }) => {
+  await openHome(page, [{ id: 'calendar', size: '2x1' }]);
+  const card = widget(page, 'calendar');
+  await expect(card.locator('.cw--week')).toBeVisible();
+  const box = (await card.boundingBox())!;
+  // Padding belongs to the stretched card link, outside the individual event chips.
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height - 8);
+  await expect(page).toHaveURL(/\/events(?:[?#]|$)/);
+  await expect(page.locator('.blk-float')).toHaveCount(0);
 });
