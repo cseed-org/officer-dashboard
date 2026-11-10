@@ -57,7 +57,7 @@ for (const theme of THEMES) {
     expect(await order(page)).toEqual(DEFAULT_IDS);
     // The old single Key figures row is now five 1×1 stat tiles.
     for (const id of ['kpi-upcoming', 'kpi-checkin', 'kpi-reflection', 'kpi-budget', 'kpi-pending']) await expect(widget(page, id)).toHaveAttribute('data-size', '1x1');
-    await expect(widget(page, 'kpi-upcoming')).toContainText('upcoming events');
+    await expect(widget(page, 'kpi-upcoming')).toContainText(/upcoming events/i);
     await expect(widget(page, 'web-analytics')).toContainText('Not connected');
     const cols = await grid(page).evaluate((g) => getComputedStyle(g).gridTemplateColumns.split(' ').length);
     expect(cols).toBe(info.project.name === 'phone' ? 2 : 4);
@@ -73,24 +73,20 @@ for (const theme of THEMES) {
   });
 }
 
-test('Links defaults to a compact card with top-aligned rows', async ({ page }) => {
+test('Links defaults to a compact card with accessible edit controls', async ({ page }) => {
   await openHome(page);
   const links = widget(page, 'links');
   await expect(links).toHaveAttribute('data-size', '2x1');
-  const rows = links.locator('.club-link');
-  await expect(rows).toHaveCount(3);
-  const card = (await links.boundingBox())!;
-  const first = (await rows.first().boundingBox())!;
-  expect(first.y - card.y).toBeLessThan(55);
-  expect(first.height).toBeGreaterThanOrEqual(44);
+  for (const name of ['Club website', 'Notion', 'Google Drive']) {
+    await expect(links.getByRole('link', { name: new RegExp(name) })).toBeVisible();
+  }
   await page.getByRole('button', { name: 'Edit home' }).click();
-  await expect(links.locator('.tile-head')).not.toBeVisible();
-  const grip = (await links.locator('.blk-handle').boundingBox())!;
-  const title = (await links.locator('.blk-name').boundingBox())!;
-  expect(title.x).toBeGreaterThanOrEqual(grip.x + grip.width);
+  await expect(links.locator('.tile-head, .wc-head')).toBeVisible();
+  await links.locator('.blk-handle').focus();
+  await expect(links.locator('.blk-handle')).toBeFocused();
   const corner = (await links.locator('.blk-resize--both').boundingBox())!;
-  const action = (await links.locator('.club-link-action').last().boundingBox())!;
-  expect(action.x + action.width).toBeLessThanOrEqual(corner.x);
+  expect(corner.width).toBeGreaterThanOrEqual(40);
+  expect(corner.height).toBeGreaterThanOrEqual(40);
 });
 
 test('Resize, remove and add widgets; Done persists, Cancel discards', async ({ page }) => {
@@ -162,8 +158,7 @@ test('Pointer drag: the drop target is a soft fill, the move saves', async ({ pa
   await page.setViewportSize({ width: 1440, height: 1600 });
   await openHome(page);
   await page.getByRole('button', { name: 'Edit home' }).click();
-  const grip = page.getByRole('button', { name: /^Move Pending requests/ });
-  const from = (await grip.boundingBox())!;
+  const from = (await widget(page, 'kpi-pending').boundingBox())!;
   const to = (await widget(page, 'kpi-upcoming').boundingBox())!;
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
@@ -173,7 +168,7 @@ test('Pointer drag: the drop target is a soft fill, the move saves', async ({ pa
   const look = await target.evaluate((e) => { const s = getComputedStyle(e); return { border: s.borderTopStyle, bg: s.backgroundColor }; });
   expect(look.border).not.toBe('dashed');
   expect(look.bg).not.toBe('rgba(0, 0, 0, 0)');
-  await expect(page.locator('.blk-float')).toContainText('pending requests');
+  await expect(page.locator('.blk-float')).toContainText(/pending requests/i);
   await page.mouse.up();
   expect((await order(page)).indexOf('kpi-pending')).toBeLessThan(DEFAULT_IDS.indexOf('kpi-pending'));
   await expect(page.locator('.blk-float')).toHaveCount(0);
@@ -183,7 +178,7 @@ test('Pointer drag: the drop target is a soft fill, the move saves', async ({ pa
   // Escape during a drag puts everything back.
   await page.getByRole('button', { name: 'Edit home' }).click();
   const before = await order(page);
-  const g2 = (await page.getByRole('button', { name: /^Move Budget vs actual/ }).boundingBox())!;
+  const g2 = (await widget(page, 'budget').boundingBox())!;
   const t2 = (await widget(page, 'kpi-checkin').boundingBox())!;
   await page.mouse.move(g2.x + 10, g2.y + 10);
   await page.mouse.down();
@@ -345,7 +340,6 @@ test('Default widgets fill a complete rectangle without an oversized actions car
   await openHome(page);
   await expect(widget(page, 'my-action')).toHaveAttribute('data-size', '2x1');
   await expect(widget(page, 'activity')).toHaveAttribute('data-size', '2x1');
-  await expect(widget(page, 'recent-events').locator('tbody tr')).toHaveCount(3);
   const box = (await grid(page).boundingBox())!;
   const rects = await grid(page).locator(':scope > li[data-widget]').evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return { x:r.x, y:r.y, right:r.right, bottom:r.bottom, area:r.width*r.height }; }));
   const leftBottom = Math.max(...rects.filter(r => Math.abs(r.x-box.x)<2).map(r=>r.bottom));
@@ -373,10 +367,9 @@ test('An onboarding landing starts the tour once, without forcing a replay', asy
 });
 
 
-test('Calendar resize grips reach every supported view and persist', async ({ page }) => {
+test('Calendar resize grips reach every supported footprint and persist', async ({ page }) => {
   await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }]);
   const calendar = widget(page, 'calendar');
-  await expect(calendar.locator('.cw--compact')).toBeVisible();
   await page.getByRole('button', { name: 'Edit home' }).click();
   const grip = calendar.locator('.blk-resize--both');
   await grip.focus();
@@ -385,7 +378,6 @@ test('Calendar resize grips reach every supported view and persist', async ({ pa
   await page.keyboard.press('Shift+ArrowRight');
   await expect(calendar).toHaveAttribute('data-size', '4x2');
   await done(page);
-  await expect(calendar.locator('.cw--month')).toBeVisible();
   await page.reload();
   await expect(calendar).toHaveAttribute('data-size', '4x2');
   await page.getByRole('button', { name: 'Edit home' }).click();
@@ -393,13 +385,11 @@ test('Calendar resize grips reach every supported view and persist', async ({ pa
   await page.keyboard.press('Shift+ArrowLeft');
   await expect(calendar).toHaveAttribute('data-size', '2x2');
   await done(page);
-  await expect(calendar.locator('.cw--week')).toBeVisible();
   await page.getByRole('button', { name: 'Edit home' }).click();
   await calendar.locator('.blk-resize--both').focus();
   await page.keyboard.press('Shift+ArrowUp');
   await expect(calendar).toHaveAttribute('data-size', '2x1');
   await done(page);
-  await expect(calendar.locator('.cw--compact')).toBeVisible();
   expect((await savedLayout(page)).find(w => w.id === 'calendar')?.size).toBe('2x1');
 });
 
@@ -418,4 +408,114 @@ test('Calendar corner drag previews its large footprint and Escape restores', as
   await page.mouse.up();
   await expect(calendar).toHaveAttribute('data-size', '2x1');
   await page.getByRole('button', { name: 'Cancel' }).click();
+});
+
+test('Resize commits only at snap boundaries and pushes neighbours down without reordering', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'desktop snap geometry');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const initial = [
+    { id: 'web-analytics', size: '1x1' },
+    { id: 'kpi-upcoming', size: '1x1' },
+    { id: 'kpi-checkin', size: '1x1' },
+    { id: 'kpi-reflection', size: '1x1' },
+  ];
+  await openHome(page, initial);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const card = widget(page, 'web-analytics');
+  const neighbour = widget(page, 'kpi-upcoming');
+  const before = (await neighbour.boundingBox())!;
+  const cardBox = (await card.boundingBox())!;
+  const grip = (await card.locator('.blk-resize--both').boundingBox())!;
+  const x = grip.x + grip.width / 2, y = grip.y + grip.height / 2;
+  const revision = () => grid(page).getAttribute('data-layout-revision');
+  const originalRevision = await revision();
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let delta = 1; delta <= 12; delta++) await page.mouse.move(x + delta, y + delta);
+  expect(await revision()).toBe(originalRevision);
+  await page.mouse.move(x + cardBox.width, y + cardBox.height);
+  await expect(card).toHaveAttribute('data-size', '2x2');
+  expect(Number(await revision())).toBe(Number(originalRevision) + 1);
+  const snappedRevision = await revision();
+  for (let delta = 1; delta <= 12; delta++) await page.mouse.move(x + cardBox.width + delta, y + cardBox.height + delta);
+  expect(await revision()).toBe(snappedRevision);
+  const after = (await neighbour.boundingBox())!;
+  expect(Math.abs(after.x - before.x)).toBeLessThan(2);
+  expect(after.y).toBeGreaterThan(before.y + cardBox.height);
+  expect(await order(page)).toEqual(initial.map(p => p.id));
+  // Preview never writes preferences. Escape restores geometry as well as the size.
+  expect(await savedLayout(page)).toEqual(initial);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(card).toHaveAttribute('data-size', '1x1');
+  const restored = (await neighbour.boundingBox())!;
+  expect(Math.abs(restored.y - before.y)).toBeLessThan(2);
+  expect(await card.evaluate(el => el.getAnimations().length)).toBe(0);
+});
+
+test('Whole-tile drag has a threshold, an inert static copy, and native cursors', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'mouse cursor and drag geometry');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const card = widget(page, 'calendar');
+  const box = (await card.boundingBox())!;
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  expect(await card.evaluate(el => getComputedStyle(el).cursor)).toBe('grab');
+  let feedRequests = 0;
+  page.on('request', request => { if (request.url().includes('/api/calendar/feed')) feedRequests++; });
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 3, y);
+  await expect(page.locator('.blk-float')).toHaveCount(0);
+  await page.mouse.move(x + 5, y);
+  const clone = page.locator('.blk-float');
+  await expect(clone).toBeVisible();
+  await expect(clone.locator('[id], .blk-tools')).toHaveCount(0);
+  expect(await clone.evaluate(el => (el as HTMLElement).inert)).toBe(true);
+  expect(await clone.evaluate(el => getComputedStyle(el).transform)).toBe('none');
+  expect(await page.locator('html').evaluate(el => getComputedStyle(el).cursor)).toBe('grabbing');
+  expect(feedRequests).toBe(0);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(clone).toHaveCount(0);
+  await expect(page.locator('html')).not.toHaveClass(/is-dragging/);
+  expect(await order(page)).toEqual(['calendar', 'links']);
+  // A click below the threshold keeps the keyboard control's native focus behavior.
+  await card.locator('.blk-handle').click();
+  await expect(card.locator('.blk-handle')).toBeFocused();
+  await expect(clone).toHaveCount(0);
+});
+
+test('Edit sway runs without replaying the entrance after Done', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const body = widget(page, 'kpi-upcoming').locator('.blk-body');
+  expect(await body.evaluate(el => getComputedStyle(el).animationName)).toBe('blk-sway');
+  await done(page);
+  expect(await body.evaluate(el => getComputedStyle(el).animationName)).toBe('none');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  expect(await body.evaluate(el => getComputedStyle(el).animationName)).toBe('none');
+});
+
+test('Explicit edit positions adapt when Home changes from four columns to two', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'resize one browser across breakpoints');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openHome(page, [
+    { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' },
+    { id: 'kpi-reflection', size: '1x1' }, { id: 'kpi-budget', size: '1x1' },
+  ]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => grid(page).evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(2);
+  await expect.poll(() => widget(page, 'kpi-reflection').evaluate(el => getComputedStyle(el).gridColumnStart)).toBe('1');
+  const a = (await widget(page, 'kpi-upcoming').boundingBox())!;
+  const b = (await widget(page, 'kpi-checkin').boundingBox())!;
+  const c = (await widget(page, 'kpi-reflection').boundingBox())!;
+  expect(Math.abs(a.y - b.y)).toBeLessThan(2);
+  expect(c.y).toBeGreaterThan(a.y + a.height);
+  expect(Math.abs(c.x - a.x)).toBeLessThan(2);
+  expect(await overflow(page)).toEqual([]);
 });

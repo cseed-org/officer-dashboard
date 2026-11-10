@@ -17,33 +17,53 @@ const FLIP_MS = 180;
  * New items keep the CSS stagger enter; removed items simply leave. Pass a new `scope`
  * when the whole view is replaced (tab/layout switch) so nothing glides across views.
  */
-export function useFlip(root: RefObject<HTMLElement | null>, scope: unknown) {
-  const rects = useRef(new Map<string, { x: number; y: number }>());
+export function useFlip(root: RefObject<HTMLElement | null>, scope: unknown, options: { skip?: (id: string) => boolean; revision?: unknown; size?: boolean } = {}) {
+  type Rect = { x: number; y: number; width: number; height: number };
+  const rects = useRef(new Map<string, Rect>());
+  const animations = useRef(new Map<HTMLElement, Animation>());
   const lastScope = useRef(scope);
+  const lastRevision = useRef<unknown>(Symbol());
   useLayoutEffect(() => {
     const box = root.current;
-    if (!box) return;
+    if (!box || (options.revision !== undefined && lastRevision.current === options.revision && lastScope.current === scope)) return;
+    lastRevision.current = options.revision;
+    // Never measure an intermediate transform from our previous animation.
+    animations.current.forEach(animation => animation.cancel());
+    animations.current.clear();
     const items = box.querySelectorAll<HTMLElement>('[data-flip]');
     if (items.length > FLIP_LIMIT) { rects.current.clear(); return; }
     const origin = box.getBoundingClientRect();
-    const sameScope = lastScope.current === scope;
+    const animate = lastScope.current === scope && !reduced();
     lastScope.current = scope;
-    const animate = sameScope && !reduced();
-    const next = new Map<string, { x: number; y: number }>();
-    const moves: [HTMLElement, number, number][] = [];
-    items.forEach((el) => {
+    const next = new Map<string, Rect>();
+    const moves: [HTMLElement, number, number, number, number][] = [];
+    items.forEach(el => {
       const r = el.getBoundingClientRect();
-      const at = { x: r.left - origin.left, y: r.top - origin.top };
-      const old = rects.current.get(el.dataset.flip!);
-      if (animate && old && (Math.abs(old.x - at.x) > 1 || Math.abs(old.y - at.y) > 1)) moves.push([el, old.x - at.x, old.y - at.y]);
-      next.set(el.dataset.flip!, at);
+      const at = { x: r.left - origin.left, y: r.top - origin.top, width: r.width, height: r.height };
+      const id = el.dataset.flip!;
+      const old = rects.current.get(id);
+      if (animate && old && !options.skip?.(id)) {
+        const dx = old.x - at.x, dy = old.y - at.y;
+        const sx = options.size && at.width ? old.width / at.width : 1;
+        const sy = options.size && at.height ? old.height / at.height : 1;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1 || Math.abs(sx - 1) > .001 || Math.abs(sy - 1) > .001) moves.push([el, dx, dy, sx, sy]);
+      }
+      next.set(id, at);
     });
     rects.current = next;
-    // Writes after all reads: one layout pass per commit.
-    for (const [el, dx, dy] of moves) {
-      el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: FLIP_MS, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    const easing = getComputedStyle(box).getPropertyValue('--ease-out').trim() || 'cubic-bezier(.2, .8, .2, 1)';
+    for (const [el, dx, dy, sx, sy] of moves) {
+      const animation = el.animate([
+        { transformOrigin: 'top left', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
+        { transformOrigin: 'top left', transform: 'none' },
+      ], { duration: options.size ? 200 : FLIP_MS, easing });
+      animations.current.set(el, animation);
     }
   });
+  useLayoutEffect(() => () => {
+    animations.current.forEach(animation => animation.cancel());
+    animations.current.clear();
+  }, []);
 }
 
 /**

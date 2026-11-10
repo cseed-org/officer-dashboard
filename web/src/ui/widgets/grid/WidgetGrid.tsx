@@ -1,13 +1,17 @@
 import DashboardTutorial from '../DashboardTutorial';
 import type { ComponentChildren } from 'preact';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from '../../../lib/api/client';
 import { timezoneSnapshot } from '../../../lib/timezone';
 import { Icon } from '../../components/Icon';
 import { Loading } from '../../components/states';
-import { blocks, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
+import { blocks, footprint, packLayout, placePushDown, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
 import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from '../registry';
 import '../../../styles/home-grid.css';
+
+import { useGridDrag } from './useGridDrag';
+import { useGridResize, snappedSize } from './useGridResize';
+import { useGridFlip } from './flip';
 
 type Resize = { id: string; x: number; y: number; size: BlockSize; snapshot: Placement[]; axis: string; width: number; height: number };
 type Drag = { id: string; x: number; y: number; snapshot: Placement[]; over: string | null };
@@ -16,7 +20,7 @@ type Drag = { id: string; x: number; y: number; snapshot: Placement[]; over: str
  * Home as a grid of blocks (spec § "V0.4 Home block grid"). The layout lives on the server
  * (/api/me/prefs); V0.3 S/M/L layouts are migrated on load. `children` renders one widget's tile.
  */
-export default function WidgetGrid({ children }: { children: (id: string, size: BlockSize) => ComponentChildren }) {
+export default function WidgetGrid({ children, entering = false }: { children: (id: string, size: BlockSize) => ComponentChildren; entering?: boolean }) {
   const [layout, setLayout] = useState<Placement[] | null>(() => {
     const prefs = timezoneSnapshot().prefs;
     return prefs ? migrateLayout(prefs.widgetLayout).layout : null;
@@ -46,13 +50,67 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
   const [drag, setDrag] = useState<Drag | null>(null);
   const [resizing, setResizing] = useState<Resize | null>(null);
   const [removed, setRemoved] = useState<Placement[] | null>(null);
-  const rects = useRef(new Map<string, DOMRect>());
+  const previewSize = useGridResize();
+  const floating = useGridDrag();
+  const pendingDrag = useRef<Drag | null>(null);
+  const captured = useRef<{ element: HTMLElement; id: number } | null>(null);
+  const cells = useRef<GridCell[]>([]);
+  const interactionCells = useRef<GridCell[]>([]);
+  const savedCells = useRef<GridCell[]>([]);
+  const [gridWidth, setGridWidth] = useState(0);
+  const placementBreakpoint = useRef(0);
+  const layoutCommit = useRef({ layout, count: 0 });
+  if (layoutCommit.current.layout !== layout) {
+    layoutCommit.current = { layout, count: layoutCommit.current.count + 1 };
+  }
   const [moved, setMoved] = useState<string | null>(null);
   const [live, setLive] = useState('');
   const pointerY = useRef(0);
   const focusAfter = useRef<string | null>(null);
   const gallery = useRef<HTMLDialogElement>(null);
   const grid = useRef<HTMLUListElement>(null);
+
+  useLayoutEffect(() => {
+    const el = grid.current;
+    if (!el) return;
+    const measure = () => setGridWidth(el.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [!!layout]);
+  const placed = useMemo(() => {
+    if (!layout || !gridWidth) return [];
+    const previous = cells.current;
+    const breakpoint = gridWidth < 600 ? 1 : gridWidth < 960 ? 2 : 3;
+    const sameBreakpoint = placementBreakpoint.current === breakpoint;
+    placementBreakpoint.current = breakpoint;
+    const sameOrder = sameBreakpoint && previous.length === layout.length && previous.every((p, i) => p.id === layout[i]?.id);
+    const changed = layout.find(p => previous.find(o => o.id === p.id)?.size !== p.size);
+    const next = sameOrder && changed
+      ? placePushDown(layout, resizing ? interactionCells.current : previous, changed.id, gridWidth)
+      : sameOrder && previous.every(p => p.w === footprint(p.size, gridWidth).w && p.h === footprint(p.size, gridWidth).h)
+        ? previous
+        : packLayout(layout, gridWidth, !editing);
+    cells.current = next;
+    return next;
+  }, [layout, gridWidth]);
+  useGridFlip(grid, placed, drag?.id, resizing?.id);
+
+  function releasePointer() {
+    const capture = captured.current;
+    if (capture?.element.hasPointerCapture(capture.id)) capture.element.releasePointerCapture(capture.id);
+    captured.current = null;
+    pendingDrag.current = null;
+    floating.clear();
+  }
+  function cancelPointer() {
+    const snapshot = drag?.snapshot ?? resizing?.snapshot ?? pendingDrag.current?.snapshot;
+    if (snapshot) { cells.current = interactionCells.current; setLayout(snapshot); }
+    releasePointer();
+    setDrag(null); setResizing(null);
+    setLive(resizing ? 'Resize cancelled' : 'Move cancelled');
+  }
 
   useEffect(() => {
     let alive = true;
@@ -87,38 +145,21 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
     focusAfter.current = null;
     document.querySelector<HTMLElement>(sel)?.focus();
   });
-  // Escape cancels a pointer drag and puts every widget back.
   useEffect(() => {
-    if (!drag) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); setLayout(drag.snapshot); setDrag(null); setLive('Move cancelled'); } };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && (drag || resizing || pendingDrag.current)) {
+        e.preventDefault(); cancelPointer();
+      }
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [drag?.id]);
+  }, [drag, resizing]);
   useEffect(() => {
     if (!moved) return;
     const t = setTimeout(() => setMoved(null), 700);
     return () => clearTimeout(t);
   }, [moved, layout]);
 
-  useLayoutEffect(() => {
-    const next = new Map<string, DOMRect>();
-    grid.current?.querySelectorAll<HTMLElement>('li[data-widget]').forEach(el => {
-      const id = el.dataset.widget!;
-      const rect = el.getBoundingClientRect();
-      const old = rects.current.get(id);
-      if (old && id !== drag?.id && !matchMedia('(prefers-reduced-motion: reduce)').matches && (old.x !== rect.x || old.y !== rect.y)) {
-        el.animate([{ transform: `translate(${old.x - rect.x}px, ${old.y - rect.y}px)` }, { transform: 'translate(0,0)' }], { duration: 180, easing: 'ease-out' });
-      }
-      next.set(id, rect);
-    });
-    rects.current = next;
-  }, [layout]);
-  useEffect(() => {
-    if (!resizing) return;
-    const cancel = (e: KeyboardEvent) => { if (e.key === 'Escape') { setLayout(resizing.snapshot); setResizing(null); setLive('Resize cancelled'); } };
-    document.addEventListener('keydown', cancel);
-    return () => document.removeEventListener('keydown', cancel);
-  }, [resizing]);
   useEffect(() => {
     if (!drag && !resizing) return;
     let frame: number;
@@ -163,18 +204,23 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
     e.preventDefault();
     moveBy(id, to);
   }
-  // Pointer drag (mouse, pen, touch): the grip captures the pointer; crossing another widget moves
-  // the dragged one into its place, so the dragged widget's own cell is always the drop target.
+  // Capture the tile, but leave clicks alone until the pointer crosses the 4px threshold.
   function onPointerDown(e: PointerEvent, id: string) {
-    if (!editing || busy || e.button !== 0) return;
-    e.preventDefault();
+    if (!editing || busy || e.button !== 0 || (e.target as HTMLElement).closest('.blk-remove, .blk-resize')) return;
     pointerY.current = e.clientY;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setDrag({ id, x: e.clientX, y: e.clientY, snapshot: layout!, over: null });
+    const element = e.currentTarget as HTMLElement;
+    element.setPointerCapture(e.pointerId);
+    captured.current = { element, id: e.pointerId };
+    interactionCells.current = cells.current;
+    pendingDrag.current = { id, x: e.clientX, y: e.clientY, snapshot: layout!, over: null };
   }
   function beginResize(e: PointerEvent, id: string, axis: string) {
     if (busy || e.button !== 0) return;
     e.preventDefault();
+    e.stopPropagation();
+    interactionCells.current = cells.current;
+    previewSize.current = layout!.find(w => w.id === id)!.size;
+    captured.current = { element: e.currentTarget as HTMLElement, id: e.pointerId };
     pointerY.current = e.clientY;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const rect = (e.currentTarget as HTMLElement).closest('li')!.getBoundingClientRect();
@@ -183,26 +229,36 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
   function onPointerMove(e: PointerEvent) {
     pointerY.current = e.clientY;
     if (resizing) {
-      const b = blocks(resizing.size);
-      const wantW = b.w + (e.clientX - resizing.x) / (resizing.width / b.w);
-      const wantH = b.h + (e.clientY - resizing.y) / (resizing.height / b.h);
-      const sizes = widgetDef(resizing.id)!.sizes.filter(s => resizing.axis === 'x' ? blocks(s).h === b.h : resizing.axis === 'y' ? blocks(s).w === b.w : true);
-      const target = [...sizes].sort((a, c) => {
-        const distance = (s: BlockSize) => (blocks(s).w - wantW) ** 2 + (blocks(s).h - wantH) ** 2;
-        return distance(a) - distance(c);
-      })[0]!;
-      setLayout(resizing.snapshot.map(w => w.id === resizing.id ? { ...w, size: target } : w));
+      const target = snappedSize(widgetDef(resizing.id)!.sizes, resizing.size, resizing.axis,
+        e.clientX - resizing.x, e.clientY - resizing.y, resizing.width, resizing.height);
+      if (previewSize.current !== target) {
+        previewSize.current = target;
+        setLayout(resizing.snapshot.map(w => w.id === resizing.id ? { ...w, size: target } : w));
+      }
       return;
     }
-    if (!drag) return;
+    let active = drag;
+    if (!active && pendingDrag.current) {
+      const pending = pendingDrag.current;
+      if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) < 4) return;
+      const tile = grid.current?.querySelector<HTMLElement>(`[data-widget="${CSS.escape(pending.id)}"]`);
+      if (!tile) return;
+      floating.start(tile);
+      active = pending;
+      pendingDrag.current = null;
+    }
+    if (!active) return;
+    e.preventDefault();
+    floating.move(e.clientX, e.clientY);
     const hit = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest<HTMLElement>('li[data-widget]')).find((li) => li && grid.current?.contains(li));
     const over = hit?.dataset.widget ?? null;
-    if (over && over !== drag.id && over !== drag.over) {
-      setLayout((l) => (l ? moveTo(l, drag.id, l.findIndex((w) => w.id === over)) : l));
+    if (over && over !== active.id && over !== active.over) {
+      setLayout((l) => (l ? moveTo(l, active!.id, l.findIndex((w) => w.id === over)) : l));
     }
-    setDrag({ ...drag, x: e.clientX, y: e.clientY, over: over === drag.id ? drag.over : over });
+    setDrag({ ...active, x: e.clientX, y: e.clientY, over: over === active.id ? active.over : over });
   }
   function endDrag() {
+    releasePointer();
     if (resizing) { setLive(`${title(resizing.id)} resized to ${sizeName(layout!.find(w => w.id === resizing.id)!.size)}`); setResizing(null); return; }
     if (!drag) return;
     announce(drag.id, layout!);
@@ -236,8 +292,8 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
     setLive(`Added ${def.title} at the end`);
     focusAfter.current = '.blk-gallery [data-add], .blk-gallery [data-close]';
   }
-  function start() { setRemoved(null); setEditing(true); setError(''); }
-  function cancel() { setLayout(saved); setEditing(false); setDrag(null); setError(''); }
+  function start() { savedCells.current = cells.current; setRemoved(null); setEditing(true); setError(''); }
+  function cancel() { releasePointer(); setResizing(null); cells.current = savedCells.current; setLayout(saved); setEditing(false); setDrag(null); setError(''); }
   async function save() {
     if (!loaded) return;
     setBusy(true); setError('');
@@ -253,7 +309,7 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
     {loaded && <DashboardTutorial onPreview={previewTour} />}
     <div class={`blocks-bar${editing ? ' is-editing' : ''}`}>
       {editing ? <>
-        <div class="blocks-bar-text"><span class="blocks-bar-title">Arrange your home</span><span class="blocks-bar-hint">Drag a grip, or focus it and use the arrow keys. Drag a corner to resize; Shift + arrow keys also resize.</span></div>
+        <div class="blocks-bar-text"><span class="blocks-bar-title">Arrange your home</span><span class="blocks-bar-hint">Drag a tile, or focus its move handle and use the arrow keys. Drag a corner to resize; Shift + arrow keys also resize.</span></div>
         <div class="blocks-bar-actions">
           <button class="btn" data-tour="add" disabled={busy} onClick={() => gallery.current?.showModal()}>Add widget</button>
           <button class="btn" disabled={busy} onClick={cancel}>Cancel</button>
@@ -267,20 +323,21 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
     </div>
     {editing && removed && <p role="status">Widget removed. <button class="btn btn--small" onClick={() => { setLayout(removed); setRemoved(null); }}>Undo</button></p>}
     <div class="blocks-wrap">
-      <ul ref={grid} class={`blocks${editing ? ' is-editing' : ''}`} aria-label="Home widgets" onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={() => { setLayout(drag?.snapshot ?? resizing?.snapshot ?? layout); setDrag(null); setResizing(null); }}>
+      <ul ref={grid} data-layout-revision={layoutCommit.current.count} class={`blocks${editing ? ' is-editing' : ''}${entering ? ' is-entering' : ''}`} aria-label="Home widgets" onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={cancelPointer}>
         {layout.map((w, i) => {
           const def = widgetDef(w.id);
           if (!def && !editing) return null; // keep another feature's widget saved until it ships
           const { w: cw, h: ch } = blocks(w.size);
           const name = title(w.id);
-          return <li key={w.id} class={`blk${drag?.id === w.id ? ' is-dragging' : ''}${resizing?.id === w.id ? ' is-resizing' : ''}${moved === w.id && !drag ? ' is-moved' : ''}`} data-widget={w.id} data-size={w.size} data-size-label={sizeLabel(w.size).replace('×', ' × ')} data-w={cw} data-h={ch} style={{ '--i': i }}>
+          const cell = placed.find(p => p.id === w.id);
+          return <li key={w.id} class={`blk${drag?.id === w.id ? ' is-dragging is-placeholder' : ''}${resizing?.id === w.id ? ' is-resizing' : ''}${moved === w.id && !drag ? ' is-moved' : ''}`} data-widget={w.id} data-flip={w.id} onPointerDown={e => onPointerDown(e, w.id)} data-size={w.size} data-size-label={sizeLabel(w.size).replace('×', ' × ')} data-w={cw} data-h={ch} style={{ '--i': i, ...(cell ? { gridColumn: `${cell.x + 1} / span ${cell.w}`, gridRow: `${cell.y + 1} / span ${cell.h}` } : {}) }}>
             <div class="blk-body" inert={editing || undefined}>
               {def ? children(w.id, w.size) : <section class="tile" aria-label={name}><p class="tile-title">{name}</p></section>}
             </div>
             {editing && <div class="blk-tools">
               <div class="blk-tools-top">
                 <button type="button" class="blk-handle" aria-label={`Move ${name}. Use the arrow keys to move it earlier or later.`} aria-describedby="blocks-live" disabled={busy}
-                  onPointerDown={(e) => onPointerDown(e, w.id)} onKeyDown={(e) => onHandleKey(e, w.id, i)}><Icon name="grip" size={18} /></button>
+                  onKeyDown={(e) => onHandleKey(e, w.id, i)}><Icon name="grip" size={18} /></button>
                 <span class="blk-name" aria-hidden="true">{name}</span>
                 <button type="button" class="blk-remove" aria-label={`Remove ${name}`} disabled={busy} onClick={() => remove(w.id, i)}><Icon name="close" size={14} /></button>
               </div>
@@ -299,9 +356,6 @@ export default function WidgetGrid({ children }: { children: (id: string, size: 
       </ul>
     </div>
     {layout.length === 0 && !editing && <p class="small muted">No widgets on your home. Use Edit home to add some.</p>}
-    {drag && <div class="blk-float" aria-hidden="true" style={{ left: `${drag.x + 14}px`, top: `${drag.y + 14}px` }}>
-      {children(drag.id, layout.find(w => w.id === drag.id)!.size)}
-    </div>}
     <p class="visually-hidden" id="blocks-live" aria-live="polite">{live}</p>
     <dialog ref={gallery} class="blk-gallery" aria-labelledby="blk-gallery-title" onClick={(e) => { if (e.target === gallery.current) gallery.current?.close(); }}>
       <div class="blk-gallery-inner">

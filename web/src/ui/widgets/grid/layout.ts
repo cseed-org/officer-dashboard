@@ -68,3 +68,56 @@ export function moveTo(layout: Placement[], id: string, to: number): Placement[]
   next.splice(dest, 0, item!);
   return next;
 }
+
+/** Coordinates are a local preview, never part of the persisted {id,size} contract. */
+export type GridCell = Placement & { x: number; y: number; w: number; h: number };
+
+export function footprint(size: BlockSize, width: number) {
+  let { w, h } = blocks(size);
+  const cols = width < 600 ? 2 : 4;
+  if (cols === 2) { if (w === 4 || h === 2) w = 2; }
+  else if (width < 960) {
+    if (w === 2 && h === 2) w = 4;
+    else if (w === 1 && h === 2) { w = 2; h = 1; }
+  }
+  return { w, h, cols };
+}
+const overlaps = (a: GridCell, b: GridCell) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** CSS's initial dense packing; ordered packing is used after an explicit move. */
+export function packLayout(layout: Placement[], width: number, dense = true): GridCell[] {
+  const placed: GridCell[] = [];
+  let cursor = 0;
+  for (const item of layout) {
+    const { w, h, cols } = footprint(item.size, width);
+    let at = dense ? 0 : cursor;
+    let cell: GridCell;
+    do {
+      cell = { ...item, w, h, x: at % cols, y: Math.floor(at / cols) };
+      at++;
+    } while (cell.x + w > cols || placed.some(p => overlaps(p, cell)));
+    placed.push(cell);
+    cursor = at;
+  }
+  return placed;
+}
+
+/** Reserve the changed tile, then push intersecting neighbours down in visual order. */
+export function placePushDown(layout: Placement[], previous: GridCell[], changedId: string, width: number): GridCell[] {
+  const fallback = packLayout(layout, width);
+  const cells = layout.map(item => {
+    const old = previous.find(p => p.id === item.id) ?? fallback.find(p => p.id === item.id)!;
+    const { w, h, cols } = footprint(item.size, width);
+    return { ...item, w, h, x: Math.min(old.x, cols - w), y: old.y };
+  });
+  const ordered = [...cells].sort((a, b) =>
+    a.id === changedId ? -1 : b.id === changedId ? 1 : a.y - b.y || a.x - b.x);
+  const placed: GridCell[] = [];
+  for (const cell of ordered) {
+    const next = { ...cell };
+    while (placed.some(p => overlaps(p, next))) next.y++;
+    placed.push(next);
+  }
+  return cells.map(cell => placed.find(p => p.id === cell.id)!);
+}
