@@ -5,7 +5,7 @@ import { api } from '../../../lib/api/client';
 import { timezoneSnapshot } from '../../../lib/timezone';
 import { Icon } from '../../components/Icon';
 import { Loading } from '../../components/states';
-import { addSlot, blocks, footprint, packLayout, placePushDown, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
+import { addSlot, blocks, firstFit, footprint, packLayout, placePushDown, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
 import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from '../registry';
 import '../../../styles/home-grid.css';
 
@@ -289,10 +289,15 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     const neighbour = next[Math.min(i, next.length - 1)];
     focusAfter.current = neighbour ? `[data-widget="${CSS.escape(neighbour.id)}"] .blk-handle` : '.blk-add';
   }
+  // A new widget starts at its smallest size in the highest free spot that fits it; nothing else
+  // moves. It is saved last in the order, and Home's dense packing puts the last widget in that
+  // same first free spot, so the saved {id,size} list reloads to what the person saw.
   function add(id: string) {
     const def = widgetDef(id)!;
-    setLayout([...layout!, { id, size: def.size }]);
-    setLive(`Added ${def.title} at the end`);
+    const item: Placement = { id, size: def.sizes[0]! };
+    if (gridWidth && cells.current.length === layout!.length) cells.current = [...cells.current, firstFit(cells.current, item, gridWidth)];
+    setLayout([...layout!, item]);
+    setLive(`Added ${def.title}, ${sizeName(item.size)}`);
     focusAfter.current = '.blk-gallery [data-add], .blk-gallery [data-close]';
   }
   function start() { savedCells.current = cells.current; setRemoved(null); setEditing(true); setError(''); }

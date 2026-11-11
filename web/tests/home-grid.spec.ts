@@ -575,3 +575,42 @@ test('Add widget stays after the last widget through add, remove, resize and mov
   await page.keyboard.press('Home');
   await expectAddLast(page);
 });
+
+test('A new widget starts at its smallest size in the highest free spot; nothing else moves', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // A stat tile, then a full-width calendar: a hole beside the tile at four and at two columns.
+  await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }, { id: 'calendar', size: '4x2' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const before = { kpi: (await widget(page, 'kpi-upcoming').boundingBox())!, cal: (await widget(page, 'calendar').boundingBox())! };
+  await page.getByRole('button', { name: 'Add widget' }).first().click();
+  const gallery = page.getByRole('dialog', { name: 'Add a widget' });
+  // Budget's default is 2×2, but a new widget starts at its smallest size.
+  await gallery.getByRole('button', { name: 'Add Budget vs actual' }).click();
+  await gallery.getByRole('button', { name: 'Close' }).click();
+  const budget = widget(page, 'budget');
+  await expect(budget).toHaveAttribute('data-size', '1x1');
+  const inGap = async () => {
+    const kpi = (await widget(page, 'kpi-upcoming').boundingBox())!;
+    const b = (await budget.boundingBox())!;
+    return Math.abs(b.y - kpi.y) < 2 && b.x > kpi.x + kpi.width;
+  };
+  await expect.poll(inGap).toBe(true);
+  expect((await widget(page, 'kpi-upcoming').boundingBox())!).toEqual(before.kpi);
+  expect((await widget(page, 'calendar').boundingBox())!).toEqual(before.cal);
+  await expectAddLast(page);
+  await done(page);
+  // Saved as {id,size} with the new widget last; a reload packs it into the same spot.
+  expect(await savedLayout(page)).toEqual([{ id: 'kpi-upcoming', size: '1x1' }, { id: 'calendar', size: '4x2' }, { id: 'budget', size: '1x1' }]);
+  await page.reload();
+  await expect(budget).toHaveAttribute('data-size', '1x1');
+  await expect.poll(inGap).toBe(true);
+  // A larger widget with no gap that fits goes at the end, below everything.
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  await page.getByRole('button', { name: 'Add widget' }).first().click();
+  await gallery.getByRole('button', { name: 'Add Recent events' }).click();
+  await gallery.getByRole('button', { name: 'Close' }).click();
+  await expect(widget(page, 'recent-events')).toHaveAttribute('data-size', '2x2');
+  const cal = (await widget(page, 'calendar').boundingBox())!;
+  expect((await widget(page, 'recent-events').boundingBox())!.y).toBeGreaterThan(cal.y + cal.height - 2);
+  await expectAddLast(page);
+});
