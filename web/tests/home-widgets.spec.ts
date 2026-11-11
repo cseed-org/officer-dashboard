@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { devLogin, overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
-import { defaultWidgetLayout } from '../src/ui/widgets/registry';
+import { defaultWidgetLayout, widgetDef } from '../src/ui/widgets/registry';
 
 /** V0.7 widget cards (web/design/mockups/home-v07-notes.md): icon chips, whole-card links, rows, calendar. */
 test.beforeEach(async ({ page }) => {
@@ -116,3 +116,37 @@ test('Budget at 1×1: a donut with a compact legend, linking to budgets', async 
   await page.mouse.click(box.x + box.width - 10, box.y + box.height - 8);
   await expect(page).toHaveURL(/\/finance\?tab=budgets/);
 });
+
+/** Every 1×1 in web/design/mockups/home-v07.html, plus budget (V0.7 follow-up). */
+const ONE_BY_ONE = ['kpi-upcoming', 'kpi-checkin', 'kpi-reflection', 'kpi-budget', 'kpi-pending', 'web-analytics', 'traffic-security', 'performance', 'workers-d1', 'member-signups', 'budget'];
+for (const role of ['director', 'officer'] as const) {
+  test(`every mockup 1×1 widget can be added from the gallery and shows at 1×1 · ${role}`, async ({ page }) => {
+    const errors = watchErrors(page);
+    await devLogin(page, role);
+    await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true, widgetLayout: [] } });
+    await page.reload();
+    await settle(page);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    const gallery = page.getByRole('dialog', { name: 'Add a widget' });
+    await page.locator('.blk-add').click();
+    for (const id of ONE_BY_ONE) {
+      const title = widgetDef(id)!.title;
+      await gallery.getByRole('button', { name: `Add ${title}`, exact: true }).click();
+      await expect(gallery.getByRole('button', { name: `Add ${title}`, exact: true })).toHaveCount(0);
+    }
+    await gallery.getByRole('button', { name: 'Close' }).click();
+    const put = page.waitForResponse((r) => r.url().endsWith('/api/me/prefs') && r.request().method() === 'PUT');
+    await page.getByRole('button', { name: 'Done' }).click();
+    expect((await put).ok()).toBe(true);
+    await page.reload();
+    await settle(page);
+    for (const id of ONE_BY_ONE) {
+      const li = page.locator(`li[data-widget="${id}"]`);
+      await expect(li, id).toHaveAttribute('data-size', '1x1');
+      await expect(li.locator(`section[data-block="${id}"] .wc-title`), id).toContainText(widgetDef(id)!.title);
+      await expect(li.locator('.wc-error'), id).toHaveCount(0);
+    }
+    expect(await overflow(page)).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+}
