@@ -16,8 +16,10 @@ import (
 const (
 	sessionTTL    = 30 * 24 * time.Hour
 	renewWhenLeft = 15 * 24 * time.Hour
-	// sessionMaxAge caps a session however often it is renewed: sign in again after 90 days.
-	sessionMaxAge    = 90 * 24 * time.Hour
+	// sessionMaxAge caps a session however often it is renewed: everyone signs in again
+	// 30 days after signing in, however active. Equal to sessionTTL, so the renewal below
+	// never moves the expiry past created_at + 30 days (it only matters if the TTL shrinks).
+	sessionMaxAge    = 30 * 24 * time.Hour
 	oauthStateName   = "cseed_oauth_state"
 	oauthVerifier    = "cseed_oauth_verifier"
 	nextCookieName   = "cseed_next"
@@ -67,7 +69,7 @@ func (c *Ctx) newSession(ctx context.Context, userID string) error {
 // when set, is the hash of the browser's previous session, deleted in the same transaction.
 func (s *Server) createSession(ctx context.Context, w http.ResponseWriter, userID, userAgent, replaces string) error {
 	token := auth.RandomToken(32)
-	expires := s.now().Add(sessionTTL)
+	expires := s.now().Add(min(sessionTTL, sessionMaxAge)) // never past created_at + sessionMaxAge
 	if len(userAgent) > 300 {
 		userAgent = userAgent[:300]
 	}
@@ -106,13 +108,17 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			switch {
 			case err == nil:
 				p = principal{user: &sess.User, sessionID: id}
+				// Slide the expiry while used, never past hardStop (created_at + sessionMaxAge),
+				// and write only when it actually moves later.
 				if time.UnixMilli(sess.ExpiresAt).Sub(s.now()) < renewWhenLeft {
 					exp := s.now().Add(sessionTTL)
 					if exp.After(hardStop) {
 						exp = hardStop
 					}
-					if werr := s.db.Write(r.Context(), func(q *store.Queries) error { return q.ExtendSession(r.Context(), id, exp.UnixMilli()) }); werr == nil {
-						s.setCookie(w, s.sessionCookieName(), ck.Value, exp, 0)
+					if exp.UnixMilli() > sess.ExpiresAt {
+						if werr := s.db.Write(r.Context(), func(q *store.Queries) error { return q.ExtendSession(r.Context(), id, exp.UnixMilli()) }); werr == nil {
+							s.setCookie(w, s.sessionCookieName(), ck.Value, exp, 0)
+						}
 					}
 				}
 			case errors.Is(err, store.ErrNotFound):

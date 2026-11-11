@@ -21,8 +21,11 @@ Environment variables (flags override where shown):
 | `DEV_AUTH` | – | `1` enables `/auth/dev` in a `-tags dev` build only |
 | `DEV_AUTH_KEY` | – | `-tags dev` builds only (ignored otherwise). When set, every dev sign-in (`POST /auth/dev`), the confirmation page and the login page's Developer mode panel need `key=<DEV_AUTH_KEY>`; nothing remembers it. A wrong or missing key gets the site's 404. Shareable link (opens a confirmation page): `https://<host>/auth/dev?as=leadership\|director\|officer&key=<KEY>[&next=/events]`. **Required, at least 16 characters, whenever `APP_URL` is not loopback**: the server refuses to start otherwise. **Test deployments only**: the key signs anyone in as any role. Use `openssl rand -hex 24`; see [development](development.md#developer-mode-on-a-test-deployment) |
 
-Sessions live in the database (`sessions`, keyed by sha256 of the cookie token, 30-day sliding
-expiry, capped at 90 days after sign-in). Signing in again replaces the browser's previous session. Service tokens are stored as sha256 hashes. Writes that arrive with a session cookie
+Sessions live in the database (`sessions`, keyed by sha256 of the cookie token). Every session
+ends 30 days after sign-in however active the person is: the cookie and stored expiry never pass
+`created_at` + 30 days, and the server refuses (and deletes) any older session. Before V0.7 the
+cap was 90 days, so deploying V0.7 signs out anyone whose session is more than 30 days old; they
+sign in again with Discord. Signing in again replaces the browser's previous session. Service tokens are stored as sha256 hashes. Writes that arrive with a session cookie
 and a foreign `Origin` header are refused (403), on top of `SameSite=Lax`.
 
 Every response carries `X-Content-Type-Options: nosniff`, a `Content-Type`, `Permissions-Policy`
