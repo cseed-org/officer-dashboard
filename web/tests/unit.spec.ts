@@ -117,7 +117,7 @@ test('V0.4: V0.3 widget layouts migrate to block sizes in place', () => {
   expect(layout).toEqual([
     { id: 'activity', size: '4x2' },
     { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }, { id: 'kpi-reflection', size: '1x1' }, { id: 'kpi-budget', size: '1x1' }, { id: 'kpi-pending', size: '1x1' },
-    { id: 'my-action', size: '2x2' },
+    { id: 'my-action', size: '2x1' },
     { id: 'member-signups', size: '2x2' },
     { id: 'unknown', size: '1x1' },
   ]);
@@ -148,4 +148,53 @@ test('V0.4: profile rules match the server (isLinkedIn, YYYY-MM graduation month
     expect(isLinkedIn(bad), bad).toBe(false);
   for (const ok of ['2028-05', '2030-12']) expect(isGradMonth(ok), ok).toBe(true);
   for (const bad of ['2028-13', '2028-00', '28-05', '2028-5', 'May 2028']) expect(isGradMonth(bad), bad).toBe(false);
+});
+
+// Greeting dates are constructed in the runtime's local calendar, never parsed as UTC.
+import { localDay, pickGreeting, readState, writeState } from '../src/ui/views/home/greeting';
+const greetingDate = (hour: number, minute = 0) => new Date(2026, 10, 11, hour, minute);
+for (const [hour, minute, message] of [
+  [4, 59, 'Go sleep, bro'], [5, 0, 'Good morning, Ada'],
+  [11, 59, 'Good morning, Ada'], [12, 0, 'Good afternoon, Ada'],
+  [16, 59, 'Good afternoon, Ada'], [17, 0, 'Good evening, Ada'],
+  [23, 59, 'Good evening, Ada'], [0, 0, 'Go sleep, bro'],
+] as const) {
+  test(`greeting boundary ${hour}:${minute}`, () => {
+    expect(pickGreeting(greetingDate(hour, minute), 'Ada', null, () => 1)).toBe(message);
+  });
+}
+test('greeting precedence, randomness, signed-out state and empty name', () => {
+  const today = { day: localDay(greetingDate(10)), signedOut: true };
+  expect(pickGreeting(greetingDate(10), 'Ada', null, () => 1 / 365 - 0.000001)).toBe('Lenny was here');
+  expect(pickGreeting(greetingDate(10), 'Ada', null, () => 1 / 365)).toBe('Good morning, Ada');
+  expect(pickGreeting(greetingDate(2), 'Ada', today, () => 0)).toBe('Go sleep, bro');
+  expect(pickGreeting(greetingDate(10), 'Ada', today, () => 0)).toBe('Lenny was here');
+  expect(pickGreeting(greetingDate(10), 'Ada', today, () => 1)).toBe('Welcome back, Ada');
+  expect(pickGreeting(greetingDate(10), 'Ada', { ...today, signedOut: false }, () => 0)).toBeNull();
+  expect(pickGreeting(greetingDate(10), 'Ada', { day: '2026-11-10', signedOut: true }, () => 1)).toBe('Good morning, Ada');
+  expect(pickGreeting(greetingDate(10), '  ', null, () => 1)).toBe('Good morning');
+});
+test('greeting storage catches read/write failures and claims fallback once per tab', () => {
+  const values = new Map<string, string>();
+  const session = () => ({ getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } });
+  const blocked = (): Storage => { throw new Error('blocked'); };
+  const state = { day: '2026-11-11', signedOut: false };
+  expect(readState('a', blocked, blocked).available).toBe(false);
+  expect(writeState('a', state, blocked, blocked)).toBe(false);
+  expect(readState('a', blocked, session)).toEqual({ state: null, fallback: true, available: true });
+  expect(writeState('a', state, blocked, session)).toBe(true);
+  expect(writeState('a', { ...state, day: '2026-11-12' }, blocked, session)).toBe(false);
+  expect(readState('a', blocked, session).state).toEqual(state);
+  expect(readState('b', blocked, session).state).toBeNull();
+  expect(writeState('b', state, session, blocked)).toBe(true);
+  expect(readState('b', session, blocked).state).toEqual(state);
+  values.set('home-greeting:b', '{invalid');
+  expect(readState('b', session, blocked).state).toBeNull();
+  const brokenReads = () => ({ getItem: () => { throw new Error('read denied'); }, setItem: () => {} });
+  const memory = readState('d', brokenReads, session);
+  expect(writeState('d', state, brokenReads, session, memory.fallback)).toBe(true);
+  expect(readState('d', brokenReads, session).state).toEqual(state);
+  const readOnly = () => ({ getItem: () => null, setItem: () => { throw new Error('quota'); } });
+  expect(writeState('c', state, readOnly, session)).toBe(true);
+  expect(writeState('c', state, readOnly, session)).toBe(false);
 });

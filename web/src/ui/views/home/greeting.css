@@ -1,0 +1,10 @@
+/* One line before and after hydration, including long names on narrow screens. */
+.page-header .home-heading {position:relative;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.home-heading-old {position:absolute;inset:0;pointer-events:none;animation:home-heading-out var(--dur-2) var(--ease-out) both;}
+.home-heading-new {animation:home-heading-in var(--dur-2) var(--ease-out) both;}
+@keyframes home-heading-in {from {opacity:0;} to {opacity:1;}}
+@keyframes home-heading-out {from {opacity:1;} to {opacity:0;}}
+@media (prefers-reduced-motion:reduce) {
+  .home-heading-old {display:none;animation:none;}
+  .home-heading-new {animation:none;}
+}
