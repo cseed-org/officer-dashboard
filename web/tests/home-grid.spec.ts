@@ -55,6 +55,8 @@ for (const theme of THEMES) {
     await useTheme(page, theme);
     await openHome(page);
     expect(await order(page)).toEqual(DEFAULT_IDS);
+    await expect(page.locator('.blocks-bar')).not.toContainText('Your layout follows you across devices.');
+    await expect(page.locator('.blocks-bar:not(.is-editing) .blocks-bar-text')).toHaveCount(0);
     // The old single Key figures row is now five 1×1 stat tiles.
     for (const id of ['kpi-upcoming', 'kpi-checkin', 'kpi-reflection', 'kpi-budget', 'kpi-pending']) await expect(widget(page, id)).toHaveAttribute('data-size', '1x1');
     await expect(widget(page, 'kpi-upcoming')).toContainText(/upcoming events/i);

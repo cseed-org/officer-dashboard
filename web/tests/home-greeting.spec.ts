@@ -84,10 +84,65 @@ test('reduced motion has no heading fade and long names do not move the grid', a
   await settle(page);
   await expect(page.locator('.home-heading-new')).toContainText('Alexandertheverylongfirstname');
   expect(await page.locator('.home-heading-new').evaluate(el => getComputedStyle(el).animationName)).toBe('none');
+  const line = await page.locator('.home-heading-new').evaluate(el => {
+    const css = getComputedStyle(el);
+    return { overflow: css.textOverflow, height: el.getBoundingClientRect().height, lineHeight: parseFloat(css.lineHeight) };
+  });
+  expect(line.overflow).toBe('ellipsis');
+  expect(line.height).toBeCloseTo(line.lineHeight, 1);
   const before = await page.locator('.page-header').boundingBox();
   await page.reload();
   await settle(page);
   const after = await page.locator('.page-header').boundingBox();
   expect(before?.height).toBe(after?.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('larger greeting reserves its space and reload restores ordinary heading typography', async ({ page }, info) => {
+  let release!: () => void;
+  const ready = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/me', async route => { await ready; await route.continue(); }, { times: 1 });
+  await devLogin(page, 'director');
+  const heading = page.locator('.home-heading');
+  await expect(heading).toHaveText('Home');
+  const headerBefore = (await page.locator('.page-header').boundingBox())!;
+  const baseSize = await heading.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+  release();
+  await settle(page);
+  const greeting = page.locator('.home-heading-new');
+  await expect(greeting).toContainText('Good morning,');
+  const largerSize = await greeting.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
+  expect(largerSize / baseSize).toBeCloseTo(info.project.name === 'phone' ? 1.3 : 1.6, 2);
+  const headerAfter = (await page.locator('.page-header').boundingBox())!;
+  expect(headerAfter.y + headerAfter.height).toBeCloseTo(headerBefore.y + headerBefore.height, 1);
+  const gridBefore = (await page.locator('.blocks').boundingBox())!;
+  await page.reload();
+  await settle(page);
+  await expect(heading).toHaveText('Home');
+  await expect(greeting).toHaveCount(0);
+  const styles = await heading.evaluate(el => {
+    const reference = document.createElement('h1');
+    reference.textContent = 'Home';
+    document.querySelector('main')!.append(reference);
+    const typography = (node: Element) => {
+      const css = getComputedStyle(node);
+      return [css.fontSize, css.fontFamily, css.fontWeight, css.lineHeight, css.letterSpacing, css.color];
+    };
+    const result = { actual: typography(el), original: typography(reference) };
+    reference.remove();
+    return result;
+  });
+  expect(styles.actual).toEqual(styles.original);
+  expect((await page.locator('.blocks').boundingBox())!.y).toBeCloseTo(gridBefore.y, 1);
+});
+
+test('invite sign-in tolerates a missing user', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/api/me', route => route.fulfill({ json: { user: null, onboarding: null } }));
+  await page.goto('/login?invite=greeting-test');
+  await expect(page.locator('[data-invite-signed-in]')).toBeVisible();
+  await expect(page.locator('[data-invite-signed-in-name]')).toHaveText('someone else');
+  await expect(page.locator('[data-invite-signed-in] form')).toHaveAttribute('data-greeting-user-id', '');
+  expect(errors).toEqual([]);
 });

@@ -324,7 +324,6 @@ export default function WidgetGrid({ children, entering = false }: { children: (
           <button class="btn btn--primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Done'}</button>
         </div>
       </> : <>
-        <div class="blocks-bar-text"><span class="blocks-bar-hint">Your layout follows you across devices.</span></div>
         <div class="blocks-bar-actions"><button class="btn btn--small" data-tour="edit" disabled={!loaded} onClick={start}>Edit home</button></div>
       </>}
       {error && <p class="small" role="alert">{error} {!loaded && <>Showing the default home. <button class="btn btn--small" onClick={() => setTick(tick + 1)}>Retry preferences</button></>}</p>}
