@@ -37,6 +37,24 @@ their role. Leadership or director accounts created from Access go through the s
 setup. Accounts with no invite record (seeded, bootstrap owner, created before V0.4)
 are not affected.
 
+## Permission changes apply at once
+
+The server reads the signed-in user's role, owner flag, active status, onboarding state and
+subteam (Design membership) from the database on every request; nothing caches them. Service
+tokens recheck their creator's active director access on every call. So a change made in
+Officers → Access applies on the person's very next request.
+
+- **Deactivation** ends all of the person's sessions (and revokes their service tokens): the next
+  request answers 401 and the tab goes to sign-in.
+- **Role, owner and subteam changes** keep the person signed in (since V0.7; before, a role
+  change signed them out). Their open tab follows on its next API request, any 403, or when the
+  tab regains focus: every signed-in response carries `X-Perm-Version`, and when it no longer
+  matches, the client refetches `/api/me`, updates the navigation and user chip, remounts the
+  page for the new permissions (a tab they may no longer open falls back to an allowed one) and
+  shows "Your permissions changed". A refused action says so in the same words. With unsaved
+  edits, the page re-renders instead of remounting and offers a reload, so no draft is lost.
+- Losing director access still revokes the person's service tokens.
+
 ## Permission matrix
 
 Roles rank `leadership > director > officer`; unknown roles are denied. Owner is an additional flag on an active leadership account. A higher role inherits lower-role permissions; resource-specific rules still apply.

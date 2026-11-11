@@ -46,11 +46,6 @@ func (c *Ctx) ownerChange(add bool) error {
 		if err := q.SetOwner(ctx, target.ID, add, c.S.nowMs()); err != nil {
 			return err
 		}
-		if target.Role != "leadership" {
-			if err := q.DeleteUserSessions(ctx, target.ID); err != nil {
-				return err
-			}
-		}
 		updated, err := q.UserByID(ctx, target.ID)
 		if err != nil {
 			return err
@@ -97,17 +92,12 @@ func (c *Ctx) ownerTransfer() error {
 			return badRequest("Owner must be active")
 		}
 		// Establish the next owner before removing the caller. Failure anywhere,
-		// including audit writes, rolls back both changes and session invalidation.
+		// including audit writes, rolls back both changes.
 		if err := q.SetOwner(ctx, target.ID, true, c.S.nowMs()); err != nil {
 			return err
 		}
 		if err := q.SetOwner(ctx, caller.ID, false, c.S.nowMs()); err != nil {
 			return err
-		}
-		if target.Role != "leadership" {
-			if err := q.DeleteUserSessions(ctx, target.ID); err != nil {
-				return err
-			}
 		}
 		for _, before := range []*store.User{target, caller} {
 			after, err := q.UserByID(ctx, before.ID)

@@ -159,6 +159,9 @@ type Session struct {
 	ExpiresAt int64
 	CreatedAt int64 // sign-in time; bounds the session's absolute lifetime
 	User      User
+	// Subteam is the user's subteam as "<id>:<lowercased name>" ("" for none). Design-team
+	// permissions follow it, so it is part of the permission version the API sends.
+	Subteam string
 }
 
 // InsertSession stores a session under the sha256 of its cookie token and stamps last login.
@@ -176,12 +179,13 @@ func (q *Queries) InsertSession(ctx context.Context, idHash, userID string, expi
 
 // SessionByHash returns the live session and its active user, or ErrNotFound.
 func (q *Queries) SessionByHash(ctx context.Context, idHash string, now int64) (*Session, error) {
-	row := q.q.QueryRowContext(ctx, `SELECT s.id, s.expires_at, s.created_at, u.id, u.discord_id, u.name, u.email, u.avatar_url, u.role, u.is_owner, u.active, u.title, u.last_login_at, u.created_at, u.updated_at
+	row := q.q.QueryRowContext(ctx, `SELECT s.id, s.expires_at, s.created_at, u.id, u.discord_id, u.name, u.email, u.avatar_url, u.role, u.is_owner, u.active, u.title, u.last_login_at, u.created_at, u.updated_at,
+		COALESCE((SELECT p.subteam_id || ':' || COALESCE(lower(t.name), '') FROM officer_profiles p LEFT JOIN subteams t ON t.id = p.subteam_id WHERE p.user_id = u.id), '')
 		FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > ? AND u.active = 1`, idHash, now)
 	var s Session
 	var last *Ms
 	var exp, created Ms
-	err := row.Scan(&s.ID, &exp, &created, &s.User.ID, &s.User.DiscordID, &s.User.Name, &s.User.Email, &s.User.AvatarURL, &s.User.Role, &s.User.IsOwner, &s.User.Active, &s.User.Title, &last, &s.User.CreatedAt, &s.User.UpdatedAt)
+	err := row.Scan(&s.ID, &exp, &created, &s.User.ID, &s.User.DiscordID, &s.User.Name, &s.User.Email, &s.User.AvatarURL, &s.User.Role, &s.User.IsOwner, &s.User.Active, &s.User.Title, &last, &s.User.CreatedAt, &s.User.UpdatedAt, &s.Subteam)
 	if err != nil {
 		return nil, notFound(err)
 	}

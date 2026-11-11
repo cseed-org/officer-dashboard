@@ -155,7 +155,10 @@ func (c *Ctx) adminUserUpdate() error {
 		if err := w.UpdateUser(ctx, before.ID, patch, c.S.nowMs()); err != nil {
 			return err
 		}
-		if (active.Set && !active.V) || (role.Has() && role.V != before.Role) {
+		// Deactivation signs the person out everywhere. A role change does not: the role is
+		// read on every request, so it applies at once, and the open tab updates in place
+		// (X-Perm-Version, see session.go) instead of bouncing to sign-in.
+		if active.Set && !active.V {
 			if err := w.DeleteUserSessions(ctx, before.ID); err != nil {
 				return err
 			}

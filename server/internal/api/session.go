@@ -108,6 +108,7 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			switch {
 			case err == nil:
 				p = principal{user: &sess.User, sessionID: id}
+				w.Header().Set(permVersionHeader, permVersion(sess))
 				// Slide the expiry while used, never past hardStop (created_at + sessionMaxAge),
 				// and write only when it actually moves later.
 				if time.UnixMilli(sess.ExpiresAt).Sub(s.now()) < renewWhenLeft {
@@ -164,6 +165,21 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 	})
+}
+
+// permVersionHeader carries a short fingerprint of everything that decides what the signed-in
+// user may see and do. It is computed from the same row every request reads, so any change
+// (role, owner flag, subteam) shows on the very next response; the web client compares it
+// with the value it loaded with and refetches /api/me when it differs. Deactivation needs no
+// version: the session stops resolving and the next request answers 401.
+const permVersionHeader = "X-Perm-Version"
+
+func permVersion(s *store.Session) string {
+	owner := "0"
+	if s.User.IsOwner {
+		owner = "1"
+	}
+	return auth.SHA256Hex(s.User.Role + "|" + owner + "|" + s.Subteam)[:16]
 }
 
 // originOK blocks cross-site writes that ride a session cookie: an unsafe request whose

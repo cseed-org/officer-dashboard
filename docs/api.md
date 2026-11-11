@@ -23,6 +23,10 @@ and response is a zod schema there with its TypeScript type inferred under the s
   400 `bad_request` (zod `flatten()` in `details`), 401 `unauthenticated`, 403 `forbidden`,
   404 `not_found`, 409 `conflict` / `invalid_transition` / `over_tolerance`, 422 `import_failed`,
   429 `rate_limited` (with `Retry-After`).
+- Every response to a signed-in session carries `X-Perm-Version`, a 16-hex fingerprint of the
+  user's role, owner flag and subteam, computed on each request. The web client compares it with
+  the version its `/api/me` was loaded with and refetches `/api/me` when it differs (see
+  [roles and permissions](roles-and-permissions.md#permission-changes-apply-at-once)).
 - Handlers parse input with the request schema and should `.parse()` their own output with
   the response schema in tests.
 
