@@ -536,3 +536,41 @@ test('A whole-card click without dragging navigates in view mode', async ({ page
   await expect(page).toHaveURL(/\/events(?:[?#]|$)/);
   await expect(page.locator('.blk-float')).toHaveCount(0);
 });
+
+/** The Add tile follows every widget in reading order: no widget ends below its row or sits after it in that row. */
+async function expectAddLast(page: Page) {
+  await expect.poll(() => grid(page).evaluate((ul) => {
+    const add = ul.querySelector(':scope > li.blk-add-cell')!.getBoundingClientRect();
+    const late = [...ul.querySelectorAll<HTMLElement>(':scope > li[data-widget]')].filter((li) => {
+      const r = li.getBoundingClientRect();
+      const sameRow = r.bottom > add.top + 2 && r.top < add.bottom - 2;
+      return r.bottom > add.bottom + 2 || (sameRow && r.left > add.left);
+    }).map((li) => li.dataset.widget);
+    return late;
+  })).toEqual([]);
+}
+
+test('Add widget stays after the last widget through add, remove, resize and move', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // A 1×1 then a full-width calendar leaves a hole beside the first tile at four and two columns.
+  await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }, { id: 'calendar', size: '4x2' }, { id: 'kpi-checkin', size: '1x1' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  await expectAddLast(page);
+  await page.getByRole('button', { name: 'Remove Avg check-in rate' }).click();
+  await expectAddLast(page);
+  await page.getByRole('button', { name: /^Move Upcoming events/ }).focus();
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(widget(page, 'kpi-upcoming')).toHaveAttribute('data-size', '2x1');
+  await expectAddLast(page);
+  await page.getByRole('button', { name: 'Add widget' }).first().click();
+  const gallery = page.getByRole('dialog', { name: 'Add a widget' });
+  await gallery.getByRole('button', { name: 'Add Pending requests' }).click();
+  await gallery.getByRole('button', { name: 'Close' }).click();
+  await expectAddLast(page);
+  // Keyboard move: the calendar to the end, then back to the front.
+  await page.getByRole('button', { name: /^Move Calendar/ }).focus();
+  await page.keyboard.press('End');
+  await expectAddLast(page);
+  await page.keyboard.press('Home');
+  await expectAddLast(page);
+});

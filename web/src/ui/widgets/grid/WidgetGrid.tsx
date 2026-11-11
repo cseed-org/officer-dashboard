@@ -5,7 +5,7 @@ import { api } from '../../../lib/api/client';
 import { timezoneSnapshot } from '../../../lib/timezone';
 import { Icon } from '../../components/Icon';
 import { Loading } from '../../components/states';
-import { blocks, footprint, packLayout, placePushDown, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
+import { addSlot, blocks, footprint, packLayout, placePushDown, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
 import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from '../registry';
 import '../../../styles/home-grid.css';
 
@@ -175,6 +175,9 @@ export default function WidgetGrid({ children, entering = false }: { children: (
 
   if (!layout) return <Loading rows={4} label="Loading widgets" />;
   const title = (id: string) => widgetDef(id)?.title ?? `Unavailable widget (${id})`;
+  // Widgets carry explicit grid positions, so the Add tile must too: left to auto-placement it
+  // would drop into the first hole above the last widget.
+  const slot = placed.length ? addSlot(placed, gridWidth) : null;
   const available = widgetRegistry.filter((w) => !layout.some((p) => p.id === w.id));
   const announce = (id: string, l: Placement[]) => setLive(`${title(id)}, position ${l.findIndex((w) => w.id === id) + 1} of ${l.length}`);
 
@@ -348,7 +351,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
             </div>}
           </li>;
         })}
-        {editing && <li class="blk" data-w="1" data-h="1">
+        {editing && <li class="blk blk-add-cell" data-w="1" data-h="1" style={slot ? { gridColumn: `${slot.x + 1} / span 1`, gridRow: `${slot.y + 1} / span 1` } : undefined}>
           <button type="button" class="blk-add" disabled={busy} onClick={() => gallery.current?.showModal()}>
             <span class="blk-add-plus" aria-hidden="true">+</span>Add widget<span class="blk-add-sub">{available.length} available</span>
           </button>

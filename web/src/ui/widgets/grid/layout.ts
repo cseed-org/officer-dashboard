@@ -85,22 +85,46 @@ export function footprint(size: BlockSize, width: number) {
 const overlaps = (a: GridCell, b: GridCell) =>
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
+/**
+ * The free spot closest to the top that fits `item`: rows top to bottom, then left to right.
+ * Below the last row every spot is free, so this always finds one. Nothing in `placed` moves.
+ */
+export function firstFit(placed: GridCell[], item: Placement, width: number, from = 0): GridCell {
+  const { w, h, cols } = footprint(item.size, width);
+  let at = from;
+  let cell: GridCell;
+  do {
+    cell = { ...item, w, h, x: at % cols, y: Math.floor(at / cols) };
+    at++;
+  } while (cell.x + w > cols || placed.some(p => overlaps(p, cell)));
+  return cell;
+}
+
 /** CSS's initial dense packing; ordered packing is used after an explicit move. */
 export function packLayout(layout: Placement[], width: number, dense = true): GridCell[] {
   const placed: GridCell[] = [];
   let cursor = 0;
   for (const item of layout) {
-    const { w, h, cols } = footprint(item.size, width);
-    let at = dense ? 0 : cursor;
-    let cell: GridCell;
-    do {
-      cell = { ...item, w, h, x: at % cols, y: Math.floor(at / cols) };
-      at++;
-    } while (cell.x + w > cols || placed.some(p => overlaps(p, cell)));
+    const cell = firstFit(placed, item, width, dense ? 0 : cursor);
     placed.push(cell);
-    cursor = at;
+    cursor = cell.y * footprint(item.size, width).cols + cell.x + 1;
   }
   return placed;
+}
+
+/**
+ * Where the edit-mode Add tile goes: the cell right after the last occupied cell in reading
+ * order, so it always follows the last widget and never fills a gap above one. It is placed
+ * explicitly because auto-placed items (even without `dense`) start from the top and would
+ * take the first hole the explicitly placed widgets leave.
+ */
+export function addSlot(cells: GridCell[], width: number): { x: number; y: number } {
+  const { cols } = footprint('1x1', width);
+  // Only tiles that reach the bottom row cover it; the Add tile goes just past the furthest one.
+  const bottom = cells.reduce((m, c) => Math.max(m, c.y + c.h), 0);
+  const end = cells.filter(c => c.y + c.h === bottom).reduce((m, c) => Math.max(m, c.x + c.w), 0);
+  const next = bottom === 0 ? 0 : end < cols ? (bottom - 1) * cols + end : bottom * cols;
+  return { x: next % cols, y: Math.floor(next / cols) };
 }
 
 /** Reserve the changed tile, then push intersecting neighbours down in visual order. */
