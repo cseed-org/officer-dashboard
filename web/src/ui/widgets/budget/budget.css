@@ -1,6 +1,14 @@
 /* Budget vs actual: donut + blegend (notes § Per widget, budget). */
 .donut-wrap {flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center;}
 .donut-wrap--wide {gap: 32px;}
+/* 1×1: a small donut and a names-only legend (notes § Per widget, budget). */
+.donut-wrap--compact {gap: 10px;}
+.donut-wrap--compact .donut-center b {font-size: 15px;}
+.donut-wrap--compact .donut-center > span {font-size: 10px;}
+.blegend--compact {gap: 4px;}
+.blegend--compact li {grid-template-columns: auto minmax(0, 1fr); gap: 6px; line-height: 16px;}
+.blegend--compact li > b {font-size: 12px;}
+.blegend--compact .blegend-more > span:nth-child(2) {font-size: 12px;}
 .donut {position: relative; display: grid; place-items: center;}
 .donut svg {display: block; transform: rotate(-90deg);}
 .donut-track {fill: none; stroke: var(--hover);}
@@ -22,4 +30,5 @@
 @container blocks (max-width: 599px) {
   .blegend--2 {grid-template-columns: minmax(0, 1fr);}
   .donut-wrap {gap: 14px;}
+  .donut-wrap--compact {gap: 8px;}
 }

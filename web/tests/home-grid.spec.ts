@@ -198,11 +198,12 @@ test('V0.3 S/M/L layouts migrate to blocks without losing anything', async ({ pa
     { id: 'future-widget', size: 'M' },
   ]);
   expect(await order(page)).toEqual(['budget', 'kpi-upcoming', 'kpi-checkin', 'kpi-reflection', 'kpi-budget', 'kpi-pending', 'web-analytics', 'activity']);
-  await expect(widget(page, 'budget')).toHaveAttribute('data-size', '2x2');
+  // S is the smallest allowed size: budget gained 1×1 in V0.7.
+  await expect(widget(page, 'budget')).toHaveAttribute('data-size', '1x1');
   await expect(widget(page, 'kpi-pending')).toHaveAttribute('data-size', '1x1');
   await expect(widget(page, 'web-analytics')).toHaveAttribute('data-size', '4x2');
   await expect(widget(page, 'activity')).toHaveAttribute('data-size', '2x2');
-  await expect.poll(async () => (await savedLayout(page)).map((w) => w.size)).toEqual(['2x2', '1x1', '1x1', '1x1', '1x1', '1x1', '4x2', '2x2', '2x2']);
+  await expect.poll(async () => (await savedLayout(page)).map((w) => w.size)).toEqual(['1x1', '1x1', '1x1', '1x1', '1x1', '1x1', '4x2', '2x2', '2x2']);
   let upgradeWrites = 0;
   page.on('request', (r) => { if (r.method() === 'PUT' && r.url().endsWith('/api/me/prefs')) upgradeWrites++; });
   await page.reload();
@@ -213,7 +214,7 @@ test('V0.3 S/M/L layouts migrate to blocks without losing anything', async ({ pa
   await expect(widget(page, 'future-widget')).toContainText('Unavailable widget (future-widget)');
   await done(page);
   const saved = await savedLayout(page);
-  expect(saved.map((w) => w.size)).toEqual(['2x2', '1x1', '1x1', '1x1', '1x1', '1x1', '4x2', '2x2', '2x2']);
+  expect(saved.map((w) => w.size)).toEqual(['1x1', '1x1', '1x1', '1x1', '1x1', '1x1', '4x2', '2x2', '2x2']);
   expect(saved.at(-1)?.id).toBe('future-widget');
 });
 

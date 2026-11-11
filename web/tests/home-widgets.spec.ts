@@ -94,3 +94,25 @@ test('Links: rows open the club links; no card link for directors', async ({ pag
   await expect(links.locator('.wc-link')).toHaveCount(0);
   await expect(links.locator('a.link-row').first()).toHaveAttribute('target', '_blank');
 });
+
+test('Budget at 1×1: a donut with a compact legend, linking to budgets', async ({ page }) => {
+  await page.request.put('/api/me/prefs', { data: { widgetLayout: [{ id: 'budget', size: '1x1' }, { id: 'kpi-budget', size: '1x1' }] } });
+  await devLogin(page, 'director');
+  await settle(page);
+  const card = page.locator('section[data-block="budget"]');
+  await expect(card.locator('.wc-chip svg')).toHaveCount(1);
+  await expect(card.locator('.donut[role="img"]')).toHaveAttribute('aria-label', /Budget FY\d+: \d+% used/);
+  await expect(card.locator('.donut-sweep')).toHaveCount(1);
+  const legend = card.locator('.blegend--compact li:not(.blegend-more)');
+  expect(await legend.count()).toBeGreaterThan(0);
+  // Names only: no amounts at 1×1, and "+n" accounts for every category left out.
+  await expect(legend.first().locator('b')).not.toBeEmpty();
+  await expect(card.locator('.blegend--compact')).not.toContainText('$');
+  const more = card.locator('.blegend-more');
+  if (await more.count()) await expect(more).toHaveText(/^\+\d+$/);
+  await expect(card.locator('.wc-aside')).toHaveCount(0);
+  expect(await overflow(page)).toEqual([]);
+  const box = (await card.boundingBox())!;
+  await page.mouse.click(box.x + box.width - 10, box.y + box.height - 8);
+  await expect(page).toHaveURL(/\/finance\?tab=budgets/);
+});

@@ -11,7 +11,34 @@ import { Donut } from './Donut';
 type Category = FinanceSummaryResponse['byCategory'][number];
 const used = (c: { spentCents: number; committedCents: number }) => c.spentCents + c.committedCents;
 
+/** 1×1: the donut alone, with the largest categories that fit beside it and "+n" for the rest. */
+function CompactBudget({ d }: { d: FinanceSummaryResponse }) {
+  const [wrap, box] = useBox();
+  const [legendRef, legendBox] = useBox();
+  const cats = [...d.byCategory].sort((a, b) => used(b) - used(a));
+  const t = d.totals;
+  const share = t.budgetCents ? used(t) / t.budgetCents : null;
+  const donut = Math.round(Math.max(56, Math.min(box.height || 88, (box.width || 200) * (box.width < 200 ? 0.4 : 0.5), 104)));
+  // One 16px line per category, 4px apart; "+n" takes a line when not all fit.
+  const shown = cats.slice(0, fitRows({ height: legendBox.height, total: cats.length, row: 16, gap: 4, more: 20, fallback: 3 }));
+  const hidden = cats.length - shown.length;
+  return (
+    <div class="donut-wrap donut-wrap--compact" ref={wrap}>
+      <Donut size={donut} total={t.budgetCents} label={`Budget FY${d.fiscalYear}: ${pct(share)} used, ${dollars(used(t))} of ${dollars(t.budgetCents)}`}
+        center={pct(share)} sub="used"
+        segments={cats.map((c) => ({ key: c.account.id, value: used(c), hue: categoryHue(c.account.code) }))} />
+      <div class="blegend-col" ref={legendRef}>
+        <ul class="blegend blegend--compact">
+          {shown.map((c) => <li key={c.account.id}><span class="dot" data-hue={categoryHue(c.account.code)} /><b>{c.account.name}</b></li>)}
+          {hidden > 0 && <li class="blegend-more"><span /><span>+{hidden}</span></li>}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function Budget({ d, size }: { d: FinanceSummaryResponse; size: BlockSize }) {
+  if (size === '1x1') return <CompactBudget d={d} />;
   const wide = size === '4x2';
   const [wrap, box] = useBox();
   const [legendRef, legendBox] = useBox();
@@ -56,7 +83,7 @@ function Budget({ d, size }: { d: FinanceSummaryResponse; size: BlockSize }) {
 export default function BudgetWidget({ me, size, overview }: WidgetProps) {
   const fy = overview.status === 'ready' ? overview.data.fiscalYear : undefined;
   return (
-    <WidgetCard id="budget" me={me} aside={fy ? `FY${fy}` : null}>
+    <WidgetCard id="budget" me={me} aside={fy && size !== '1x1' ? `FY${fy}` : null}>
       {fy === undefined ? <WidgetState state={overview} label="the budget" /> : <BudgetBody fiscalYear={fy} size={size} />}
     </WidgetCard>
   );

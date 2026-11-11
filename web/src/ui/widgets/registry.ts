@@ -58,7 +58,7 @@ export const widgetRegistry: WidgetDef[] = [
   { id: 'kpi-pending', component: KpiWidget, title: 'Pending requests', sizes: ['1x1', '2x1'], size: '1x1', group: 'kpis', icon: 'inbox', accent: 'amber', href: pending },
   { id: 'my-action', component: MyActionWidget, title: 'My actions', sizes: ['2x1', '2x2', '4x2'], size: '2x1', icon: 'flag', accent: 'amber', href: (me) => (director(me) ? pending() : href.requests({ scope: 'mine' })) },
   { id: 'recent-events', component: RecentEventsWidget, title: 'Recent events', sizes: ['2x2', '4x2'], size: '2x2', icon: 'ticket', accent: 'blue', href: () => href.events() },
-  { id: 'budget', component: BudgetWidget, title: 'Budget vs actual', sizes: ['2x2', '4x2'], size: '2x2', icon: 'pie', accent: 'green', href: () => href.finance('budgets') },
+  { id: 'budget', component: BudgetWidget, title: 'Budget vs actual', sizes: ['1x1', '2x2', '4x2'], size: '2x2', icon: 'pie', accent: 'green', href: () => href.finance('budgets') },
   { id: 'activity', component: ActivityWidget, title: 'Activity', sizes: ['2x1', '1x2', '2x2', '4x2'], size: '2x1', icon: 'activity', accent: 'coral', href: (me) => (director(me) ? href.admin('audit') : href.requests({ scope: 'all' })) },
   { id: 'web-analytics', component: WebAnalyticsWidget, title: 'Web Analytics', sizes: ['1x1', '2x2', '4x2'], size: '1x1', icon: 'globe', accent: 'blue', href: () => CLOUDFLARE, external: true },
   { id: 'traffic-security', component: TrafficSecurityWidget, title: 'Traffic & security', sizes: ['1x1', '2x2'], size: '1x1', icon: 'shield', accent: 'coral', href: () => CLOUDFLARE, external: true },
