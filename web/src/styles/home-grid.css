@@ -16,7 +16,9 @@
 
 /* The wrapper is the size container: columns follow the space Home actually has, not the viewport,
    so the sidebar never squeezes four columns into a tablet. */
-.blocks-wrap {container: blocks / inline-size; min-width: 0;}
+.main.main--home {max-width: none;}
+/* Ten 240px blocks plus nine 16px gaps: stop growing blocks at the column cap. */
+.blocks-wrap {container: blocks / inline-size; min-width: 0; max-width: 2544px;}
 .blocks {
   --cols: 4;
   display: grid;

@@ -5,7 +5,7 @@ import { api } from '../../../lib/api/client';
 import { timezoneSnapshot } from '../../../lib/timezone';
 import { Icon } from '../../components/Icon';
 import { Loading } from '../../components/states';
-import { addSlot, blocks, firstFit, footprint, packLayout, placePushDown, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
+import { addSlot, blocks, firstFit, footprint, gridColumns, packLayout, placePushDown, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
 import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from '../registry';
 import '../../../styles/home-grid.css';
 
@@ -82,10 +82,11 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   const placed = useMemo(() => {
     if (!layout || !gridWidth) return [];
     const previous = cells.current;
-    const breakpoint = gridWidth < 600 ? 1 : gridWidth < 960 ? 2 : 3;
+    const cols = gridColumns(gridWidth);
+    const breakpoint = gridWidth >= 600 && gridWidth < 960 ? -4 : cols;
     const sameBreakpoint = placementBreakpoint.current === breakpoint;
     placementBreakpoint.current = breakpoint;
-    const sameOrder = sameBreakpoint && previous.length === layout.length && previous.every((p, i) => p.id === layout[i]?.id);
+    const sameOrder = sameBreakpoint && previous.length === layout.length && previous.every((p, i) => p.id === layout[i]?.id && p.x + p.w <= cols);
     const changed = layout.find(p => previous.find(o => o.id === p.id)?.size !== p.size);
     const next = sameOrder && changed
       ? placePushDown(layout, resizing ? interactionCells.current : previous, changed.id, gridWidth)
@@ -330,7 +331,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     </div>
     {editing && removed && <p role="status">Widget removed. <button class="btn btn--small" onClick={() => { setLayout(removed); setRemoved(null); }}>Undo</button></p>}
     <div class="blocks-wrap">
-      <ul ref={grid} data-layout-revision={layoutCommit.current.count} class={`blocks${editing ? ' is-editing' : ''}${entering ? ' is-entering' : ''}`} aria-label="Home widgets" onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={cancelPointer}>
+      <ul ref={grid} style={gridWidth ? { '--cols': gridColumns(gridWidth) } : undefined} data-layout-revision={layoutCommit.current.count} class={`blocks${editing ? ' is-editing' : ''}${entering ? ' is-entering' : ''}`} aria-label="Home widgets" onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={cancelPointer}>
         {layout.map((w, i) => {
           const def = widgetDef(w.id);
           if (!def && !editing) return null; // keep another feature's widget saved until it ships

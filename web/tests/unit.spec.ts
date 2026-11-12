@@ -198,3 +198,43 @@ test('greeting storage catches read/write failures and claims fallback once per 
   expect(writeState('c', state, readOnly, session)).toBe(true);
   expect(writeState('c', state, readOnly, session)).toBe(false);
 });
+
+import { addSlot, firstFit, footprint, gridColumns, packLayout, placePushDown, type GridCell, type Placement } from '../src/ui/widgets/grid/layout';
+for (const [width, columns] of [[390, 2], [650, 4], [960, 4], [1200, 5], [1450, 6], [1700, 7], [1950, 8], [2200, 9], [2500, 10], [5000, 10]]) {
+  test(`Home placement stays bounded at ${columns} columns (${width}px container)`, () => {
+    expect(gridColumns(width!)).toBe(columns);
+    const layout: Placement[] = [
+      { id: 'a', size: '1x1' }, { id: 'b', size: '4x2' }, { id: 'c', size: '2x2' },
+      { id: 'd', size: '1x2' }, { id: 'e', size: '2x1' }, { id: 'f', size: '1x1' },
+    ];
+    const bounded = (cells: GridCell[]) => {
+      for (const cell of cells) {
+        expect(cell.x).toBeGreaterThanOrEqual(0);
+        expect(cell.x + cell.w).toBeLessThanOrEqual(columns!);
+        expect(cells.filter(other => other.id !== cell.id && cell.x < other.x + other.w && other.x < cell.x + cell.w && cell.y < other.y + other.h && other.y < cell.y + cell.h)).toEqual([]);
+      }
+    };
+    for (const dense of [true, false]) {
+      const packed = packLayout(layout, width!, dense);
+      bounded(packed);
+      if (columns! >= 4) expect(packed.find(c => c.id === 'b')!.w).toBe(4);
+      const grown = layout.map(p => p.id === 'a' ? { ...p, size: '2x2' as const } : p);
+      const pushed = placePushDown(grown, packed, 'a', width!);
+      bounded(pushed);
+      expect(pushed.map(c => c.id)).toEqual(layout.map(c => c.id));
+      const slot = addSlot(pushed, width!);
+      const last = Math.max(...pushed.map(c => (c.y + c.h - 1) * columns! + c.x + c.w - 1));
+      expect(slot.y * columns! + slot.x).toBe(last + 1);
+      const newCell = firstFit(pushed, { id: 'new', size: '1x1' }, width!);
+      bounded([...pushed, newCell]);
+      // Independently scan every preceding cell: none can be free above the new tile.
+      for (let at = 0; at < newCell.y * columns! + newCell.x; at++) {
+        const x = at % columns!, y = Math.floor(at / columns!);
+        expect(pushed.some(c => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h)).toBe(true);
+      }
+      const adapted = placePushDown(layout, packLayout(layout, 2500), 'b', width!);
+      bounded(adapted);
+      expect(adapted.find(c => c.id === 'b')!.w).toBe(footprint('4x2', width!).w);
+    }
+  });
+}

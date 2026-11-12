@@ -616,3 +616,72 @@ test('A new widget starts at its smallest size in the highest free spot; nothing
   expect((await widget(page, 'recent-events').boundingBox())!.y).toBeGreaterThan(cal.y + cal.height - 2);
   await expectAddLast(page);
 });
+
+test('wide Home adds columns while blocks keep their size and widgets fit the screen', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one browser covers all widths');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openHome(page);
+  const measurements: { viewport: number; columns: number; block: number }[] = [];
+  for (const [width, columns] of [[1280, 4], [1920, 6], [2560, 9]]) {
+    await page.setViewportSize({ width: width!, height: 1200 });
+    await expect.poll(() => grid(page).evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBe(columns);
+    const block = (await widget(page, 'kpi-upcoming').boundingBox())!.width;
+    measurements.push({ viewport: width!, columns: columns!, block });
+    expect(await overflow(page)).toEqual([]);
+    expect(Math.abs(block / measurements[0]!.block - 1)).toBeLessThan(.15);
+  }
+  console.log('Home grid measurements:', JSON.stringify(measurements));
+  await info.attach('wide-home-measurements', { body: JSON.stringify(measurements), contentType: 'application/json' });
+  // Narrow/intermediate widths and the ten-column cap must also avoid document overflow.
+  for (const width of [320, 390, 599, 600, 767, 768, 960, 1099, 1440, 1600, 2200, 2880, 3840]) {
+    await page.setViewportSize({ width, height: 1200 });
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect.poll(() => grid(page).evaluate(el => [...el.querySelectorAll(':scope > li')].every(li => li.getBoundingClientRect().right <= el.getBoundingClientRect().right + 1))).toBe(true);
+  }
+});
+
+for (const width of [1280, 1600, 1920, 2200, 2400, 2560, 2880]) {
+  test(`editing and placement work at ${width}px`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'exercise each desktop column count');
+    await page.setViewportSize({ width, height: 1200 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }, { id: 'calendar', size: '4x2' }, { id: 'kpi-checkin', size: '1x1' }]);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    await expect(widget(page, 'calendar')).toHaveCSS('grid-column-end', 'span 4');
+    await expectAddLast(page);
+    const before = await widget(page, 'calendar').boundingBox();
+    await page.getByRole('button', { name: 'Add widget', exact: true }).click();
+    const gallery = page.getByRole('dialog', { name: 'Add a widget' });
+    await gallery.getByRole('button', { name: 'Add Budget vs actual' }).click();
+    await gallery.getByRole('button', { name: 'Close' }).click();
+    await expect(widget(page, 'budget')).toHaveAttribute('data-size', '1x1');
+    expect(await widget(page, 'calendar').boundingBox()).toEqual(before);
+    await expectAddLast(page);
+    // Resize pushes neighbours without overlap; move works with the resulting positions.
+    await page.getByRole('button', { name: /^Move Upcoming events/ }).focus();
+    await page.keyboard.press('Shift+ArrowRight');
+    await expect(widget(page, 'kpi-upcoming')).toHaveAttribute('data-size', '2x1');
+    await expectAddLast(page);
+    const source = widget(page, 'calendar').locator('.blk-handle');
+    const target = widget(page, 'kpi-upcoming').locator('.blk-handle');
+    await source.dragTo(target);
+    await expect.poll(() => order(page)).toEqual(['calendar', 'kpi-upcoming', 'kpi-checkin', 'budget']);
+    await expectAddLast(page);
+    await page.getByRole('button', { name: 'Remove Avg check-in rate' }).click();
+    await expectAddLast(page);
+    await done(page);
+    expect(await savedLayout(page)).toEqual([{ id: 'calendar', size: '4x2' }, { id: 'kpi-upcoming', size: '2x1' }, { id: 'budget', size: '1x1' }]);
+    await page.reload();
+    await expect(widget(page, 'calendar')).toHaveCSS('grid-column-end', 'span 4');
+    expect(await overflow(page)).toEqual([]);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    // Explicit coordinates and the cancel snapshot must adapt across 9 → 6 → 4 → 2 columns.
+    for (const nextWidth of [2560, 1920, 1280, 390, width]) {
+      await page.setViewportSize({ width: nextWidth, height: 1200 });
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await expectAddLast(page);
+    }
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    expect(await overflow(page)).toEqual([]);
+  });
+}

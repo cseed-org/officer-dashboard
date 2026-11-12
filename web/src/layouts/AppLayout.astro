@@ -152,7 +152,7 @@ const NAVSCRIPT = `(function () {
               <UserChip client:load />
             </div>
           </nav>
-          <main id="main" class="main" tabindex="-1">
+          <main id="main" class:list={['main', { 'main--home': page === 'home' }]} tabindex="-1">
             {!customHeader && <header class="page-header">
               <h1 class={page === 'home' ? 'home-heading' : undefined}>{title}</h1>
               {page === 'home' && <span class="visually-hidden" aria-live="polite" aria-atomic="true" data-home-greeting-announcement></span>}

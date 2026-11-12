@@ -72,9 +72,17 @@ export function moveTo(layout: Placement[], id: string, to: number): Placement[]
 /** Coordinates are a local preview, never part of the persisted {id,size} contract. */
 export type GridCell = Placement & { x: number; y: number; w: number; h: number };
 
+/** Existing desktop blocks are 226–266px at 1280–1440px viewport widths.
+ * Pick the nearest count to 240px plus the 16px gap; CSS caps the container at
+ * ten such blocks. Two-column phones and the existing four-column minimum remain.
+ */
+export function gridColumns(width: number): number {
+  return width < 600 ? 2 : Math.max(4, Math.min(10, Math.round((width + 16) / 256)));
+}
+
 export function footprint(size: BlockSize, width: number) {
   let { w, h } = blocks(size);
-  const cols = width < 600 ? 2 : 4;
+  const cols = gridColumns(width);
   if (cols === 2) { if (w === 4 || h === 2) w = 2; }
   else if (width < 960) {
     if (w === 2 && h === 2) w = 4;
