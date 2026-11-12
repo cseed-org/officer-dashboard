@@ -53,6 +53,17 @@ export async function devLogin(page: Page, as: 'director' | 'officer' | 'leaders
 }
 
 /**
+ * devLogin, with the first-visit dashboard tour marked seen. The tour's dialog covers the
+ * top bar and sidebar, so tests that click the menu or search button sign in with this.
+ */
+export async function devLoginSkipTour(page: Page, as: 'director' | 'officer' | 'leadership') {
+  await devLogin(page, as);
+  const r = await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true }, timeout: 15_000 });
+  expect(r.ok(), `PUT /api/me/prefs → ${r.status()}`).toBe(true);
+  await page.reload();
+}
+
+/**
  * Expected HTTP failures: /api/search is 404 on the v1 backend (the palette then falls back
  * to the list endpoints), /login probes /api/me while signed out, and /login probes
  * /auth/dev/info, which only dev builds with DEV_AUTH=1 answer.
