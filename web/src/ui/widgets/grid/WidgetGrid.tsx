@@ -5,7 +5,7 @@ import { api } from '../../../lib/api/client';
 import { timezoneSnapshot } from '../../../lib/timezone';
 import { Icon } from '../../components/Icon';
 import { Loading } from '../../components/states';
-import { addSlot, blocks, firstFit, fitsAt, footprint, gridColumns, moveToCell, packLayout, placePushDown, trackAt, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
+import { addSlot, blocks, fitsAt, gridColumns, migrateLayout, moveInOrder, pack, settle, sizeLabel, sizeName, trackAt, type GridCell, type Pin, type Placement } from './layout';
 import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from '../registry';
 import '../../../styles/home-grid.css';
 
@@ -13,7 +13,7 @@ import { useGridDrag } from './useGridDrag';
 import { useGridResize, snappedSize } from './useGridResize';
 import { useGridFlip } from './flip';
 
-type Resize = { id: string; x: number; y: number; size: BlockSize; snapshot: Placement[]; axis: string; width: number; height: number };
+type Resize = { id: string; x: number; y: number; size: BlockSize; snapshot: Placement[]; pin: Pin; axis: string; width: number; height: number };
 /** `at` is the last valid drop cell (the dragged widget's top-left), or null before the first. */
 type Drag = { id: string; x: number; y: number; snapshot: Placement[]; at: { x: number; y: number } | null };
 
@@ -55,11 +55,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   const floating = useGridDrag();
   const pendingDrag = useRef<Drag | null>(null);
   const captured = useRef<{ element: HTMLElement; id: number } | null>(null);
-  const cells = useRef<GridCell[]>([]);
-  const interactionCells = useRef<GridCell[]>([]);
-  const savedCells = useRef<GridCell[]>([]);
   const [gridWidth, setGridWidth] = useState(0);
-  const placementBreakpoint = useRef(0);
   const layoutCommit = useRef({ layout, count: 0 });
   if (layoutCommit.current.layout !== layout) {
     layoutCommit.current = { layout, count: layoutCommit.current.count + 1 };
@@ -80,23 +76,9 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     observer.observe(el);
     return () => observer.disconnect();
   }, [!!layout]);
-  const placed = useMemo(() => {
-    if (!layout || !gridWidth) return [];
-    const previous = cells.current;
-    const cols = gridColumns(gridWidth);
-    const breakpoint = gridWidth >= 600 && gridWidth < 960 ? -4 : cols;
-    const sameBreakpoint = placementBreakpoint.current === breakpoint;
-    placementBreakpoint.current = breakpoint;
-    const sameOrder = sameBreakpoint && previous.length === layout.length && previous.every((p, i) => p.id === layout[i]?.id && p.x + p.w <= cols);
-    const changed = layout.find(p => previous.find(o => o.id === p.id)?.size !== p.size);
-    const next = sameOrder && changed
-      ? placePushDown(layout, resizing ? interactionCells.current : previous, changed.id, gridWidth)
-      : sameOrder && previous.every(p => p.w === footprint(p.size, gridWidth).w && p.h === footprint(p.size, gridWidth).h)
-        ? previous
-        : packLayout(layout, gridWidth, !editing);
-    cells.current = next;
-    return next;
-  }, [layout, gridWidth]);
+  // Positions are always the dense packing of the order, so the edit preview, a save and a reload
+  // agree. Edits keep `layout` in reading order (settle), so tab order follows the picture.
+  const placed = useMemo<GridCell[]>(() => (layout && gridWidth ? pack(layout, gridWidth) : []), [layout, gridWidth]);
   useGridFlip(grid, placed, drag?.id, resizing?.id);
 
   function releasePointer() {
@@ -108,7 +90,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   }
   function cancelPointer() {
     const snapshot = drag?.snapshot ?? resizing?.snapshot ?? pendingDrag.current?.snapshot;
-    if (snapshot) { cells.current = interactionCells.current; setLayout(snapshot); }
+    if (snapshot) setLayout(snapshot);
     releasePointer();
     setDrag(null); setResizing(null);
     setLive(resizing ? 'Resize cancelled' : 'Move cancelled');
@@ -184,7 +166,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   const announce = (id: string, l: Placement[]) => setLive(`${title(id)}, position ${l.findIndex((w) => w.id === id) + 1} of ${l.length}`);
 
   function moveBy(id: string, to: number) {
-    const next = moveTo(layout!, id, to);
+    const next = moveInOrder(layout!, id, to, gridWidth);
     if (next === layout) return;
     setLayout(next); setMoved(id); announce(id, next);
     focusAfter.current = `[data-widget="${CSS.escape(id)}"] .blk-handle`;
@@ -216,20 +198,19 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     const element = e.currentTarget as HTMLElement;
     element.setPointerCapture(e.pointerId);
     captured.current = { element, id: e.pointerId };
-    interactionCells.current = cells.current;
     pendingDrag.current = { id, x: e.clientX, y: e.clientY, snapshot: layout!, at: null };
   }
   function beginResize(e: PointerEvent, id: string, axis: string) {
     if (busy || e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    interactionCells.current = cells.current;
+    const cell = placed.find(c => c.id === id)!;
     previewSize.current = layout!.find(w => w.id === id)!.size;
     captured.current = { element: e.currentTarget as HTMLElement, id: e.pointerId };
     pointerY.current = e.clientY;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const rect = (e.currentTarget as HTMLElement).closest('li')!.getBoundingClientRect();
-    setResizing({ id, x: e.clientX, y: e.clientY, size: layout!.find(w => w.id === id)!.size, snapshot: layout!, axis, width: rect.width, height: rect.height });
+    setResizing({ id, x: e.clientX, y: e.clientY, size: layout!.find(w => w.id === id)!.size, snapshot: layout!, pin: { id, x: cell.x, y: cell.y }, axis, width: rect.width, height: rect.height });
   }
   function onPointerMove(e: PointerEvent) {
     pointerY.current = e.clientY;
@@ -238,7 +219,8 @@ export default function WidgetGrid({ children, entering = false }: { children: (
         e.clientX - resizing.x, e.clientY - resizing.y, resizing.width, resizing.height);
       if (previewSize.current !== target) {
         previewSize.current = target;
-        setLayout(resizing.snapshot.map(w => w.id === resizing.id ? { ...w, size: target } : w));
+        // The resized widget keeps its top-left; the others pack around it.
+        setLayout(settle(resizing.snapshot.map(w => w.id === resizing.id ? { ...w, size: target } : w), gridWidth, resizing.pin));
       }
       return;
     }
@@ -257,15 +239,15 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     floating.move(e.clientX, e.clientY);
     // The target is the grid cell under the pointer (the floating copy's top-left), from the grid's
     // own tracks, so empty gaps and the row below the last tile are targets too. A spot the
-    // footprint can't fit keeps the last valid target.
+    // footprint can't fit keeps the last valid target. The dragged widget is pinned there and the
+    // rest pack around it, always from the drag-start snapshot, so nothing hops while the target
+    // holds; the placeholder then sits where the drop will really land.
     const at = cellAt(e.clientX, e.clientY);
     const size = active.snapshot.find(w => w.id === active!.id)?.size;
     let target = active.at;
     if (at && size && fitsAt(size, at, gridWidth) && (at.x !== target?.x || at.y !== target?.y)) {
       target = at;
-      const next = moveToCell(active.snapshot, interactionCells.current, active.id, at, gridWidth);
-      cells.current = next.cells;
-      setLayout(next.layout);
+      setLayout(settle(active.snapshot, gridWidth, { id: active.id, ...at }));
     }
     setDrag({ ...active, x: e.clientX, y: e.clientY, at: target });
   }
@@ -289,7 +271,9 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     setDrag(null);
   }
   function resize(id: string, size: BlockSize) {
-    setLayout(layout!.map((p) => (p.id === id ? { ...p, size } : p)));
+    const cell = placed.find(c => c.id === id);
+    const next = layout!.map((p) => (p.id === id ? { ...p, size } : p));
+    setLayout(gridWidth ? settle(next, gridWidth, cell && { id, x: cell.x, y: cell.y }) : next);
     setLive(`${title(id)} is now ${sizeName(size)}`);
   }
   function remove(id: string, i: number) {
@@ -303,25 +287,26 @@ export default function WidgetGrid({ children, entering = false }: { children: (
       ghost.animate([{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(.94)' }], { duration: 160 }).finished.finally(() => ghost.remove());
     }
     setRemoved(layout);
-    const next = layout!.filter((p) => p.id !== id);
+    // Widgets below rise, and a later widget that fits the freed spot fills it.
+    const kept = layout!.filter((p) => p.id !== id);
+    const next = gridWidth ? settle(kept, gridWidth) : kept;
     setLayout(next);
     setLive(`Removed ${title(id)}`);
     const neighbour = next[Math.min(i, next.length - 1)];
     focusAfter.current = neighbour ? `[data-widget="${CSS.escape(neighbour.id)}"] .blk-handle` : '.blk-add';
   }
-  // A new widget starts at its smallest size in the highest free spot that fits it; nothing else
-  // moves. It is saved last in the order, and Home's dense packing puts the last widget in that
-  // same first free spot, so the saved {id,size} list reloads to what the person saw.
+  // A new widget starts at its smallest size. Packed last, it takes the highest free spot that fits
+  // it (the first gap no other widget fits); then the order is settled to reading order.
   function add(id: string) {
     const def = widgetDef(id)!;
     const item: Placement = { id, size: def.sizes[0]! };
-    if (gridWidth && cells.current.length === layout!.length) cells.current = [...cells.current, firstFit(cells.current, item, gridWidth)];
-    setLayout([...layout!, item]);
+    setLayout(gridWidth ? settle([...layout!, item], gridWidth) : [...layout!, item]);
     setLive(`Added ${def.title}, ${sizeName(item.size)}`);
     focusAfter.current = '.blk-gallery [data-add], .blk-gallery [data-close]';
   }
-  function start() { savedCells.current = cells.current; setRemoved(null); setEditing(true); setError(''); }
-  function cancel() { releasePointer(); setResizing(null); cells.current = savedCells.current; setLayout(saved); setEditing(false); setDrag(null); setError(''); }
+  // Editing works on the reading order (same picture), so keyboard moves and tab order match it.
+  function start() { if (gridWidth) setLayout(settle(layout!, gridWidth)); setRemoved(null); setEditing(true); setError(''); }
+  function cancel() { releasePointer(); setResizing(null); setLayout(saved); setEditing(false); setDrag(null); setError(''); }
   async function save() {
     if (!loaded) return;
     setBusy(true); setError('');

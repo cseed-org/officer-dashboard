@@ -199,14 +199,15 @@ test('greeting storage catches read/write failures and claims fallback once per 
   expect(writeState('c', state, readOnly, session)).toBe(false);
 });
 
-import { addSlot, firstFit, footprint, gridColumns, packLayout, placePushDown, type GridCell, type Placement } from '../src/ui/widgets/grid/layout';
+import { addSlot, footprint, gridColumns, pack, readingOrder, settle, type GridCell, type Placement } from '../src/ui/widgets/grid/layout';
 for (const [width, columns] of [[390, 2], [650, 4], [960, 4], [1200, 5], [1450, 6], [1700, 7], [1950, 8], [2200, 9], [2500, 10], [5000, 10]]) {
-  test(`Home placement stays bounded at ${columns} columns (${width}px container)`, () => {
+  test(`Home dense packing stays bounded and fills the top at ${columns} columns (${width}px container)`, () => {
     expect(gridColumns(width!)).toBe(columns);
     const layout: Placement[] = [
       { id: 'a', size: '1x1' }, { id: 'b', size: '4x2' }, { id: 'c', size: '2x2' },
       { id: 'd', size: '1x2' }, { id: 'e', size: '2x1' }, { id: 'f', size: '1x1' },
     ];
+    const covers = (cells: GridCell[], x: number, y: number) => cells.some(c => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h);
     const bounded = (cells: GridCell[]) => {
       for (const cell of cells) {
         expect(cell.x).toBeGreaterThanOrEqual(0);
@@ -214,27 +215,43 @@ for (const [width, columns] of [[390, 2], [650, 4], [960, 4], [1200, 5], [1450, 
         expect(cells.filter(other => other.id !== cell.id && cell.x < other.x + other.w && other.x < cell.x + cell.w && cell.y < other.y + other.h && other.y < cell.y + cell.h)).toEqual([]);
       }
     };
-    for (const dense of [true, false]) {
-      const packed = packLayout(layout, width!, dense);
-      bounded(packed);
-      if (columns! >= 4) expect(packed.find(c => c.id === 'b')!.w).toBe(4);
-      const grown = layout.map(p => p.id === 'a' ? { ...p, size: '2x2' as const } : p);
-      const pushed = placePushDown(grown, packed, 'a', width!);
-      bounded(pushed);
-      expect(pushed.map(c => c.id)).toEqual(layout.map(c => c.id));
-      const slot = addSlot(pushed, width!);
-      const last = Math.max(...pushed.map(c => (c.y + c.h - 1) * columns! + c.x + c.w - 1));
-      expect(slot.y * columns! + slot.x).toBe(last + 1);
-      const newCell = firstFit(pushed, { id: 'new', size: '1x1' }, width!);
-      bounded([...pushed, newCell]);
-      // Independently scan every preceding cell: none can be free above the new tile.
-      for (let at = 0; at < newCell.y * columns! + newCell.x; at++) {
-        const x = at % columns!, y = Math.floor(at / columns!);
-        expect(pushed.some(c => x >= c.x && x < c.x + c.w && y >= c.y && y < c.y + c.h)).toBe(true);
+    /** A gap is left only where no widget placed later (in reading order) could have started. */
+    const dense = (cells: GridCell[]) => {
+      const bottom = Math.max(...cells.map(c => c.y + c.h));
+      for (let y = 0; y < bottom; y++) for (let x = 0; x < columns!; x++) {
+        if (covers(cells, x, y)) continue;
+        for (const later of cells.filter(c => c.y > y || (c.y === y && c.x > x))) {
+          const others = cells.filter(c => c.id !== later.id && (c.y < y || (c.y === y && c.x < x)));
+          let fits = x + later.w <= columns!;
+          for (let dy = 0; fits && dy < later.h; dy++) for (let dx = 0; fits && dx < later.w; dx++) if (covers(others, x + dx, y + dy)) fits = false;
+          expect(fits, `${later.id} fits the gap at (${x},${y})`).toBe(false);
+        }
       }
-      const adapted = placePushDown(layout, packLayout(layout, 2500), 'b', width!);
-      bounded(adapted);
-      expect(adapted.find(c => c.id === 'b')!.w).toBe(footprint('4x2', width!).w);
-    }
+    };
+    const packed = pack(layout, width!);
+    bounded(packed); dense(packed);
+    expect(pack(layout, width!)).toEqual(packed); // deterministic
+    if (columns! >= 4) expect(packed.find(c => c.id === 'b')!.w).toBe(4);
+    // The settled (reading) order packs to the same picture, so a save and reload match.
+    expect(pack(settle(layout, width!), width!).map(({ id, x, y }) => ({ id, x, y })).sort((p, q) => p.id.localeCompare(q.id)))
+      .toEqual(packed.map(({ id, x, y }) => ({ id, x, y })).sort((p, q) => p.id.localeCompare(q.id)));
+    // Growing a widget pinned at its top-left: it keeps the spot; the rest pack around it.
+    const a = packed.find(c => c.id === 'a')!;
+    const grown = settle(layout.map(p => p.id === 'a' ? { ...p, size: '2x2' as const } : p), width!, { id: 'a', x: a.x, y: a.y });
+    const after = pack(grown, width!);
+    bounded(after); dense(after);
+    if (a.x + footprint('2x2', width!).w <= columns!) expect(after.find(c => c.id === 'a')).toMatchObject({ x: a.x, y: a.y });
+    expect(readingOrder(after)).toEqual(grown);
+    // Removing a widget never leaves a gap something later fits.
+    const removed = pack(settle(layout.filter(p => p.id !== 'c'), width!), width!);
+    bounded(removed); dense(removed);
+    // The Add tile follows the last widget; a new 1×1 takes the first free cell.
+    const slot = addSlot(after, width!);
+    const last = Math.max(...after.map(c => (c.y + c.h - 1) * columns! + c.x + c.w - 1));
+    expect(slot.y * columns! + slot.x).toBe(last + 1);
+    const added = pack([...grown, { id: 'new', size: '1x1' }], width!);
+    const fresh = added.find(c => c.id === 'new')!;
+    bounded(added);
+    for (let at = 0; at < fresh.y * columns! + fresh.x; at++) expect(covers(added, at % columns!, Math.floor(at / columns!))).toBe(true);
   });
 }

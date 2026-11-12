@@ -90,34 +90,76 @@ export function footprint(size: BlockSize, width: number) {
   }
   return { w, h, cols };
 }
-const overlaps = (a: GridCell, b: GridCell) =>
-  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+export type Pin = { id: string; x: number; y: number };
 
 /**
- * The free spot closest to the top that fits `item`: rows top to bottom, then left to right.
- * Below the last row every spot is free, so this always finds one. Nothing in `placed` moves.
+ * Dense packing, the one rule every Home layout follows (view, edit, reload). Scan cells top to
+ * bottom, left to right; each empty cell takes the next widget, in `layout` order, whose footprint
+ * fits there. Later widgets may overtake earlier ones to fill a gap; a gap stays only where no
+ * remaining widget fits. Deterministic: the same order and width always pack the same way.
+ * `pin` holds one widget at a chosen top-left (the one being dragged or resized) and packs the
+ * others around it. Returns cells in `layout` order.
  */
-export function firstFit(placed: GridCell[], item: Placement, width: number, from = 0): GridCell {
-  const { w, h, cols } = footprint(item.size, width);
-  let at = from;
-  let cell: GridCell;
-  do {
-    cell = { ...item, w, h, x: at % cols, y: Math.floor(at / cols) };
-    at++;
-  } while (cell.x + w > cols || placed.some(p => overlaps(p, cell)));
-  return cell;
+export function pack(layout: Placement[], width: number, pin?: Pin): GridCell[] {
+  const { cols } = footprint('1x1', width);
+  const taken: Uint8Array[] = [];
+  const row = (y: number) => (taken[y] ??= new Uint8Array(cols));
+  const free = (x: number, y: number, w: number, h: number) => {
+    if (x + w > cols) return false;
+    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < w; dx++) if (row(y + dy)[x + dx]) return false;
+    return true;
+  };
+  const out = new Map<string, GridCell>();
+  const put = (c: GridCell) => {
+    for (let dy = 0; dy < c.h; dy++) row(c.y + dy).fill(1, c.x, c.x + c.w);
+    out.set(c.id, c);
+  };
+  const pinned = pin && layout.find(p => p.id === pin.id);
+  if (pinned) {
+    const { w, h } = footprint(pinned.size, width);
+    put({ ...pinned, w, h, x: Math.max(0, Math.min(pin.x, cols - w)), y: Math.max(0, pin.y) });
+  }
+  const remaining = layout.filter(p => !out.has(p.id)).map(p => ({ ...p, ...footprint(p.size, width) }));
+  for (let at = 0; remaining.length; at++) {
+    const x = at % cols, y = Math.floor(at / cols);
+    if (row(y)[x]) continue;
+    const i = remaining.findIndex(r => free(x, y, r.w, r.h));
+    if (i < 0) continue;
+    const [{ id, size, w, h }] = remaining.splice(i, 1) as [typeof remaining[number]];
+    put({ id, size, w, h, x, y });
+  }
+  return layout.map(p => out.get(p.id)!);
 }
 
-/** CSS's initial dense packing; ordered packing is used after an explicit move. */
-export function packLayout(layout: Placement[], width: number, dense = true): GridCell[] {
-  const placed: GridCell[] = [];
-  let cursor = 0;
-  for (const item of layout) {
-    const cell = firstFit(placed, item, width, dense ? 0 : cursor);
-    placed.push(cell);
-    cursor = cell.y * footprint(item.size, width).cols + cell.x + 1;
+/** Cells in reading order (top to bottom, left to right) as a saved {id,size} order. */
+export const readingOrder = (cells: GridCell[]): Placement[] =>
+  [...cells].sort((a, b) => a.y - b.y || a.x - b.x).map(({ id, size }) => ({ id, size }));
+
+/**
+ * The order to keep after an edit: pack (holding `pin` where the person put it), then take the
+ * reading order. Packing that order unpinned gives the same cells wherever the pinned widget
+ * could stay, and otherwise lets it rise into the gap it fits, so what Home shows during a drag
+ * is what the drop, a save and a reload give. The persisted format stays {id,size}[].
+ */
+export const settle = (layout: Placement[], width: number, pin?: Pin): Placement[] =>
+  readingOrder(pack(layout, width, pin));
+
+/**
+ * Keyboard move: `id` to index `to` of the reading order. Dense packing can pack a swap back into
+ * the same picture (a 1×1 that fills a gap fills it from any later index), so keep stepping the
+ * same way until the picture changes. Returns `layout` itself when nothing can move.
+ */
+export function moveInOrder(layout: Placement[], id: string, to: number, width: number): Placement[] {
+  const from = layout.findIndex(p => p.id === id);
+  const step = Math.sign(to - from);
+  if (from < 0 || !step) return layout;
+  const before = pack(layout, width);
+  for (let i = to; i >= 0 && i < layout.length; i += step) {
+    const next = settle(moveTo(layout, id, i), width);
+    const cells = pack(next, width);
+    if (cells.some(c => { const b = before.find(o => o.id === c.id)!; return b.x !== c.x || b.y !== c.y; })) return next;
   }
-  return placed;
+  return layout;
 }
 
 /**
@@ -133,25 +175,6 @@ export function addSlot(cells: GridCell[], width: number): { x: number; y: numbe
   const end = cells.filter(c => c.y + c.h === bottom).reduce((m, c) => Math.max(m, c.x + c.w), 0);
   const next = bottom === 0 ? 0 : end < cols ? (bottom - 1) * cols + end : bottom * cols;
   return { x: next % cols, y: Math.floor(next / cols) };
-}
-
-/** Reserve the changed tile, then push intersecting neighbours down in visual order. */
-export function placePushDown(layout: Placement[], previous: GridCell[], changedId: string, width: number): GridCell[] {
-  const fallback = packLayout(layout, width);
-  const cells = layout.map(item => {
-    const old = previous.find(p => p.id === item.id) ?? fallback.find(p => p.id === item.id)!;
-    const { w, h, cols } = footprint(item.size, width);
-    return { ...item, w, h, x: Math.min(old.x, cols - w), y: old.y };
-  });
-  const ordered = [...cells].sort((a, b) =>
-    a.id === changedId ? -1 : b.id === changedId ? 1 : a.y - b.y || a.x - b.x);
-  const placed: GridCell[] = [];
-  for (const cell of ordered) {
-    const next = { ...cell };
-    while (placed.some(p => overlaps(p, next))) next.y++;
-    placed.push(next);
-  }
-  return cells.map(cell => placed.find(p => p.id === cell.id)!);
 }
 
 /**
@@ -174,15 +197,4 @@ export function trackAt(sizes: number[], gap: number, offset: number, extra = 0)
 export function fitsAt(size: BlockSize, at: { x: number; y: number }, width: number) {
   const { w, cols } = footprint(size, width);
   return at.x >= 0 && at.y >= 0 && at.x + w <= cols;
-}
-
-/**
- * Put `id` with its top-left at `at`, push intersecting neighbours down from `previous`, and
- * return the layout in reading order with the matching cells (so the order and the explicit
- * positions agree, and the Add tile still follows the last widget).
- */
-export function moveToCell(layout: Placement[], previous: GridCell[], id: string, at: { x: number; y: number }, width: number) {
-  const base = previous.map(c => (c.id === id ? { ...c, x: at.x, y: at.y } : c));
-  const cells = placePushDown(layout, base, id, width).sort((a, b) => a.y - b.y || a.x - b.x);
-  return { layout: cells.map(({ id, size }) => ({ id, size })), cells };
 }

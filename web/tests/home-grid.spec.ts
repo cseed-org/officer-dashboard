@@ -21,6 +21,41 @@ async function savedLayout(page: Page): Promise<P[]> {
 const grid = (page: Page) => page.getByRole('list', { name: 'Home widgets' });
 const order = (page: Page) => grid(page).locator(':scope > li[data-widget]').evaluateAll((els) => els.map((e) => e.getAttribute('data-widget')));
 const widget = (page: Page, id: string) => grid(page).locator(`:scope > li[data-widget="${id}"]`);
+type Cell = { x: number; y: number; w: number; h: number };
+/** A widget's explicit cell: 0-based column and row, and its span. */
+const cellOf = (page: Page, id: string): Promise<Cell> => widget(page, id).evaluate((e) => {
+  const s = getComputedStyle(e);
+  return { x: +s.gridColumnStart - 1, y: +s.gridRowStart - 1, w: +s.gridColumnEnd.replace('span ', ''), h: +s.gridRowEnd.replace('span ', '') };
+});
+/** Every widget's cell, keyed by id. */
+const cells = (page: Page) => grid(page).locator(':scope > li[data-widget]').evaluateAll((els) => Object.fromEntries(els.map((e) => {
+  const s = getComputedStyle(e);
+  return [e.getAttribute('data-widget')!, { x: +s.gridColumnStart - 1, y: +s.gridRowStart - 1, w: +s.gridColumnEnd.replace('span ', ''), h: +s.gridRowEnd.replace('span ', '') }];
+})) as Record<string, Cell>);
+/** Pairs of widgets whose cells overlap (always empty for a valid layout). */
+const overlapping = (all: Record<string, Cell>) => {
+  const e = Object.entries(all); const out: string[] = [];
+  for (let i = 0; i < e.length; i++) for (let j = i + 1; j < e.length; j++) {
+    const [a, b] = [e[i]![1], e[j]![1]];
+    if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) out.push(`${e[i]![0]}/${e[j]![0]}`);
+  }
+  return out;
+};
+/** The viewport point at the centre of grid cell (x, y), from the grid's own tracks; y may be one row past the last. */
+const cellPoint = (page: Page, x: number, y: number) => grid(page).evaluate((g, [x, y]) => {
+  const s = getComputedStyle(g); const r = g.getBoundingClientRect();
+  const cols = s.gridTemplateColumns.split(' ').map(parseFloat); const rows = s.gridTemplateRows.split(' ').map(parseFloat);
+  const at = (ts: number[], gap: number, i: number) => { let p = 0; for (let k = 0; k < i; k++) p += (ts[k] ?? ts.at(-1)!) + gap; return p + (ts[i] ?? ts.at(-1)!) / 2; };
+  return { x: r.left + at(cols, parseFloat(s.columnGap), x), y: r.top + at(rows, parseFloat(s.rowGap), y) };
+}, [x, y] as const);
+/** Press on a widget; the returned function moves the pointer to the centre of a grid cell. */
+async function dragOver(page: Page, id: string) {
+  const box = (await widget(page, id).boundingBox())!;
+  await page.mouse.move(box.x + 24, box.y + box.height / 2);
+  await page.mouse.down();
+  return async (x: number, y: number, steps = 6) => { const p = await cellPoint(page, x, y); await page.mouse.move(p.x, p.y, { steps }); };
+}
+const hint = (page: Page) => grid(page).locator('li.is-dragging.is-placeholder');
 async function openHome(page: Page, layout: P[] = defaultWidgetLayout) {
   await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true } });
   await putLayout(page, layout);
@@ -111,12 +146,16 @@ test('Resize, remove and add widgets; Done persists, Cancel discards', async ({ 
   await expect(gallery.getByRole('button', { name: 'Add Web Analytics' })).toBeVisible();
   await gallery.getByRole('button', { name: 'Close' }).click();
   await expect(widget(page, 'member-signups')).toHaveAttribute('data-size', '1x1');
+  // Dense packing may let a later widget fill a gap first, so the saved order is the reading order
+  // Home showed, and a reload packs to the same picture.
+  const expected = await order(page);
+  expect([...expected].sort()).toEqual([...DEFAULT_IDS.filter((id) => id !== 'web-analytics'), 'member-signups'].sort());
+  const shown = await cells(page);
   await done(page);
-
-  const expected = [...DEFAULT_IDS.filter((id) => id !== 'web-analytics'), 'member-signups'];
   await page.reload();
   await expect(widget(page, 'member-signups')).toContainText('No members yet');
   expect(await order(page)).toEqual(expected);
+  expect(await cells(page)).toEqual(shown);
   await expect(widget(page, 'kpi-upcoming')).toHaveAttribute('data-size', '2x1');
   await expect(widget(page, 'recent-events')).toHaveAttribute('data-size', '4x2');
   const saved = await savedLayout(page);
@@ -146,7 +185,10 @@ test('Keyboard reordering on the grip, announced and saved', async ({ page }) =>
   await page.keyboard.press('Home');
   expect((await order(page))[0]).toBe('recent-events');
   await page.keyboard.press('ArrowDown');
-  expect((await order(page))[1]).toBe('recent-events');
+  // One step later; dense packing may place it further when it can't fit the next spot.
+  const later = (await order(page)).indexOf('recent-events');
+  expect(later).toBeGreaterThan(0);
+  await expect(page.locator('#blocks-live')).toHaveText(`Recent events, position ${later + 1} of ${DEFAULT_IDS.length}`);
   await page.keyboard.press('End');
   expect((await order(page)).at(-1)).toBe('recent-events');
   await expect(grip).toBeFocused();
@@ -214,10 +256,13 @@ test('V0.3 S/M/L layouts migrate to blocks without losing anything', async ({ pa
   // A widget from a feature that has not shipped stays saved and shows in edit mode.
   await page.getByRole('button', { name: 'Edit home' }).click();
   await expect(widget(page, 'future-widget')).toContainText('Unavailable widget (future-widget)');
+  const arranged = await order(page);
   await done(page);
   const saved = await savedLayout(page);
-  expect(saved.map((w) => w.size)).toEqual(['1x1', '1x1', '1x1', '1x1', '1x1', '1x1', '4x2', '2x2', '2x2']);
-  expect(saved.at(-1)?.id).toBe('future-widget');
+  // Saved in the reading order edit mode showed (a 2×2 can fill a gap the 4×2 can't).
+  expect(saved.map((w) => w.id)).toEqual(arranged);
+  expect(saved.map((w) => w.size).sort()).toEqual(['1x1', '1x1', '1x1', '1x1', '1x1', '1x1', '2x2', '2x2', '4x2']);
+  expect(saved).toContainEqual({ id: 'future-widget', size: '2x2' });
 });
 
 test('Phone: two columns, stat tiles pair up, large widgets take the full row', async ({ page }, info) => {
@@ -418,7 +463,7 @@ test('Calendar corner drag previews its large footprint and Escape restores', as
   await page.getByRole('button', { name: 'Cancel' }).click();
 });
 
-test('Resize commits only at snap boundaries and pushes neighbours down without reordering', async ({ page }, info) => {
+test('Resize commits only at snap boundaries; neighbours pack around the resized widget', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'desktop snap geometry');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const initial = [
@@ -447,9 +492,9 @@ test('Resize commits only at snap boundaries and pushes neighbours down without 
   const snappedRevision = await revision();
   for (let delta = 1; delta <= 12; delta++) await page.mouse.move(x + cardBox.width + delta, y + cardBox.height + delta);
   expect(await revision()).toBe(snappedRevision);
-  const after = (await neighbour.boundingBox())!;
-  expect(Math.abs(after.x - before.x)).toBeLessThan(2);
-  expect(after.y).toBeGreaterThan(before.y + cardBox.height);
+  // The resized widget keeps its top-left; the stat tiles pack into the free cells beside it.
+  expect(await cellOf(page, 'web-analytics')).toEqual({ x: 0, y: 0, w: 2, h: 2 });
+  expect(await cellOf(page, 'kpi-upcoming')).toEqual({ x: 2, y: 0, w: 1, h: 1 });
   expect(await order(page)).toEqual(initial.map(p => p.id));
   // Preview never writes preferences. Escape restores geometry as well as the size.
   expect(await savedLayout(page)).toEqual(initial);
@@ -578,7 +623,7 @@ test('Add widget stays after the last widget through add, remove, resize and mov
   await expectAddLast(page);
 });
 
-test('A new widget starts at its smallest size in the highest free spot; nothing else moves', async ({ page }) => {
+test('A new widget starts at its smallest size in the highest free spot it fits', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   // A stat tile, then a full-width calendar: a hole beside the tile at four and at two columns.
   await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }, { id: 'calendar', size: '4x2' }]);
@@ -601,19 +646,26 @@ test('A new widget starts at its smallest size in the highest free spot; nothing
   expect((await widget(page, 'calendar').boundingBox())!).toEqual(before.cal);
   await expectAddLast(page);
   await done(page);
-  // Saved as {id,size} with the new widget last; a reload packs it into the same spot.
-  expect(await savedLayout(page)).toEqual([{ id: 'kpi-upcoming', size: '1x1' }, { id: 'calendar', size: '4x2' }, { id: 'budget', size: '1x1' }]);
+  // Saved as {id,size} in reading order (the new widget sits in the gap); a reload packs it into the same spot.
+  expect(await savedLayout(page)).toEqual([{ id: 'kpi-upcoming', size: '1x1' }, { id: 'budget', size: '1x1' }, { id: 'calendar', size: '4x2' }]);
   await page.reload();
   await expect(budget).toHaveAttribute('data-size', '1x1');
   await expect.poll(inGap).toBe(true);
-  // A larger widget with no gap that fits goes at the end, below everything.
+  // A larger widget takes the highest spot it fits: a 2×2 fits beside the stat tiles at four
+  // columns (the full-width calendar can't), so dense packing puts it there and the calendar
+  // packs below it; at two columns it goes below everything. A reload packs the same.
   await page.getByRole('button', { name: 'Edit home' }).click();
   await page.getByRole('button', { name: 'Add widget' }).first().click();
   await gallery.getByRole('button', { name: 'Add Recent events' }).click();
   await gallery.getByRole('button', { name: 'Close' }).click();
   await expect(widget(page, 'recent-events')).toHaveAttribute('data-size', '2x2');
-  const cal = (await widget(page, 'calendar').boundingBox())!;
-  expect((await widget(page, 'recent-events').boundingBox())!.y).toBeGreaterThan(cal.y + cal.height - 2);
+  const recent = await cellOf(page, 'recent-events');
+  const cal = await cellOf(page, 'calendar');
+  const cols = await grid(page).evaluate((g) => getComputedStyle(g).gridTemplateColumns.split(' ').length);
+  // Phone (two columns) and tablet (a 2×2 is drawn four wide) have no such spot.
+  if (recent.w + 2 > cols) expect(recent.y).toBeGreaterThanOrEqual(cal.y + cal.h);
+  else { expect(recent).toEqual({ x: 2, y: 0, w: 2, h: 2 }); expect(cal.y).toBe(2); }
+  expect(overlapping(await cells(page))).toEqual([]);
   await expectAddLast(page);
 });
 
@@ -665,9 +717,9 @@ for (const width of [1280, 1600, 1920, 2200, 2400, 2560, 2880]) {
     const source = widget(page, 'calendar').locator('.blk-handle');
     const target = widget(page, 'kpi-upcoming').locator('.blk-handle');
     await source.dragTo(target);
-    // The calendar lands on the hovered tile's cell and pushes that tile down below it.
+    // The calendar lands on the hovered tile's cell; the rest pack around it without overlap.
     await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: 0, w: 4, h: 2 });
-    expect((await cellOf(page, 'kpi-upcoming')).y).toBeGreaterThanOrEqual(2);
+    expect(overlapping(await cells(page))).toEqual([]);
     expect((await order(page))[0]).toBe('calendar');
     await expectAddLast(page);
     await page.getByRole('button', { name: 'Remove Avg check-in rate' }).click();
@@ -691,66 +743,98 @@ for (const width of [1280, 1600, 1920, 2200, 2400, 2560, 2880]) {
   });
 }
 
-/** The viewport point at the centre of grid cell (x, y), from the grid's own tracks; y may be one row past the last. */
-const cellPoint = (page: Page, x: number, y: number) => grid(page).evaluate((g, [x, y]) => {
-  const s = getComputedStyle(g); const r = g.getBoundingClientRect();
-  const cols = s.gridTemplateColumns.split(' ').map(parseFloat); const rows = s.gridTemplateRows.split(' ').map(parseFloat);
-  const at = (ts: number[], gap: number, i: number) => { let p = 0; for (let k = 0; k < i; k++) p += (ts[k] ?? ts.at(-1)!) + gap; return p + (ts[i] ?? ts.at(-1)!) / 2; };
-  return { x: r.left + at(cols, parseFloat(s.columnGap), x), y: r.top + at(rows, parseFloat(s.rowGap), y) };
-}, [x, y] as const);
-/** A widget's explicit cell: 0-based column and row, and its span. */
-const cellOf = (page: Page, id: string) => widget(page, id).evaluate((e) => {
-  const s = getComputedStyle(e);
-  return { x: +s.gridColumnStart - 1, y: +s.gridRowStart - 1, w: +s.gridColumnEnd.replace('span ', ''), h: +s.gridRowEnd.replace('span ', '') };
-});
-async function dragOver(page: Page, id: string) {
-  const box = (await widget(page, id).boundingBox())!;
-  await page.mouse.move(box.x + 24, box.y + box.height / 2);
-  await page.mouse.down();
-  return async (x: number, y: number, steps = 6) => { const p = await cellPoint(page, x, y); await page.mouse.move(p.x, p.y, { steps }); };
-}
-const hint = (page: Page) => grid(page).locator('li.is-dragging.is-placeholder');
-
-// The drop target is the grid cell under the pointer, so empty gaps and the space past the last tile
-// show the hint too (they used to show nothing: only tiles were hit-tested).
-for (const [width, cols, gap, end] of [[1280, 4, [3, 0], [2, 3]], [1920, 6, [1, 1], [3, 2]]] as const) {
-  test(`drag hints and drops land on empty gaps and past the last tile · ${cols} columns`, async ({ page }, info) => {
+// Dense packing: what the drag shows is where the drop lands, and a reload packs the same picture.
+for (const [width, cols] of [[1280, 4], [1920, 6]] as const) {
+  test(`the drop hint is the final position after packing · ${cols} columns`, async ({ page }, info) => {
     test.skip(info.project.name !== 'desktop', 'mouse drag geometry at desktop column counts');
     await page.setViewportSize({ width, height: 1400 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    // 4 columns: two 1×1 tiles leave a gap above the calendar; 6 columns: a gap below them.
-    await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }, { id: 'calendar', size: '4x2' }]);
+    await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }, { id: 'calendar', size: '4x2' }, { id: 'my-action', size: '2x1' }]);
     await page.getByRole('button', { name: 'Edit home' }).click();
     await expect.poll(() => grid(page).evaluate((g) => getComputedStyle(g).gridTemplateColumns.split(' ').length)).toBe(cols);
 
-    let to = await dragOver(page, 'kpi-upcoming');
-    await to(gap[0], gap[1]);
-    await expect(hint(page)).toHaveAttribute('data-widget', 'kpi-upcoming');
-    await expect.poll(() => cellOf(page, 'kpi-upcoming')).toEqual({ x: gap[0], y: gap[1], w: 1, h: 1 });
+    // A spot the widget can keep: it lands exactly where the pointer is, and the rest pack around it.
+    let to = await dragOver(page, 'kpi-checkin');
+    await to(0, 0);
+    await expect.poll(() => cellOf(page, 'kpi-checkin')).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    expect(await hint(page).getAttribute('data-widget')).toBe('kpi-checkin');
     expect(await hint(page).evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
-    // Past the last tile, in the Add tile's row: the hint follows, the Add tile stays last.
-    await to(end[0], end[1]);
-    await expect.poll(() => cellOf(page, 'kpi-upcoming')).toEqual({ x: end[0], y: end[1], w: 1, h: 1 });
-    await expectAddLast(page);
     await page.mouse.up();
-    await expect(hint(page)).toHaveCount(0);
-    expect(await cellOf(page, 'kpi-upcoming')).toEqual({ x: end[0], y: end[1], w: 1, h: 1 });
-    expect((await order(page)).at(-1)).toBe('kpi-upcoming');
-    await expectAddLast(page);
+    expect(await cellOf(page, 'kpi-checkin')).toEqual({ x: 0, y: 0, w: 1, h: 1 });
 
-    // A 4×2 calendar: a fitting spot shows the hint at its full size; a column it can't fit from
-    // shows nothing new, and dropping there keeps the last valid target.
+    // Empty space, the last tile's row and the row past it: wherever the hint settles is where
+    // the drop lands (a 1×1 below a gap it fits rises into that gap), with no overlap.
+    const bottom = Math.max(...Object.values(await cells(page)).map((c) => c.y + c.h));
+    for (const [id, x, y] of [['kpi-upcoming', cols - 1, 0], ['kpi-upcoming', 1, bottom], ['my-action', 0, bottom - 1], ['calendar', 0, bottom], ['my-action', cols - 2, 0]] as const) {
+      to = await dragOver(page, id);
+      await to(x, y);
+      await page.waitForTimeout(120);
+      const shown = await cellOf(page, id);
+      const all = await cells(page);
+      await page.mouse.up();
+      await expect(hint(page)).toHaveCount(0);
+      expect(await cellOf(page, id), `${id} dropped over (${x},${y})`).toEqual(shown);
+      expect(await cells(page)).toEqual(all);
+      expect(overlapping(all)).toEqual([]);
+      await expectAddLast(page);
+    }
+
+    // A column the 4×2 can't start in shows nothing new, and dropping there keeps the last target.
     const cal = await cellOf(page, 'calendar');
     to = await dragOver(page, 'calendar');
-    await to(0, cal.y + 1);
-    await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: cal.y + 1, w: 4, h: 2 });
-    await to(cols - 1, cal.y + 2, 1); // one jump: the columns in between would be valid targets
+    await to(0, cal.y);
+    await expect.poll(() => cellOf(page, 'calendar')).toEqual(cal);
+    await to(cols - 1, cal.y + 1, 1); // one jump: the columns in between would be valid targets
     await page.waitForTimeout(150);
-    expect(await cellOf(page, 'calendar')).toEqual({ x: 0, y: cal.y + 1, w: 4, h: 2 });
+    expect(await cellOf(page, 'calendar')).toEqual(cal);
     await page.mouse.up();
-    expect(await cellOf(page, 'calendar')).toEqual({ x: 0, y: cal.y + 1, w: 4, h: 2 });
-    await expectAddLast(page);
+    expect(await cellOf(page, 'calendar')).toEqual(cal);
+
+    const shown = await cells(page);
+    const arranged = await order(page);
     await done(page);
-    expect((await savedLayout(page)).map((w) => w.id)).toEqual(await order(page));
+    expect((await savedLayout(page)).map((w) => w.id)).toEqual(arranged);
+    await page.reload();
+    await expect(grid(page).locator(':scope > li[data-widget]').first()).toBeVisible();
+    expect(await cells(page)).toEqual(shown);
   });
 }
+
+test('Removing a widget lets a 1×1 further down fill the gap near the top', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // Links, two stat tiles, the calendar, then a stat tile below it (four columns; phone: two).
+  await openHome(page, [{ id: 'links', size: '2x1' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }, { id: 'calendar', size: '4x2' }, { id: 'kpi-reflection', size: '1x1' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const gap = await cellOf(page, 'kpi-checkin');
+  const cal = await cellOf(page, 'calendar');
+  expect((await cellOf(page, 'kpi-reflection')).y).toBeGreaterThanOrEqual(cal.y + cal.h);
+  await page.getByRole('button', { name: 'Remove Avg check-in rate' }).click();
+  // The lower stat tile overtakes the calendar into the freed cell; the calendar stays put.
+  await expect.poll(() => cellOf(page, 'kpi-reflection')).toEqual(gap);
+  expect(await cellOf(page, 'calendar')).toEqual(cal);
+  expect(await order(page)).toEqual(['links', 'kpi-upcoming', 'kpi-reflection', 'calendar']);
+  await expectAddLast(page);
+  const shown = await cells(page);
+  await done(page);
+  await page.reload();
+  await expect(widget(page, 'kpi-reflection')).toBeVisible();
+  expect(await cells(page)).toEqual(shown);
+});
+
+test('Shrinking a widget lets the widgets below rise into the space', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'a 2×2 keeps two columns only at desktop widths');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openHome(page, [{ id: 'calendar', size: '4x2' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }]);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  expect(await cellOf(page, 'kpi-upcoming')).toEqual({ x: 0, y: 2, w: 1, h: 1 });
+  await page.getByRole('button', { name: /^Move Calendar/ }).focus();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await expect(widget(page, 'calendar')).toHaveAttribute('data-size', '2x2');
+  // The calendar keeps its top-left; both stat tiles rise beside it.
+  expect(await cellOf(page, 'calendar')).toEqual({ x: 0, y: 0, w: 2, h: 2 });
+  await expect.poll(() => cellOf(page, 'kpi-upcoming')).toEqual({ x: 2, y: 0, w: 1, h: 1 });
+  expect(await cellOf(page, 'kpi-checkin')).toEqual({ x: 3, y: 0, w: 1, h: 1 });
+  await expectAddLast(page);
+  await done(page);
+  expect(await savedLayout(page)).toEqual([{ id: 'calendar', size: '2x2' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }]);
+});
