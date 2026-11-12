@@ -153,3 +153,36 @@ export function placePushDown(layout: Placement[], previous: GridCell[], changed
   }
   return cells.map(cell => placed.find(p => p.id === cell.id)!);
 }
+
+/**
+ * Which track an offset (px from the grid's content edge) falls in, given the grid's resolved
+ * track sizes and gap. Each gap is split between its two neighbours. `extra` tracks past the last
+ * one (sized like it) also count, so the row just below the grid is a target. Null outside.
+ */
+export function trackAt(sizes: number[], gap: number, offset: number, extra = 0): number | null {
+  if (offset < -gap / 2 || !sizes.length) return null;
+  let start = 0;
+  for (let i = 0; i < sizes.length + extra; i++) {
+    const size = sizes[i] ?? sizes[sizes.length - 1]!;
+    if (offset < start + size + gap / 2) return i;
+    start += size + gap;
+  }
+  return null;
+}
+
+/** Whether `size`'s footprint fits with its top-left at `at`: inside the columns, never above row 0. */
+export function fitsAt(size: BlockSize, at: { x: number; y: number }, width: number) {
+  const { w, cols } = footprint(size, width);
+  return at.x >= 0 && at.y >= 0 && at.x + w <= cols;
+}
+
+/**
+ * Put `id` with its top-left at `at`, push intersecting neighbours down from `previous`, and
+ * return the layout in reading order with the matching cells (so the order and the explicit
+ * positions agree, and the Add tile still follows the last widget).
+ */
+export function moveToCell(layout: Placement[], previous: GridCell[], id: string, at: { x: number; y: number }, width: number) {
+  const base = previous.map(c => (c.id === id ? { ...c, x: at.x, y: at.y } : c));
+  const cells = placePushDown(layout, base, id, width).sort((a, b) => a.y - b.y || a.x - b.x);
+  return { layout: cells.map(({ id, size }) => ({ id, size })), cells };
+}

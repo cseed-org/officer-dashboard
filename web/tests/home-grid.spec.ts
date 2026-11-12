@@ -665,12 +665,17 @@ for (const width of [1280, 1600, 1920, 2200, 2400, 2560, 2880]) {
     const source = widget(page, 'calendar').locator('.blk-handle');
     const target = widget(page, 'kpi-upcoming').locator('.blk-handle');
     await source.dragTo(target);
-    await expect.poll(() => order(page)).toEqual(['calendar', 'kpi-upcoming', 'kpi-checkin', 'budget']);
+    // The calendar lands on the hovered tile's cell and pushes that tile down below it.
+    await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: 0, w: 4, h: 2 });
+    expect((await cellOf(page, 'kpi-upcoming')).y).toBeGreaterThanOrEqual(2);
+    expect((await order(page))[0]).toBe('calendar');
     await expectAddLast(page);
     await page.getByRole('button', { name: 'Remove Avg check-in rate' }).click();
     await expectAddLast(page);
+    const arranged = await order(page);
     await done(page);
-    expect(await savedLayout(page)).toEqual([{ id: 'calendar', size: '4x2' }, { id: 'kpi-upcoming', size: '2x1' }, { id: 'budget', size: '1x1' }]);
+    const sizes: Record<string, string> = { calendar: '4x2', 'kpi-upcoming': '2x1', budget: '1x1' };
+    expect(await savedLayout(page)).toEqual(arranged.map((id) => ({ id: id!, size: sizes[id!] })));
     await page.reload();
     await expect(widget(page, 'calendar')).toHaveCSS('grid-column-end', 'span 4');
     expect(await overflow(page)).toEqual([]);
@@ -683,5 +688,69 @@ for (const width of [1280, 1600, 1920, 2200, 2400, 2560, 2880]) {
     }
     await page.getByRole('button', { name: 'Cancel' }).click();
     expect(await overflow(page)).toEqual([]);
+  });
+}
+
+/** The viewport point at the centre of grid cell (x, y), from the grid's own tracks; y may be one row past the last. */
+const cellPoint = (page: Page, x: number, y: number) => grid(page).evaluate((g, [x, y]) => {
+  const s = getComputedStyle(g); const r = g.getBoundingClientRect();
+  const cols = s.gridTemplateColumns.split(' ').map(parseFloat); const rows = s.gridTemplateRows.split(' ').map(parseFloat);
+  const at = (ts: number[], gap: number, i: number) => { let p = 0; for (let k = 0; k < i; k++) p += (ts[k] ?? ts.at(-1)!) + gap; return p + (ts[i] ?? ts.at(-1)!) / 2; };
+  return { x: r.left + at(cols, parseFloat(s.columnGap), x), y: r.top + at(rows, parseFloat(s.rowGap), y) };
+}, [x, y] as const);
+/** A widget's explicit cell: 0-based column and row, and its span. */
+const cellOf = (page: Page, id: string) => widget(page, id).evaluate((e) => {
+  const s = getComputedStyle(e);
+  return { x: +s.gridColumnStart - 1, y: +s.gridRowStart - 1, w: +s.gridColumnEnd.replace('span ', ''), h: +s.gridRowEnd.replace('span ', '') };
+});
+async function dragOver(page: Page, id: string) {
+  const box = (await widget(page, id).boundingBox())!;
+  await page.mouse.move(box.x + 24, box.y + box.height / 2);
+  await page.mouse.down();
+  return async (x: number, y: number, steps = 6) => { const p = await cellPoint(page, x, y); await page.mouse.move(p.x, p.y, { steps }); };
+}
+const hint = (page: Page) => grid(page).locator('li.is-dragging.is-placeholder');
+
+// The drop target is the grid cell under the pointer, so empty gaps and the space past the last tile
+// show the hint too (they used to show nothing: only tiles were hit-tested).
+for (const [width, cols, gap, end] of [[1280, 4, [3, 0], [2, 3]], [1920, 6, [1, 1], [3, 2]]] as const) {
+  test(`drag hints and drops land on empty gaps and past the last tile · ${cols} columns`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'mouse drag geometry at desktop column counts');
+    await page.setViewportSize({ width, height: 1400 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    // 4 columns: two 1×1 tiles leave a gap above the calendar; 6 columns: a gap below them.
+    await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }, { id: 'calendar', size: '4x2' }]);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    await expect.poll(() => grid(page).evaluate((g) => getComputedStyle(g).gridTemplateColumns.split(' ').length)).toBe(cols);
+
+    let to = await dragOver(page, 'kpi-upcoming');
+    await to(gap[0], gap[1]);
+    await expect(hint(page)).toHaveAttribute('data-widget', 'kpi-upcoming');
+    await expect.poll(() => cellOf(page, 'kpi-upcoming')).toEqual({ x: gap[0], y: gap[1], w: 1, h: 1 });
+    expect(await hint(page).evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+    // Past the last tile, in the Add tile's row: the hint follows, the Add tile stays last.
+    await to(end[0], end[1]);
+    await expect.poll(() => cellOf(page, 'kpi-upcoming')).toEqual({ x: end[0], y: end[1], w: 1, h: 1 });
+    await expectAddLast(page);
+    await page.mouse.up();
+    await expect(hint(page)).toHaveCount(0);
+    expect(await cellOf(page, 'kpi-upcoming')).toEqual({ x: end[0], y: end[1], w: 1, h: 1 });
+    expect((await order(page)).at(-1)).toBe('kpi-upcoming');
+    await expectAddLast(page);
+
+    // A 4×2 calendar: a fitting spot shows the hint at its full size; a column it can't fit from
+    // shows nothing new, and dropping there keeps the last valid target.
+    const cal = await cellOf(page, 'calendar');
+    to = await dragOver(page, 'calendar');
+    await to(0, cal.y + 1);
+    await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: cal.y + 1, w: 4, h: 2 });
+    await to(cols - 1, cal.y + 2, 1); // one jump: the columns in between would be valid targets
+    await page.waitForTimeout(150);
+    expect(await cellOf(page, 'calendar')).toEqual({ x: 0, y: cal.y + 1, w: 4, h: 2 });
+    await page.mouse.up();
+    expect(await cellOf(page, 'calendar')).toEqual({ x: 0, y: cal.y + 1, w: 4, h: 2 });
+    await expectAddLast(page);
+    await done(page);
+    expect((await savedLayout(page)).map((w) => w.id)).toEqual(await order(page));
   });
 }

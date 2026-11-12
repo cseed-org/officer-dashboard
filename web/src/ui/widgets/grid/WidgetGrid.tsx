@@ -5,7 +5,7 @@ import { api } from '../../../lib/api/client';
 import { timezoneSnapshot } from '../../../lib/timezone';
 import { Icon } from '../../components/Icon';
 import { Loading } from '../../components/states';
-import { addSlot, blocks, firstFit, footprint, gridColumns, packLayout, placePushDown, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
+import { addSlot, blocks, firstFit, fitsAt, footprint, gridColumns, moveToCell, packLayout, placePushDown, trackAt, type GridCell, migrateLayout, moveTo, sizeLabel, sizeName, type Placement } from './layout';
 import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from '../registry';
 import '../../../styles/home-grid.css';
 
@@ -14,7 +14,8 @@ import { useGridResize, snappedSize } from './useGridResize';
 import { useGridFlip } from './flip';
 
 type Resize = { id: string; x: number; y: number; size: BlockSize; snapshot: Placement[]; axis: string; width: number; height: number };
-type Drag = { id: string; x: number; y: number; snapshot: Placement[]; over: string | null };
+/** `at` is the last valid drop cell (the dragged widget's top-left), or null before the first. */
+type Drag = { id: string; x: number; y: number; snapshot: Placement[]; at: { x: number; y: number } | null };
 
 /**
  * Home as a grid of blocks (spec § "V0.4 Home block grid"). The layout lives on the server
@@ -216,7 +217,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     element.setPointerCapture(e.pointerId);
     captured.current = { element, id: e.pointerId };
     interactionCells.current = cells.current;
-    pendingDrag.current = { id, x: e.clientX, y: e.clientY, snapshot: layout!, over: null };
+    pendingDrag.current = { id, x: e.clientX, y: e.clientY, snapshot: layout!, at: null };
   }
   function beginResize(e: PointerEvent, id: string, axis: string) {
     if (busy || e.button !== 0) return;
@@ -254,12 +255,30 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     if (!active) return;
     e.preventDefault();
     floating.move(e.clientX, e.clientY);
-    const hit = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest<HTMLElement>('li[data-widget]')).find((li) => li && grid.current?.contains(li));
-    const over = hit?.dataset.widget ?? null;
-    if (over && over !== active.id && over !== active.over) {
-      setLayout((l) => (l ? moveTo(l, active!.id, l.findIndex((w) => w.id === over)) : l));
+    // The target is the grid cell under the pointer (the floating copy's top-left), from the grid's
+    // own tracks, so empty gaps and the row below the last tile are targets too. A spot the
+    // footprint can't fit keeps the last valid target.
+    const at = cellAt(e.clientX, e.clientY);
+    const size = active.snapshot.find(w => w.id === active!.id)?.size;
+    let target = active.at;
+    if (at && size && fitsAt(size, at, gridWidth) && (at.x !== target?.x || at.y !== target?.y)) {
+      target = at;
+      const next = moveToCell(active.snapshot, interactionCells.current, active.id, at, gridWidth);
+      cells.current = next.cells;
+      setLayout(next.layout);
     }
-    setDrag({ ...active, x: e.clientX, y: e.clientY, over: over === active.id ? active.over : over });
+    setDrag({ ...active, x: e.clientX, y: e.clientY, at: target });
+  }
+  /** The grid cell (column, row) under a viewport point; one row past the last also counts. */
+  function cellAt(clientX: number, clientY: number) {
+    const el = grid.current;
+    if (!el) return null;
+    const s = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    const tracks = (v: string) => (v === 'none' ? [] : v.split(' ').map(parseFloat));
+    const x = trackAt(tracks(s.gridTemplateColumns), parseFloat(s.columnGap) || 0, clientX - r.left - el.clientLeft - parseFloat(s.paddingLeft));
+    const y = trackAt(tracks(s.gridTemplateRows), parseFloat(s.rowGap) || 0, clientY - r.top - el.clientTop - parseFloat(s.paddingTop), 1);
+    return x === null || y === null ? null : { x, y };
   }
   function endDrag() {
     releasePointer();
