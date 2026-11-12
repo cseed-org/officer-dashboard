@@ -1,3 +1,4 @@
+import { markGreetingSignedOut } from '../views/home/browserGreeting';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError } from '../../lib/api/client';
 import type { CalendarSettings, CurrentUser, MyProfile, OnboardingState, ProfileResponse, WidgetPlacement } from '../../lib/contracts';
@@ -313,6 +314,7 @@ export default function OnboardingPage() {
       setStepError({ text: 'We couldn’t save your place, so you’re still signed in. Check your connection and try again.', action: { label: 'Try again', run: () => void finishLater(discardProfile) } });
       return;
     }
+    markGreetingSignedOut(data.user.id);
     clearCachedRole();
     const f = document.createElement('form');
     f.method = 'post';

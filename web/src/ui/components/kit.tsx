@@ -27,26 +27,60 @@ export function CategoryDot({ code }: { code: string }) {
   return <span class="cat-dot" data-hue={categoryHue(code)} aria-hidden="true" />;
 }
 
-/** Keep figures stable and readable at first paint; animate the containing surface instead. */
-export function CountUp({ value }: { value: string | number }) {
-  return <>{value}</>;
+const NUMBER = /-?[\d,]*\.?\d+/;
+/** Format `v` like the number inside `template`: same prefix/suffix, decimals and grouping. */
+function formatLike(template: string, match: string, v: number) {
+  const decimals = (match.split('.')[1] ?? '').length;
+  return template.replace(match, v.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: match.includes(',') }));
 }
 
-/** A tiny trend line (decorative: the tile's text carries the numbers). */
-export function Sparkline({ values, hue }: { values: (number | null)[]; hue: Hue }) {
+/**
+ * A figure that renders its final text (first paint, no-JS, reduced motion) and counts up from 0
+ * only while the Home entrance runs (an `.is-entering` ancestor): rAF, ease-out cubic, 480ms,
+ * starting with its tile's stagger. Tabular numbers keep the width steady.
+ */
+export function CountUp({ value }: { value: string | number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const text = el?.firstChild;
+    if (!el || !(text instanceof Text) || !el.closest('.is-entering')) return;
+    const final = String(value);
+    const match = NUMBER.exec(final)?.[0];
+    if (!match) return;
+    const target = Number(match.replace(/,/g, ''));
+    if (!Number.isFinite(target) || target === 0) return;
+    const tile = el.closest<HTMLElement>('.blk');
+    const index = tile ? Number(getComputedStyle(tile).getPropertyValue('--i')) || 0 : 0;
+    const start = performance.now() + Math.min(index, 10) * 40 + 40;
+    // Preact owns the text node; only its data changes, and it ends on the final text.
+    text.data = formatLike(final, match, 0);
+    let frame = requestAnimationFrame(function step(now) {
+      const k = Math.min(1, Math.max(0, (now - start) / 480));
+      text.data = k >= 1 ? final : formatLike(final, match, target * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) frame = requestAnimationFrame(step);
+    });
+    return () => { cancelAnimationFrame(frame); text.data = final; };
+  }, []);
+  return <span ref={ref} class="count-up">{value}</span>;
+}
+
+/** A tiny trend line (decorative: the tile's text carries the numbers). `width`/`height` let a
+ *  widget scale it to the space it has; the stroke and end dot stay the same size. */
+export function Sparkline({ values, hue, width = 96, height = 28 }: { values: (number | null)[]; hue: Hue; width?: number; height?: number }) {
   const pts = values.filter((v): v is number => v !== null && Number.isFinite(v));
   if (pts.length < 2) return null;
-  const W = 96;
-  const H = 28;
+  const W = Math.max(24, Math.round(width));
+  const H = Math.max(16, Math.round(height));
   const lo = Math.min(...pts);
   const hi = Math.max(...pts);
   const span = hi - lo || 1;
-  const xy = pts.map((v, i) => [(i / (pts.length - 1)) * (W - 4) + 2, H - 3 - ((v - lo) / span) * (H - 6)] as const);
+  const xy = pts.map((v, i) => [(i / (pts.length - 1)) * (W - 6) + 3, H - 4 - ((v - lo) / span) * (H - 8)] as const);
   const d = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
   const [lx, ly] = xy[xy.length - 1]!;
   return (
     <svg class="sparkline" data-hue={hue} viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true" focusable="false">
-      <path d={d} class="sparkline-line" />
+      <path d={d} class="sparkline-line" pathLength={1} />
       <circle cx={lx} cy={ly} r={2.5} class="sparkline-dot" />
     </svg>
   );

@@ -160,3 +160,56 @@ test('Members commits connection notices with the initial directory', async ({ p
   await expect(page.getByText('Cloudflare is not connected.', { exact: false })).toBeVisible();
   await settle(page);
 });
+
+/** Record whether the Home grid ever carried `.is-entering`, and any count-up text frames. */
+async function watchEntrance(page: import('@playwright/test').Page) {
+  await page.addInitScript(() => {
+    const w = window as unknown as { entered: boolean; counts: string[] };
+    w.entered = false; w.counts = [];
+    new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === 'attributes' && (r.target as Element).matches?.('ul.blocks.is-entering')) w.entered = true;
+        if (r.type === 'characterData' && r.target.parentElement?.classList.contains('count-up')) w.counts.push((r.target as Text).data);
+      }
+    }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'], characterData: true });
+    const check = () => { if (document.querySelector('ul.blocks.is-entering')) w.entered = true; };
+    document.addEventListener('DOMContentLoaded', () => new MutationObserver(check).observe(document.body, { subtree: true, childList: true }));
+  });
+}
+const entered = (page: import('@playwright/test').Page) => page.evaluate(() => (window as unknown as { entered: boolean }).entered);
+
+test('Home load motion plays once per browser session', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one viewport is enough');
+  await watchEntrance(page);
+  await devLogin(page, 'director');
+  await expect.poll(() => entered(page)).toBe(true);
+  expect(await page.evaluate(() => sessionStorage.getItem('home-entered'))).toBe('1');
+  // Tiles fade up 40ms apart; figures count up and end on their final text.
+  const delays = await page.locator('ul.blocks > li.blk').evaluateAll((els) => els.slice(0, 3).map((el) => getComputedStyle(el).animationDelay));
+  expect(delays.slice(0, 3)).toEqual(['0s', '0.04s', '0.08s']);
+  await expect(page.locator('ul.blocks')).not.toHaveClass(/is-entering/, { timeout: 5_000 });
+  const counts = await page.evaluate(() => (window as unknown as { counts: string[] }).counts);
+  expect(counts.length, 'count-up frames').toBeGreaterThan(0);
+  const figure = page.locator('section[data-block="kpi-checkin"] .kpi-value');
+  await expect(figure).toHaveText(/^\d+%$/);
+
+  // Same session, second load: no entrance.
+  await page.reload();
+  await settle(page);
+  await page.waitForTimeout(300);
+  expect(await entered(page)).toBe(false);
+  expect(await page.locator('ul.blocks > li.blk').first().evaluate((el) => getComputedStyle(el).animationName)).not.toBe('wc-in');
+});
+
+test('Home load motion never plays under reduced motion', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one viewport is enough');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await watchEntrance(page);
+  await devLogin(page, 'director');
+  await settle(page);
+  await page.waitForTimeout(300);
+  expect(await entered(page)).toBe(false);
+  expect(await page.evaluate(() => (window as unknown as { counts: string[] }).counts)).toEqual([]);
+  // Nothing was marked played, so turning motion back on later still gets the first-visit entrance.
+  expect(await page.evaluate(() => sessionStorage.getItem('home-entered'))).toBeNull();
+});

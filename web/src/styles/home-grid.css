@@ -10,13 +10,17 @@
   --block-lift: 0 18px 40px -18px rgb(0 0 0 / .32), 0 2px 6px rgb(0 0 0 / .08);
   --block-drop: color-mix(in srgb, var(--c-blue) 12%, var(--surface));
   --block-ring: color-mix(in srgb, var(--c-blue) 30%, transparent);
+  --block-spot: color-mix(in srgb, var(--c-blue) 5%, transparent);   /* a cell a drag can land on */
+  --block-target: color-mix(in srgb, var(--c-blue) 70%, transparent); /* the drop spot's ring */
 }
-:root[data-theme="dark"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); }
-@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); } }
+:root[data-theme="dark"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); --block-spot: color-mix(in srgb, var(--c-blue) 9%, transparent); }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); --block-spot: color-mix(in srgb, var(--c-blue) 9%, transparent); } }
 
 /* The wrapper is the size container: columns follow the space Home actually has, not the viewport,
    so the sidebar never squeezes four columns into a tablet. */
-.blocks-wrap {container: blocks / inline-size; min-width: 0;}
+.main.main--home {max-width: none;}
+/* Ten 240px blocks plus nine 16px gaps: stop growing blocks at the column cap. */
+.blocks-wrap {container: blocks / inline-size; min-width: 0; max-width: 2544px;}
 .blocks {
   --cols: 4;
   display: grid;
@@ -107,8 +111,9 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
 @keyframes blk-sway {from {transform: rotate(-.3deg);} to {transform: rotate(.3deg);}}
 @media (prefers-reduced-motion: reduce) {.blocks.is-editing .blk-body {animation: none;}}
 .blocks.is-editing .tile {box-shadow: 0 0 0 2px var(--block-ring), var(--block-shadow);}
-.blocks.is-editing .tile > * {opacity: .38; pointer-events: none; user-select: none;}
-.blocks.is-editing .tile-head, .blocks.is-editing .kpi-head, .blocks.is-editing .cf-widget .widget-head {visibility: hidden;} /* the edit label takes their place */
+.blocks.is-editing .tile > * {pointer-events: none; user-select: none;}
+.blocks.is-editing .tile-body, .blocks.is-editing .widget-body, .blocks.is-editing .widget-foot {opacity: .55;}
+.blocks.is-editing .tile-head, .blocks.is-editing .kpi-head, .blocks.is-editing .cf-widget .widget-head {padding-right: 28px;}
 .blk-tools {position: absolute; inset: 0; z-index: 2; display: none; flex-direction: column; justify-content: space-between; padding: 8px; pointer-events: none;}
 .blocks.is-editing .blk-tools {display: flex;}
 .blk-tools-top {display: flex; align-items: center; gap: 8px; min-width: 0;}
@@ -123,10 +128,17 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
   .blk-remove {width: 36px; height: 36px;}
 }
 
-/* Dragging: the widget's own cell becomes the drop target, a soft filled highlight; a lifted card
-   follows the pointer. Keyboard moves flash the same fill on the moved widget. */
-.blk.is-dragging .blk-body, .blk.is-moved .blk-body {animation: none !important;}
-.blk.is-dragging {background: var(--block-drop); box-shadow: inset 0 0 0 2px var(--block-ring);}
+/* Dragging: the widget's own cell is the drop target, at its exact size and final packed spot: a
+   soft fill with a clear ring that scales in when the spot changes (WidgetGrid animates ::after).
+   Every other cell it can land on gets a faint tinted outline behind the tiles, so only empty
+   space shows one. Tinted, never dashed. A lifted card follows the pointer. Keyboard moves flash
+   the same fill on the moved widget. */
+.blk.is-dragging .blk-body, .blk.is-resizing .blk-body, .blk.is-moved .blk-body {animation: none !important;}
+.blk.is-dragging {background: var(--block-drop);}
+.blk.is-dragging::after {content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px var(--block-target), 0 0 0 4px var(--block-spot); pointer-events: none;}
+.blk-spot {border-radius: var(--block-radius); background: var(--block-spot); box-shadow: inset 0 0 0 1px var(--block-ring); pointer-events: none; animation: blk-spot-in var(--dur-1, 160ms) ease-out both;}
+@keyframes blk-spot-in {from {opacity: 0;}}
+@media (prefers-reduced-motion: reduce) {.blk-spot {animation: none;}}
 .blk.is-dragging > * {visibility: hidden;}
 .blk.is-moved .tile {background: var(--block-drop);}
 .blk-float {position: fixed; z-index: 50; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--block-radius); background: var(--surface); box-shadow: var(--block-lift); font-weight: 600; pointer-events: none; transform: rotate(-1.2deg) scale(1.02);}
@@ -162,8 +174,7 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
 }
 
 /* Edit overlays preserve each tile's footprint and content context. */
-.blocks.is-editing .blk-body {animation: none;}
-.blocks.is-editing .tile > * {opacity: .65;}
+/* Entrance lives on the tile, sway on its body: toggling edit never restarts entrance. */
 .blk-resize {position: absolute; border: 0; background: transparent; color: var(--text); touch-action: none; pointer-events: auto; padding: 0;}
 .blk-resize--both {right: 0; bottom: 0; width: 44px; height: 44px; cursor: nwse-resize; font-size: 32px; border-radius: 12px; background: var(--surface);}
 .blk-resize--x {right: 0; top: 48px; bottom: 44px; width: 14px; cursor: ew-resize;}
@@ -173,7 +184,7 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
 .blk-float {width: min(320px, 65vw); max-height: 300px; overflow: hidden; padding: 0;}
 .blk-float > .tile {min-height: 140px;}
 @media (prefers-reduced-motion: no-preference) {
-  .blk-body {animation: blk-enter var(--dur-2) var(--ease-out) backwards;}
+  .blocks.is-entering > .blk {animation: blk-enter var(--dur-2) var(--ease-out) backwards;}
   @keyframes blk-enter {from {opacity: .7; transform: scale(.97);} to {opacity: 1; transform: scale(1);}}
 }
 
@@ -186,8 +197,6 @@ a.club-link:hover, a.club-link:focus-visible {background: var(--hover); outline-
 .club-link-icon {display: grid; place-items: center; width: 28px; height: 28px; flex: none; border: 1px solid var(--line); border-radius: 7px; font-weight: 600;}
 .club-link-action {margin-left: auto; white-space: nowrap; font-size: 12px;}
 .club-link.is-unset {color: var(--muted);}
-.blocks.is-editing .tile--links {padding-top: 48px;}
-.blocks.is-editing .tile--links > .tile-head {display: none;}
 .blocks.is-editing .tile--links .club-links {padding-right: 32px;}
 .blocks.is-editing .tile--links .club-link {min-height: 36px;}
 /* Resize controls brighten on intent; coarse pointers always keep them visible. */
@@ -209,4 +218,26 @@ a.club-link:hover, a.club-link:focus-visible {background: var(--hover); outline-
   .tour-card-content {animation: enter var(--dur-2) var(--ease-out) backwards;}
   .dashboard-tour[open] .tour-shade {animation: fade-in var(--dur-2) var(--ease-out);}
   .blk-resize--both {transition: opacity 140ms ease, color 140ms ease, background-color 140ms ease;}
+}
+
+
+/* Whole-tile editing uses native cursors; keyboard controls remain focusable. */
+.blocks.is-editing .blk[data-widget] {cursor: grab; touch-action: none; user-select: none;}
+html.is-dragging, html.is-dragging * {cursor: grabbing !important;}
+.blocks.is-editing .blk:hover .tile {box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-blue) 55%, transparent), var(--block-shadow);}
+.blk-tools-top {justify-content: flex-end;}
+.blk-name {display: none;}
+.blk-handle {position: absolute; left: 8px; top: 8px; opacity: 0;}
+.blk-handle:focus-visible, .blk-handle.is-tour-target {opacity: 1; z-index: 3;}
+.blk-remove {width: 24px; height: 24px; margin: 4px;}
+.blk-resize--x {right: -6px; width: 12px;}
+.blk-resize--y {bottom: -6px; height: 12px;}
+.blk-resize--x::after, .blk-resize--y::after {content: ""; position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--control) 45%, transparent);}
+.blk-resize--x::after {width: 4px; height: 28px; top: calc(50% - 14px); left: 4px;}
+.blk-resize--y::after {height: 4px; width: 28px; left: calc(50% - 14px); top: 4px;}
+.blk:hover .blk-resize::after, .blk.is-resizing .blk-resize::after {background: var(--c-blue);}
+.blk-float {max-height: none; list-style: none;}
+.blk-float .blk-body {animation: none !important;}
+@media (pointer: coarse) {
+  .blk-resize--x::after, .blk-resize--y::after {background: var(--c-blue);}
 }

@@ -21,11 +21,23 @@ const PATHS: Record<string, string> = {
   ledger: 'M4 4h16v16H4zM4 9h16M9 9v11',
   'chevron-down': 'm6 9 6 6 6-6',
   'arrow-right': 'M5 12h14M13 6l6 6-6 6',
+  clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  link: 'M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1',
+  flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  ticket: 'M4 5h16a1 1 0 0 1 1 1v3a3 3 0 0 0 0 6v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a3 3 0 0 0 0-6V6a1 1 0 0 1 1-1zM15 5v2M15 11v2M15 17v2',
+  pie: 'M12 3a9 9 0 1 0 9 9h-9zM15 2.5a7 7 0 0 1 6.5 6.5H15z',
+  activity: 'M3 12h4l3-8 4 16 3-8h4',
+  globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
+  gauge: 'M5.6 18.4a9 9 0 1 1 12.8 0M12 14l3.5-4.5M12 14h.01',
+  database: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+  users: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M18 14a6 6 0 0 1 4 7',
+  'arrow-up-right': 'M7 17 17 7M8 7h9v9',
+  'resize-corner': 'M20 12l-8 8M20 17l-3 3',
 };
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, size = 18, label }: { name: IconName; size?: number; label?: string }) {
+export function Icon({ name, size = 18, label, stroke = 1.75 }: { name: IconName; size?: number; label?: string; stroke?: number }) {
   return (
     <svg
       class="icon"
@@ -34,7 +46,7 @@ export function Icon({ name, size = 18, label }: { name: IconName; size?: number
       height={size}
       fill="none"
       stroke="currentColor"
-      stroke-width="1.75"
+      stroke-width={stroke}
       stroke-linecap="round"
       stroke-linejoin="round"
       role={label ? 'img' : undefined}

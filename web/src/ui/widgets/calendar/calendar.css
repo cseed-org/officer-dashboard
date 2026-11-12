@@ -1,0 +1,45 @@
+/* Home calendar: week (2×1, 2×2) and month (4×2). No buttons, menus or source chips (notes § Calendar). */
+.hcal {flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; overflow: hidden;}
+.hcal-day {min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 3px; padding: 4px; border-radius: 8px; background: var(--sunken); overflow: hidden;}
+.hcal-day.is-weekend, .calm-day.is-weekend {background: color-mix(in srgb, var(--sunken) 50%, var(--surface));}
+.hcal-day.is-today, .calm-day.is-today {background: color-mix(in srgb, var(--c-blue) calc(var(--tint) * .7), var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-blue) 35%, transparent);}
+.cal-dh {flex: none; display: flex; align-items: baseline; gap: 4px; height: 18px; padding: 0 2px; font-size: 11px; line-height: 18px; color: var(--muted); white-space: nowrap; overflow: hidden;}
+.cal-dh b {font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums;}
+.hcal-day.is-today .cal-dh b {display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; line-height: 1;}
+.hcal-more {margin-left: auto; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums;}
+.cal-chip-wrap {min-width: 0; flex: none;}
+.cal-chip {display: block; min-width: 0; padding: 2px 5px; border-radius: 5px; border-left: 2px solid var(--hue); background: color-mix(in srgb, var(--hue) var(--tint), var(--surface)); color: var(--text); text-decoration: none; font-size: 11px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.cal-chip time {font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 4px; font-size: 10px;}
+a.cal-chip:hover, a.cal-chip:focus-visible {background: color-mix(in srgb, var(--hue) calc(var(--tint) * 2), var(--surface));}
+a.cal-chip:focus-visible {outline: 2px solid var(--c-blue); outline-offset: 1px;}
+.cal-chip--2 {display: grid; height: 30px; padding: 2px 5px;}
+.cal-chip--2 time {margin: 0; line-height: 12px;}
+.cal-chip--2 span {overflow: hidden; text-overflow: ellipsis;}
+.hcal--tall .cal-chip {white-space: normal; display: grid; max-height: 44px; padding: 3px 5px;}
+.hcal--tall .cal-chip time {margin: 0; line-height: 12px;}
+.hcal--tall .cal-chip span {display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;}
+.calm {flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 16px repeat(var(--weeks, 6), minmax(0, 1fr)); gap: 3px; overflow: hidden;}
+.calm-dow {font-size: 11px; line-height: 16px; color: var(--muted); padding: 0 4px;}
+.calm-day {min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 2px; padding: 2px 4px; border-radius: 6px; background: var(--sunken); overflow: hidden;}
+.calm-day.is-outside {opacity: .45;}
+.calm-dh {flex: none; display: flex; align-items: center; gap: 4px; font-size: 11px; line-height: 14px; height: 14px; font-variant-numeric: tabular-nums;}
+.calm-dh b {font-weight: 500;}
+.calm-day.is-today .calm-dh b {display: inline-grid; place-items: center; min-width: 18px; height: 14px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-weight: 600;}
+.calm .cal-chip {font-size: 10px; line-height: 13px; padding: 1px 4px;}
+.cal-dot {display: none; width: 5px; height: 5px; border-radius: 50%; background: var(--hue); flex: none;}
+.cal-summary {display: inline-flex; align-items: center; gap: 6px; font-size: 12px;}
+.cw .wc-foot {font-size: 12px;}
+/* Phone-width Home: chip times hide; month cells become a date plus dots. */
+@container blocks (max-width: 599px) {
+  .cal-chip time {display: none;}
+  .cal-chip--2 {height: auto;}
+  .calm .cal-chip-wrap, .calm .hcal-more {display: none;}
+  .calm-day .cal-dot {display: inline-block;}
+  .calm-dh {flex-wrap: wrap; height: auto;}
+}
+
+/* Details card on chip hover or focus (portalled to <body>). */
+.cw-item-popover {position: fixed; z-index: 100; width: min(280px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow-y: auto; display: grid; gap: 7px; padding: 14px; border: 1px solid var(--control); border-top: 3px solid var(--hue, var(--c-blue)); border-radius: var(--radius-overlay); background: var(--surface); color: var(--text); box-shadow: var(--block-lift); font-size: 12px; animation: pop-in var(--dur-2) var(--ease-out) backwards;}
+.cw-item-popover strong {font-size: 14px;}
+.cw-item-popover a:focus-visible {outline: 2px solid var(--c-blue); outline-offset: 2px;}
+.cw-popover-source {display: flex; align-items: center; gap: 5px; color: var(--muted);}

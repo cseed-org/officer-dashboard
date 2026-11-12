@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home V0.7 widgets · CSEED design</title>
+<!--
+  Home V0.7 widget redesign: design mockup only (branch v07-home-widgets). Self-contained: inline CSS,
+  inline SVG, no external assets. Notes for the implementer: home-v07-notes.md beside this file.
+
+  Token values below are COPIED from src/styles/tokens.css, src/styles/v03.css and
+  src/styles/home-grid.css so this file stands alone. They are scoped to .theme[data-theme] (instead
+  of :root) only so both themes can render on one page. Production keeps them on :root.
+  New tokens (the only two): --home-stagger and --dur-chart, marked NEW below.
+-->
+<style>
+/* ═════════════ Tokens (copied; see header) ═════════════ */
+.theme[data-theme="light"] {
+  color-scheme: light;
+  --bg:#ffffff; --surface:#ffffff; --sunken:#f7f7f5; --text:#202320; --muted:#646963; --line:#e3e5e1;
+  --control:#858b82; --accent:#202320; --accent-ink:#ffffff; --positive:#326247; --negative:#a33732;
+  --attention:#805b20; --info:#485f73; --hover:#eeefec;
+  --c-blue:#2f6fc4; --c-amber:#b47c0c; --c-teal:#0a948a; --c-coral:#d9634a; --c-violet:#7a5bd0; --c-green:#3d8f3f;
+  --tint:11%;
+  --block-shadow:0 1px 2px rgb(20 20 20 / .04), 0 1px 1px rgb(20 20 20 / .03);
+  --block-drop:color-mix(in srgb, var(--c-blue) 12%, var(--surface));
+  --overlay-shadow:0 18px 40px -18px rgb(0 0 0 / .22), 0 2px 6px rgb(0 0 0 / .06);
+}
+.theme[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#181a18; --surface:#1c1f1c; --sunken:#212421; --text:#eeefeb; --muted:#a8aea5; --line:#373d36;
+  --control:#778271; --accent:#eeefeb; --accent-ink:#181a18; --positive:#94c6a5; --negative:#f0a09a;
+  --attention:#dbc38e; --info:#a8bfd2; --hover:#2b302a;
+  --c-blue:#4f8ad8; --c-amber:#b98428; --c-teal:#1f9d92; --c-coral:#d96d52; --c-violet:#8f78e0; --c-green:#4fa156;
+  --tint:18%;
+  --block-shadow:0 1px 2px rgb(0 0 0 / .4);
+  --block-drop:color-mix(in srgb, var(--c-blue) 22%, var(--surface));
+  --overlay-shadow:0 18px 40px -16px rgb(0 0 0 / .6), 0 2px 6px rgb(0 0 0 / .3);
+}
+.theme {
+  --font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --font-display: 'Playfair Display', ui-serif, Georgia, 'Times New Roman', serif;
+  --radius-control:8px; --radius-card:12px; --radius-widget:16px;
+  --ease-out:cubic-bezier(.2, .8, .2, 1); --ease-in:cubic-bezier(.4, 0, 1, 1); --ease-soft:cubic-bezier(.22, .61, .36, 1);
+  --dur-1:120ms; --dur-2:180ms; --dur-3:240ms; --dur-step:420ms; --motion-distance:8px;
+  --home-stagger:40ms;   /* NEW (home-grid.css): entrance stagger between tiles */
+  --dur-chart:480ms;     /* NEW (home-grid.css): chart draw / bar grow / donut sweep / count-up */
+  --block-row:152px; --block-gap:16px; --block-radius:var(--radius-widget);
+  --block-lift:0 18px 40px -18px rgb(0 0 0 / .32), 0 2px 6px rgb(0 0 0 / .08);
+  --block-ring:color-mix(in srgb, var(--c-blue) 30%, transparent);
+  background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.45;
+}
+[data-hue="blue"]{--hue:var(--c-blue)} [data-hue="amber"]{--hue:var(--c-amber)} [data-hue="teal"]{--hue:var(--c-teal)}
+[data-hue="coral"]{--hue:var(--c-coral)} [data-hue="violet"]{--hue:var(--c-violet)} [data-hue="green"]{--hue:var(--c-green)}
+
+/* ═════════════ Mockup frame (not product) ═════════════ */
+* {box-sizing: border-box;}
+html, body {margin: 0;}
+body {background: #f2f2ef; font-family: ui-sans-serif, system-ui, sans-serif;}
+.mk-bar {position: sticky; top: 0; z-index: 40; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; background: #202320; color: #eeefeb; font-size: 13px;}
+.mk-bar b {font-weight: 600; margin-right: 8px;}
+.mk-bar a {color: #eeefeb;}
+.mk-seg {display: inline-flex; border: 1px solid #555b54; border-radius: 8px; overflow: hidden;}
+.mk-seg button, .mk-btn {font: inherit; font-size: 12px; padding: 5px 10px; border: 0; background: transparent; color: #eeefeb; cursor: pointer;}
+.mk-seg button[aria-pressed="true"] {background: #eeefeb; color: #202320;}
+.mk-btn {border: 1px solid #555b54; border-radius: 8px;}
+.mk-btn:hover {background: #373d36;}
+.mk-btn--hot {background: #f5d140; color: #202320; border-color: #f5d140; font-weight: 600;}
+.mk-btn--hot:hover {background: #ffe27a;}
+.mk-only {font-size: 11px; opacity: .7;}
+.mk-jump {display: flex; flex-wrap: wrap; gap: 4px 12px; margin-left: auto;}
+.theme {padding: 32px 0 56px;}
+.theme + .theme {border-top: 4px solid #202320;}
+.mk-wrap {max-width: 1180px; margin: 0 auto; padding: 0 32px;}
+.mk-theme-tag {display: inline-block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; margin-bottom: 8px;}
+.mk-h1 {font-family: var(--font-display); font-weight: 400; font-size: 34px; letter-spacing: -.02em; margin: 0 0 4px;}
+.mk-h2 {font-size: 18px; font-weight: 600; margin: 48px 0 4px;}
+.mk-h3 {font-size: 13px; font-weight: 600; margin: 24px 0 8px; color: var(--muted); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;}
+.mk-h3 code, .mk-p code {font-family: var(--mono); font-size: 11px; color: var(--text); background: var(--sunken); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px;}
+.mk-p {margin: 0 0 12px; color: var(--muted); font-size: 13px; max-width: 80ch;}
+.mk-p strong {color: var(--text); font-weight: 600;}
+.mk-legend {display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); margin: 8px 0 0;}
+.mk-legend span {display: inline-flex; gap: 6px; align-items: center;}
+.mk-row {display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 8px 0 12px;}
+.mk-row .mk-btn {color: var(--text); border-color: var(--line); background: var(--surface);}
+.mk-row .mk-btn:hover {background: var(--hover);}
+.mk-frame {position: relative;}
+.mk-tag {position: absolute; z-index: 30; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: #f5d140; color: #202320; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 6px rgb(0 0 0 / .15);}
+@media (max-width: 767px) {.mk-wrap {padding: 0 16px;} .mk-jump {display: none;} .mk-h1 {font-size: 26px;}}
+
+/* ═════════════ Grid (home-grid.css, unchanged rules) ═════════════ */
+.blocks-wrap {container: blocks / inline-size; min-width: 0;}
+.blocks {--cols: 4; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-auto-rows: minmax(var(--block-row), auto); grid-auto-flow: row dense; gap: var(--block-gap); list-style: none; margin: 0; padding: 0;}
+.blk {--w: 1; --h: 1; position: relative; grid-column: span var(--w); grid-row: span var(--h); display: flex; min-width: 0; border-radius: var(--block-radius);}
+.blk[data-w="2"] {--w: 2;} .blk[data-w="4"] {--w: 4;} .blk[data-h="2"] {--h: 2;}
+@container blocks (max-width: 599px) {
+  .blocks {--cols: 2; --block-row: 136px; gap: 12px;}
+  .blk[data-w="4"], .blk[data-h="2"] {--w: 2;}
+}
+/* Edit/push-down demo: explicit placement, as placePushDown() produces. */
+.blocks--placed .blk {grid-column: calc(var(--x) + 1) / span var(--w); grid-row: calc(var(--y) + 1) / span var(--h);}
+
+/* ═════════════ Widget card (NEW: shell/widget.css) ═════════════ */
+.wc {
+  position: relative; flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--block-radius);
+  box-shadow: var(--block-shadow); overflow: hidden;
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out);
+}
+.wc-head {display: flex; align-items: center; gap: 8px; min-width: 0; height: 24px; flex: none;}
+.wc-chip {flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--hue); background: color-mix(in srgb, var(--hue) var(--tint), var(--surface));}
+.wc-title {min-width: 0; margin: 0; font-size: 13px; font-weight: 600; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.wc-link {color: inherit; text-decoration: none;}
+.wc-link::after {content: ""; position: absolute; inset: 0; z-index: 0; border-radius: inherit;}  /* whole card is the link */
+.wc-link:focus-visible {outline: none;}
+.wc:has(.wc-link:focus-visible) {outline: 2px solid var(--c-blue); outline-offset: 2px;}
+.wc-aside {margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums;}
+.wc-go {flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; color: var(--muted); opacity: 0; transform: translate(-3px, 3px); transition: opacity var(--dur-1) var(--ease-out), transform var(--dur-2) var(--ease-out);}
+.wc-body {position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px;}
+.wc-foot {flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: auto;}
+/* Anything interactive inside the card sits above the card link. */
+.wc a:not(.wc-link), .wc button {position: relative; z-index: 1;}
+/* Hover cue: lift, shadow, ↗ by the title. `.is-hover` forces it for the mockup. */
+@media (hover: hover) {.wc:hover {transform: translateY(-2px); box-shadow: var(--overlay-shadow); border-color: color-mix(in srgb, var(--control) 40%, var(--line));} .wc:hover .wc-go {opacity: 1; transform: none;}}
+.wc.is-hover {transform: translateY(-2px); box-shadow: var(--overlay-shadow); border-color: color-mix(in srgb, var(--control) 40%, var(--line));}
+.wc.is-hover .wc-go, .wc:has(.wc-link:focus-visible) .wc-go {opacity: 1; transform: none;}
+.wc--nolink .wc-go {display: none;}
+
+/* Compact rows (replace tables): title line + muted meta line, no headers. */
+.rows {display: grid; gap: 2px; list-style: none; margin: 0 -8px; padding: 0; align-content: start;}
+.rows--2 {grid-template-columns: 1fr 1fr; column-gap: 16px; margin: 0 -8px;}
+.row {display: flex; align-items: center; gap: 10px; min-width: 0; padding: 5px 8px; border-radius: 8px; color: inherit; text-decoration: none;}
+a.row:hover, a.row.is-hover {background: var(--hover);}
+.row-main {flex: 1; min-width: 0; display: grid;}
+.row-title {font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.row-meta {font-size: 12px; line-height: 16px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;}
+.row-side {flex: none; display: grid; justify-items: end; gap: 1px; text-align: right;}
+.row-amt {font-size: 13px; line-height: 18px; font-weight: 500; font-variant-numeric: tabular-nums;}
+.row-more {font-size: 12px; color: var(--muted); padding: 0 0 0 0; margin-top: auto;}
+.sep {padding: 0 4px; opacity: .6;}
+/* Status chip: the existing .badge look (dot + written label, never colour alone). */
+.st {display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); white-space: nowrap;}
+.st::before {content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--hue, var(--control));}
+.row-meta .st {color: var(--muted);}
+.dot {flex: none; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--hue, var(--control));}
+.avatar {flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 10px; font-weight: 700; color: var(--hue); background: color-mix(in srgb, var(--hue) var(--tint), var(--surface));}
+.day-label {font-size: 11px; font-weight: 600; color: var(--muted); margin: 2px 0 2px; text-transform: none;}
+
+/* Stat tiles */
+.stat-row {display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; min-width: 0;}
+.stat-value {font-size: 2rem; font-weight: 500; letter-spacing: -.04em; line-height: 1.05; font-variant-numeric: tabular-nums; white-space: nowrap;}
+.stat-value--neg {color: var(--negative);}
+.stat-sub {font-size: 12px; color: var(--muted); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;}
+.stat-split {flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; min-height: 0; align-items: end;}
+.stat-split > div {display: grid; gap: 4px; min-width: 0; align-content: end;}
+.mini {display: grid; gap: 3px; font-size: 12px; min-width: 0;}
+.mini > span {display: flex; gap: 6px; min-width: 0; white-space: nowrap;}
+.mini b {font-weight: 500; overflow: hidden; text-overflow: ellipsis;}
+.mini i {font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; min-width: 3.2em;}
+
+/* Sparkline: the current kit.tsx visual (2px line, end dot), plus a draw-in. */
+.sparkline {display: block; overflow: visible; flex: none;}
+.sparkline-line {fill: none; stroke: var(--hue); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;}
+.sparkline-dot {fill: var(--hue); stroke: var(--surface); stroke-width: 2;}
+.sparkline--wide {width: 100%; height: 44px;}
+/* Progress (kit.tsx Progress) */
+.progress {display: block; width: 100%; min-width: 48px; height: 6px; border-radius: 999px; overflow: hidden; background: var(--hover);}
+.progress-fill {display: block; height: 100%; border-radius: inherit; background: var(--hue); transform-origin: 0 50%;}
+.split-legend {display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted);}
+.split-legend span {display: inline-flex; gap: 6px; align-items: center;}
+/* Column bars (Workers/D1, signups). Axis-less, as today. */
+.bars {display: flex; align-items: flex-end; gap: 3px; height: 56px; flex: none;}
+.bars i {flex: 1; min-width: 3px; border-radius: 3px 3px 1px 1px; background: var(--hue); opacity: .85; transform-origin: 50% 100%;}
+.bars i:last-child {opacity: 1;}
+/* Metrics (Cloudflare M/L) */
+.metrics {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px;}
+.metrics--4 {grid-template-columns: repeat(4, minmax(0, 1fr));}
+.metric {display: grid; gap: 1px; min-width: 0;}
+.metric-label {font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.metric-value {font-size: 20px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap;}
+.breakdowns {display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; min-height: 0;}
+.breakdowns h4 {margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted);}
+.kv {display: grid; gap: 0; list-style: none; margin: 0; padding: 0; font-size: 12px;}
+.kv li {display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; min-width: 0;}
+.kv li span:first-child {overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.kv li span:last-child {color: var(--muted); font-variant-numeric: tabular-nums;}
+.vital {display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px;}
+.vital:first-child {border-top: 0;}
+.vital b {font-weight: 500; flex: 1;}
+.vital span {font-variant-numeric: tabular-nums;}
+.vital small {font-size: 11px; color: var(--muted); min-width: 64px; text-align: right;}
+
+/* Budget donut + legend */
+.donut-wrap {flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 20px; align-items: center; min-height: 0;}
+.donut {position: relative; display: grid; place-items: center;}
+.donut svg {display: block; transform: rotate(-90deg);}
+.donut-track {fill: none; stroke: var(--hover);}
+.donut-seg {fill: none; stroke: var(--hue);}
+.donut-center {position: absolute; inset: 0; display: grid; place-content: center; text-align: center; line-height: 1.15;}
+.donut-center b {font-size: 22px; font-weight: 500; letter-spacing: -.03em; font-variant-numeric: tabular-nums;}
+.donut-center > span {font-size: 11px; color: var(--muted);}
+.legend {display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; min-width: 0; font-size: 12px;}
+.legend--2 {grid-template-columns: 1fr 1fr; column-gap: 20px; row-gap: 10px;}
+.legend li {display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; min-width: 0;}
+.legend li > b {font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.legend li > span {color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap;}
+.legend li .progress {grid-column: 2 / -1; height: 4px;}
+.legend-total {display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); padding-top: 8px; border-top: 1px solid var(--line);}
+.legend-total b {color: var(--text); font-weight: 500;}
+.over {color: var(--negative);}
+
+/* Links */
+.links {display: grid; gap: 2px; list-style: none; margin: 0 -8px; padding: 0;}
+.links--row {grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0;}
+.links--grid {grid-template-columns: 1fr 1fr; gap: 8px; margin: 0;}
+.link-row {display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 8px; border-radius: 8px; color: inherit; text-decoration: none;}
+a.link-row:hover {background: var(--hover);}
+.links--row .link-row, .links--grid .link-row {flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px; background: var(--sunken); border-radius: 10px;}
+.links--grid .link-row {min-height: 92px; justify-content: space-between;}
+.link-chip {flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); color: var(--text); font-weight: 600; font-size: 12px;}
+.link-unset {color: var(--muted);}
+.link-unset .link-chip {color: var(--muted);}
+
+/* Calendar: week (2×1, 2×2) and month (4×2). No buttons, menus or chips-as-controls. */
+.cal {flex: 1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; min-height: 0;}
+.cal-day {min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 4px; border-radius: 8px; background: var(--sunken);}
+.cal-day.is-weekend {background: color-mix(in srgb, var(--sunken) 50%, var(--surface)); }
+.cal-day.is-today {background: color-mix(in srgb, var(--c-blue) calc(var(--tint) * .7), var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-blue) 35%, transparent);}
+.cal-dh {display: flex; align-items: baseline; gap: 4px; padding: 0 2px 2px; font-size: 11px; color: var(--muted); white-space: nowrap;}
+.cal-dh b {font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums;}
+.cal-day.is-today .cal-dh b {display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px;}
+.cal-more {margin-left: auto; font-size: 10px; color: var(--muted);}
+.cal-chip {display: block; min-width: 0; padding: 2px 5px; border-radius: 5px; border-left: 2px solid var(--hue); background: color-mix(in srgb, var(--hue) var(--tint), var(--surface)); color: var(--text); text-decoration: none; font-size: 11px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.cal-chip time {font-variant-numeric: tabular-nums; color: var(--muted); margin-right: 4px; font-size: 10px;}
+a.cal-chip:hover {background: color-mix(in srgb, var(--hue) calc(var(--tint) * 2), var(--surface));}
+.cal-chip--2 {display: grid; padding: 2px 5px;}
+.cal-chip--2 time {margin: 0; line-height: 12px;}
+.cal--tall .cal-chip {white-space: normal; display: grid; padding: 3px 5px;}
+.cal--tall .cal-chip time {margin: 0;}
+.cal--tall .cal-chip span {display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;}
+.cal-empty-line {position: absolute; inset: auto 0 6px; text-align: center; font-size: 12px; color: var(--muted); pointer-events: none;}
+.calm {flex: 1; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto repeat(6, minmax(0, 1fr)); gap: 3px; min-height: 0;}
+.calm-dow {font-size: 11px; color: var(--muted); padding: 0 4px;}
+.calm-day {min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 3px 4px; border-radius: 6px; background: var(--sunken);}
+.calm-day.is-weekend {background: color-mix(in srgb, var(--sunken) 50%, var(--surface));}
+.calm-day.is-outside {opacity: .45;}
+.calm-day.is-today {background: color-mix(in srgb, var(--c-blue) calc(var(--tint) * .7), var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-blue) 35%, transparent);}
+.calm-dh {display: flex; align-items: center; gap: 4px; font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums;}
+.calm-day.is-today .calm-dh b {display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-weight: 600;}
+.calm-dh b {font-weight: 500;}
+.calm .cal-chip {font-size: 10px; line-height: 13px; padding: 1px 4px;}
+
+/* Empty state: muted widget icon + one line. */
+.empty {flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; text-align: center; color: var(--muted); font-size: 13px; padding: 4px 8px;}
+.empty svg {color: var(--control); opacity: .8;}
+.empty--row {grid-auto-flow: column; gap: 10px; align-items: center;}
+
+/* ═════════════ Edit mode ═════════════ */
+.blocks.is-editing .blk {cursor: grab;}                 /* the whole tile is the drag target */
+.blocks.is-editing .wc {box-shadow: 0 0 0 2px var(--block-ring), var(--block-shadow); transform: none;}
+.blocks.is-editing .wc-body, .blocks.is-editing .wc-foot {opacity: .55; pointer-events: none; user-select: none;}
+.blocks.is-editing .wc-go, .blocks.is-editing .wc-aside {display: none;}
+.blocks.is-editing .wc-link {pointer-events: none;}
+.blocks.is-editing .blk:hover .wc, .blocks.is-editing .blk.is-hover .wc {box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-blue) 55%, transparent), var(--block-shadow);}
+.blocks.is-sway .blk:not(.is-placeholder):not(.is-resizing) .wc {animation: blk-sway 3.2s var(--ease-soft) infinite alternate; animation-delay: calc(var(--i, 0) * -430ms);}
+@keyframes blk-sway {from {transform: rotate(-.3deg);} to {transform: rotate(.3deg);}}
+.blk-remove {position: absolute; z-index: 3; top: 12px; right: 12px; width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--text); color: var(--bg); cursor: pointer; padding: 0;}
+/* Resize: right edge, bottom edge, corner. Hit strips 12px; visible grips brighten on tile hover. */
+.rz {position: absolute; z-index: 3; display: grid; place-items: center; touch-action: none;}
+.rz-e {top: 40px; bottom: 24px; right: -6px; width: 12px; cursor: ew-resize;}
+.rz-s {left: 24px; right: 40px; bottom: -6px; height: 12px; cursor: ns-resize;}
+.rz-se {right: -4px; bottom: -4px; width: 28px; height: 28px; cursor: nwse-resize;}
+.rz-e::before, .rz-s::before {content: ""; border-radius: 999px; background: var(--control); opacity: .45; transition: opacity var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);}
+.rz-e::before {width: 4px; height: 28px;}
+.rz-s::before {width: 28px; height: 4px;}
+.rz-se svg {color: var(--control); opacity: .55; transition: opacity var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);}
+.blk:hover .rz::before, .blk.is-hover .rz::before, .blk.is-resizing .rz::before {opacity: 1; background: var(--c-blue);}
+.blk:hover .rz-se svg, .blk.is-hover .rz-se svg, .blk.is-resizing .rz-se svg {opacity: 1; color: var(--c-blue);}
+@media (pointer: coarse) {.rz::before, .rz-se svg {opacity: 1;}}
+/* Dragging: the origin cell is the drop target; a static clone follows the pointer. */
+.blk.is-placeholder {background: var(--block-drop); box-shadow: inset 0 0 0 2px var(--block-ring); cursor: grabbing;}
+.blk.is-placeholder > * {visibility: hidden;}
+.blk-float {position: absolute; z-index: 20; display: flex; pointer-events: none; transform: rotate(-1.2deg) scale(1.02); cursor: grabbing;}
+.blk-float .wc {box-shadow: var(--block-lift), 0 0 0 2px var(--block-ring);}
+.blk-float .wc-body, .blk-float .wc-foot {opacity: 1;}
+/* Resizing: the tile shows its preview size; neighbours slide (FLIP, --dur-3). */
+.blk.is-resizing .wc {outline: 2px solid var(--c-blue); outline-offset: 3px; box-shadow: var(--block-shadow);}
+.blk-size {position: absolute; z-index: 4; left: 12px; bottom: 12px; padding: 3px 8px; border-radius: 8px; background: var(--surface); border: 1px solid var(--block-ring); box-shadow: var(--block-shadow); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;}
+.blk.is-pushed .wc {box-shadow: 0 0 0 2px var(--block-ring), var(--block-shadow);}
+.push-tag {position: absolute; z-index: 5; top: 13px; right: 44px; font-size: 11px; font-weight: 600; color: var(--c-blue); background: var(--surface); border: 1px solid var(--block-ring); border-radius: 999px; padding: 1px 8px;}
+
+/* ═════════════ Load motion (NEW: shell/entrance.ts adds .is-entering once per session) ═════════════ */
+@media (prefers-reduced-motion: no-preference) {
+  .is-entering .blk {animation: wc-in var(--dur-step) var(--ease-soft) backwards; animation-delay: calc(min(var(--i, 0), 10) * var(--home-stagger));}
+  .is-entering .sparkline-line {stroke-dasharray: 1; animation: draw var(--dur-chart) var(--ease-out) backwards; animation-delay: calc(min(var(--i, 0), 10) * var(--home-stagger) + 40ms);}
+  .is-entering .sparkline-dot {animation: fade var(--dur-2) var(--ease-out) backwards; animation-delay: calc(min(var(--i, 0), 10) * var(--home-stagger) + 40ms + var(--dur-chart) - 80ms);}
+  .is-entering .progress-fill {animation: grow-x var(--dur-chart) var(--ease-out) backwards; animation-delay: calc(min(var(--i, 0), 10) * var(--home-stagger) + 40ms);}
+  .is-entering .bars i {animation: grow-y var(--dur-chart) var(--ease-out) backwards; animation-delay: calc(min(var(--i, 0), 10) * var(--home-stagger) + 40ms + var(--b, 0) * 8ms);}
+  .is-entering .donut-sweep {animation: sweep var(--dur-chart) var(--ease-out) backwards; animation-delay: calc(min(var(--i, 0), 10) * var(--home-stagger) + 40ms);}
+  .is-entering .cal-chip {animation: fade var(--dur-3) var(--ease-out) backwards; animation-delay: calc(min(var(--i, 0), 10) * var(--home-stagger) + 80ms + min(var(--c, 0), 10) * 12ms);}
+}
+@keyframes wc-in {from {opacity: 0; transform: translateY(var(--motion-distance));} to {opacity: 1; transform: none;}}
+@keyframes draw {from {stroke-dashoffset: 1;} to {stroke-dashoffset: 0;}}
+@keyframes grow-x {from {transform: scaleX(0);} to {transform: scaleX(1);}}
+@keyframes grow-y {from {transform: scaleY(0);} to {transform: scaleY(1);}}
+@keyframes sweep {from {stroke-dashoffset: 100;} to {stroke-dashoffset: 0;}}
+@keyframes fade {from {opacity: 0;} to {opacity: 1;}}
+@media (prefers-reduced-motion: reduce) {.wc, .wc-go, .rz::before, .rz-se svg {transition: none;} .blocks.is-sway .blk .wc {animation: none !important;}}
+
+/* Phone (Home under 600px): two columns; dense rules as home-grid.css. */
+@container blocks (max-width: 599px) {
+  .wc {padding: 14px;}
+  .stat-value {font-size: 1.5rem;}
+  .rows--2, .legend--2 {grid-template-columns: 1fr;}
+  .breakdowns {grid-template-columns: 1fr 1fr;}
+  .breakdowns section:nth-child(3) {display: none;}
+  .metrics--4 {grid-template-columns: 1fr 1fr;}
+  .cal-chip time {display: none;}
+  .calm .cal-chip, .calm .cal-more {display: none;}
+  .calm-day .cal-dot {display: inline-block;}
+}
+.cal-dot {display: none; width: 5px; height: 5px; border-radius: 50%; background: var(--hue);}
+</style>
+</head>
+<body>
+<div class="mk-bar">
+  <b>Home V0.7 widgets · design mockup</b>
+  <span class="mk-seg" role="group" aria-label="Theme">
+    <button type="button" data-show="both" aria-pressed="true">Both</button>
+    <button type="button" data-show="light" aria-pressed="false">Light</button>
+    <button type="button" data-show="dark" aria-pressed="false">Dark</button>
+  </span>
+  <button type="button" class="mk-btn mk-btn--hot" id="replay">↻ Replay load motion</button>
+  <span class="mk-only">(mockup only, not in the product)</span>
+  <nav class="mk-jump" aria-label="Sections"><a href="#home-light">Home</a><a href="#sizes-light">Every size</a><a href="#empty-light">Empty</a><a href="#hover-light">Hover</a><a href="#edit-light">Edit mode</a></nav>
+</div>
+<div id="themes"></div>
+
+<script>
+/* ═════════════ Icons: 24px grid, stroke 1.75, round caps/joins (Icon.tsx). ★ = NEW path ═════════════ */
+const ICON = {
+  calendar: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 2v4M16 2v4',
+  wallet: 'M3 7a2 2 0 0 1 2-2h13v4M3 7v11a2 2 0 0 0 2 2h15V9H5a2 2 0 0 1-2-2zM16 14.5h.01',
+  shield: 'M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6z',
+  check: 'M20 6 9 17l-5-5',
+  message: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
+  inbox: 'M3 13h5l1.5 3h5L16 13h5M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z',
+  close: 'M6 6l12 12M18 6 6 18',
+  /* ★ new */
+  clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  link: 'M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1',
+  flag: 'M5 21V4M5 4h11l-2 4 2 4H5',
+  ticket: 'M4 5h16a1 1 0 0 1 1 1v3a3 3 0 0 0 0 6v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a3 3 0 0 0 0-6V6a1 1 0 0 1 1-1zM15 5v2M15 11v2M15 17v2',
+  pie: 'M12 3a9 9 0 1 0 9 9h-9zM15 2.5a7 7 0 0 1 6.5 6.5H15z',
+  activity: 'M3 12h4l3-8 4 16 3-8h4',
+  globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18',
+  gauge: 'M5.6 18.4a9 9 0 1 1 12.8 0M12 14l3.5-4.5M12 14h.01',
+  database: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+  users: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21a7 7 0 0 1 14 0M16 3.5a4 4 0 0 1 0 7.5M18 14a6 6 0 0 1 4 7',
+  'arrow-up-right': 'M7 17 17 7M8 7h9v9',
+  'resize-corner': 'M20 12l-8 8M20 17l-3 3',
+};
+const ico = (n, s = 14, sw = 1.75) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON[n]}"/></svg>`;
+
+/* ═════════════ Sample data (Tue Nov 10 2026, week Mon 9 – Sun 15) ═════════════ */
+const REQS = [
+  {t: 'Pizza for speaker night', n: '0031', who: 'Maya Chen', amt: '$184', st: ['Submitted', 'amber'], when: '2d ago', cat: ['Food', 'blue'], due: 'Nov 13'},
+  {t: 'Sticker reorder', n: '0030', who: 'Jon Park', amt: '$96', st: ['Submitted', 'amber'], when: '3d ago', cat: ['Marketing', 'teal'], due: 'Nov 20'},
+  {t: 'Venue deposit, Hack morning', n: '0029', who: 'Priya Rao', amt: '$400', st: ['Submitted', 'amber'], when: '4d ago', cat: ['Venue', 'amber'], due: 'Nov 11'},
+  {t: 'Zoom renewal', n: '0028', who: 'Sam Ortiz', amt: '$15', st: ['Submitted', 'amber'], when: '5d ago', cat: ['Software', 'coral'], due: ''},
+  {t: 'Banner print', n: '0027', who: 'Lee Wong', amt: '$62', st: ['Submitted', 'amber'], when: '1w ago', cat: ['Marketing', 'teal'], due: ''},
+  {t: 'Coffee, office hours', n: '0026', who: 'Maya Chen', amt: '$38', st: ['Submitted', 'amber'], when: '1w ago', cat: ['Food', 'blue'], due: ''},
+  {t: 'Figma seat', n: '0025', who: 'Ana Silva', amt: '$45', st: ['Submitted', 'amber'], when: '1w ago', cat: ['Software', 'coral'], due: ''},
+  {t: 'Lanyards', n: '0024', who: 'Jon Park', amt: '$120', st: ['Submitted', 'amber'], when: '2w ago', cat: ['Merch', 'green'], due: ''},
+];
+const EVENTS = [
+  {t: 'Founders panel', d: 'Oct 28', g: 64, ci: .71, rf: .42, where: 'Engineering Hall 101'},
+  {t: 'Pitch practice', d: 'Oct 21', g: 22, ci: .86, rf: .55, where: 'Library L2'},
+  {t: 'Resume clinic', d: 'Oct 14', g: 31, ci: .68, rf: .29, where: 'Career Center'},
+  {t: 'Kickoff social', d: 'Oct 7', g: 88, ci: .62, rf: .18, where: 'Quad lawn'},
+  {t: 'Design sprint', d: 'Sep 30', g: 19, ci: .79, rf: .47, where: 'Makerspace'},
+  {t: 'Intro night', d: 'Sep 23', g: 104, ci: .58, rf: .21, where: 'Union Ballroom'},
+];
+const CATS = [
+  {n: 'Food', h: 'blue', used: 1640, budget: 2000},
+  {n: 'Venue', h: 'amber', used: 1400, budget: 2500},
+  {n: 'Marketing', h: 'teal', used: 760, budget: 1500},
+  {n: 'Merch', h: 'green', used: 400, budget: 1000},
+  {n: 'Software', h: 'coral', used: 380, budget: 800},
+  {n: 'Travel', h: 'violet', used: 0, budget: 1200},
+];
+const ACT = [
+  {who: 'Sam Ortiz', h: 'blue', what: 'approved request #0023', when: '2h', day: 'Today'},
+  {who: 'Priya Rao', h: 'violet', what: 'imported Founders panel guests', when: '4h', day: 'Today'},
+  {who: 'Maya Chen', h: 'teal', what: 'submitted request #0031', when: '6h', day: 'Today'},
+  {who: 'Lee Wong', h: 'amber', what: 'approved design Poster v2', when: '1d', day: 'Yesterday'},
+  {who: 'Jon Park', h: 'green', what: 'updated member record', when: '1d', day: 'Yesterday'},
+  {who: 'Sam Ortiz', h: 'blue', what: 'reimbursed request #0019', when: '1d', day: 'Yesterday'},
+  {who: 'Ana Silva', h: 'coral', what: 'changed role to director', when: '2d', day: 'Sunday'},
+  {who: 'Priya Rao', h: 'violet', what: 'created event Hack morning', when: '2d', day: 'Sunday'},
+  {who: 'Token “luma-sync”', h: 'teal', what: 'synced 3 events', when: '2d', day: 'Sunday'},
+  {who: 'Lee Wong', h: 'amber', what: 'denied request #0018', when: '3d', day: 'Saturday'},
+  {who: 'Maya Chen', h: 'teal', what: 'checked in Buildspace', when: '3d', day: 'Saturday'},
+  {who: 'Jon Park', h: 'green', what: 'added link Notion', when: '3d', day: 'Saturday'},
+];
+const WEEK = [ // Mon 9 … Sun 15; hue by calendar source
+  {d: 9, dow: 'Mon', ev: [['6:00p', 'Officer sync', 'green']]},
+  {d: 10, dow: 'Tue', today: true, ev: [['12:00p', 'Design review', 'violet'], ['6:30p', 'Pitch practice', 'blue']]},
+  {d: 11, dow: 'Wed', ev: [['All day', 'Venue deposit due', 'amber']]},
+  {d: 12, dow: 'Thu', ev: [['5:00p', 'Buildspace check-in', 'teal'], ['7:00p', 'Founders AMA', 'blue'], ['9:00p', 'Slides due', 'violet']]},
+  {d: 13, dow: 'Fri', ev: [['4:00p', 'Poster due', 'violet']]},
+  {d: 14, dow: 'Sat', weekend: true, ev: [['10:00a', 'Hack morning', 'blue']]},
+  {d: 15, dow: 'Sun', weekend: true, ev: []},
+];
+const MONTH_EV = {
+  '10-27': [['6:00p', 'Officer sync', 'green']], '10-28': [['6:00p', 'Founders panel', 'blue']], '10-30': [['All day', 'Halloween social', 'blue']],
+  '11-2': [['6:00p', 'Officer sync', 'green']], '11-4': [['5:00p', 'Buildspace check-in', 'teal']], '11-5': [['12:00p', 'Design review', 'violet'], ['7:00p', 'Workshop', 'blue']],
+  '11-9': WEEK[0].ev, '11-10': WEEK[1].ev, '11-11': WEEK[2].ev, '11-12': WEEK[3].ev, '11-13': WEEK[4].ev, '11-14': WEEK[5].ev,
+  '11-16': [['6:00p', 'Officer sync', 'green']], '11-18': [['All day', 'Merch order due', 'amber']], '11-19': [['5:00p', 'Buildspace check-in', 'teal'], ['6:30p', 'Speaker night', 'blue']],
+  '11-23': [['6:00p', 'Officer sync', 'green']], '11-25': [['All day', 'Thanksgiving break', 'blue']],
+  '11-30': [['6:00p', 'Officer sync', 'green']], '12-2': [['7:00p', 'Demo day', 'blue'], ['5:00p', 'Buildspace check-in', 'teal']], '12-4': [['All day', 'Reimbursements due', 'amber']],
+};
+const WEB_VISITS = [312, 280, 401, 365, 420, 510, 526];
+
+/* ═════════════ Helpers ═════════════ */
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const money = (n) => '$' + n.toLocaleString('en-US');
+const pct = (r) => Math.round(r * 100) + '%';
+const num = (v, extra = '') => `<span data-count${extra}>${v}</span>`;  // count-up target
+function spark(values, hue, {w = 72, h = 28, wide = false} = {}) {
+  const lo = Math.min(...values), hi = Math.max(...values), span = hi - lo || 1;
+  const xy = values.map((v, i) => [(i / (values.length - 1)) * (w - 4) + 2, h - 3 - ((v - lo) / span) * (h - 6)]);
+  const d = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
+  const [lx, ly] = xy[xy.length - 1];
+  const size = wide ? `class="sparkline sparkline--wide" preserveAspectRatio="none"` : `class="sparkline" width="${w}" height="${h}"`;
+  // Wide sparklines stretch; the end dot is drawn as a separate, non-stretched overlay.
+  return `<svg ${size} data-hue="${hue}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path pathLength="1" class="sparkline-line" d="${d}"/>${wide ? '' : `<circle cx="${lx}" cy="${ly}" r="2.5" class="sparkline-dot"/>`}</svg>`;
+}
+const progress = (v, hue) => `<span class="progress" aria-hidden="true"><span class="progress-fill" data-hue="${hue}" style="width:${Math.min(v, 1) * 100}%"></span></span>`;
+const bars = (values, hue) => { const hi = Math.max(...values); return `<div class="bars" data-hue="${hue}" aria-hidden="true">${values.map((v, b) => `<i style="height:${Math.max(4, (v / hi) * 100)}%;--b:${b}"></i>`).join('')}</div>`; };
+const usageHue = (r) => r < .8 ? 'green' : r <= 1 ? 'amber' : 'coral';
+let uid = 0;
+function donut(cats, total, size) {
+  const r = 50 - 8, sw = size > 140 ? 14 : 12, id = 'dm' + (++uid);
+  let at = 0;
+  const segs = cats.filter((c) => c.used > 0).map((c) => {
+    const p = (c.used / total) * 100, gap = .6;
+    const s = `<circle class="donut-seg" data-hue="${c.h}" cx="50" cy="50" r="${r}" pathLength="100" stroke-width="${sw}" stroke-dasharray="${Math.max(p - gap, .1)} ${100 - Math.max(p - gap, .1)}" stroke-dashoffset="${-at}"/>`;
+    at += p; return s;
+  }).join('');
+  const used = cats.reduce((a, c) => a + c.used, 0);
+  return `<div class="donut" style="width:${size}px;height:${size}px"><svg viewBox="0 0 100 100" width="${size}" height="${size}" aria-hidden="true">
+    <mask id="${id}"><circle class="donut-sweep" cx="50" cy="50" r="${r}" fill="none" stroke="#fff" stroke-width="${sw + 4}" pathLength="100" stroke-dasharray="100 100" stroke-dashoffset="0"/></mask>
+    <circle class="donut-track" cx="50" cy="50" r="${r}" stroke-width="${sw}"/>
+    <g mask="url(#${id})">${segs}</g></svg>
+    <div class="donut-center"><b>${num(pct(used / total))}</b><span>used of ${money(total)}</span></div></div>`;
+}
+
+/* ═════════════ Widget shell ═════════════ */
+const DEF = {
+  'calendar':        {title: 'Calendar', icon: 'calendar', hue: 'blue', href: '/events', sizes: ['2x1', '2x2', '4x2']},
+  'links':           {title: 'Links', icon: 'link', hue: 'teal', href: '/settings#club-links', sizes: ['2x1', '1x2', '2x2']},
+  'kpi-upcoming':    {title: 'Upcoming events', icon: 'clock', hue: 'blue', href: '/events?when=upcoming', sizes: ['1x1', '2x1']},
+  'kpi-checkin':     {title: 'Avg check-in rate', icon: 'check', hue: 'teal', href: '/events?when=past', sizes: ['1x1', '2x1']},
+  'kpi-reflection':  {title: 'Reflection rate', icon: 'message', hue: 'violet', href: '/events?when=past', sizes: ['1x1', '2x1']},
+  'kpi-budget':      {title: 'Budget remaining', icon: 'wallet', hue: 'green', href: '/finance/budgets', sizes: ['1x1', '2x1']},
+  'kpi-pending':     {title: 'Pending requests', icon: 'inbox', hue: 'amber', href: '/requests?scope=all&status=pending', sizes: ['1x1', '2x1']},
+  'my-action':       {title: 'Awaiting your approval', icon: 'flag', hue: 'amber', href: '/requests?scope=all&status=pending', sizes: ['2x1', '2x2', '4x2']},
+  'recent-events':   {title: 'Recent events', icon: 'ticket', hue: 'blue', href: '/events', sizes: ['2x2', '4x2']},
+  'budget':          {title: 'Budget vs actual', icon: 'pie', hue: 'green', href: '/finance/budgets', sizes: ['2x2', '4x2']},
+  'activity':        {title: 'Recent activity', icon: 'activity', hue: 'coral', href: '/admin/audit', sizes: ['2x1', '1x2', '2x2', '4x2']},
+  'web-analytics':   {title: 'Web Analytics', icon: 'globe', hue: 'blue', href: 'https://dash.cloudflare.com', sizes: ['1x1', '2x2', '4x2']},
+  'traffic-security':{title: 'Traffic & security', icon: 'shield', hue: 'coral', href: 'https://dash.cloudflare.com', sizes: ['1x1', '2x2']},
+  'performance':     {title: 'Performance', icon: 'gauge', hue: 'teal', href: 'https://dash.cloudflare.com', sizes: ['1x1', '2x2']},
+  'workers-d1':      {title: 'Workers/D1 usage', icon: 'database', hue: 'violet', href: 'https://dash.cloudflare.com', sizes: ['1x1', '2x2']},
+  'member-signups':  {title: 'Member signups', icon: 'users', hue: 'violet', href: '/members', sizes: ['1x1', '2x2']},
+};
+function card(id, size, {state = 'ready', i = 0, cls = '', blkCls = '', extra = '', aside, nolink = false, place} = {}) {
+  const d = DEF[id], [w, h] = size.split('x');
+  const r = state === 'empty' ? {body: emptyBody(id, size)} : R[id](size);
+  const asideTxt = aside ?? r.aside;
+  const style = `--i:${i}` + (place ? `;--x:${place.x};--y:${place.y}` : '');
+  return `<li class="blk ${blkCls}" data-widget="${id}" data-w="${w}" data-h="${h}" style="${style}">
+    <section class="wc${nolink ? ' wc--nolink' : ''} ${cls}" data-hue="${d.hue}" aria-labelledby="${id}-${size}-${++uid}">
+      <header class="wc-head">
+        <span class="wc-chip" aria-hidden="true">${ico(d.icon, 14)}</span>
+        <h3 class="wc-title" id="${id}-${size}-${uid}">${nolink ? d.title : `<a class="wc-link" href="${d.href}">${d.title}</a>`}</h3>
+        <span class="wc-go" aria-hidden="true">${ico('arrow-up-right', 14, 2)}</span>
+        ${asideTxt ? `<span class="wc-aside">${asideTxt}</span>` : ''}
+      </header>
+      <div class="wc-body">${r.body}</div>
+      ${r.foot && state !== 'empty' ? `<footer class="wc-foot">${r.foot}</footer>` : ''}
+    </section>${extra}</li>`;
+}
+const EMPTY = {
+  'calendar': 'Nothing scheduled this week',
+  'links': 'No club links yet',
+  'kpi-upcoming': 'Nothing on the calendar',
+  'kpi-checkin': 'No past events yet',
+  'kpi-reflection': 'No reflections yet',
+  'kpi-budget': 'No budget set for FY2027',
+  'kpi-pending': 'Nothing waiting',
+  'my-action': 'Nothing to approve',
+  'recent-events': 'No events yet · import a Luma guest list',
+  'budget': 'No budget set for FY2027',
+  'activity': 'No activity yet',
+  'web-analytics': 'Not connected yet',
+  'traffic-security': 'Not connected yet',
+  'performance': 'Not connected yet',
+  'workers-d1': 'Not connected yet',
+  'member-signups': 'No members yet',
+};
+function emptyBody(id, size) {
+  if (id === 'calendar') return weekGrid(size === '2x2', true) + `<p class="cal-empty-line">${EMPTY[id]}</p>`;
+  const small = size === '1x1' || size === '2x1';
+  return `<div class="empty${size === '2x1' ? ' empty--row' : ''}">${ico(DEF[id].icon, small ? 24 : 32, 1.5)}<span>${EMPTY[id]}</span></div>`;
+}
+
+/* ═════════════ Widget bodies per size ═════════════ */
+function reqRow(r, rich) {
+  const meta = rich
+    ? `<span class="mono">#${r.n}</span><span class="sep">·</span>${r.who}<span class="sep">·</span><span class="st" data-hue="${r.cat[1]}" style="--hue:var(--c-${r.cat[1]})">${r.cat[0]}</span>${r.due ? `<span class="sep">·</span>needed ${r.due}` : ''}<span class="sep">·</span>${r.when}`
+    : `${r.who}<span class="sep">·</span>${r.when}${r.due ? `<span class="sep">·</span>needed ${r.due}` : ''}`;
+  return `<li><a class="row" href="/requests/${r.n}"><span class="row-main"><span class="row-title">${esc(r.t)}</span><span class="row-meta">${meta}</span></span><span class="row-side"><span class="row-amt">${r.amt}</span><span class="st" data-hue="${r.st[1]}">${r.st[0]}</span></span></a></li>`;
+}
+function eventRow(e, rich) {
+  const side = rich
+    ? `<span class="row-side" style="grid-template-columns:96px 3.5em;align-items:center;column-gap:8px">${progress(e.ci, 'teal')}<span class="row-amt">${pct(e.ci)}</span></span>`
+    : `<span class="row-side"><span class="row-amt">${e.g}</span><span class="row-meta">guests</span></span>`;
+  const meta = rich ? `${e.d}<span class="sep">·</span>${e.where}<span class="sep">·</span>${e.g} guests<span class="sep">·</span>${pct(e.rf)} reflected` : `${e.d}<span class="sep">·</span>${pct(e.ci)} checked in`;
+  return `<li><a class="row" href="/events/x"><span class="row-main"><span class="row-title">${e.t}</span><span class="row-meta">${meta}</span></span>${side}</a></li>`;
+}
+function actRow(a, compact) {
+  const ini = a.who.replace(/[“”]/g, '').split(' ').map((s) => s[0]).join('').slice(0, 2);
+  return `<li><a class="row" href="/admin/audit"><span class="avatar" data-hue="${a.h}">${ini}</span><span class="row-main"><span class="row-title"><b style="font-weight:600">${a.who}</b> <span style="font-weight:400">${a.what}</span></span>${compact ? '' : `<span class="row-meta">${a.when} ago</span>`}</span>${compact ? `<span class="row-meta">${a.when}</span>` : ''}</a></li>`;
+}
+function chip(ev, c, two = false) { return `<a class="cal-chip${two ? ' cal-chip--2' : ''}" data-hue="${ev[2]}" href="/events/x" style="--c:${c}"><time>${ev[0]}</time><span>${ev[1]}</span></a>`; }
+function weekGrid(tall, empty = false) {
+  let c = 0;
+  return `<div class="cal${tall ? ' cal--tall' : ''}">${WEEK.map((d) => {
+    const ev = empty ? [] : d.ev, max = tall ? 4 : 2, shown = ev.slice(0, max);
+    // 2×1: one chip if more would not fit; "+n" in the day header.
+    const fit = tall ? shown : ev.slice(0, ev.length > 2 ? 1 : 2);
+    const more = ev.length - fit.length;
+    return `<div class="cal-day${d.weekend ? ' is-weekend' : ''}${d.today ? ' is-today' : ''}"><span class="cal-dh">${d.dow} <b>${d.d}</b>${more ? `<span class="cal-more">+${more}</span>` : ''}</span>${fit.map((e) => chip(e, c++, !tall)).join('')}</div>`;
+  }).join('')}</div>`;
+}
+function monthGrid() {
+  const days = []; // Mon Oct 26 → Sun Dec 6
+  const start = new Date(2026, 9, 26);
+  for (let k = 0; k < 42; k++) { const t = new Date(start); t.setDate(start.getDate() + k); days.push(t); }
+  let c = 0;
+  return `<div class="calm">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((x) => `<span class="calm-dow">${x}</span>`).join('')}${days.map((t, k) => {
+    const key = `${t.getMonth() + 1}-${t.getDate()}`, ev = MONTH_EV[key] || [];
+    const today = t.getMonth() === 10 && t.getDate() === 10, out = t.getMonth() !== 10, wk = k % 7 > 4;
+    const fit = ev.slice(0, 1), more = ev.length - fit.length;
+    return `<div class="calm-day${wk ? ' is-weekend' : ''}${out ? ' is-outside' : ''}${today ? ' is-today' : ''}"><span class="calm-dh"><b>${t.getDate()}</b>${ev.map((e) => `<i class="cal-dot" data-hue="${e[2]}"></i>`).join('')}${more ? `<span class="cal-more">+${more}</span>` : ''}</span>${fit.map((e) => chip(e, c++)).join('')}</div>`;
+  }).join('')}</div>`;
+}
+const SYNC = 'Synced daily, last 7:02 AM';
+const R = {
+  'calendar': (s) => s === '4x2' ? {aside: 'November 2026', body: monthGrid()} : {aside: 'Nov 9 – 15', body: weekGrid(s === '2x2')},
+  'links': (s) => {
+    const L = [['C', 'Club website', 'cseed.co'], ['N', 'Notion', 'notion.so/cseed'], ['D', 'Google Drive', 'Not set', true]];
+    if (s === '2x1') return {body: `<ul class="links links--row">${L.map(([c, n, u, unset]) => `<li><a class="link-row${unset ? ' link-unset' : ''}" href="#"><span class="link-chip">${c}</span><span class="row-title" style="font-size:12px">${n}</span></a></li>`).join('')}</ul>`};
+    if (s === '1x2') return {body: `<ul class="links">${L.map(([c, n, u, unset]) => `<li><a class="link-row${unset ? ' link-unset' : ''}" href="#"><span class="link-chip">${c}</span><span class="row-main"><span class="row-title">${n}</span><span class="row-meta">${unset ? 'Add link' : u}</span></span></a></li>`).join('')}</ul>`};
+    return {body: `<ul class="links links--grid">${[...L, ['+', 'Add a link', 'Leadership only', true]].map(([c, n, u, unset]) => `<li><a class="link-row${unset ? ' link-unset' : ''}" href="#"><span class="link-chip">${c}</span><span class="row-main"><span class="row-title">${n}</span><span class="row-meta">${u === 'Not set' ? 'Not set · add in Settings' : u}</span></span></a></li>`).join('')}</ul>`};
+  },
+  'kpi-upcoming': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num(4)}</span></div><span class="stat-sub">next: Founders AMA · Thu 7:00 PM</span>`}
+    : {body: `<div class="stat-split"><div><span class="stat-value">${num(4)}</span><span class="stat-sub">in the next 30 days</span></div><div class="mini">${[['Thu', 'Founders AMA'], ['Sat', 'Hack morning'], ['Nov 19', 'Speaker night']].map(([a, b]) => `<span><i>${a}</i><b>${b}</b></span>`).join('')}</div></div>`},
+  'kpi-checkin': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num('71%')}</span>${spark([.62, .68, .66, .74, .7, .71, .78], 'teal')}</div><span class="stat-sub">past events, FY2027</span>`}
+    : {body: `<div class="stat-split"><div><span class="stat-value">${num('71%')}</span><span class="stat-sub">past events, FY2027</span></div><div>${spark([.62, .68, .66, .74, .7, .71, .78], 'teal', {w: 160, h: 44, wide: true})}<span class="stat-sub">best 86% Pitch practice · low 58%</span></div></div>`},
+  'kpi-reflection': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num('38%')}</span>${spark([.31, .35, .29, .4, .36, .38, .42], 'violet')}</div><span class="stat-sub">of checked-in guests</span>`}
+    : {body: `<div class="stat-split"><div><span class="stat-value">${num('38%')}</span><span class="stat-sub">of checked-in guests</span></div><div>${spark([.31, .35, .29, .4, .36, .38, .42], 'violet', {w: 160, h: 44, wide: true})}<span class="stat-sub">last event 42% · Founders panel</span></div></div>`},
+  'kpi-budget': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num('$4,420')}</span></div>${progress(.51, 'green')}<span class="stat-sub">$4,180 spent · $400 committed</span>`}
+    : {body: `<div class="stat-split"><div><span class="stat-value">${num('$4,420')}</span><span class="stat-sub">left of $9,000 · FY2027</span></div><div>${progress(.51, 'green')}<span class="split-legend"><span><i class="dot" data-hue="green"></i>$4,180 spent</span><span><i class="dot" data-hue="amber"></i>$400 committed</span></span></div></div>`},
+  'kpi-pending': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num(3)}</span></div><span class="stat-sub">$680 awaiting a director</span>`}
+    : {body: `<div class="stat-split"><div><span class="stat-value">${num(3)}</span><span class="stat-sub">$680 awaiting a director</span></div><div class="mini">${REQS.slice(0, 3).map((r) => `<span><i>${r.amt}</i><b>${r.t}</b></span>`).join('')}</div></div>`},
+  'my-action': (s) => {
+    if (s === '2x1') return {aside: '8 waiting', body: `<ul class="rows">${REQS.slice(0, 2).map((r) => reqRow(r)).join('')}</ul>`};
+    if (s === '2x2') return {aside: '8 waiting', body: `<ul class="rows">${REQS.slice(0, 5).map((r) => reqRow(r)).join('')}</ul><span class="row-more">+3 more · $265</span>`};
+    return {aside: '8 waiting · $960', body: `<ul class="rows rows--2">${REQS.slice(0, 8).map((r) => reqRow(r, true)).join('')}</ul>`};
+  },
+  'recent-events': (s) => s === '2x2'
+    ? {body: `<ul class="rows">${EVENTS.slice(0, 5).map((e) => eventRow(e)).join('')}</ul>`}
+    : {aside: 'check-in rate', body: `<ul class="rows">${EVENTS.slice(0, 6).map((e) => eventRow(e, true)).join('')}</ul>`},
+  'budget': (s) => s === '2x2'
+    ? {aside: 'FY2027', body: `<div class="donut-wrap">${donut(CATS, 9000, 128)}<ul class="legend">${CATS.slice(0, 5).map((c) => `<li><span class="dot" data-hue="${c.h}"></span><b>${c.n}</b><span>${money(c.used)} / ${money(c.budget)}</span></li>`).join('')}<li><span></span><b style="font-weight:400;color:var(--muted);font-size:12px">+1 more</b><span></span></li></ul></div>`}
+    : {aside: 'FY2027', body: `<div class="donut-wrap" style="gap:32px">${donut(CATS, 9000, 176)}<div style="display:grid;gap:12px;min-width:0"><ul class="legend legend--2">${CATS.map((c) => { const u = c.used / c.budget; return `<li><span class="dot" data-hue="${c.h}"></span><b>${c.n}</b><span>${money(c.used)} / ${money(c.budget)}</span>${progress(u, usageHue(u))}</li>`; }).join('')}</ul><div class="legend-total"><span>All categories</span><span><b>$4,580</b> used · $4,420 left of $9,000</span></div></div></div>`},
+  'activity': (s) => {
+    if (s === '2x1') return {body: `<ul class="rows">${ACT.slice(0, 2).map((a) => actRow(a, true)).join('')}</ul>`};
+    if (s === '1x2') return {body: `<ul class="rows">${ACT.slice(0, 6).map((a) => actRow(a)).join('')}</ul>`};
+    if (s === '2x2') return {body: `<ul class="rows">${ACT.slice(0, 6).map((a) => actRow(a)).join('')}</ul>`};
+    const days = [...new Set(ACT.map((a) => a.day))];
+    const col = (ds) => `<div>${ds.map((d) => `<p class="day-label">${d}</p><ul class="rows">${ACT.filter((a) => a.day === d).map((a) => actRow(a, true)).join('')}</ul>`).join('')}</div>`;
+    return {body: `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">${col(days.slice(0, 2))}${col(days.slice(2))}</div>`};
+  },
+  'web-analytics': (s) => {
+    if (s === '1x1') return {body: `<div class="stat-row"><span class="stat-value">${num('2,814')}</span>${spark(WEB_VISITS, 'blue')}</div><span class="stat-sub">visits · last 7 days</span>`, foot: '7:02 AM'};
+    const head = `<div class="metrics"><div class="metric"><span class="metric-label">Visits</span><span class="metric-value">${num('2,814')}</span></div><div class="metric"><span class="metric-label">Page views</span><span class="metric-value">${num('6,930')}</span></div></div><span data-hue="blue">${spark(WEB_VISITS, 'blue', {w: 200, h: 44, wide: true})}</span>`;
+    const pages = [['/', '2,140'], ['/events', '1,210'], ['/join', '860'], ['/about', '410']];
+    if (s === '2x2') return {aside: 'Last 7 days', body: head + `<ul class="kv">${pages.slice(0, 3).map(([a, b]) => `<li><span>${a}</span><span>${b}</span></li>`).join('')}</ul>`, foot: SYNC};
+    const sec = (t, rows) => `<section><h4>${t}</h4><ul class="kv">${rows.map(([a, b]) => `<li><span>${a}</span><span>${b}</span></li>`).join('')}</ul></section>`;
+    return {aside: 'Last 7 days', body: head + `<div class="breakdowns">${sec('Top pages', pages)}${sec('Referrers', [['Direct', '1,320'], ['instagram.com', '640'], ['linkedin.com', '410'], ['google.com', '302']])}${sec('Countries', [['United States', '2,390'], ['Canada', '160'], ['India', '96'], ['United Kingdom', '61']])}</div>`, foot: SYNC};
+  },
+  'traffic-security': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num('48.2k')}</span></div><span class="stat-sub">requests · 312 security events</span>`, foot: '7:02 AM'}
+    : {aside: 'Last 24 hours', body: `<div class="metrics">${[['Requests', '48.2k'], ['Bandwidth', '1.3 GB'], ['Security events', '312'], ['Cache hit', '86.4%']].map(([a, b]) => `<div class="metric"><span class="metric-label">${a}</span><span class="metric-value">${num(b)}</span></div>`).join('')}</div><div><span class="metric-label" style="font-size:12px;color:var(--muted)">Requests by hour</span>${bars([22, 18, 12, 9, 8, 11, 19, 30, 41, 46, 52, 49, 55, 58, 54, 50, 47, 44, 40, 38, 36, 33, 29, 25], 'coral')}</div>`, foot: SYNC},
+  'performance': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num('1.1 s')}</span></div><span class="stat-sub">LCP p75 · <span class="st" data-hue="green">Good</span></span>`, foot: '7:02 AM'}
+    : {aside: 'p75 · last 24 hours', body: `<div>${[['Largest paint (LCP)', '1.1 s', 'Good', 'green', '≤ 2.5 s'], ['Interaction (INP)', '140 ms', 'Good', 'green', '≤ 200 ms'], ['Layout shift (CLS)', '0.12', 'Needs work', 'amber', '≤ 0.1'], ['/events', '1.6 s', 'Good', 'green', 'LCP'], ['/join', 'Insufficient samples', '', '', '']].map(([a, b, c, h, t]) => `<div class="vital"><b>${a}</b><span>${b}</span>${c ? `<span class="st" data-hue="${h}" style="min-width:86px">${c}</span>` : '<span style="min-width:86px"></span>'}<small>${t}</small></div>`).join('')}</div>`, foot: SYNC},
+  'workers-d1': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num('12.4k')}</span></div><span class="stat-sub">worker requests · 24 h</span>`, foot: '7:02 AM'}
+    : {aside: 'Last 24 hours', body: `<div class="metrics">${[['Worker requests', '12.4k'], ['CPU time · p50', '1.8 ms'], ['D1 rows read', '84.2k'], ['D1 rows written', '1,906']].map(([a, b]) => `<div class="metric"><span class="metric-label">${a}</span><span class="metric-value">${num(b)}</span></div>`).join('')}</div><div><span class="metric-label" style="font-size:12px;color:var(--muted)">Requests, last 7 days</span>${bars([9.8, 10.4, 11.9, 10.1, 12.8, 13.3, 12.4], 'violet')}</div>`, foot: SYNC},
+  'member-signups': (s) => s === '1x1'
+    ? {body: `<div class="stat-row"><span class="stat-value">${num(412)}</span></div><span class="stat-sub">members · +18 in 7 days</span>`, foot: '7:02 AM'}
+    : {aside: 'Directory', body: `<div class="metrics">${[['Total members', '412'], ['Joined in 7 days', '18'], ['Joined today', '2'], ['Joined in 30 days', '54']].map(([a, b]) => `<div class="metric"><span class="metric-label">${a}</span><span class="metric-value">${num(b)}</span></div>`).join('')}</div><div><span class="metric-label" style="font-size:12px;color:var(--muted)">Daily signups, 14 days</span>${bars([3, 1, 4, 2, 6, 5, 2, 1, 3, 4, 2, 5, 3, 2], 'violet')}</div>`, foot: SYNC},
+};
+
+/* ═════════════ Page sections ═════════════ */
+const HOME = [ // the registry default layout
+  ['links', '2x1'], ['kpi-upcoming', '1x1'], ['kpi-checkin', '1x1'], ['kpi-reflection', '1x1'], ['kpi-budget', '1x1'],
+  ['kpi-pending', '1x1'], ['web-analytics', '1x1'], ['calendar', '4x2'], ['recent-events', '2x2'], ['budget', '2x2'],
+  ['my-action', '2x1'], ['activity', '2x1'],
+];
+const grid = (items, cls = '') => `<div class="blocks-wrap"><ul class="blocks ${cls}">${items}</ul></div>`;
+function theme(t) {
+  const sec = (id, title, p) => `<h2 class="mk-h2" id="${id}-${t}">${title}</h2>${p ? `<p class="mk-p">${p}</p>` : ''}`;
+  let out = `<section class="theme" data-theme="${t}"><div class="mk-wrap">
+    <span class="mk-theme-tag">${t} theme</span>
+    <h1 class="mk-h1">hey alex, welcome in.</h1>
+    <p class="mk-p">Home V0.7. Each title has a tinted icon chip in the widget’s accent. The whole card is the link (no corner links), and rows inside open their own item. Hover any card: it lifts 2px, gains a soft shadow, and ↗ fades in by the title.</p>`;
+
+  out += sec('home', 'Home · default layout', 'The registry default layout, as a returning officer sees it. <strong>↻ Replay load motion</strong> (top bar) plays the first-visit entrance: tiles fade up 40ms apart, sparklines draw, bars grow, numbers count up and the donut sweeps, in about 0.8s.');
+  out += grid(HOME.map(([id, s], i) => card(id, s, {i})).join(''), 'js-entrance');
+
+  out += sec('sizes', 'Every widget at every allowed size', 'Sizes come from <code>registry.ts</code>. Bigger sizes show more rows and fields; nothing scrolls inside a widget.');
+  Object.keys(DEF).forEach((id) => {
+    const d = DEF[id];
+    out += `<h3 class="mk-h3">${d.title} <code>${id}</code> <span>${d.sizes.map((s) => s.replace('x', '×')).join(' · ')}</span> <span>icon <code>${d.icon}</code> accent <code>--c-${d.hue}</code></span></h3>`;
+    out += grid(d.sizes.map((s, i) => card(id, s, {i})).join(''), 'js-entrance');
+  });
+
+  out += sec('empty', 'Empty states', 'The widget’s icon, muted (<code>--control</code>), with one line. The calendar keeps its dates, because the week itself is the information. Stat tiles show their zero or “—” value and the line replaces the sub text.');
+  out += grid(Object.keys(DEF).map((id, i) => {
+    const s = id.startsWith('kpi') || ['web-analytics', 'traffic-security', 'performance', 'workers-d1', 'member-signups'].includes(id) ? '1x1' : id === 'calendar' ? '2x1' : DEF[id].sizes.includes('2x2') ? '2x2' : DEF[id].sizes[0];
+    return card(id, s === '2x2' && id === 'links' ? '2x1' : s, {state: 'empty', i});
+  }).join(''));
+
+  out += sec('hover', 'Hover and focus', 'Forced hover here (<code>.is-hover</code>). Lift <code>translateY(-2px)</code>, <code>--overlay-shadow</code>, and a border nudged toward <code>--control</code>, over <code>--dur-2</code> <code>--ease-out</code>. ↗ goes from opacity 0 at (−3px, 3px) to 1 at rest (<code>--dur-1</code> opacity, <code>--dur-2</code> move). Keyboard focus on the title link shows the same ↗ and a 2px <code>--c-blue</code> ring on the card. A hovered row inside a card gets <code>--hover</code> and opens its own item.');
+  out += grid([
+    card('kpi-checkin', '1x1', {cls: 'is-hover'}),
+    card('kpi-budget', '1x1'),
+    card('my-action', '2x2', {cls: 'is-hover'}).replace('<a class="row"', '<a class="row is-hover"'),
+    card('activity', '2x1'),
+    card('web-analytics', '1x1', {cls: 'is-hover'}),
+    card('kpi-pending', '1x1'),
+  ].join(''));
+
+  out += sec('edit', 'Edit mode', 'After <strong>Edit home</strong>, the whole tile is the drag handle (<code>cursor: grab</code>, native). Headers stay readable, the body dims to 55% and turns inert, and ↗ and the aside hide. There’s a remove button top-right, and resize grips on the right edge, the bottom edge and the corner (<code>ew-resize</code>, <code>ns-resize</code>, <code>nwse-resize</code>). The grips brighten to <code>--c-blue</code> on tile hover and always show on touch. A slow sway (±0.3°, 3.2s) says “movable”.');
+  out += `<h3 class="mk-h3">1 · Idle (one tile hovered)</h3>`;
+  out += grid(EDIT_START.map((p, i) => editCard(p, i, i === 0 ? 'is-hover' : '')).join(''), 'is-editing is-sway blocks--placed');
+  out += `<h3 class="mk-h3">2 · Dragging Recent events <span>a static clone follows the pointer (rotated −1.2°, scale 1.02, <code>--block-lift</code>); the origin cell is the drop target; <code>cursor: grabbing</code> on &lt;html&gt;</span></h3>`;
+  out += `<div class="mk-frame js-drag">${grid(EDIT_START.map((p, i) => editCard(p, i, p.id === 'recent-events' ? 'is-placeholder' : '')).join(''), 'is-editing blocks--placed')}</div>`;
+  out += `<h3 class="mk-h3">3 · Resizing My actions 2×1 → 2×2 <span>it snaps to allowed sizes only; neighbours below are pushed down (no reordering) and slide over <code>--dur-3</code> <code>--ease-out</code></span></h3>`;
+  out += `<div class="mk-row"><button type="button" class="mk-btn js-play-resize">▶ Play resize</button><span class="mk-p" style="margin:0">Toggles 2×1 ↔ 2×2 with a FLIP slide, the way <code>useFlip</code> should animate it. Below is the frame mid-resize: tiles tagged “↓ pushed” moved down one row to make room.</span></div>`;
+  out += `<div class="mk-frame">${grid(resizeFrame(), 'is-editing blocks--placed js-resize')}</div>`;
+  out += `</div></section>`;
+  return out;
+}
+
+/* Edit-mode layout with explicit positions (what placePushDown works on). */
+const EDIT_START = [
+  {id: 'my-action', s: '2x1', x: 0, y: 0}, {id: 'activity', s: '2x1', x: 2, y: 0},
+  {id: 'kpi-upcoming', s: '1x1', x: 0, y: 1}, {id: 'kpi-checkin', s: '1x1', x: 1, y: 1},
+  {id: 'kpi-budget', s: '1x1', x: 2, y: 1}, {id: 'kpi-pending', s: '1x1', x: 3, y: 1},
+  {id: 'recent-events', s: '2x2', x: 0, y: 2}, {id: 'links', s: '2x1', x: 2, y: 2}, {id: 'web-analytics', s: '1x1', x: 2, y: 3}, {id: 'kpi-reflection', s: '1x1', x: 3, y: 3},
+];
+const tools = (name) => `<button class="blk-remove" type="button" aria-label="Remove ${name}">${ico('close', 12, 2.5)}</button>
+  <span class="rz rz-e" role="presentation"></span><span class="rz rz-s" role="presentation"></span>
+  <span class="rz rz-se" role="presentation">${ico('resize-corner', 18, 2)}</span>`;
+function editCard(p, i, blkCls = '', extraHtml = '') {
+  return card(p.id, p.s, {i, blkCls, place: p, extra: tools(DEF[p.id].title) + extraHtml});
+}
+/** Push-down: place the resized tile first, then every other tile in (y, x) order, moving it down until it fits. */
+function placePushDown(items, changedId) {
+  const placed = [], hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const dims = (p) => { const [w, h] = p.s.split('x').map(Number); return {...p, w, h}; };
+  const order = [...items].map(dims).sort((a, b) => (a.id === changedId ? -1 : b.id === changedId ? 1 : a.y - b.y || a.x - b.x));
+  for (const p of order) { const q = {...p}; while (placed.some((o) => hit(o, q))) q.y++; placed.push(q); }
+  return items.map((p) => placed.find((q) => q.id === p.id));
+}
+function resizeFrame() {
+  const after = placePushDown(EDIT_START.map((p) => p.id === 'my-action' ? {...p, s: '2x2'} : p), 'my-action');
+  let html = '';
+  after.forEach((p, i) => {
+    const before = EDIT_START[i], moved = before.y !== p.y;
+    const extra = p.id === 'my-action' ? '<span class="blk-size">2×2</span>' : moved ? `<span class="push-tag">↓ pushed</span>` : '';
+    html += editCard(p, i, p.id === 'my-action' ? 'is-resizing' : moved ? 'is-pushed' : '', extra);
+  });
+  return html;
+}
+
+document.getElementById('themes').innerHTML = theme('light') + theme('dark');
+
+/* Dragging frame: drop a static clone of the dragged tile over the grid, offset as if mid-drag. */
+document.querySelectorAll('.js-drag').forEach((frame) => {
+  const src = frame.querySelector('.blk.is-placeholder');
+  const clone = src.cloneNode(true);
+  clone.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));   // ids stripped, as in production
+  clone.querySelectorAll('.blk-remove, .rz').forEach((n) => n.remove());
+  clone.className = 'blk-float';
+  const fr = frame.getBoundingClientRect(), r = src.getBoundingClientRect();
+  Object.assign(clone.style, {left: (r.left - fr.left + r.width * .42) + 'px', top: (r.top - fr.top - r.height * .34) + 'px', width: r.width + 'px', height: r.height + 'px'});
+  frame.appendChild(clone);
+  const tag = document.createElement('span');
+  tag.className = 'mk-tag'; tag.textContent = 'cursor: grabbing';
+  Object.assign(tag.style, {left: (r.left - fr.left + r.width * .42 + r.width * .5) + 'px', top: (r.top - fr.top - r.height * .34 - 12) + 'px'});
+  frame.appendChild(tag);
+});
+
+/* ═════════════ Resize demo: FLIP neighbours on a snapped size change ═════════════ */
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function flip(container, mutate) {
+  const tiles = [...container.querySelectorAll('.blk')];
+  const first = new Map(tiles.map((t) => { t.getAnimations().forEach((a) => a.cancel()); return [t, t.getBoundingClientRect()]; }));
+  mutate();
+  if (reduce) return;
+  tiles.forEach((t) => {
+    const a = first.get(t), b = t.getBoundingClientRect();
+    const dx = a.left - b.left, dy = a.top - b.top, sx = a.width / b.width, sy = a.height / b.height;
+    if (!dx && !dy && sx === 1 && sy === 1) return;
+    t.animate([{transformOrigin: '0 0', transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`}, {transformOrigin: '0 0', transform: 'none'}], {duration: 240, easing: 'cubic-bezier(.2, .8, .2, 1)'});
+  });
+}
+document.querySelectorAll('.js-play-resize').forEach((btn) => {
+  const ul = btn.closest('.mk-wrap').querySelector('.js-resize');
+  let big = true;
+  const apply = (bigNow) => {
+    const layout = bigNow ? placePushDown(EDIT_START.map((p) => p.id === 'my-action' ? {...p, s: '2x2'} : p), 'my-action') : EDIT_START.map((p) => { const [w, h] = p.s.split('x').map(Number); return {...p, w, h}; });
+    ul.querySelectorAll('.blk').forEach((li) => {
+      const p = layout.find((q) => q.id === li.dataset.widget);
+      li.style.setProperty('--x', p.x); li.style.setProperty('--y', p.y);
+      li.dataset.h = String(p.h);
+      li.querySelector('.push-tag')?.remove();
+      li.classList.toggle('is-pushed', false);
+      const lbl = li.querySelector('.blk-size'); if (lbl) lbl.textContent = bigNow ? '2×2' : '2×1';
+    });
+  };
+  btn.addEventListener('click', () => { big = !big; flip(ul, () => apply(big)); btn.textContent = big ? '▶ Play resize (shrink)' : '▶ Play resize (grow)'; });
+});
+
+/* ═════════════ Load motion (mockup replay; production: once per session, sessionStorage "home-entered") ═════════════ */
+const fmtLike = (template, v) => {
+  const m = template.match(/-?[\d,]*\.?\d+/); if (!m) return template;
+  const dec = (m[0].split('.')[1] || '').length;
+  const s = v.toLocaleString('en-US', {minimumFractionDigits: dec, maximumFractionDigits: dec, useGrouping: m[0].includes(',') || v >= 1e4});
+  return template.replace(m[0], s);
+};
+function countUp(el, delay) {
+  const final = el.dataset.final ?? (el.dataset.final = el.textContent);
+  const m = final.match(/-?[\d,]*\.?\d+/); if (!m) return;
+  const target = parseFloat(m[0].replace(/,/g, ''));
+  el.textContent = fmtLike(final, 0);
+  const dur = 480, t0 = performance.now() + delay;
+  const step = (t) => {
+    const k = Math.min(1, Math.max(0, (t - t0) / dur)), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = k >= 1 ? final : fmtLike(final, target * e);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function replay() {
+  document.querySelectorAll('.js-entrance').forEach((ul) => {
+    ul.classList.remove('is-entering'); void ul.offsetWidth; ul.classList.add('is-entering');
+    if (reduce) return;
+    ul.querySelectorAll('.blk').forEach((li) => {
+      const i = +getComputedStyle(li).getPropertyValue('--i') || 0;
+      li.querySelectorAll('[data-count]').forEach((el) => countUp(el, Math.min(i, 10) * 40 + 40));
+    });
+  });
+}
+document.getElementById('replay').addEventListener('click', replay);
+replay();
+
+/* Theme filter (mockup only) */
+document.querySelectorAll('[data-show]').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-show]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  document.querySelectorAll('.theme').forEach((s) => s.hidden = b.dataset.show !== 'both' && s.dataset.theme !== b.dataset.show);
+}));
+</script>
+</body>
+</html>

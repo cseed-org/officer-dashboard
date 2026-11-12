@@ -1,0 +1,31 @@
+/* Cloudflare + member widgets (notes § Cloudflare widgets). Surface and header come from shell/widget.css. */
+.metrics {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; align-content: start;}
+.metrics--4 {grid-template-columns: repeat(4, minmax(0, 1fr));}
+.metric {display: grid; gap: 1px; min-width: 0;}
+.metric-label {font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.metric-value {font-size: 20px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;}
+.breakdowns {display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; min-height: 0; overflow: hidden;}
+.breakdowns--1 {grid-template-columns: minmax(0, 1fr);}
+.breakdowns h3 {margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted);}
+.kv {display: grid; list-style: none; margin: 0; padding: 0; font-size: 12px;}
+.kv li {display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; min-width: 0;}
+.kv li span:first-child {overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.kv li span:last-child {color: var(--muted); font-variant-numeric: tabular-nums;}
+.vitals {display: grid; align-content: start;}
+.vital {display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; min-width: 0;}
+.vital:first-child {border-top: 0;}
+.vital b {font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.vital span {font-variant-numeric: tabular-nums; white-space: nowrap;}
+.vital-chip {min-width: 86px; font-size: 12px;}
+.vital small {font-size: 11px; color: var(--muted); min-width: 64px; text-align: right;}
+.cf-stale {display: inline-flex; align-items: center; gap: 5px; color: var(--attention);}
+.cf-stale::before {content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c-amber);}
+.cf-details {font-size: 12px; color: var(--muted); text-align: center;}
+.cf-details summary {cursor: pointer; display: inline-block;}
+.cf-details p {margin: 6px auto 0; max-width: 36ch; text-align: left;}
+@container blocks (max-width: 599px) {
+  .breakdowns {grid-template-columns: 1fr 1fr;}
+  .breakdowns section:nth-child(3) {display: none;}
+  .metrics--4 {grid-template-columns: 1fr 1fr;}
+  .vital small {display: none;}
+}

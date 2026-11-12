@@ -47,6 +47,8 @@
   --dur-1: 120ms;
   --dur-2: 180ms;
   --dur-3: 240ms;
+  --home-stagger: 40ms;  /* Home entrance: delay between tiles */
+  --dur-chart: 480ms;    /* Home entrance: sparkline draw, bar grow, donut sweep, count-up */
   --ease-in: cubic-bezier(.4, 0, 1, 1);
   --motion-distance: 8px;
   --motion-drawer-distance: 100%;

@@ -1,3 +1,4 @@
+import { markGreetingSignedOut } from './home/browserGreeting';
 import { ClubLinksPanel } from './ClubLinksPanel';
 import { TimezonePanel } from './TimezonePanel';
 import { useState } from 'preact/hooks';
@@ -120,6 +121,7 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
           action="/auth/logout"
           onSubmit={() => {
             // The next person on this browser must not inherit a cached director role.
+            markGreetingSignedOut(me.id);
             clearCachedRole();
           }}
         >
