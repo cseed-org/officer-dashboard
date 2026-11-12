@@ -71,21 +71,8 @@ export const widgetRegistry: WidgetDef[] = [
 export const KPI_GROUP_ID = 'kpis';
 export const kpiIds = widgetRegistry.filter((w) => w.group === 'kpis').map((w) => w.id);
 
-/** Calendar adds two full desktop rows to the existing packed layout. */
-export const defaultWidgetLayout: { id: string; size: BlockSize }[] = [
-  { id: 'links', size: '2x1' },
-  { id: 'kpi-upcoming', size: '1x1' },
-  { id: 'kpi-checkin', size: '1x1' },
-  { id: 'kpi-reflection', size: '1x1' },
-  { id: 'kpi-budget', size: '1x1' },
-  { id: 'kpi-pending', size: '1x1' },
-  { id: 'web-analytics', size: '1x1' },
-  { id: 'calendar', size: '4x2' },
-  { id: 'recent-events', size: '2x2' },
-  { id: 'budget', size: '2x2' },
-  { id: 'my-action', size: '2x1' },
-  { id: 'activity', size: '2x1' },
-];
+export { defaultWidgetLayout } from './defaultLayout';
+import { defaultWidgetLayout } from './defaultLayout';
 
 export const widgetDef = (id: string) => widgetRegistry.find((w) => w.id === id);
 

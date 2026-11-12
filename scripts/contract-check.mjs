@@ -47,7 +47,7 @@ const bundle = join(work, 'contracts.mjs');
 await build({ entryPoints: [join(root, 'src/core/contracts.ts')], bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'error' });
 const { ENDPOINTS, ApiError } = await import(pathToFileURL(bundle).href);
 const registryBundle = join(work, 'widget-registry.mjs');
-await build({ entryPoints: [join(root, 'web/src/ui/widgets/registry.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
+await build({ entryPoints: [join(root, 'web/src/ui/widgets/defaultLayout.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
 const { defaultWidgetLayout } = await import(pathToFileURL(registryBundle).href);
 
 // ───────────── binary, database, server ─────────────

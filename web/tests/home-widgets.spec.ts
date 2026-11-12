@@ -83,7 +83,7 @@ test('clicking a card navigates to its page; a row opens its own item', async ({
   const href = await row.getAttribute('href');
   expect(href).toMatch(/\/events\?id=/);
   await row.click();
-  await expect(page).toHaveURL(new RegExp(href!.replace(/[?]/g, '\\?')));
+  await expect(page).toHaveURL(new RegExp(href!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
 test('Links: rows open the club links; no card link for directors', async ({ page }) => {
