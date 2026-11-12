@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { devLogin, settle } from './helpers';
+import { devLoginSkipTour, settle } from './helpers';
 
 test("an officer can't see Admin", async ({ page }, info) => {
-  await devLogin(page, 'director');
+  await devLoginSkipTour(page, 'director');
   await settle(page);
   if (info.project.name === 'phone') await page.locator('[data-nav-toggle]').click();
   await expect(page.locator('#sidebar [data-nav="admin"]')).toHaveCount(0);
 
-  await devLogin(page, 'officer');
+  await devLoginSkipTour(page, 'officer');
   await settle(page);
   if (info.project.name === 'phone') await page.locator('[data-nav-toggle]').click();
   await expect(page.locator('#sidebar [data-nav="events"]')).toBeVisible();

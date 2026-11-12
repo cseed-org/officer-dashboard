@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
-import { devLogin, openDialog, settle } from './helpers';
+import { devLoginSkipTour, openDialog, settle } from './helpers';
 
 test('P2-1: a 401 from any API call during a session goes to /login', async ({ page }) => {
-  await devLogin(page, 'director');
+  await devLoginSkipTour(page, 'director');
   await page.goto('/events');
   await settle(page);
   // The session "expires": the next data call answers 401, and so does /api/me (as it would
@@ -18,7 +18,7 @@ test('P2-1: a 401 from any API call during a session goes to /login', async ({ p
 });
 
 test('P2-2: /login?next= never leaves the site', async ({ page }) => {
-  await devLogin(page, 'director');
+  await devLoginSkipTour(page, 'director');
   for (const next of ['/%5Cevil.example', '//evil.example', '%5C%5Cevil.example', 'https://evil.example/']) {
     await page.goto(`/login?next=${next}`);
     // Whatever the origin under test (WEB_ORIGIN), we stay on it and land on home.
@@ -30,7 +30,7 @@ test('P2-2: /login?next= never leaves the site', async ({ page }) => {
 });
 
 test('P2-3: search results with off-site or script hrefs are dropped', async ({ page }, info) => {
-  await devLogin(page, 'director');
+  await devLoginSkipTour(page, 'director');
   await settle(page);
   const result = (title: string, href: string) => ({ kind: 'user', id: title, title, subtitle: 'x', href });
   await page.route(/\/api\/search\?/, (r) =>
@@ -59,7 +59,7 @@ test('P2-3: search results with off-site or script hrefs are dropped', async ({ 
 });
 
 test('P2-4: finance shows the lookups error with a retry instead of loading forever', async ({ page }) => {
-  await devLogin(page, 'director');
+  await devLoginSkipTour(page, 'director');
   await page.route(/\/api\/lookups$/, (r) => r.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'internal', message: 'Lookups are down.' } }) }));
   await page.goto('/finance?tab=reports');
   await expect(page.getByText("Couldn't load the fiscal year")).toBeVisible();
@@ -71,7 +71,7 @@ test('P2-4: finance shows the lookups error with a retry instead of loading fore
 });
 
 test('P3-2: signing out forgets the cached role', async ({ page }) => {
-  await devLogin(page, 'director');
+  await devLoginSkipTour(page, 'director');
   await page.goto('/settings');
   await settle(page);
   expect(await page.evaluate(() => localStorage.getItem('cseed-role'))).toBe('director');
@@ -82,7 +82,7 @@ test('P3-2: signing out forgets the cached role', async ({ page }) => {
 
 test('P3-3: the phone menu sheet traps focus and Escape returns it to the menu button', async ({ page }, info) => {
   test.skip(info.project.name !== 'phone', 'the sheet exists on phones only');
-  await devLogin(page, 'director');
+  await devLoginSkipTour(page, 'director');
   await settle(page);
   const toggle = page.locator('[data-nav-toggle]');
   await toggle.click();
