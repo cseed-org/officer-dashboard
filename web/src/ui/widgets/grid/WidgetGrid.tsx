@@ -80,6 +80,34 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   // agree. Edits keep `layout` in reading order (settle), so tab order follows the picture.
   const placed = useMemo<GridCell[]>(() => (layout && gridWidth ? pack(layout, gridWidth) : []), [layout, gridWidth]);
   useGridFlip(grid, placed, drag?.id, resizing?.id);
+  // Every cell the dragged widget can really end up covering: try each spot its footprint fits
+  // (one row past the end too), pack as a drop there would, and keep where it lands. Computed once
+  // per drag from the snapshot, so the outlines hold still while the preview moves around them.
+  const spots = useMemo(() => {
+    const item = drag && drag.snapshot.find(w => w.id === drag.id);
+    if (!drag || !item || !gridWidth) return [];
+    const cols = gridColumns(gridWidth);
+    const bottom = pack(drag.snapshot, gridWidth).reduce((m, c) => Math.max(m, c.y + c.h), 0);
+    const covered = new Set<number>();
+    for (let y = 0; y <= bottom; y++) for (let x = 0; x < cols; x++) {
+      if (!fitsAt(item.size, { x, y }, gridWidth)) continue;
+      const c = pack(settle(drag.snapshot, gridWidth, { id: drag.id, x, y }), gridWidth).find(p => p.id === drag.id)!;
+      for (let dy = 0; dy < c.h; dy++) for (let dx = 0; dx < c.w; dx++) covered.add((c.y + dy) * cols + c.x + dx);
+    }
+    return [...covered].sort((a, b) => a - b).map(i => ({ x: i % cols, y: Math.floor(i / cols) }));
+  }, [drag?.id, drag?.snapshot, gridWidth]);
+  // The target ring scales in when the drop spot changes (not at drag start; never with reduced motion).
+  const target = drag ? placed.find(c => c.id === drag.id) : undefined;
+  const targetKey = target ? `${target.x},${target.y}` : '';
+  const lastTarget = useRef('');
+  useLayoutEffect(() => {
+    const previous = lastTarget.current;
+    lastTarget.current = targetKey;
+    if (!previous || !targetKey || previous === targetKey || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    grid.current?.querySelector('li.is-dragging')?.animate(
+      [{ transform: 'scale(.94)', opacity: 0.35 }, { transform: 'scale(1)', opacity: 1 }],
+      { duration: 220, easing: 'cubic-bezier(.2, .8, .2, 1)', pseudoElement: '::after' });
+  }, [targetKey]);
 
   function releasePointer() {
     const capture = captured.current;
@@ -336,6 +364,8 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     {editing && removed && <p role="status">Widget removed. <button class="btn btn--small" onClick={() => { setLayout(removed); setRemoved(null); }}>Undo</button></p>}
     <div class="blocks-wrap">
       <ul ref={grid} style={gridWidth ? { '--cols': gridColumns(gridWidth) } : undefined} data-layout-revision={layoutCommit.current.count} class={`blocks${editing ? ' is-editing' : ''}${entering ? ' is-entering' : ''}`} aria-label="Home widgets" onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={cancelPointer}>
+        {/* First in the list so tiles paint over them: outlines show only in the grid's empty space. */}
+        {spots.map(c => <li key={`spot-${c.x}-${c.y}`} class="blk-spot" aria-hidden="true" style={{ gridColumn: `${c.x + 1} / span 1`, gridRow: `${c.y + 1} / span 1` }} />)}
         {layout.map((w, i) => {
           const def = widgetDef(w.id);
           if (!def && !editing) return null; // keep another feature's widget saved until it ships

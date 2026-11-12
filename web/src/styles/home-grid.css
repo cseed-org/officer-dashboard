@@ -10,9 +10,11 @@
   --block-lift: 0 18px 40px -18px rgb(0 0 0 / .32), 0 2px 6px rgb(0 0 0 / .08);
   --block-drop: color-mix(in srgb, var(--c-blue) 12%, var(--surface));
   --block-ring: color-mix(in srgb, var(--c-blue) 30%, transparent);
+  --block-spot: color-mix(in srgb, var(--c-blue) 5%, transparent);   /* a cell a drag can land on */
+  --block-target: color-mix(in srgb, var(--c-blue) 70%, transparent); /* the drop spot's ring */
 }
-:root[data-theme="dark"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); }
-@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); } }
+:root[data-theme="dark"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); --block-spot: color-mix(in srgb, var(--c-blue) 9%, transparent); }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); --block-spot: color-mix(in srgb, var(--c-blue) 9%, transparent); } }
 
 /* The wrapper is the size container: columns follow the space Home actually has, not the viewport,
    so the sidebar never squeezes four columns into a tablet. */
@@ -126,10 +128,17 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
   .blk-remove {width: 36px; height: 36px;}
 }
 
-/* Dragging: the widget's own cell becomes the drop target, a soft filled highlight; a lifted card
-   follows the pointer. Keyboard moves flash the same fill on the moved widget. */
+/* Dragging: the widget's own cell is the drop target, at its exact size and final packed spot: a
+   soft fill with a clear ring that scales in when the spot changes (WidgetGrid animates ::after).
+   Every other cell it can land on gets a faint tinted outline behind the tiles, so only empty
+   space shows one. Tinted, never dashed. A lifted card follows the pointer. Keyboard moves flash
+   the same fill on the moved widget. */
 .blk.is-dragging .blk-body, .blk.is-resizing .blk-body, .blk.is-moved .blk-body {animation: none !important;}
-.blk.is-dragging {background: var(--block-drop); box-shadow: inset 0 0 0 2px var(--block-ring);}
+.blk.is-dragging {background: var(--block-drop);}
+.blk.is-dragging::after {content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px var(--block-target), 0 0 0 4px var(--block-spot); pointer-events: none;}
+.blk-spot {border-radius: var(--block-radius); background: var(--block-spot); box-shadow: inset 0 0 0 1px var(--block-ring); pointer-events: none; animation: blk-spot-in var(--dur-1, 160ms) ease-out both;}
+@keyframes blk-spot-in {from {opacity: 0;}}
+@media (prefers-reduced-motion: reduce) {.blk-spot {animation: none;}}
 .blk.is-dragging > * {visibility: hidden;}
 .blk.is-moved .tile {background: var(--block-drop);}
 .blk-float {position: fixed; z-index: 50; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--block-radius); background: var(--surface); box-shadow: var(--block-lift); font-weight: 600; pointer-events: none; transform: rotate(-1.2deg) scale(1.02);}

@@ -838,3 +838,55 @@ test('Shrinking a widget lets the widgets below rise into the space', async ({ p
   await done(page);
   expect(await savedLayout(page)).toEqual([{ id: 'calendar', size: '2x2' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }]);
 });
+
+for (const theme of THEMES) {
+  test(`dragging outlines only the cells a widget can land on; the target ring scales in · ${theme}`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'mouse drag geometry');
+    await useTheme(page, theme);
+    await page.setViewportSize({ width: 1280, height: 1400 });
+    // Four columns: two stat tiles, a gap of two cells, the calendar below.
+    await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-checkin', size: '1x1' }, { id: 'calendar', size: '4x2' }]);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    const spots = () => grid(page).locator(':scope > li.blk-spot').evaluateAll((els) => els.map((e) => {
+      const s = getComputedStyle(e); return `${+s.gridColumnStart - 1},${+s.gridRowStart - 1}`;
+    }));
+    await expect(grid(page).locator('li.blk-spot')).toHaveCount(0);
+
+    // A 1×1 dropped in the gap would be packed back beside the other tile, so the gap gets no outline.
+    let to = await dragOver(page, 'kpi-upcoming');
+    await to(0, 0);
+    await expect.poll(spots).toEqual(['0,0', '1,0']);
+    await page.mouse.up();
+    await expect(grid(page).locator('li.blk-spot')).toHaveCount(0);
+
+    // The calendar can land on the top row, so the empty gap cells are outlined and visible.
+    to = await dragOver(page, 'calendar');
+    await to(0, 1);
+    await expect.poll(async () => (await spots()).includes('3,0')).toBe(true);
+    const spot = grid(page).locator('li.blk-spot').nth((await spots()).indexOf('3,0'));
+    const look = await spot.evaluate((e) => {
+      const s = getComputedStyle(e); const r = e.getBoundingClientRect();
+      return { bg: s.backgroundColor, ring: s.boxShadow, dashed: [s.borderTopStyle, s.outlineStyle].includes('dashed'), uncovered: !document.elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2).some((el) => el.closest('li[data-widget]')) };
+    });
+    expect(look.bg).not.toBe('rgba(0, 0, 0, 0)');
+    expect(look.ring).toContain('inset');
+    expect(look.dashed).toBe(false);
+    expect(look.uncovered).toBe(true); // in empty space, not under a tile
+    // The target: a fill plus a stronger ring at the widget's exact size.
+    const ring = await hint(page).evaluate((e) => getComputedStyle(e, '::after').boxShadow);
+    expect(ring).toContain('inset');
+    expect(await hint(page).evaluate((e) => [e.getBoundingClientRect().width, e.getBoundingClientRect().height])).toEqual(
+      await page.locator('.blk-float').evaluate((e) => [parseFloat(e.style.width), parseFloat(e.style.height)]));
+    // Moving the target scales the ring in; reduced motion keeps it still.
+    await to(0, 0);
+    await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: 0, w: 4, h: 2 });
+    expect(await hint(page).evaluate((e) => e.getAnimations({ subtree: true }).length)).toBeGreaterThan(0);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await to(0, 1);
+    await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: 1, w: 4, h: 2 });
+    expect(await hint(page).evaluate((e) => e.getAnimations({ subtree: true }).length)).toBe(0);
+    await page.mouse.up();
+    await expect(grid(page).locator('li.blk-spot')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Cancel' }).click();
+  });
+}
