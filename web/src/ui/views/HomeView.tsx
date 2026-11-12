@@ -33,7 +33,18 @@ export default function HomeView({ me }: { me: CurrentUser }) {
     const next = document.createElement('span');
     next.className = 'home-heading-new';
     next.textContent = greeting;
+    const header = heading.closest<HTMLElement>('.page-header');
+    const beforeHeight = header?.getBoundingClientRect().height;
     heading.replaceChildren(old, next);
+    // Animate layout only for a greeting. Returning visits keep main's original spacing.
+    if (header && beforeHeight !== undefined && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const afterHeight = header.getBoundingClientRect().height;
+      const css = getComputedStyle(header);
+      header.animate([{ height: `${beforeHeight}px` }, { height: `${afterHeight}px` }], {
+        duration: parseFloat(css.getPropertyValue('--dur-2')),
+        easing: css.getPropertyValue('--ease-out').trim(),
+      });
+    }
     old.addEventListener('animationend', () => old.remove(), { once: true });
     const announcement = document.querySelector('[data-home-greeting-announcement]');
     if (announcement) announcement.textContent = greeting;

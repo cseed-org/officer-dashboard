@@ -94,11 +94,11 @@ test('reduced motion has no heading fade and long names do not move the grid', a
   await page.reload();
   await settle(page);
   const after = await page.locator('.page-header').boundingBox();
-  expect(before?.height).toBe(after?.height);
+  expect(before!.height).toBeGreaterThan(after!.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('larger greeting reserves its space and reload restores ordinary heading typography', async ({ page }, info) => {
+test('greeting glides to its height and normal visits match the main header', async ({ page }, info) => {
   let release!: () => void;
   const ready = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/me', async route => { await ready; await route.continue(); }, { times: 1 });
@@ -113,9 +113,9 @@ test('larger greeting reserves its space and reload restores ordinary heading ty
   await expect(greeting).toContainText('Good morning,');
   const largerSize = await greeting.evaluate(el => parseFloat(getComputedStyle(el).fontSize));
   expect(largerSize / baseSize).toBeCloseTo(info.project.name === 'phone' ? 1.3 : 1.6, 2);
+  await expect.poll(() => page.locator('.page-header').evaluate(el => el.getAnimations().length)).toBe(0);
   const headerAfter = (await page.locator('.page-header').boundingBox())!;
-  expect(headerAfter.y + headerAfter.height).toBeCloseTo(headerBefore.y + headerBefore.height, 1);
-  const gridBefore = (await page.locator('.blocks').boundingBox())!;
+  expect(headerAfter.height).toBeGreaterThan(headerBefore.height);
   await page.reload();
   await settle(page);
   await expect(heading).toHaveText('Home');
@@ -123,17 +123,22 @@ test('larger greeting reserves its space and reload restores ordinary heading ty
   const styles = await heading.evaluate(el => {
     const reference = document.createElement('h1');
     reference.textContent = 'Home';
-    document.querySelector('main')!.append(reference);
+    // main's AppLayout uses this exact header/h1 markup, with no Home-specific styles.
+    const referenceHeader = document.createElement('header');
+    referenceHeader.className = 'page-header';
+    referenceHeader.append(reference);
+    document.querySelector('main')!.append(referenceHeader);
     const typography = (node: Element) => {
       const css = getComputedStyle(node);
       return [css.fontSize, css.fontFamily, css.fontWeight, css.lineHeight, css.letterSpacing, css.color];
     };
-    const result = { actual: typography(el), original: typography(reference) };
-    reference.remove();
+    const result = { actual: typography(el), original: typography(reference), height: el.parentElement!.getBoundingClientRect().height, mainHeight: referenceHeader.getBoundingClientRect().height };
+    referenceHeader.remove();
     return result;
   });
   expect(styles.actual).toEqual(styles.original);
-  expect((await page.locator('.blocks').boundingBox())!.y).toBeCloseTo(gridBefore.y, 1);
+  expect(styles.height).toBe(styles.mainHeight);
+  expect(styles.height).toBe(headerBefore.height);
 });
 
 test('invite sign-in tolerates a missing user', async ({ page }) => {
