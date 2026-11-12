@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"testing/fstest"
 	"time"
 
+	"officerdashboard/internal/auth"
+	"officerdashboard/internal/store"
 	"officerdashboard/internal/web"
 )
 
@@ -118,24 +121,72 @@ func TestServiceTokenFollowsItsCreator(t *testing.T) {
 	expectStatus(t, "inactive creator, unrevoked token", e.get("/api/agent/jobs", bearer(kept)), 401)
 }
 
-// Sessions slide while used, but never outlive 90 days from sign-in.
+// A session used every day still ends 30 days after sign-in: the expiry slides while used
+// but never past created_at + 30 days, and day 30 answers 401.
 func TestSessionsHaveAnAbsoluteLifetime(t *testing.T) {
+	if sessionMaxAge != 30*24*time.Hour {
+		t.Fatalf("sessionMaxAge = %v, want 30 days", sessionMaxAge)
+	}
 	e := newEnv(t)
 	start := e.clock
-	who := e.officer()
-	e.mustOK(e.get("/api/me", who)) // renews the short test session to the full 30 days
-	for day := 10; day < 90; day += 10 {
-		e.clock = start.Add(time.Duration(day) * 24 * time.Hour)
+	cap := start.Add(sessionMaxAge)
+	who := e.officer() // the harness session expires after a day, so the first use renews it
+	renewed := false
+	for day := 0; day < 30; day++ {
+		e.clock = start.Add(time.Duration(day)*24*time.Hour + time.Hour)
 		r := e.get("/api/me", who)
 		expectStatus(t, fmt.Sprintf("day %d", day), r, 200)
-		if ck := cookieNamed(setCookies(r), e.srv.sessionCookieName()); ck != nil && ck.Expires.After(start.Add(sessionMaxAge)) {
-			t.Errorf("day %d: renewed past the absolute cap: %v", day, ck.Expires)
+		if ck := cookieNamed(setCookies(r), e.srv.sessionCookieName()); ck != nil && ck.MaxAge >= 0 {
+			renewed = true
+			if ck.Expires.After(cap) {
+				t.Errorf("day %d: cookie renewed past day 30: %v", day, ck.Expires)
+			}
+		}
+		if n := e.scalar(`SELECT count(*) FROM sessions WHERE user_id = 'user-priya' AND expires_at > ?`, cap.UnixMilli()); n != int64(0) {
+			t.Errorf("day %d: %v sessions expire after day 30", day, n)
 		}
 	}
-	e.clock = start.Add(sessionMaxAge)
-	expectStatus(t, "day 90", e.get("/api/me", who), 401)
-	if n := e.scalar(`SELECT count(*) FROM sessions WHERE user_id = 'user-priya' AND expires_at > ?`, start.Add(sessionMaxAge).UnixMilli()); n != int64(0) {
-		t.Errorf("%v sessions outlive the cap", n)
+	if !renewed {
+		t.Error("the expiry was never renewed")
+	}
+	e.clock = cap
+	expectStatus(t, "day 30", e.get("/api/me", who), 401)
+	if n := e.scalar(`SELECT count(*) FROM sessions WHERE user_id = 'user-priya' AND expires_at > ?`, cap.UnixMilli()); n != int64(0) {
+		t.Errorf("%v sessions are still live at day 30", n)
+	}
+}
+
+// A fresh sign-in sets a cookie that ends exactly 30 days later.
+func TestNewSessionCookieEndsAtDay30(t *testing.T) {
+	e := newEnv(t)
+	rec := httptest.NewRecorder()
+	if err := e.srv.createSession(context.Background(), rec, "user-priya", "test", ""); err != nil {
+		t.Fatal(err)
+	}
+	ck := cookieNamed(rec.Result().Cookies(), e.srv.sessionCookieName())
+	if ck == nil || !ck.Expires.Equal(e.clock.Add(sessionMaxAge).Truncate(time.Second)) {
+		t.Fatalf("cookie = %+v, want expiry %v", ck, e.clock.Add(sessionMaxAge))
+	}
+	if n := e.scalar(`SELECT count(*) FROM sessions WHERE user_id = 'user-priya' AND expires_at = created_at + ?`, sessionMaxAge.Milliseconds()); n != int64(1) {
+		t.Errorf("stored expiry is not created_at + 30 days (%v rows)", n)
+	}
+}
+
+// Sessions issued under the old 90-day cap that are more than 30 days old stop working on
+// deploy, even with an expiry still in the future.
+func TestOldLongSessionsAreRejectedAfterDeploy(t *testing.T) {
+	e := newEnv(t)
+	token := auth.RandomToken(32)
+	created := e.clock.Add(-31 * 24 * time.Hour)
+	if err := e.db.Write(context.Background(), func(w *store.Queries) error {
+		return w.InsertSession(context.Background(), auth.SHA256Hex(token), "user-priya", e.clock.Add(20*24*time.Hour).UnixMilli(), "test", created.UnixMilli())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	old := actor{cookie: &http.Cookie{Name: e.srv.sessionCookieName(), Value: token}}
+	expectStatus(t, "31-day-old session", e.get("/api/me", old), 401)
+	if n := e.scalar(`SELECT count(*) FROM sessions WHERE id = ?`, auth.SHA256Hex(token)); n != int64(0) {
+		t.Errorf("the stale session was not deleted")
 	}
 }
 

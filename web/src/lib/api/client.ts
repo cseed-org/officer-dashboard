@@ -142,6 +142,32 @@ async function validate<N extends EndpointName>(name: N, method: string, data: u
   return data as ResponseOf<N>;
 }
 
+/**
+ * Permission changes reach open tabs: every signed-in API response carries X-Perm-Version, a
+ * fingerprint of the user's role, owner flag and subteam. When a response shows a version other
+ * than the one the page is rendered for, PERMISSIONS_EVENT fires and lib/session.ts refetches
+ * /api/me, which updates the nav and remounts the page for the new permissions.
+ */
+export const PERMISSIONS_EVENT = 'cseed-permissions';
+let pageVersion: string | null = null; // the version of the /api/me the page last applied
+let meVersion: string | null = null; // the version on the latest /api/me response
+
+function notePermissions(name: EndpointName, res: Response) {
+  const v = res.headers.get('x-perm-version');
+  if (!v) return;
+  if (name === 'me') meVersion = v;
+  if (pageVersion !== null && v !== pageVersion && typeof window !== 'undefined') window.dispatchEvent(new Event(PERMISSIONS_EVENT));
+}
+
+export const permissions = {
+  /** The latest /api/me shows other permissions than the page was rendered for. */
+  changed: () => pageVersion !== null && meVersion !== null && meVersion !== pageVersion,
+  /** The page now renders the latest /api/me. */
+  accept: () => { pageVersion = meVersion; },
+};
+
+export const PERMISSIONS_CHANGED_MESSAGE = 'Your permissions changed, so this is no longer allowed. The page now shows what you can do.';
+
 export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> = {}): Promise<ResponseOf<N>> {
   const spec = ENDPOINTS[name];
   const url = endpointUrl(name, opts);
@@ -162,9 +188,16 @@ export async function api<N extends EndpointName>(name: N, opts: CallOptions<N> 
     if ((e as Error).name === 'AbortError') throw e;
     throw new ApiCallError(0, 'internal', 'Could not reach the server. Check your connection and try again.');
   }
+  notePermissions(name, res);
   if (!res.ok) {
-    const err = await toApiError(res);
+    let err = await toApiError(res);
     if (res.status === 401) redirectToLogin();
+    if (res.status === 403 && err.code !== 'onboarding_required') {
+      // A refusal may mean this tab is out of date: say so plainly, and recheck /api/me.
+      const v = res.headers.get('x-perm-version');
+      if (pageVersion !== null && v !== null && v !== pageVersion) err = new ApiCallError(403, err.code, PERMISSIONS_CHANGED_MESSAGE, err.details);
+      if (name !== 'me' && typeof window !== 'undefined') window.dispatchEvent(new Event(PERMISSIONS_EVENT));
+    }
     // The server holds invitees on setup until they finish (403 onboarding_required).
     if (err.code === 'onboarding_required' && typeof location !== 'undefined' && location.pathname !== '/onboarding') location.replace('/onboarding');
     throw err;

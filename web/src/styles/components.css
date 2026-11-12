@@ -81,6 +81,8 @@ html:not([data-role='director']):not([data-role='leadership']) [data-director-on
 .notice--negative {border-left:3px solid var(--negative);}
 .notice--attention {border-left:3px solid var(--attention);}
 .notice--info {border-left:3px solid var(--info);}
+.permissions-notice {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:12px;}
+.permissions-notice > span {flex:1 1 240px;}
 .check-ok {color:var(--positive);}
 .check-bad {color:var(--negative);}
 .flag {display:block;font-size:12px;color:var(--attention);}
