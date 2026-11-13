@@ -415,6 +415,7 @@ await call('prefsPut', { who: officer, body: { timezoneMode: 'manual', timezone:
 must((await call('prefsGet', { who: officer })).json.effectiveTimezone === 'Asia/Tokyo', 'manual time zone persists');
 await call('prefsPut', { who: officer, body: { timezoneMode: 'club', timezone: '' } });
 await call('calendarEmailsList', { who: officer });
+await call('meStats', { who: officer });
 const savedEmail = await call('calendarEmailCreate', { who: officer, body: { email: 'one@example.org' } });
 await call('calendarEmailUpdate', { who: officer, params: { id: savedEmail.json.email.id }, body: { email: 'changed@example.org' } });
 await call('calendarEmailUpdate', { who: directorA, params: { id: savedEmail.json.email.id }, body: { active: true }, expect: 404 });

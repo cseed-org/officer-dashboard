@@ -69,6 +69,7 @@ const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   eventDesignNeed: { method: 'PUT', path: '/api/events/:id/design-need' },
   health: { method: 'GET', path: '/api/health' },
   me: { method: 'GET', path: '/api/me' },
+  meStats: { method: 'GET', path: '/api/me/stats' },
   lookups: { method: 'GET', path: '/api/lookups' },
   overview: { method: 'GET', path: '/api/overview' },
   eventsList: { method: 'GET', path: '/api/events' },

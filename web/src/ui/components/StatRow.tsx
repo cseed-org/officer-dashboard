@@ -13,10 +13,14 @@ export interface StatTileData {
   alert?: boolean;
   /** Marks a link tile whose filter is currently applied. */
   pressed?: boolean;
+  /** Shows the value as plain text (no count-up), for titles that happen to contain digits. */
+  plain?: boolean;
+  /** Full text for a value that may be cut off. */
+  title?: string;
 }
 
 /** One summary figure, styled like the Home stat widgets. */
-export function StatTile({ label, value, sub, href, loading, alert, pressed }: StatTileData) {
+export function StatTile({ label, value, sub, href, loading, alert, pressed, plain, title }: StatTileData) {
   const body = loading ? (
     <>
       <span class="stat-tile-label">{label}</span>
@@ -26,8 +30,8 @@ export function StatTile({ label, value, sub, href, loading, alert, pressed }: S
   ) : (
     <>
       <span class="stat-tile-label">{label}</span>
-      <span class={`stat-tile-value${alert ? ' stat-tile-value--alert' : ''}`}>
-        <CountUp value={value} />
+      <span class={`stat-tile-value${alert ? ' stat-tile-value--alert' : ''}`} title={title}>
+        {plain ? value : <CountUp value={value} />}
       </span>
       {sub && <span class="stat-tile-sub">{sub}</span>}
     </>

@@ -57,3 +57,46 @@ test('signed-out visitors are sent to /login, which links to Discord and back to
   }
   await expect(page).toHaveURL(/\/finance\?id=req-0005/);
 });
+
+test('settings shows the signed-in officer\'s own hosting stats, a Discord placeholder and the tour entry', async ({ page }) => {
+  await devLogin(page, 'officer');
+  await page.goto('/settings');
+  await settle(page);
+  const row = page.locator('[data-stat-row]');
+  await expect(row.locator('.stat-tile')).toHaveCount(4);
+  await expect(row.locator('[data-stat="events-hosted"] .stat-tile-value')).toHaveText('1');
+  await expect(row.locator('[data-stat="attendees"] .stat-tile-value')).toHaveText('25');
+  const discord = row.locator('[data-stat="discord-messages"]');
+  await expect(discord).toContainText('Coming soon');
+  await expect(discord).not.toContainText(/\d/);
+  const last = row.locator('[data-stat="last-event-hosted"]');
+  await expect(last).toContainText('BuildHer: Intro to Web Apps');
+  await expect(last).toContainText('Oct 16, 2026');
+  await expect(last).toHaveAttribute('href', '/events?id=event-buildher-1');
+  await expect(page.getByRole('heading', { name: 'your profile' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Replay dashboard tour' })).toHaveAttribute('href', '/?tutorial=1');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('a director who has hosted nothing sees zeros and the empty state', async ({ page }) => {
+  await devLogin(page, 'director');
+  await page.goto('/settings');
+  await settle(page);
+  const row = page.locator('[data-stat-row]');
+  await expect(row.locator('[data-stat="events-hosted"] .stat-tile-value')).toHaveText('0');
+  await expect(row.locator('[data-stat="attendees"] .stat-tile-value')).toHaveText('0');
+  await expect(row.locator('[data-stat="last-event-hosted"]')).toContainText('not hosted');
+});
+
+test('a failed stats request shows a retry, not zeros', async ({ page }) => {
+  await devLogin(page, 'officer');
+  await page.route('**/api/me/stats', (r) => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"x"}' }));
+  await page.goto('/settings');
+  await settle(page);
+  const hosted = page.locator('[data-stat="events-hosted"]');
+  await expect(hosted).toContainText('Could not load');
+  await expect(hosted.locator('.stat-tile-value')).toHaveText('—');
+  await page.unroute('**/api/me/stats');
+  await hosted.getByRole('button', { name: 'Retry' }).click();
+  await expect(hosted.locator('.stat-tile-value')).toHaveText('1');
+});
