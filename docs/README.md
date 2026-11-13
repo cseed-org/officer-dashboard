@@ -6,7 +6,7 @@
 | [Configuration](configuration.md) | Server environment variables, club location/time zone, aliases, container and tooling settings. |
 | [Deployment](deployment.md) | Raspberry Pi/systemd, HTTPS proxy, containers, replication, backups. |
 | [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
-| [Buildspace](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
+| [Buildspace + Launchpad](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
 | [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
 | [Roles and permissions](roles-and-permissions.md) | Officers management tabs, role matrix, owner provisioning, transfer and recovery. |
 | [Purchase deadlines](purchase-deadlines.md) | Optional “needed by” dates on purchase requests, due hints, deadline sort and the Home calendar source. |

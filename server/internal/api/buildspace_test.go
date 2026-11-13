@@ -119,10 +119,33 @@ func TestBuildspaceDiscordScopedReplayAndIdentity(t *testing.T) {
 
 func TestBuildspaceLegacyAPIAlias(t *testing.T) {
 	e := newEnv(t)
+	testBuildspaceLegacyWrites(t, e)
 	expectStatus(t, "legacy anonymous", e.get("/api/buildspace", anon), 401)
 	legacy := e.mustOK(e.get("/api/buildspace", e.officer()))
 	canonical := e.mustOK(e.get("/api/buildspace-launchpad", e.officer()))
 	if string(legacy.Raw) != string(canonical.Raw) {
 		t.Fatal("legacy and canonical responses differ")
 	}
+}
+
+func testBuildspaceLegacyWrites(t *testing.T, e *testEnv) {
+	issued := e.mustOK(e.post("/api/admin/tokens", map[string]any{"name": "Legacy bot", "scopes": []string{"ingest:buildspace"}, "expiresInDays": 30}, e.director()))
+	payload := map[string]any{"discordId": "100000000000000001", "externalId": "legacy-message", "kind": "weekly", "date": "2026-10-31", "body": "Legacy progress", "status": "on-track"}
+	expectStatus(t, "legacy ingest rejects session", e.post("/api/ingest/buildspace", payload, e.officer()), 401)
+	actor := bearer(issued.at("plaintext").(string))
+	e.mustOK(e.post("/api/ingest/buildspace", payload, actor))
+	e.mustOK(e.post("/api/ingest/buildspace-launchpad", payload, actor))
+	count := 0
+	for _, a := range readBuildspace(t, e).Activity {
+		if a.ExternalID != nil && *a.ExternalID == "legacy-message" {
+			count++
+			if a.Body != "Legacy progress" {
+				t.Fatal("legacy ingest body changed")
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("legacy replay created %d entries", count)
+	}
+	expectStatus(t, "legacy schedule enforces leadership", e.do("PUT", "/api/buildspace/schedule", map[string]any{"dueWeekday": 3, "dueTime": nil}, e.officer()), 403)
 }

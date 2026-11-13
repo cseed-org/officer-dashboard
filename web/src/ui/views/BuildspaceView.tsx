@@ -323,7 +323,7 @@ function BuildspaceContent({
     if (flag === f) u.delete("flag");
     else u.set("flag", f);
     const q = u.toString();
-    return `/buildspace${q ? `?${q}` : ""}`;
+    return `/buildspace-launchpad${q ? `?${q}` : ""}`;
   };
   return (
     <div class="buildspace">

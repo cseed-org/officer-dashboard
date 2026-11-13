@@ -40,7 +40,7 @@ func loadBuildspaceCalendarActivity(ctx context.Context, q *Queries, window Cale
 	return out, rows.Err()
 }
 
-// Weekly due items follow the configurable due-day rules (buildspace_launchpad_schedule.go): one
+// Weekly due items follow the configurable due-day rules (buildspace_schedule.go): one
 // item per builder for each week whose due date falls in the window. A dated weekly entry
 // in that week suppresses it; builders not yet joined and shipped projects are excluded.
 // Titles carry the due time when one is set. This is independent of the People

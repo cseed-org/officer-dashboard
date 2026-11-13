@@ -36,7 +36,7 @@ test('Buildspace + Launchpad tiles filter the register through the query string'
   await devSignIn(page, { as: 'director' }, '/buildspace-launchpad');
   await settle(page);
   await page.locator('[data-stat="open-requests"]').click();
-  await expect(page).toHaveURL(/flag=requests/);
+  await expect(page).toHaveURL(/\/buildspace-launchpad\?.*flag=requests/);
   await expect(page.locator('[data-stat="open-requests"]')).toHaveAttribute('aria-current', 'true');
 });
 

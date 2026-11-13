@@ -23,7 +23,7 @@ Leadership sets the weekly due day from the Buildspace + Launchpad page itself (
 - **Changing the setting mid-week never moves the current deadline.** The new rule starts the day after the current week's due date. Its first week runs from then to the first new due weekday at least six days later, so the transition week lasts 7–13 days instead of demanding two check-ins in a few days. Example: on Tuesday Nov 3, switching from Sunday to Wednesday keeps this week as Nov 2–8, then Nov 9–18 (10 days), then Thursday–Wednesday weeks. Saving again before the change takes effect replaces the pending change; choosing the current rule again cancels it. Past weeks never change, because rules only ever take effect after the current week.
 - **Everything follows the same rules:** the “Awaiting this week” summary and filter, each builder's This week status, the drawer notice, absences this week, Discord ingest (its response reports the assigned `week`), seeding, and the `buildspace-weekly` calendar items.
 
-Rules are versioned rows in `buildspace_week_rules` (migration `0019_buildspace_schedule.sql`, after #49's `0018`): each governs dates from its `effective_from` until the next row. The week arithmetic lives in `server/internal/store/buildspace-launchpad_schedule.go`, with unit tests for different due days, year ends, transitions, DST due moments and the club-zone “today” on a fall-back night, and API tests for leadership-only writes, auditing, a mid-week change, ingest assignment and calendar items.
+Rules are versioned rows in `buildspace_launchpad_week_rules` (migration `0019_buildspace_schedule.sql`, after #49's `0018`): each governs dates from its `effective_from` until the next row. The week arithmetic lives in `server/internal/store/buildspace_schedule.go`, with unit tests for different due days, year ends, transitions, DST due moments and the club-zone “today” on a fall-back night, and API tests for leadership-only writes, auditing, a mid-week change, ingest assignment and calendar items.
 
 `dashboard seed` inserts six projects, twelve builders and three mentor contacts, covering all tracks and stages. Weekly demo dates use the week when seeding; they age naturally. This is explicit sample-data seeding, never automatic production migration. Demo names are independent from real member records.
 
@@ -47,7 +47,7 @@ Contracts live in both contract files; the contract checker exercises every rout
 
 1. Register builders and save each Discord **user ID**, not the display name.
 2. A director creates an expiring service token in Officers → Tokens with `ingest:buildspace`, then stores it in the bot's secret environment as `BUILDSPACE_INGEST_TOKEN`. Set `DASHBOARD_URL` to the dashboard's HTTPS origin. The existing token revocation screen can disable ingestion immediately.
-3. Wire the adapter stub at `scripts/buildspace-launchpad-discord-stub.mjs` into the bot's weekly slash command or dedicated-channel handler. The bot itself is not implemented or deployed by this draft. Take author identity and message ID from Discord's trusted event, not from user-supplied text. Compute the check-in date in the club time zone (Settings); the response's `week` says which check-in week it counted for.
+3. Wire the adapter stub at `scripts/buildspace-discord-stub.mjs` into the bot's weekly slash command or dedicated-channel handler. The bot itself is not implemented or deployed by this draft. Take author identity and message ID from Discord's trusted event, not from user-supplied text. Compute the check-in date in the club time zone (Settings); the response's `week` says which check-in week it counted for.
 4. Submit this payload, keeping the original message ID and identical body/date/status for retries:
 
 ```json
@@ -92,7 +92,7 @@ Two small shared helpers live in `web/src/ui/components/motion.ts`:
 - `useCrossfade` swaps whole views (tab, Table/Cards/Board, card grouping). The outgoing view is cloned, inert and `aria-hidden` with ids stripped, into the same `.async-outgoing` overlay that `Async` uses, and fades for 180ms while the incoming view owns layout, so removing the overlay never resizes the page.
 - `useFlip` glides keyed `data-flip` items from their previous to their new position after filter changes and board stage moves (a project whose stage is saved in the drawer slides to its new lane). It reads each rect once per commit relative to the view, then writes; it skips above 60 items and is cancelled when the view itself is swapped.
 
-Everything is transform/opacity, starts at non-zero opacity, and is disabled under `prefers-reduced-motion` (no overlay, no FLIP, no CSS animation). Browser checks in `web/tests/buildspace-launchpad.spec.ts` cover the tablist and indicator, overlay inertness and stable height, the paintable first frame and eight-item cap, FLIP on filters and stage moves, the drawer slide, form field entry, reduced motion, the schedule popover permissions and save/cancel flow, and no horizontal overflow at desktop and phone widths in both themes.
+Everything is transform/opacity, starts at non-zero opacity, and is disabled under `prefers-reduced-motion` (no overlay, no FLIP, no CSS animation). Browser checks in `web/tests/buildspace.spec.ts` cover the tablist and indicator, overlay inertness and stable height, the paintable first frame and eight-item cap, FLIP on filters and stage moves, the drawer slide, form field entry, reduced motion, the schedule popover permissions and save/cancel flow, and no horizontal overflow at desktop and phone widths in both themes.
 
 ### Performance
 
@@ -103,10 +103,16 @@ Measured with `web/scripts/performance.mjs` (`PERF_ROUTES=/buildspace-launchpad`
 | main `7ba453c` | 2.080s (2.076–2.188) | 0 | 76,747 |
 | this branch | 1.716s (1.676–1.784) | 0 | 79,108 |
 
-Main was already over the 2s budget on this page; the branch meets LCP < 2s and CLS < 0.05 in these three lab samples, which are not a field guarantee. An earlier cut that kept the intro inside `Async` measured 2.172s median, against 2.176s for its own main baseline (`30b1a4b`) in the same batch: the motion itself costs no measurable LCP. Raw samples: [perf.json](evidence/buildspace-launchpad-v06/perf.json).
+Main was already over the 2s budget on this page; the branch meets LCP < 2s and CLS < 0.05 in these three lab samples, which are not a field guarantee. An earlier cut that kept the intro inside `Async` measured 2.172s median, against 2.176s for its own main baseline (`30b1a4b`) in the same batch: the motion itself costs no measurable LCP. Raw samples: [perf.json](evidence/buildspace-v06/perf.json).
 
-Screenshots (built site, leadership): [people desktop light](evidence/buildspace-launchpad-v06/people-1440-light.png), [people phone dark](evidence/buildspace-launchpad-v06/people-390-dark.png), [board desktop dark](evidence/buildspace-launchpad-v06/board-1440-dark.png), [drawer phone light](evidence/buildspace-launchpad-v06/drawer-390-light.png), [schedule desktop light](evidence/buildspace-launchpad-v06/schedule-1440-light.png), [schedule phone dark](evidence/buildspace-launchpad-v06/schedule-390-dark.png); all four theme/width combinations of each are in that folder.
+Screenshots (built site, leadership): [people desktop light](evidence/buildspace-v06/people-1440-light.png), [people phone dark](evidence/buildspace-v06/people-390-dark.png), [board desktop dark](evidence/buildspace-v06/board-1440-dark.png), [drawer phone light](evidence/buildspace-v06/drawer-390-light.png), [schedule desktop light](evidence/buildspace-v06/schedule-1440-light.png), [schedule phone dark](evidence/buildspace-v06/schedule-390-dark.png); all four theme/width combinations of each are in that folder.
 
 ## Rename compatibility
 
 Migration 0023 renames the five tables and recreates the three explicit indexes under `buildspace_launchpad_*`, preserving rows and foreign keys. API aliases retain old clients and ingest tokens (`ingest:buildspace`). Calendar source IDs and item IDs remain stable for saved preferences and ICS subscriptions; titles and links use the new name and route. The legacy page redirects with 301 and keeps query parameters.
+
+Audit history retains its original identifiers: rows written before migration 0023 use `buildspace.*` actions and `buildspace_*` entities; new rows use `buildspace_launchpad.*` actions and `buildspace_launchpad_*` entities. Searches and exports spanning the rename must include both prefixes. Existing audit rows are not rewritten.
+
+Browser screenshots now write to `tmp/verify/launchpad/`; running the spec does not overwrite the historical V0.6 evidence linked above.
+
+The legacy page redirect is served by Go. On the standalone Astro development server, use `/buildspace-launchpad` directly; old `/buildspace` links return 404 there. Astro’s built-in static redirect is not configured because it discards deep-link query parameters. Summary tiles always link directly to the canonical route.
