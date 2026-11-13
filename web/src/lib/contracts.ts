@@ -1025,6 +1025,24 @@ export const MyStats = z.object({
   lastEvent: z.object({ id: Id, name: z.string(), startsAt: IsoDateTime }).nullable(),
 });
 export type MyStats = z.infer<typeof MyStats>;
+/** Person drawer (V0.10): hero stats and recent activity for one officer, all from existing rows. */
+export const PersonActivityItem = z.object({
+  kind: z.enum(['event', 'design', 'purchase']),
+  id: Id,
+  title: z.string(),
+  /** event: hosted | hosting; design: its stage; purchase: its status. */
+  status: z.string(),
+  /** design only: whether they requested it or are designing it. */
+  role: z.enum(['requested', 'designing']).nullable(),
+  at: IsoDateTime,
+  href: z.string().startsWith('/'),
+});
+export type PersonActivityItem = z.infer<typeof PersonActivityItem>;
+export const OfficerActivityResponse = z.object({
+  stats: z.object({ eventsHosted: z.number().int().min(0), openDesign: z.number().int().min(0), openPurchases: z.number().int().min(0) }),
+  items: z.array(PersonActivityItem),
+});
+export type OfficerActivityResponse = z.infer<typeof OfficerActivityResponse>;
 export const CalendarWidgetUpdate = z.union([CalendarWidgetOptions, CalendarWidgetOptions.omit({ sources: true }).extend({ events: z.boolean(), design: z.boolean() })]);
 export const CalendarFeedItem = z.object({
   id: Id, source: Id, type: z.string(), title: z.string(),
@@ -1380,6 +1398,7 @@ export const ENDPOINTS = {
   inviteRevoke: { method: 'DELETE', path: '/api/invites/:id', auth: 'director', response: OkResponse },
   officersList: { method: 'GET', path: '/api/officers', auth: 'officer', response: OfficersResponse },
   officerDetail: { method: 'GET', path: '/api/officers/:id', auth: 'officer', response: OfficerResponse },
+  officerActivity: { method: 'GET', path: '/api/officers/:id/activity', auth: 'officer', response: OfficerActivityResponse },
   officerUpdate: { method: 'PATCH', path: '/api/officers/:id', auth: 'director', body: OfficerUpdateRequest, response: OfficerResponse },
   profileGet: { method: 'GET', path: '/api/me/profile', auth: 'officer', response: ProfileResponse },
   profilePut: { method: 'PUT', path: '/api/me/profile', auth: 'officer', body: ProfileUpsertRequest, response: ProfileResponse },

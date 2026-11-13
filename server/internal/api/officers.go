@@ -667,3 +667,46 @@ func (c *Ctx) onboardingComplete() error {
 	writeJSON(c.W, 200, map[string]any{"user": currentUser(u), "onboarding": nil})
 	return nil
 }
+
+// officerActivity serves a person drawer's hero stats and recent activity for one officer:
+// events they host, design requests they requested or design, and purchase requests they
+// submitted. Every officer can already see these rows on the Events, Design and Finance pages;
+// ex-officers stay director-only, like GET /api/officers/{id}.
+func (c *Ctx) officerActivity() error {
+	me, err := c.officer()
+	if err != nil {
+		return err
+	}
+	ctx := c.Context()
+	q := c.S.db.Read()
+	o, err := c.loadOfficer(ctx, q, c.R.PathValue("id"), auth.HasRole(me.Role, auth.RoleDirector))
+	if err != nil {
+		return err
+	}
+	s, items, err := q.PersonActivity(ctx, o.ID, c.S.now().UnixMilli(), 8)
+	if err != nil {
+		return err
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		href := ""
+		switch it.Kind {
+		case "event":
+			href = "/events?id=" + url.QueryEscape(it.ID)
+		case "design":
+			href = "/design?id=" + url.QueryEscape(it.ID)
+		case "purchase":
+			href = "/finance?id=" + url.QueryEscape(it.ID)
+		}
+		var role any
+		if it.Role != "" {
+			role = it.Role
+		}
+		out = append(out, map[string]any{"kind": it.Kind, "id": it.ID, "title": it.Title, "status": it.Status, "role": role, "at": it.At.UTC().Format(time.RFC3339), "href": href})
+	}
+	writeJSON(c.W, 200, map[string]any{
+		"stats": map[string]any{"eventsHosted": s.EventsHosted, "openDesign": s.OpenDesign, "openPurchases": s.OpenPurchases},
+		"items": out,
+	})
+	return nil
+}

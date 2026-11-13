@@ -397,3 +397,40 @@ func TestDirectorsDeactivateOfficersOnlyLeadershipDeactivatesDirectors(t *testin
 	// A name-only edit of a director is still fine for directors.
 	e.mustOK(e.do("PATCH", "/api/admin/users/user-director", map[string]any{"title": "ED"}, e.director()))
 }
+
+func TestOfficerActivityStatsAndVisibility(t *testing.T) {
+	e := newEnv(t)
+	r := e.mustOK(e.get("/api/officers/user-priya/activity", e.officer()))
+	// Priya requested two open design requests and has one submitted purchase (req-0005).
+	if r.num("stats", "openDesign") != 2 || r.num("stats", "openPurchases") != 1 {
+		t.Fatalf("stats %s", r.Raw)
+	}
+	kinds := map[string]bool{}
+	for _, it := range r.list("items") {
+		m := it.(map[string]any)
+		kinds[m["kind"].(string)] = true
+		if m["kind"] == "design" && m["role"] != "requested" {
+			t.Errorf("Priya requested every design item: %v", m)
+		}
+		if !strings.HasPrefix(m["href"].(string), "/") {
+			t.Errorf("href %v", m["href"])
+		}
+	}
+	if !kinds["design"] || !kinds["purchase"] || !kinds["event"] {
+		t.Errorf("want event, design and purchase items: %s", r.Raw)
+	}
+	riley := e.mustOK(e.get("/api/officers/user-riley/activity", e.officer()))
+	if riley.num("stats", "openDesign") != 2 || !strings.Contains(string(riley.Raw), `"role":"designing"`) {
+		t.Fatalf("riley %s", riley.Raw)
+	}
+	// Drafts stay private to their requester.
+	marcus := e.mustOK(e.get("/api/officers/user-marcus/activity", e.director()))
+	if strings.Contains(string(marcus.Raw), "Hack Night prizes") || strings.Contains(string(marcus.Raw), `"status":"draft"`) {
+		t.Fatalf("draft leaked: %s", marcus.Raw)
+	}
+	expectStatus(t, "unknown officer", e.get("/api/officers/nope/activity", e.officer()), 404)
+	// Ex-officers are director-only, like their profile.
+	e.mustOK(e.do("PATCH", "/api/admin/users/user-marcus", map[string]any{"active": false}, e.director()))
+	expectStatus(t, "officer reads ex-officer", e.get("/api/officers/user-marcus/activity", e.officer()), 404)
+	e.mustOK(e.get("/api/officers/user-marcus/activity", e.director()))
+}

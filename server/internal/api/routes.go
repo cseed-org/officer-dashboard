@@ -98,6 +98,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("DELETE /api/invites/{id}", (*Ctx).inviteRevoke)
 	h("GET /api/officers", (*Ctx).officersList)
 	h("GET /api/officers/{id}", (*Ctx).officerDetail)
+	h("GET /api/officers/{id}/activity", (*Ctx).officerActivity)
 	h("PATCH /api/officers/{id}", (*Ctx).officerUpdate)
 	h("GET /api/me/profile", (*Ctx).profileGet)
 	h("PUT /api/me/profile", (*Ctx).profilePut)

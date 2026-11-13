@@ -38,6 +38,7 @@ const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   inviteRevoke: { method: 'DELETE', path: '/api/invites/:id' },
   officersList: { method: 'GET', path: '/api/officers' },
   officerDetail: { method: 'GET', path: '/api/officers/:id' },
+  officerActivity: { method: 'GET', path: '/api/officers/:id/activity' },
   officerUpdate: { method: 'PATCH', path: '/api/officers/:id' },
   profileGet: { method: 'GET', path: '/api/me/profile' },
   profilePut: { method: 'PUT', path: '/api/me/profile' },
