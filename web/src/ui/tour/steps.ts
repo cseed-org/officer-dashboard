@@ -25,9 +25,9 @@ export const TOUR_STEPS: TourStep[] = [
   { id: 'resize', title: 'Resize from the corner', text: 'Drag a corner to preview an allowed size, or hold Shift and use the arrow keys. Escape cancels.', targets: sel('resize'), edit: true },
   { id: 'add', title: 'Add and remove', text: 'Add widget opens the gallery. The × on a card removes it, and you can always bring it back. This preview saves nothing.', targets: sel('add'), edit: true },
   { id: 'sidebar', title: 'Find your way', text: 'The sidebar takes you to every part of the dashboard.', targets: sel('sidebar', 'nav-toggle') },
-  { id: 'sidebar-resize', title: 'Make it yours, too', text: 'Drag the sidebar’s edge to make it wider or narrower. Double-click the edge to reset it.', targets: sel('sidebar-resize'), optional: true },
+  { id: 'sidebar-resize', title: 'Resize the sidebar', text: 'Drag the sidebar’s edge to make it wider or narrower. Double-click it to switch between icons only and your last width.', targets: sel('sidebar-resize'), optional: true },
   { id: 'search', title: 'Jump anywhere', text: 'Open the command palette to find any page, event or person. On a keyboard, press Ctrl K (⌘K on a Mac).', targets: sel('search') },
 ];
 
 /** The stops to show now: optional ones only when their target exists on this page. */
-export const availableSteps = (): TourStep[] => TOUR_STEPS.filter((t) => !t.optional || t.targets.some((q) => document.querySelector(q)));
+export const availableSteps = (): TourStep[] => TOUR_STEPS.filter((t) => !t.optional || t.targets.some((q) => Array.from(document.querySelectorAll(q)).some((el) => el.getBoundingClientRect().width > 0)));

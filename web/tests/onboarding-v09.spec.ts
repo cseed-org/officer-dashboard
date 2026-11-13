@@ -200,6 +200,8 @@ test('the tour walks every stop, spotlighting its target and previewing edit mod
     ['Resize from the corner', '[data-tour="resize"]'],
     ['Add and remove', '[data-tour="add"]'],
     ['Find your way', phone ? '[data-tour="nav-toggle"]' : '[data-tour="sidebar"]'],
+    // The resizable sidebar exists on wide screens only; the stop is skipped elsewhere.
+    ...((page.viewportSize()?.width ?? 1440) >= 768 ? ([['Resize the sidebar', '[data-tour="sidebar-resize"]']] as [string, string][]) : []),
     ['Jump anywhere', null],
   ];
   for (const [i, [title, target]] of stops.entries()) {
@@ -210,7 +212,7 @@ test('the tour walks every stop, spotlighting its target and previewing edit mod
   }
   await expect(page.locator('[data-tour="search"].is-tour-target')).toHaveCount(1);
   await tour(page).getByRole('button', { name: 'Back' }).click();
-  await expect(tour(page).locator('h2')).toHaveText('Find your way');
+  await expect(tour(page).locator('h2')).toHaveText(stops[stops.length - 2]![0]);
   await nextStop(page);
   await tour(page).getByRole('button', { name: 'Finish' }).click();
   await expect(tour(page)).toHaveCount(0);

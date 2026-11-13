@@ -14,6 +14,7 @@ import { ErrorState, Loading } from '../components/states';
 import { ProfileForm } from './ProfileForm';
 import { CalendarPanel } from './CalendarPanel';
 import { safeImageUrl } from '../../lib/url';
+import { startTour } from '../tour/startTour';
 
 const THEMES: { key: ThemePref; label: string; sub: string }[] = [
   { key: 'light', label: 'Light', sub: 'the default' },
@@ -147,7 +148,7 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
 
       <Section title="dashboard" id="dashboard">
         <p class="muted small">Take the guided tour of the Home dashboard again.</p>
-        <div><a class="btn" href="/?tutorial=1" data-replay-tour>Replay dashboard tour</a></div>
+        <div><a class="btn" href="/?tutorial=1" data-replay-tour onClick={(e) => { e.preventDefault(); startTour(); }}>Replay dashboard tour</a></div>
       </Section>
 
       <Section title="session" id="session">
