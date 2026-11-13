@@ -4,7 +4,7 @@
  */
 
 /** Server length limits per field. */
-export const PROFILE_MAX = { phone: 32, preferredName: 60, pronouns: 40, personalEmail: 254, schoolEmail: 254, title: 100, startTerm: 40, linkedin: 300 } as const;
+export const PROFILE_MAX = { phone: 32, preferredName: 60, pronouns: 40, personalEmail: 254, schoolEmail: 254, title: 100, team: 60, linkedin: 300 } as const;
 
 /** isLinkedIn: https and a linkedin.com host (any subdomain); the path is free. */
 export function isLinkedIn(s: string): boolean {

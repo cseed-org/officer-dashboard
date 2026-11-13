@@ -646,14 +646,16 @@ function ProfileDrawer({
   const [role, setRole] = useState('');
   const [team, setTeam] = useState('');
   const [title, setTitle] = useState('');
+  const [term, setTerm] = useState('');
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setRole(officer?.role ?? '');
     setTeam(officer?.subteam?.id ?? '');
     setTitle(officer?.title ?? '');
+    setTerm(officer?.startTerm ?? '');
     setNote(null);
-  }, [officer?.id, officer?.role, officer?.subteam?.id, officer?.title]);
+  }, [officer?.id, officer?.role, officer?.subteam?.id, officer?.title, officer?.startTerm]);
 
   const o = officer;
   const self = o?.id === me.id;
@@ -667,7 +669,7 @@ function ProfileDrawer({
     setBusy(true);
     setNote(null);
     try {
-      await api('officerUpdate', { params: { id: o.id }, body: { ...(team !== o.subteam?.id ? { subteamId: team } : {}), title: title.trim() || null } });
+      await api('officerUpdate', { params: { id: o.id }, body: { ...(team !== o.subteam?.id ? { subteamId: team } : {}), title: title.trim() || null, ...(term.trim() !== (o.startTerm ?? '') ? { startTerm: term.trim() || null } : {}) } });
       setNote({ ok: true, text: 'Saved ✓' });
       onChanged();
     } catch (e) {
@@ -717,6 +719,7 @@ function ProfileDrawer({
                 </a>
               ),
             )}
+            {fact('Team or committee', o.team)}
             {fact('Officer since', o.startTerm)}
             {o.lastLoginAt !== undefined && fact('Last sign-in', o.lastLoginAt ? fmtDateTime(o.lastLoginAt) : 'Never')}
           </dl>
@@ -724,7 +727,7 @@ function ProfileDrawer({
 
           {canEditTeam && o.profileComplete && (
             <section class="stack" data-officer-edit>
-              <h3>Subteam and title</h3>
+              <h3>Subteam, title and start term</h3>
               <div class="grid-fields">
                 <div class="field">
                   <label class="field-label" for="pd-team">
@@ -744,10 +747,17 @@ function ProfileDrawer({
                   </label>
                   <input class="input" id="pd-title" value={title} maxLength={100} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} />
                 </div>
+                <div class="field">
+                  <label class="field-label" for="pd-term">
+                    Start term
+                  </label>
+                  <input class="input" id="pd-term" value={term} maxLength={40} placeholder="Fall 2026" onInput={(e) => setTerm((e.target as HTMLInputElement).value)} />
+                  <p class="field-hint">Set automatically at first sign-in. Only directors and leadership can change it.</p>
+                </div>
               </div>
               <div class="action-row">
-                <button class="btn" onClick={saveTeam} disabled={busy || (team === (o.subteam?.id ?? '') && title.trim() === (o.title ?? ''))}>
-                  Save subteam and title
+                <button class="btn" onClick={saveTeam} disabled={busy || (team === (o.subteam?.id ?? '') && title.trim() === (o.title ?? '') && term.trim() === (o.startTerm ?? ''))}>
+                  Save changes
                 </button>
               </div>
             </section>

@@ -114,19 +114,19 @@ const NAVSCRIPT = `(function () {
       ) : (
         <div class="app" data-page={page}>
           <header class="topbar">
-            <button type="button" class="icon-btn" data-nav-toggle aria-controls="sidebar" aria-expanded="false" aria-label="Menu">
+            <button type="button" class="icon-btn" data-tour="nav-toggle" data-nav-toggle aria-controls="sidebar" aria-expanded="false" aria-label="Menu">
               <Icon name="menu" />
             </button>
             <a class="wordmark wordmark--top" href="/" aria-label="CSEED officers, home">
               <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-wordmark.png" alt="" width="78" height="18" />
               <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-wordmark-white.png" alt="" width="78" height="18" />
             </a>
-            <button type="button" class="icon-btn" data-open-search aria-label="Search">
+            <button type="button" class="icon-btn" data-tour="search" data-open-search aria-label="Search">
               <Icon name="search" />
             </button>
           </header>
           <div class="nav-scrim" data-nav-scrim aria-hidden="true" />
-          <nav class="sidebar" id="sidebar" aria-label="Main">
+          <nav class="sidebar" id="sidebar" data-tour="sidebar" aria-label="Main">
             <button type="button" class="icon-btn sheet-close" data-nav-close aria-label="Close menu">
               <Icon name="close" />
             </button>
@@ -138,7 +138,7 @@ const NAVSCRIPT = `(function () {
                 <span class="wordmark-sub">officers</span>
               </span>
             </a>
-            <button type="button" class="search-trigger" data-open-search aria-label="Search (Ctrl K)">
+            <button type="button" class="search-trigger" data-tour="search" data-open-search aria-label="Search (Ctrl K)">
               <Icon name="search" size={16} />
               <span class="search-trigger-text">Search</span>
               <kbd class="search-trigger-kbd" data-shortcut>Ctrl K</kbd>
@@ -166,7 +166,7 @@ const NAVSCRIPT = `(function () {
           <SidebarResizer client:load />
           <main id="main" class:list={['main', { 'main--home': page === 'home' }]} tabindex="-1">
             {!customHeader && <header class="page-header">
-              <h1 class={page === 'home' ? 'home-heading' : undefined}>{title}</h1>
+              <h1 class={page === 'home' ? 'home-heading' : undefined} data-tour={page === 'home' ? 'greeting' : undefined}>{title}</h1>
               {page === 'home' && <span class="visually-hidden" aria-live="polite" aria-atomic="true" data-home-greeting-announcement></span>}
               <slot name="header" />
             </header>}

@@ -30,12 +30,25 @@ is audited. Discord login itself never creates users or grants leadership/owners
 ## Setup before access
 
 Everyone who joins through an invite, and every account added from Officers → Access,
-finishes the six-step setup before the rest of the dashboard opens. Until then the server
+finishes the setup (welcome intro, then a five-stage intake) before the rest of the dashboard opens. Until then the server
 refuses every API call except their own account (`/api/me*`: profile, preferences,
 calendar, setup), the club time zone and health, with 403 `onboarding_required`, whatever
 their role. Leadership or director accounts created from Access go through the same
-setup. Accounts with no invite record (seeded, bootstrap owner, created before V0.4)
-are not affected.
+setup. Accounts with no invite record (seeded, bootstrap owner, created before V0.4) are not
+locked out of the API, but see the same flow once (below).
+
+### Onboarding version (V0.9)
+
+`users.onboarding_version` records the newest first-login flow a person finished; the server's
+`OnboardingVersion` (9) is the current one. `/api/me` carries `onboarding` whenever the version
+is lower (or an invite is unfinished), so **every account, existing officers included, gets the
+intro and intake once**, with the profile they already filled in pre-populated, then the Home
+tour. `POST /api/me/onboarding/complete` sets the version. A future flow bumps the constant.
+
+The **start term** is set automatically (e.g. `Fall 2026`) when a profile is first saved and
+officers cannot change it (the profile endpoint ignores it); directors and leadership edit it
+from the officer profile (`PATCH /api/officers/:id`, `startTerm`). The intake also collects an
+officer **team/committee** (`profile.team`), chosen from the list in `web/src/lib/officerTeams.ts`.
 
 ## Permission changes apply at once
 

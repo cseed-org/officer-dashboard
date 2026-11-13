@@ -3,13 +3,14 @@ import type { Ref } from 'preact';
 import { api, ApiCallError, fieldErrors } from '../../lib/api/client';
 import type { MyProfile, ProfileResponse, ProfileUpsertRequest } from '../../lib/contracts';
 import { isGradMonth, isLinkedIn, PROFILE_MAX } from '../../lib/profileRules';
+import { OFFICER_TEAMS } from '../../lib/officerTeams';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS_IN = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const pad = (n: number) => String(n).padStart(2, '0');
 
 type Values = Record<
-  'phone' | 'month' | 'day' | 'preferredName' | 'pronouns' | 'personalEmail' | 'schoolEmail' | 'gradDate' | 'title' | 'startTerm' | 'linkedin' | 'subteamId',
+  'phone' | 'month' | 'day' | 'preferredName' | 'pronouns' | 'personalEmail' | 'schoolEmail' | 'gradDate' | 'title' | 'team' | 'linkedin' | 'subteamId',
   string
 >;
 
@@ -25,18 +26,26 @@ function initial(p: MyProfile | null): Values {
     schoolEmail: p?.schoolEmail ?? '',
     gradDate: p?.gradDate ?? '',
     title: p?.title ?? '',
-    startTerm: p?.startTerm ?? '',
+    team: p?.team ?? '',
     linkedin: p?.linkedin ?? '',
     subteamId: p?.subteam?.id ?? '',
   };
 }
 
-const OPTIONAL = ['preferredName', 'pronouns', 'personalEmail', 'schoolEmail', 'gradDate', 'title', 'startTerm', 'linkedin'] as const;
+const OPTIONAL = ['preferredName', 'pronouns', 'personalEmail', 'schoolEmail', 'gradDate', 'title', 'team', 'linkedin'] as const;
+
+/** The intake form shows the profile in three stages; Settings shows all of it (no section). */
+export type ProfileSection = 'basics' | 'about' | 'role';
+const SECTION_FIELDS: Record<ProfileSection, string[]> = {
+  basics: ['phone', 'birthday', 'subteamId'],
+  about: ['preferredName', 'pronouns', 'personalEmail', 'schoolEmail'],
+  role: ['team', 'title', 'gradDate', 'linkedin'],
+};
 
 const MAX: Partial<Record<keyof Values, number>> = PROFILE_MAX;
 
 /** Client checks with the same copy as the server, so errors read the same either way. */
-function check(v: Values, needsSubteam: boolean): Record<string, string> {
+function check(v: Values, needsSubteam: boolean, section?: ProfileSection): Record<string, string> {
   const e: Record<string, string> = {};
   const digits = v.phone.replace(/\D/g, '').length;
   if (!v.phone.trim()) e.phone = 'Enter your phone number';
@@ -49,7 +58,9 @@ function check(v: Values, needsSubteam: boolean): Record<string, string> {
   if (v.gradDate.trim() && !isGradMonth(v.gradDate.trim())) e.gradDate = 'Enter a month, like 2028-05';
   if (v.linkedin.trim() && !isLinkedIn(v.linkedin.trim())) e.linkedin = 'Use your https://linkedin.com/in/… address';
   if (needsSubteam && !v.subteamId) e.subteamId = 'Choose your subteam';
-  return e;
+  if (!section) return e;
+  // A stage only reports its own fields; earlier stages were saved when they were left.
+  return Object.fromEntries(Object.entries(e).filter(([k]) => SECTION_FIELDS[section].includes(k)));
 }
 
 export interface ProfileFormHandle {
@@ -69,12 +80,15 @@ export function ProfileForm({
   brand = false,
   handle,
   showSave = true,
+  section,
 }: {
   data: ProfileResponse;
   onSaved?: (r: ProfileResponse) => void;
   brand?: boolean;
   handle?: Ref<ProfileFormHandle>;
   showSave?: boolean;
+  /** Intake only: show one stage of the form. The other stages stay mounted, so nothing typed is lost. */
+  section?: ProfileSection;
 }) {
   const [v, setV] = useState<Values>(() => initial(data.profile));
   const savedValues = useRef<Values>(initial(data.profile));
@@ -104,7 +118,7 @@ export function ProfileForm({
   };
 
   const submit = async (): Promise<boolean> => {
-    const errs = check(v, needsSubteam);
+    const errs = check(v, needsSubteam, section);
     setErrors(errs);
     setFormError(null);
     if (Object.keys(errs).length) {
@@ -121,7 +135,7 @@ export function ProfileForm({
       schoolEmail: opt(v.schoolEmail),
       gradDate: opt(v.gradDate),
       title: opt(v.title),
-      startTerm: opt(v.startTerm),
+      team: opt(v.team),
       linkedin: opt(v.linkedin),
       ...(needsSubteam ? { subteamId: v.subteamId } : {}),
     };
@@ -144,7 +158,7 @@ export function ProfileForm({
     }
   };
   const dirty = () => (Object.keys(v) as (keyof Values)[]).some((k) => v[k].trim() !== savedValues.current[k].trim());
-  useImperativeHandle(handle as Ref<ProfileFormHandle>, () => ({ submit, dirty }), [v, needsSubteam]);
+  useImperativeHandle(handle as Ref<ProfileFormHandle>, () => ({ submit, dirty }), [v, needsSubteam, section]);
 
   const desc = (id: string, hint = false) => {
     const ids = [hint && `pf-${id}-hint`, errors[id] && `pf-${id}-error`].filter(Boolean).join(' ');
@@ -168,6 +182,47 @@ export function ProfileForm({
   const errorCount = Object.keys(errors).length;
   const maxDay = v.month ? DAYS_IN[+v.month - 1]! : 31;
 
+  const aboutFields = (
+    <>
+      {text('preferredName', 'Preferred name', 'text', 'nickname')}
+      {text('pronouns', 'Pronouns')}
+      {text('personalEmail', 'Personal email', 'email', 'email')}
+      {text('schoolEmail', 'School email', 'email', 'email')}
+    </>
+  );
+  const teams: string[] = [...OFFICER_TEAMS];
+  if (v.team && !teams.includes(v.team)) teams.unshift(v.team);
+  const roleFields = (
+    <>
+      <div class="field">
+        <label class="field-label" for="pf-team">
+          Team or committee
+        </label>
+        <select class="select" id="pf-team" value={v.team} onChange={set('team')} {...desc('team')}>
+          <option value="">Choose one</option>
+          {teams.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        {err('team')}
+      </div>
+      {text('title', 'Title', 'text', 'organization-title')}
+      <div class="field">
+        <label class="field-label" for="pf-gradDate">
+          Graduation date
+        </label>
+        <input class="input" id="pf-gradDate" type="month" placeholder="2028-05" maxLength={7} value={v.gradDate} onInput={set('gradDate')} {...desc('gradDate', true)} />
+        <p class="field-hint" id="pf-gradDate-hint">
+          Month and year, like 2028-05.
+        </p>
+        {err('gradDate')}
+      </div>
+      {text('linkedin', 'LinkedIn', 'url', 'url')}
+    </>
+  );
+
   return (
     <form
       ref={form}
@@ -184,7 +239,7 @@ export function ProfileForm({
           {errorCount} fields need attention.
         </p>
       )}
-      <div class="grid-fields">
+      <div class="grid-fields" hidden={!!section && section !== 'basics'}>
         <div class="field">
           <label class="field-label" for="pf-phone">
             Phone · required
@@ -243,29 +298,30 @@ export function ProfileForm({
           </div>
         )}
       </div>
-      <details open={moreOpen} onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)}>
-        <summary>More about you · optional</summary>
-        <div class="grid-fields" style="margin-top:12px">
-          {text('preferredName', 'Preferred name', 'text', 'nickname')}
-          {text('pronouns', 'Pronouns')}
-          {text('personalEmail', 'Personal email', 'email', 'email')}
-          {text('schoolEmail', 'School email', 'email', 'email')}
-          <div class="field">
-            <label class="field-label" for="pf-gradDate">
-              Graduation date
-            </label>
-            <input class="input" id="pf-gradDate" type="month" placeholder="2028-05" maxLength={7} value={v.gradDate} onInput={set('gradDate')} {...desc('gradDate', true)} />
-            <p class="field-hint" id="pf-gradDate-hint">
-              Month and year, like 2028-05.
-            </p>
-            {err('gradDate')}
+      {section ? (
+        <>
+          <div class="grid-fields" hidden={section !== 'about'}>
+            {aboutFields}
           </div>
-          {text('title', 'Title', 'text', 'organization-title')}
-          {text('startTerm', 'Start term')}
-          {text('linkedin', 'LinkedIn', 'url', 'url')}
-        </div>
-      </details>
-      <p class="field-hint">
+          <div class="grid-fields" hidden={section !== 'role'}>
+            {roleFields}
+          </div>
+        </>
+      ) : (
+        <details open={moreOpen} onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)}>
+          <summary>More about you · optional</summary>
+          <div class="grid-fields" style="margin-top:12px">
+            {aboutFields}
+            {roleFields}
+          </div>
+          {data.profile?.startTerm && (
+            <p class="field-hint" data-start-term>
+              Start term: {data.profile.startTerm}. Set automatically when you joined; a director can change it.
+            </p>
+          )}
+        </details>
+      )}
+      <p class="field-hint" hidden={!!section && section !== 'basics'}>
         {subteamName ? `Name, Discord and subteam (${subteamName}) come from your invitation or a director.` : 'Name and Discord come from your account.'}
       </p>
       {formError && (

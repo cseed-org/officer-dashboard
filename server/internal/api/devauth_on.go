@@ -179,7 +179,7 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 			if err := c.newSession(ctx, userID); err != nil {
 				return err
 			}
-			if inv, err := c.S.db.Read().InviteForUser(ctx, userID); err == nil && inv.OnboardedAt == nil {
+			if st, err := c.S.onboardingState(ctx, c.S.db.Read(), userID); err == nil && st != nil {
 				next = "/onboarding"
 			}
 			http.Redirect(c.W, c.R, next, http.StatusSeeOther)
@@ -229,6 +229,10 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 					return forbidden("Developer sign-in cannot target a dashboard owner")
 				}
 				userID = u.ID
+				if f.Get("onboarding") == "reset" {
+					// Replays the V0.9 intro + intake for this account, as for an existing officer on the release that shipped it.
+					return w.SetOnboardingVersion(ctx, userID, 0)
+				}
 				return nil
 			}
 			u, err := w.FirstActiveUserWithRole(ctx, as)
@@ -245,7 +249,11 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 				discord = "000000000000000003"
 			}
 			now := store.Ms(c.S.nowMs())
-			return w.InsertUser(ctx, store.User{ID: userID, DiscordID: discord, Name: "Dev " + as, Role: as, Active: true, CreatedAt: now, UpdatedAt: now})
+			if err := w.InsertUser(ctx, store.User{ID: userID, DiscordID: discord, Name: "Dev " + as, Role: as, Active: true, CreatedAt: now, UpdatedAt: now}); err != nil {
+				return err
+			}
+			// Placeholders stand in for existing accounts; the onboarding specs reset one on purpose.
+			return w.SetOnboardingVersion(ctx, userID, OnboardingVersion)
 		})
 		if err != nil {
 			return err
@@ -253,6 +261,11 @@ func (s *Server) registerDev(_ *http.ServeMux, h func(string, handlerFunc)) {
 		c.S.log.Warn("[dev-auth] signing in", "as", as, "user", userID)
 		if err := c.newSession(ctx, userID); err != nil {
 			return err
+		}
+		if f.Get("onboarding") == "reset" {
+			if st, err := c.S.onboardingState(ctx, c.S.db.Read(), userID); err == nil && st != nil {
+				next = "/onboarding"
+			}
 		}
 		http.Redirect(c.W, c.R, next, http.StatusSeeOther)
 		return nil

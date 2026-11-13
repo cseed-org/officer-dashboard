@@ -190,7 +190,8 @@ func TestInviteeSignInOnboardingAndProfile(t *testing.T) {
 	if after := signInAsInvitee(t, e, "next=/finance"); after.Header.Get("Location") != "/finance" {
 		t.Fatalf("after onboarding → %s", after.Header.Get("Location"))
 	}
-	expectStatus(t, "non-invitee complete", e.post("/api/me/onboarding/complete", nil, e.officer()), 409)
+	// An account already past the flow completing again changes nothing.
+	e.mustOK(e.post("/api/me/onboarding/complete", nil, e.officer()))
 }
 
 func TestOfficersDirectoryPhoneVisibilityAndSubteamEdits(t *testing.T) {

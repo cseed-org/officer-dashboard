@@ -150,8 +150,8 @@ func (c *Ctx) authCallback() error {
 		c.S.log.Error("create session failed", "error", err)
 		return c.loginRedirect("discord")
 	}
-	// Invitees who haven't finished setup always resume onboarding.
-	if inv, err := c.S.db.Read().InviteForUser(ctx, userID); err == nil && inv.OnboardedAt == nil {
+	// Anyone who hasn't finished the current onboarding flow resumes it.
+	if st, err := c.S.onboardingState(ctx, c.S.db.Read(), userID); err == nil && st != nil {
 		next = "/onboarding"
 	}
 	http.Redirect(c.W, c.R, next, http.StatusFound)

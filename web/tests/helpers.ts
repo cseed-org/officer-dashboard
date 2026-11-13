@@ -25,7 +25,7 @@ export const devKeyParam = process.env.E2E_DEV_AUTH_KEY ? `&key=${encodeURICompo
  * with `as`/`user` or `discord`, then open where the server redirected. The key, when the
  * server needs one, goes with every sign-in.
  */
-export async function devSignIn(page: Page, fields: { as?: string; user?: string; discord?: string }, next = '/') {
+export async function devSignIn(page: Page, fields: { as?: string; user?: string; discord?: string; onboarding?: 'reset' }, next = '/') {
   // Session rotation invalidates the previous page's in-flight API calls. Dispose that
   // document first so a late 401 cannot redirect the newly authenticated page.
   if (page.url() !== 'about:blank') await page.goto('about:blank');

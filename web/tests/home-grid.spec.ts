@@ -315,19 +315,19 @@ test('Corner resize previews supported footprint, Escape restores, Done persists
 test('Tutorial skips with Escape, stays seen on reload, and replays from Settings', async ({ page }) => {
   await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: false } });
   await page.goto('/');
-  const tour = page.getByRole('dialog', { name: 'Your home base' });
+  const tour = page.getByRole('dialog', { name: 'This is Home' });
   await expect(tour).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(tour).not.toBeVisible();
   const prefs = await (await page.request.get('/api/me/prefs')).json();
   expect(prefs.dashboardTutorialSeen).toBe(true);
   await page.reload();
-  await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
+  await expect(page.locator('[data-home-tour][open]')).toHaveCount(0);
   await page.goto('/settings');
-  await page.getByRole('link', { name: 'Replay dashboard tutorial' }).click();
-  await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
+  await page.getByRole('link', { name: /Replay dashboard (tutorial|tour)/ }).click();
+  await expect(page.getByRole('dialog', { name: 'This is Home' })).toBeVisible();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Make it yours' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Your widgets' })).toBeVisible();
   await page.getByRole('button', { name: 'Skip tour' }).click();
 });
 
@@ -336,24 +336,25 @@ test('Coachmarks spotlight real controls and discard their temporary edit previe
   await openHome(page, [{ id: 'kpi-upcoming', size: '1x1' }]);
   const before = await savedLayout(page);
   await page.goto('/?tutorial=1');
-  const tour = page.locator('.dashboard-tour');
+  const tour = page.locator('[data-home-tour]');
   await expect(tour).toBeVisible();
-  await expect(widget(page, 'links')).toBeVisible(); // temporary example, never saved
-  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  const nextStop = () => tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await nextStop(); // widgets
+  await nextStop(); // edit
   await expect(page.locator('[data-tour="edit"]')).toHaveClass(/is-tour-target/);
-  await tour.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(widget(page, 'links').locator('.blk-handle')).toHaveClass(/is-tour-target/);
-  await tour.getByRole('button', { name: 'Next', exact: true }).click();
-  const corner = widget(page, 'links').locator('.blk-resize--both');
-  await expect(corner).toHaveClass(/is-tour-target/);
+  await nextStop();
+  await expect(widget(page, 'links')).toBeVisible(); // temporary example, never saved
+  await expect(page.locator('[data-tour="drag"].is-tour-target')).toHaveCount(1);
+  await nextStop();
+  const corner = page.locator('[data-tour="resize"].is-tour-target');
+  await expect(corner).toHaveCount(1);
   const r = (await corner.boundingBox())!;
-  const hole = await tour.locator('mask .tour-cutout').evaluate(e => ({ x: Number(e.getAttribute('x')), y: Number(e.getAttribute('y')), w: Number(e.getAttribute('width')), h: Number(e.getAttribute('height')) }));
+  const hole = await tour.locator('mask rect').nth(1).evaluate(e => ({ x: Number(e.getAttribute('x')), y: Number(e.getAttribute('y')), w: Number(e.getAttribute('width')), h: Number(e.getAttribute('height')) }));
   expect(hole.w).toBeGreaterThanOrEqual(r.width);
   expect(hole.h).toBeGreaterThanOrEqual(r.height);
-  await tour.getByRole('button', { name: 'Next', exact: true }).click();
+  await nextStop();
   await expect(page.locator('[data-tour="add"]')).toHaveClass(/is-tour-target/);
-  await tour.getByRole('button', { name: 'Next', exact: true }).click();
-  await expect(widget(page, 'links').locator('.club-links')).toHaveClass(/is-tour-target/);
+  for (let i = 0; i < 2; i++) await nextStop(); // sidebar, search
   await tour.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(tour).not.toBeVisible();
   await expect(widget(page, 'links')).toHaveCount(0);
@@ -408,11 +409,11 @@ test('Default widgets fill a complete rectangle without an oversized actions car
 test('An onboarding landing starts the tour once, without forcing a replay', async ({ page }) => {
   await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: false } });
   await page.goto('/?tutorial=onboarding');
-  await expect(page.getByRole('dialog', { name: 'Your home base' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'This is Home' })).toBeVisible();
   await page.getByRole('button', { name: 'Skip tour' }).click();
   await page.goto('/?tutorial=onboarding');
   await expect(page.getByRole('button', { name: 'Edit home' })).toBeEnabled();
-  await expect(page.locator('.dashboard-tour[open]')).toHaveCount(0);
+  await expect(page.locator('[data-home-tour][open]')).toHaveCount(0);
 });
 
 

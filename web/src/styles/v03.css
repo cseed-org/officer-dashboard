@@ -289,7 +289,6 @@
 
 /* ───────────── Onboarding shell: full-screen, paper, one question per step ───────────── */
 .onb {position:fixed;inset:0;z-index:90;display:grid;grid-template-rows:auto minmax(0, 1fr) auto;background:var(--paper);color:var(--brand-ink);font-family:var(--font-brand);overflow:hidden;}
-.onb--framed {position:relative;inset:auto;z-index:auto;height:720px;border-radius:var(--radius-overlay);border:1px solid var(--line);}
 .onb a {color:var(--brand-ink);}
 .onb-top {display:grid;grid-template-columns:auto minmax(0, 1fr) auto;align-items:center;gap:24px;padding:20px 32px;}
 .onb-top .wordmark-logo {height:18px;}
@@ -309,43 +308,23 @@
 .onb-form .field-label {color:var(--brand-ink);}
 .onb-form .field-hint {color:var(--brand-ink-soft);}
 .onb .input, .onb .select, .onb .textarea {border-color:var(--brand-control);background:var(--paper-raised);color:var(--brand-ink);min-height:44px;}
-.onb-prefill {display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;padding:12px 14px;border-radius:10px;background:var(--paper-raised);font-family:var(--font);font-size:13px;}
-.onb-prefill dt {color:var(--brand-ink-soft);font-size:12px;}
-.onb-prefill dd {margin:0;font-weight:500;}
 .onb-foot {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 32px 24px;}
 .onb-foot .btn {min-height:44px;padding:8px 20px;font-family:var(--font);border-color:var(--brand-control);background:transparent;color:var(--brand-ink);}
 .onb-foot .btn--primary {background:var(--brand-ink);border-color:var(--brand-ink);color:var(--paper);min-width:140px;}
 .onb-foot .btn--text {border-color:transparent;}
-.onb-art {position:relative;height:100%;min-height:420px;}
-.polaroid {position:absolute;margin:0;padding:12px 12px 40px;background:var(--polaroid);box-shadow:var(--polaroid-shadow);transform:rotate(var(--tilt, 0deg));}
-.polaroid img {display:block;width:100%;height:100%;object-fit:cover;}
-.polaroid figcaption {position:absolute;left:12px;right:12px;bottom:10px;font-family:var(--font-mono-brand);font-size:13px;color:#3d3d3d;}
-.onb-checks {list-style:none;margin:0;padding:0;display:grid;gap:10px;font-family:var(--font);}
-.onb-checks li {display:flex;align-items:center;gap:10px;}
-.onb-checks .icon {color:var(--brand-ink);}
 /* Step transition: forward moves left, back moves right; headline, lede and form stagger. */
 .onb-step.is-entering > * {animation:onb-in var(--dur-step) var(--ease-soft) both;}
 .onb-step.is-entering > :nth-child(2) {animation-delay:var(--stagger);}
 .onb-step.is-entering > :nth-child(3) {animation-delay:calc(var(--stagger) * 2);}
 .onb-step.is-entering > :nth-child(n+4) {animation-delay:calc(var(--stagger) * 3);}
-.onb-step.is-leaving {animation:onb-out 240ms var(--ease-soft) both;}
-.onb[data-dir="back"] .onb-step.is-entering > * {animation-name:onb-in-back;}
-.onb[data-dir="back"] .onb-step.is-leaving {animation-name:onb-out-back;}
 @keyframes onb-in {from {opacity:0;transform:translate(16px, 8px);} to {opacity:1;transform:none;}}
-@keyframes onb-in-back {from {opacity:0;transform:translate(-16px, 8px);} to {opacity:1;transform:none;}}
-@keyframes onb-out {to {opacity:0;transform:translateX(-16px);}}
-@keyframes onb-out-back {to {opacity:0;transform:translateX(16px);}}
-.onb-art.is-entering .polaroid {animation:polaroid-settle var(--dur-reveal) var(--ease-soft) both;animation-delay:calc(var(--n, 0) * var(--stagger) + 200ms);}
-@keyframes polaroid-settle {from {opacity:0;transform:translateY(40px) rotate(0deg) scale(.985);} to {opacity:1;transform:rotate(var(--tilt, 0deg));}}
 @media (prefers-reduced-motion: reduce) {
   /* base.css already cancels animation/transition; restate the end states so nothing waits hidden. */
-  .onb-step > *, .onb-art .polaroid, .gallery, .widget {opacity:1;}
-  .onb-art .polaroid {transform:rotate(var(--tilt, 0deg));}
+  .onb-step > *, .gallery, .widget {opacity:1;}
   .widget-grid.is-editing .widget {transform:none;}
 }
 @media (max-width: 1099px) {
   .onb-main {grid-template-columns:minmax(0, 1fr);padding:16px 32px;}
-  .onb-art {display:none;}
 }
 @media (max-width: 767px) {
   .onb-top {grid-template-columns:auto 1fr;gap:12px 16px;padding:14px 16px;}
@@ -355,7 +334,6 @@
   .onb-main {padding:8px 16px 16px;align-items:start;}
   .onb-foot {padding:12px 16px calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--brand-line);background:var(--paper);}
   .onb-foot .btn--primary {flex:1;}
-  .onb--framed {height:auto;min-height:680px;}
 }
 
 /* ───────────── Calendar-email picker: up to five saved addresses ───────────── */
@@ -405,16 +383,11 @@
 .state--brand .state-title {font-family:var(--font-display);font-weight:400;font-size:24px;letter-spacing:-.01em;}
 .state--brand .state-body {color:var(--brand-ink-soft);}
 .state--brand .btn {border-color:var(--brand-control);background:var(--paper-raised);color:var(--brand-ink);}
-.state-photos {position:relative;width:180px;height:120px;margin-bottom:8px;}
-.state-photos .polaroid {width:96px;height:110px;padding:6px 6px 18px;}
-.state-photos .polaroid:first-child {left:12px;top:4px;}
-.state-photos .polaroid:last-child {right:12px;top:0;}
 
 /* D2 onboarding form composition, readable hints on paper, and photo placement. */
-.onb-step{padding:20px 0}.onb-form .grid-fields{gap:16px}.onb-form details{border-top:1px solid var(--brand-control);padding-top:12px}.onb-form summary{cursor:pointer;min-height:44px}.onb-form .choice{background:var(--paper-raised);color:var(--brand-ink);border-color:var(--brand-control);min-height:64px}.onb-form .choice-sub{color:var(--brand-ink-soft)}.onb-form .choice-row{display:grid;grid-template-columns:1fr 1fr}.onb-form .btn{min-height:44px}.onb-form .field-error{margin:0}.onb-prefill{display:grid;grid-template-columns:100px minmax(0,1fr)}.onb-prefill dd{overflow-wrap:anywhere}.onb-art .polaroid:first-child{width:300px;height:340px;left:15px;top:30px}.onb-art .polaroid:last-child{width:270px;height:290px;right:0;bottom:20px}.onb .notice{font-family:var(--font)}.onb .field-hint{color:var(--brand-ink-soft)}
+.onb-step{padding:20px 0}.onb-form .grid-fields{gap:16px}.onb-form details{border-top:1px solid var(--brand-control);padding-top:12px}.onb-form summary{cursor:pointer;min-height:44px}.onb-form .choice{background:var(--paper-raised);color:var(--brand-ink);border-color:var(--brand-control);min-height:64px}.onb-form .choice-sub{color:var(--brand-ink-soft)}.onb-form .choice-row{display:grid;grid-template-columns:1fr 1fr}.onb-form .btn{min-height:44px}.onb-form .field-error{margin:0}.onb .notice{font-family:var(--font)}.onb .field-hint{color:var(--brand-ink-soft)}
 
 @media(max-width:767px){.onb-form .choice-row{grid-template-columns:1fr}.onb-title.display--xl{font-size:36px}.onb-step{gap:16px}.onb-form .grid-fields{grid-template-columns:1fr}}
-.onb-art[hidden],.onb-foot[hidden],.onb-progress[hidden],.onb-count[hidden]{display:none}
 
 /* D3 directory composition */
 /* Directory-only composition; shared components and color tokens remain authoritative. */
@@ -443,3 +416,11 @@ body:has(dialog[open]){overflow:hidden}
   .onb-shell-logo {left:calc(50% - 34.664px);top:17.5px;}
   .onb-shell-logo .wordmark-logo {height:16px;}
 }
+
+/* V0.9: the intro hands over to the intake without a cut. The stages' header and footer fade in once the intro's logo is home. */
+.onb-top .onb-progress, .onb-top .onb-count, .onb-foot {animation:onb-chrome-in 420ms var(--ease-soft, ease) both;}
+@keyframes onb-chrome-in {from {opacity:0;transform:translateY(6px);}}
+@media (prefers-reduced-motion: reduce) {
+  .onb-top .onb-progress, .onb-top .onb-count, .onb-foot {animation:none;}
+}
+[data-onb-profile] > [data-start-term] {margin-top:16px;}

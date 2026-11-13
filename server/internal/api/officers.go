@@ -32,6 +32,7 @@ type OfficerDTO struct {
 	SchoolEmail     *string     `json:"schoolEmail"`
 	GradDate        *string     `json:"gradDate"`
 	StartTerm       *string     `json:"startTerm"`
+	Team            *string     `json:"team"`
 	LinkedIn        *string     `json:"linkedin"`
 	Phone           *string     `json:"phone,omitempty"`
 	ProfileComplete bool        `json:"profileComplete"`
@@ -51,7 +52,7 @@ func officerDTO(u *store.User, p *store.Profile, people *peopleIndex, inv *store
 		o.ProfileComplete = true
 		o.Subteam = people.subteam(p.SubteamID)
 		o.PreferredName, o.Pronouns, o.PersonalEmail, o.SchoolEmail = p.PreferredName, p.Pronouns, p.PersonalEmail, p.SchoolEmail
-		o.GradDate, o.StartTerm, o.LinkedIn = p.GradDate, p.StartTerm, p.LinkedIn
+		o.GradDate, o.StartTerm, o.LinkedIn, o.Team = p.GradDate, p.StartTerm, p.LinkedIn, p.Team
 		b := p.Birthday
 		o.Birthday = &b
 		if privileged {
@@ -171,10 +172,11 @@ func (c *Ctx) officerUpdate() error {
 	if _, err := c.director(); err != nil {
 		return err
 	}
-	var subteam, title validate.Field[string]
+	var subteam, title, startTerm validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		subteam = r.Str("subteamId", validate.S{Min: 1, Max: 64})
 		title = r.Str("title", validate.S{Null: true, Trim: true, Max: 100})
+		startTerm = r.Str("startTerm", validate.S{Null: true, Trim: true, Max: 40})
 	}); err != nil {
 		return err
 	}
@@ -213,6 +215,19 @@ func (c *Ctx) officerUpdate() error {
 		if before.ProfileComplete {
 			patch.Title = optOf(title)
 		}
+		if startTerm.Set {
+			// Only admins reach this handler; officers never edit their own start term.
+			if !before.ProfileComplete {
+				return conflict(before.Name + " hasn't filled in their profile yet, so there's no start term to change.")
+			}
+			var term *string
+			if startTerm.V != "" {
+				term = &startTerm.V
+			}
+			if err := q.SetStartTerm(ctx, before.ID, term); err != nil {
+				return err
+			}
+		}
 		if err := q.PatchProfile(ctx, before.ID, patch); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -226,7 +241,7 @@ func (c *Ctx) officerUpdate() error {
 			if o.Subteam != nil {
 				team = &o.Subteam.ID
 			}
-			return map[string]any{"subteamId": team, "title": o.Title}
+			return map[string]any{"subteamId": team, "title": o.Title, "startTerm": o.StartTerm}
 		}
 		return c.audit(ctx, q, "officer.updated", "user", before.ID, snap(before), snap(out))
 	})
@@ -251,6 +266,7 @@ type MyProfile struct {
 	GradDate             *string     `json:"gradDate"`
 	Title                *string     `json:"title"`
 	StartTerm            *string     `json:"startTerm"`
+	Team                 *string     `json:"team"`
 	LinkedIn             *string     `json:"linkedin"`
 	CalendarDeliveryMode string      `json:"calendarDeliveryMode"`
 }
@@ -260,7 +276,7 @@ func myProfile(p *store.Profile, people *peopleIndex) *MyProfile {
 		return nil
 	}
 	return &MyProfile{Subteam: people.subteam(p.SubteamID), Phone: p.Phone, Birthday: p.Birthday, PreferredName: p.PreferredName, Pronouns: p.Pronouns,
-		PersonalEmail: p.PersonalEmail, SchoolEmail: p.SchoolEmail, GradDate: p.GradDate, Title: p.Title, StartTerm: p.StartTerm, LinkedIn: p.LinkedIn,
+		PersonalEmail: p.PersonalEmail, SchoolEmail: p.SchoolEmail, GradDate: p.GradDate, Title: p.Title, StartTerm: p.StartTerm, Team: p.Team, LinkedIn: p.LinkedIn,
 		CalendarDeliveryMode: p.DeliveryMode}
 }
 
@@ -370,7 +386,7 @@ func (c *Ctx) profilePut() error {
 			r.Issues.Add("gradDate", "Enter a month, like 2028-05")
 		}
 		p.Title = opt("title", validate.S{Max: 100})
-		p.StartTerm = opt("startTerm", validate.S{Max: 40})
+		p.Team = opt("team", validate.S{Max: 60})
 		p.LinkedIn = opt("linkedin", validate.S{Max: 300})
 		if p.LinkedIn != nil && !isLinkedIn(*p.LinkedIn) {
 			r.Issues.Add("linkedin", "Use your https://linkedin.com/in/… address")
@@ -447,6 +463,14 @@ func (c *Ctx) profilePut() error {
 			}
 			p.DeliveryMode = mode.V
 		}
+		// The start term is never typed by the officer: a new profile gets the current term, and
+		// an existing one keeps its value (admins change it from the officer view).
+		if before != nil {
+			p.StartTerm = before.StartTerm
+		} else {
+			t := currentTerm(c.S.now())
+			p.StartTerm = &t
+		}
 		if err := q.SaveProfile(ctx, p); err != nil {
 			return err
 		}
@@ -491,7 +515,23 @@ func redactProfile(p *store.Profile) any {
 
 // ─── onboarding ───
 
-// OnboardingState is present on /api/me while an invitee hasn't finished setup.
+// OnboardingVersion is the current intro + intake flow. Accounts below it (every existing
+// account when it shipped, and every new one) go through the flow once; see docs/onboarding.md.
+const OnboardingVersion = 9
+
+// currentTerm names the academic term a date falls in, like "Fall 2026".
+func currentTerm(t time.Time) string {
+	switch m := t.UTC().Month(); {
+	case m <= time.May:
+		return fmt.Sprintf("Spring %d", t.UTC().Year())
+	case m <= time.August:
+		return fmt.Sprintf("Summer %d", t.UTC().Year())
+	default:
+		return fmt.Sprintf("Fall %d", t.UTC().Year())
+	}
+}
+
+// OnboardingState is present on /api/me while the account still has the intro + intake ahead.
 type OnboardingState struct {
 	Step      int          `json:"step"`
 	Name      string       `json:"name"`
@@ -504,46 +544,62 @@ type OnboardingState struct {
 	// CorrectionPending: they reported a problem with these details and the inviter
 	// hasn't edited the invite since.
 	CorrectionPending bool `json:"correctionPending"`
+	// Returning: an existing account seeing the flow once (it has no unfinished invite).
+	Returning bool `json:"returning"`
+	// StartTerm is the term the profile has (or will get), shown read-only.
+	StartTerm string `json:"startTerm"`
 }
 
 func (s *Server) onboardingState(ctx context.Context, q *store.Queries, userID string) (*OnboardingState, error) {
-	inv, err := q.InviteForUser(ctx, userID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil
-	}
+	version, step, err := q.OnboardingProgress(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if inv.OnboardedAt != nil {
+	inv, err := q.InviteForUser(ctx, userID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	invited := err == nil
+	invPending := invited && inv.OnboardedAt == nil
+	if version >= OnboardingVersion && !invPending {
 		return nil, nil
 	}
 	people, err := loadPeople(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	// The live account name and subteam, so an inviter's fix shows up on Confirm at once.
-	st := &OnboardingState{Step: inv.Step, Name: inv.Name, Subteam: people.subteam(inv.SubteamID), CorrectionsByDM: s.cfg.DM != nil}
+	if step < 1 || step > 5 {
+		step = 1
+	}
+	st := &OnboardingState{Step: step, CorrectionsByDM: s.cfg.DM != nil, Returning: !invPending, StartTerm: currentTerm(s.now())}
 	if u, ok := people.users[userID]; ok {
 		st.Name = u.Name
 	}
-	latest, err := q.LatestAuditAction(ctx, inv.ID, "onboarding.correction", "invite.updated")
-	if err != nil {
-		return nil, err
-	}
-	st.CorrectionPending = latest == "onboarding.correction"
-	if u, ok := people.users[inv.InvitedBy]; ok {
-		sum := userSummary(u)
-		st.InvitedBy = &sum
-		d := u.DiscordID
-		st.InviterDiscordID = &d
+	if invited {
+		st.Subteam = people.subteam(inv.SubteamID)
+		if u, ok := people.users[inv.InvitedBy]; ok {
+			sum := userSummary(u)
+			st.InvitedBy = &sum
+			d := u.DiscordID
+			st.InviterDiscordID = &d
+		}
+		latest, err := q.LatestAuditAction(ctx, inv.ID, "onboarding.correction", "invite.updated")
+		if err != nil {
+			return nil, err
+		}
+		st.CorrectionPending = latest == "onboarding.correction"
 	}
 	if p, err := q.ProfileByUser(ctx, userID); err == nil {
 		st.HasProfile = true
 		st.Subteam = people.subteam(p.SubteamID)
+		if p.StartTerm != nil {
+			st.StartTerm = *p.StartTerm
+		}
 	}
 	return st, nil
 }
 
+// onboardingInvite is the unfinished invite, for corrections (only invitees send them).
 func (c *Ctx) onboardingInvite(ctx context.Context, q *store.Queries) (*store.Invite, error) {
 	inv, err := q.InviteForUser(ctx, c.User.ID)
 	if err != nil || inv.OnboardedAt != nil {
@@ -559,18 +615,21 @@ func (c *Ctx) onboardingSave() error {
 	}
 	var step int64
 	if err := c.jsonBody(func(r *validate.Reader) {
-		step = r.Int("step", validate.I{Req: true, Min: validate.Lo(1), Max: validate.Lo(6)}).V
+		step = r.Int("step", validate.I{Req: true, Min: validate.Lo(1), Max: validate.Lo(5)}).V
 	}); err != nil {
 		return err
 	}
 	ctx := c.Context()
 	var st *OnboardingState
 	err := c.S.db.Write(ctx, func(q *store.Queries) error {
-		inv, err := c.onboardingInvite(ctx, q)
+		cur, err := c.S.onboardingState(ctx, q, c.User.ID)
 		if err != nil {
 			return err
 		}
-		if err := q.SetOnboardingStep(ctx, inv.ID, int(step)); err != nil {
+		if cur == nil {
+			return conflict("You've already finished setup")
+		}
+		if err := q.SetUserOnboardingStep(ctx, c.User.ID, int(step)); err != nil {
 			return err
 		}
 		st, err = c.S.onboardingState(ctx, q, c.User.ID)
@@ -592,20 +651,28 @@ func (c *Ctx) onboardingComplete() error {
 	}
 	ctx := c.Context()
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
-		inv, err := q.InviteForUser(ctx, u.ID)
+		version, _, err := q.OnboardingProgress(ctx, u.ID)
 		if err != nil {
-			return conflict("Only invited officers go through setup")
+			return err
 		}
-		if inv.OnboardedAt != nil {
+		inv, invErr := q.InviteForUser(ctx, u.ID)
+		invPending := invErr == nil && inv.OnboardedAt == nil
+		if version >= OnboardingVersion && !invPending {
 			return nil
 		}
 		if _, err := q.ProfileByUser(ctx, u.ID); err != nil {
 			return conflict("Add your phone and birthday before finishing")
 		}
-		if err := q.MarkOnboarded(ctx, inv.ID, c.S.nowMs()); err != nil {
+		if err := q.SetOnboardingVersion(ctx, u.ID, OnboardingVersion); err != nil {
 			return err
 		}
-		return c.audit(ctx, q, "onboarding.completed", "invite", inv.ID, nil, map[string]any{"userId": u.ID})
+		if invPending {
+			if err := q.MarkOnboarded(ctx, inv.ID, c.S.nowMs()); err != nil {
+				return err
+			}
+			return c.audit(ctx, q, "onboarding.completed", "invite", inv.ID, nil, map[string]any{"userId": u.ID})
+		}
+		return c.audit(ctx, q, "onboarding.completed", "user", u.ID, nil, map[string]any{"version": OnboardingVersion})
 	})
 	if err != nil {
 		return err
