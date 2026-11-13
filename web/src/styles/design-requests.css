@@ -141,8 +141,8 @@
 [data-lane="doing"] {--lane:var(--c-amber);}
 [data-lane="review"] {--lane:var(--c-violet);}
 [data-lane="done"] {--lane:var(--c-green);}
-[data-hue="blue"] {--hue:var(--c-blue);} [data-hue="violet"] {--hue:var(--c-violet);} [data-hue="amber"] {--hue:var(--c-amber);}
-[data-hue="teal"] {--hue:var(--c-teal);} [data-hue="coral"] {--hue:var(--c-coral);} [data-hue="green"] {--hue:var(--c-green);}
+:is(.board, .thisweek) [data-hue="blue"] {--hue:var(--c-blue);} :is(.board, .thisweek) [data-hue="violet"] {--hue:var(--c-violet);} :is(.board, .thisweek) [data-hue="amber"] {--hue:var(--c-amber);}
+:is(.board, .thisweek) [data-hue="teal"] {--hue:var(--c-teal);} :is(.board, .thisweek) [data-hue="coral"] {--hue:var(--c-coral);} :is(.board, .thisweek) [data-hue="green"] {--hue:var(--c-green);}
 
 /* Pipeline: the split across lanes, sized by count. */
 .pipeline {display:flex;gap:4px;min-width:0;height:34px;}

@@ -238,10 +238,10 @@ export default function DesignView({ me }: { me: CurrentUser }) {
         <StatRow
           label="Design requests summary"
           tiles={[
-            { label: 'Open', value: stats ? stats.open : 0, sub: 'not delivered yet', loading: !stats },
-            { label: 'In progress', value: stats ? stats.inProgress : 0, sub: 'being designed now', loading: !stats },
-            { label: 'Waiting on me', value: stats ? stats.mine : 0, sub: 'assigned to me or to approve', alert: !!stats && stats.mine > 0, loading: !stats, href: '/design?filter=mine', pressed: filter === 'mine' },
-            { label: 'Due soon', value: stats ? stats.due : 0, sub: stats && stats.overdue ? `${stats.overdue} overdue` : 'this week or overdue', alert: !!stats && stats.overdue > 0, loading: !stats, href: '/design?filter=due', pressed: filter === 'due' },
+            { label: 'Open', icon: 'inbox', hue: 'blue', value: stats ? stats.open : 0, sub: 'not delivered yet', loading: !stats },
+            { label: 'In progress', icon: 'pen', hue: 'amber', value: stats ? stats.inProgress : 0, sub: 'being designed now', loading: !stats },
+            { label: 'Waiting on me', icon: 'user', hue: 'violet', value: stats ? stats.mine : 0, sub: 'assigned to me or to approve', alert: !!stats && stats.mine > 0, loading: !stats, href: '/design?filter=mine', pressed: filter === 'mine' },
+            { label: 'Due soon', icon: 'clock', hue: 'coral', value: stats ? stats.due : 0, sub: stats && stats.overdue ? `${stats.overdue} overdue` : 'this week or overdue', alert: !!stats && stats.overdue > 0, loading: !stats, href: '/design?filter=due', pressed: filter === 'due' },
           ]}
         />
       )}
