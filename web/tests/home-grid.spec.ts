@@ -207,15 +207,16 @@ test('Pointer drag: the drop target is a soft fill, the move saves', async ({ pa
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
-  const target = grid(page).locator('li.is-dragging');
-  await expect(target).toHaveAttribute('data-widget', 'kpi-pending');
+  const target = hint(page);
+  await expect(target).toHaveCount(1);
+  await expect(widget(page, 'kpi-pending')).toHaveClass(/is-lifted/);
   const look = await target.evaluate((e) => { const s = getComputedStyle(e); return { border: s.borderTopStyle, bg: s.backgroundColor }; });
   expect(look.border).not.toBe('dashed');
   expect(look.bg).not.toBe('rgba(0, 0, 0, 0)');
-  await expect(page.locator('.blk-float')).toContainText(/pending requests/i);
+  await expect(widget(page, 'kpi-pending')).toContainText(/pending requests/i);
   await page.mouse.up();
   expect((await order(page)).indexOf('kpi-pending')).toBeLessThan(DEFAULT_IDS.indexOf('kpi-pending'));
-  await expect(page.locator('.blk-float')).toHaveCount(0);
+  await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
   await done(page);
   expect((await savedLayout(page)).map(w => w.id)).toEqual(await order(page));
 
@@ -506,7 +507,7 @@ test('Resize commits only at snap boundaries; neighbours pack around the resized
   expect(await card.evaluate(el => el.getAnimations().length)).toBe(0);
 });
 
-test('Whole-tile drag has a threshold, an inert static copy, and native cursors', async ({ page }, info) => {
+test('Whole-tile drag has a threshold, a lifted live card, and native cursors', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'mouse cursor and drag geometry');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }]);
@@ -520,13 +521,11 @@ test('Whole-tile drag has a threshold, an inert static copy, and native cursors'
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 3, y);
-  await expect(page.locator('.blk-float')).toHaveCount(0);
+  await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
   await page.mouse.move(x + 5, y);
-  const clone = page.locator('.blk-float');
+  const clone = grid(page).locator('.is-lifted');
   await expect(clone).toBeVisible();
-  await expect(clone.locator('[id], .blk-tools')).toHaveCount(0);
-  expect(await clone.evaluate(el => (el as HTMLElement).inert)).toBe(true);
-  expect(await clone.evaluate(el => getComputedStyle(el).transform)).toBe('none');
+  expect(await clone.evaluate(el => getComputedStyle(el).position)).toBe('fixed');
   expect(await page.locator('html').evaluate(el => getComputedStyle(el).cursor)).toBe('grabbing');
   expect(feedRequests).toBe(0);
   await page.keyboard.press('Escape');
@@ -757,7 +756,7 @@ for (const [width, cols] of [[1280, 4], [1920, 6]] as const) {
     let to = await dragOver(page, 'kpi-checkin');
     await to(0, 0);
     await expect.poll(() => cellOf(page, 'kpi-checkin')).toEqual({ x: 0, y: 0, w: 1, h: 1 });
-    expect(await hint(page).getAttribute('data-widget')).toBe('kpi-checkin');
+    await expect(widget(page, 'kpi-checkin')).toHaveClass(/is-lifted/);
     expect(await hint(page).evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
     await page.mouse.up();
     expect(await cellOf(page, 'kpi-checkin')).toEqual({ x: 0, y: 0, w: 1, h: 1 });
@@ -876,17 +875,148 @@ for (const theme of THEMES) {
     const ring = await hint(page).evaluate((e) => getComputedStyle(e, '::after').boxShadow);
     expect(ring).toContain('inset');
     expect(await hint(page).evaluate((e) => [e.getBoundingClientRect().width, e.getBoundingClientRect().height])).toEqual(
-      await page.locator('.blk-float').evaluate((e) => [parseFloat(e.style.width), parseFloat(e.style.height)]));
+      await grid(page).locator('li.is-lifted').evaluate((e) => [parseFloat((e as HTMLElement).style.width), parseFloat((e as HTMLElement).style.height)]));
     // Moving the target scales the ring in; reduced motion keeps it still.
+    // Count ring animations as they start: the 220ms animation is too short to sample reliably.
+    await page.evaluate(() => {
+      const w = window as unknown as { ringStarts: number };
+      w.ringStarts = 0;
+      const animate = Element.prototype.animate;
+      Element.prototype.animate = function (this: Element, ...args: Parameters<Element['animate']>) {
+        if ((args[1] as KeyframeAnimationOptions | undefined)?.pseudoElement === '::after') w.ringStarts++;
+        return animate.apply(this, args);
+      };
+    });
     await to(0, 0);
     await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: 0, w: 4, h: 2 });
-    expect(await hint(page).evaluate((e) => e.getAnimations({ subtree: true }).length)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => (window as unknown as { ringStarts: number }).ringStarts)).toBeGreaterThan(0);
+    const starts = await page.evaluate(() => (window as unknown as { ringStarts: number }).ringStarts);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await to(0, 1);
     await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: 1, w: 4, h: 2 });
-    expect(await hint(page).evaluate((e) => e.getAnimations({ subtree: true }).length)).toBe(0);
+    expect(await page.evaluate(() => (window as unknown as { ringStarts: number }).ringStarts)).toBe(starts);
     await page.mouse.up();
     await expect(grid(page).locator('li.blk-spot')).toHaveCount(0);
     await page.getByRole('button', { name: 'Cancel' }).click();
+  });
+}
+
+type Frame = { t: number; boxes: { id: string; x: number; y: number; w: number; h: number; leaves: number }[] };
+/** Start sampling every card's real bounding box (transforms included) on every animation frame. */
+const startFrames = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as { frames: unknown[]; sampling: boolean };
+  w.frames = []; w.sampling = true;
+  const tick = () => {
+    if (!w.sampling) return;
+    const boxes = [...document.querySelectorAll<HTMLElement>('ul.blocks > li.blk')].map(li => {
+      const r = li.getBoundingClientRect();
+      // Rendered text leaves in the body: a collapsed card keeps only its title.
+      const shown = (e: HTMLElement) => {
+        let r = e.getBoundingClientRect();
+        let left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+        for (let a: HTMLElement | null = e; a; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.display === 'none' || s.visibility !== 'visible' || parseFloat(s.opacity) <= 0) return false;
+          // An ancestor that clips (overflow) cuts the visible area down to its own box.
+          if (a !== e && (s.overflowX !== 'visible' || s.overflowY !== 'visible' || s.contain.includes('paint') || s.clipPath !== 'none')) {
+            r = a.getBoundingClientRect();
+            left = Math.max(left, r.left); top = Math.max(top, r.top); right = Math.min(right, r.right); bottom = Math.min(bottom, r.bottom);
+          }
+          if (a === li) break;
+        }
+        return right - left >= 1 && bottom - top >= 1;
+      };
+      const leaves = [...li.querySelectorAll<HTMLElement>('.blk-body *')].filter(e => !e.children.length && e.textContent?.trim() && shown(e)).length;
+      return { id: li.dataset.widget ?? (li.classList.contains('is-placeholder') ? 'slot' : li.dataset.flip ?? 'add'), x: r.left, y: r.top, w: r.width, h: r.height, leaves };
+    });
+    w.frames.push({ t: performance.now(), boxes });
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+});
+const stopFrames = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as { frames: unknown[]; sampling: boolean };
+  w.sampling = false; return w.frames;
+}) as Promise<Frame[]>;
+/** Pairs of boxes that intersect by more than 1px, ignoring `float` (the card riding the pointer). */
+const hits = (frames: Frame[], float?: string, ...skip: string[]) => frames.flatMap((f, n) => {
+  const boxes = f.boxes.filter(b => b.id !== float && !skip.includes(b.id) && b.w > 0);
+  const out: string[] = [];
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i]!, b = boxes[j]!;
+    if (a.x < b.x + b.w - 1 && b.x < a.x + a.w - 1 && a.y < b.y + b.h - 1 && b.y < a.y + a.h - 1) out.push(`frame ${n}: ${a.id}/${b.id}`);
+  }
+  return out;
+});
+/** The layout the grid shows: cards, the drop placeholder and the add tile. */
+const MIN_LEAVES = 2;
+
+for (const project of ['desktop', 'tablet']) {
+  test(`Dragging: neighbours never overlap, the card keeps its size and content, and at rest it overlaps nothing · ${project}`, async ({ page }, info) => {
+    test.skip(info.project.name !== project, 'one run per viewport');
+    if (project === 'desktop') await page.setViewportSize({ width: 1440, height: 1600 });
+    await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-pending', size: '1x1' }]);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    const card = widget(page, 'calendar');
+    const before = (await card.boundingBox())!;
+    const move = await dragOver(page, 'calendar');
+    await startFrames(page);
+    const now = () => page.evaluate(() => performance.now());
+    const rests: [number, number][] = [];
+    // Right across Links, then below, then back: reflows in every direction. The pointer pauses at each stop.
+    for (const [x, y] of [[1, 0], [3, 0], [0, 1], [2, 1], [0, 0]] as const) {
+      await move(x, y, 14);
+      const from = await now();
+      await page.waitForTimeout(700);
+      rests.push([from, await now()]);
+    }
+    await page.mouse.up();
+    await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
+    await page.waitForTimeout(400);
+    const frames = await stopFrames(page);
+    expect(frames.length).toBeGreaterThan(40);
+    // (a) Cards other than the dragged one never intersect, in any frame (the drop placeholder counts).
+    expect(hits(frames, 'calendar')).toEqual([]);
+    // (b) Once the pointer pauses (from 250ms: the grid has reflowed and the card has docked), the dragged
+    // card overlaps no other card; the same holds again after the drop.
+    const resting = frames.filter(f => rests.some(([a, b]) => f.t >= a + 250 && f.t <= b) || f.t >= rests.at(-1)![1] + 200);
+    expect(resting.length).toBeGreaterThan(20);
+    // The card docks into its own slot, so the placeholder is the one box it is meant to cover.
+    expect(hits(resting, undefined, 'slot')).toEqual([]);
+    // (c) The dragged card keeps its size (only the ≤2% lift) and its content in every frame.
+    for (const f of frames) {
+      const c = f.boxes.find(b => b.id === 'calendar')!;
+      expect(Math.abs(c.w / before.width - 1), 'width').toBeLessThan(0.03);
+      expect(Math.abs(c.h / before.height - 1), 'height').toBeLessThan(0.03);
+    }
+    for (const f of frames) for (const b of f.boxes) if (b.id !== 'slot' && b.id !== 'add') expect(b.leaves, `${b.id} content`).toBeGreaterThanOrEqual(MIN_LEAVES);
+    const after = (await card.boundingBox())!;
+    expect(Math.abs(after.width - before.width)).toBeLessThan(1);
+    expect(Math.abs(after.height - before.height)).toBeLessThan(1);
+  });
+
+  test(`Resizing keeps every card rendered and nothing overlaps in any frame · ${project}`, async ({ page }, info) => {
+    test.skip(info.project.name !== project, 'one run per viewport');
+    if (project === 'desktop') await page.setViewportSize({ width: 1440, height: 1600 });
+    await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-pending', size: '1x1' }]);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    const card = widget(page, 'calendar');
+    const grip = card.locator('.blk-resize--both');
+    const g = (await grip.boundingBox())!;
+    const rect = (await card.boundingBox())!;
+    await page.mouse.move(g.x + 20, g.y + 20);
+    await page.mouse.down();
+    await startFrames(page);
+    // Grow to 4×2, shrink back, grow again.
+    for (const [dx, dy] of [[rect.width, rect.height], [0, 0], [rect.width, rect.height]] as [number, number][]) {
+      await page.mouse.move(g.x + 20 + dx, g.y + 20 + dy, { steps: 12 });
+      await page.waitForTimeout(300);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    const frames = await stopFrames(page);
+    expect(frames.length).toBeGreaterThan(20);
+    expect(hits(frames)).toEqual([]);
+    for (const f of frames) for (const b of f.boxes) if (b.id !== 'slot' && b.id !== 'add') expect(b.leaves, `${b.id} content`).toBeGreaterThanOrEqual(MIN_LEAVES);
   });
 }

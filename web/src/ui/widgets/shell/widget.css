@@ -99,8 +99,8 @@ a.row:focus-visible {outline: 2px solid var(--c-blue); outline-offset: -2px;}
 .blocks.is-editing .wc-go, .blocks.is-editing .wc-aside {display: none;}
 .blocks.is-editing .wc-link {pointer-events: none;}
 .blocks.is-editing .blk:hover .wc {box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-blue) 55%, transparent), var(--block-shadow);}
-.blk-float .wc {box-shadow: var(--block-lift), 0 0 0 2px var(--block-ring);}
-.blk-float .wc-body, .blk-float .wc-foot {opacity: 1;}
+.blk.is-lifted .wc {box-shadow: var(--block-lift), 0 0 0 2px var(--block-ring);}
+.blk.is-lifted .wc-body, .blk.is-lifted .wc-foot {opacity: 1;}
 
 /* ───────────── Phone (Home under 600px) ───────────── */
 @container blocks (max-width: 599px) {
