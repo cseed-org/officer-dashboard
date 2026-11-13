@@ -32,7 +32,7 @@ test.describe('resizable sidebar', () => {
     await resetWidth(page);
   });
 
-  test('dragging resizes freely and the width follows the user to a new browser profile', async ({ page, browser }) => {
+  test('dragging resizes freely and the width follows the user to a new browser profile', async ({ page }) => {
     const errors = watchErrors(page);
     await dragTo(page, 300);
     expect(await width(page)).toBe(300);
