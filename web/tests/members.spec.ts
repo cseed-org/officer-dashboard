@@ -45,6 +45,7 @@ for (const theme of THEMES) {
       await route.fulfill({
         json: {
           officers: [],
+          officerRows: [],
           items: items.slice(offset, offset + limit),
           total: items.length,
           offset,
@@ -124,6 +125,7 @@ for (const theme of THEMES) {
       route.fulfill({
         json: {
           officers: [],
+          officerRows: [],
           items: [member],
           total: 1,
           limit: 50,
@@ -184,15 +186,17 @@ for (const theme of THEMES) {
     await devLogin(page, "officer");
     const matched = makeMember(1);
     const other = makeMember(2);
-    await page.route("**/api/members?*", (route) =>
-      route.fulfill({
+    await page.route("**/api/members?*", (route) => {
+      const filtered = !!new URL(route.request().url()).searchParams.get("campus");
+      return route.fulfill({
         json: {
           officers: [
             { id: "u-1", name: "Priya Shah", title: "Treasurer", subteam: "Finance", email: "priya@uw.edu", memberId: matched.person_id },
             { id: "u-2", name: "Sam Rivera", title: null, subteam: null, email: "sam@uw.edu", memberId: null },
           ],
+          officerRows: filtered ? [] : [{ id: "u-2", name: "Sam Rivera", title: null, subteam: null, email: "sam@uw.edu", memberId: null }],
           items: [matched, other],
-          total: 2,
+          total: filtered ? 2 : 3,
           limit: 25,
           offset: 0,
           connected: true,
@@ -200,8 +204,8 @@ for (const theme of THEMES) {
           syncError: "",
           facets: { campus: ["Seattle"], grad_year: ["2028"] },
         },
-      }),
-    );
+      });
+    });
     await page.goto("/members");
     // 2 member rows + 1 officer without a member row; the matched officer is not repeated.
     await expect(page.locator("tbody tr")).toHaveCount(3);

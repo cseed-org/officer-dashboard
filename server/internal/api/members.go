@@ -44,9 +44,37 @@ func (c *Ctx) membersList() error {
 	}
 	defer tx.Rollback()
 	q := store.On(tx)
-	items, total, err := q.Members(c.Context(), f)
+	officers, err := c.memberOfficers(c.Context(), q)
 	if err != nil {
 		return err
+	}
+	for _, o := range officers {
+		if o.MemberID != nil {
+			f.CurrentOfficerIDs = append(f.CurrentOfficerIDs, *o.MemberID)
+		}
+	}
+	// The directory is the officer-only rows (no member row shares their email) followed by the
+	// mirror rows, paged together: offset and total count both. Display only.
+	extras := officerOnlyRows(officers, f)
+	e := len(extras)
+	page := []MemberOfficerDTO{}
+	if f.Offset < e {
+		page = extras[f.Offset:min(e, f.Offset+f.Limit)]
+	}
+	mf := f
+	mf.Offset = max(0, f.Offset-e)
+	mf.Limit = f.Limit - len(page)
+	items := []cloudflare.Person{}
+	var total int
+	if mf.Limit > 0 {
+		if items, total, err = q.Members(c.Context(), mf); err != nil {
+			return err
+		}
+	} else {
+		mf.Limit = 1
+		if _, total, err = q.Members(c.Context(), mf); err != nil {
+			return err
+		}
 	}
 	facets, err := q.MemberFacets(c.Context())
 	if err != nil {
@@ -59,10 +87,6 @@ func (c *Ctx) membersList() error {
 	for i := range items {
 		items[i].Demographics = nil
 	}
-	officers, err := c.memberOfficers(c.Context(), q)
-	if err != nil {
-		return err
-	}
 	// Paging past the first page is how a bulk copy of the member list happens; leave a trace.
 	if f.Offset > 0 {
 		filters := map[string]any{"q": f.Search, "campus": f.Campus, "gradYear": f.GradYear, "officer": f.Officer}
@@ -73,7 +97,7 @@ func (c *Ctx) membersList() error {
 		}
 	}
 	c.W.Header().Set("Cache-Control", "no-store")
-	writeJSON(c.W, 200, map[string]any{"items": items, "total": total, "limit": f.Limit, "offset": f.Offset, "connected": c.S.cfg.Cloudflare.Client.D1Connected(), "lastSync": last, "syncError": msg, "facets": facets, "officers": officers})
+	writeJSON(c.W, 200, map[string]any{"items": items, "total": total + e, "limit": f.Limit, "offset": f.Offset, "connected": c.S.cfg.Cloudflare.Client.D1Connected(), "lastSync": last, "syncError": msg, "facets": facets, "officers": officers, "officerRows": page})
 	return nil
 }
 
@@ -87,6 +111,25 @@ type MemberOfficerDTO struct {
 	Subteam  *string `json:"subteam"`
 	Email    string  `json:"email"`
 	MemberID *string `json:"memberId"`
+}
+
+// officerOnlyRows are active officers with no member row, narrowed by the same filters the
+// member rows get (member-only fields such as campus or grad year exclude them).
+func officerOnlyRows(all []MemberOfficerDTO, f store.MemberFilter) []MemberOfficerDTO {
+	out := []MemberOfficerDTO{}
+	if f.Campus != "" || f.GradYear != "" || f.Officer == "no" {
+		return out
+	}
+	for _, o := range all {
+		if o.MemberID != nil {
+			continue
+		}
+		if f.Search != "" && !strings.Contains(store.Fold(o.Name+" "+o.Email), store.Fold(f.Search)) {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
 }
 
 func (c *Ctx) memberOfficers(ctx context.Context, q *store.Queries) ([]MemberOfficerDTO, error) {

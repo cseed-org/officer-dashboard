@@ -107,11 +107,8 @@ function Members({ me }: { me: CurrentUser }) {
   // email with a member row badges that row instead of adding a second line.
   const officers = data?.officers ?? [];
   const officerOf = new Map(officers.flatMap((o) => (o.memberId ? [[o.memberId, o] as const] : [])));
-  const needle = filters.q.trim().toLowerCase();
-  const extras =
-    data && offset === 0 && !filters.campus && !filters.gradYear && filters.officer !== "no"
-      ? officers.filter((o) => !o.memberId && (!needle || `${o.name} ${o.email}`.toLowerCase().includes(needle)))
-      : [];
+  // Officer-only rows are part of the paged directory: the server counts and pages them with the members.
+  const extras = data?.officerRows ?? [];
   const change = (key: keyof Filters, value: string) => {
     setFilters({ ...filters, [key]: value });
     setOffset(0);
@@ -263,7 +260,7 @@ function Members({ me }: { me: CurrentUser }) {
           data && (
             <>
               <div class="block-head">
-                <h2>{(data.total + extras.length).toLocaleString()} members</h2>
+                <h2>{data.total.toLocaleString()} members</h2>
                 <span class="muted">
                   Read-only mirror · open a name for details
                 </span>

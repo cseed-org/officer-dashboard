@@ -1008,25 +1008,16 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
             </div>
           </div>
 
-          {officers.length <= 1 && !filtering ? (
-            <section class="state">
-              <h2 class="state-title">No officers yet</h2>
-              <p class="state-body">{canManage ? 'Invite the first officers. They get a Discord DM or a link, then set up their profile.' : 'Officers appear here once they’re invited.'}</p>
-              {canManage && (
-                <button class="btn btn--primary" onClick={() => setInviteOpen(true)}>
-                  Invite officer
-                </button>
-              )}
-            </section>
-          ) : (
-            <div class="stack" data-directory>
+          <div class="stack" data-directory>
               <section class="stack people-group" data-section="officers" aria-labelledby="dir-officers">
                 <div class="section-head">
                   <h2 id="dir-officers">Officers</h2>
                   <span class="muted small">{activeRows.length}</span>
                 </div>
                 {activeRows.length === 0 ? (
-                  <p class="muted small" role="status">{filtering ? 'No officers match.' : 'No active officers.'}</p>
+                  <p class="muted small" role="status">
+                    {filtering ? 'No officers match.' : canManage ? 'No officers yet. Invite the first officers: they get a Discord DM or a link, then set up their profile.' : 'Officers appear here once they’re invited.'}
+                  </p>
                 ) : (
                   <div class="table-wrap">
                     <table class="dt">
@@ -1121,8 +1112,7 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
                   </div>
                 </section>
               )}
-            </div>
-          )}
+          </div>
         </>
       )}
 

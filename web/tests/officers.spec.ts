@@ -166,6 +166,27 @@ test('Board Members shows Officers, Club Support Contacts and Ex-Officers', asyn
   }
 });
 
+test('a single officer account still shows its Club Support Contacts', async ({ page }) => {
+  await devLogin(page, 'director');
+  const name = `Solo ${Date.now()}`;
+  const made = await page.request.post('/api/contacts', { data: { name, type: 'mentor', clubSupport: true } });
+  const id = (await made.json()).contact.id as string;
+  try {
+    await page.route('**/api/officers', async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      body.officers = body.officers.slice(0, 1);
+      await route.fulfill({ response: res, json: body });
+    });
+    await page.goto('/officers');
+    await settle(page);
+    await expect(page.locator('[data-section="officers"] tbody tr')).toHaveCount(1);
+    await expect(page.locator('[data-section="club-support"]')).toContainText(name);
+  } finally {
+    await page.request.delete(`/api/contacts/${id}`);
+  }
+});
+
 for (const theme of THEMES) {
   test(`officers page and invite dialog fit the screen (${theme})`, async ({ page }, info) => {
     await useTheme(page, theme);

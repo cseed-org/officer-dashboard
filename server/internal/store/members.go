@@ -10,6 +10,9 @@ import (
 type MemberFilter struct {
 	Search, Campus, GradYear, Officer string
 	Limit, Offset                     int
+	// CurrentOfficerIDs are member rows matched to active officers; display-time only, so they
+	// count as officers for the yes/no filter even when the mirror flag is stale.
+	CurrentOfficerIDs []string
 }
 
 func memberWhere(f MemberFilter) (string, []any) {
@@ -26,8 +29,22 @@ func memberWhere(f MemberFilter) (string, []any) {
 		}
 	}
 	if f.Officer != "" {
-		where += " AND has_been_officer=?"
-		args = append(args, f.Officer == "yes")
+		ph := strings.TrimSuffix(strings.Repeat("?,", len(f.CurrentOfficerIDs)), ",")
+		cur := ""
+		if ph != "" {
+			cur = " OR person_id IN (" + ph + ")"
+		}
+		if f.Officer == "yes" {
+			where += " AND (has_been_officer=1" + cur + ")"
+		} else {
+			where += " AND has_been_officer=0"
+			if ph != "" {
+				where += " AND person_id NOT IN (" + ph + ")"
+			}
+		}
+		for _, id := range f.CurrentOfficerIDs {
+			args = append(args, id)
+		}
 	}
 	return where, args
 }
