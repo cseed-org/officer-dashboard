@@ -126,6 +126,46 @@ test('an unknown account from an invite link sees the unavailable screen', async
   await expect(page.locator('#step-title')).toHaveText('Let’s get you a fresh start.');
 });
 
+test('Board Members shows Officers, Club Support Contacts and Ex-Officers', async ({ page }) => {
+  await devLogin(page, 'director');
+  const name = `Support ${Date.now()}`;
+  const made = await page.request.post('/api/contacts', { data: { name, org: 'Dept. of Things', role: 'Advisor', type: 'mentor', email: 'adviser@example.org', clubSupport: true } });
+  expect(made.ok()).toBe(true);
+  const plain = await page.request.post('/api/contacts', { data: { name: `Plain ${Date.now()}`, type: 'speaker' } });
+  const ids = [(await made.json()).contact.id as string, (await plain.json()).contact.id as string];
+  try {
+    // Ex-officers are the deactivated accounts; show one without touching shared seed data.
+    await page.route('**/api/officers', async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      const victim = body.officers.find((o: { name: string }) => o.name === 'Priya Shah');
+      victim.active = false;
+      await route.fulfill({ response: res, json: body });
+    });
+    await page.goto('/officers');
+    await settle(page);
+    const officers = page.locator('[data-section="officers"]');
+    const support = page.locator('[data-section="club-support"]');
+    const ex = page.locator('[data-section="ex-officers"]');
+    await expect(officers.getByRole('heading', { name: 'Officers', exact: true })).toBeVisible();
+    await expect(officers).toContainText('Sam Rivera');
+    await expect(officers).not.toContainText('Priya Shah');
+    await expect(support.getByRole('heading', { name: 'Club Support Contacts' })).toBeVisible();
+    await expect(support).toContainText(name);
+    await expect(support).not.toContainText('Plain ');
+    await expect(support.getByRole('link', { name: 'adviser@example.org' })).toHaveAttribute('href', 'mailto:adviser@example.org');
+    await expect(ex.getByRole('heading', { name: 'Ex-Officers' })).toBeVisible();
+    await expect(ex).toContainText('Priya Shah');
+    // One search box narrows every section.
+    await page.locator('[data-officer-search]').fill('Dept. of Things');
+    await expect(support).toContainText(name);
+    await expect(officers).not.toContainText('Sam Rivera');
+    expect(await overflow(page)).toEqual([]);
+  } finally {
+    for (const id of ids) await page.request.delete(`/api/contacts/${id}`);
+  }
+});
+
 for (const theme of THEMES) {
   test(`officers page and invite dialog fit the screen (${theme})`, async ({ page }, info) => {
     await useTheme(page, theme);

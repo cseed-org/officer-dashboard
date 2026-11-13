@@ -138,3 +138,31 @@ func TestLegacySpeakersRedirect(t *testing.T) {
 		}
 	}
 }
+
+func TestContactClubSupportFlagAndFilter(t *testing.T) {
+	e := newEnv(t)
+	post := func(name string, extra map[string]any) string {
+		b := map[string]any{"name": name, "type": "mentor"}
+		for k, v := range extra {
+			b[k] = v
+		}
+		r := e.mustOK(e.post("/api/contacts", b, e.officer()))
+		return r.at("contact", "id").(string)
+	}
+	plain := post("Plain Person", nil)
+	support := post("Dana Advisor", map[string]any{"clubSupport": true})
+	if r := e.mustOK(e.get("/api/contacts/"+plain, e.officer())); r.at("contact", "clubSupport") != false {
+		t.Fatalf("default should be false: %s", r.Raw)
+	}
+	r := e.mustOK(e.get("/api/contacts?clubSupport=true", e.officer()))
+	if s := string(r.Raw); !strings.Contains(s, support) || strings.Contains(s, plain) {
+		t.Fatalf("filter true: %s", s)
+	}
+	e.mustOK(e.do("PATCH", "/api/contacts/"+plain, map[string]any{"clubSupport": true}, e.officer()))
+	e.mustOK(e.do("PATCH", "/api/contacts/"+support, map[string]any{"clubSupport": false}, e.officer()))
+	r = e.mustOK(e.get("/api/contacts?clubSupport=true", e.officer()))
+	if s := string(r.Raw); !strings.Contains(s, plain) || strings.Contains(s, support) {
+		t.Fatalf("after toggle: %s", s)
+	}
+	expectStatus(t, "bad filter", e.get("/api/contacts?clubSupport=maybe", e.officer()), 400)
+}

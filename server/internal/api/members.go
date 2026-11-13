@@ -59,6 +59,10 @@ func (c *Ctx) membersList() error {
 	for i := range items {
 		items[i].Demographics = nil
 	}
+	officers, err := c.memberOfficers(c.Context(), q)
+	if err != nil {
+		return err
+	}
 	// Paging past the first page is how a bulk copy of the member list happens; leave a trace.
 	if f.Offset > 0 {
 		filters := map[string]any{"q": f.Search, "campus": f.Campus, "gradYear": f.GradYear, "officer": f.Officer}
@@ -69,8 +73,71 @@ func (c *Ctx) membersList() error {
 		}
 	}
 	c.W.Header().Set("Cache-Control", "no-store")
-	writeJSON(c.W, 200, map[string]any{"items": items, "total": total, "limit": f.Limit, "offset": f.Offset, "connected": c.S.cfg.Cloudflare.Client.D1Connected(), "lastSync": last, "syncError": msg, "facets": facets})
+	writeJSON(c.W, 200, map[string]any{"items": items, "total": total, "limit": f.Limit, "offset": f.Offset, "connected": c.S.cfg.Cloudflare.Client.D1Connected(), "lastSync": last, "syncError": msg, "facets": facets, "officers": officers})
 	return nil
+}
+
+// MemberOfficerDTO is an active officer shown in the Members list. MemberID is set when an
+// existing member row shares one of the officer's emails; that row gets the badge instead of
+// a second line. Display only: nothing is written to member records.
+type MemberOfficerDTO struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Title    *string `json:"title"`
+	Subteam  *string `json:"subteam"`
+	Email    string  `json:"email"`
+	MemberID *string `json:"memberId"`
+}
+
+func (c *Ctx) memberOfficers(ctx context.Context, q *store.Queries) ([]MemberOfficerDTO, error) {
+	users, err := q.Users(ctx)
+	if err != nil {
+		return nil, err
+	}
+	profiles, err := q.Profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	people, err := loadPeople(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	byEmail, err := q.MemberIDsByEmail(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := []MemberOfficerDTO{}
+	for i := range users {
+		u := &users[i]
+		if !u.Active {
+			continue
+		}
+		o := MemberOfficerDTO{ID: u.ID, Name: u.Name, Title: u.Title}
+		emails := []string{}
+		if p, ok := profiles[u.ID]; ok {
+			if t := people.subteam(p.SubteamID); t != nil {
+				o.Subteam = &t.Name
+			}
+			emails = append(emails, deref(p.SchoolEmail), deref(p.PersonalEmail))
+			if p.Title != nil && o.Title == nil {
+				o.Title = p.Title
+			}
+		}
+		emails = append(emails, deref(u.Email))
+		for _, e := range emails {
+			if e = strings.TrimSpace(e); e == "" {
+				continue
+			}
+			if o.Email == "" {
+				o.Email = e
+			}
+			if id, ok := byEmail[store.Fold(e)]; ok && o.MemberID == nil {
+				o.MemberID = &id
+			}
+		}
+		out = append(out, o)
+	}
+	return out, nil
 }
 func (c *Ctx) memberDetail() error {
 	if _, err := c.officer(); err != nil {

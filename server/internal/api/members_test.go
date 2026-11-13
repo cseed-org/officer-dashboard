@@ -103,3 +103,53 @@ func TestMembersNotConnectedAndCSV(t *testing.T) {
 		}
 	}
 }
+
+func TestMembersListIncludesActiveOfficersDedupedByEmail(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.edu' WHERE id='user-priya'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Write(ctx, func(q *store.Queries) error {
+		return q.SaveMember(ctx, cloudflare.Person{ID: "m-priya", FirstName: "Priya", LastName: "Member", JoinDate: "2026-01-01", UWEmail: strp("PRIYA@uw.edu")})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := e.mustOK(e.get("/api/members", e.officer()))
+	var body struct {
+		Officers []struct {
+			ID       string  `json:"id"`
+			Name     string  `json:"name"`
+			MemberID *string `json:"memberId"`
+		} `json:"officers"`
+	}
+	if err := json.Unmarshal(r.Raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Officers) < 2 {
+		t.Fatalf("expected the active team: %s", r.Raw)
+	}
+	var matched, unmatched int
+	for _, o := range body.Officers {
+		if o.ID == "user-priya" {
+			if o.MemberID == nil || *o.MemberID != "m-priya" {
+				t.Fatalf("priya should dedupe against the member row: %+v", o)
+			}
+			matched++
+		} else if o.MemberID == nil {
+			unmatched++
+		}
+	}
+	if matched != 1 || unmatched == 0 {
+		t.Fatalf("matched=%d unmatched=%d %s", matched, unmatched, r.Raw)
+	}
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET active=0 WHERE id='user-priya'`); err != nil {
+		t.Fatal(err)
+	}
+	r = e.mustOK(e.get("/api/members", e.director()))
+	if strings.Contains(string(r.Raw), `"id":"user-priya"`) {
+		t.Fatalf("deactivated officers must not be listed: %s", r.Raw)
+	}
+}
+
+func strp(s string) *string { return &s }

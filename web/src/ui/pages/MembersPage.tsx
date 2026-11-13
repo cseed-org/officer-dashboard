@@ -103,6 +103,15 @@ function Members({ me }: { me: CurrentUser }) {
     );
     return () => controller.abort();
   }, [detailId]);
+  // Officers are club members: current officers are listed too (display only). One that shares an
+  // email with a member row badges that row instead of adding a second line.
+  const officers = data?.officers ?? [];
+  const officerOf = new Map(officers.flatMap((o) => (o.memberId ? [[o.memberId, o] as const] : [])));
+  const needle = filters.q.trim().toLowerCase();
+  const extras =
+    data && offset === 0 && !filters.campus && !filters.gradYear && filters.officer !== "no"
+      ? officers.filter((o) => !o.memberId && (!needle || `${o.name} ${o.email}`.toLowerCase().includes(needle)))
+      : [];
   const change = (key: keyof Filters, value: string) => {
     setFilters({ ...filters, [key]: value });
     setOffset(0);
@@ -254,12 +263,12 @@ function Members({ me }: { me: CurrentUser }) {
           data && (
             <>
               <div class="block-head">
-                <h2>{data.total.toLocaleString()} members</h2>
+                <h2>{(data.total + extras.length).toLocaleString()} members</h2>
                 <span class="muted">
                   Read-only mirror · open a name for details
                 </span>
               </div>
-              {data.items.length === 0 ? (
+              {data.items.length === 0 && extras.length === 0 ? (
                 <div class="state">
                   <h3>
                     {data.connected
@@ -287,7 +296,7 @@ function Members({ me }: { me: CurrentUser }) {
                           "Grad year",
                           "Campus",
                           "Joined",
-                          "Has been officer",
+                          "Officer",
                         ].map((h) => (
                           <th scope="col" key={h}>
                             {h}
@@ -296,6 +305,22 @@ function Members({ me }: { me: CurrentUser }) {
                       </tr>
                     </thead>
                     <tbody>
+                      {extras.map((o) => (
+                        <tr key={o.id} data-officer-row={o.id}>
+                          <td class="dt-primary" data-label="Name">
+                            <a class="member-name" href="/officers">{o.name}</a>
+                            <span class="member-preferred">{[o.title, o.subteam].filter(Boolean).join(" · ") || "Officer"}</span>
+                          </td>
+                          <td data-label="UW email">{o.email || "—"}</td>
+                          <td data-label="Major">—</td>
+                          <td data-label="Grad year">—</td>
+                          <td data-label="Campus">—</td>
+                          <td class="nowrap" data-label="Joined">—</td>
+                          <td data-label="Officer">
+                            <span class="badge badge--info" data-officer-badge>Officer</span>
+                          </td>
+                        </tr>
+                      ))}
                       {data.items.map((p) => (
                         <tr key={p.person_id}>
                           <td class="dt-primary" data-label="Name">
@@ -322,8 +347,14 @@ function Members({ me }: { me: CurrentUser }) {
                           <td class="nowrap" data-label="Joined">
                             {p.join_date.slice(0, 10)}
                           </td>
-                          <td data-label="Has been officer">
-                            {p.has_been_cseed_officer ? "Yes" : "No"}
+                          <td data-label="Officer">
+                            {officerOf.has(p.person_id) ? (
+                              <span class="badge badge--info" data-officer-badge>Officer</span>
+                            ) : p.has_been_cseed_officer ? (
+                              <span class="muted">Former</span>
+                            ) : (
+                              <span class="muted">—</span>
+                            )}
                           </td>
                         </tr>
                       ))}

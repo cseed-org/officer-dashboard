@@ -2,3 +2,5 @@
 @media (max-width: 640px) {
   .officers-page .people-menu .row-menu-list { left: 0; right: auto; }
 }
+/* Emails wrap inside their column instead of running under the table edge. */
+.officers-page .dt td a:not(.cell-title) { overflow-wrap: anywhere; }

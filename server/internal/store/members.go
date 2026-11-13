@@ -159,3 +159,27 @@ func (q *Queries) MemberSignupCounts(ctx context.Context, at int64) (map[string]
 	counts["last30Days"] = month
 	return counts, err
 }
+
+// MemberIDsByEmail maps every folded member email (UW, CS, personal) to its person ID, so
+// officers can be matched to an existing member row without copying any member data.
+func (q *Queries) MemberIDsByEmail(ctx context.Context) (map[string]string, error) {
+	rows, err := q.q.QueryContext(ctx, `SELECT person_id,coalesce(uw_email,''),coalesce(json_extract(record_json,'$.cs_email'),''),coalesce(json_extract(record_json,'$.personal_email'),'') FROM members_mirror ORDER BY join_date,person_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id string
+		var emails [3]string
+		if err := rows.Scan(&id, &emails[0], &emails[1], &emails[2]); err != nil {
+			return nil, err
+		}
+		for _, e := range emails {
+			if e = Fold(strings.TrimSpace(e)); e != "" {
+				out[e] = id
+			}
+		}
+	}
+	return out, rows.Err()
+}

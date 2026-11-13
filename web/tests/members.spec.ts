@@ -44,6 +44,7 @@ for (const theme of THEMES) {
         limit = Number(q.get("limit") || 25);
       await route.fulfill({
         json: {
+          officers: [],
           items: items.slice(offset, offset + limit),
           total: items.length,
           offset,
@@ -122,6 +123,7 @@ for (const theme of THEMES) {
     await page.route("**/api/members?*", (route) =>
       route.fulfill({
         json: {
+          officers: [],
           items: [member],
           total: 1,
           limit: 50,
@@ -175,6 +177,44 @@ for (const theme of THEMES) {
       "Correcting major",
     );
     expect(writes).toBe(1);
+    expect(await overflow(page)).toEqual([]);
+  });
+  test(`Officers are listed with members, deduped by email · ${theme}`, async ({ page }) => {
+    await useTheme(page, theme);
+    await devLogin(page, "officer");
+    const matched = makeMember(1);
+    const other = makeMember(2);
+    await page.route("**/api/members?*", (route) =>
+      route.fulfill({
+        json: {
+          officers: [
+            { id: "u-1", name: "Priya Shah", title: "Treasurer", subteam: "Finance", email: "priya@uw.edu", memberId: matched.person_id },
+            { id: "u-2", name: "Sam Rivera", title: null, subteam: null, email: "sam@uw.edu", memberId: null },
+          ],
+          items: [matched, other],
+          total: 2,
+          limit: 25,
+          offset: 0,
+          connected: true,
+          lastSync: Date.now(),
+          syncError: "",
+          facets: { campus: ["Seattle"], grad_year: ["2028"] },
+        },
+      }),
+    );
+    await page.goto("/members");
+    // 2 member rows + 1 officer without a member row; the matched officer is not repeated.
+    await expect(page.locator("tbody tr")).toHaveCount(3);
+    await expect(page.getByRole("heading", { name: "3 members", exact: true })).toBeVisible();
+    await expect(page.locator("[data-officer-row]")).toHaveCount(1);
+    await expect(page.locator("[data-officer-row]")).toContainText("Sam Rivera");
+    await expect(page.locator("[data-officer-row] [data-officer-badge]")).toHaveText("Officer");
+    // The member row that shares the officer's email carries the badge instead.
+    await expect(page.locator("tbody tr", { hasText: "Member 0001" }).locator("[data-officer-badge]")).toHaveText("Officer");
+    await expect(page.locator("tbody tr", { hasText: "Member 0002" }).locator("[data-officer-badge]")).toHaveCount(0);
+    // Narrowing by a member-only field drops the officer-only line.
+    await page.getByRole("combobox", { name: "Campus", exact: true }).selectOption("Seattle");
+    await expect(page.locator("[data-officer-row]")).toHaveCount(0);
     expect(await overflow(page)).toEqual([]);
   });
   // Layout persistence moved to home-grid.spec.ts, which resets the layout before each test.

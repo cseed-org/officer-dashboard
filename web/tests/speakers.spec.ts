@@ -264,3 +264,39 @@ test('legacy Speakers deep link redirects to External Contacts', async ({ page }
   await expect(openDialog(page).getByLabel('Has spoken for CSEED before')).not.toBeChecked();
   await page.request.delete(`/api/contacts/${contact.id}`);
 });
+
+test('contacts: marking a contact as club support tags it, filters it and lists it under Board Members', async ({ page }) => {
+  const name = `Support ${Date.now().toString(36)}`;
+  await devLogin(page, 'officer');
+  await page.goto('/contacts');
+  await settle(page);
+  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  let d = openDialog(page);
+  await d.getByLabel('Name').fill(name);
+  await d.getByLabel('Club support contact (shown under Board Members)').check();
+  await d.getByRole('button', { name: 'Add contact' }).click();
+  await expect(page).toHaveURL(/\/contacts\?id=/);
+  const id = new URL(page.url()).searchParams.get('id')!;
+  try {
+    await page.keyboard.press('Escape');
+    await expect(entry(page, name).locator('[data-club-support]')).toBeVisible();
+    // The "Club support only" filter hides everyone else.
+    await page.getByLabel('Club support only').check();
+    await expect(entry(page, name)).toHaveCount(1);
+    await expect(page.locator('main').locator('.speakers-desktop tbody tr, .speakers-mobile article').filter({ visible: true })).not.toHaveCount(0);
+    await page.goto('/officers');
+    await settle(page);
+    await expect(page.locator('[data-section="club-support"]')).toContainText(name);
+    // Un-tagging removes it from Board Members.
+    await page.goto(`/contacts?id=${id}`);
+    d = openDialog(page);
+    await d.getByLabel('Club support contact (shown under Board Members)').uncheck();
+    await d.getByRole('button', { name: 'Save contact' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Contact saved.' })).toBeVisible();
+    await page.goto('/officers');
+    await settle(page);
+    await expect(page.locator('[data-section="club-support"]')).not.toContainText(name);
+  } finally {
+    await page.request.delete(`/api/contacts/${id}`);
+  }
+});
