@@ -25,7 +25,9 @@
 }
 
 /* ───────────── Kanban (design requests): calm, dense, readable ───────────── */
-.kanban {display:grid;grid-auto-flow:column;grid-auto-columns:minmax(200px, 1fr);gap:12px;overflow-x:auto;padding-bottom:4px;align-items:start;}
+.kanban {display:grid;grid-auto-flow:column;grid-auto-columns:minmax(200px, 1fr);gap:12px;overflow-x:auto;padding-bottom:4px;align-items:stretch;}
+/* Every column spans the board's full height, so a card dragged straight across from low in a tall
+   column still lands on a drop target (a short column would sit above the viewport). */
 .kanban:focus-visible {outline:2px solid var(--focus, var(--c-blue));outline-offset:4px;}
 .kanban-col {position:relative;display:grid;gap:8px;align-content:start;min-width:0;padding:10px;border-radius:var(--radius-card);background:var(--sunken);border:1px solid var(--line);transition:border-color var(--dur-1) ease;}
 .kanban-col.is-over {border-color:var(--control);}
