@@ -53,7 +53,7 @@ export default function FinanceView({ me }: { me: CurrentUser }) {
       </div>
 
       <div key={tab} id="fin-panel" role="tabpanel" aria-labelledby={`fin-tab-${tab}`} class="tab-panel">
-        {tab === 'requests' && <RequestsPanel director={director} tick={listTick} fy={fy} />}
+        {tab === 'requests' && <RequestsPanel director={director} tick={listTick} fy={fy} fyFailed={lookups.status === 'error'} onRetryFy={lookups.reload} />}
         {tab !== 'requests' && (
           <>
             {tab !== 'periods' && <YearFundFilters lookups={lookups.status === 'ready' ? lookups.data : null} fy={fy} fundId={fundId} />}
@@ -170,19 +170,31 @@ const FILTERS: { key: StatusFilter; label: string; statuses: PurchaseStatus[] }[
 ];
 
 type StatCounts = { pending: number; approved: number; awaiting: number; director: boolean; loading: boolean };
+type Totals = { budgetCents: number; spentCents: number; committedCents: number };
+/** The budget tile: figures, a skeleton, or "unavailable" with a retry. */
+type Budget = { kind: 'ready'; totals: Totals } | { kind: 'loading' } | { kind: 'error'; retry: () => void };
 
-/** Budget figures come from the finance summary; they only load once the fiscal year is known. */
-function BudgetTile({ fy, ...c }: StatCounts & { fy: number }) {
-  const summary = useApi('financeSummary', { query: { fiscalYear: fy } });
-  return <StatRowFor {...c} summary={summary.status === 'ready' ? summary.data.totals : null} summaryLoading={summary.status === 'loading'} />;
+/** Budget figures come from the finance summary; `tick` refetches them after a request changes. */
+function BudgetTile({ fy, tick, ...c }: StatCounts & { fy: number; tick: number }) {
+  const summary = useApi('financeSummary', { query: { fiscalYear: fy } }, { fiscalYear: fy, tick });
+  const budget: Budget = summary.status === 'ready' ? { kind: 'ready', totals: summary.data.totals } : summary.status === 'error' ? { kind: 'error', retry: summary.reload } : { kind: 'loading' };
+  return <StatRowFor {...c} budget={budget} />;
 }
 
-function RequestStats({ fy, ...c }: StatCounts & { fy: number | null }) {
-  return fy ? <BudgetTile fy={fy} {...c} /> : <StatRowFor {...c} summary={null} summaryLoading />;
+function RequestStats({ fy, tick, fyFailed, onRetryFy, ...c }: StatCounts & { fy: number | null; tick: number; fyFailed: boolean; onRetryFy: () => void }) {
+  if (fy) return <BudgetTile fy={fy} tick={tick} {...c} />;
+  return <StatRowFor {...c} budget={fyFailed ? { kind: 'error', retry: onRetryFy } : { kind: 'loading' }} />;
 }
 
-function StatRowFor({ pending, approved, awaiting, director, loading, summary, summaryLoading }: StatCounts & { summary: { budgetCents: number; spentCents: number; committedCents: number } | null; summaryLoading: boolean }) {
-  const used = summary && summary.budgetCents ? (summary.spentCents + summary.committedCents) / summary.budgetCents : null;
+function StatRowFor({ pending, approved, awaiting, director, loading, budget }: StatCounts & { budget: Budget }) {
+  const t = budget.kind === 'ready' ? budget.totals : null;
+  const used = t && t.budgetCents ? (t.spentCents + t.committedCents) / t.budgetCents : null;
+  const spend =
+    budget.kind === 'error'
+      ? { value: '—', sub: <>Unavailable · <button type="button" class="linkish" onClick={budget.retry}>Retry</button></> }
+      : t
+        ? { value: t.budgetCents ? `${Math.round((used ?? 0) * 100)}%` : '—', sub: t.budgetCents ? `${formatCents(t.spentCents + t.committedCents)} of ${formatCents(t.budgetCents)}` : 'no budget set' }
+        : { value: 0, sub: undefined };
   return (
     <StatRow
       label="Requests summary"
@@ -190,19 +202,13 @@ function StatRowFor({ pending, approved, awaiting, director, loading, summary, s
         { label: 'Pending', value: pending, sub: 'waiting on a director', alert: pending > 0 && director, loading, href: '/finance?status=pending' },
         { label: 'Approved', value: approved, sub: 'being bought or delivered', loading },
         { label: 'Awaiting payment', value: awaiting, sub: 'reimbursement due', loading },
-        {
-          label: 'Spend vs budget',
-          value: summary ? (summary.budgetCents ? `${Math.round((used ?? 0) * 100)}%` : '—') : 0,
-          sub: summary ? (summary.budgetCents ? `${formatCents(summary.spentCents + summary.committedCents)} of ${formatCents(summary.budgetCents)}` : 'no budget set') : undefined,
-          alert: used !== null && used > 1,
-          loading: summaryLoading,
-        },
+        { label: 'Spend vs budget', ...spend, alert: used !== null && used > 1, loading: budget.kind === 'loading' },
       ]}
     />
   );
 }
 
-function RequestsPanel({ director, tick, fy }: { director: boolean; tick: number; fy: number | null }) {
+function RequestsPanel({ director, tick, fy, fyFailed, onRetryFy }: { director: boolean; tick: number; fy: number | null; fyFailed: boolean; onRetryFy: () => void }) {
   const search = useSearch();
   // Directors land on everyone's requests (they approve them); officers on their own.
   const scope: Scope = (search.get('scope') as Scope | null) ?? (director ? 'all' : 'mine');
@@ -228,7 +234,7 @@ function RequestsPanel({ director, tick, fy }: { director: boolean; tick: number
   return (
     <div class="stack">
       {state.status !== 'error' && (
-        <RequestStats fy={fy} pending={n('submitted')} approved={n('approved', 'fulfilling', 'fulfilled')} awaiting={n('reimbursed')} director={director} loading={loading} />
+        <RequestStats fy={fy} pending={n('submitted')} approved={n('approved', 'fulfilling', 'fulfilled')} awaiting={n('reimbursed')} director={director} loading={loading} tick={tick} fyFailed={fyFailed} onRetryFy={onRetryFy} />
       )}
       <div class="toolbar toolbar--wrap">
         <div class="segmented" role="group" aria-label="Whose requests">

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { devSignIn, settle, watchErrors } from './helpers';
+import { devLogin, devSignIn, settle, watchErrors } from './helpers';
 
 // V0.9: Buildspace, Events, Design and Finance requests share one layout: a StatRow of
 // summary tiles on top, the list underneath.
@@ -38,4 +38,43 @@ test('Buildspace tiles filter the register through the query string', async ({ p
   await page.locator('[data-stat="open-requests"]').click();
   await expect(page).toHaveURL(/flag=requests/);
   await expect(page.locator('[data-stat="open-requests"]')).toHaveAttribute('aria-current', 'true');
+});
+
+const spendTile = (page: import('@playwright/test').Page) => page.locator('[data-stat="spend-vs-budget"]');
+
+test('Finance: a failed budget summary says unavailable and retries instead of showing 0', async ({ page }) => {
+  await devSignIn(page, { as: 'director' }, '/');
+  let fail = true;
+  await page.route('**/api/finance/summary*', (route) => (fail ? route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' }) : route.continue()));
+  await page.goto('/finance');
+  await settle(page);
+  await expect(spendTile(page)).toContainText('Unavailable');
+  await expect(spendTile(page).locator('.stat-tile-value')).toHaveText('—');
+  fail = false;
+  await spendTile(page).getByRole('button', { name: 'Retry' }).click();
+  await expect(spendTile(page)).not.toContainText('Unavailable');
+  await expect(spendTile(page).locator('.stat-tile-value')).toContainText(/%|—/);
+});
+
+test('Finance: the budget tile refetches after a request in the drawer changes', async ({ page }) => {
+  await devLogin(page, 'director');
+  const lookups = await (await page.request.get('/api/lookups')).json();
+  const res = await page.request.post('/api/requests', {
+    data: { type: 'club_purchase', title: `stat-e2e ${Date.now()}`, vendor: 'E2E', quantity: 1, unitCostCents: 500, taxShipCents: 0, expenseAccountId: lookups.expenseAccounts[0].id, fundId: lookups.funds[0].id, justification: 'stat tile e2e', neededBy: null },
+  });
+  expect(res.ok(), await res.text()).toBe(true);
+  const id = (await res.json()).request.id as string;
+  let summaries = 0;
+  page.on('request', (r) => r.url().includes('/api/finance/summary') && summaries++);
+  page.on('dialog', (d) => d.accept());
+  try {
+    await page.goto(`/finance?id=${id}`);
+    await settle(page);
+    await expect(spendTile(page).locator('.stat-tile-value')).not.toHaveAttribute('aria-busy', 'true');
+    const before = summaries;
+    await page.getByRole('button', { name: /delete/i }).first().click();
+    await expect.poll(() => summaries).toBeGreaterThan(before);
+  } finally {
+    await page.request.delete(`/api/requests/${id}`).catch(() => {});
+  }
 });

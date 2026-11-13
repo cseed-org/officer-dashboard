@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { designStats } from '../src/lib/design';
+import type { DesignRequestItem } from '../src/lib/contracts';
 import { isGradMonth, isLinkedIn } from '../src/lib/profileRules';
 import { normalizeHref } from '../src/lib/routes';
 import { sanitizeResults } from '../src/lib/search';
@@ -255,3 +257,15 @@ for (const [width, columns] of [[390, 2], [650, 4], [960, 4], [1200, 5], [1450, 
     for (let at = 0; at < fresh.y * columns! + fresh.x; at++) expect(covers(added, at % columns!, Math.floor(at / columns!))).toBe(true);
   });
 }
+
+test('V0.9: Design "Waiting on me" counts a request once when it is both assigned to me and awaiting my approval', () => {
+  const me = { id: 'u1', name: 'Me' };
+  const item = (id: string, over: Partial<DesignRequestItem>) => ({ id, stage: 'new', dueDate: null, updatedAt: '2026-11-01T00:00:00Z', requester: { id: 'other', name: 'O' }, assignee: null, ...over }) as DesignRequestItem;
+  const items = [
+    item('both', { stage: 'in-review', requester: me, assignee: me }), // assigned to me AND to approve
+    item('assigned', { stage: 'in-progress', assignee: me }),
+    item('approve', { stage: 'in-review', requester: me, assignee: { id: 'x', name: 'X' } }),
+    item('delivered', { stage: 'delivered', assignee: me }),
+  ];
+  expect(designStats(items, 'u1', '2026-11-13').mine).toBe(3);
+});

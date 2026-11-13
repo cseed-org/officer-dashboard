@@ -16,6 +16,7 @@ import {
 } from '../../lib/contracts';
 import {
   DESIGN_FILTERS,
+  designStats,
   designMoveTargets,
   dueState,
   dueText,
@@ -50,19 +51,6 @@ const VIEW_LABEL: Record<View, string> = {
 };
 const phone = () => typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches;
 type Menu = (i: DesignRequestItem, d: DesignRequestsListResponse) => MenuItem[];
-
-function designStats(items: DesignRequestItem[], meId: string) {
-  const today = todayPacific();
-  const open = items.filter((i) => i.stage !== 'delivered');
-  const w = myWork(items, meId);
-  return {
-    open: open.length,
-    inProgress: items.filter((i) => i.stage === 'in-progress').length,
-    mine: w.assigned.length + w.approve.length,
-    due: items.filter((i) => matchesFilter(i, 'due', meId, today)).length,
-    overdue: open.filter((i) => dueState(i, today) === 'overdue').length,
-  };
-}
 
 export default function DesignView({ me }: { me: CurrentUser }) {
   const search = useSearch();
