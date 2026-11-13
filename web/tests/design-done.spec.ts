@@ -135,7 +135,16 @@ for (const [from, how] of [['accepted', 'keyboard'], ['new', 'drag']] as const) 
         await expect(lane(page, 'done')).toHaveClass(/is-over/);
         await page.keyboard.press('Space');
       } else if (info.project.name === 'desktop') {
-        await card.dragTo(lane(page, 'done'), { targetPosition: { x: 80, y: 60 } });
+        // A real pointer drag with steps (dragTo's single jump was flaky right after load).
+        await expect(page.locator('[data-board]')).toHaveAttribute('aria-busy', 'false');
+        await card.scrollIntoViewIfNeeded();
+        const from = (await card.locator('.kanban-card-meta').boundingBox())!;
+        const to = (await lane(page, 'done').boundingBox())!;
+        await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(to.x + to.width / 2, from.y + from.height / 2, { steps: 16 });
+        await expect(lane(page, 'done')).toHaveClass(/is-over/);
+        await page.mouse.up();
       } else {
         // Touch: the ⋯ menu (Done is another tab on phones).
         await card.getByRole('button', { name: `Actions for ${title}` }).click();
