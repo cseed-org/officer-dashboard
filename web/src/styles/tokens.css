@@ -111,3 +111,8 @@
  }
 }
 :root[data-density="compact"] { --pad: 16px; --gap: 16px; --row: 8px; }
+
+/* Card surface shared by Home widgets and the stat tiles on every other page. */
+:root { --block-radius: var(--radius-widget, 16px); --block-shadow: 0 1px 2px rgb(20 20 20 / .04), 0 1px 1px rgb(20 20 20 / .03); }
+:root[data-theme="dark"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); } }

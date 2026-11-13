@@ -68,7 +68,6 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
           <input {...describe('manual-timezone', errors.timezone, true)} class="input" list="iana-timezones" value={manual} onInput={(e) => setManual(e.currentTarget.value)} required disabled={busy} />
         </Field>}
         <p class="muted small">Current time: <time data-timezone-preview>{dateTimeFormatter({ dateStyle: 'medium', timeStyle: 'short' }).format(now)} · {effectiveTimezone()}</time></p>
-        <p class="muted small">Saved to your account. Automatic detection needs access to your device’s time zone; until detected, the club default applies.</p>
         {status('personal')}
         <div><button class="btn btn--primary" type="submit" disabled={busy}>Save time zone</button></div>
       </form>
@@ -80,7 +79,7 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
         <Field id="club-timezone" label="Club default time zone" error={errors.clubTimezone} hint="Set the IANA zone for the club’s location. Used by everyone choosing Club default."><input {...describe('club-timezone', errors.clubTimezone, true)} class="input" list="iana-timezones" value={clubZone} onInput={(e) => setClubZone(e.currentTarget.value)} required disabled={busy} /></Field>
         {status('club')}
         <div><button class="btn" type="submit" disabled={busy}>Save club location</button></div>
-      </form> : <><dl class="facts"><div><dt>Location</dt><dd>{club?.location}</dd></div><div><dt>Default time zone</dt><dd>{club?.clubTimezone}</dd></div></dl><p class="muted small">Leadership and owners manage the club location and default time zone.</p></>}
+      </form> : <><dl class="facts"><div><dt>Location</dt><dd>{club?.location}</dd></div><div><dt>Default time zone</dt><dd>{club?.clubTimezone}</dd></div></dl></>}
     </Section>
   </>;
 }

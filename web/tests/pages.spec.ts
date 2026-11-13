@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { devLogin, openDialog, overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
 
-const PAGES: { path: string; heading: string }[] = [
-  { path: '/', heading: 'Home' },
+const PAGES: { path: string; heading: string | RegExp }[] = [
+  // Home's h1 is the greeting since V0.7 ("Home" only when it is not shown).
+  { path: '/', heading: /^\S.*\S$|^Home$/ },
   { path: '/events', heading: 'Events' },
   { path: '/finance', heading: 'Requests & Finance' },
   { path: '/finance?tab=budgets', heading: 'Requests & Finance' },
@@ -25,6 +26,7 @@ for (const theme of THEMES) {
         await settle(page);
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
         await expect(page.getByRole('heading', { level: 1 })).toHaveText(p.heading);
+        if (p.path === '/') await expect(page.locator('h1.home-heading')).toBeVisible();
         await expect(page.locator('main [data-state="error"]'), `${p.path} shows an error`).toHaveCount(0);
         expect(await overflow(page), `${p.path} overflows`).toEqual([]);
       }

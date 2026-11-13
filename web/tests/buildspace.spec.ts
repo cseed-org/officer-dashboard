@@ -187,8 +187,7 @@ test('leadership sets the due day from the Buildspace page; officers can only re
   await page.getByLabel('Due time · optional').fill('18:00');
   await page.getByRole('button', { name: 'Save schedule' }).click();
   await expect(page.getByText('Check-in schedule saved.')).toBeVisible();
-  // The current week keeps its deadline; the change is pending and stated in the footnote.
-  await expect(page.locator('.bs-footnote')).toContainText(`due ${names[next]}s, 6:00 PM`);
+  // The current week keeps its deadline; the change is pending (checked in the panel below).
   const saved = await page.request.get('/api/buildspace').then((r) => r.json());
   expect(saved.weekDue).toBe(original.weekDue);
   expect(saved.schedule.pending).toMatchObject({ dueWeekday: next, dueTime: '18:00' });

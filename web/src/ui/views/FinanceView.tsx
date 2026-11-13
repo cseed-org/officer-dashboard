@@ -199,10 +199,10 @@ function StatRowFor({ pending, approved, awaiting, director, loading, budget }: 
     <StatRow
       label="Requests summary"
       tiles={[
-        { label: 'Pending', value: pending, sub: 'waiting on a director', alert: pending > 0 && director, loading, href: '/finance?status=pending' },
-        { label: 'Approved', value: approved, sub: 'being bought or delivered', loading },
-        { label: 'Awaiting payment', value: awaiting, sub: 'reimbursement due', loading },
-        { label: 'Spend vs budget', ...spend, alert: used !== null && used > 1, loading: budget.kind === 'loading' },
+        { label: 'Pending', icon: 'inbox', hue: 'amber', value: pending, sub: 'waiting on a director', alert: pending > 0 && director, loading, href: '/finance?status=pending' },
+        { label: 'Approved', icon: 'check', hue: 'green', value: approved, sub: 'being bought or delivered', loading },
+        { label: 'Awaiting payment', icon: 'wallet', hue: 'teal', value: awaiting, sub: 'reimbursement due', loading },
+        { label: 'Spend vs budget', icon: 'pie', hue: 'green', ...spend, alert: used !== null && used > 1, loading: budget.kind === 'loading' },
       ]}
     />
   );
@@ -513,7 +513,6 @@ function ReportsPanel({ query, director, active }: { query: Q; director: boolean
         ))}
       </div>
       <Report name={report} query={query} key={report} />
-      {!director && <p class="muted small">The trial balance and financial statements are for directors. Ask one if you need them.</p>}
     </div>
   );
 }
