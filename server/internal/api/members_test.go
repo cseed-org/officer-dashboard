@@ -103,3 +103,111 @@ func TestMembersNotConnectedAndCSV(t *testing.T) {
 		}
 	}
 }
+
+func TestMembersListIncludesActiveOfficersDedupedByEmail(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.edu' WHERE id='user-priya'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Write(ctx, func(q *store.Queries) error {
+		return q.SaveMember(ctx, cloudflare.Person{ID: "m-priya", FirstName: "Priya", LastName: "Member", JoinDate: "2026-01-01", UWEmail: strp("PRIYA@uw.edu")})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := e.mustOK(e.get("/api/members", e.officer()))
+	var body struct {
+		Officers []struct {
+			ID       string  `json:"id"`
+			Name     string  `json:"name"`
+			MemberID *string `json:"memberId"`
+		} `json:"officers"`
+	}
+	if err := json.Unmarshal(r.Raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Officers) < 2 {
+		t.Fatalf("expected the active team: %s", r.Raw)
+	}
+	var matched, unmatched int
+	for _, o := range body.Officers {
+		if o.ID == "user-priya" {
+			if o.MemberID == nil || *o.MemberID != "m-priya" {
+				t.Fatalf("priya should dedupe against the member row: %+v", o)
+			}
+			matched++
+		} else if o.MemberID == nil {
+			unmatched++
+		}
+	}
+	if matched != 1 || unmatched == 0 {
+		t.Fatalf("matched=%d unmatched=%d %s", matched, unmatched, r.Raw)
+	}
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET active=0 WHERE id='user-priya'`); err != nil {
+		t.Fatal(err)
+	}
+	r = e.mustOK(e.get("/api/members", e.director()))
+	if strings.Contains(string(r.Raw), `"id":"user-priya"`) {
+		t.Fatalf("deactivated officers must not be listed: %s", r.Raw)
+	}
+}
+
+func strp(s string) *string { return &s }
+
+func TestMembersOfficerFilterAndPagingCountOfficerRows(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.edu' WHERE id='user-priya'`); err != nil {
+		t.Fatal(err)
+	}
+	var active int
+	if err := e.db.R.QueryRow(`SELECT count(*) FROM users WHERE active=1`).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	// Priya's member row has a stale mirror flag (has_been_officer=0); 3 other members are plain.
+	if err := e.db.Write(ctx, func(q *store.Queries) error {
+		for i, id := range []string{"m-priya", "m-a", "m-b", "m-c"} {
+			p := cloudflare.Person{ID: id, FirstName: id, LastName: "X", JoinDate: "2026-01-0" + string(rune('1'+i))}
+			if id == "m-priya" {
+				p.UWEmail = strp("priya@uw.edu")
+			}
+			if err := q.SaveMember(ctx, p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	get := func(path string) (items []any, total int, rows []any) {
+		r := e.mustOK(e.get(path, e.officer()))
+		return r.at("items").([]any), int(r.at("total").(float64)), r.at("officerRows").([]any)
+	}
+	only := active - 1 // everyone but Priya has no member row
+	items, total, rows := get("/api/members?officer=yes")
+	if total != 1+only || len(rows) != only || len(items) != 1 {
+		t.Fatalf("yes: total=%d rows=%d items=%d", total, len(rows), len(items))
+	}
+	if items[0].(map[string]any)["person_id"] != "m-priya" {
+		t.Fatalf("matched current officer must count as officer: %v", items)
+	}
+	_, total, rows = get("/api/members?officer=no")
+	if total != 3 || len(rows) != 0 {
+		t.Fatalf("no: total=%d rows=%d", total, len(rows))
+	}
+	// Combined paging: total is stable on every page and pages tile the directory exactly once.
+	seen, grand := 0, 0
+	for off := 0; off < 100; off += 3 {
+		items, total, rows := get("/api/members?limit=3&offset=" + string(rune('0'+off/10)) + string(rune('0'+off%10)))
+		if grand == 0 {
+			grand = total
+		}
+		if total != grand {
+			t.Fatalf("total changed across pages: %d vs %d", total, grand)
+		}
+		seen += len(items) + len(rows)
+	}
+	if seen != grand || grand != 4+only {
+		t.Fatalf("seen=%d grand=%d want %d", seen, grand, 4+only)
+	}
+}

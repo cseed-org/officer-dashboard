@@ -44,9 +44,37 @@ func (c *Ctx) membersList() error {
 	}
 	defer tx.Rollback()
 	q := store.On(tx)
-	items, total, err := q.Members(c.Context(), f)
+	officers, err := c.memberOfficers(c.Context(), q)
 	if err != nil {
 		return err
+	}
+	for _, o := range officers {
+		if o.MemberID != nil {
+			f.CurrentOfficerIDs = append(f.CurrentOfficerIDs, *o.MemberID)
+		}
+	}
+	// The directory is the officer-only rows (no member row shares their email) followed by the
+	// mirror rows, paged together: offset and total count both. Display only.
+	extras := officerOnlyRows(officers, f)
+	e := len(extras)
+	page := []MemberOfficerDTO{}
+	if f.Offset < e {
+		page = extras[f.Offset:min(e, f.Offset+f.Limit)]
+	}
+	mf := f
+	mf.Offset = max(0, f.Offset-e)
+	mf.Limit = f.Limit - len(page)
+	items := []cloudflare.Person{}
+	var total int
+	if mf.Limit > 0 {
+		if items, total, err = q.Members(c.Context(), mf); err != nil {
+			return err
+		}
+	} else {
+		mf.Limit = 1
+		if _, total, err = q.Members(c.Context(), mf); err != nil {
+			return err
+		}
 	}
 	facets, err := q.MemberFacets(c.Context())
 	if err != nil {
@@ -69,8 +97,90 @@ func (c *Ctx) membersList() error {
 		}
 	}
 	c.W.Header().Set("Cache-Control", "no-store")
-	writeJSON(c.W, 200, map[string]any{"items": items, "total": total, "limit": f.Limit, "offset": f.Offset, "connected": c.S.cfg.Cloudflare.Client.D1Connected(), "lastSync": last, "syncError": msg, "facets": facets})
+	writeJSON(c.W, 200, map[string]any{"items": items, "total": total + e, "limit": f.Limit, "offset": f.Offset, "connected": c.S.cfg.Cloudflare.Client.D1Connected(), "lastSync": last, "syncError": msg, "facets": facets, "officers": officers, "officerRows": page})
 	return nil
+}
+
+// MemberOfficerDTO is an active officer shown in the Members list. MemberID is set when an
+// existing member row shares one of the officer's emails; that row gets the badge instead of
+// a second line. Display only: nothing is written to member records.
+type MemberOfficerDTO struct {
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Title    *string `json:"title"`
+	Subteam  *string `json:"subteam"`
+	Email    string  `json:"email"`
+	MemberID *string `json:"memberId"`
+}
+
+// officerOnlyRows are active officers with no member row, narrowed by the same filters the
+// member rows get (member-only fields such as campus or grad year exclude them).
+func officerOnlyRows(all []MemberOfficerDTO, f store.MemberFilter) []MemberOfficerDTO {
+	out := []MemberOfficerDTO{}
+	if f.Campus != "" || f.GradYear != "" || f.Officer == "no" {
+		return out
+	}
+	for _, o := range all {
+		if o.MemberID != nil {
+			continue
+		}
+		if f.Search != "" && !strings.Contains(store.Fold(o.Name+" "+o.Email), store.Fold(f.Search)) {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+func (c *Ctx) memberOfficers(ctx context.Context, q *store.Queries) ([]MemberOfficerDTO, error) {
+	users, err := q.Users(ctx)
+	if err != nil {
+		return nil, err
+	}
+	profiles, err := q.Profiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	people, err := loadPeople(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	byEmail, err := q.MemberIDsByEmail(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := []MemberOfficerDTO{}
+	for i := range users {
+		u := &users[i]
+		if !u.Active {
+			continue
+		}
+		o := MemberOfficerDTO{ID: u.ID, Name: u.Name, Title: u.Title}
+		emails := []string{}
+		if p, ok := profiles[u.ID]; ok {
+			if t := people.subteam(p.SubteamID); t != nil {
+				o.Subteam = &t.Name
+			}
+			emails = append(emails, deref(p.SchoolEmail), deref(p.PersonalEmail))
+			if p.Title != nil && o.Title == nil {
+				o.Title = p.Title
+			}
+		}
+		emails = append(emails, deref(u.Email))
+		for _, e := range emails {
+			if e = strings.TrimSpace(e); e == "" {
+				continue
+			}
+			if o.Email == "" {
+				o.Email = e
+			}
+			if id, ok := byEmail[store.Fold(e)]; ok && o.MemberID == nil {
+				o.MemberID = &id
+			}
+		}
+		out = append(out, o)
+	}
+	return out, nil
 }
 func (c *Ctx) memberDetail() error {
 	if _, err := c.officer(); err != nil {

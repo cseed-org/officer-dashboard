@@ -70,7 +70,7 @@ for anything else (status 404).
 | `/finance?id=<requestId>` | `finance/index.html` | request detail slide-over (works with any tab) |
 | `/finance?new=1[&eventId=]` | `finance/index.html` | new request drawer |
 | `/finance?tab=budgets\|reports\|periods` | `finance/index.html` | `&fy=`, `&fund=`, `&report=<FINANCE_REPORTS key>` |
-| `/officers` | `officers/index.html` | `?tab=invites\|access\|tokens\|audit` (directors); directory for everyone |
+| `/officers` | `officers/index.html` | Board Members: `?tab=invites\|access\|tokens\|audit` (directors); directory for everyone (Officers, Club Support Contacts, Ex-Officers) |
 | `/admin` | `admin/index.html` | Redirects to Officers Access; query/hash tabs and legacy subpaths are mapped |
 | `/settings` | `settings/index.html` | theme, density, profile, sign out |
 | `/login` | `login/index.html` | `?next=`, `?error=not_allowlisted\|inactive\|state\|discord` |
@@ -132,3 +132,5 @@ it follows the user across devices. `lib/sidebar.ts` mirrors it into localStorag
 (`cseed-sidebar`) and the inline PREPAINT script in `AppLayout` sets `<html data-sidebar>` and
 `--sidebar` before first paint; the server value wins once `/api/me/prefs` loads
 (`applyTimezone` calls `syncSidebarFromServer`). Phones keep the menu sheet and have no handle.
+
+**Directory (V0.9).** Board Members (`/officers`) has three sub-sections under one search: *Officers* (active accounts), *Club Support Contacts* (external contacts with `clubSupport`, managed from `/contacts`; migration `0021_contact_club_support.sql`) and *Ex-Officers* (deactivated accounts; only directors receive those from `/api/officers`). Members (`/members`) also lists current officers with an Officer badge: `GET /api/members` returns `officers` (active users, with `memberId` when a member row shares one of their emails), and the page shows only the unmatched ones as extra first-page rows and badges the matched member rows. Display only: no member record is written.

@@ -15,9 +15,10 @@ func (c *Ctx) contactsList() error {
 	if _, err := c.officer(); err != nil {
 		return err
 	}
-	var text, kind, topic, spoken string
+	var text, kind, topic, spoken, support string
 	if err := c.query(func(r *validate.Reader) {
 		spoken = r.Str("hasSpokenForUs", validate.S{Enum: []string{"true", "false"}}).V
+		support = r.Str("clubSupport", validate.S{Enum: []string{"true", "false"}}).V
 		text = r.Str("q", validate.S{Trim: true, Max: 100}).V
 		kind = r.Str("type", validate.S{Enum: []string{"speaker", "mentor", "both"}}).V
 		topic = r.Str("topic", validate.S{Trim: true, Max: 100}).V
@@ -31,6 +32,9 @@ func (c *Ctx) contactsList() error {
 	items := []store.Contact{}
 	for _, v := range rows {
 		if spoken != "" && v.HasSpokenForUs != (spoken == "true") {
+			continue
+		}
+		if support != "" && v.ClubSupport != (support == "true") {
 			continue
 		}
 		if kind != "" && v.Type != kind && v.Type != "both" {
@@ -78,9 +82,10 @@ func (c *Ctx) contactSave(create bool) error {
 	var name, org, role, kind, email, linkedin, notes validate.Field[string]
 	var topics, eventIDs []string
 	var topicsSet, eventsSet bool
-	var hasSpoken validate.Field[bool]
+	var hasSpoken, clubSupport validate.Field[bool]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		hasSpoken = r.BoolField("hasSpokenForUs")
+		clubSupport = r.BoolField("clubSupport")
 		name = r.Str("name", validate.S{Req: create, Trim: true, Min: 1, Max: 200})
 		org = r.Str("org", validate.S{Trim: true, Max: 200})
 		role = r.Str("role", validate.S{Trim: true, Max: 200})
@@ -144,6 +149,9 @@ func (c *Ctx) contactSave(create bool) error {
 		}
 		if hasSpoken.Set {
 			v.HasSpokenForUs = hasSpoken.V
+		}
+		if clubSupport.Set {
+			v.ClubSupport = clubSupport.V
 		}
 		if topicsSet {
 			v.Topics = []string{}

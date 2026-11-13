@@ -1270,7 +1270,9 @@ export const Member = z.object({
 });
 export type Member = z.infer<typeof Member>;
 export const MembersQuery = z.object({q:z.string().max(200).optional(),campus:z.string().max(100).optional(),gradYear:z.string().max(20).optional(),officer:z.enum(['yes','no']).optional(),limit:QueryInt.min(1).max(200).default(50),offset:QueryInt.min(0).max(1000000).default(0)});
-export const MembersResponse = z.object({items:z.array(Member),total:z.number().int(),limit:z.number().int(),offset:z.number().int(),connected:z.boolean(),lastSync:z.number().nullable(),syncError:z.string(),facets:z.object({campus:z.array(z.string()),grad_year:z.array(z.string())})});
+/** An active officer listed with the members. memberId is the existing member row sharing one of their emails, if any. */
+export const MemberOfficer = z.object({id:Id,name:z.string(),title:z.string().nullable(),subteam:z.string().nullable(),email:z.string(),memberId:z.string().nullable()});
+export const MembersResponse = z.object({officers:z.array(MemberOfficer),officerRows:z.array(MemberOfficer),items:z.array(Member),total:z.number().int(),limit:z.number().int(),offset:z.number().int(),connected:z.boolean(),lastSync:z.number().nullable(),syncError:z.string(),facets:z.object({campus:z.array(z.string()),grad_year:z.array(z.string())})});
 export const MemberResponse = z.object({member:Member});
 export const MemberUpdateRequest = z.object({first_name:z.string().trim().min(1).max(254).optional(),last_name:z.string().trim().min(1).max(254).optional(),preferred_name:z.string().max(254).nullable().optional(),uw_email:z.email().max(254).nullable().optional(),cs_email:z.email().max(254).nullable().optional(),personal_email:z.email().max(254).nullable().optional(),major:z.string().max(254).nullable().optional(),grad_year:z.string().max(254).nullable().optional(),campus:z.string().max(254).nullable().optional(),pronouns:z.string().max(254).nullable().optional(),auditNote:z.string().trim().min(1).max(2000)}).strict();
 export const CloudflareSyncResponse = z.object({ok:z.literal(true),connected:z.boolean()});
@@ -1283,18 +1285,18 @@ export const OutreachChannel = z.enum(['email', 'linkedin', 'discord', 'phone', 
 export const OutreachOutcome = z.enum(['awaiting_reply', 'interested', 'confirmed', 'declined', 'follow_up']);
 export const ContactOutreach = z.object({ id: Id, officerId: Id, officerName: z.string(), date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string(), createdAt: z.number().int() });
 export const Contact = z.object({
- id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType, hasSpokenForUs: z.boolean(),
+ id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType, hasSpokenForUs: z.boolean(), clubSupport: z.boolean(),
  topics: z.array(z.string()), email: z.string(), linkedin: z.string(), notes: z.string(),
  createdAt: z.number().int(), updatedAt: z.number().int(),
  events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
  outreach: z.array(ContactOutreach), lastOutreach: ContactOutreach.nullable(),
 });
 export type Contact = z.infer<typeof Contact>;
-export const ContactCreateRequest = z.object({ hasSpokenForUs: z.boolean().optional(), name: z.string().trim().min(1).max(200), org: z.string().trim().max(200).optional(), role: z.string().trim().max(200).optional(), type: ContactType,
+export const ContactCreateRequest = z.object({ hasSpokenForUs: z.boolean().optional(), clubSupport: z.boolean().optional(), name: z.string().trim().min(1).max(200), org: z.string().trim().max(200).optional(), role: z.string().trim().max(200).optional(), type: ContactType,
  topics: z.array(z.string().trim().min(1).max(100)).max(30).optional(), email: z.union([z.string().trim().pipe(z.email().max(254)), z.literal('')]).optional(), linkedin: z.union([z.string().trim().pipe(z.url({ protocol: /^https?$/ }).max(2000)), z.literal('')]).optional(), notes: z.string().max(10000).optional(), eventIds: z.array(Id).max(100).optional() });
 export const ContactPatchRequest = ContactCreateRequest.partial();
 export const ContactResponse = z.object({ contact: Contact });
-export const ContactsQuery = z.object({ hasSpokenForUs: z.enum(['true', 'false']).optional(), q: z.string().trim().max(100).optional(), type: ContactType.optional(), topic: z.string().trim().max(100).optional() });
+export const ContactsQuery = z.object({ hasSpokenForUs: z.enum(['true', 'false']).optional(), clubSupport: z.enum(['true', 'false']).optional(), q: z.string().trim().max(100).optional(), type: ContactType.optional(), topic: z.string().trim().max(100).optional() });
 export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string().max(10000).optional() });
 
 /**

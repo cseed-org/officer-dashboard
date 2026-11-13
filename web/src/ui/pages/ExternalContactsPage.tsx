@@ -21,6 +21,7 @@ const formError = (error: unknown) => {
 };
 const blank = {
   hasSpokenForUs: false,
+  clubSupport: false,
   name: "",
   org: "",
   role: "",
@@ -34,6 +35,7 @@ const blank = {
 type Draft = typeof blank;
 const draftOf = (c: Contact): Draft => ({
   hasSpokenForUs: c.hasSpokenForUs,
+  clubSupport: c.clubSupport,
   name: c.name,
   org: c.org,
   role: c.role,
@@ -48,6 +50,9 @@ const draftOf = (c: Contact): Draft => ({
 export default function ExternalContactsPage() {
   return <Gate label="external contacts">{(me) => <ExternalContacts me={me} />}</Gate>;
 }
+function Support({ c }: { c: Contact }) {
+  return c.clubSupport ? <span class="badge badge--positive" data-club-support>Club support</span> : null;
+}
 function ExternalContacts({ me }: { me: CurrentUser }) {
   const search = useSearch();
   const openId = search.get("id");
@@ -56,6 +61,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
   const [spoken, setSpoken] = useState("");
   const [type, setType] = useState("");
   const [topic, setTopic] = useState("");
+  const [support, setSupport] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Draft>({ ...blank });
   const addDraft = useRef<Draft | null>(null);
@@ -186,7 +192,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
     }
   }
   const field = (
-    key: Exclude<keyof Draft, "type" | "eventIds" | "hasSpokenForUs">,
+    key: Exclude<keyof Draft, "type" | "eventIds" | "hasSpokenForUs" | "clubSupport">,
     title: string,
     inputType: "text" | "email" | "url" = "text",
   ) => {
@@ -221,6 +227,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
   const filtered = items.filter(
     (c) =>
       (!spoken || c.hasSpokenForUs === (spoken === "true")) &&
+      (!support || c.clubSupport) &&
       (!type || c.type === type || c.type === "both") &&
       (!topic ||
         c.topics.some(
@@ -281,6 +288,10 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
               <option value="true">Has spoken</option>
               <option value="false">Not yet</option>
             </select>
+          </label>
+          <label class="choice">
+            <input type="checkbox" checked={support} onChange={(e) => setSupport(e.currentTarget.checked)} data-filter-support />
+            <span>Club support only</span>
           </label>
           <label class="field">
             <span class="field-label">Topic</span>
@@ -343,7 +354,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
                           </button>
                         </td>
                         <td>
-                          <span class="badge badge--info">{label(c.type)}</span> <Spoken c={c} />
+                          <span class="badge badge--info">{label(c.type)}</span> <Spoken c={c} /> <Support c={c} />
                           <span class="cell-sub">{c.topics.join(" · ")}</span>
                         </td>
                         <td>
@@ -368,6 +379,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
                         {[label(c.type), ...c.topics].join(" · ")}
                       </span>
                       <Spoken c={c} />
+                      <Support c={c} />
                       <Reach c={c} />
                       <div>
                         <span class="field-label">Past events</span>
@@ -415,6 +427,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
                         setType("");
                         setSpoken("");
                         setTopic("");
+                        setSupport(false);
                       }
                     : add
                 }
@@ -463,6 +476,10 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
                       <option value={t}>{label(t)}</option>
                     ))}
                   </select>
+                </label>
+                <label class="choice">
+                  <input type="checkbox" checked={draft.clubSupport} onChange={(e) => setDraft({ ...draft, clubSupport: e.currentTarget.checked })} data-club-support-input />
+                  <span>Club support contact (shown under Board Members)</span>
                 </label>
                 <label class="choice">
                   <input type="checkbox" checked={draft.hasSpokenForUs} onChange={(e) => setDraft({ ...draft, hasSpokenForUs: e.currentTarget.checked })} />
