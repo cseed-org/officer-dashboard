@@ -1,10 +1,11 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import type { CurrentUser, WidgetPrefs, ClubSettings } from '../../lib/contracts';
 import { api, fieldErrors } from '../../lib/api/client';
 import { applyTimezone, browserTimezone, dateTimeFormatter, effectiveTimezone, refreshTimezone, timezoneOptions, timezoneSnapshot } from '../../lib/timezone';
 import { Section, Field, describe } from '../components/kit';
 
-export function TimezonePanel({ me }: { me: CurrentUser }) {
+export function TimezonePanel({ me, between }: { me: CurrentUser; between?: ComponentChildren }) {
   const snapshot = timezoneSnapshot();
   const [, setPrefs] = useState<WidgetPrefs | null>(snapshot.prefs);
   const [club, setClub] = useState<ClubSettings | null>(snapshot.club);
@@ -72,6 +73,7 @@ export function TimezonePanel({ me }: { me: CurrentUser }) {
         <div><button class="btn btn--primary" type="submit" disabled={busy}>Save time zone</button></div>
       </form>
     </Section>
+    {between}
     <Section title="club location" id="club-location">
       {me.role === 'leadership' ? <form class="form" onSubmit={(e) => { e.preventDefault(); void saveClub(); }}>
         <Field id="club-location-label" label="Club location" error={errors.location}><input {...describe('club-location-label', errors.location)} class="input" value={location} onInput={(e) => setLocation(e.currentTarget.value)} maxLength={200} required disabled={busy} /></Field>

@@ -32,22 +32,32 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
   const stats = useApi('meStats');
   const st = stats.status === 'ready' ? stats.data : null;
   const lastEvent = st?.lastEvent ?? null;
+  const loading = stats.status === 'loading';
+  const failed = stats.status === 'error';
+  const retry = (
+    <>
+      Could not load.{' '}
+      <button type="button" class="link-button" onClick={stats.reload}>
+        Retry
+      </button>
+    </>
+  );
 
   return (
     <div class="stack settings">
       <StatRow
         label="Your hosting stats"
         tiles={[
-          { label: 'Events hosted', value: st ? st.eventsHosted : 0, sub: 'that you hosted', loading: stats.status === 'loading' },
-          { label: 'Attendees', value: st ? st.attendees : 0, sub: 'checked in at your events', loading: stats.status === 'loading' },
+          { label: 'Events hosted', value: st ? st.eventsHosted : '—', sub: failed ? retry : 'that you hosted', loading },
+          { label: 'Attendees', value: st ? st.attendees : '—', sub: failed ? retry : 'checked in at your events', loading },
           { label: 'Discord messages', value: 'Coming soon', sub: 'sent in the club server' },
           lastEvent
-            ? { label: 'Last event hosted', value: lastEvent.name, sub: fmtDate(lastEvent.startsAt), href: href.event(lastEvent.id) }
-            : { label: 'Last event hosted', value: '—', sub: stats.status === 'error' ? 'Could not load' : 'You have not hosted an event yet', loading: stats.status === 'loading' },
+            ? { label: 'Last event hosted', value: lastEvent.name, sub: fmtDate(lastEvent.startsAt), href: href.event(lastEvent.id), plain: true, title: lastEvent.name }
+            : { label: 'Last event hosted', value: '—', sub: failed ? retry : 'You have not hosted an event yet', loading },
         ]}
       />
 
-      <h2 class="settings-group" id="g-account">Account</h2>
+      <p class="settings-group">Account</p>
       <Section title="your profile" id="profile">
         <div class="profile">
           {safeImageUrl(me.avatarUrl) ? <img class="avatar avatar--lg" src={safeImageUrl(me.avatarUrl)!} alt="" width={56} height={56} /> : <span class="avatar avatar--lg" aria-hidden="true">{initials(me.name)}</span>}
@@ -80,7 +90,7 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
         )}
       </Section>
 
-      <h2 class="settings-group" id="g-preferences">Preferences</h2>
+      <p class="settings-group">Preferences</p>
       <Section title="appearance" id="appearance">
         <fieldset class="fieldset">
           <legend>theme</legend>
@@ -127,12 +137,10 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
         <p class="muted small">Saved in this browser only.</p>
       </Section>
 
-      <TimezonePanel me={me} />
-
-      <h2 class="settings-group" id="g-club">Club</h2>
+      <TimezonePanel me={me} between={<p class="settings-group">Club</p>} />
       <ClubLinksPanel me={me} />
 
-      <h2 class="settings-group" id="g-integrations">Calendar &amp; dashboard</h2>
+      <p class="settings-group">Calendar &amp; dashboard</p>
       <Section title="calendar" id="calendar">
         <CalendarPanel next="/settings" removable />
       </Section>
@@ -141,8 +149,6 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
         <p class="muted small">Take the guided tour of the Home dashboard again.</p>
         <div><a class="btn" href="/?tutorial=1" data-replay-tour>Replay dashboard tour</a></div>
       </Section>
-
-      <h2 class="settings-group" id="g-session">Session</h2>
 
       <Section title="session" id="session">
         <form

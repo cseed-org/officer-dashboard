@@ -1,6 +1,10 @@
 package store
 
-import "context"
+import (
+	"context"
+	"database/sql"
+	"errors"
+)
 
 // HostedEvent is the newest event a user hosted.
 type HostedEvent struct {
@@ -36,6 +40,9 @@ func (q *Queries) MyHostingStats(ctx context.Context, userID string, nowMs int64
 	}
 	var h HostedEvent
 	err = q.q.QueryRowContext(ctx, `SELECT e.id, e.name, e.starts_at FROM events e WHERE `+hostedWhere+` ORDER BY julianday(e.starts_at) DESC, e.id LIMIT 1`, userID, nowSec).Scan(&h.ID, &h.Name, &h.StartsAt)
+	if errors.Is(err, sql.ErrNoRows) { // the event vanished between the two reads
+		return s, nil
+	}
 	if err != nil {
 		return s, err
 	}
