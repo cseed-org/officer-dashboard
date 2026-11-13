@@ -103,7 +103,6 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("PUT /api/me/profile", (*Ctx).profilePut)
 	h("PUT /api/me/onboarding", (*Ctx).onboardingSave)
 	h("POST /api/me/onboarding/complete", (*Ctx).onboardingComplete)
-	h("POST /api/me/onboarding/correction", (*Ctx).onboardingCorrection)
 	h("GET /api/me/calendar", (*Ctx).calendarGet)
 	h("PUT /api/me/calendar", (*Ctx).calendarPut)
 	h("POST /api/me/calendar/test", (*Ctx).calendarTest)

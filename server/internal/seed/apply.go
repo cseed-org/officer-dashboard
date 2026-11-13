@@ -83,6 +83,12 @@ func apply(ctx context.Context, w *store.Queries) error {
 			return err
 		}
 	}
+	// Demo and e2e accounts are past the first-login flow; a real deployment's accounts are not.
+	for _, u := range Users {
+		if err := w.Exec(ctx, `UPDATE users SET onboarding_version=? WHERE id=?`, store.OnboardingVersion, u.ID); err != nil {
+			return err
+		}
+	}
 	if err := w.Exec(ctx, `UPDATE users SET is_owner=1 WHERE id='user-leadership' AND NOT EXISTS(SELECT 1 FROM users WHERE is_owner=1)`); err != nil {
 		return err
 	}

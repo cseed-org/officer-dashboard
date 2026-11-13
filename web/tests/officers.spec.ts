@@ -46,16 +46,17 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   await page.context().clearCookies();
   await devSignIn(page, { discord: id });
   await expect(page).toHaveURL(/\/onboarding$/);
-  await settle(page);
+  // The welcome intro comes first; skipping it lands on the first intake stage.
+  const skipIntro = async () => {
+    await page.getByRole('button', { name: 'Skip' }).click();
+    await expect(page.locator('.wi')).toHaveCount(0, { timeout: 5000 });
+  };
+  await skipIntro();
   await expect(page.locator('#step-title')).toContainText('Robin'); // names keep their capitals
-  await page.locator('[data-onb-next]').click();
-  await expect(page.locator('[data-prefill]')).toContainText('Robin Park');
   // Other pages send unfinished invitees back here.
   await page.goto('/finance');
   await expect(page).toHaveURL(/\/onboarding$/);
-  await settle(page);
-  await expect(page.locator('[data-prefill]')).toBeVisible(); // resumed at step 2
-  await page.locator('[data-onb-next]').click();
+  await skipIntro();
 
   // Profile: inline errors, then a valid month-day birthday.
   await expect(page.locator('[data-finish-later]')).toBeVisible(); // phones too
@@ -67,6 +68,10 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   await page.getByLabel('Birthday month').selectOption('04');
   await page.getByLabel('Birthday day').selectOption('21');
   await page.locator('[data-onb-next]').click();
+  await expect(page.locator('.onb')).toHaveAttribute('data-step', '2');
+  await page.locator('[data-onb-next]').click(); // about you: all optional
+  await expect(page.locator('.onb')).toHaveAttribute('data-step', '3');
+  await page.locator('[data-onb-next]').click(); // your role
 
   // Calendar: the custom picker, ".ics not configured", Google "not configured".
   const picker = page.locator('[data-email-picker]');
@@ -86,10 +91,8 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   // Widgets, then done.
   await page.getByLabel('Budget vs actual').uncheck();
   await page.locator('[data-onb-next]').click();
-  await expect(page.locator('[data-summary]')).toContainText('Phone and birthday saved');
-  await expect(page.locator('[data-summary]')).toContainText('.ics invites to robin@example.org');
-  await page.locator('[data-onb-next]').click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/\?tutorial=onboarding/); // Home, with the guided tour
+  await page.getByRole('button', { name: 'Skip tour' }).click();
   await settle(page);
 
   // The director sees them as an officer with a phone; officers don't see phones.

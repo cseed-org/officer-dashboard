@@ -4,7 +4,7 @@ import { devLoginSkipTour, devSignIn } from './helpers';
 /**
  * V0.9 onboarding intro: the multilingual greeting, the snake that eats it and the apples
  * spelling "cseed" before becoming the logo, and the reduced-motion / Skip paths. The intro
- * opens on /onboarding?intro=1 for a brand-new invitee. Needs the Go server with DEV_AUTH=1.
+ * is the first step for a brand-new invitee. Needs the Go server with DEV_AUTH=1.
  *
  * INTRO_FRAMES=<dir> also saves a frame sequence of the animation (used for the PR).
  */
@@ -28,8 +28,7 @@ async function openIntro(page: Page) {
   await page.context().clearCookies();
   await devSignIn(page, { discord: id });
   await expect(page).toHaveURL(/\/onboarding$/);
-  await page.goto('/onboarding?intro=1');
-  await expect(page.locator('.wi')).toBeVisible();
+  await expect(page.locator('.wi')).toBeVisible(); // the intro is the first step, no switch needed
   return shell;
 }
 

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"officerdashboard/internal/auth"
-	"officerdashboard/internal/notify"
 	"officerdashboard/internal/store"
 	"officerdashboard/internal/validate"
 )
@@ -32,6 +31,7 @@ type OfficerDTO struct {
 	SchoolEmail     *string     `json:"schoolEmail"`
 	GradDate        *string     `json:"gradDate"`
 	StartTerm       *string     `json:"startTerm"`
+	Team            *string     `json:"team"`
 	LinkedIn        *string     `json:"linkedin"`
 	Phone           *string     `json:"phone,omitempty"`
 	ProfileComplete bool        `json:"profileComplete"`
@@ -51,7 +51,7 @@ func officerDTO(u *store.User, p *store.Profile, people *peopleIndex, inv *store
 		o.ProfileComplete = true
 		o.Subteam = people.subteam(p.SubteamID)
 		o.PreferredName, o.Pronouns, o.PersonalEmail, o.SchoolEmail = p.PreferredName, p.Pronouns, p.PersonalEmail, p.SchoolEmail
-		o.GradDate, o.StartTerm, o.LinkedIn = p.GradDate, p.StartTerm, p.LinkedIn
+		o.GradDate, o.StartTerm, o.LinkedIn, o.Team = p.GradDate, p.StartTerm, p.LinkedIn, p.Team
 		b := p.Birthday
 		o.Birthday = &b
 		if privileged {
@@ -171,10 +171,11 @@ func (c *Ctx) officerUpdate() error {
 	if _, err := c.director(); err != nil {
 		return err
 	}
-	var subteam, title validate.Field[string]
+	var subteam, title, startTerm validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		subteam = r.Str("subteamId", validate.S{Min: 1, Max: 64})
 		title = r.Str("title", validate.S{Null: true, Trim: true, Max: 100})
+		startTerm = r.Str("startTerm", validate.S{Null: true, Trim: true, Max: 40})
 	}); err != nil {
 		return err
 	}
@@ -213,6 +214,19 @@ func (c *Ctx) officerUpdate() error {
 		if before.ProfileComplete {
 			patch.Title = optOf(title)
 		}
+		if startTerm.Set {
+			// Only admins reach this handler; officers never edit their own start term.
+			if !before.ProfileComplete {
+				return conflict(before.Name + " hasn't filled in their profile yet, so there's no start term to change.")
+			}
+			var term *string
+			if startTerm.V != "" {
+				term = &startTerm.V
+			}
+			if err := q.SetStartTerm(ctx, before.ID, term); err != nil {
+				return err
+			}
+		}
 		if err := q.PatchProfile(ctx, before.ID, patch); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -226,7 +240,7 @@ func (c *Ctx) officerUpdate() error {
 			if o.Subteam != nil {
 				team = &o.Subteam.ID
 			}
-			return map[string]any{"subteamId": team, "title": o.Title}
+			return map[string]any{"subteamId": team, "title": o.Title, "startTerm": o.StartTerm}
 		}
 		return c.audit(ctx, q, "officer.updated", "user", before.ID, snap(before), snap(out))
 	})
@@ -251,6 +265,7 @@ type MyProfile struct {
 	GradDate             *string     `json:"gradDate"`
 	Title                *string     `json:"title"`
 	StartTerm            *string     `json:"startTerm"`
+	Team                 *string     `json:"team"`
 	LinkedIn             *string     `json:"linkedin"`
 	CalendarDeliveryMode string      `json:"calendarDeliveryMode"`
 }
@@ -260,7 +275,7 @@ func myProfile(p *store.Profile, people *peopleIndex) *MyProfile {
 		return nil
 	}
 	return &MyProfile{Subteam: people.subteam(p.SubteamID), Phone: p.Phone, Birthday: p.Birthday, PreferredName: p.PreferredName, Pronouns: p.Pronouns,
-		PersonalEmail: p.PersonalEmail, SchoolEmail: p.SchoolEmail, GradDate: p.GradDate, Title: p.Title, StartTerm: p.StartTerm, LinkedIn: p.LinkedIn,
+		PersonalEmail: p.PersonalEmail, SchoolEmail: p.SchoolEmail, GradDate: p.GradDate, Title: p.Title, StartTerm: p.StartTerm, Team: p.Team, LinkedIn: p.LinkedIn,
 		CalendarDeliveryMode: p.DeliveryMode}
 }
 
@@ -370,7 +385,7 @@ func (c *Ctx) profilePut() error {
 			r.Issues.Add("gradDate", "Enter a month, like 2028-05")
 		}
 		p.Title = opt("title", validate.S{Max: 100})
-		p.StartTerm = opt("startTerm", validate.S{Max: 40})
+		p.Team = opt("team", validate.S{Max: 60})
 		p.LinkedIn = opt("linkedin", validate.S{Max: 300})
 		if p.LinkedIn != nil && !isLinkedIn(*p.LinkedIn) {
 			r.Issues.Add("linkedin", "Use your https://linkedin.com/in/… address")
@@ -447,6 +462,15 @@ func (c *Ctx) profilePut() error {
 			}
 			p.DeliveryMode = mode.V
 		}
+		// The start term is never typed by the officer: a new profile gets the current term, and
+		// an existing one keeps its value (admins change it from the officer view).
+		if before != nil && before.StartTerm != nil {
+			p.StartTerm = before.StartTerm
+		} else {
+			// New profile, or an older one that never had a term: the intake showed this exact value.
+			t := c.S.clubTerm(ctx, q)
+			p.StartTerm = &t
+		}
 		if err := q.SaveProfile(ctx, p); err != nil {
 			return err
 		}
@@ -491,65 +515,83 @@ func redactProfile(p *store.Profile) any {
 
 // ─── onboarding ───
 
-// OnboardingState is present on /api/me while an invitee hasn't finished setup.
+// OnboardingVersion is the current intro + intake flow (see store.OnboardingVersion).
+const OnboardingVersion = store.OnboardingVersion
+
+// currentTerm names the academic term a date falls in, like "Fall 2026".
+func currentTerm(t time.Time) string {
+	switch m := t.Month(); {
+	case m <= time.May:
+		return fmt.Sprintf("Spring %d", t.Year())
+	case m <= time.August:
+		return fmt.Sprintf("Summer %d", t.Year())
+	default:
+		return fmt.Sprintf("Fall %d", t.Year())
+	}
+}
+
+// clubTerm is the current term by the club's calendar, not UTC's.
+func (s *Server) clubTerm(ctx context.Context, q *store.Queries) string {
+	loc, _ := time.LoadLocation(store.DefaultTimezone)
+	if cs, err := q.ClubSettings(ctx); err == nil {
+		if l, err := time.LoadLocation(cs.ClubTimezone); err == nil {
+			loc = l
+		}
+	}
+	if loc == nil {
+		loc = time.UTC
+	}
+	return currentTerm(s.now().In(loc))
+}
+
+// OnboardingState is present on /api/me while the account still has the intro + intake ahead.
 type OnboardingState struct {
-	Step      int          `json:"step"`
-	Name      string       `json:"name"`
-	Subteam   *SubteamDTO  `json:"subteam"`
-	InvitedBy *UserSummary `json:"invitedBy"`
-	// InviterDiscordID lets the client open a DM with the inviter for corrections.
-	InviterDiscordID *string `json:"inviterDiscordId"`
-	HasProfile       bool    `json:"hasProfile"`
-	CorrectionsByDM  bool    `json:"correctionsByDm"`
-	// CorrectionPending: they reported a problem with these details and the inviter
-	// hasn't edited the invite since.
-	CorrectionPending bool `json:"correctionPending"`
+	Step       int         `json:"step"`
+	Name       string      `json:"name"`
+	Subteam    *SubteamDTO `json:"subteam"`
+	HasProfile bool        `json:"hasProfile"`
+	// Returning: an existing account seeing the flow once (it has no unfinished invite).
+	Returning bool `json:"returning"`
+	// StartTerm is the term the profile has (or will get), shown read-only.
+	StartTerm string `json:"startTerm"`
 }
 
 func (s *Server) onboardingState(ctx context.Context, q *store.Queries, userID string) (*OnboardingState, error) {
-	inv, err := q.InviteForUser(ctx, userID)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil
-	}
+	version, step, err := q.OnboardingProgress(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if inv.OnboardedAt != nil {
+	inv, err := q.InviteForUser(ctx, userID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	invited := err == nil
+	invPending := invited && inv.OnboardedAt == nil
+	if version >= OnboardingVersion && !invPending {
 		return nil, nil
 	}
 	people, err := loadPeople(ctx, q)
 	if err != nil {
 		return nil, err
 	}
-	// The live account name and subteam, so an inviter's fix shows up on Confirm at once.
-	st := &OnboardingState{Step: inv.Step, Name: inv.Name, Subteam: people.subteam(inv.SubteamID), CorrectionsByDM: s.cfg.DM != nil}
+	if step < 1 || step > 5 {
+		step = 1
+	}
+	st := &OnboardingState{Step: step, Returning: !invPending, StartTerm: s.clubTerm(ctx, q)}
 	if u, ok := people.users[userID]; ok {
 		st.Name = u.Name
 	}
-	latest, err := q.LatestAuditAction(ctx, inv.ID, "onboarding.correction", "invite.updated")
-	if err != nil {
-		return nil, err
-	}
-	st.CorrectionPending = latest == "onboarding.correction"
-	if u, ok := people.users[inv.InvitedBy]; ok {
-		sum := userSummary(u)
-		st.InvitedBy = &sum
-		d := u.DiscordID
-		st.InviterDiscordID = &d
+	if invited {
+		st.Subteam = people.subteam(inv.SubteamID)
 	}
 	if p, err := q.ProfileByUser(ctx, userID); err == nil {
 		st.HasProfile = true
 		st.Subteam = people.subteam(p.SubteamID)
+		if p.StartTerm != nil {
+			st.StartTerm = *p.StartTerm
+		}
 	}
 	return st, nil
-}
-
-func (c *Ctx) onboardingInvite(ctx context.Context, q *store.Queries) (*store.Invite, error) {
-	inv, err := q.InviteForUser(ctx, c.User.ID)
-	if err != nil || inv.OnboardedAt != nil {
-		return nil, conflict("You've already finished setup")
-	}
-	return inv, nil
 }
 
 // onboardingSave records the step to resume at ("Finish later" and each step change).
@@ -559,18 +601,21 @@ func (c *Ctx) onboardingSave() error {
 	}
 	var step int64
 	if err := c.jsonBody(func(r *validate.Reader) {
-		step = r.Int("step", validate.I{Req: true, Min: validate.Lo(1), Max: validate.Lo(6)}).V
+		step = r.Int("step", validate.I{Req: true, Min: validate.Lo(1), Max: validate.Lo(5)}).V
 	}); err != nil {
 		return err
 	}
 	ctx := c.Context()
 	var st *OnboardingState
 	err := c.S.db.Write(ctx, func(q *store.Queries) error {
-		inv, err := c.onboardingInvite(ctx, q)
+		cur, err := c.S.onboardingState(ctx, q, c.User.ID)
 		if err != nil {
 			return err
 		}
-		if err := q.SetOnboardingStep(ctx, inv.ID, int(step)); err != nil {
+		if cur == nil {
+			return conflict("You've already finished setup")
+		}
+		if err := q.SetUserOnboardingStep(ctx, c.User.ID, int(step)); err != nil {
 			return err
 		}
 		st, err = c.S.onboardingState(ctx, q, c.User.ID)
@@ -592,20 +637,28 @@ func (c *Ctx) onboardingComplete() error {
 	}
 	ctx := c.Context()
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
-		inv, err := q.InviteForUser(ctx, u.ID)
+		version, _, err := q.OnboardingProgress(ctx, u.ID)
 		if err != nil {
-			return conflict("Only invited officers go through setup")
+			return err
 		}
-		if inv.OnboardedAt != nil {
+		inv, invErr := q.InviteForUser(ctx, u.ID)
+		invPending := invErr == nil && inv.OnboardedAt == nil
+		if version >= OnboardingVersion && !invPending {
 			return nil
 		}
 		if _, err := q.ProfileByUser(ctx, u.ID); err != nil {
 			return conflict("Add your phone and birthday before finishing")
 		}
-		if err := q.MarkOnboarded(ctx, inv.ID, c.S.nowMs()); err != nil {
+		if err := q.SetOnboardingVersion(ctx, u.ID, OnboardingVersion); err != nil {
 			return err
 		}
-		return c.audit(ctx, q, "onboarding.completed", "invite", inv.ID, nil, map[string]any{"userId": u.ID})
+		if invPending {
+			if err := q.MarkOnboarded(ctx, inv.ID, c.S.nowMs()); err != nil {
+				return err
+			}
+			return c.audit(ctx, q, "onboarding.completed", "invite", inv.ID, nil, map[string]any{"userId": u.ID})
+		}
+		return c.audit(ctx, q, "onboarding.completed", "user", u.ID, nil, map[string]any{"version": OnboardingVersion})
 	})
 	if err != nil {
 		return err
@@ -613,110 +666,4 @@ func (c *Ctx) onboardingComplete() error {
 	c.S.backfillCalendar(u.ID)
 	writeJSON(c.W, 200, map[string]any{"user": currentUser(u), "onboarding": nil})
 	return nil
-}
-
-// onboardingCorrection sends "my name/subteam is wrong" to the inviter over Discord.
-//
-// The bot DMs a real person, so it allows one correction a minute and five delivered DMs
-// per invite. The slot is reserved (an onboarding.correction audit row) inside one write
-// transaction before the DM goes out, so parallel requests can't all pass the check. All
-// reservations count toward the five unless their result shows no DM was delivered
-// (failed, not_configured, skipped), so a DM still in flight holds its slot.
-func (c *Ctx) onboardingCorrection() error {
-	u, err := c.officer()
-	if err != nil {
-		return err
-	}
-	var message string
-	if err := c.jsonBody(func(r *validate.Reader) {
-		message = r.Str("message", validate.S{Req: true, Trim: true, Min: 1, Max: 500}).V
-	}); err != nil {
-		return err
-	}
-	ctx := c.Context()
-	var inv *store.Invite
-	var inviter *store.User
-	err = c.S.db.Write(ctx, func(q *store.Queries) error {
-		var err error
-		if inv, err = c.onboardingInvite(ctx, q); err != nil {
-			return err
-		}
-		_, recent, err := q.AuditCountSince(ctx, "onboarding.correction", inv.ID, c.S.nowMs()-60_000)
-		if err != nil {
-			return err
-		}
-		// Every reservation counts unless its result says no DM was delivered, so a DM
-		// still in flight (or one whose result write failed) holds its slot.
-		reserved, _, err := q.AuditCountSince(ctx, "onboarding.correction", inv.ID, 0)
-		if err != nil {
-			return err
-		}
-		undelivered := 0
-		for _, a := range []string{"onboarding.correction.failed", "onboarding.correction.not_configured", "onboarding.correction.skipped"} {
-			n, _, err := q.AuditCountSince(ctx, a, inv.ID, 0)
-			if err != nil {
-				return err
-			}
-			undelivered += n
-		}
-		if reserved-undelivered >= 5 {
-			return conflict("You've sent five corrections already. Message your inviter on Discord directly.")
-		}
-		if recent > 0 {
-			return conflict("Give your inviter a minute before sending another correction.")
-		}
-		if inviter, err = q.UserByID(ctx, inv.InvitedBy); err != nil {
-			return notFoundErr("Your inviter's account is gone. Ask leadership on Discord.")
-		}
-		return c.audit(ctx, q, "onboarding.correction", "invite", inv.ID, nil, map[string]any{"message": message})
-	})
-	if err != nil {
-		return err
-	}
-	dm := DMResult{Status: "not_configured"}
-	switch {
-	case !inviter.Active:
-		msg := inviter.Name + " no longer has a dashboard account. Ask leadership on Discord to fix your details."
-		dm = DMResult{Status: "skipped", Message: &msg}
-	case c.S.cfg.DM != nil:
-		content := fmt.Sprintf("%s (Discord %s) is setting up their CSEED dashboard account and says their invite details need a fix:\n\n> %s\n\nYou invited them as \"%s\". Update it on the Officers page.",
-			neutralizeDM(u.Name), u.DiscordID, strings.ReplaceAll(neutralizeDM(message), "\n", "\n> "), neutralizeDM(inv.Name))
-		// Bounded well under the one-minute cooldown.
-		sendCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := c.S.cfg.DM.SendDM(sendCtx, inviter.DiscordID, content)
-		cancel()
-		if err != nil {
-			msg := "Discord didn't deliver it. Message " + inviter.Name + " on Discord directly."
-			var de *notify.DMError
-			if errors.As(err, &de) && de.Code == 50007 {
-				msg = inviter.Name + " doesn't accept DMs from the bot. Message them on Discord directly."
-			}
-			dm = DMResult{Status: "failed", Message: &msg}
-		} else {
-			at := isoMs(c.S.nowMs())
-			dm = DMResult{Status: "sent", SentAt: &at}
-		}
-	}
-	wctx := context.WithoutCancel(ctx)
-	err = c.S.db.Write(wctx, func(w *store.Queries) error {
-		return c.audit(wctx, w, "onboarding.correction."+dm.Status, "invite", inv.ID, nil, map[string]any{"dm": dm.Status})
-	})
-	if err != nil {
-		return err
-	}
-	writeJSON(c.W, 200, map[string]any{"dm": dm, "inviter": userSummary(inviter), "inviterDiscordId": inviter.DiscordID})
-	return nil
-}
-
-var (
-	dmSchemeRE   = regexp.MustCompile(`(?i)\b([a-z][a-z0-9+.-]*)://`)
-	dmMarkdownRE = regexp.MustCompile("([\\\\*_~`|>\\[\\]()#<])")
-)
-
-// neutralizeDM makes relayed text inert in Discord: URL schemes are broken so nothing
-// links or embeds, markdown characters are escaped, and @ mentions can't ping.
-func neutralizeDM(s string) string {
-	s = dmSchemeRE.ReplaceAllString(s, "$1[:]//")
-	s = dmMarkdownRE.ReplaceAllString(s, `\$1`)
-	return strings.ReplaceAll(s, "@", "@\u200b")
 }

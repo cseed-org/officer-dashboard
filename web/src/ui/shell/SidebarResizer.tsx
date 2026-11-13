@@ -69,6 +69,7 @@ export default function SidebarResizer() {
   return (
     <div
       class="sidebar-resizer"
+      data-tour="sidebar-resize"
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize sidebar"

@@ -90,3 +90,18 @@ export function layoutForChoices(picked: Set<string>): { id: string; size: Block
   const rest = ids.filter((id) => !first.some((p) => p.id === id)).map((id) => ({ id, size: widgetDef(id)!.size }));
   return [...first, ...rest];
 }
+
+/**
+ * An existing layout adjusted to the picked choices: widgets whose choice was unticked go, ticked
+ * ones that are missing are added at their default size, and everything else keeps its place and size.
+ */
+export function applyChoices<T extends { id: string }>(saved: T[], picked: Set<string>): (T | { id: string; size: BlockSize })[] {
+  const kept = saved.filter((w) => {
+    const c = choiceOf(w.id);
+    return !c || picked.has(c);
+  });
+  // A choice that already has any widget on the page (e.g. some of the Key figures) is left as the officer arranged it.
+  const present = new Set(kept.map((w) => choiceOf(w.id)));
+  const missing = [...picked].filter((id) => !present.has(id));
+  return [...kept, ...layoutForChoices(new Set(missing))];
+}

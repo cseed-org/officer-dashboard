@@ -18,15 +18,16 @@ type Profile struct {
 	GradDate      *string
 	Title         *string
 	StartTerm     *string
+	Team          *string
 	LinkedIn      *string
 	DeliveryMode  string
 }
 
-const profileCols = `user_id,subteam_id,phone,birthday,preferred_name,pronouns,personal_email,school_email,grad_date,title,start_term,linkedin,calendar_delivery_mode`
+const profileCols = `user_id,subteam_id,phone,birthday,preferred_name,pronouns,personal_email,school_email,grad_date,title,start_term,linkedin,calendar_delivery_mode,team`
 
 func scanProfile(s interface{ Scan(...any) error }) (*Profile, error) {
 	var p Profile
-	err := s.Scan(&p.UserID, &p.SubteamID, &p.Phone, &p.Birthday, &p.PreferredName, &p.Pronouns, &p.PersonalEmail, &p.SchoolEmail, &p.GradDate, &p.Title, &p.StartTerm, &p.LinkedIn, &p.DeliveryMode)
+	err := s.Scan(&p.UserID, &p.SubteamID, &p.Phone, &p.Birthday, &p.PreferredName, &p.Pronouns, &p.PersonalEmail, &p.SchoolEmail, &p.GradDate, &p.Title, &p.StartTerm, &p.LinkedIn, &p.DeliveryMode, &p.Team)
 	return &p, err
 }
 
@@ -61,12 +62,12 @@ func (q *Queries) SaveProfile(ctx context.Context, p Profile) error {
 	if p.DeliveryMode == "" {
 		p.DeliveryMode = "ics"
 	}
-	return q.Exec(ctx, `INSERT INTO officer_profiles(`+profileCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+	return q.Exec(ctx, `INSERT INTO officer_profiles(`+profileCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(user_id) DO UPDATE SET subteam_id=excluded.subteam_id,phone=excluded.phone,birthday=excluded.birthday,
 		preferred_name=excluded.preferred_name,pronouns=excluded.pronouns,personal_email=excluded.personal_email,
 		school_email=excluded.school_email,grad_date=excluded.grad_date,title=excluded.title,start_term=excluded.start_term,
-		linkedin=excluded.linkedin,calendar_delivery_mode=excluded.calendar_delivery_mode`,
-		p.UserID, p.SubteamID, p.Phone, p.Birthday, p.PreferredName, p.Pronouns, p.PersonalEmail, p.SchoolEmail, p.GradDate, p.Title, p.StartTerm, p.LinkedIn, p.DeliveryMode)
+		linkedin=excluded.linkedin,calendar_delivery_mode=excluded.calendar_delivery_mode,team=excluded.team`,
+		p.UserID, p.SubteamID, p.Phone, p.Birthday, p.PreferredName, p.Pronouns, p.PersonalEmail, p.SchoolEmail, p.GradDate, p.Title, p.StartTerm, p.LinkedIn, p.DeliveryMode, p.Team)
 }
 
 // ProfilePatch is what a director may change on someone else's profile.

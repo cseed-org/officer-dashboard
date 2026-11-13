@@ -1,4 +1,4 @@
-import DashboardTutorial from '../DashboardTutorial';
+import HomeTour from '../../tour/HomeTour';
 import type { ComponentChildren } from 'preact';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from '../../../lib/api/client';
@@ -384,7 +384,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   }
 
   return <>
-    {loaded && <DashboardTutorial onPreview={previewTour} />}
+    {loaded && <HomeTour onPreview={previewTour} />}
     <div class={`blocks-bar${editing ? ' is-editing' : ''}`}>
       {editing ? <>
         <div class="blocks-bar-text"><span class="blocks-bar-title">Arrange your home</span><span class="blocks-bar-hint">Drag a tile, or focus its move handle and use the arrow keys. Drag a corner to resize; Shift + arrow keys also resize.</span></div>
@@ -400,7 +400,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     </div>
     {editing && removed && <p role="status">Widget removed. <button class="btn btn--small" onClick={() => { setLayout(removed); setRemoved(null); }}>Undo</button></p>}
     <div class="blocks-wrap">
-      <ul ref={grid} style={gridWidth ? { '--cols': gridColumns(gridWidth) } : undefined} data-layout-revision={layoutCommit.current.count} class={`blocks${editing ? ' is-editing' : ''}${entering ? ' is-entering' : ''}`} aria-label="Home widgets" onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={cancelPointer}>
+      <ul ref={grid} data-tour="grid" style={gridWidth ? { '--cols': gridColumns(gridWidth) } : undefined} data-layout-revision={layoutCommit.current.count} class={`blocks${editing ? ' is-editing' : ''}${entering ? ' is-entering' : ''}`} aria-label="Home widgets" onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={cancelPointer}>
         {/* First in the list so tiles paint over them: outlines show only in the grid's empty space. */}
         {spots.map(c => <li key={`spot-${c.x}-${c.y}`} class="blk-spot" aria-hidden="true" style={{ gridColumn: `${c.x + 1} / span 1`, gridRow: `${c.y + 1} / span 1` }} />)}
         {layout.map((w, i) => {
@@ -417,14 +417,14 @@ export default function WidgetGrid({ children, entering = false }: { children: (
             </div>
             {editing && <div class="blk-tools">
               <div class="blk-tools-top">
-                <button type="button" class="blk-handle" aria-label={`Move ${name}. Use the arrow keys to move it earlier or later.`} aria-describedby="blocks-live" disabled={busy}
+                <button type="button" class="blk-handle" data-tour="drag" aria-label={`Move ${name}. Use the arrow keys to move it earlier or later.`} aria-describedby="blocks-live" disabled={busy}
                   onKeyDown={(e) => onHandleKey(e, w.id, i)}><Icon name="grip" size={18} /></button>
                 <span class="blk-name" aria-hidden="true">{name}</span>
                 <button type="button" class="blk-remove" aria-label={`Remove ${name}`} disabled={busy} onClick={() => remove(w.id, i)}><Icon name="close" size={14} /></button>
               </div>
               {def && def.sizes.length > 1 && <>
                 {(['x', 'y', 'both'] as const).filter(axis => axis === 'both' || def.sizes.some(s => axis === 'x' ? blocks(s).h === ch && blocks(s).w !== cw : blocks(s).w === cw && blocks(s).h !== ch)).map(axis =>
-                  <button type="button" class={`blk-resize blk-resize--${axis}`} disabled={busy} aria-label={`Resize ${name}. Shift and arrow keys change size.`} onKeyDown={e => onHandleKey(e, w.id, i)} onPointerDown={e => beginResize(e, w.id, axis)}>{axis === 'both' ? <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24"><path d="M6 18 18 6M11 18l7-7M16 18l2-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg> : ''}</button>)}
+                  <button type="button" class={`blk-resize blk-resize--${axis}`} data-tour={axis === 'both' ? 'resize' : undefined} disabled={busy} aria-label={`Resize ${name}. Shift and arrow keys change size.`} onKeyDown={e => onHandleKey(e, w.id, i)} onPointerDown={e => beginResize(e, w.id, axis)}>{axis === 'both' ? <svg aria-hidden="true" viewBox="0 0 24 24" width="24" height="24"><path d="M6 18 18 6M11 18l7-7M16 18l2-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg> : ''}</button>)}
               </>}
             </div>}
           </li>;

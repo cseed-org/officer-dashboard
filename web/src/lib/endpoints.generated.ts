@@ -43,7 +43,6 @@ const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   profilePut: { method: 'PUT', path: '/api/me/profile' },
   onboardingSave: { method: 'PUT', path: '/api/me/onboarding' },
   onboardingComplete: { method: 'POST', path: '/api/me/onboarding/complete' },
-  onboardingCorrection: { method: 'POST', path: '/api/me/onboarding/correction' },
   calendarFeed: { method: 'GET', path: '/api/calendar/feed' },
   calendarWidgetGet: { method: 'GET', path: '/api/me/calendar-widget' },
   calendarWidgetPut: { method: 'PUT', path: '/api/me/calendar-widget' },

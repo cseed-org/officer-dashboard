@@ -156,7 +156,10 @@ func TestDiscordSignInRefusals(t *testing.T) {
 func TestProvisionedOwnerCanSignInWithoutLoginTimeBootstrap(t *testing.T) {
 	e := discordEnv(t, `{"id":"123456789012345678","username":"boss","global_name":null}`, nil)
 	if err := e.db.Write(context.Background(), func(q *store.Queries) error {
-		return q.InsertUser(context.Background(), store.User{ID: "provisioned", DiscordID: "123456789012345678", Name: "Configured owner", Role: "leadership", Active: true, IsOwner: true})
+		if err := q.InsertUser(context.Background(), store.User{ID: "provisioned", DiscordID: "123456789012345678", Name: "Configured owner", Role: "leadership", Active: true, IsOwner: true}); err != nil {
+			return err
+		}
+		return q.SetOnboardingVersion(context.Background(), "provisioned", OnboardingVersion) // past the first-login flow
 	}); err != nil {
 		t.Fatal(err)
 	}

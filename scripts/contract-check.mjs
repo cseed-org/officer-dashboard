@@ -449,7 +449,6 @@ db.prepare(`UPDATE invites SET accepted_at = ?, user_id = 'user-invitee' WHERE i
 const invitee = sessionFor('user-invitee');
 must((await call('me', { who: invitee })).json.onboarding?.step === 1, 'invitee starts onboarding');
 await call('onboardingSave', { who: invitee, body: { step: 3 } });
-await call('onboardingCorrection', { who: invitee, body: { message: 'Wrong subteam' } });
 await call('onboardingComplete', { who: invitee, expect: 409 });
 await call('profilePut', { who: invitee, body: { phone: '+1 206 555 0123', birthday: '12-01' } });
 await call('calendarFeed', { who: invitee, query: { start: '2026-11-01', end: '2026-12-01' }, expect: 403 });

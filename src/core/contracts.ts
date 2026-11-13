@@ -154,18 +154,19 @@ export type EventCounts = z.infer<typeof EventCounts>;
 /** GET /api/me */
 export const Subteam = z.object({ id: Id, name: z.string() });
 export type Subteam = z.infer<typeof Subteam>;
-/** Present on /api/me while an invited officer hasn't finished onboarding; null otherwise. */
+/**
+ * Present on /api/me while the account still has the first-login flow ahead: it is below the
+ * current onboarding version (existing accounts see it once) or an invite is unfinished.
+ */
 export const OnboardingState = z.object({
-  step: z.number().int().min(1).max(6),
+  step: z.number().int().min(1).max(5),
   name: z.string(),
   subteam: Subteam.nullable(),
-  invitedBy: UserSummary.nullable(),
-  inviterDiscordId: DiscordId.nullable(),
   hasProfile: z.boolean(),
-  /** false when the Discord bot isn't configured: corrections open a Discord DM instead. */
-  correctionsByDm: z.boolean(),
-  /** They reported a problem with these details and the inviter hasn't edited the invite since. */
-  correctionPending: z.boolean(),
+  /** An existing account seeing the V0.9 intro + intake once (no unfinished invite). */
+  returning: z.boolean(),
+  /** The term the profile has, or will get on first save. Set automatically; only admins change it. */
+  startTerm: z.string(),
 });
 export type OnboardingState = z.infer<typeof OnboardingState>;
 export const MeResponse = z.object({ user: CurrentUser, onboarding: OnboardingState.nullable() });
@@ -1071,7 +1072,7 @@ export const MonthDay = z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])
 export const Officer = UserSummary.extend({
   discordId: DiscordId, role: Role, isOwner: z.boolean(), active: z.boolean(), title: z.string().nullable(), subteam: Subteam.nullable(),
   preferredName: z.string().nullable(), pronouns: z.string().nullable(), birthday: MonthDay.nullable(),
-  personalEmail: z.string().nullable(), schoolEmail: z.string().nullable(), gradDate: z.string().nullable(), startTerm: z.string().nullable(), linkedin: z.string().nullable(),
+  personalEmail: z.string().nullable(), schoolEmail: z.string().nullable(), gradDate: z.string().nullable(), startTerm: z.string().nullable(), team: z.string().nullable(), linkedin: z.string().nullable(),
   /** Director+ viewers only; absent otherwise. */
   phone: z.string().optional(),
   profileComplete: z.boolean(),
@@ -1082,12 +1083,12 @@ export type Officer = z.infer<typeof Officer>;
 export const OfficersResponse = z.object({ officers: z.array(Officer), subteams: z.array(Subteam), canManage: z.boolean(), canChangeRoles: z.boolean() });
 export type OfficersResponse = z.infer<typeof OfficersResponse>;
 export const OfficerResponse = z.object({ officer: Officer });
-export const OfficerUpdateRequest = z.object({ subteamId: Id.optional(), title: z.string().trim().max(100).nullable().optional() });
+export const OfficerUpdateRequest = z.object({ subteamId: Id.optional(), title: z.string().trim().max(100).nullable().optional(), startTerm: z.string().trim().max(40).nullable().optional() });
 export const DeliveryMode = z.enum(['ics', 'google']);
 export const MyProfile = z.object({
   subteam: Subteam.nullable(), phone: z.string(), birthday: MonthDay,
   preferredName: z.string().nullable(), pronouns: z.string().nullable(), personalEmail: z.string().nullable(), schoolEmail: z.string().nullable(),
-  gradDate: z.string().nullable(), title: z.string().nullable(), startTerm: z.string().nullable(), linkedin: z.string().nullable(),
+  gradDate: z.string().nullable(), title: z.string().nullable(), startTerm: z.string().nullable(), team: z.string().nullable(), linkedin: z.string().nullable(),
   calendarDeliveryMode: DeliveryMode,
 });
 export type MyProfile = z.infer<typeof MyProfile>;
@@ -1099,15 +1100,13 @@ export const ProfileUpsertRequest = z.object({
   /** Only for officers without a profile or invite; otherwise must match (directors change it). */
   subteamId: Id.optional(),
   preferredName: optText(60), pronouns: optText(40), personalEmail: optText(254), schoolEmail: optText(254),
-  gradDate: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(), title: optText(100), startTerm: optText(40), linkedin: optText(300),
+  gradDate: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(), title: optText(100), team: optText(60), linkedin: optText(300),
   calendarDeliveryMode: DeliveryMode.optional(),
 });
 export type ProfileUpsertRequest = z.infer<typeof ProfileUpsertRequest>;
-export const OnboardingSaveRequest = z.object({ step: z.number().int().min(1).max(6) });
+export const OnboardingSaveRequest = z.object({ step: z.number().int().min(1).max(5) });
 export const OnboardingResponse = z.object({ onboarding: OnboardingState.nullable() });
 export const OnboardingCompleteResponse = z.object({ user: CurrentUser, onboarding: z.null() });
-export const OnboardingCorrectionRequest = z.object({ message: z.string().trim().min(1).max(500) });
-export const OnboardingCorrectionResponse = z.object({ dm: DMResult, inviter: UserSummary, inviterDiscordId: DiscordId });
 export const CalendarSettings = z.object({
   mode: DeliveryMode, hasProfile: z.boolean(), activeEmail: z.string().nullable(),
   ics: z.object({ configured: z.boolean() }),
@@ -1393,7 +1392,6 @@ export const ENDPOINTS = {
   profilePut: { method: 'PUT', path: '/api/me/profile', auth: 'officer', body: ProfileUpsertRequest, response: ProfileResponse },
   onboardingSave: { method: 'PUT', path: '/api/me/onboarding', auth: 'officer', body: OnboardingSaveRequest, response: OnboardingResponse },
   onboardingComplete: { method: 'POST', path: '/api/me/onboarding/complete', auth: 'officer', response: OnboardingCompleteResponse },
-  onboardingCorrection: { method: 'POST', path: '/api/me/onboarding/correction', auth: 'officer', body: OnboardingCorrectionRequest, response: OnboardingCorrectionResponse },
   calendarFeed: { method: 'GET', path: '/api/calendar/feed', auth: 'officer', query: z.object({ start: z.string(), end: z.string(), sources: z.string().optional() }), response: CalendarFeed },
   calendarWidgetGet: { method: 'GET', path: '/api/me/calendar-widget', auth: 'officer', response: CalendarWidgetOptions },
   calendarWidgetPut: { method: 'PUT', path: '/api/me/calendar-widget', auth: 'officer', body: CalendarWidgetUpdate, response: CalendarWidgetOptions },

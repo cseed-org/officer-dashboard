@@ -71,7 +71,6 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | PUT | `/api/me/profile` | officer | — | `ProfileUpsertRequest` | `ProfileResponse` |
 | PUT | `/api/me/onboarding` | officer | — | `OnboardingSaveRequest` | `OnboardingResponse` |
 | POST | `/api/me/onboarding/complete` | officer | — | — | `OnboardingCompleteResponse` |
-| POST | `/api/me/onboarding/correction` | officer | — | `OnboardingCorrectionRequest` | `OnboardingCorrectionResponse` |
 | GET | `/api/me/calendar` | officer | — | — | `CalendarSettings` |
 | PUT | `/api/me/calendar` | officer | — | `CalendarModeRequest` | `CalendarSettings` |
 | POST | `/api/me/calendar/test` | officer | — | — | `CalendarTestResponse` |
@@ -446,29 +445,22 @@ row (seeded, bootstrap, created before V0.4) are never gated.
 sign-in page uses it when an invite link opens in a browser where someone else is
 signed in: it shows "Signed in as X" with a sign-out button instead of continuing as X.
 
-**Onboarding** is for invitees and admin-created accounts. `/api/me` carries `onboarding`
-(step to resume, the account's current name and subteam, inviter, `hasProfile`,
-`correctionsByDm`, `correctionPending`) or `null`. `correctionPending` is true after a
-correction until the inviter edits the invite. PUT
-`/api/me/onboarding {step}` saves where to resume ("Finish later"). POST
-`/api/me/onboarding/correction {message}` DMs the inviter that the pre-filled name or
-subteam is wrong; without a bot it returns `not_configured` plus the inviter's Discord
-ID so the client can open a DM. Corrections are limited to one a minute and five
-delivered DMs per invite (409); the slot is reserved inside one write transaction before
-the DM goes out, so parallel requests can't slip past the limit, and failed DMs don't
-count toward five. A deactivated inviter gets no DM (`dm.status` `skipped`, with advice to
-ask leadership). The relayed text has URL schemes broken and markdown and mentions
-escaped, so the bot never posts a live link. POST `/api/me/onboarding/complete` requires a saved
-profile (409 otherwise) and is idempotent; non-invitees get 409.
+**Onboarding** is the first-login flow (welcome intro, five-stage intake, then the Home tour). `/api/me`
+carries `onboarding` (step to resume, the account's name and subteam, `hasProfile`, `returning`,
+`startTerm`) or `null`. It is present for invitees and admin-created accounts until they finish,
+and for every account below the server's onboarding version (existing officers see it once).
+PUT `/api/me/onboarding {step}` (1–5) saves where to resume ("Finish later"). POST
+`/api/me/onboarding/complete` requires a saved profile (409 otherwise), sets the version and is
+idempotent. Only unfinished invitees are blocked from the rest of the API.
 
 **Profiles.** PUT `/api/me/profile` replaces the caller's profile. Required: `phone`
 (7–15 digits; `+ ( ) . -` and spaces allowed) and `birthday` as **MM-DD** (no year is
 collected; Feb 29 allowed). Optional (null or omitted clears): preferredName, pronouns,
 personalEmail, schoolEmail (lower-cased), gradDate (`YYYY-MM`), title (also the
-user's display title), startTerm, linkedin (https on linkedin.com). The subteam comes
+user's display title), team (team or committee), linkedin (https on linkedin.com). The subteam comes
 from the invite while onboarding (so an inviter's fix applies), then from the existing
 profile; changing it is 403 ("ask a director"). Officers
-with neither pick one with `subteamId` on first save. Phone is redacted from the audit log.
+with neither pick one with `subteamId` on first save. Phone is redacted from the audit log. `startTerm` is automatic (the club-calendar term, filled in on the first save if empty) and read-only for officers; directors and leadership set it with PATCH `/api/officers/:id`.
 
 **Officers directory.** GET `/api/officers` lists active officers (director+ also see
 deactivated accounts) with subteam, profile fields and onboarding state, plus
