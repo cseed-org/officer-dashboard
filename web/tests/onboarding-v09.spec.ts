@@ -37,6 +37,8 @@ test('a new officer: intro, then the intake slides in under the same logo, then 
   await newInvitee(page);
   const before = await logoBox(page);
   await expect(page.locator('.onb-main')).toHaveCount(0); // nothing of the form shows under the intro
+  // V0.10: no start button, only Skip; any click, tap or key starts the intro.
+  await expect(page.locator('.wi').getByRole('button')).toHaveCount(1);
   await skipIntro(page);
   // Same logo, same place; the form is there.
   expect(await logoBox(page)).toBe(before);
@@ -225,6 +227,8 @@ test('reduced motion: the intro just fades and the tour spotlight jumps in place
   await newInvitee(page);
   await expect(page.locator('.wi')).toBeVisible();
   await page.keyboard.press('Space');
+  // V0.10: the group photo still shows, then a plain fade; no snake.
+  await expect(page.locator('[data-wi-photo]')).toBeVisible();
   await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
   await expect(page.locator('.wi')).toHaveCount(0, { timeout: 5000 });
   await stage(page, 1);

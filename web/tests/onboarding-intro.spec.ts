@@ -1,27 +1,34 @@
 import { expect, test, type Page } from '@playwright/test';
 import { devLoginSkipTour, devSignIn } from './helpers';
+import { letterCells, WORD_PATH } from '../src/ui/onboarding/snakePlan';
 
 /**
- * V0.9 onboarding intro: the multilingual greeting, the snake that eats it and the apples
- * spelling "cseed" before becoming the logo, and the reduced-motion / Skip paths. The intro
- * is the first step for a brand-new invitee. Needs the Go server with DEV_AUTH=1.
+ * V0.10 hello screen: the multilingual greeting in glass letters over changing colour, no start
+ * button (a click, a tap or any key starts), the group-photo slot, the arcade snake whose body
+ * ends up spelling "cseed", the hand-off onto the shell logo at every width, the reduced-motion
+ * and Skip paths, and the media fallbacks. The planner itself is unit-tested in
+ * onboarding-snake.spec.ts. Needs the Go server with DEV_AUTH=1.
  *
  * INTRO_FRAMES=<dir> also saves a frame sequence of the animation (used for the PR).
  */
 const discordId = () => `9${String(Date.now()).padStart(13, '0')}${Math.floor(Math.random() * 1e4).toString().padStart(4, '0')}`;
 
+/** The real app shell's logo (sidebar wordmark, the rail's C mark, or the phone top bar), measured on Home. */
+const shellLogo = (page: Page) =>
+  page.evaluate(() => {
+    const el = Array.from(document.querySelectorAll('.topbar .wordmark-logo, .sidebar .wordmark-logo, .sidebar .wordmark-mark')).find((e) => {
+      const b = e.getBoundingClientRect();
+      return b.width > 0 && b.right > 0 && b.left < innerWidth && getComputedStyle(e).visibility !== 'hidden';
+    })!;
+    const b = el.getBoundingClientRect();
+    return { box: [b.left, b.top, b.width, b.height], kind: el.classList.contains('wordmark-mark') ? 'mark' : 'wordmark' };
+  });
+
 async function openIntro(page: Page) {
   const id = discordId();
   await devLoginSkipTour(page, 'director');
   await expect(page.locator('.app')).toBeVisible();
-  // The real app-shell logo (sidebar at desktop, top bar on phones): the snake's destination.
-  const shell = await page.evaluate(() => {
-    // Phone: top bar wordmark. 768–1099px: the rail's C mark. Wider: the sidebar wordmark.
-    const sel = innerWidth < 768 ? '.topbar .wordmark-logo' : innerWidth < 1100 ? '.sidebar .wordmark-mark' : '.sidebar .wordmark-logo';
-    const el = Array.from(document.querySelectorAll(sel)).find((e) => e.getBoundingClientRect().width > 0)!;
-    const b = el.getBoundingClientRect();
-    return [b.left, b.top, b.width, b.height];
-  });
+  const shell = await shellLogo(page);
   const r = await page.request.post('/api/invites', { data: { name: 'Intro Tester', discordId: id, subteamId: 'team-events', method: 'link' } });
   expect(r.ok()).toBe(true);
   await page.goto('about:blank');
@@ -32,67 +39,149 @@ async function openIntro(page: Page) {
   return shell;
 }
 
+/**
+ * Starts the intro by `how` (a DOM click on the overlay or on Skip, or a key) and, in the same task,
+ * freezes every animation at its start and reads what the layers really show: the computed
+ * opacity of the photo, the dot grid and the background at that moment, plus a sample taken
+ * part-way through each of their animations (`at` ms in).
+ */
+const startFrozen = (page: Page, how: 'overlay' | 'skip' | 'key', at = 0) =>
+  page.evaluate(
+    ({ how, at }) => {
+      if (how === 'skip') document.querySelector<HTMLElement>('.wi-skip')!.click();
+      else if (how === 'overlay') document.querySelector<HTMLElement>('.wi')!.click();
+      else window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true }));
+      const anims = document.getAnimations();
+      anims.forEach((a) => {
+        a.pause();
+        a.currentTime = at;
+      });
+      const op = (s: string) => +getComputedStyle(document.querySelector(s)!).opacity;
+      const out = { photo: op('.wi-photo'), board: op('.wi-board'), bg: op('.wi-bg') };
+      anims.forEach((a) => a.play());
+      return out;
+    },
+    { how, at },
+  );
+
 const active = (page: Page) => page.locator('[data-wi-phrase][data-active="true"]');
 const overlay = (page: Page) => page.locator('.wi');
+const box = (page: Page, sel: string) => page.locator(sel).evaluate((e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; });
 
-test('the greeting cycles through languages and keeps cseed lowercase', async ({ page }) => {
+/**
+ * Where the intro's logo ends up: its layout box (it is placed by left/top/height, and its own
+ * animation ends at scale(1) with no translate), next to the page logo's box. Read from layout,
+ * not from a frame, so a slow machine cannot miss the moment.
+ */
+const landing = (page: Page) =>
+  page.locator('[data-wi-logo]').evaluate((lg: HTMLElement) => {
+    const frames = lg.getAnimations().map((a) => (a.effect as KeyframeEffect).getKeyframes());
+    const last = frames.at(-1)?.at(-1);
+    const p = document.querySelector('[data-onb-logo]')!.getBoundingClientRect();
+    // Untransformed box: left/top/height as placed, width from the current box over the current scale.
+    const m = new DOMMatrix(getComputedStyle(lg).transform === 'none' ? undefined : getComputedStyle(lg).transform);
+    const w = lg.getBoundingClientRect().width / (m.a || 1);
+    return { intro: [parseFloat(lg.style.left), parseFloat(lg.style.top), w, parseFloat(lg.style.height)], page: [p.left, p.top, p.width, p.height], kind: lg.dataset.kind, end: last?.transform, opacity: last?.opacity };
+  });
+
+test('the greeting cycles through languages in glass letters, with no start button', async ({ page }) => {
   await openIntro(page);
   const langs = new Set<string>();
   await expect(active(page)).toHaveCount(1);
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     langs.add((await active(page).getAttribute('data-lang')) ?? '');
     await expect.poll(async () => (await active(page).getAttribute('data-lang')) ?? '', { timeout: 6000 }).not.toBe([...langs].pop());
   }
   expect(langs.size).toBeGreaterThanOrEqual(3);
   const all = page.locator('[data-wi-phrase]');
   expect(await all.count()).toBeGreaterThanOrEqual(12);
-  // Every sentence carries the club name as lowercase Latin text, LTR even inside Arabic.
   const names = await all.evaluateAll((els) => els.map((e) => e.querySelector('.wi-cs')?.textContent));
   expect(new Set(names)).toEqual(new Set(['cseed']));
   const arabic = page.locator('[data-wi-phrase][lang="ar"]');
   await expect(arabic).toHaveAttribute('dir', 'rtl');
   await expect(arabic.locator('.wi-cs')).toHaveAttribute('dir', 'ltr');
   await expect(page.locator('.wi p.visually-hidden')).toHaveText('Hello, welcome to cseed');
+  // Glass type: a translucent fill clipped to the letters, never a solid colour.
+  const fill = await active(page).locator('.wi-text').evaluate((e) => ({ color: getComputedStyle(e).color, clip: getComputedStyle(e).backgroundClip }));
+  expect(fill.color).toBe('rgba(0, 0, 0, 0)');
+  expect(fill.clip).toBe('text');
+  // The only button is Skip; the overlay itself is the labelled control.
+  await expect(overlay(page).getByRole('button')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Skip' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /continue|start|begin/i })).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: /press any key, click or tap anywhere/i })).toBeVisible();
+  // The colour changes: a new wash fades in about every 1.2s.
+  const washes = async () => page.locator('.wi-wash').evaluateAll((els) => els.map((e) => (e as HTMLElement).style.background).join('|'));
+  const w0 = await washes();
+  await expect.poll(washes, { timeout: 4000 }).not.toBe(w0);
 });
 
-test('Enter sends the snake in, it lands on the logo, then onDone fires', async ({ page }) => {
+test('the photo and the grid reveal from nothing; the exit fade does not jump them to full', async ({ page }) => {
+  await openIntro(page);
+  // Review F-1: at the start both are hidden, part-way through their reveals they are part-way.
+  const t0 = await startFrozen(page, 'overlay', 0);
+  expect(t0.photo).toBe(0);
+  expect(t0.board).toBe(0);
+  expect(t0.bg).toBe(1);
+  await page.goto('about:blank');
+  await openIntro(page);
+  const mid = await startFrozen(page, 'overlay', 40);
+  expect(mid.photo).toBeGreaterThan(0);
+  expect(mid.photo).toBeLessThan(0.9);
+  expect(mid.board).toBeGreaterThan(0);
+  expect(mid.board).toBeLessThan(0.9);
+});
+
+test('a click shows the group photo and starts the snake, whose body ends up spelling "cseed", then it lands on the logo', async ({ page }) => {
   const shell = await openIntro(page);
-  await page.keyboard.press('Enter');
+  await overlay(page).click({ position: { x: 200, y: 300 } });
   await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+  // The photo slot: the placeholder until the real photo is dropped in.
+  const photo = page.locator('[data-wi-photo]');
+  await expect(photo).toHaveAttribute('data-wi-photo', 'placeholder');
+  await expect(photo.locator('img')).toHaveAttribute('src', '/media/hello-group-placeholder.svg');
+  await expect.poll(() => photo.evaluate((e) => +getComputedStyle(e).opacity)).toBeGreaterThan(0.95);
   await expect(page.locator('[data-wi-snake="head"]')).toHaveCount(1);
-  expect(await page.locator('[data-wi-snake]').count()).toBeGreaterThan(10);
-  await expect.poll(() => page.locator('[data-wi-apple]').count()).toBeGreaterThan(20);
+  await expect.poll(() => page.locator('[data-wi-apple]').count()).toBe(WORD_PATH.length - 6);
 
-  // The final frame: the intro's logo sits exactly where the page's logo does.
-  // Measured inside the page, in the frame the logo animation ends (the overlay goes ~160ms later).
-  const rects = await page.evaluate(
-    () =>
-      new Promise<{ intro: number[]; page: number[] }>((resolve) => {
-        const box = (s: string) => {
-          const b = document.querySelector(s)!.getBoundingClientRect();
-          return [b.left, b.top, b.width, b.height];
-        };
-        // Keep the last measurement taken once the logo is fully in; resolve when the overlay goes
-        // (a slow machine can skip frames between the logo finishing and the overlay unmounting).
-        let last: { intro: number[]; page: number[] } | null = null;
-        const tick = () => {
-          const lg = document.querySelector('[data-wi-logo]');
-          if (!lg) return last ? resolve(last) : requestAnimationFrame(tick);
-          const anims = lg.getAnimations();
-          if (anims.length && anims.every((a) => a.playState === 'finished')) last = { intro: box('[data-wi-logo]'), page: box('[data-onb-logo]') };
-          requestAnimationFrame(tick);
-        };
-        tick();
-      }),
+  await expect(overlay(page)).toHaveAttribute('data-state', 'spelled', { timeout: 30_000 });
+  // The body's cells, tail to head, are exactly the planned word path; letter cells vs joins as planned.
+  const cells = await page.locator('[data-wi-snake]').evaluateAll((els) =>
+    (els as HTMLElement[]).filter((e) => e.style.opacity === '1').map((e) => ({ cell: e.dataset.cell!, kind: e.dataset.kind!, head: e.dataset.wiSnake === 'head' })),
   );
-  // ...and that is where the real shell draws its logo (same images, same geometry).
-  rects.intro.forEach((v, i) => expect(Math.abs(v - rects.page[i]!)).toBeLessThan(0.01));
-  rects.intro.forEach((v, i) => expect(Math.abs(v - shell[i]!), `shell logo ${shell} vs intro ${rects.intro}`).toBeLessThan(0.6));
+  expect(cells).toHaveLength(WORD_PATH.length);
+  const want = new Set(WORD_PATH.map((c) => `${c.x},${c.y}`));
+  expect(new Set(cells.map((c) => c.cell))).toEqual(want);
+  const letters = letterCells();
+  for (const c of cells) expect(c.kind, c.cell).toBe(letters.has(c.cell) ? 'letter' : 'join');
+  const last = WORD_PATH[WORD_PATH.length - 1]!;
+  expect(cells.find((c) => c.head)!.cell).toBe(`${last.x},${last.y}`);
+  // Joins are dimmed so the word reads.
+  const join = page.locator('[data-wi-snake][data-kind="join"]').first();
+  await expect.poll(() => join.evaluate((e) => +getComputedStyle(e).opacity)).toBeLessThan(0.3);
+  expect(await join.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(20, 20, 20)'); // dimmed by opacity, never by repainting
 
+  const rects = await landing(page);
+  expect(rects.end).toBe('scale(1)');
+  expect(String(rects.opacity)).toBe('1');
+  rects.intro.forEach((v, i) => expect(Math.abs(v - rects.page[i]!)).toBeLessThan(0.01));
+  rects.intro.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `shell logo ${shell.box} vs intro ${rects.intro}`).toBeLessThan(0.6));
   await expect(overlay(page)).toHaveCount(0, { timeout: 20_000 }); // onDone → the page removes it
   await expect(page.locator('[data-onb-logo]')).toBeVisible();
   await expect(page.locator('#step-title')).toBeFocused();
+});
+
+test('any key starts it; Tab moves focus and Shift does nothing', async ({ page }) => {
+  await openIntro(page);
+  await page.keyboard.press('Shift');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Skip' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(overlay(page)).toBeFocused();
+  await expect(overlay(page)).toHaveAttribute('data-state', 'greeting');
+  await page.keyboard.press('k');
+  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+  await expect(page.locator('[data-wi-snake="head"]')).toHaveCount(1);
 });
 
 test('it is a real modal: Tab stays inside, the setup behind is inert, focus returns after', async ({ page }) => {
@@ -102,22 +191,41 @@ test('it is a real modal: Tab stays inside, the setup behind is inert, focus ret
     await page.keyboard.press(i % 3 === 2 ? 'Shift+Tab' : 'Tab');
     expect(await page.evaluate(() => !!document.activeElement?.closest('.wi')), `focus escaped after press ${i + 1}`).toBe(true);
   }
+  await expect(overlay(page)).toHaveAttribute('data-state', 'greeting');
   await page.getByRole('button', { name: 'Skip' }).click();
   await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
   expect(await page.evaluate(() => !!document.querySelector('[inert]'))).toBe(false);
   await expect(page.locator('#step-title')).toBeFocused();
 });
 
-test('a click dismisses; pressing again fast-forwards to the end', async ({ page }) => {
+test('pressing again fast-forwards to the end; Escape skips', async ({ page }) => {
   await openIntro(page);
-  await page.locator('.wi').click({ position: { x: 120, y: 300 } });
+  await overlay(page).click({ position: { x: 120, y: 300 } });
   await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(500);
   await page.keyboard.press('Space');
+  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
+
+  // Escape, on a fresh invitee.
+  await openIntro(page);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
   await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
 });
 
-test('Skip goes straight to the logo without the snake', async ({ page }) => {
+test('Skip goes straight to the logo without the snake or the photo', async ({ page }) => {
+  await openIntro(page);
+  // Review F-1: the exit fade must not flash the never-revealed photo or grid, at any point.
+  for (const at of [0, 120, 300]) {
+    if (at) {
+      await page.goto('about:blank');
+      await openIntro(page);
+    }
+    const o = await startFrozen(page, 'skip', at);
+    expect(o.photo, `photo at ${at}ms`).toBe(0);
+    expect(o.board, `grid at ${at}ms`).toBe(0);
+    await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
+  }
   await openIntro(page);
   await page.getByRole('button', { name: 'Skip' }).click();
   await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
@@ -125,37 +233,68 @@ test('Skip goes straight to the logo without the snake', async ({ page }) => {
   await expect(page.locator('[data-onb-logo]')).toBeVisible();
 });
 
-test('prefers-reduced-motion: no snake, a plain fade to the logo', async ({ page }) => {
+test('prefers-reduced-motion: no snake and no colour changes; the photo shows, then a plain fade to the logo', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openIntro(page);
   await expect(active(page)).toHaveCount(1);
-  await page.keyboard.press('Space');
+  const washes = () => page.locator('.wi-wash').evaluateAll((els) => els.map((e) => (e as HTMLElement).style.background).join('|'));
+  const w0 = await washes();
+  await page.waitForTimeout(2600);
+  expect(await washes()).toBe(w0);
+  // The photo fades in from nothing (review F-1: the exit fade used to show it at once).
+  const t0 = await startFrozen(page, 'key', 0);
+  expect(t0.photo).toBe(0);
+  expect(t0.board).toBe(0);
+  await expect.poll(() => page.locator('[data-wi-photo]').evaluate((e) => +getComputedStyle(e).opacity)).toBeGreaterThan(0.95);
   await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
   await expect(page.locator('[data-wi-apple]')).toHaveCount(0);
-  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
+  await expect(overlay(page)).toHaveCount(0, { timeout: 5000 });
   await expect(page.locator('[data-onb-logo]')).toBeVisible();
 });
 
-test('the accessible Continue button works from the keyboard', async ({ page }) => {
+test('missing media: no video element, the animated gradient instead, and the photo placeholder', async ({ page }) => {
+  const media: string[] = [];
+  page.on('request', (r) => r.url().includes('/media/') && media.push(new URL(r.url()).pathname));
   await openIntro(page);
-  const btn = page.getByRole('button', { name: 'Continue to setup' });
-  await page.keyboard.press('Tab'); // Skip first, then Continue
-  await page.keyboard.press('Tab');
-  await expect(btn).toBeFocused();
-  await page.keyboard.press('Enter');
-  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+  await expect(overlay(page)).toHaveAttribute('data-video', 'off');
+  await expect(page.locator('[data-wi-video]')).toHaveCount(0);
+  await expect(page.locator('[data-wi-fallback]')).toBeVisible();
+  await expect(overlay(page)).toHaveAttribute('data-photo', 'placeholder');
+  // Nothing asks for the missing files (no 404s): only the placeholder is fetched.
+  expect(media.filter((m) => !m.endsWith('/hello-group-placeholder.svg'))).toEqual([]);
+  // Glass that does not need refraction is still glass: a blurred backdrop on Skip.
+  const skip = await page.getByRole('button', { name: 'Skip' }).evaluate((e) => getComputedStyle(e).backdropFilter);
+  expect(skip).toContain('blur(');
 });
+
+// QA Q-1: the logo hand-off lines up with the real shell at the tablet edges and on phones.
+for (const [w, h] of [[820, 1180], [900, 1180], [1099, 900], [1100, 900], [390, 844]] as const) {
+  test(`${w}px: the intro logo lands exactly on the shell logo`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'widths are set explicitly; run once');
+    await page.setViewportSize({ width: w, height: h });
+    const shell = await openIntro(page);
+    const pageLogo = await box(page, '[data-onb-logo]');
+    pageLogo.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `page ${pageLogo} vs shell ${shell.box}`).toBeLessThan(0.6));
+    await expect(page.locator('[data-onb-logo]')).toHaveAttribute('data-kind', shell.kind);
+    await page.keyboard.press('Enter');
+    await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+    const r = await landing(page);
+    expect(r.end).toBe('scale(1)');
+    expect(r.kind).toBe(shell.kind);
+    r.intro.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `intro ${r.intro} vs shell ${shell.box}`).toBeLessThan(0.6));
+  });
+}
 
 test('frame sequence for the PR', async ({ page }, info) => {
   const dir = process.env.INTRO_FRAMES;
   test.skip(!dir, 'set INTRO_FRAMES=<dir> to record frames');
   await openIntro(page);
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1600);
   await page.screenshot({ path: `${dir}/${info.project.name}-00-greeting.png` });
   await page.keyboard.press('Enter');
   const t0 = Date.now();
   for (let i = 1; i <= 30; i++) {
-    await page.waitForTimeout(Math.max(0, i * 450 - (Date.now() - t0)));
+    await page.waitForTimeout(Math.max(0, i * 400 - (Date.now() - t0)));
     await page.screenshot({ path: `${dir}/${info.project.name}-${String(i).padStart(2, '0')}.png` });
     if ((await overlay(page).count()) === 0) break;
   }

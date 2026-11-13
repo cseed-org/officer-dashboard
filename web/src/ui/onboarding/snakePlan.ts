@@ -1,361 +1,233 @@
 /**
- * Geometry and timing for the intro's snake. Pure functions, no DOM: `buildPlan` lays out
- * one route (across the greeting, off-screen, in over the apples that spell "cseed", then
- * up to the logo), a speed profile along it, and bakes per-segment Web Animations keyframes
- * (transform + opacity only).
+ * The intro's arcade snake (V0.10). Pure functions, no DOM: `buildPlan` lays a grid over the
+ * viewport and plans, tick by tick, a classic snake. It moves one cell per tick with 90° turns
+ * and grows by keeping its tail still on the tick it eats an apple. It crosses the greeting,
+ * leaves the right edge, wraps to a lane above the word, drops into the "c" and eats the
+ * apples laid along the word. When it stops, its body is exactly `WORD_PATH`, which spells
+ * "cseed" on the grid.
  */
 
-export interface P {
+export interface Cell {
   x: number;
   y: number;
 }
-interface Rect {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
+/** What a route cell is: the greeting pass, the way round to the word, a letter of the word, or a join between letters. */
+export type CellKind = 'greet' | 'approach' | 'letter' | 'join';
+export interface RouteCell extends Cell {
+  kind: CellKind;
 }
+
+/** 3-wide glyphs; x-height letters are 5 rows, the "d" 7 (its stem rises two rows above the others). */
+export const GLYPHS: Record<string, string[]> = {
+  c: ['###', '#..', '#..', '#..', '###'],
+  s: ['###', '#..', '###', '..#', '###'],
+  e: ['###', '#.#', '###', '#..', '###'],
+  d: ['..#', '..#', '###', '#.#', '#.#', '#.#', '###'],
+};
+export const WORD = 'cseed';
+/** Letters are 3 cells wide with 2 empty columns between them. */
+export const LETTER_PITCH = 5;
+export const WORD_COLS = 23;
+export const WORD_ROWS = 7;
+
+/** The cells of each letter of "cseed", in word coordinates (row 0 = the top of the d). */
+export function letterCells(): Set<string> {
+  const out = new Set<string>();
+  WORD.split('').forEach((ch, i) => {
+    const g = GLYPHS[ch]!;
+    const top = WORD_ROWS - g.length;
+    g.forEach((row, r) => [...row].forEach((v, c) => v === '#' && out.add(`${i * LETTER_PITCH + c},${top + r}`)));
+  });
+  return out;
+}
+
+/**
+ * The snake's final body, tail first: the shortest self-avoiding grid route that covers every
+ * letter cell of "cseed". The e's and the d have T-junctions, so no single stroke can trace them
+ * without help: 15 extra "join" cells link the letters (58 letter cells, 77 in all). The joins
+ * are drawn dimmed at the end, like the blacked-out tube between letters of a neon sign.
+ */
+export const WORD_PATH: readonly Cell[] = (
+  [
+    [2, 2], [1, 2], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [1, 6], [2, 6], [3, 6], [4, 6], [5, 6], [6, 6], [7, 6], [7, 5], [7, 4], [6, 4], [5, 4], [5, 3], [5, 2],
+    [6, 2], [7, 2], [8, 2], [9, 2], [9, 3], [10, 3], [10, 2], [11, 2], [12, 2], [12, 3], [12, 4], [11, 4], [10, 4], [10, 5], [10, 6], [11, 6], [12, 6], [13, 6], [14, 6], [14, 5],
+    [14, 4], [14, 3], [15, 3], [15, 2], [16, 2], [17, 2], [17, 3], [17, 4], [16, 4], [15, 4], [15, 5], [15, 6], [16, 6], [17, 6], [18, 6], [19, 6], [19, 5], [19, 4], [19, 3], [19, 2],
+    [19, 1], [20, 1], [21, 1], [21, 2], [20, 2], [20, 3], [20, 4], [20, 5], [20, 6], [21, 6], [22, 6], [22, 5], [22, 4], [22, 3], [22, 2], [22, 1], [22, 0],
+  ] as const
+).map(([x, y]) => ({ x, y }));
+
+/** Length of the snake when it first appears; it grows by one per apple from there. */
+export const START_LENGTH = 6;
 
 export interface PlanInput {
   vw: number;
   vh: number;
-  /** Where the greeting sits, for eating it left to right. */
-  text: Rect;
-  /** The logo's final centre and size; the snake collapses into this. */
-  target: { cx: number; cy: number; size: number };
+  /** Where the greeting sits, so its strips vanish as the head passes. */
+  text: { left: number; right: number; top: number; bottom: number };
+  /** The page logo's box; the spelled word shrinks into it. */
+  target: { x: number; y: number; w: number; h: number };
 }
 
 export interface Plan {
-  D: number;
-  appleSize: number;
-  segCount: number;
+  /** Cell size (px) and the grid: `cols × rows` cells, the first one's corner at (ox, oy). */
+  C: number;
+  cols: number;
+  rows: number;
+  ox: number;
+  oy: number;
+  /** Grid cell of the word's top-left corner. */
+  gx0: number;
+  gy0: number;
+  /** Every cell the head visits, in order. */
+  route: RouteCell[];
+  /** Route index the head reaches at tick 0 / when it wraps (the pause while the apples pop in) / when it enters the word. */
+  wrapAt: number;
+  wordFrom: number;
+  /** Route indices that hold an apple (each one: the tail stays put on that tick). */
+  apples: number[];
+  /** Per tick: the head's route index and the body length. Tick 0 is the snake's first frame. */
+  ticks: { head: number; len: number; ate: boolean }[];
+  /** ms at which each tick starts. */
+  at: number[];
+  /** ms: the snake is complete and spells the word. */
+  spelledAt: number;
+  /** ms: the word starts shrinking into the logo, and when it is there. */
+  morphAt: number;
+  morphEnd: number;
+  /** Total ms until the hand-off can start. */
   duration: number;
-  apples: { x: number; y: number; eatAt: number; index: number }[];
-  /** Vertical strips of the greeting with the time (ms) the head reaches each. */
+  /** The word's box (px) and the transform that maps it onto the logo box. */
+  word: { x: number; y: number; w: number; h: number };
+  morph: { tx: number; ty: number; s: number };
+  /** Vertical strips of the greeting with the ms at which the head reaches each. */
   slices: { x0: number; x1: number; eatAt: number }[];
-  /** When the apples start to pop in (ms) and how long the pause lasts. */
-  holdStart: number;
-  holdEnd: number;
-  /** ms into the animation that the head is within reach of the logo. */
-  collapseAt: number;
-  /** Keyframes for segment `i` (0 = head). */
-  segment(i: number): Keyframe[];
+  /** The body (route indices, head first) at tick `t`. */
+  body(t: number): number[];
+  /** Pixel corner of a grid cell. */
+  px(c: Cell): { x: number; y: number };
 }
 
-const RAD = Math.PI / 180;
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
-const dist = (a: P, b: P) => Math.hypot(b.x - a.x, b.y - a.y);
 
-function arc(cx: number, cy: number, rx: number, ry: number, a0: number, a1: number): P[] {
-  const n = Math.max(2, Math.ceil(Math.abs(a1 - a0) / 4));
-  const out: P[] = [];
-  for (let i = 0; i <= n; i++) {
-    const a = lerp(a0, a1, i / n) * RAD;
-    out.push({ x: cx + rx * Math.cos(a), y: cy - ry * Math.sin(a) });
-  }
-  return out;
-}
-const seg = (a: P, b: P): P[] => {
-  const n = Math.max(2, Math.ceil(dist(a, b) / 6));
-  return Array.from({ length: n + 1 }, (_, i) => ({ x: lerp(a.x, b.x, i / n), y: lerp(a.y, b.y, i / n) }));
-};
-function bezier(p0: P, p1: P, p2: P, p3: P): P[] {
-  const n = Math.max(8, Math.ceil((dist(p0, p1) + dist(p1, p2) + dist(p2, p3)) / 6));
-  const out: P[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const u = 1 - t;
-    out.push({
-      x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
-      y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
-    });
-  }
-  return out;
-}
-const unit = (a: P, b: P): P => {
-  const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-  return { x: (b.x - a.x) / d, y: (b.y - a.y) / d };
-};
-const tail = (pts: P[]) => unit(pts[Math.max(0, pts.length - 4)]!, pts[pts.length - 1]!);
-const head = (pts: P[]) => unit(pts[0]!, pts[Math.min(3, pts.length - 1)]!);
+/** ms per tick while crossing the greeting, and while writing the word (slower, so the growth reads). */
+export const STEP_FAST = 22;
+export const STEP_WORD = 34;
+/** ms the snake waits off-screen while the apples pop in; then the hold on the spelled word; then the shrink. */
+export const WRAP_HOLD = 420;
+export const SPELL_HOLD = 1000;
+export const MORPH_MS = 640;
 
-/** Letters in a unit box: u across (0..1), v down (0 = x-height line, 1 = baseline, -0.5 = ascender). */
-function letterStrokes(ch: string): P[][] {
-  switch (ch) {
-    case 'c':
-      return [arc(0.5, 0.5, 0.48, 0.5, 80, 315)];
-    case 's':
-      return [[...arc(0.5, 0.25, 0.42, 0.25, 25, 270), ...arc(0.5, 0.75, 0.42, 0.25, 90, -155).slice(1)]];
-    case 'e':
-      return [[...seg({ x: 0.04, y: 0.5 }, { x: 0.96, y: 0.5 }), ...arc(0.5, 0.5, 0.46, 0.5, 0, 320).slice(1)]];
-    default: // d
-      return [[...arc(0.38, 0.5, 0.38, 0.5, 0, 360), ...seg({ x: 0.76, y: 0.5 }, { x: 0.76, y: -0.5 }).slice(1)]];
-  }
-}
-
-/** Resample a polyline at roughly even `step` spacing (always keeps the first point). */
-function resample(pts: P[], step: number): P[] {
-  const out: P[] = [pts[0]!];
-  let acc = 0;
-  for (let i = 1; i < pts.length; i++) {
-    let a = pts[i - 1]!;
-    const b = pts[i]!;
-    let seglen = dist(a, b);
-    while (acc + seglen >= step) {
-      const t = (step - acc) / seglen;
-      a = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
-      out.push(a);
-      seglen = dist(a, b);
-      acc = 0;
-    }
-    acc += seglen;
-  }
-  return out;
-}
-
-interface Sample {
-  x: number;
-  y: number;
-  d: number;
-}
-interface Piece {
-  /** Distance range [d0, d1] this piece covers. */
-  v: number;
-  rampIn: number;
-  rampOut: number;
-}
-
-/** Time (s) for the head to cover `x` of a piece of length `len` (trapezoid: ramp up, cruise, ramp down). */
-function pieceTime(p: Piece, len: number, x: number): number {
-  const { v, rampIn: r1, rampOut: r2 } = p;
-  x = clamp(x, 0, len);
-  const a1 = r1 > 0 ? (v * v) / (2 * r1) : 0;
-  const a2 = r2 > 0 ? (v * v) / (2 * r2) : 0;
-  const t1 = r1 > 0 ? (2 * r1) / v : 0;
-  const cruiseEnd = len - r2;
-  const tCruiseEnd = t1 + Math.max(0, cruiseEnd - r1) / v;
-  if (r1 > 0 && x < r1) return Math.sqrt((2 * x) / a1);
-  if (x <= cruiseEnd) return t1 + (x - r1) / v;
-  const xp = x - cruiseEnd;
-  return tCruiseEnd + (v - Math.sqrt(Math.max(0, v * v - 2 * a2 * xp))) / a2;
+/** Cell size: the 23-cell word takes about 58% of a wide screen and the full width (less a 16px gutter each side) on a phone. */
+export function cellSize(vw: number): number {
+  return clamp(Math.floor((vw < 600 ? vw - 32 : vw * 0.58) / WORD_COLS), 12, 38);
 }
 
 export function buildPlan(input: PlanInput): Plan {
   const { vw, vh, text, target } = input;
-  const H = Math.min(vw * 0.2, vh * 0.28, 170);
-  const D = clamp(H * 0.17, 16, 28);
-  const appleSize = D * 0.82;
-  const segCount = 26;
-  const sp = D * 0.52;
-  const tailLen = segCount * sp;
-  const pad = tailLen + D * 3;
-  const cy = vh / 2;
-  const speedA = clamp(vw * 1.0, 700, 1500);
-  const speedB = clamp(H * 5.2, 420, 950);
+  const C = cellSize(vw);
+  const cols = Math.ceil(vw / C) + 1;
+  const rows = Math.ceil(vh / C) + 1;
+  const ox = (vw - cols * C) / 2;
+  const oy = (vh - rows * C) / 2;
+  const gx0 = Math.floor((cols - WORD_COLS) / 2);
+  // Keep a lane of 3 rows above the word for the approach, even on a short screen.
+  const gy0 = Math.max(4, Math.floor((rows - WORD_ROWS) / 2));
+  const L0 = START_LENGTH;
+  const letters = letterCells();
 
-  /* ── Route ───────────────────────────────────────────────────────────── */
-  // Piece A: left to right across the greeting, with a gentle slither.
-  const amp = D * 0.35;
-  const lambda = D * 9;
-  const A: P[] = [];
-  const aSpan = vw + pad * 2;
-  for (let x = 0; x <= aSpan; x += 8) {
-    const ramp = clamp(x / (pad + 80), 0, 1);
-    A.push({ x: x - pad, y: cy + amp * ramp * Math.sin((x / lambda) * Math.PI * 2) });
+  /* ── Route ── */
+  const route: RouteCell[] = [];
+  // 1. In from the left on the greeting's row, out past the right edge until the whole body is gone.
+  const mid = gy0 + 3;
+  for (let x = -1; x <= cols + L0; x++) route.push({ x, y: mid, kind: 'greet' });
+  // 2. Wrap (arcade style) to a lane three rows above the word, run right to the c's column, drop down.
+  const wrapAt = route.length;
+  const lane = gy0 - 3;
+  for (let x = -L0; x <= gx0 + 2; x++) route.push({ x, y: lane, kind: 'approach' });
+  for (let y = lane + 1; y < gy0 + 2; y++) route.push({ x: gx0 + 2, y, kind: 'approach' });
+  // 3. The word, tail cell first.
+  const wordFrom = route.length;
+  for (const c of WORD_PATH) route.push({ x: gx0 + c.x, y: gy0 + c.y, kind: letters.has(`${c.x},${c.y}`) ? 'letter' : 'join' });
+
+  // Apples on every word cell after the first L0: arriving with length L0 and eating on every
+  // tick from there leaves the tail on the word's first cell, so the final body is the word.
+  const apples: number[] = [];
+  for (let i = wordFrom + L0; i < route.length; i++) apples.push(i);
+  const appleSet = new Set(apples);
+
+  /* ── Ticks ── */
+  const ticks: Plan['ticks'] = [{ head: 0, len: L0, ate: false }];
+  const at: number[] = [0];
+  let t = 0;
+  for (let head = 1; head < route.length; head++) {
+    const prev = ticks[ticks.length - 1]!;
+    const ate = appleSet.has(head);
+    t += head <= wordFrom - 3 ? STEP_FAST : STEP_WORD;
+    if (head === wrapAt) t += WRAP_HOLD;
+    ticks.push({ head, len: prev.len + (ate ? 1 : 0), ate });
+    at.push(t);
   }
-  // Piece B: in from the left above the word, hook down into the "c", then trace cseed.
-  const Wc = H * 0.62;
-  const gap = H * 0.28;
-  const wordW = 5 * Wc + 4 * gap;
-  const X0 = (vw - wordW) / 2;
-  const Y0 = cy - H * 0.25;
-  const cStart = letterStrokes('c')[0]!.map((p) => ({ x: X0 + p.x * Wc, y: Y0 + p.y * H }))[0]!;
-  const rho = H * 0.23;
-  const laneY = cStart.y - 2 * rho;
-  const B: P[] = [...seg({ x: -pad, y: laneY }, { x: cStart.x, y: laneY }), ...arc(cStart.x, laneY + rho, rho, rho, 90, -90).slice(1)];
-  const strokes: { pts: P[]; from: number }[] = [];
-  let prev: P[] | null = null;
-  'cseed'.split('').forEach((ch, i) => {
-    const lx = X0 + i * (Wc + gap);
-    const pts = letterStrokes(ch)[0]!.map((p) => ({ x: lx + p.x * Wc, y: Y0 + p.y * H }));
-    if (prev) {
-      const a = prev[prev.length - 1]!;
-      const b = pts[0]!;
-      const h = Math.max(dist(a, b) * 0.4, H * 0.25);
-      const t0 = tail(prev);
-      const t3 = head(pts);
-      B.push(...bezier(a, { x: a.x + t0.x * h, y: a.y + t0.y * h }, { x: b.x - t3.x * h, y: b.y - t3.y * h }, b).slice(1));
-    }
-    strokes.push({ pts, from: B.length });
-    B.push(...pts.slice(prev ? 0 : 1));
-    prev = pts;
-  });
-  // Piece C: from the top of the "d" up and across to the logo.
-  const T: P = { x: target.cx, y: target.cy };
-  const dEnd = B[B.length - 1]!;
-  const dTan = tail(prev!);
-  const span = dist(dEnd, T);
-  const C = bezier(
-    dEnd,
-    { x: dEnd.x + dTan.x * span * 0.45, y: dEnd.y + dTan.y * span * 0.45 },
-    { x: T.x + span * 0.38, y: T.y - span * 0.08 },
-    T,
-  ).slice(1);
+  const spelledAt = t;
+  const morphAt = spelledAt + SPELL_HOLD;
+  const morphEnd = morphAt + MORPH_MS;
 
-  // Samples with cumulative distance; the A→B jump (off-screen both sides) has ~0 length.
-  const samples: Sample[] = [];
-  let d = 0;
-  const push = (pts: P[], jump = false) => {
-    pts.forEach((p, i) => {
-      const last = samples[samples.length - 1];
-      if (last) d += jump && i === 0 ? 0.01 : Math.hypot(p.x - last.x, p.y - last.y);
-      samples.push({ x: p.x, y: p.y, d });
-    });
-  };
-  push(A);
-  const dA = d;
-  push(B, true);
-  const dB0 = dA + 0.01;
-  const dBEnd = d;
-  push(C);
-  const dEndRoute = d;
-  const dTotal = dEndRoute + tailLen; // the tail keeps going until it reaches the logo too
+  const px = (c: Cell) => ({ x: ox + c.x * C, y: oy + c.y * C });
+  const w0 = px({ x: gx0, y: gy0 });
+  const word = { x: w0.x, y: w0.y, w: WORD_COLS * C, h: WORD_ROWS * C };
+  const s = Math.min(target.w / word.w, target.h / word.h);
+  const morph = { s, tx: target.x + target.w / 2 - (word.x + word.w / 2) * s, ty: target.y + target.h / 2 - (word.y + word.h / 2) * s };
 
-  const at = (dist: number): { x: number; y: number } => {
-    if (dist <= 0) return samples[0]!;
-    if (dist >= dEndRoute) return samples[samples.length - 1]!;
-    let lo = 0;
-    let hi = samples.length - 1;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if (samples[mid]!.d <= dist) lo = mid;
-      else hi = mid;
-    }
-    const a = samples[lo]!;
-    const b = samples[hi]!;
-    const t = b.d === a.d ? 0 : (dist - a.d) / (b.d - a.d);
-    return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
-  };
-
-  /* ── Speed profile ───────────────────────────────────────────────────── */
-  const HOLD = 0.6; // s, off-screen: the apples pop in
-  const pA: Piece = { v: speedA, rampIn: Math.min(380, dA * 0.2), rampOut: 0 };
-  const pB: Piece = { v: speedB, rampIn: Math.min(260, (dBEnd - dB0) * 0.2), rampOut: 0 };
-  const lenC = dTotal - dBEnd;
-  const pC: Piece = { v: speedB * 1.1, rampIn: 0, rampOut: lenC * 0.7 };
-  const tA = pieceTime(pA, dA, dA);
-  const tB = pieceTime(pB, dBEnd - dB0, dBEnd - dB0);
-  const tC = pieceTime(pC, lenC, lenC);
-  const total = tA + HOLD + tB + tC;
-  const timeAt = (dist: number): number => {
-    if (dist <= dA) return pieceTime(pA, dA, dist);
-    if (dist <= dBEnd) return tA + HOLD + pieceTime(pB, dBEnd - dB0, dist - dB0);
-    return tA + HOLD + tB + pieceTime(pC, lenC, dist - dBEnd);
-  };
-  const distAt = (t: number): number => {
-    if (t <= tA) return invert((x) => pieceTime(pA, dA, x), t, 0, dA);
-    if (t <= tA + HOLD) return dA;
-    if (t <= tA + HOLD + tB) return dB0 + invert((x) => pieceTime(pB, dBEnd - dB0, x), t - tA - HOLD, 0, dBEnd - dB0);
-    return dBEnd + invert((x) => pieceTime(pC, lenC, x), t - tA - HOLD - tB, 0, lenC);
-  };
-
-  /* ── What gets eaten, and when ───────────────────────────────────────── */
-  const nearest = (x: number) => {
-    // First sample of piece A whose x reaches `x` (A is monotone in x).
-    for (const s of samples) if (s.d <= dA && s.x >= x) return s.d;
-    return dA;
-  };
-  const SLICE = 26;
+  // The greeting vanishes in vertical strips as the head's leading edge reaches each one.
+  const SLICE = 24;
   const slices: Plan['slices'] = [];
-  const sliceStart = Math.floor(text.left - 6);
-  const sliceEnd = Math.ceil(text.right + 6);
-  for (let x = sliceStart; x < sliceEnd; x += SLICE) {
-    slices.push({ x0: x, x1: Math.min(x + SLICE, sliceEnd), eatAt: Math.max(0, timeAt(nearest(x + SLICE * 0.5 - D * 0.2))) * 1000 });
+  const sx0 = Math.floor(text.left - 8);
+  const sx1 = Math.ceil(text.right + 8);
+  for (let x = sx0; x < sx1; x += SLICE) {
+    const col = Math.floor((x + SLICE / 2 - ox) / C); // the column whose cell covers the strip's middle
+    const head = clamp(col + 1, 0, wrapAt - 1); // route index of that column (route starts at x = -1)
+    slices.push({ x0: x, x1: Math.min(x + SLICE, sx1), eatAt: at[head]! });
   }
 
-  const apples: Plan['apples'] = [];
-  const spacing = appleSize * 1.4;
-  // Apples sit on the letter strokes, so the dist of each is read off the route samples.
-  let appleIndex = 0;
-  for (const st of strokes) {
-    for (const p of resample(st.pts, spacing)) {
-      let best = dB0;
-      let bestD = Infinity;
-      for (const s of samples) {
-        if (s.d < dB0 || s.d > dBEnd) continue;
-        const dd = (s.x - p.x) ** 2 + (s.y - p.y) ** 2;
-        if (dd < bestD) {
-          bestD = dd;
-          best = s.d;
-        }
-      }
-      apples.push({ x: p.x, y: p.y, eatAt: timeAt(best) * 1000, index: appleIndex++ });
-    }
-  }
-
-  /* ── Keyframes ───────────────────────────────────────────────────────── */
-  const FRAME = 1000 / 60;
-  const frames = Math.ceil((total * 1000) / FRAME) + 1;
-  const dShrink = dEndRoute - Math.max(span, 240) * 0.9;
-  const endScale = clamp((target.size * 0.78) / D, 0.5, 1);
-  const scaleAt = (dd: number) => {
-    const k = clamp((dd - dShrink) / (dEndRoute - dShrink), 0, 1);
-    const e = k * k * (3 - 2 * k);
-    return lerp(1, endScale, e);
-  };
-  const dists = Array.from({ length: frames }, (_, f) => distAt(Math.min(total, (f * FRAME) / 1000)));
-  const margin = D * 1.5;
-
-  const segment = (i: number): Keyframe[] => {
-    const out: Keyframe[] = [];
-    let angle = 0;
-    let lastAngle = 0;
-    for (let f = 0; f < frames; f++) {
-      const dd = dists[f]! - i * sp;
-      const p = at(dd);
-      const sc = scaleAt(dd);
-      const off = p.x < -margin || p.x > vw + margin || p.y < -margin || p.y > vh + margin || dd < 0;
-      let tf = `translate(${p.x.toFixed(2)}px, ${p.y.toFixed(2)}px) translate(-50%, -50%) scale(${sc.toFixed(3)})`;
-      if (i === 0) {
-        const a = at(dd - D * 0.7);
-        const b = at(dd + D * 0.7);
-        if (dist(a, b) > 0.5) {
-          let raw = Math.atan2(b.y - a.y, b.x - a.x) / RAD;
-          // Unwrap so the head never spins the long way round between frames.
-          while (raw - lastAngle > 180) raw -= 360;
-          while (raw - lastAngle < -180) raw += 360;
-          // Low-pass so the 90° corners of the letters read as turns, not snaps.
-          angle = f === 0 ? raw : lerp(angle, raw, 0.35);
-          lastAngle = angle;
-        }
-        tf += ` rotate(${angle.toFixed(1)}deg)`;
-      }
-      out.push({ transform: tf, opacity: off ? 0 : 1 });
-    }
+  const body = (tick: number) => {
+    const { head, len } = ticks[clamp(tick, 0, ticks.length - 1)]!;
+    const out: number[] = [];
+    for (let i = head; i > head - len && i >= 0; i--) out.push(i);
     return out;
   };
 
   return {
-    D,
-    appleSize,
-    segCount,
-    duration: total * 1000,
+    C,
+    cols,
+    rows,
+    ox,
+    oy,
+    gx0,
+    gy0,
+    route,
+    wrapAt,
+    wordFrom,
     apples,
+    ticks,
+    at,
+    spelledAt,
+    morphAt,
+    morphEnd,
+    duration: morphEnd,
+    word,
+    morph,
     slices,
-    holdStart: tA * 1000,
-    holdEnd: (tA + HOLD) * 1000,
-    collapseAt: timeAt(Math.max(dBEnd, dEndRoute - span * 0.2)) * 1000,
-    segment,
+    body,
+    px,
   };
 }
 
-/** Invert a monotone increasing f on [lo, hi] by bisection. */
-function invert(f: (x: number) => number, t: number, lo: number, hi: number): number {
-  for (let i = 0; i < 28; i++) {
-    const mid = (lo + hi) / 2;
-    if (f(mid) < t) lo = mid;
-    else hi = mid;
+/** Text picture of a set of word cells (`#` letter, `+` join, `.` empty), for tests and docs. */
+export function picture(cells: readonly RouteCell[], gx0: number, gy0: number): string {
+  const grid = Array.from({ length: WORD_ROWS }, () => Array<string>(WORD_COLS).fill('.'));
+  for (const c of cells) {
+    const x = c.x - gx0;
+    const y = c.y - gy0;
+    if (x >= 0 && x < WORD_COLS && y >= 0 && y < WORD_ROWS) grid[y]![x] = c.kind === 'join' ? '+' : '#';
   }
-  return (lo + hi) / 2;
+  return grid.map((r) => r.join('')).join('\n');
 }
