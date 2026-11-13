@@ -911,7 +911,22 @@ const startFrames = (page: Page) => page.evaluate(() => {
     const boxes = [...document.querySelectorAll<HTMLElement>('ul.blocks > li.blk')].map(li => {
       const r = li.getBoundingClientRect();
       // Rendered text leaves in the body: a collapsed card keeps only its title.
-      const leaves = [...li.querySelectorAll<HTMLElement>('.blk-body *')].filter(e => !e.children.length && e.textContent?.trim() && e.getBoundingClientRect().height > 0).length;
+      const shown = (e: HTMLElement) => {
+        let r = e.getBoundingClientRect();
+        let left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+        for (let a: HTMLElement | null = e; a; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.display === 'none' || s.visibility !== 'visible' || parseFloat(s.opacity) <= 0) return false;
+          // An ancestor that clips (overflow) cuts the visible area down to its own box.
+          if (a !== e && (s.overflowX !== 'visible' || s.overflowY !== 'visible' || s.contain.includes('paint') || s.clipPath !== 'none')) {
+            r = a.getBoundingClientRect();
+            left = Math.max(left, r.left); top = Math.max(top, r.top); right = Math.min(right, r.right); bottom = Math.min(bottom, r.bottom);
+          }
+          if (a === li) break;
+        }
+        return right - left >= 1 && bottom - top >= 1;
+      };
+      const leaves = [...li.querySelectorAll<HTMLElement>('.blk-body *')].filter(e => !e.children.length && e.textContent?.trim() && shown(e)).length;
       return { id: li.dataset.widget ?? (li.classList.contains('is-placeholder') ? 'slot' : li.dataset.flip ?? 'add'), x: r.left, y: r.top, w: r.width, h: r.height, leaves };
     });
     w.frames.push({ t: performance.now(), boxes });
@@ -962,9 +977,9 @@ for (const project of ['desktop', 'tablet']) {
     expect(frames.length).toBeGreaterThan(40);
     // (a) Cards other than the dragged one never intersect, in any frame (the drop placeholder counts).
     expect(hits(frames, 'calendar')).toEqual([]);
-    // (b) Once the pointer pauses (350ms: the grid has reflowed and the card has docked), the dragged
+    // (b) Once the pointer pauses (from 250ms: the grid has reflowed and the card has docked), the dragged
     // card overlaps no other card; the same holds again after the drop.
-    const resting = frames.filter(f => rests.some(([a, b]) => f.t >= a + 350 && f.t <= b) || f.t >= rests.at(-1)![1] + 200);
+    const resting = frames.filter(f => rests.some(([a, b]) => f.t >= a + 250 && f.t <= b) || f.t >= rests.at(-1)![1] + 200);
     expect(resting.length).toBeGreaterThan(20);
     // The card docks into its own slot, so the placeholder is the one box it is meant to cover.
     expect(hits(resting, undefined, 'slot')).toEqual([]);
