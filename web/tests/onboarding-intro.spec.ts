@@ -155,9 +155,11 @@ test('frame sequence for the PR', async ({ page }, info) => {
   await page.screenshot({ path: `${dir}/${info.project.name}-00-greeting.png` });
   await page.keyboard.press('Enter');
   const t0 = Date.now();
-  for (let i = 1; i <= 14; i++) {
+  for (let i = 1; i <= 30; i++) {
     await page.waitForTimeout(Math.max(0, i * 450 - (Date.now() - t0)));
     await page.screenshot({ path: `${dir}/${info.project.name}-${String(i).padStart(2, '0')}.png` });
     if ((await overlay(page).count()) === 0) break;
   }
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${dir}/${info.project.name}-99-handoff.png` });
 });
