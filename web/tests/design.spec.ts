@@ -26,9 +26,11 @@ for (const theme of THEMES) test(`a design request moves across the board (${the
   await settle(page);
   const form = page.locator('dialog[open] [data-design-form]');
   await expect(form.getByLabel('Title')).toHaveValue('Hack Night promo');
-  // Due a week before Hack Night (Nov 13, 2026), never before today, none once it has passed.
+  // Due a week before Hack Night (Nov 13, 2026, 6 PM Pacific), never before today, and none once
+  // it has started. On the event day itself, before 6 PM, the due date is today.
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
-  await expect(form.getByLabel('Due date')).toHaveValue(today >= '2026-11-13' ? '' : today > '2026-11-06' ? today : '2026-11-06');
+  const started = Date.now() >= Date.parse('2026-11-13T18:00:00-08:00');
+  await expect(form.getByLabel('Due date')).toHaveValue(started ? '' : today > '2026-11-06' ? today : '2026-11-06');
   await form.getByLabel('Title').fill(title);
   await form.getByLabel('Type').selectOption('poster');
   await form.getByLabel('Sizes / formats').fill('A3 PDF');
