@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { devLogin, overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
 
 // V0.6: Buildspace + Launchpad motion parity and the configurable check-in due day.
-const SHOTS = 'docs/evidence/buildspace-v06';
+const SHOTS = 'tmp/verify/launchpad';
 
 /** Record every FLIP (Element.animate on a data-flip item) before page scripts run. */
 async function recordFlips(page: Page) {
@@ -228,5 +228,6 @@ test('legacy Buildspace links preserve the selected person', async ({ page }) =>
   await devLogin(page, 'director');
   await page.goto('/buildspace?person=bs-person-01');
   await expect(page).toHaveURL(/\/buildspace-launchpad\?person=bs-person-01/);
+  expect(await overflow(page)).toEqual([]);
   await expect(page.getByRole('heading', { name: 'Buildspace + Launchpad', exact: true })).toBeVisible();
 });
