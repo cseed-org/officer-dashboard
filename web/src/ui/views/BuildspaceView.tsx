@@ -306,7 +306,18 @@ function BuildspaceContent({
         ? projects.map((p) => ({ id: p.id, label: p.name }))
         : BUILDSPACE_TRACKS.map((t) => ({ id: t, label: t }));
   const awaiting = b.people.filter((p) => missed(p, b)).length;
-  const unmentored = b.projects.filter((p) => !p.mentorIds.length).length;
+  // Tile figures count builder rows, the same rows the tile's filter shows on the People tab.
+  const openRequestBuilders = b.people.filter((x) =>
+    b.activity.some(
+      (a) =>
+        a.projectId === x.projectId &&
+        (!a.personId || a.personId === x.id) &&
+        openActivity(a),
+    ),
+  ).length;
+  const unmentored = b.people.filter(
+    (x) => !project(x.projectId).mentorIds.length,
+  ).length;
   const flagHref = (f: string) => {
     const u = new URLSearchParams(qs);
     if (flag === f) u.delete("flag");
@@ -321,8 +332,8 @@ function BuildspaceContent({
         tiles={[
           { label: "Builders", icon: "users", hue: "violet", value: b.people.length, sub: plural(b.projects.length, "project") },
           { label: "Awaiting this week", icon: "clock", hue: "amber", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
-          { label: "Open requests", icon: "inbox", hue: "teal", value: b.activity.filter(openActivity).length, sub: "from builders", href: flagHref("requests"), pressed: flag === "requests" },
-          { label: "Unmentored", icon: "flag", hue: "coral", value: unmentored, sub: "projects without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
+          { label: "Open requests", icon: "inbox", hue: "teal", value: openRequestBuilders, sub: "builders with open requests", href: flagHref("requests"), pressed: flag === "requests" },
+          { label: "Unmentored", icon: "flag", hue: "coral", value: unmentored, sub: "builders without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
         ]}
       />
       {notice && <Notice tone="positive">{notice}</Notice>}
