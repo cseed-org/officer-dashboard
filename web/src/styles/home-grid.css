@@ -5,16 +5,14 @@
 :root {
   --block-row: 152px;            /* minimum height of one block row; rows grow if content needs it */
   --block-gap: 16px;
-  --block-radius: var(--radius-widget, 16px);
-  --block-shadow: 0 1px 2px rgb(20 20 20 / .04), 0 1px 1px rgb(20 20 20 / .03);
   --block-lift: 0 18px 40px -18px rgb(0 0 0 / .32), 0 2px 6px rgb(0 0 0 / .08);
   --block-drop: color-mix(in srgb, var(--c-blue) 12%, var(--surface));
   --block-ring: color-mix(in srgb, var(--c-blue) 30%, transparent);
   --block-spot: color-mix(in srgb, var(--c-blue) 5%, transparent);   /* a cell a drag can land on */
   --block-target: color-mix(in srgb, var(--c-blue) 70%, transparent); /* the drop spot's ring */
 }
-:root[data-theme="dark"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); --block-spot: color-mix(in srgb, var(--c-blue) 9%, transparent); }
-@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --block-shadow: 0 1px 2px rgb(0 0 0 / .4); --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); --block-spot: color-mix(in srgb, var(--c-blue) 9%, transparent); } }
+:root[data-theme="dark"] { --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); --block-spot: color-mix(in srgb, var(--c-blue) 9%, transparent); }
+@media (prefers-color-scheme: dark) { :root[data-theme="system"] { --block-drop: color-mix(in srgb, var(--c-blue) 22%, var(--surface)); --block-spot: color-mix(in srgb, var(--c-blue) 9%, transparent); } }
 
 /* The wrapper is the size container: columns follow the space Home actually has, not the viewport,
    so the sidebar never squeezes four columns into a tablet. */

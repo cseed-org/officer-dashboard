@@ -49,12 +49,12 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
       <StatRow
         label="Your hosting stats"
         tiles={[
-          { label: 'Events hosted', value: st ? st.eventsHosted : '—', sub: failed ? retry : 'that you hosted', loading },
-          { label: 'Attendees', value: st ? st.attendees : '—', sub: failed ? retry : 'checked in at your events', loading },
-          { label: 'Discord messages', value: 'Coming soon', sub: 'sent in the club server' },
+          { label: 'Events hosted', icon: 'ticket', hue: 'blue', value: st ? st.eventsHosted : '—', sub: failed ? retry : 'that you hosted', loading },
+          { label: 'Attendees', icon: 'users', hue: 'violet', value: st ? st.attendees : '—', sub: failed ? retry : 'checked in at your events', loading },
+          { label: 'Discord messages', icon: 'message', hue: 'teal', value: 'Coming soon', sub: 'sent in the club server' },
           lastEvent
-            ? { label: 'Last event hosted', value: lastEvent.name, sub: fmtDate(lastEvent.startsAt), href: href.event(lastEvent.id), plain: true, title: lastEvent.name }
-            : { label: 'Last event hosted', value: '—', sub: failed ? retry : 'You have not hosted an event yet', loading },
+            ? { label: 'Last event hosted', icon: 'calendar', hue: 'amber', value: lastEvent.name, sub: fmtDate(lastEvent.startsAt), href: href.event(lastEvent.id), plain: true, title: lastEvent.name }
+            : { label: 'Last event hosted', icon: 'calendar', hue: 'amber', value: '—', sub: failed ? retry : 'You have not hosted an event yet', loading },
         ]}
       />
 
@@ -81,7 +81,6 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
             </div>
           </dl>
         </div>
-        <p class="muted small">Your name and picture come from Discord. A director can change your role or subteam.</p>
         {profile.status === 'loading' ? (
           <Loading rows={3} label="Loading your profile" />
         ) : profile.status === 'error' ? (
@@ -135,7 +134,6 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
             ))}
           </div>
         </fieldset>
-        <p class="muted small">Saved in this browser only.</p>
       </Section>
 
       <TimezonePanel me={me} between={<p class="settings-group">Club</p>} />
@@ -147,7 +145,6 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
       </Section>
 
       <Section title="dashboard" id="dashboard">
-        <p class="muted small">Take the guided tour of the Home dashboard again.</p>
         <div><a class="btn" href="/?tutorial=1" data-replay-tour onClick={(e) => { e.preventDefault(); startTour(); }}>Replay dashboard tour</a></div>
       </Section>
 

@@ -16,7 +16,7 @@ import { Icon } from "../components/Icon";
 import { Drawer } from "../components/Drawer";
 import { useCrossfade, useFlip } from "../components/motion";
 import type { CurrentUser } from "../../lib/contracts";
-import { ScheduleMenu, scheduleSummary } from "./buildspace/Schedule";
+import { ScheduleMenu } from "./buildspace/Schedule";
 import { BuildspaceDetail } from "./buildspace/Detail";
 import { ProjectForm, PersonForm } from "./buildspace/Forms";
 import {
@@ -37,7 +37,6 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
       <div class="bs-intro">
         <div>
           <span class="brand-eyebrow">THE BUILDER REGISTER</span>
-          <p>A little progress, every week.</p>
         </div>
         <div class="action-row">
           <ScheduleMenu
@@ -320,10 +319,10 @@ function BuildspaceContent({
       <StatRow
         label="Buildspace summary"
         tiles={[
-          { label: "Builders", value: b.people.length, sub: plural(b.projects.length, "project") },
-          { label: "Awaiting this week", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
-          { label: "Open requests", value: b.activity.filter(openActivity).length, sub: "from builders", href: flagHref("requests"), pressed: flag === "requests" },
-          { label: "Unmentored", value: unmentored, sub: "projects without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
+          { label: "Builders", icon: "users", hue: "violet", value: b.people.length, sub: plural(b.projects.length, "project") },
+          { label: "Awaiting this week", icon: "clock", hue: "amber", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
+          { label: "Open requests", icon: "inbox", hue: "teal", value: b.activity.filter(openActivity).length, sub: "from builders", href: flagHref("requests"), pressed: flag === "requests" },
+          { label: "Unmentored", icon: "flag", hue: "coral", value: unmentored, sub: "projects without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
         ]}
       />
       {notice && <Notice tone="positive">{notice}</Notice>}
@@ -457,9 +456,6 @@ function BuildspaceContent({
             </Empty>
           ) : view === "board" ? (
             <>
-              <p class="bs-muted">
-                Projects by stage · select a project to update its stage.
-              </p>
               <div class="bs-board">
                 {BUILDSPACE_STAGES.map((s) => (
                   <section class="bs-lane motion-list" key={s}>
@@ -742,10 +738,6 @@ function BuildspaceContent({
         </div>
         <div ref={outRef} class="bs-view-out" />
       </div>
-      <p class="bs-footnote">
-        {scheduleSummary(b.schedule)} Awaiting includes this week in progress;
-        absences remain visible. Mentors follow each builder’s project.
-      </p>
       <Drawer
         open={
           !!form ||

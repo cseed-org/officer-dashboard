@@ -155,16 +155,9 @@ function ScheduleDetails({
                 type="time"
                 value={time}
                 disabled={busy}
-                aria-describedby="bs-schedule-hint"
                 onInput={(e) => setTime(e.currentTarget.value)}
               />
             </label>
-            <p class="bs-muted small" id="bs-schedule-hint">
-              Leave the time empty for end of day. Changes start after the
-              current week ends ({fmtShort(schedule.week.due)}), so this week’s
-              deadline never moves; the first week under a new day lasts 7–13
-              days.
-            </p>
             {error && <Notice tone="negative">{error}</Notice>}
             <div class="action-row">
               <button

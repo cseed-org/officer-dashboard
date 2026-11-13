@@ -119,9 +119,6 @@ export function ProjectForm({
             Add a mentor in <a href="/contacts">External Contacts</a> first.
           </p>
         )}
-        <p class="bs-muted">
-          Projects without a mentor appear in the attention filter.
-        </p>
       </fieldset>
       <label>
         Links · one per line
@@ -207,10 +204,6 @@ export function PersonForm({
           ))}
         </select>
       </label>
-      <p class="bs-muted">
-        Track, partners, and mentors follow the project. Create a project first
-        if it isn’t listed.
-      </p>
       <label>
         Joined on
         <input
@@ -230,10 +223,6 @@ export function PersonForm({
           defaultValue={person?.memberId || ""}
         />
       </label>
-      <p class="bs-muted">
-        Copy the ID from the <a href="/members">Members directory</a> to link an
-        existing member.
-      </p>
       <label>
         Discord user ID · optional
         <input
@@ -244,9 +233,6 @@ export function PersonForm({
           defaultValue={person?.discordId || ""}
         />
       </label>
-      <p class="bs-muted">
-        Needed for the bot to match weekly updates to this builder.
-      </p>
       {error && <Notice tone="negative">{error}</Notice>}
       <button class="btn btn--primary" disabled={busy || !b.projects.length}>
         {busy ? "Saving…" : "Save builder"}

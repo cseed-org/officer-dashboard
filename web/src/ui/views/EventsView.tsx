@@ -127,7 +127,6 @@ function EventHealth({ e }: { e: EventListItem }) {
           {noReflection > 0 && `${plural(noReflection, 'attendee')} ${noReflection === 1 ? 'has' : 'have'} no reflection yet.`}
         </p>
       )}
-      <p class="small muted">Figures update after a CSV import; they are not live Luma totals.</p>
     </section>
   );
 }
@@ -222,10 +221,10 @@ export default function EventsView() {
         <StatRow
           label="Events summary"
           tiles={[
-            { label: 'Upcoming', value: stats ? stats.upcoming : 0, sub: 'on the calendar', loading: loadingStats },
-            { label: 'This month', value: stats ? stats.thisMonth : 0, sub: monthLabel(monthOf(today)), loading: loadingStats },
-            { label: 'Attendees', value: stats ? stats.attendees : 0, sub: 'checked in, all events', loading: loadingStats },
-            { label: 'Drafts', value: stats ? stats.drafts : 0, sub: 'not published yet', loading: loadingStats },
+            { label: 'Upcoming', icon: 'clock', hue: 'blue', value: stats ? stats.upcoming : 0, sub: 'on the calendar', loading: loadingStats },
+            { label: 'This month', icon: 'calendar', hue: 'teal', value: stats ? stats.thisMonth : 0, sub: monthLabel(monthOf(today)), loading: loadingStats },
+            { label: 'Attendees', icon: 'users', hue: 'violet', value: stats ? stats.attendees : 0, sub: 'checked in, all events', loading: loadingStats },
+            { label: 'Drafts', icon: 'pen', hue: 'amber', value: stats ? stats.drafts : 0, sub: 'not published yet', loading: loadingStats },
           ]}
         />
       )}
@@ -460,7 +459,6 @@ export function EventDetail({ id, onChanged, onTitle }: { id: string; onChanged?
             { label: 'reflected', value: m.matchedReflections, rate: m.reflectionRate, hue: 'violet' },
           ]}
         />
-        <p class="muted small">Rates: checked in ÷ registered, then reflections from checked-in guests ÷ checked in.</p>
       </Section>
 
       <Section title="registrations" id={`registrations-${e.id}`}>
@@ -507,7 +505,6 @@ export function EventDetail({ id, onChanged, onTitle }: { id: string; onChanged?
             <dd>{m.matchedReflections}</dd>
           </div>
         </dl>
-        <p class="muted small">Guest lists come from Luma. Re-import the export to update registrations and check-ins; guests are matched by email.</p>
       </Section>
 
       <Section title="spending" id={`spending-${e.id}`} actions={<a href={href.newRequest(e.id)}>new request →</a>}>
