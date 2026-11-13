@@ -1,11 +1,12 @@
 import { fmtDateTime } from '../../lib/format';
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Gate } from "../shell/Gate";
-import { Drawer } from "../components/Drawer";
+import { ActivityList, PersonDrawer, PersonFacts, PersonSection, usePersonParam } from "../components/PersonDrawer";
+import { PeopleCard, PeopleChip, PeopleGroup, PeopleSearch, PersonCell, PersonRow, type Column } from "../components/PeopleTable";
 import { api, endpointUrl, fieldErrors } from "../../lib/api/client";
 import type { BodyOf, ResponseOf } from "../../lib/api/client";
-import type { CurrentUser, Member } from "../../lib/contracts";
-import { Loading } from "../components/states";
+import type { CurrentUser, Member, OfficerActivityResponse } from "../../lib/contracts";
+import { ErrorState, Loading } from "../components/states";
 import "../../styles/members.css";
 
 type Filters = {
@@ -32,6 +33,16 @@ const stamp = (n: number | null) =>
 export default function MembersPage() {
   return <Gate label="members">{(me) => <Members me={me} />}</Gate>;
 }
+const fullName = (m: Pick<Member, "first_name" | "last_name">) => `${m.first_name} ${m.last_name}`;
+const MEMBER_COLUMNS: Column[] = [
+  { label: "Name", width: "30%" },
+  { label: "UW email", width: "22%" },
+  { label: "Major", width: "14%" },
+  { label: "Grad year", width: "9%" },
+  { label: "Campus", width: "10%" },
+  { label: "Joined", width: "9%" },
+  { label: "Officer", width: "6%" },
+];
 function Members({ me }: { me: CurrentUser }) {
   const director = me.role !== "officer";
   const [filters, setFilters] = useState<Filters>(EMPTY),
@@ -43,10 +54,16 @@ function Members({ me }: { me: CurrentUser }) {
     [error, setError] = useState(""),
     [status, setStatus] = useState(""),
     [syncing, setSyncing] = useState(false);
+  const person = usePersonParam("id");
+  const detailId = person.personId;
   const [member, setMember] = useState<Member | null>(null),
-    [detailLoading, setDetailLoading] = useState(false),
-    [detailId, setDetailId] = useState<string | null>(null);
+    [detailError, setDetailError] = useState<unknown>(null);
   const limit = 25;
+  // An officer with no membership record opens here too, as a read-only officer summary.
+  const openOfficer = detailId
+    ? (data?.officerRows.find((o) => o.id === detailId) ??
+      data?.officers.find((o) => o.id === detailId && !o.memberId))
+    : undefined;
   useEffect(() => {
     if (filters.q === search) return;
     const timer = setTimeout(() => {
@@ -82,27 +99,22 @@ function Members({ me }: { me: CurrentUser }) {
     return () => controller.abort();
   }, [filters, offset, tick]);
   useEffect(() => {
-    if (!detailId) return;
+    setMember(null);
+    setDetailError(null);
+    // Wait for the list so an officer id is not looked up as a member.
+    if (!detailId || !data || openOfficer) return;
     const controller = new AbortController();
-    setDetailLoading(true);
     api("memberDetail", {
       params: { id: detailId },
       signal: controller.signal,
     }).then(
-      (d) => {
-        setMember(d.member);
-        setDetailLoading(false);
-      },
+      (d) => setMember(d.member),
       (e) => {
-        if (e.name !== "AbortError") {
-          setError(e.message);
-          setDetailId(null);
-          setDetailLoading(false);
-        }
+        if (e.name !== "AbortError") setDetailError(e);
       },
     );
     return () => controller.abort();
-  }, [detailId]);
+  }, [detailId, !!data, openOfficer?.id]);
   // Officers are club members: current officers are listed too (display only). One that shares an
   // email with a member row badges that row instead of adding a second line.
   const officers = data?.officers ?? [];
@@ -132,13 +144,11 @@ function Members({ me }: { me: CurrentUser }) {
   // Connection state can insert a notice and change the status width. Commit the
   // initial directory with that state known, rather than moving a painted table.
   if (!data && loading) return <Loading rows={6} label="Loading members" />;
+  const officerOfOpen = member ? officerOf.get(member.person_id) : undefined;
   return (
     <div class="members-page">
       <header class="page-header">
-        <div>
-          <h1>Members</h1>
-          <p class="page-sub">A growing community, one signup at a time.</p>
-        </div>
+        <h1>Members</h1>
         <div class="action-row">
           {director && (
             <>
@@ -157,45 +167,30 @@ function Members({ me }: { me: CurrentUser }) {
           )}
         </div>
       </header>
-      <div class="members-sync notice notice--info">
-        <strong>
-          {!data
-            ? "Loading connection…"
-            : data.connected
-              ? "D1 membership mirror"
-              : "Not connected"}
-        </strong>
-        <span>Synced daily, last {stamp(data?.lastSync ?? null)}</span>
-        <span class="muted">Source: cseed-membership · People</span>
-      </div>
-      {data && !data.connected && (
-        <p class="notice">
-          Cloudflare is not connected. A director can add the server credentials
-          to begin daily sync.
-        </p>
-      )}
-      {data?.syncError && (
-        <p class="notice" role="status">
-          The latest sync failed. Showing the last successful mirror.
-        </p>
-      )}
       {status && (
-        <p role="status" class="notice">
+        <p role="status" class="notice members-notice">
           {status}
         </p>
       )}
-      <section class="block" aria-label="Member directory" aria-busy={loading}>
-        <form class="members-filters" onSubmit={(e) => e.preventDefault()}>
-          <label class="field members-search">
-            <span class="field-label">Search members</span>
-            <input
-              class="input"
-              type="search"
-              placeholder="Name, preferred name or email"
-              value={search}
-              onInput={(e) => setSearch(e.currentTarget.value)}
-            />
-          </label>
+      <PeopleCard label="Member directory" busy={loading} data="members">
+        <div class="people-status members-sync">
+          <strong>
+            {!data
+              ? "Loading connection…"
+              : data.connected
+                ? "D1 membership mirror"
+                : "Not connected"}
+          </strong>
+          <span>Synced daily, last {stamp(data?.lastSync ?? null)}</span>
+          {data && !data.connected && (
+            <span>A director can add the server credentials to begin daily sync.</span>
+          )}
+          {data?.syncError && (
+            <span role="status" class="warn">The latest sync failed. Showing the last successful mirror.</span>
+          )}
+        </div>
+        <form class="people-tools members-filters" onSubmit={(e) => e.preventDefault()}>
+          <PeopleSearch label="Search members" value={search} placeholder="Name, preferred name or email" onInput={setSearch} />
           <label class="field">
             <span class="field-label">Campus</span>
             <select
@@ -247,7 +242,7 @@ function Members({ me }: { me: CurrentUser }) {
           </button>
         </form>
         {error && (
-          <p role="alert" class="notice">
+          <p role="alert" class="notice members-notice">
             {error}{" "}
             <button class="btn" onClick={() => setTick((t) => t + 1)}>
               Retry
@@ -259,107 +254,72 @@ function Members({ me }: { me: CurrentUser }) {
         ) : (
           data && (
             <>
-              <div class="block-head">
-                <h2>{data.total.toLocaleString()} members</h2>
-                <span class="muted">
-                  Read-only mirror · open a name for details
-                </span>
-              </div>
-              {data.items.length === 0 && extras.length === 0 ? (
-                <div class="state">
-                  <h3>
-                    {data.connected
-                      ? "No members found"
-                      : "Waiting for Cloudflare"}
-                  </h3>
-                  <p>
-                    {data.connected
-                      ? "Try a different search or clear your filters."
-                      : "Your directory will appear after the first sync."}
-                  </p>
-                </div>
-              ) : (
-                <div class="table-wrap members-table">
-                  <table class="dt">
-                    <caption class="visually-hidden">
-                      CSEED membership directory
-                    </caption>
-                    <thead>
-                      <tr>
-                        {[
-                          "Name",
-                          "UW email",
-                          "Major",
-                          "Grad year",
-                          "Campus",
-                          "Joined",
-                          "Officer",
-                        ].map((h) => (
-                          <th scope="col" key={h}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {extras.map((o) => (
-                        <tr key={o.id} data-officer-row={o.id}>
-                          <td class="dt-primary" data-label="Name">
-                            <a class="member-name" href="/officers">{o.name}</a>
-                            <span class="member-preferred">{[o.title, o.subteam].filter(Boolean).join(" · ") || "Officer"}</span>
-                          </td>
-                          <td data-label="UW email">{o.email || "—"}</td>
-                          <td data-label="Major">—</td>
-                          <td data-label="Grad year">—</td>
-                          <td data-label="Campus">—</td>
-                          <td class="nowrap" data-label="Joined">—</td>
-                          <td data-label="Officer">
-                            <span class="badge badge--info" data-officer-badge>Officer</span>
-                          </td>
-                        </tr>
-                      ))}
-                      {data.items.map((p) => (
-                        <tr key={p.person_id}>
-                          <td class="dt-primary" data-label="Name">
-                            <button
-                              class="member-name"
-                              onClick={() => {
-                                setMember(null);
-                                setDetailId(p.person_id);
-                              }}
-                            >
-                              {p.first_name} {p.last_name}
-                            </button>
-                            {p.preferred_name &&
-                              p.preferred_name !== p.first_name && (
-                                <span class="member-preferred">
-                                  Goes by {p.preferred_name}
-                                </span>
-                              )}
-                          </td>
-                          <td data-label="UW email">{p.uw_email || "—"}</td>
-                          <td data-label="Major">{p.major || "—"}</td>
-                          <td data-label="Grad year">{p.grad_year || "—"}</td>
-                          <td data-label="Campus">{p.campus || "—"}</td>
-                          <td class="nowrap" data-label="Joined">
-                            {p.join_date.slice(0, 10)}
-                          </td>
-                          <td data-label="Officer">
-                            {officerOf.has(p.person_id) ? (
-                              <span class="badge badge--info" data-officer-badge>Officer</span>
-                            ) : p.has_been_cseed_officer ? (
-                              <span class="muted">Former</span>
-                            ) : (
-                              <span class="muted">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <nav class="members-pagination" aria-label="Member pagination">
+              <PeopleGroup
+                section="members"
+                title={`${data.total.toLocaleString()} members`}
+                caption="CSEED membership directory"
+                collapsible={false}
+                columns={MEMBER_COLUMNS}
+                empty={
+                  data.items.length === 0 && extras.length === 0 ? (
+                    <div class="people-empty">
+                      <p class="state-title">
+                        {data.connected
+                          ? "No members found"
+                          : "Waiting for Cloudflare"}
+                      </p>
+                      <p class="muted">
+                        {data.connected
+                          ? "Try a different search or clear your filters."
+                          : "Your directory will appear after the first sync."}
+                      </p>
+                    </div>
+                  ) : undefined
+                }
+              >
+                {extras.map((o) => (
+                  <PersonRow key={o.id} onOpen={() => person.open(o.id)} data={{ "data-officer-row": o.id, "data-person-row": o.id }}>
+                    <td>
+                      <PersonCell id={o.id} name={o.name} sub={[o.title, o.subteam].filter(Boolean).join(" · ") || "Officer"} onOpen={() => person.open(o.id)} />
+                    </td>
+                    <td>{o.email || "—"}</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td class="nowrap">—</td>
+                    <td data-cell="chip">
+                      <PeopleChip hue="blue" data={{ "data-officer-badge": "" }}>Officer</PeopleChip>
+                    </td>
+                  </PersonRow>
+                ))}
+                {data.items.map((p) => (
+                  <PersonRow key={p.person_id} onOpen={() => person.open(p.person_id)} data={{ "data-person-row": p.person_id }}>
+                    <td>
+                      <PersonCell
+                        id={p.person_id}
+                        name={fullName(p)}
+                        sub={p.preferred_name && p.preferred_name !== p.first_name ? `Goes by ${p.preferred_name}` : p.pronouns || undefined}
+                        onOpen={() => person.open(p.person_id)}
+                      />
+                    </td>
+                    <td>{p.uw_email || "—"}</td>
+                    <td>{p.major || "—"}</td>
+                    <td>{p.grad_year || "—"}</td>
+                    <td>{p.campus || "—"}</td>
+                    <td class="nowrap">{p.join_date.slice(0, 10)}</td>
+                    <td data-cell="chip">
+                      {officerOf.has(p.person_id) ? (
+                        <PeopleChip hue="blue" data={{ "data-officer-badge": "" }}>Officer</PeopleChip>
+                      ) : p.has_been_cseed_officer ? (
+                        <PeopleChip ghost>Former</PeopleChip>
+                      ) : (
+                        <span class="muted">—</span>
+                      )}
+                    </td>
+                  </PersonRow>
+                ))}
+              </PeopleGroup>
+              <nav class="people-foot members-pagination" aria-label="Member pagination">
                 <span role="status">
                   {data.total === 0
                     ? "0 members"
@@ -391,48 +351,170 @@ function Members({ me }: { me: CurrentUser }) {
             </>
           )
         )}
-      </section>
-      <Drawer
+      </PeopleCard>
+      {openOfficer ? (
+        <OfficerSummaryDrawer officer={openOfficer} onClose={person.close} />
+      ) : (
+      <PersonDrawer
         open={detailId !== null}
-        onClose={() => {
-          setDetailId(null);
-          setMember(null);
-        }}
-        title={
-          member ? `${member.first_name} ${member.last_name}` : "Member details"
-        }
-        eyebrow="Membership record"
+        onClose={person.close}
         id="member-detail"
-      >
-        {detailLoading || !member ? (
-          <Loading rows={6} />
-        ) : (
-          <MemberEditor
-            key={member.person_id}
-            member={member}
-            director={director}
-            actorName={me.name}
-            connected={data?.connected ?? false}
-            onSaved={(p) => {
-              setMember(p);
-              setTick((t) => t + 1);
-              setStatus("Member saved to Cloudflare D1.");
-            }}
-          />
-        )}
-      </Drawer>
+        personKey={detailId ?? ""}
+        name={member ? fullName(member) : "Member"}
+        eyebrow="Member"
+        subtitle={member ? [member.preferred_name && member.preferred_name !== member.first_name ? `Goes by ${member.preferred_name}` : null, member.pronouns, member.major].filter(Boolean).join(" · ") || undefined : undefined}
+        chips={
+          member && (officerOfOpen ? (
+            <PeopleChip hue="blue">Officer</PeopleChip>
+          ) : member.has_been_cseed_officer ? (
+            <PeopleChip>Former officer</PeopleChip>
+          ) : (
+            <PeopleChip hue="green">Member</PeopleChip>
+          ))
+        }
+        actions={
+          member
+            ? [
+                ...(member.uw_email || member.personal_email
+                  ? [{ label: "Email", icon: "mail" as const, href: `mailto:${member.uw_email || member.personal_email}`, primary: true }]
+                  : []),
+                ...(officerOfOpen ? [{ label: "Officer profile", icon: "user" as const, href: `/officers?person=${encodeURIComponent(officerOfOpen.id)}` }] : []),
+              ]
+            : []
+        }
+        stats={
+          member
+            ? [
+                { label: "Joined", value: member.join_date.slice(0, 10) },
+                { label: "Graduation year", value: member.grad_year || "—" },
+                { label: "Campus", value: member.campus || "—" },
+              ]
+            : []
+        }
+        status={detailError ? <div class="person-body"><ErrorState error={detailError} /></div> : !member ? <div class="person-body"><Loading rows={6} /></div> : undefined}
+        tabs={
+          member
+            ? [
+                {
+                  key: "overview",
+                  label: "Overview",
+                  render: () => (
+                    <>
+                      <PersonSection title="Membership record">
+                        <PersonFacts
+                          facts={[
+                            ["Person ID", <span class="mono">{member.person_id}</span>],
+                            ["Join date", member.join_date.slice(0, 10)],
+                            ["Has been officer", member.has_been_cseed_officer ? "Yes" : "No"],
+                          ]}
+                        />
+                      </PersonSection>
+                      <PersonSection title="Contact and profile">
+                        <PersonFacts facts={fields.map(([key, label]) => [label, member[key] || "Not provided", key])} />
+                      </PersonSection>
+                      {!director && <p class="muted small">Directors and leadership can edit member records.</p>}
+                    </>
+                  ),
+                },
+                ...(director
+                  ? [
+                      {
+                        key: "manage",
+                        label: "Manage",
+                        render: () => (
+                          <MemberEditor
+                            key={member.person_id}
+                            member={member}
+                            actorName={me.name}
+                            connected={data?.connected ?? false}
+                            onSaved={(p) => {
+                              setMember(p);
+                              setTick((t) => t + 1);
+                              setStatus("Member saved to Cloudflare D1.");
+                            }}
+                          />
+                        ),
+                      },
+                    ]
+                  : []),
+              ]
+            : []
+        }
+      />
+      )}
     </div>
+  );
+}
+/** An officer without a membership record, opened from Members: read-only; edits stay on Board Members. */
+function OfficerSummaryDrawer({ officer: o, onClose }: { officer: ResponseOf<"membersList">["officers"][number]; onClose: () => void }) {
+  const [activity, setActivity] = useState<OfficerActivityResponse | null>(null);
+  useEffect(() => {
+    setActivity(null);
+    const controller = new AbortController();
+    api("officerActivity", { params: { id: o.id }, signal: controller.signal }).then(
+      (r) => !controller.signal.aborted && setActivity(r),
+      () => {},
+    );
+    return () => controller.abort();
+  }, [o.id]);
+  const num = (n: number | undefined) => (n === undefined ? "…" : String(n));
+  const profile = `/officers?person=${encodeURIComponent(o.id)}`;
+  return (
+    <PersonDrawer
+      open
+      onClose={onClose}
+      id="member-detail"
+      personKey={o.id}
+      name={o.name}
+      eyebrow="Officer"
+      subtitle={[o.title, o.subteam].filter(Boolean).join(" · ") || undefined}
+      chips={<PeopleChip hue="blue">Officer</PeopleChip>}
+      actions={[
+        ...(o.email ? [{ label: "Email", icon: "mail" as const, href: `mailto:${o.email}`, primary: true }] : []),
+        { label: "Officer profile", icon: "user" as const, href: profile },
+      ]}
+      stats={[
+        { label: "Events hosted", value: num(activity?.stats.eventsHosted) },
+        { label: "Open design requests", value: num(activity?.stats.openDesign) },
+        { label: "Open purchases", value: num(activity?.stats.openPurchases) },
+      ]}
+      tabs={[
+        {
+          key: "overview",
+          label: "Overview",
+          render: () => (
+            <>
+              <PersonSection title="Officer">
+                <PersonFacts
+                  facts={[
+                    ["Title", o.title || "Not set"],
+                    ["Subteam", o.subteam || "Not set"],
+                    ["Email", o.email || "Not provided"],
+                  ]}
+                />
+              </PersonSection>
+              <p class="muted small" data-no-member-record>
+                No membership record matches this officer’s email yet. Edit officer details on Board Members.
+              </p>
+            </>
+          ),
+        },
+        {
+          key: "activity",
+          label: "Activity",
+          render: () => (activity ? <ActivityList items={activity.items} /> : <Loading rows={3} />),
+        },
+      ]}
+    />
   );
 }
 function MemberEditor({
   member,
-  director,
   connected,
   actorName,
   onSaved,
 }: {
   member: Member;
-  director: boolean;
   connected: boolean;
   actorName: string;
   onSaved: (p: Member) => void;
@@ -475,35 +557,6 @@ function MemberEditor({
   }
   return (
     <div class="stack">
-      <dl class="facts">
-        <div>
-          <dt>Person ID</dt>
-          <dd>{member.person_id}</dd>
-        </div>
-        <div>
-          <dt>Join date</dt>
-          <dd>{member.join_date.slice(0, 10)} · Read-only</dd>
-        </div>
-        <div>
-          <dt>Has been officer</dt>
-          <dd>{member.has_been_cseed_officer ? "Yes" : "No"} · Read-only</dd>
-        </div>
-      </dl>
-      {!director ? (
-        <>
-          <p class="notice">
-            Read-only. Directors and leadership can edit member records.
-          </p>
-          <dl class="facts">
-            {fields.map(([key, label]) => (
-              <div key={key}>
-                <dt>{label}</dt>
-                <dd>{member[key] || "Not provided"}</dd>
-              </div>
-            ))}
-          </dl>
-        </>
-      ) : (
         <form
           class="stack"
           onSubmit={(e) => {
@@ -644,7 +697,6 @@ function MemberEditor({
             </button>
           )}
         </form>
-      )}
     </div>
   );
 }

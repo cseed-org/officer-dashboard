@@ -1,10 +1,12 @@
-.speakers-filters {
-  align-items: end;
-  flex-wrap: wrap;
+.speakers-filters .field {
+  flex: 1 1 140px;
 }
-.speakers-filters .field:first-child {
-  flex: 1;
-  min-width: 180px;
+.speakers-filters .people-search {
+  flex: 2 1 220px;
+}
+.speakers-support {
+  align-self: center;
+  white-space: nowrap;
 }
 .speakers-fieldset {
   border: 0;
@@ -12,16 +14,17 @@
   margin: 0;
   min-width: 0;
 }
-.speakers-mobile {
-  display: none;
-}
 .speakers-note {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.speakers-page td {
-  vertical-align: top;
-  overflow-wrap: anywhere;
+.speakers-page .people-table td[data-cell="chip"] .person-sub {
+  display: block;
+  margin-top: 4px;
+}
+.speakers-page .danger-zone {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
 }
 /* Brand empty state from the approved v03 design system. */
 @font-face {
@@ -78,25 +81,15 @@
   color: var(--brand-ink);
 }
 @media (max-width: 640px) {
-  .speakers-desktop {
+  .speakers-filters .field {
+    flex-basis: calc(50% - 12px);
+    min-width: 0;
+  }
+  .speakers-filters .people-search {
+    flex-basis: 100%;
+  }
+  /* On phones the chip cell keeps only the chips. */
+  .speakers-page .people-table td[data-cell="chip"] .person-sub {
     display: none;
   }
-  .speakers-mobile {
-    display: grid;
-    gap: var(--space-4, 16px);
-  }
-  .speakers-mobile .cell-sub {
-    display: block;
-  }
-  .speakers-mobile a {
-    overflow-wrap: anywhere;
-  }
-  .speakers-filters {
-    width: 100%;
-  }
-}
-
-.speakers-mobile .field-label {
-  display: block;
-  margin-bottom: 4px;
 }

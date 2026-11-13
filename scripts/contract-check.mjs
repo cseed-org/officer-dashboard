@@ -438,6 +438,8 @@ const officersOfficer = await call('officersList', { who: officer });
 must(officersOfficer.json.officers.every((o) => o.phone === undefined), 'officers never see phone');
 must((await call('officersList', { who: directorA })).json.officers.some((o) => typeof o.phone === 'string'), 'directors see phone');
 await call('officerDetail', { who: officer, params: { id: 'user-ava' } });
+const activity = await call('officerActivity', { who: officer, params: { id: 'user-priya' } });
+must(activity.json.stats.openDesign >= 1 && activity.json.items.some((i) => i.kind === 'design'), 'person activity lists the design requests an officer requested', activity.json);
 await call('officerUpdate', { who: directorA, params: { id: 'user-marcus' }, body: { subteamId: 'team-events', title: 'Events crew' } });
 await call('officerUpdate', { who: officer, params: { id: 'user-marcus' }, body: { title: 'x' }, expect: 403 });
 await call('profileGet', { who: officer });

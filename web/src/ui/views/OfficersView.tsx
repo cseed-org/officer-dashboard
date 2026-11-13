@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 import { api, ApiCallError, fieldErrors } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
-import type { CurrentUser, DMResult, Invite, InviteResponse, Officer, ProfileResponse, Subteam } from '../../lib/contracts';
+import type { Contact, CurrentUser, DMResult, Invite, InviteResponse, Officer, OfficerActivityResponse, ProfileResponse, Subteam } from '../../lib/contracts';
+import { ROLE_HUE, type Hue } from '../../lib/colors';
+import { setParams } from '../../lib/nav';
+import { ActivityList, PersonDrawer, PersonFacts, PersonSection, useCopied, usePersonParam, type PersonTab } from '../components/PersonDrawer';
+import { ContactLinks, PeopleCard, PeopleChip, PeopleGroup, PeoplePills, PeopleSearch, PersonCell, PersonRow, sortBy, type Column, type Sort } from '../components/PeopleTable';
 import { fmtDate, fmtDateTime, fmtShort, safeUrl } from '../../lib/format';
 import { Drawer } from '../components/Drawer';
 import { ErrorState, Loading } from '../components/states';
@@ -17,55 +21,59 @@ const birthday = (md: string | null) => {
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
 const errText = (e: unknown, fallback: string) => (e instanceof ApiCallError || e instanceof Error ? e.message : fallback);
 
-function RoleBadge({ o }: { o: Pick<Officer, 'role' | 'isOwner'> }) {
+const ROLE_LABEL = { leadership: 'Leadership', director: 'Director', officer: 'Officer' } as const;
+
+function RoleChip({ o }: { o: Pick<Officer, 'role' | 'isOwner'> }) {
   return (
-    <>
-      <span class="role-badge" data-role={o.role}>
-        {cap(o.role)}
-      </span>
-      {o.isOwner && (
-        <>
-          {' '}
-          <span class="badge badge--neutral">Owner</span>
-        </>
-      )}
-    </>
+    <span class="people-chips">
+      <PeopleChip hue={ROLE_HUE[o.role]} data={{ 'data-role': o.role }}>
+        {ROLE_LABEL[o.role]}
+      </PeopleChip>
+      {o.isOwner && <PeopleChip ghost>Owner</PeopleChip>}
+    </span>
   );
 }
 
-const StatusBadge = ({ o }: { o: Officer }) =>
-  !o.active ? (
-    <span class="badge badge--neutral">Deactivated</span>
-  ) : o.onboarding === 'pending' ? (
-    <span class="badge badge--attention">Setting up</span>
-  ) : !o.profileComplete ? (
-    <span class="badge badge--attention">Profile incomplete</span>
-  ) : (
-    <span class="badge badge--positive">Active</span>
-  );
+const statusOf = (o: Officer): [string, Hue | null] =>
+  !o.active ? ['Deactivated', null] : o.onboarding === 'pending' ? ['Setting up', 'amber'] : !o.profileComplete ? ['Profile incomplete', 'amber'] : ['Active', 'green'];
 
-/** One directory line: name (opens the profile), subteam, role and the best email to reach them. */
+const displayName = (o: Officer) => (o.preferredName && o.preferredName !== o.name.split(' ')[0] ? `${o.name} (${o.preferredName})` : o.name);
+
+const OFFICER_COLUMNS: Column<OfficerSort>[] = [
+  { label: 'Name', sort: 'name', width: '34%' },
+  { label: 'Subteam', width: '16%' },
+  { label: 'Role', width: '20%' },
+  { label: 'Since', sort: 'since', width: '14%' },
+  { label: 'Contact', width: '16%' },
+];
+type OfficerSort = 'name' | 'since';
+/** "Fall 2026" → 2026.75 so terms sort in calendar order; anything else sorts as text. */
+const termValue = (t: string | null) => {
+  const m = /^(winter|spring|summer|fall|autumn)\s+(\d{4})$/i.exec(t?.trim() ?? '');
+  if (!m) return t ?? null;
+  return Number(m[2]) + ({ winter: 0, spring: 0.25, summer: 0.5, fall: 0.75, autumn: 0.75 } as Record<string, number>)[m[1]!.toLowerCase()]!;
+};
+const sortOfficers = (rows: Officer[], sort: Sort<OfficerSort> | null) =>
+  sortBy(rows, sort, (o, k) => (k === 'name' ? o.name : termValue(o.startTerm)));
+
+/** One directory row: avatar and name (opens the drawer), subteam, role, start term, contact. */
 function OfficerRow({ o, onOpen }: { o: Officer; onOpen: () => void }) {
-  const email = o.schoolEmail || o.personalEmail;
-  const sub = [o.title, !o.active ? null : o.onboarding === 'pending' ? 'Setting up' : !o.profileComplete ? 'Profile incomplete' : null].filter(Boolean).join(' · ');
+  const [status] = statusOf(o);
+  const sub = [o.title, o.active && status !== 'Active' ? status : null].filter(Boolean).join(' · ');
   return (
-    <tr data-officer={o.id}>
-      <td data-label="Officer" class="dt-primary">
-        <span class="people-cell">
-          <button class="linkish cell-title" onClick={onOpen}>
-            {o.preferredName && o.preferredName !== o.name.split(' ')[0] ? `${o.name} (${o.preferredName})` : o.name}
-          </button>
-          <span class="cell-sub">{sub || '—'}</span>
-        </span>
+    <PersonRow onOpen={onOpen} data={{ 'data-officer': o.id, 'data-person-row': o.id }}>
+      <td>
+        <PersonCell id={o.id} name={displayName(o)} avatarUrl={o.avatarUrl} sub={sub || '—'} onOpen={onOpen} />
       </td>
-      <td data-label="Subteam">{o.subteam?.name ?? '—'}</td>
-      <td data-label="Role">
-        <span class="people-cell">
-          <RoleBadge o={o} />
-        </span>
+      <td>{o.subteam?.name ?? <span class="muted">—</span>}</td>
+      <td data-cell="chip">
+        <RoleChip o={o} />
       </td>
-      <td data-label="Contact">{email ? <a href={`mailto:${email}`}>{email}</a> : <span class="muted">—</span>}</td>
-    </tr>
+      <td class="muted">{o.startTerm ?? '—'}</td>
+      <td>
+        <ContactLinks email={o.schoolEmail || o.personalEmail} discordId={o.discordId} linkedin={safeUrl(o.linkedin)} />
+      </td>
+    </PersonRow>
   );
 }
 
@@ -624,7 +632,7 @@ function InvitesSection({
 
 // ─────────────────────────── profile drawer ───────────────────────────
 
-function ProfileDrawer({
+function OfficerDrawer({
   officer,
   me,
   subteams,
@@ -633,6 +641,7 @@ function ProfileDrawer({
   onClose,
   onChanged,
   confirm,
+  onEditMine,
 }: {
   officer: Officer | null;
   me: CurrentUser;
@@ -642,6 +651,7 @@ function ProfileDrawer({
   onClose: () => void;
   onChanged: () => void;
   confirm: (c: Confirm) => void;
+  onEditMine: () => void;
 }) {
   const [role, setRole] = useState('');
   const [team, setTeam] = useState('');
@@ -649,13 +659,28 @@ function ProfileDrawer({
   const [term, setTerm] = useState('');
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState<OfficerActivityResponse | null>(null);
+  const [activityError, setActivityError] = useState<unknown>(null);
+  const [copied, copyText] = useCopied();
   useEffect(() => {
     setRole(officer?.role ?? '');
     setTeam(officer?.subteam?.id ?? '');
     setTitle(officer?.title ?? '');
     setTerm(officer?.startTerm ?? '');
-    setNote(null);
   }, [officer?.id, officer?.role, officer?.subteam?.id, officer?.title, officer?.startTerm]);
+  // "Saved ✓" survives the list refresh that the save triggers; a different person clears it.
+  useEffect(() => setNote(null), [officer?.id]);
+  useEffect(() => {
+    setActivity(null);
+    setActivityError(null);
+    if (!officer) return;
+    const ctrl = new AbortController();
+    api('officerActivity', { params: { id: officer.id }, signal: ctrl.signal }).then(
+      (r) => !ctrl.signal.aborted && setActivity(r),
+      (e) => !ctrl.signal.aborted && setActivityError(e),
+    );
+    return () => ctrl.abort();
+  }, [officer?.id]);
 
   const o = officer;
   const self = o?.id === me.id;
@@ -663,6 +688,7 @@ function ProfileDrawer({
   const canEditTeam = canManage && !!o && (o.role !== 'leadership' || canChangeRoles);
   // Directors deactivate officers; only leadership deactivates directors or leadership.
   const canDeactivate = !!o && (canChangeRoles || (canManage && o.role === 'officer'));
+  const hasManage = !!o && ((canEditTeam && o.profileComplete) || (canDeactivate && !self) || (me.isOwner && !self && o.active));
 
   const saveTeam = async () => {
     if (!o) return;
@@ -679,52 +705,66 @@ function ProfileDrawer({
     }
   };
 
-  const fact = (label: string, value: preact.ComponentChildren) => (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value || '—'}</dd>
-    </div>
-  );
-
-  return (
-    <Drawer open={!!o} onClose={onClose} id="profile" title="Officer profile">
-      {o && (
+  if (!o) return <PersonDrawer open={false} onClose={onClose} personKey="" name="" tabs={[]} />;
+  const email = o.schoolEmail || o.personalEmail;
+  const [statusText, statusHue] = statusOf(o);
+  const linkedin = safeUrl(o.linkedin);
+  const num = (n: number | undefined) => (activity ? n : activityError ? '—' : '…');
+  type Tab = 'overview' | 'activity' | 'manage';
+  const tabs: PersonTab<Tab>[] = [
+    {
+      key: 'overview',
+      label: 'Overview',
+      render: () => (
         <div class="stack" data-officer-profile={o.id}>
-          <div class="action-row">
-            <RoleBadge o={o} />
-            <StatusBadge o={o} />
-          </div>
-          <div>
-            <h3>{o.name}</h3>
-            <p class="muted">
-              {[o.subteam?.name, o.title, o.pronouns].filter(Boolean).join(' · ') || 'No profile yet'}
-            </p>
-          </div>
-          <dl class="facts">
-            {fact('Discord', <span class="mono">{o.discordId}</span>)}
-            {fact(
-              'Phone',
-              o.phone !== undefined ? <span data-phone>{o.phone}</span> : <span class="muted">Visible to directors and leadership</span>,
-            )}
-            {fact('Birthday', birthday(o.birthday))}
-            {fact('Preferred name', o.preferredName)}
-            {fact('Personal email', o.personalEmail && <a href={`mailto:${o.personalEmail}`}>{o.personalEmail}</a>)}
-            {fact('School email', o.schoolEmail && <a href={`mailto:${o.schoolEmail}`}>{o.schoolEmail}</a>)}
-            {fact('Graduation', o.gradDate)}
-            {fact(
-              'LinkedIn',
-              o.linkedin && (
-                <a href={o.linkedin} target="_blank" rel="noopener noreferrer">
-                  {o.linkedin.replace(/^https:\/\/(www\.)?/, '')}
-                </a>
-              ),
-            )}
-            {fact('Team or committee', o.team)}
-            {fact('Officer since', o.startTerm)}
-            {o.lastLoginAt !== undefined && fact('Last sign-in', o.lastLoginAt ? fmtDateTime(o.lastLoginAt) : 'Never')}
-          </dl>
           {!o.profileComplete && <p class="notice">{o.onboarding === 'pending' ? `${o.name} is still going through setup.` : `${o.name} hasn’t filled in their profile yet.`}</p>}
-
+          <PersonSection title="Contact">
+            <PersonFacts
+              facts={[
+                ['School email', o.schoolEmail && <a href={`mailto:${o.schoolEmail}`}>{o.schoolEmail}</a>],
+                ['Personal email', o.personalEmail && <a href={`mailto:${o.personalEmail}`}>{o.personalEmail}</a>],
+                ['Phone', o.phone !== undefined ? <span data-phone>{o.phone}</span> : <span class="muted">Visible to directors and leadership</span>],
+                ['Discord', <span class="mono">{o.discordId}</span>],
+                ['LinkedIn', linkedin && (
+                  <a href={linkedin} target="_blank" rel="noopener noreferrer">
+                    {linkedin.replace(/^https:\/\/(www\.)?/, '')}
+                  </a>
+                )],
+                ['Birthday', o.birthday ? birthday(o.birthday) : null],
+              ]}
+            />
+          </PersonSection>
+          <PersonSection title="Role and team">
+            <PersonFacts
+              facts={[
+                ['Subteam', o.subteam?.name],
+                ['Title', o.title],
+                ['Officer since', o.startTerm],
+                ['Team or committee', o.team],
+                ['Preferred name', o.preferredName],
+                ['Graduation', o.gradDate],
+                ...(o.lastLoginAt !== undefined ? [['Last sign-in', o.lastLoginAt ? fmtDateTime(o.lastLoginAt) : 'Never'] as [string, string]] : []),
+              ]}
+            />
+          </PersonSection>
+          <PersonSection title="Recent activity">
+            {activity ? <ActivityList items={activity.items.slice(0, 3)} /> : activityError ? <ErrorState error={activityError} /> : <Loading rows={2} label="Loading activity" />}
+          </PersonSection>
+        </div>
+      ),
+    },
+    {
+      key: 'activity',
+      label: 'Activity',
+      render: () => (activity ? <ActivityList items={activity.items} /> : activityError ? <ErrorState error={activityError} /> : <Loading rows={4} label="Loading activity" />),
+    },
+    ...(hasManage
+      ? [
+          {
+            key: 'manage' as const,
+            label: 'Manage',
+            render: () => (
+              <div class="stack" data-officer-manage>
           {canEditTeam && o.profileComplete && (
             <section class="stack" data-officer-edit>
               <h3>Subteam, title and start term</h3>
@@ -893,14 +933,89 @@ function ProfileDrawer({
               </div>
             </section>
           )}
-          {note && (
-            <p class={`notice${note.ok ? ' notice--positive' : ' notice--negative'}`} role="status">
-              {note.text}
-            </p>
-          )}
-        </div>
-      )}
-    </Drawer>
+                {note && (
+                  <p class={`notice${note.ok ? ' notice--positive' : ' notice--negative'}`} role="status">
+                    {note.text}
+                  </p>
+                )}
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    <PersonDrawer
+      open
+      onClose={onClose}
+      id="profile"
+      personKey={o.id}
+      name={o.name}
+      avatarUrl={o.avatarUrl}
+      eyebrow={o.active ? 'Officer' : 'Ex-officer'}
+      subtitle={[o.title, o.subteam?.name, o.pronouns].filter(Boolean).join(' · ') || 'No profile yet'}
+      chips={
+        <>
+          <RoleChip o={o} />
+          <PeopleChip hue={statusHue}>{statusText}</PeopleChip>
+        </>
+      }
+      actions={[
+        ...(email ? [{ label: 'Email', icon: 'mail' as const, href: `mailto:${email}`, primary: true }] : []),
+        { label: copied === 'discord' ? 'Copied ✓' : 'Copy Discord ID', icon: 'message' as const, onClick: () => copyText('discord', o.discordId), data: 'copy-discord' },
+        ...(linkedin ? [{ label: 'LinkedIn', icon: 'link' as const, href: linkedin, external: true }] : []),
+        ...(self ? [{ label: 'Edit my profile', icon: 'pen' as const, onClick: onEditMine, data: 'edit-own' }] : []),
+      ]}
+      stats={[
+        { label: 'Events hosted', value: num(activity?.stats.eventsHosted) },
+        { label: 'Open design requests', value: num(activity?.stats.openDesign) },
+        { label: 'Open purchases', value: num(activity?.stats.openPurchases) },
+      ]}
+      tabs={tabs}
+    />
+  );
+}
+
+/** A Club Support Contact opened from Board Members: read-only here, edited on Contacts. */
+function SupportDrawer({ contact, onClose }: { contact: Contact | null; onClose: () => void }) {
+  if (!contact) return <PersonDrawer open={false} onClose={onClose} personKey="" name="" tabs={[]} />;
+  const c = contact;
+  const linkedin = safeUrl(c.linkedin);
+  return (
+    <PersonDrawer
+      open
+      onClose={onClose}
+      personKey={c.id}
+      name={c.name}
+      eyebrow="Club support contact"
+      subtitle={[c.role, c.org].filter(Boolean).join(' · ') || undefined}
+      chips={<PeopleChip hue="teal">{c.type === 'both' ? 'Speaker & mentor' : c.type === 'mentor' ? 'Mentor' : 'Speaker'}</PeopleChip>}
+      actions={[
+        ...(c.email ? [{ label: 'Email', icon: 'mail' as const, href: `mailto:${c.email}`, primary: true }] : []),
+        ...(linkedin ? [{ label: 'LinkedIn', icon: 'link' as const, href: linkedin, external: true }] : []),
+        { label: 'Manage in Contacts', icon: 'arrow-right' as const, href: `/contacts?person=${encodeURIComponent(c.id)}`, data: 'manage-contact' },
+      ]}
+      tabs={[
+        {
+          key: 'overview',
+          label: 'Overview',
+          render: () => (
+            <PersonSection title="Contact">
+              <PersonFacts
+                facts={[
+                  ['Email', c.email && <a href={`mailto:${c.email}`}>{c.email}</a>],
+                  ['LinkedIn', linkedin && <a href={linkedin} target="_blank" rel="noopener noreferrer">{linkedin.replace(/^https:\/\/(www\.)?/, '')}</a>],
+                  ['Organization', c.org],
+                  ['Role', c.role],
+                  ['Topics', c.topics.join(' · ')],
+                ]}
+              />
+            </PersonSection>
+          ),
+        },
+      ]}
+    />
   );
 }
 
@@ -937,7 +1052,8 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
   useEffect(loadInvites, []);
   const [q, setQ] = useState('');
   const [team, setTeam] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [sort, setSort] = useState<Sort<OfficerSort> | null>(null);
+  const person = usePersonParam();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [prefill, setPrefill] = useState<{ name: string; discordId: string; subteamId: string } | null>(null);
   const [mine, setMine] = useState(() => typeof location !== 'undefined' && new URLSearchParams(location.search).get('profile') === 'me');
@@ -956,21 +1072,27 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
     [officers, needle, team],
   );
   const supportAll = supportList.status === 'ready' ? supportList.data.items : [];
-  const support = supportAll.filter((c) => !needle || [c.name, c.org, c.role, c.email].some((v) => v.toLowerCase().includes(needle)));
+  const support = sortBy(
+    supportAll.filter((c) => !needle || [c.name, c.org, c.role, c.email].some((v) => v.toLowerCase().includes(needle))),
+    sort?.key === 'name' ? sort : null,
+    (c) => c.name,
+  );
 
   if (list.status === 'loading') return <Loading rows={8} label="Loading officers" />;
   if (list.status === 'error') return <ErrorState error={list.error} onRetry={list.reload} />;
   const { subteams, canManage, canChangeRoles } = list.data;
-  const activeRows = filtered.filter((o) => o.active);
-  const ex = filtered.filter((o) => !o.active);
+  const activeRows = sortOfficers(filtered.filter((o) => o.active), sort);
+  const ex = sortOfficers(filtered.filter((o) => !o.active), sort);
   const active = officers.filter((o) => o.active).length;
   const supportLoaded = supportList.status === 'ready';
-  const current = officers.find((o) => o.id === openId) ?? null;
+  const current = officers.find((o) => o.id === person.personId) ?? null;
+  const currentSupport = current ? null : (supportAll.find((c) => c.id === person.personId) ?? null);
   const filtering = !!(q || team);
   const refresh = () => {
     list.reload();
     loadInvites();
   };
+  const openMine = () => setMine(true);
 
   return (
     <div class="stack" data-officers>
@@ -979,7 +1101,7 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
           {active} active{isDirector && officers.length > active ? ` · ${officers.length - active} ex-officers` : ''} · {subteams.length} subteams
         </span>
         <div class="toolbar-actions">
-          <button class="btn" onClick={() => setMine(true)} data-open-own>
+          <button class="btn" onClick={openMine} data-open-own>
             My profile
           </button>
           {canManage && (
@@ -997,133 +1119,78 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
         </div>
       </div>
       {section === 'directory' && (
-        <>
-          <div class="toolbar">
-            <div class="toolbar-main">
-              <label class="field">
-                <span class="field-label">Find a person</span>
-                <input class="input" type="search" placeholder="Name, title or email" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} data-officer-search />
-              </label>
-              <label class="field">
-                <span class="field-label">Subteam</span>
-                <select class="select" value={team} onChange={(e) => setTeam((e.target as HTMLSelectElement).value)}>
-                  <option value="">All subteams</option>
-                  {subteams.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+        <PeopleCard label="Board Members directory" data="officers">
+          <div class="people-tools">
+            <PeopleSearch label="Find a person" value={q} placeholder="Name, title or email" onInput={setQ} data={{ 'data-officer-search': '' }} />
+            <PeoplePills label="Subteam" value={team} options={[{ key: '', label: 'All' }, ...subteams.map((t) => ({ key: t.id, label: t.name }))]} onChange={setTeam} />
           </div>
-
-          <div class="stack" data-directory>
-              <section class="stack people-group" data-section="officers" aria-labelledby="dir-officers">
-                <div class="section-head">
-                  <h2 id="dir-officers">Officers</h2>
-                  <span class="muted small">{activeRows.length}</span>
-                </div>
-                {activeRows.length === 0 ? (
-                  <p class="muted small" role="status">
+          <div data-directory>
+            <PeopleGroup
+              section="officers"
+              title="Officers"
+              count={activeRows.length}
+              columns={OFFICER_COLUMNS}
+              sort={sort}
+              onSort={setSort}
+              empty={
+                activeRows.length === 0 ? (
+                  <p class="muted small people-group-empty" role="status">
                     {filtering ? 'No officers match.' : canManage ? 'No officers yet. Invite the first officers: they get a Discord DM or a link, then set up their profile.' : 'Officers appear here once they’re invited.'}
                   </p>
-                ) : (
-                  <div class="table-wrap">
-                    <table class="dt">
-                      <caption class="visually-hidden">Officers</caption>
-                      <thead>
-                        <tr>
-                          <th scope="col">Officer</th>
-                          <th scope="col">Subteam</th>
-                          <th scope="col">Role</th>
-                          <th scope="col">Contact</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activeRows.map((o) => (
-                          <OfficerRow key={o.id} o={o} onOpen={() => setOpenId(o.id)} />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
+                ) : undefined
+              }
+            >
+              {activeRows.map((o) => (
+                <OfficerRow key={o.id} o={o} onOpen={() => person.open(o.id)} />
+              ))}
+            </PeopleGroup>
 
-              <section class="stack people-group" data-section="club-support" aria-labelledby="dir-support">
-                <div class="section-head">
-                  <h2 id="dir-support">Club Support Contacts</h2>
-                  <span class="muted small">
-                    {support.length} · <a href="/contacts">Manage in Contacts</a>
-                  </span>
-                </div>
-                {support.length === 0 ? (
-                  <p class="muted small" role="status">
+            <PeopleGroup
+              section="club-support"
+              title="Club Support Contacts"
+              count={support.length}
+              extra={<a href="/contacts">Manage in Contacts</a>}
+              columns={[
+                { label: 'Name', sort: 'name', width: '34%' },
+                { label: 'Organization', width: '30%' },
+                { label: 'Type', width: '20%' },
+                { label: 'Contact', width: '16%' },
+              ]}
+              sort={sort?.key === 'name' ? sort : null}
+              onSort={setSort}
+              empty={
+                support.length === 0 ? (
+                  <p class="muted small people-group-empty" role="status">
                     {supportLoaded && !needle ? 'None yet. Mark an external contact as club support on the Contacts page.' : 'No club support contacts match.'}
                   </p>
-                ) : (
-                  <div class="table-wrap">
-                    <table class="dt">
-                      <caption class="visually-hidden">Club support contacts</caption>
-                      <thead>
-                        <tr>
-                          <th scope="col">Contact</th>
-                          <th scope="col">Organization</th>
-                          <th scope="col">Contact info</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {support.map((c) => (
-                          <tr key={c.id} data-support={c.id}>
-                            <td data-label="Contact" class="dt-primary">
-                              <span class="people-cell">
-                                <a class="cell-title" href={`/contacts?id=${encodeURIComponent(c.id)}`}>{c.name}</a>
-                                <span class="cell-sub">{c.role || '—'}</span>
-                              </span>
-                            </td>
-                            <td data-label="Organization">{c.org || '—'}</td>
-                            <td data-label="Contact info">
-                              <span class="people-cell">
-                                {c.email ? <a href={`mailto:${c.email}`}>{c.email}</a> : <span class="muted">—</span>}
-                                {safeUrl(c.linkedin) && <a class="cell-sub" href={safeUrl(c.linkedin)!} target="_blank" rel="noopener noreferrer">LinkedIn</a>}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
+                ) : undefined
+              }
+            >
+              {support.map((c) => (
+                <PersonRow key={c.id} onOpen={() => person.open(c.id)} data={{ 'data-support': c.id, 'data-person-row': c.id }}>
+                  <td>
+                    <PersonCell id={c.id} name={c.name} sub={c.role || '—'} onOpen={() => person.open(c.id)} />
+                  </td>
+                  <td>{c.org || <span class="muted">—</span>}</td>
+                  <td data-cell="chip">
+                    <PeopleChip hue="teal">{c.type === 'both' ? 'Speaker & mentor' : c.type === 'mentor' ? 'Mentor' : 'Speaker'}</PeopleChip>
+                  </td>
+                  <td>
+                    <ContactLinks email={c.email} linkedin={safeUrl(c.linkedin)} />
+                  </td>
+                </PersonRow>
+              ))}
+            </PeopleGroup>
 
-              {ex.length > 0 && (
-                <section class="stack people-group" data-section="ex-officers" aria-labelledby="dir-ex">
-                  <div class="section-head">
-                    <h2 id="dir-ex">Ex-Officers</h2>
-                    <span class="muted small">{ex.length}</span>
-                  </div>
-                  <div class="table-wrap">
-                    <table class="dt">
-                      <caption class="visually-hidden">Ex-officers (access ended)</caption>
-                      <thead>
-                        <tr>
-                          <th scope="col">Former officer</th>
-                          <th scope="col">Subteam</th>
-                          <th scope="col">Role</th>
-                          <th scope="col">Contact</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ex.map((o) => (
-                          <OfficerRow key={o.id} o={o} onOpen={() => setOpenId(o.id)} />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              )}
+            {ex.length > 0 && (
+              <PeopleGroup section="ex-officers" title="Ex-Officers" caption="Ex-officers (access ended)" count={ex.length} columns={OFFICER_COLUMNS} sort={sort} onSort={setSort}>
+                {ex.map((o) => (
+                  <OfficerRow key={o.id} o={o} onOpen={() => person.open(o.id)} />
+                ))}
+              </PeopleGroup>
+            )}
           </div>
-        </>
+        </PeopleCard>
       )}
 
       {section === 'invites' && isDirector && invites && (
@@ -1140,16 +1207,21 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
         />
       )}
 
-      <ProfileDrawer
-        officer={current}
-        me={me}
-        subteams={subteams}
-        canManage={canManage}
-        canChangeRoles={canChangeRoles}
-        onClose={() => setOpenId(null)}
-        onChanged={list.reload}
-        confirm={setConfirm}
-      />
+      {currentSupport ? (
+        <SupportDrawer contact={currentSupport} onClose={person.close} />
+      ) : (
+        <OfficerDrawer
+          officer={section === 'directory' ? current : null}
+          me={me}
+          subteams={subteams}
+          canManage={canManage}
+          canChangeRoles={canChangeRoles}
+          onClose={person.close}
+          onChanged={list.reload}
+          confirm={setConfirm}
+          onEditMine={openMine}
+        />
+      )}
       {canManage && (
         <InviteDialog
           open={inviteOpen}
@@ -1164,7 +1236,7 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
         open={mine}
         onClose={() => {
           setMine(false);
-          if (location.search.includes('profile=me')) history.replaceState(null, '', '/officers');
+          if (new URLSearchParams(location.search).get('profile') === 'me') setParams({ profile: null }, { replace: true });
         }}
         onSaved={list.reload}
       />

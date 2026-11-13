@@ -66,6 +66,7 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | DELETE | `/api/invites/:id` | director | — | — | `OkResponse` |
 | GET | `/api/officers` | officer | — | — | `OfficersResponse` |
 | GET | `/api/officers/:id` | officer | — | — | `OfficerResponse` |
+| GET | `/api/officers/:id/activity` | officer | — | — | `OfficerActivityResponse` |
 | PATCH | `/api/officers/:id` | director | — | `OfficerUpdateRequest` | `OfficerResponse` |
 | GET | `/api/me/profile` | officer | — | — | `ProfileResponse` |
 | PUT | `/api/me/profile` | officer | — | `ProfileUpsertRequest` | `ProfileResponse` |
@@ -469,6 +470,8 @@ viewers.** Birthday (month-day) is visible to every officer. PATCH
 `/api/officers/:id` (director+) changes `subteamId` and `title`; editing a leadership
 user requires leadership. Role and active status stay on PATCH `/api/admin/users/:id`. Making someone a co-owner
 (POST `/api/admin/owners/:userId`) also promotes them to leadership.
+
+GET `/api/officers/:id/activity` (V0.10 person drawer) returns `stats` (`eventsHosted`: published or completed events they host that have started; `openDesign`: design requests not yet delivered that they requested or are designing; `openPurchases`: their purchase requests that are submitted, approved or fulfilling) and up to 8 recent `items` (`kind` event | design | purchase, `title`, `status`, `role` for design, `at`, `href`), newest first. Drafts are never included. Ex-officers answer 404 to officers, as on GET `/api/officers/:id`.
 
 **Calendar delivery.** Each officer's mode is `ics` or `google`.
 
