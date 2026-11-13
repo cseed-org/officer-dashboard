@@ -108,6 +108,49 @@ test('Members: a row opens the drawer and old ?id= links land on ?person=', asyn
   await expect(openDialog(page).getByRole('heading', { level: 2, name: 'Rowan Ito' })).toBeVisible();
 });
 
+test('Members: an officer with no membership record opens in the drawer, not on another page', async ({ page }) => {
+  const officer = { id: 'user-solo', name: 'Sol Okafor', title: 'VP Outreach', subteam: 'Outreach', email: 'sol@uw.edu', memberId: null };
+  await page.route('**/api/members?*', (route) =>
+    route.fulfill({ json: { officers: [officer], officerRows: [officer], items: [], total: 1, offset: 0, limit: 25, connected: true, lastSync: Date.now(), syncError: '', facets: { campus: [], grad_year: [] } } }),
+  );
+  let memberLookups = 0;
+  await page.route('**/api/members/user-solo', (route) => {
+    memberLookups++;
+    return route.fulfill({ status: 404, json: { error: { code: 'not_found', message: 'Not found' } } });
+  });
+  await page.route('**/api/officers/user-solo/activity', (route) =>
+    route.fulfill({ json: { stats: { eventsHosted: 3, openDesign: 1, openPurchases: 0 }, items: [] } }),
+  );
+  await devLogin(page, 'officer');
+  await page.goto('/members');
+  await settle(page);
+  await page.getByLabel('Search members').fill('Sol');
+  const row = page.locator('[data-officer-row="user-solo"]');
+  // Both the name and the rest of the row open the drawer on Members.
+  for (const [target, close] of [
+    [row.getByRole('button', { name: 'Sol Okafor', exact: true }), 'escape'],
+    [row.locator('.avatar'), 'back'],
+  ] as const) {
+    await target.click();
+    await expect(page).toHaveURL(/\/members\?person=user-solo$/);
+    const d = openDialog(page);
+    await expect(d.getByRole('heading', { level: 2, name: 'Sol Okafor' })).toBeVisible();
+    await expect(d.locator('[data-person-stats]').locator('div', { hasText: 'Events hosted' }).locator('dd')).toHaveText('3');
+    await expect(d.getByRole('link', { name: 'Officer profile' })).toHaveAttribute('href', '/officers?person=user-solo');
+    await expectFullScreenOnPhone(page);
+    if (close === 'back') await page.goBack();
+    else await page.keyboard.press('Escape');
+    await expect(openDialog(page)).toHaveCount(0);
+    // Still on Members with the search kept.
+    await expect(page).toHaveURL(/\/members$/);
+    await expect(page.getByLabel('Search members')).toHaveValue('Sol');
+  }
+  // A deep link resolves the officer too, without asking for a member record.
+  await page.goto('/members?person=user-solo');
+  await expect(openDialog(page).getByRole('heading', { level: 2, name: 'Sol Okafor' })).toBeVisible();
+  expect(memberLookups).toBe(0);
+});
+
 test('External Contacts: open, stats, edit from Manage, Back closes', async ({ page }) => {
   await devLogin(page, 'officer');
   const name = `Drawer ${Date.now().toString(36)}`;

@@ -1,12 +1,11 @@
 import { fmtDateTime } from '../../lib/format';
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Gate } from "../shell/Gate";
-import { navigate } from "../../lib/nav";
-import { PersonDrawer, PersonFacts, PersonSection, usePersonParam } from "../components/PersonDrawer";
+import { ActivityList, PersonDrawer, PersonFacts, PersonSection, usePersonParam } from "../components/PersonDrawer";
 import { PeopleCard, PeopleChip, PeopleGroup, PeopleSearch, PersonCell, PersonRow, type Column } from "../components/PeopleTable";
 import { api, endpointUrl, fieldErrors } from "../../lib/api/client";
 import type { BodyOf, ResponseOf } from "../../lib/api/client";
-import type { CurrentUser, Member } from "../../lib/contracts";
+import type { CurrentUser, Member, OfficerActivityResponse } from "../../lib/contracts";
 import { ErrorState, Loading } from "../components/states";
 import "../../styles/members.css";
 
@@ -60,6 +59,11 @@ function Members({ me }: { me: CurrentUser }) {
   const [member, setMember] = useState<Member | null>(null),
     [detailError, setDetailError] = useState<unknown>(null);
   const limit = 25;
+  // An officer with no membership record opens here too, as a read-only officer summary.
+  const openOfficer = detailId
+    ? (data?.officerRows.find((o) => o.id === detailId) ??
+      data?.officers.find((o) => o.id === detailId && !o.memberId))
+    : undefined;
   useEffect(() => {
     if (filters.q === search) return;
     const timer = setTimeout(() => {
@@ -97,7 +101,8 @@ function Members({ me }: { me: CurrentUser }) {
   useEffect(() => {
     setMember(null);
     setDetailError(null);
-    if (!detailId) return;
+    // Wait for the list so an officer id is not looked up as a member.
+    if (!detailId || !data || openOfficer) return;
     const controller = new AbortController();
     api("memberDetail", {
       params: { id: detailId },
@@ -109,7 +114,7 @@ function Members({ me }: { me: CurrentUser }) {
       },
     );
     return () => controller.abort();
-  }, [detailId]);
+  }, [detailId, !!data, openOfficer?.id]);
   // Officers are club members: current officers are listed too (display only). One that shares an
   // email with a member row badges that row instead of adding a second line.
   const officers = data?.officers ?? [];
@@ -273,9 +278,9 @@ function Members({ me }: { me: CurrentUser }) {
                 }
               >
                 {extras.map((o) => (
-                  <PersonRow key={o.id} onOpen={() => navigate(`/officers?person=${encodeURIComponent(o.id)}`)} data={{ "data-officer-row": o.id }}>
+                  <PersonRow key={o.id} onOpen={() => person.open(o.id)} data={{ "data-officer-row": o.id, "data-person-row": o.id }}>
                     <td>
-                      <PersonCell id={o.id} name={o.name} sub={[o.title, o.subteam].filter(Boolean).join(" · ") || "Officer"} href={`/officers?person=${encodeURIComponent(o.id)}`} />
+                      <PersonCell id={o.id} name={o.name} sub={[o.title, o.subteam].filter(Boolean).join(" · ") || "Officer"} onOpen={() => person.open(o.id)} />
                     </td>
                     <td>{o.email || "—"}</td>
                     <td>—</td>
@@ -347,6 +352,9 @@ function Members({ me }: { me: CurrentUser }) {
           )
         )}
       </PeopleCard>
+      {openOfficer ? (
+        <OfficerSummaryDrawer officer={openOfficer} onClose={person.close} />
+      ) : (
       <PersonDrawer
         open={detailId !== null}
         onClose={person.close}
@@ -433,7 +441,71 @@ function Members({ me }: { me: CurrentUser }) {
             : []
         }
       />
+      )}
     </div>
+  );
+}
+/** An officer without a membership record, opened from Members: read-only; edits stay on Board Members. */
+function OfficerSummaryDrawer({ officer: o, onClose }: { officer: ResponseOf<"membersList">["officers"][number]; onClose: () => void }) {
+  const [activity, setActivity] = useState<OfficerActivityResponse | null>(null);
+  useEffect(() => {
+    setActivity(null);
+    const controller = new AbortController();
+    api("officerActivity", { params: { id: o.id }, signal: controller.signal }).then(
+      (r) => !controller.signal.aborted && setActivity(r),
+      () => {},
+    );
+    return () => controller.abort();
+  }, [o.id]);
+  const num = (n: number | undefined) => (n === undefined ? "…" : String(n));
+  const profile = `/officers?person=${encodeURIComponent(o.id)}`;
+  return (
+    <PersonDrawer
+      open
+      onClose={onClose}
+      id="member-detail"
+      personKey={o.id}
+      name={o.name}
+      eyebrow="Officer"
+      subtitle={[o.title, o.subteam].filter(Boolean).join(" · ") || undefined}
+      chips={<PeopleChip hue="blue">Officer</PeopleChip>}
+      actions={[
+        ...(o.email ? [{ label: "Email", icon: "mail" as const, href: `mailto:${o.email}`, primary: true }] : []),
+        { label: "Officer profile", icon: "user" as const, href: profile },
+      ]}
+      stats={[
+        { label: "Events hosted", value: num(activity?.stats.eventsHosted) },
+        { label: "Open design requests", value: num(activity?.stats.openDesign) },
+        { label: "Open purchases", value: num(activity?.stats.openPurchases) },
+      ]}
+      tabs={[
+        {
+          key: "overview",
+          label: "Overview",
+          render: () => (
+            <>
+              <PersonSection title="Officer">
+                <PersonFacts
+                  facts={[
+                    ["Title", o.title || "Not set"],
+                    ["Subteam", o.subteam || "Not set"],
+                    ["Email", o.email || "Not provided"],
+                  ]}
+                />
+              </PersonSection>
+              <p class="muted small" data-no-member-record>
+                No membership record matches this officer’s email yet. Edit officer details on Board Members.
+              </p>
+            </>
+          ),
+        },
+        {
+          key: "activity",
+          label: "Activity",
+          render: () => (activity ? <ActivityList items={activity.items} /> : <Loading rows={3} />),
+        },
+      ]}
+    />
   );
 }
 function MemberEditor({
