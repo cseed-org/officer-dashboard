@@ -27,17 +27,22 @@ const { title, page, bare = false, customHeader = false, description = 'CSEED of
 // Signed-in pages start their first API reads while the HTML parses (lib/early.ts).
 const EARLY = bare ? null : earlyScript([...EARLY_SHARED, ...((page && EARLY_PAGE[page]) ?? [])]);
 
-const NAV: { key: PageKey; label: string; href: string; icon: IconName; directorOnly?: boolean }[] = [
+type NavItem = { key: PageKey; label: string; href: string; icon: IconName; directorOnly?: boolean };
+const NAV: NavItem[] = [
   { key: 'home', label: 'Home', href: '/', icon: 'home' },
   { key: 'buildspace', label: 'Buildspace', href: '/buildspace', icon: 'blocks' },
   { key: 'events', label: 'Events', href: '/events', icon: 'calendar' },
   { key: 'finance', label: 'Requests & Finance', href: '/finance', icon: 'wallet' },
-  { key: 'officers', label: 'Officers', href: '/officers', icon: 'user' },
-  { key: 'members', label: 'Members', href: '/members', icon: 'user' },
-  { key: 'contacts', label: 'External Contacts', href: '/contacts', icon: 'user' },
   { key: 'design', label: 'Design', href: '/design', icon: 'inbox' },
 ];
-const PREPAINT = `(function(){var d=document.documentElement,t,n,r,w;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role');w=+localStorage.getItem('cseed-sidebar')}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}})();`;
+/** The collapsible People folder, directly under Design. */
+const PEOPLE: NavItem[] = [
+  { key: 'officers', label: 'Board/Officers', href: '/officers', icon: 'badge' },
+  { key: 'members', label: 'Members', href: '/members', icon: 'users' },
+  { key: 'contacts', label: 'External Contacts', href: '/contacts', icon: 'contact' },
+];
+const peopleCurrent = PEOPLE.find((n) => n.key === page);
+const PREPAINT = `(function(){var d=document.documentElement,t,n,r,w;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role');w=+localStorage.getItem('cseed-sidebar');if(localStorage.getItem('cseed-people')==='0')d.dataset.people='closed'}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}})();`;
 /**
  * First paint with the user's saved sidebar width (from the server, so a new device, a cleared
  * cache or a width changed elsewhere never jumps). The head script in lib/early.ts is already
@@ -57,7 +62,7 @@ const NAVSCRIPT = `(function () {
   if (!btn || !s) return;
   var others = [document.querySelector('.topbar'), document.getElementById('main')];
   var focusables = function () {
-    return Array.prototype.filter.call(s.querySelectorAll('a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])'), function (el) { return el.offsetParent !== null; });
+    return Array.prototype.filter.call(s.querySelectorAll('a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])'), function (el) { return el.offsetParent !== null && getComputedStyle(el).visibility !== 'hidden'; });
   };
   function set(open, restore) {
     if (open === h.classList.contains('nav-open')) return;
@@ -154,6 +159,27 @@ const NAVSCRIPT = `(function () {
                   </li>
                 ))
               }
+              <li class="nav-folder" data-nav-folder data-current={peopleCurrent ? '' : undefined}>
+                <button type="button" class="nav-link nav-folder-toggle" id="nav-people-toggle" aria-expanded="true" aria-controls="nav-people-panel" aria-haspopup="true" title="People" data-nav="people">
+                  <Icon name="folder-user" />
+                  <span class="nav-label">People</span>
+                  <span class="nav-chevron" aria-hidden="true"><Icon name="chevron-down" size={14} /></span>
+                </button>
+                <div class="nav-folder-panel" id="nav-people-panel" role="group" aria-label="People">
+                  <ul class="nav-sublist" role="list">
+                    {
+                      PEOPLE.map((n) => (
+                        <li>
+                          <a class="nav-link nav-link--sub" href={n.href} aria-current={page === n.key ? 'page' : undefined} data-nav={n.key}>
+                            <Icon name={n.icon} />
+                            <span class="nav-label">{n.label}</span>
+                          </a>
+                        </li>
+                      ))
+                    }
+                  </ul>
+                </div>
+              </li>
             </ul>
             <div class="sidebar-foot">
               <a class="nav-link" href="/settings" aria-current={page === 'settings' ? 'page' : undefined} title="Settings" data-nav="settings">
@@ -177,5 +203,6 @@ const NAVSCRIPT = `(function () {
     }
     {!bare && <CommandPalette client:load />}
     {!bare && <script is:inline set:html={NAVSCRIPT} />}
+    {!bare && <script>import '../lib/nav-people';</script>}
   </body>
 </html>

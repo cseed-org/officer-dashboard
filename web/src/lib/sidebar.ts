@@ -14,6 +14,9 @@ export const SIDEBAR_DEFAULT = 232;
 export const SIDEBAR_KEY = 'cseed-sidebar';
 export const SIDEBAR_LAST_KEY = 'cseed-sidebar-last';
 
+/** The sidebar's People folder: '0' = collapsed, anything else (or nothing) = open. Device-local, like the width cache. */
+export const PEOPLE_KEY = 'cseed-people';
+
 const store = {
   get(k: string) {
     try { return localStorage.getItem(k); } catch { return null; }
@@ -81,4 +84,11 @@ export function saveSidebarWidth(w: number, save: (w: number) => Promise<unknown
     timer = 0;
     save(w).catch(() => {});
   }, 400);
+}
+
+/** Remember the People folder open/closed on this device; `<html data-people="closed">` is what the PREPAINT script and CSS read. */
+export function savePeopleOpen(open: boolean) {
+  store.set(PEOPLE_KEY, open ? null : '0');
+  if (open) delete document.documentElement.dataset.people;
+  else document.documentElement.dataset.people = 'closed';
 }
