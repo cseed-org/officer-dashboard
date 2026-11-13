@@ -402,20 +402,25 @@ body:has(dialog[open]){overflow:hidden}
 .dt-primary .linkish{text-align:left}.prototype-toggle{display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px dashed var(--line)}
 @media(max-width:640px){.dt-primary .linkish{min-height:44px;display:inline-flex;align-items:center}.dt .action-row .btn{min-height:44px}}
 @media(min-width:641px){.people-group .dt{table-layout:fixed}.people-group .dt th:first-child{width:46%}.people-group .dt th:nth-child(2){width:30%}}
-/* The shell's logo, where AppLayout draws it: sidebar at desktop (20, 26.75), centred in the top bar on phones. */
+/* The shell's logo. ShellLogo (LogoMark.tsx) measures an invisible copy of the shell's header
+   (.onb-ghost, same classes, same CSS) and copies its box and kind (wordmark or C mark) inline;
+   these rules are only the first-paint defaults until that runs. */
 .onb-logo-slot {display:block;width:0;height:18px;}
-.onb-shell-logo {position:fixed;z-index:91;left:20px;top:26.75px;display:flex;width:max-content;}
+.onb-ghost {position:fixed;inset:0;z-index:-1;opacity:0;pointer-events:none;overflow:hidden;contain:layout paint;}
+.onb-shell-logo {position:fixed;z-index:91;left:20px;top:26.75px;height:18px;display:flex;width:max-content;}
 .onb-shell-logo .wordmark-mark, .wi-logo .wordmark-mark {display:none;}
+.onb-shell-logo .wordmark-logo, .wi-logo .wordmark-logo {height:100%;width:auto;}
 @media (min-width: 768px) and (max-width: 1099px) {
-  .onb-shell-logo {left:17.5px;top:30px;}
-  .onb-shell-logo .wordmark-logo, .wi-logo .wordmark-logo {display:none !important;}
-  .onb-shell-logo .wordmark-mark, .wi-logo .wordmark-mark {display:inline-grid;}
+  .onb-shell-logo {left:17.5px;top:22px;height:28px;}
+  .onb-shell-logo:not([data-kind]) .wordmark-logo, .wi-logo:not([data-kind]) .wordmark-logo {display:none !important;}
+  .onb-shell-logo:not([data-kind]) .wordmark-mark, .wi-logo:not([data-kind]) .wordmark-mark {display:inline-grid;}
 }
-.onb-shell-logo .wordmark-logo {height:18px;}
 @media (max-width: 767px) {
-  .onb-shell-logo {left:calc(50% - 34.664px);top:17.5px;}
-  .onb-shell-logo .wordmark-logo {height:16px;}
+  .onb-shell-logo {left:calc(50% - 34.664px);top:17.5px;height:16px;}
 }
+.onb-shell-logo[data-kind="mark"] .wordmark-logo, .wi-logo[data-kind="mark"] .wordmark-logo {display:none !important;}
+.onb-shell-logo[data-kind="mark"] .wordmark-mark, .wi-logo[data-kind="mark"] .wordmark-mark {display:inline-grid;}
+.onb-shell-logo[data-kind="wordmark"] .wordmark-mark, .wi-logo[data-kind="wordmark"] .wordmark-mark {display:none;}
 
 /* V0.9: the intro hands over to the intake without a cut. The stages' header and footer fade in once the intro's logo is home. */
 .onb-top .onb-progress, .onb-top .onb-count, .onb-foot {animation:onb-chrome-in 420ms var(--ease-soft, ease) both;}
