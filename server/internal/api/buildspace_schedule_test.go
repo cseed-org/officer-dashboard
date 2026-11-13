@@ -11,7 +11,7 @@ import (
 func TestBuildspaceScheduleMidWeekChange(t *testing.T) {
 	e := newEnv(t)
 	audits := func() int64 {
-		return e.scalar(`SELECT count(*) FROM audit_log WHERE action='buildspace.schedule.updated'`).(int64)
+		return e.scalar(`SELECT count(*) FROM audit_log WHERE action='buildspace_launchpad.schedule.updated'`).(int64)
 	}
 	list := e.mustOK(e.get("/api/buildspace-launchpad", e.officer()))
 	if list.str("weekStart") != "2026-10-26" || list.str("weekDue") != "2026-11-01" || list.str("today") != "2026-10-31" || list.at("schedule", "pending") != nil {
