@@ -1,0 +1,134 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "reduced": "no-preference",
+    "reads": 1,
+    "styles": {
+      ".tour-card": {
+        "transition": "transform",
+        "duration": "0.18s",
+        "animation": "none"
+      },
+      ".tour-card-content": {
+        "transition": "all",
+        "duration": "0s",
+        "animation": "enter"
+      },
+      ".tour-cutout": {
+        "transition": "all",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".cw .async-content": {
+        "transition": "all",
+        "duration": "0s",
+        "animation": "item-enter"
+      },
+      ".club-links>li": {
+        "transition": "all",
+        "duration": "0s",
+        "animation": "item-enter"
+      }
+    }
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "reduced": "no-preference",
+    "reads": 1,
+    "styles": {
+      ".tour-card": {
+        "transition": "transform",
+        "duration": "0.18s",
+        "animation": "none"
+      },
+      ".tour-card-content": {
+        "transition": "all",
+        "duration": "0s",
+        "animation": "enter"
+      },
+      ".tour-cutout": {
+        "transition": "all",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".cw .async-content": {
+        "transition": "all",
+        "duration": "0s",
+        "animation": "item-enter"
+      },
+      ".club-links>li": {
+        "transition": "all",
+        "duration": "0s",
+        "animation": "item-enter"
+      }
+    }
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "reduced": "reduce",
+    "reads": 1,
+    "styles": {
+      ".tour-card": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".tour-card-content": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".tour-cutout": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".cw .async-content": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".club-links>li": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      }
+    }
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "reduced": "reduce",
+    "reads": 1,
+    "styles": {
+      ".tour-card": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".tour-card-content": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".tour-cutout": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".cw .async-content": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      },
+      ".club-links>li": {
+        "transition": "none",
+        "duration": "0s",
+        "animation": "none"
+      }
+    }
+  }
+]

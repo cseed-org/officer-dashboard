@@ -1,0 +1,29 @@
+*, *::before, *::after {box-sizing: border-box;}
+html {-webkit-text-size-adjust: 100%;}
+body {margin: 0;background: var(--bg);color: var(--text);font: 14px/1.5 var(--font);}
+html.has-modal {overflow: hidden;}
+a {color: var(--accent);}
+h1, h2, h3 {line-height: 1.25;margin: 0;}
+h1 {font-size: 1.75rem;}
+h2 {font-size: 1rem;}
+img, svg {max-width: 100%;}
+.icon {flex: none;}
+.visually-hidden {position: absolute !important;width: 1px;height: 1px;overflow: hidden;clip: rect(0 0 0 0);white-space: nowrap;}
+.skip-link {position: absolute;left: 8px;top: -48px;z-index: 100;background: var(--surface);padding: 8px 12px;border-radius: var(--radius);}
+.skip-link:focus {top: 8px;}
+:focus-visible {outline: 2px solid var(--text);outline-offset: 3px;box-shadow: 0 0 0 2px var(--brand);}
+.muted {color: var(--muted);}
+.small {font-size: 12px;}
+.mono {font-family: var(--mono);}
+.num {font-variant-numeric: tabular-nums;}
+.num {text-align: right;}
+kbd {font: 0.75rem var(--mono);border: 1px solid var(--line);border-radius: 4px;padding: 0 4px;color: var(--muted);}
+
+
+p {margin-top: 0;}
+h1 {font-weight: 600;letter-spacing: -.035em;}
+h2, h3 {font-weight: 600;letter-spacing: -.015em;}
+button, input, select, textarea {accent-color: var(--text);}
+button, a, input, select, textarea {-webkit-tap-highlight-color: transparent;}
+[hidden] {display: none !important;}
+@media (prefers-reduced-motion: reduce) {*, *::before, *::after {animation: none !important;transition: none !important;scroll-behavior: auto !important;}}

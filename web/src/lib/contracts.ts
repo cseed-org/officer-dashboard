@@ -1,0 +1,1472 @@
+/**
+ * Copied from the v1 app's src/core/contracts.ts (web/ is its own project; keep the two in
+ * step until v1 is removed). Local addition: the Search section below, mirroring the Go
+ * backend's GET /api/search until it publishes its own schema.
+ *
+ * API contract between the UI and the backend. Every request body, query string and
+ * response the UI calls is a zod schema here, with its TS type inferred next to it.
+ * Endpoints, methods and roles are listed in docs/api.md and in ENDPOINTS below.
+ *
+ * Conventions
+ * - JSON over HTTPS; multipart/form-data only for file uploads (CSV import, attachments).
+ * - Money is integer cents (`*Cents`). Rates are fractions 0..1 or null when undefined.
+ * - Dates are `YYYY-MM-DD`; datetimes are ISO 8601 with offset; timestamps from the DB are
+ *   serialised as ISO datetimes.
+ * - Errors always use ApiError with an HTTP status: 400 validation, 401 not signed in,
+ *   403 wrong role, 404 not found, 409 invalid state transition / conflict, 422 import errors.
+ * - Lists are cursor-paginated: pass `cursor` from the previous `nextCursor`.
+ */
+import { z } from 'zod';
+import {
+  ACCOUNT_TYPES,
+  APPROVAL_DECISIONS,
+  ATTACHMENT_KINDS,
+  CSV_IMPORT_KINDS,
+  FINANCE_REPORTS,
+  FISCAL_PERIOD_STATUSES,
+  FORM990_PARTS,
+  FULFILLMENT_JOB_STATUSES,
+  FUNCTIONAL_CLASSES,
+  FUND_KINDS,
+  PURCHASE_STATUSES,
+  PURCHASE_TYPES,
+  RESTRICTIONS,
+  ROLES,
+  SERVICE_TOKEN_SCOPES,
+  STORAGE_BACKENDS,
+} from './domain';
+
+// Zod's JIT probes `Function('')`, which the pages' Content-Security-Policy (no 'unsafe-eval')
+// refuses and reports as a violation; the interpreter is fast enough for these payloads.
+z.config({ jitless: true });
+
+// ───────────────────────────── Primitives ─────────────────────────────
+
+export const Id = z.string().min(1).max(64);
+export const IsoDate = z.iso.date();
+export const IsoDateTime = z.iso.datetime({ offset: true });
+export const Cents = z.number().int();
+export const NonNegCents = Cents.nonnegative();
+export const Rate = z.number().min(0).max(1).nullable();
+export const DiscordId = z.string().regex(/^\d{17,20}$/, 'Discord IDs are 17–20 digits');
+export const FiscalYear = z.number().int().min(2000).max(2100);
+
+export const Role = z.enum(ROLES);
+export const PurchaseStatus = z.enum(PURCHASE_STATUSES);
+export const PurchaseType = z.enum(PURCHASE_TYPES);
+export const FunctionalClass = z.enum(FUNCTIONAL_CLASSES);
+export const AccountType = z.enum(ACCOUNT_TYPES);
+export const Restriction = z.enum(RESTRICTIONS);
+export const FundKind = z.enum(FUND_KINDS);
+export const AttachmentKind = z.enum(ATTACHMENT_KINDS);
+export const ServiceTokenScope = z.enum(SERVICE_TOKEN_SCOPES);
+export const FinanceReportName = z.enum(FINANCE_REPORTS);
+
+/** Query-string integers arrive as strings. */
+const QueryInt = z.coerce.number().int();
+
+export const PageQuery = z.object({
+  cursor: z.string().optional(),
+  limit: QueryInt.min(1).max(200).default(50),
+});
+
+const page = <T extends z.ZodType>(item: T) =>
+  z.object({ items: z.array(item), nextCursor: z.string().nullable() });
+
+export const ApiError = z.object({
+  error: z.object({
+    code: z.enum([
+      'bad_request',
+      'unauthenticated',
+      'forbidden',
+      'not_found',
+      'conflict',
+      'invalid_transition',
+      'import_failed',
+      'internal',
+      /** 403 while an invited officer hasn't finished setup; only /api/me* is open. */
+      'onboarding_required',
+    ]),
+    message: z.string(),
+    /** Field errors (from zod `flatten()`), or per-row import errors. */
+    details: z.unknown().optional(),
+  }),
+});
+export type ApiError = z.infer<typeof ApiError>;
+
+export const OkResponse = z.object({ ok: z.literal(true) });
+export type OkResponse = z.infer<typeof OkResponse>;
+
+// ───────────────────────────── Shared shapes ─────────────────────────────
+
+export const UserSummary = z.object({
+  id: Id,
+  name: z.string(),
+  avatarUrl: z.string().nullable(),
+});
+export type UserSummary = z.infer<typeof UserSummary>;
+
+export const CurrentUser = UserSummary.extend({
+  isOwner: z.boolean(),
+  discordId: z.string(),
+  role: Role,
+  title: z.string().nullable(),
+});
+export type CurrentUser = z.infer<typeof CurrentUser>;
+
+export const AccountOption = z.object({
+  id: Id,
+  code: z.string(),
+  name: z.string(),
+  type: AccountType,
+  form990Line: z.string().nullable(),
+});
+export type AccountOption = z.infer<typeof AccountOption>;
+
+export const FundOption = z.object({
+  id: Id,
+  code: z.string(),
+  name: z.string(),
+  kind: FundKind,
+  restriction: Restriction,
+});
+export type FundOption = z.infer<typeof FundOption>;
+
+/**
+ * Event health counts (see src/core/metrics.ts). reflectionRate counts only reflections
+ * matched to a checked-in guest by normalized email, so it stays within 0..1; the rest
+ * are reported as unmatchedReflections so the UI can flag the data problem.
+ */
+export const EventCounts = z.object({
+  registered: z.number().int().nonnegative(),
+  checkedIn: z.number().int().nonnegative(),
+  /** All reflections received (distinct respondents). */
+  reflections: z.number().int().nonnegative(),
+  /** Reflections from guests who checked in (matched by normalized email). */
+  matchedReflections: z.number().int().nonnegative(),
+  /** Reflections with no matching check-in (reflections − matchedReflections). */
+  unmatchedReflections: z.number().int().nonnegative(),
+  /** checkedIn / registered */
+  checkInRate: Rate,
+  /** matchedReflections / checkedIn */
+  reflectionRate: Rate,
+});
+export type EventCounts = z.infer<typeof EventCounts>;
+
+// ───────────────────────────── Session / me ─────────────────────────────
+
+/** GET /api/me */
+export const Subteam = z.object({ id: Id, name: z.string() });
+export type Subteam = z.infer<typeof Subteam>;
+/**
+ * Present on /api/me while the account still has the first-login flow ahead: it is below the
+ * current onboarding version (existing accounts see it once) or an invite is unfinished.
+ */
+export const OnboardingState = z.object({
+  step: z.number().int().min(1).max(5),
+  name: z.string(),
+  subteam: Subteam.nullable(),
+  hasProfile: z.boolean(),
+  /** An existing account seeing the V0.9 intro + intake once (no unfinished invite). */
+  returning: z.boolean(),
+  /** The term the profile has, or will get on first save. Set automatically; only admins change it. */
+  startTerm: z.string(),
+});
+export type OnboardingState = z.infer<typeof OnboardingState>;
+export const MeResponse = z.object({ user: CurrentUser, onboarding: OnboardingState.nullable() });
+export type MeResponse = z.infer<typeof MeResponse>;
+
+/** GET /api/lookups — dropdown options for forms. */
+export const LookupsResponse = z.object({
+  expenseAccounts: z.array(AccountOption),
+  funds: z.array(FundOption),
+  events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+  subteams: z.array(z.object({ id: Id, name: z.string() })),
+  /** Active officers, by name: the event host picker. */
+  hosts: z.array(UserSummary),
+  currentFiscalYear: FiscalYear,
+});
+export type LookupsResponse = z.infer<typeof LookupsResponse>;
+
+// ───────────────────────────── Overview ─────────────────────────────
+
+/** draft until published by hand in Luma; imports from Luma arrive as published. */
+export const EventStatus = z.enum(['draft', 'published', 'completed', 'cancelled']);
+export type EventStatus = z.infer<typeof EventStatus>;
+/** Whether an event needs design work. Unknown (never decided) counts as needed. */
+export const DesignNeed = z.enum(['unknown', 'needed', 'not_needed']);
+export type DesignNeed = z.infer<typeof DesignNeed>;
+export const SubteamBrief = z.object({ id: Id, name: z.string() });
+export type SubteamBrief = z.infer<typeof SubteamBrief>;
+
+const LUMA_HOSTS = ['lu.ma', 'www.lu.ma', 'luma.com', 'www.luma.com'];
+const LUMA_RESERVED = new Set(
+  'create discover calendar calendars home signin signup login logout settings explore user u event events pricing help about terms privacy map search dashboard check-in checkin manage embed api ios android download careers blog changelog features community library pay'.split(' '),
+);
+/**
+ * The public Luma event page pasted back after publishing by hand: https on lu.ma or
+ * luma.com, path /<slug> or /event/evt-<id>. Luma's own pages (/create, /discover,
+ * /calendar, the home page…) are refused. The server applies the same rule and stores the
+ * link without query, fragment or trailing slash.
+ */
+export function lumaEventUrlProblem(raw: string): string | null {
+  const msg = 'Use the HTTPS link to a Luma event page, like https://lu.ma/your-event';
+  const text = raw.trim();
+  // Go's url.Parse is stricter than WHATWG URL here: no backslashes, no port (even :443),
+  // and the "//" after the scheme is required.
+  if (!/^https:\/\//i.test(text) || text.includes('\\') || /^https:\/\/[^/?#]*:\d*(?:[/?#]|$)/i.test(text)) return msg;
+  let u: URL;
+  try {
+    u = new URL(text);
+  } catch {
+    return msg;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port || !LUMA_HOSTS.includes(u.hostname.toLowerCase())) return msg;
+  const [first = '', second, ...rest] = u.pathname.replace(/\/$/, '').replace(/^\//, '').split('/');
+  if (second === undefined && /^[A-Za-z0-9][A-Za-z0-9-]{1,99}$/.test(first) && !LUMA_RESERVED.has(first.toLowerCase())) return null;
+  if (rest.length === 0 && first === 'event' && second !== undefined && /^evt-[A-Za-z0-9]{4,64}$/.test(second)) return null;
+  return msg;
+}
+export const LumaEventUrl = z
+  .string()
+  .max(300)
+  .refine((v) => lumaEventUrlProblem(v) === null, { message: 'Use the HTTPS link to a Luma event page, like https://lu.ma/your-event' });
+
+export const EventListItem = z.object({
+  id: Id,
+  lumaId: z.string().nullable(),
+  name: z.string(),
+  startsAt: IsoDateTime,
+  endsAt: IsoDateTime.nullable(),
+  location: z.string().nullable(),
+  host: UserSummary.nullable(),
+  hostSubteam: SubteamBrief.nullable(),
+  status: EventStatus,
+  capacity: z.number().int().positive().nullable(),
+  /** The Luma event page saved after the manual handoff; never synced. */
+  lumaUrl: z.string().nullable(),
+  /** App path of the cover image (GET, officer session), cache-busted by `v`. */
+  coverUrl: z.string().nullable(),
+  metrics: EventCounts,
+  designNeed: DesignNeed,
+});
+export type EventListItem = z.infer<typeof EventListItem>;
+
+/** GET /api/overview */
+export const OverviewResponse = z.object({
+  fiscalYear: FiscalYear,
+  kpis: z.object({
+    upcomingEvents: z.number().int().nonnegative(),
+    /** Mean over past events in the fiscal year (one vote per event). */
+    avgCheckInRate: Rate,
+    avgReflectionRate: Rate,
+    budgetCents: NonNegCents,
+    spentCents: Cents,
+    /** Approved but not yet posted (encumbered). */
+    committedCents: NonNegCents,
+    /** budget − spent − committed; may be negative when over budget. */
+    remainingCents: Cents,
+    pendingRequests: z.number().int().nonnegative(),
+    pendingRequestsCents: NonNegCents,
+  }),
+  recentEvents: z.array(EventListItem).max(10),
+});
+export type OverviewResponse = z.infer<typeof OverviewResponse>;
+
+// ───────────────────────────── Events ─────────────────────────────
+
+/** GET /api/events */
+export const EventsListQuery = PageQuery.extend({
+  when: z.enum(['upcoming', 'past', 'all']).default('all'),
+  q: z.string().max(100).optional(),
+  from: IsoDate.optional(),
+  to: IsoDate.optional(),
+});
+export type EventsListQuery = z.infer<typeof EventsListQuery>;
+
+export const EventsListResponse = page(EventListItem);
+export type EventsListResponse = z.infer<typeof EventsListResponse>;
+
+/** GET /api/events/:id */
+export const EventDetailResponse = z.object({
+  event: EventListItem.extend({
+    url: z.string().nullable(),
+    description: z.string().nullable(),
+    /** TODO(notion): placeholder is true while the NotionSync stub is in use (no page exists). */
+    notion: z.object({ url: z.string().nullable(), placeholder: z.boolean() }),
+    updatedAt: IsoDateTime,
+  }),
+  /** Purchase requests linked to this event. */
+  requests: z.array(z.lazy(() => PurchaseRequestListItem)),
+  spentCents: Cents,
+});
+export type EventDetailResponse = z.infer<typeof EventDetailResponse>;
+
+/** GET /api/events/:id/metrics — chart data. */
+export const EventMetricsResponse = z.object({
+  eventId: Id,
+  totals: EventCounts,
+  /** Cumulative registrations by day up to the event date. */
+  registrationsByDay: z.array(z.object({ date: IsoDate, cumulative: z.number().int().nonnegative() })),
+  /** Reflections received by day after the event. */
+  reflectionsByDay: z.array(z.object({ date: IsoDate, count: z.number().int().nonnegative() })),
+});
+export type EventMetricsResponse = z.infer<typeof EventMetricsResponse>;
+
+/** A stored link (event, item, Luma): absolute http(s) only, like the server's validate.IsURL. */
+export const HttpUrl = z.url({ protocol: /^https?$/ });
+
+/** POST /api/events (create manually) and PATCH /api/events/:id (all fields optional). */
+export const EventUpsertRequest = z.object({
+  name: z.string().trim().min(1).max(200),
+  startsAt: IsoDateTime,
+  endsAt: IsoDateTime.nullable().optional(),
+  location: z.string().max(200).nullable().optional(),
+  url: HttpUrl.nullable().optional(),
+  lumaId: z.string().max(100).nullable().optional(),
+  hostUserId: Id.nullable().optional(),
+  /** Defaults to draft on create. */
+  status: EventStatus.optional(),
+  description: z.string().max(5000).nullable().optional(),
+  capacity: z.number().int().min(1).max(100000).nullable().optional(),
+  hostSubteamId: Id.nullable().optional(),
+  lumaUrl: LumaEventUrl.nullable().optional(),
+  /** Defaults to unknown on create. Setting not_needed is director+ or the event's host (403 otherwise). */
+  designNeed: DesignNeed.optional(),
+});
+export type EventUpsertRequest = z.infer<typeof EventUpsertRequest>;
+export const EventPatchRequest = EventUpsertRequest.partial();
+export type EventPatchRequest = z.infer<typeof EventPatchRequest>;
+
+export const EventUpsertResponse = z.object({ event: EventListItem });
+export type EventUpsertResponse = z.infer<typeof EventUpsertResponse>;
+
+// ───────────────────────────── CSV import ─────────────────────────────
+
+/**
+ * POST /api/events/import — multipart/form-data with these text fields plus `file` (CSV,
+ * ≤ 5 MB). `dryRun=true` validates and returns the same report without writing.
+ * Luma guest export: one CSV per event (eventId, or lumaEventId/eventName to create one).
+ */
+export const CsvImportFields = z.object({
+  kind: z.enum(CSV_IMPORT_KINDS),
+  eventId: Id.optional(),
+  /** Create or match an event by Luma id when importing a fresh guest export. */
+  lumaEventId: z.string().optional(),
+  eventName: z.string().optional(),
+  eventStartsAt: IsoDateTime.optional(),
+  dryRun: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+});
+export type CsvImportFields = z.infer<typeof CsvImportFields>;
+
+export const CsvImportResponse = z.object({
+  eventId: Id,
+  kind: z.enum(CSV_IMPORT_KINDS),
+  dryRun: z.boolean(),
+  rows: z.number().int().nonnegative(),
+  created: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  errors: z.array(z.object({ row: z.number().int().positive(), message: z.string() })),
+  metrics: EventCounts,
+});
+export type CsvImportResponse = z.infer<typeof CsvImportResponse>;
+
+/** POST /api/ingest/luma — service token with scope `ingest:luma` (future scraper agent). */
+export const LumaIngestRequest = z.object({
+  event: z.object({
+    lumaId: z.string().min(1),
+    name: z.string().min(1),
+    startsAt: IsoDateTime,
+    endsAt: IsoDateTime.nullable().optional(),
+    location: z.string().nullable().optional(),
+    url: HttpUrl.nullable().optional(),
+  }),
+  guests: z
+    .array(
+      z.object({
+        email: z.email().transform((e) => e.toLowerCase()),
+        name: z.string().nullable().optional(),
+        lumaGuestId: z.string().nullable().optional(),
+        approvalStatus: z.string().nullable().optional(),
+        registeredAt: IsoDateTime.nullable().optional(),
+        checkedInAt: IsoDateTime.nullable().optional(),
+      }),
+    )
+    .max(5000),
+});
+export type LumaIngestRequest = z.infer<typeof LumaIngestRequest>;
+export const LumaIngestResponse = CsvImportResponse.omit({ kind: true, dryRun: true });
+export type LumaIngestResponse = z.infer<typeof LumaIngestResponse>;
+
+// ───────────────────────────── Purchase requests ─────────────────────────────
+
+export const Attachment = z.object({
+  id: Id,
+  kind: AttachmentKind,
+  filename: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+  storage: z.enum(STORAGE_BACKENDS),
+  /** Drive webViewLink, or a /api/attachments/:id URL for the local stub. */
+  url: z.string().nullable(),
+  uploadedBy: UserSummary,
+  createdAt: IsoDateTime,
+});
+export type Attachment = z.infer<typeof Attachment>;
+
+export const Approval = z.object({
+  id: Id,
+  director: UserSummary,
+  decision: z.enum(APPROVAL_DECISIONS),
+  comment: z.string().nullable(),
+  createdAt: IsoDateTime,
+});
+export type Approval = z.infer<typeof Approval>;
+
+export const PurchaseRequestListItem = z.object({
+  id: Id,
+  number: z.string(),
+  title: z.string(),
+  vendor: z.string(),
+  type: PurchaseType,
+  status: PurchaseStatus,
+  totalCents: NonNegCents,
+  requester: UserSummary,
+  expenseAccount: AccountOption.pick({ id: true, code: true, name: true }),
+  fund: FundOption.pick({ id: true, code: true, name: true }),
+  eventId: Id.nullable(),
+  /** Optional date-only purchase deadline ("needed by"). */
+  neededBy: IsoDate.nullable(),
+  submittedAt: IsoDateTime.nullable(),
+  updatedAt: IsoDateTime,
+});
+export type PurchaseRequestListItem = z.infer<typeof PurchaseRequestListItem>;
+
+/** GET /api/requests — every officer can read every request (scope=all); `mine` is the default tab. */
+export const PurchaseRequestsListQuery = PageQuery.extend({
+  scope: z.enum(['mine', 'all']).default('mine'),
+  status: z
+    .union([PurchaseStatus, z.literal('pending')])
+    .optional()
+    .describe('`pending` = submitted (awaiting a director)'),
+  eventId: Id.optional(),
+  q: z.string().max(100).optional(),
+  /** `deadline` lists only requests with a needed-by date, soonest first. */
+  sort: z.enum(['newest', 'deadline']).default('newest'),
+});
+export type PurchaseRequestsListQuery = z.infer<typeof PurchaseRequestsListQuery>;
+
+export const PurchaseRequestsListResponse = page(PurchaseRequestListItem).extend({
+  /** Counts per status for tab badges, over the same scope. */
+  counts: z.partialRecord(PurchaseStatus, z.number().int().nonnegative()),
+});
+export type PurchaseRequestsListResponse = z.infer<typeof PurchaseRequestsListResponse>;
+
+const PurchaseRequestFields = z.object({
+  type: PurchaseType,
+  title: z.string().trim().min(1).max(200),
+  vendor: z.string().trim().min(1).max(200),
+  itemUrl: HttpUrl.nullable().optional(),
+  quantity: z.number().int().min(1).max(10_000),
+  unitCostCents: NonNegCents,
+  taxShipCents: NonNegCents.default(0),
+  expenseAccountId: Id,
+  fundId: Id,
+  eventId: Id.nullable().optional(),
+  functionalClass: FunctionalClass.default('program'),
+  justification: z.string().trim().min(1).max(4000),
+  neededBy: IsoDate.nullable().optional(),
+});
+
+/**
+ * POST /api/requests. The server computes totalCents (quantity × unitCost + taxShip).
+ * `submit: true` creates and submits in one step; otherwise it is saved as a draft.
+ */
+export const PurchaseRequestCreateRequest = PurchaseRequestFields.extend({
+  submit: z.boolean().default(false),
+});
+export type PurchaseRequestCreateRequest = z.infer<typeof PurchaseRequestCreateRequest>;
+
+/** PATCH /api/requests/:id — drafts only (409 otherwise). */
+export const PurchaseRequestUpdateRequest = PurchaseRequestFields.partial().extend({
+  // Zod 4 applies defaults inside optional fields; PATCH must preserve omitted values.
+  taxShipCents: NonNegCents.optional(),
+  functionalClass: FunctionalClass.optional(),
+});
+export type PurchaseRequestUpdateRequest = z.infer<typeof PurchaseRequestUpdateRequest>;
+
+export const PurchaseRequestDetail = PurchaseRequestListItem.extend({
+  itemUrl: z.string().nullable(),
+  quantity: z.number().int().positive(),
+  unitCostCents: NonNegCents,
+  taxShipCents: NonNegCents,
+  /** Set at settlement (fulfilled / reimbursed); the amount actually posted. totalCents stays the approved estimate. */
+  actualTotalCents: NonNegCents.nullable(),
+  functionalClass: FunctionalClass,
+  justification: z.string(),
+  event: z.object({ id: Id, name: z.string() }).nullable(),
+  decidedAt: IsoDateTime.nullable(),
+  createdAt: IsoDateTime,
+  approvals: z.array(Approval),
+  attachments: z.array(Attachment),
+  /** Journal entries posted for this request (fulfilment / reimbursement). */
+  journalEntryIds: z.array(Id),
+  /** Status moves the current user may make right now (drives the action buttons). */
+  allowedTransitions: z.array(PurchaseStatus),
+  /** Whether the current user may edit (draft + requester). */
+  canEdit: z.boolean(),
+  /**
+   * Most this viewer may record as the actual total when settling (approved estimate plus
+   * the agent tolerance). null when they cannot settle, or are leadership (uncapped).
+   */
+  maxSettlementCents: z.number().int().nullable(),
+  /**
+   * Set while the purchasing agent's settlement is held for director review (it
+   * reported more than the approved estimate plus tolerance). A director clears it
+   * by settling the request with POST /transition.
+   */
+  settlementHold: z
+    .object({ attemptedCents: NonNegCents, approvedCents: NonNegCents, reason: z.string(), heldAt: IsoDateTime })
+    .nullable(),
+});
+export type PurchaseRequestDetail = z.infer<typeof PurchaseRequestDetail>;
+
+/** Response of GET/POST/PATCH /api/requests/:id and every action endpoint. */
+export const PurchaseRequestResponse = z.object({ request: PurchaseRequestDetail });
+export type PurchaseRequestResponse = z.infer<typeof PurchaseRequestResponse>;
+
+/** POST /api/requests/:id/approve | /deny (director). A comment is required to deny. */
+export const PurchaseDecisionRequest = z.object({
+  comment: z.string().trim().max(2000).optional(),
+});
+export type PurchaseDecisionRequest = z.infer<typeof PurchaseDecisionRequest>;
+export const PurchaseDenyRequest = z.object({ comment: z.string().trim().min(1).max(2000) });
+export type PurchaseDenyRequest = z.infer<typeof PurchaseDenyRequest>;
+
+const TransitionComment = z.string().trim().max(2000).optional();
+
+/**
+ * Settlement: what was actually paid. Moving to `fulfilled` (club purchase) or
+ * `reimbursed` (reimbursement) posts the journal entry for **actualTotalCents**, not the
+ * approved estimate (`totalCents`); the encumbrance for the estimate is released at the
+ * same time. The actual amount may be lower or higher than the estimate (discounts,
+ * shipping); both are kept on the request so the difference stays visible.
+ */
+export const PurchaseSettlement = z.object({
+  actualTotalCents: NonNegCents,
+  /** Receipts already uploaded via POST /api/requests/:id/attachments. */
+  attachmentIds: z.array(Id).max(20).default([]),
+  /** e.g. order number from the vendor. */
+  orderReference: z.string().trim().max(200).optional(),
+  comment: TransitionComment,
+});
+export type PurchaseSettlement = z.infer<typeof PurchaseSettlement>;
+
+/**
+ * POST /api/requests/:id/transition — later lifecycle moves (director). The body is
+ * discriminated on `to`: the two posting moves (`fulfilled`, `reimbursed`) require a
+ * PurchaseSettlement; the others take an optional comment.
+ */
+export const PurchaseTransitionRequest = z.discriminatedUnion('to', [
+  z.object({ to: z.literal('fulfilling'), comment: TransitionComment }),
+  PurchaseSettlement.extend({ to: z.literal('fulfilled') }),
+  PurchaseSettlement.extend({ to: z.literal('reimbursed') }),
+  z.object({ to: z.literal('closed'), comment: TransitionComment }),
+  z.object({ to: z.literal('cancelled'), comment: TransitionComment }),
+]);
+export type PurchaseTransitionRequest = z.infer<typeof PurchaseTransitionRequest>;
+
+/** POST /api/requests/:id/attachments — multipart: `file` (≤ 10 MB; pdf/png/jpeg/heic/webp) + these fields. */
+export const AttachmentUploadFields = z.object({ kind: AttachmentKind.default('receipt') });
+export type AttachmentUploadFields = z.infer<typeof AttachmentUploadFields>;
+export const AttachmentUploadResponse = z.object({ attachment: Attachment });
+export type AttachmentUploadResponse = z.infer<typeof AttachmentUploadResponse>;
+
+export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+export const ATTACHMENT_MIME_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/heic',
+  'image/webp',
+] as const;
+export const CSV_MAX_BYTES = 5 * 1024 * 1024;
+
+// ───────────────────────────── Finance ─────────────────────────────
+
+export const FinanceQuery = z.object({
+  fiscalYear: QueryInt.pipe(FiscalYear).optional(),
+  /** Report "as of" / period end; defaults to today. */
+  asOf: IsoDate.optional(),
+  fundId: Id.optional(),
+});
+export type FinanceQuery = z.infer<typeof FinanceQuery>;
+
+/** GET /api/finance/summary — what officers see on /finance. */
+export const FinanceSummaryResponse = z.object({
+  fiscalYear: FiscalYear,
+  asOf: IsoDate,
+  totals: z.object({
+    budgetCents: NonNegCents,
+    spentCents: Cents,
+    committedCents: NonNegCents,
+    remainingCents: Cents,
+  }),
+  byCategory: z.array(
+    z.object({
+      account: AccountOption.pick({ id: true, code: true, name: true }),
+      budgetCents: NonNegCents,
+      spentCents: Cents,
+      committedCents: NonNegCents,
+      remainingCents: Cents,
+    }),
+  ),
+  funds: z.array(
+    FundOption.extend({ balanceCents: Cents, awardedCents: NonNegCents.nullable(), endDate: IsoDate.nullable() }),
+  ),
+});
+export type FinanceSummaryResponse = z.infer<typeof FinanceSummaryResponse>;
+
+const ReportMeta = z.object({
+  fiscalYear: FiscalYear,
+  from: IsoDate,
+  asOf: IsoDate,
+  generatedAt: IsoDateTime,
+  fundId: Id.nullable(),
+});
+
+const AccountRef = AccountOption.pick({ id: true, code: true, name: true, type: true, form990Line: true });
+
+export const TrialBalanceReport = ReportMeta.extend({
+  report: z.literal('trial-balance'),
+  rows: z.array(z.object({ account: AccountRef, debitCents: NonNegCents, creditCents: NonNegCents })),
+  totals: z.object({ debitCents: NonNegCents, creditCents: NonNegCents }),
+});
+
+const ActivityRow = z.object({
+  account: AccountRef,
+  withoutDonorCents: Cents,
+  withDonorCents: Cents,
+  totalCents: Cents,
+});
+export const StatementOfActivitiesReport = ReportMeta.extend({
+  report: z.literal('statement-of-activities'),
+  revenue: z.array(ActivityRow),
+  /** Net assets released from restriction (reclassification). */
+  releasesCents: Cents,
+  expenses: z.array(ActivityRow),
+  changeInNetAssets: z.object({ withoutDonorCents: Cents, withDonorCents: Cents, totalCents: Cents }),
+  netAssetsBeginning: z.object({ withoutDonorCents: Cents, withDonorCents: Cents, totalCents: Cents }),
+  netAssetsEnding: z.object({ withoutDonorCents: Cents, withDonorCents: Cents, totalCents: Cents }),
+});
+
+const BalanceRow = z.object({ account: AccountRef, balanceCents: Cents });
+export const StatementOfFinancialPositionReport = ReportMeta.extend({
+  report: z.literal('statement-of-financial-position'),
+  assets: z.array(BalanceRow),
+  liabilities: z.array(BalanceRow),
+  netAssets: z.object({ withoutDonorCents: Cents, withDonorCents: Cents }),
+  totals: z.object({
+    assetsCents: Cents,
+    liabilitiesCents: Cents,
+    netAssetsCents: Cents,
+    /** Must be true: assets = liabilities + net assets. */
+    balanced: z.boolean(),
+  }),
+});
+
+export const StatementOfFunctionalExpensesReport = ReportMeta.extend({
+  report: z.literal('statement-of-functional-expenses'),
+  rows: z.array(
+    z.object({
+      account: AccountRef,
+      programCents: Cents,
+      mgmtGeneralCents: Cents,
+      fundraisingCents: Cents,
+      totalCents: Cents,
+    }),
+  ),
+  totals: z.object({
+    programCents: Cents,
+    mgmtGeneralCents: Cents,
+    fundraisingCents: Cents,
+    totalCents: Cents,
+  }),
+});
+
+export const BudgetVsActualReport = ReportMeta.extend({
+  report: z.literal('budget-vs-actual'),
+  rows: z.array(
+    z.object({
+      account: AccountRef,
+      fund: FundOption.pick({ id: true, code: true, name: true }).nullable(),
+      budgetCents: NonNegCents,
+      actualCents: Cents,
+      committedCents: NonNegCents,
+      varianceCents: Cents,
+      /** actual / budget, null when budget is 0. Not bounded to 1 (over budget > 1). */
+      usedRate: z.number().nonnegative().nullable(),
+    }),
+  ),
+  totals: z.object({ budgetCents: NonNegCents, actualCents: Cents, committedCents: NonNegCents, varianceCents: Cents }),
+});
+
+export const FundBalancesReport = ReportMeta.extend({
+  report: z.literal('fund-balances'),
+  rows: z.array(
+    z.object({
+      fund: FundOption,
+      beginningCents: Cents,
+      additionsCents: Cents,
+      releasesCents: Cents,
+      expensesCents: Cents,
+      endingCents: Cents,
+      restrictedEndingCents: Cents,
+      unrestrictedEndingCents: Cents,
+    }),
+  ),
+});
+
+/**
+ * GET /api/finance/reports/:report — JSON by default; `?format=csv` returns text/csv
+ * with a Content-Disposition filename. Officers may read OFFICER_FINANCE_REPORTS only.
+ */
+export const FinanceReportQuery = FinanceQuery.extend({ format: z.enum(['json', 'csv']).default('json') });
+export type FinanceReportQuery = z.infer<typeof FinanceReportQuery>;
+
+export const Form990Report = ReportMeta.extend({
+  report: z.literal('form-990'),
+  rows: z.array(z.object({ part: z.enum(['VIII', 'IX']), line: z.string(), totalCents: Cents, programCents: Cents, mgmtGeneralCents: Cents, fundraisingCents: Cents })),
+  /** Totals over mapped lines: Part VIII line 12 (total revenue) and Part IX line 25 (total functional expenses). */
+  totals: z.object({
+    partVIIILine12Cents: Cents,
+    partIXLine25: z.object({ totalCents: Cents, programCents: Cents, mgmtGeneralCents: Cents, fundraisingCents: Cents }),
+  }),
+  /** Line 1g memo: noncash (in-kind, stock) contributions already included in lines 1a–1f. */
+  line1gNoncashCents: Cents,
+  /** Revenue/expense accounts with no 990 mapping; their amounts are NOT in the totals above. */
+  unmappedAccounts: z.array(z.object({ account: AccountRef, totalCents: Cents })),
+});
+export type Form990Report = z.infer<typeof Form990Report>;
+
+export const FinanceReportResponse = z.discriminatedUnion('report', [
+  TrialBalanceReport,
+  StatementOfActivitiesReport,
+  StatementOfFinancialPositionReport,
+  StatementOfFunctionalExpensesReport,
+  BudgetVsActualReport,
+  FundBalancesReport,
+  Form990Report,
+]);
+export type FinanceReportResponse = z.infer<typeof FinanceReportResponse>;
+
+/** GET /api/finance/budgets?fiscalYear= */
+export const BudgetLine = z.object({
+  id: Id,
+  fiscalYear: FiscalYear,
+  account: AccountOption.pick({ id: true, code: true, name: true }),
+  fund: FundOption.pick({ id: true, code: true, name: true }).nullable(),
+  amountCents: NonNegCents,
+  notes: z.string().nullable(),
+});
+export type BudgetLine = z.infer<typeof BudgetLine>;
+export const BudgetsResponse = z.object({ fiscalYear: FiscalYear, lines: z.array(BudgetLine) });
+export type BudgetsResponse = z.infer<typeof BudgetsResponse>;
+
+/** PUT /api/finance/budgets (director) — replaces the whole fiscal year's budget. */
+export const BudgetsUpsertRequest = z.object({
+  fiscalYear: FiscalYear,
+  lines: z
+    .array(
+      z.object({
+        accountId: Id,
+        fundId: Id.nullable(),
+        amountCents: NonNegCents,
+        notes: z.string().max(500).nullable().optional(),
+      }),
+    )
+    .max(500),
+});
+export type BudgetsUpsertRequest = z.infer<typeof BudgetsUpsertRequest>;
+
+/** GET /api/finance/periods (director) */
+export const FiscalPeriodsResponse = z.object({
+  periods: z.array(
+    z.object({
+      id: Id,
+      fiscalYear: FiscalYear,
+      name: z.string(),
+      startDate: IsoDate,
+      endDate: IsoDate,
+      status: z.enum(FISCAL_PERIOD_STATUSES),
+    }),
+  ),
+});
+export type FiscalPeriodsResponse = z.infer<typeof FiscalPeriodsResponse>;
+export type FinancePeriod = FiscalPeriodsResponse['periods'][number];
+
+/** POST /api/finance/periods (director) — creates the 12 monthly periods of a fiscal year that has none. */
+export const FiscalYearPeriodsCreateRequest = z.object({ fiscalYear: FiscalYear });
+export type FiscalYearPeriodsCreateRequest = z.infer<typeof FiscalYearPeriodsCreateRequest>;
+
+/**
+ * POST /api/finance/periods/:id/close (director) — open → closed or locked, closed → locked.
+ * Closed and locked periods reject new entries; neither can reopen.
+ */
+export const FiscalPeriodCloseRequest = z.object({ to: z.enum(['closed', 'locked']) });
+export type FiscalPeriodCloseRequest = z.infer<typeof FiscalPeriodCloseRequest>;
+
+/** GET /api/finance/accounts (director) — chart of accounts with 990 mapping. */
+export const ChartOfAccountsResponse = z.object({
+  accounts: z.array(
+    AccountOption.extend({
+      form990Part: z.enum(FORM990_PARTS).nullable(),
+      form990Label: z.string().nullable(),
+      restriction: Restriction.nullable(),
+      budgetable: z.boolean(),
+      active: z.boolean(),
+    }),
+  ),
+});
+export type ChartOfAccountsResponse = z.infer<typeof ChartOfAccountsResponse>;
+
+// ───────────────────────────── Admin: users ─────────────────────────────
+
+export const AdminUser = CurrentUser.extend({
+  email: z.string().nullable(),
+  active: z.boolean(),
+  lastLoginAt: IsoDateTime.nullable(),
+  createdAt: IsoDateTime,
+});
+export type AdminUser = z.infer<typeof AdminUser>;
+
+/** GET /api/admin/users */
+export const AdminUsersResponse = z.object({ users: z.array(AdminUser) });
+export type AdminUsersResponse = z.infer<typeof AdminUsersResponse>;
+
+/** POST /api/admin/users — allowlist a Discord account. 409 if the Discord ID exists. */
+export const AdminUserCreateRequest = z.object({
+  discordId: DiscordId,
+  name: z.string().trim().min(1).max(100),
+  /** The account goes through onboarding with this subteam, like an invitee. */
+  subteamId: Id,
+  role: Role.default('officer'),
+  title: z.string().trim().max(100).nullable().optional(),
+  email: z.email().nullable().optional(),
+});
+export type AdminUserCreateRequest = z.infer<typeof AdminUserCreateRequest>;
+
+/**
+ * PATCH /api/admin/users/:id — change role / deactivate. Deactivating ends the user's
+ * sessions. 409 when it would leave no active director.
+ */
+export const AdminUserUpdateRequest = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  role: Role.optional(),
+  active: z.boolean().optional(),
+  title: z.string().trim().max(100).nullable().optional(),
+  email: z.email().nullable().optional(),
+});
+export type AdminUserUpdateRequest = z.infer<typeof AdminUserUpdateRequest>;
+
+export const AdminUserResponse = z.object({ user: AdminUser });
+export type AdminUserResponse = z.infer<typeof AdminUserResponse>;
+
+// ───────────────────────────── Admin: service tokens ─────────────────────────────
+
+export const ServiceToken = z.object({
+  id: Id,
+  name: z.string(),
+  prefix: z.string(),
+  scopes: z.array(ServiceTokenScope),
+  createdBy: UserSummary,
+  createdAt: IsoDateTime,
+  lastUsedAt: IsoDateTime.nullable(),
+  expiresAt: IsoDateTime.nullable(),
+  revokedAt: IsoDateTime.nullable(),
+});
+export type ServiceToken = z.infer<typeof ServiceToken>;
+
+/** GET /api/admin/tokens */
+export const ServiceTokensResponse = z.object({ tokens: z.array(ServiceToken) });
+export type ServiceTokensResponse = z.infer<typeof ServiceTokensResponse>;
+
+/** POST /api/admin/tokens */
+export const ServiceTokenCreateRequest = z.object({
+  name: z.string().trim().min(1).max(100),
+  scopes: z.array(ServiceTokenScope).min(1),
+  /** Days until expiry; null = never. */
+  expiresInDays: z.number().int().min(1).max(365).nullable().default(90),
+});
+export type ServiceTokenCreateRequest = z.infer<typeof ServiceTokenCreateRequest>;
+
+/** The plaintext token appears only in this response. */
+export const ServiceTokenCreateResponse = z.object({ token: ServiceToken, plaintext: z.string() });
+export type ServiceTokenCreateResponse = z.infer<typeof ServiceTokenCreateResponse>;
+
+// DELETE /api/admin/tokens/:id → OkResponse (revokes; the row is kept for audit).
+
+// ───────────────────────────── Admin: audit log ─────────────────────────────
+
+/** GET /api/admin/audit */
+export const AuditLogQuery = PageQuery.extend({ entityType: z.string().optional(), entityId: Id.optional() });
+export type AuditLogQuery = z.infer<typeof AuditLogQuery>;
+export const AuditLogEntry = z.object({
+  id: Id,
+  actor: UserSummary.nullable(),
+  actorTokenName: z.string().nullable(),
+  action: z.string(),
+  entityType: z.string(),
+  entityId: z.string().nullable(),
+  before: z.unknown().nullable(),
+  after: z.unknown().nullable(),
+  createdAt: IsoDateTime,
+});
+export type AuditLogEntry = z.infer<typeof AuditLogEntry>;
+export const AuditLogResponse = page(AuditLogEntry);
+export type AuditLogResponse = z.infer<typeof AuditLogResponse>;
+
+// ───────────────────────────── Agent (service token `agent:jobs`) ─────────────────────────────
+
+export const FulfillmentJob = z.object({
+  id: Id,
+  status: z.enum(FULFILLMENT_JOB_STATUSES),
+  attempts: z.number().int().nonnegative(),
+  request: PurchaseRequestDetail.omit({ allowedTransitions: true, canEdit: true, maxSettlementCents: true }),
+  createdAt: IsoDateTime,
+  claimedAt: IsoDateTime.nullable(),
+});
+export type FulfillmentJob = z.infer<typeof FulfillmentJob>;
+
+/** GET /api/agent/jobs?status=queued */
+export const AgentJobsQuery = z.object({ status: z.enum(FULFILLMENT_JOB_STATUSES).default('queued') });
+export type AgentJobsQuery = z.infer<typeof AgentJobsQuery>;
+export const AgentJobsResponse = z.object({ jobs: z.array(FulfillmentJob) });
+export type AgentJobsResponse = z.infer<typeof AgentJobsResponse>;
+
+// POST /api/agent/jobs/:id/claim → { job: FulfillmentJob } (409 if already claimed)
+export const AgentJobResponse = z.object({ job: FulfillmentJob });
+export type AgentJobResponse = z.infer<typeof AgentJobResponse>;
+
+/** POST /api/agent/jobs/:id/complete */
+export const AgentJobCompleteRequest = z.discriminatedUnion('outcome', [
+  z.object({
+    outcome: z.literal('done'),
+    /** What was actually paid; posted instead of the estimate, as in PurchaseSettlement. */
+    actualTotalCents: NonNegCents,
+    attachmentIds: z.array(Id).max(20).default([]),
+    orderReference: z.string().max(200).optional(),
+    notes: z.string().max(2000).optional(),
+  }),
+  z.object({ outcome: z.literal('failed'), error: z.string().min(1).max(2000) }),
+]);
+export type AgentJobCompleteRequest = z.infer<typeof AgentJobCompleteRequest>;
+
+// ───────────────────────────── Health ─────────────────────────────
+
+/** GET /api/health (public) */
+/** `version` is shown to signed-in callers only. */
+export const HealthResponse = z.object({ ok: z.literal(true), db: z.boolean(), version: z.string().optional() });
+export type HealthResponse = z.infer<typeof HealthResponse>;
+
+// ───────────────────────────── Search (Go backend, v2) ─────────────────────────────
+
+export const SEARCH_KINDS = ['event', 'request', 'user', 'account', 'contact'] as const;
+export type SearchKind = (typeof SEARCH_KINDS)[number];
+
+/** GET /api/search?q=&limit= */
+export const SearchQuery = z.object({ q: z.string().max(100), limit: z.coerce.number().int().min(1).max(50).optional() });
+export type SearchQuery = z.infer<typeof SearchQuery>;
+export const SearchResult = z.object({
+  kind: z.enum(SEARCH_KINDS),
+  id: z.string(),
+  title: z.string(),
+  subtitle: z.string(),
+  href: z.string(),
+});
+export type SearchResult = z.infer<typeof SearchResult>;
+export const SearchResponse = z.object({ results: z.array(SearchResult) });
+export type SearchResponse = z.infer<typeof SearchResponse>;
+
+// ───────────────────────────── Endpoint index ─────────────────────────────
+
+// V0.3: server-backed Home layout and private calendar addresses.
+/** V0.4 block sizes are W×H in Home grid blocks. S/M/L are V0.3 sizes: still accepted and returned for
+ *  layouts saved before V0.4; the web client migrates them on load (web/src/ui/widgets/layout.ts). */
+export const WidgetBlockSize = z.enum(['1x1', '2x1', '1x2', '2x2', '4x1', '4x2']);
+export type WidgetBlockSize = z.infer<typeof WidgetBlockSize>;
+export const WidgetLegacySize = z.enum(['S', 'M', 'L']);
+export const WidgetPlacement = z.object({ id: Id, size: z.union([WidgetBlockSize, WidgetLegacySize]) });
+export type WidgetPlacement = z.infer<typeof WidgetPlacement>;
+export const IanaTimezone = z.string().max(100).refine((v) => {
+  try { return v !== 'Local' && (v === 'UTC' || v.includes('/')) && !!new Intl.DateTimeFormat('en-US', { timeZone: v }); } catch { return false; }
+}, 'Choose an IANA time zone');
+const ClubLink = z.string().max(2048).refine(v => { if (!v) return true; try { const u = new URL(v); return ['http:', 'https:'].includes(u.protocol) && !!u.hostname && !u.username && !u.password; } catch { return false; } }, 'Use an http or https URL').default('');
+export const ClubSettings = z.object({ websiteUrl: ClubLink, notionUrl: ClubLink, driveUrl: ClubLink, clubTimezone: IanaTimezone, location: z.string().trim().min(1).max(200) });
+export type ClubSettings = z.infer<typeof ClubSettings>;
+export const TimezoneMode = z.enum(['club', 'auto', 'manual']);
+/** Left nav width in px: 0 = never resized (default), else 64 (icons only) to 320. The Go handler enforces the same bounds. */
+export const SidebarWidth = z.number().int().refine((v) => v === 0 || (v >= 64 && v <= 320), 'Sidebar width must be 0 (default) or 64 to 320 px');
+export const WidgetPrefs = z.object({ sidebarWidth: SidebarWidth.default(0), dashboardTutorialSeen: z.boolean().default(false), timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
+export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).extend({ dashboardTutorialSeen: z.boolean(), sidebarWidth: SidebarWidth }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined || p.dashboardTutorialSeen !== undefined || p.sidebarWidth !== undefined, 'No preferences supplied');
+export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
+export const CalendarWidgetOptions = z.object({
+  view: z.enum(['auto', 'agenda', 'week', 'month']),
+  sources: z.array(Id).max(32),
+  colourBy: z.enum(['source', 'type']),
+  showWeekends: z.boolean(),
+});
+export type CalendarWidgetOptions = z.infer<typeof CalendarWidgetOptions>;
+/** The signed-in user's own hosting numbers (hosted = events.host_user_id, published/completed and already started). */
+export const MyStats = z.object({
+  eventsHosted: z.number().int().min(0),
+  attendees: z.number().int().min(0),
+  lastEvent: z.object({ id: Id, name: z.string(), startsAt: IsoDateTime }).nullable(),
+});
+export type MyStats = z.infer<typeof MyStats>;
+export const CalendarWidgetUpdate = z.union([CalendarWidgetOptions, CalendarWidgetOptions.omit({ sources: true }).extend({ events: z.boolean(), design: z.boolean() })]);
+export const CalendarFeedItem = z.object({
+  id: Id, source: Id, type: z.string(), title: z.string(),
+  date: z.string(), startsAt: IsoDateTime.nullable(), endsAt: IsoDateTime.nullable(), lumaUrl: z.string().nullable(), location: z.string().nullable(), href: z.string().startsWith('/'),
+  /** Optional one-line summary for the popover, e.g. "#2027-0004 · $45.00 · approved". */
+  detail: z.string().nullable().optional(),
+});
+export type CalendarFeedItem = z.infer<typeof CalendarFeedItem>;
+export const CalendarFeedSource = z.object({ id: Id, label: z.string(), icon: z.string(), hue: z.string() });
+export type CalendarFeedSource = z.infer<typeof CalendarFeedSource>;
+export const CalendarFeed = z.object({ items: z.array(CalendarFeedItem), timezone: IanaTimezone, sources: z.array(CalendarFeedSource) });
+export const CalendarEmail = z.object({ id: Id, email: z.email(), active: z.boolean() });
+export type CalendarEmail = z.infer<typeof CalendarEmail>;
+export const CalendarEmailsResponse = z.object({ emails: z.array(CalendarEmail).max(5) });
+export const CalendarEmailResponse = z.object({ email: CalendarEmail });
+export const CalendarEmailCreateRequest = z.object({ email: z.email().max(254), active: z.boolean().optional() });
+export const CalendarEmailUpdateRequest = CalendarEmailCreateRequest.partial();
+export const InviteMethod = z.enum(['dm', 'link', 'both']);
+export const InviteCreateRequest = z.object({ name: z.string().trim().min(1).max(100), discordId: DiscordId, subteamId: Id, method: InviteMethod.default('link') });
+export const Invite = z.object({
+  id: Id, name: z.string(), discordId: DiscordId, subteam: Subteam.nullable(), invitedBy: UserSummary.nullable(), method: InviteMethod,
+  status: z.enum(['pending', 'expired', 'accepted', 'onboarded']),
+  dmSentAt: IsoDateTime.nullable(), dmError: z.string().nullable(), createdAt: IsoDateTime, expiresAt: IsoDateTime.nullable(),
+  acceptedAt: IsoDateTime.nullable(), onboardedAt: IsoDateTime.nullable(), userId: Id.nullable(),
+});
+export type Invite = z.infer<typeof Invite>;
+export const DMResult = z.object({ status: z.enum(['sent', 'failed', 'not_configured', 'skipped']), sentAt: IsoDateTime.nullable(), message: z.string().nullable() });
+export type DMResult = z.infer<typeof DMResult>;
+/** `link` is always returned so a failed or unconfigured DM can fall back to copy-link. */
+export const InviteResponse = z.object({ invite: Invite, token: z.string(), link: z.url(), reinvited: z.boolean(), dm: DMResult });
+export type InviteResponse = z.infer<typeof InviteResponse>;
+export const InvitesResponse = z.object({ invites: z.array(Invite), dmConfigured: z.boolean() });
+/** PATCH /api/invites/:id — fix the details of an invite that hasn't finished onboarding. */
+export const InviteUpdateRequest = z.object({ name: z.string().trim().min(1).max(100).optional(), subteamId: Id.optional() });
+export const InviteUpdateResponse = z.object({ invite: Invite });
+
+/** Birthday is month-day (MM-DD); no year is collected. */
+export const MonthDay = z.string().regex(/^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'Enter a month and day, like 04-21');
+export const Officer = UserSummary.extend({
+  discordId: DiscordId, role: Role, isOwner: z.boolean(), active: z.boolean(), title: z.string().nullable(), subteam: Subteam.nullable(),
+  preferredName: z.string().nullable(), pronouns: z.string().nullable(), birthday: MonthDay.nullable(),
+  personalEmail: z.string().nullable(), schoolEmail: z.string().nullable(), gradDate: z.string().nullable(), startTerm: z.string().nullable(), team: z.string().nullable(), linkedin: z.string().nullable(),
+  /** Director+ viewers only; absent otherwise. */
+  phone: z.string().optional(),
+  profileComplete: z.boolean(),
+  onboarding: z.enum(['none', 'pending', 'done']),
+  lastLoginAt: IsoDateTime.nullable().optional(),
+});
+export type Officer = z.infer<typeof Officer>;
+export const OfficersResponse = z.object({ officers: z.array(Officer), subteams: z.array(Subteam), canManage: z.boolean(), canChangeRoles: z.boolean() });
+export type OfficersResponse = z.infer<typeof OfficersResponse>;
+export const OfficerResponse = z.object({ officer: Officer });
+export const OfficerUpdateRequest = z.object({ subteamId: Id.optional(), title: z.string().trim().max(100).nullable().optional(), startTerm: z.string().trim().max(40).nullable().optional() });
+export const DeliveryMode = z.enum(['ics', 'google']);
+export const MyProfile = z.object({
+  subteam: Subteam.nullable(), phone: z.string(), birthday: MonthDay,
+  preferredName: z.string().nullable(), pronouns: z.string().nullable(), personalEmail: z.string().nullable(), schoolEmail: z.string().nullable(),
+  gradDate: z.string().nullable(), title: z.string().nullable(), startTerm: z.string().nullable(), team: z.string().nullable(), linkedin: z.string().nullable(),
+  calendarDeliveryMode: DeliveryMode,
+});
+export type MyProfile = z.infer<typeof MyProfile>;
+export const ProfileResponse = z.object({ profile: MyProfile.nullable(), subteams: z.array(Subteam), subteamLocked: z.boolean(), defaultSubteam: Subteam.nullable() });
+export type ProfileResponse = z.infer<typeof ProfileResponse>;
+const optText = (max: number) => z.string().trim().max(max).nullable().optional();
+export const ProfileUpsertRequest = z.object({
+  phone: z.string().trim().min(1).max(32), birthday: MonthDay,
+  /** Only for officers without a profile or invite; otherwise must match (directors change it). */
+  subteamId: Id.optional(),
+  preferredName: optText(60), pronouns: optText(40), personalEmail: optText(254), schoolEmail: optText(254),
+  gradDate: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(), title: optText(100), team: optText(60), linkedin: optText(300),
+  calendarDeliveryMode: DeliveryMode.optional(),
+});
+export type ProfileUpsertRequest = z.infer<typeof ProfileUpsertRequest>;
+export const OnboardingSaveRequest = z.object({ step: z.number().int().min(1).max(5) });
+export const OnboardingResponse = z.object({ onboarding: OnboardingState.nullable() });
+export const OnboardingCompleteResponse = z.object({ user: CurrentUser, onboarding: z.null() });
+export const CalendarSettings = z.object({
+  mode: DeliveryMode, hasProfile: z.boolean(), activeEmail: z.string().nullable(),
+  ics: z.object({ configured: z.boolean() }),
+  google: z.object({ configured: z.boolean(), connected: z.boolean(), accountEmail: z.string().nullable(), connectedAt: IsoDateTime.nullable() }),
+});
+export type CalendarSettings = z.infer<typeof CalendarSettings>;
+export const CalendarModeRequest = z.object({ mode: DeliveryMode });
+export const CalendarTestResponse = z.object({ status: z.enum(['sent', 'failed', 'skipped', 'not_configured']), message: z.string() });
+
+// ───────────────────────────── Design requests ─────────────────────────────
+// One board everyone sees. Design-subteam members (and director+) assign and move work;
+// only the requester approves in review, which is the only way to reach Delivered.
+
+export const DESIGN_STAGES = ['new', 'accepted', 'in-progress', 'in-review', 'delivered'] as const;
+export const DesignStage = z.enum(DESIGN_STAGES);
+export type DesignStage = z.infer<typeof DesignStage>;
+export const DESIGN_TYPES = ['poster', 'social', 'slides', 'merch', 'video', 'other'] as const;
+export const DesignType = z.enum(DESIGN_TYPES);
+export type DesignType = z.infer<typeof DesignType>;
+export const DesignUrgency = z.enum(['normal', 'high']);
+export const DesignFileKind = z.enum(['reference', 'review', 'delivered']);
+export type DesignFileKind = z.infer<typeof DesignFileKind>;
+
+export const DesignEventRef = z.object({ id: Id, name: z.string(), startsAt: z.string() });
+export const DesignRequestItem = z.object({
+  id: Id,
+  title: z.string(),
+  type: DesignType,
+  formats: z.string(),
+  dueDate: IsoDate.nullable(),
+  urgency: DesignUrgency,
+  stage: DesignStage,
+  event: DesignEventRef.nullable(),
+  program: z.string().nullable(),
+  requester: UserSummary,
+  assignee: UserSummary.nullable(),
+  commentCount: z.number().int().nonnegative(),
+  fileCount: z.number().int().nonnegative(),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type DesignRequestItem = z.infer<typeof DesignRequestItem>;
+export const DesignComment = z.object({ id: Id, author: UserSummary, body: z.string(), createdAt: IsoDateTime });
+export type DesignComment = z.infer<typeof DesignComment>;
+export const DesignFile = z.object({
+  id: Id, kind: DesignFileKind, filename: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
+  url: z.string(), uploadedBy: UserSummary, createdAt: IsoDateTime,
+});
+export type DesignFile = z.infer<typeof DesignFile>;
+/** What the current viewer may do; the server enforces the same rules. */
+export const DesignPermissions = z.object({
+  canEdit: z.boolean(),
+  canDelete: z.boolean(),
+  canAssign: z.boolean(),
+  canAssignSelf: z.boolean(),
+  moveTo: z.array(DesignStage),
+  canApprove: z.boolean(),
+  canRequestChanges: z.boolean(),
+  uploadKinds: z.array(DesignFileKind),
+});
+export type DesignPermissions = z.infer<typeof DesignPermissions>;
+export const DesignRequestDetail = DesignRequestItem.extend({
+  brief: z.string(),
+  references: z.string(),
+  approvedBy: UserSummary.nullable(),
+  approvedAt: IsoDateTime.nullable(),
+  comments: z.array(DesignComment),
+  files: z.array(DesignFile),
+  permissions: DesignPermissions,
+});
+export type DesignRequestDetail = z.infer<typeof DesignRequestDetail>;
+
+/**
+ * The Design page's design indicator for an event: requested while any linked request is open,
+ * done once every linked request is delivered, otherwise not-needed or needs-design from designNeed.
+ */
+export const DESIGN_INDICATORS = ['needs-design', 'requested', 'not-needed', 'done'] as const;
+export const DesignIndicator = z.enum(DESIGN_INDICATORS);
+export type DesignIndicator = z.infer<typeof DesignIndicator>;
+/** An event being planned (draft or published, starting within six weeks) and its design state. */
+export const DesignUpcomingEvent = z.object({
+  id: Id,
+  name: z.string(),
+  startsAt: IsoDateTime,
+  status: EventStatus,
+  host: UserSummary.nullable(),
+  hostSubteam: SubteamBrief.nullable(),
+  designNeed: DesignNeed,
+  indicator: DesignIndicator,
+  /** Linked requests, open ones first. */
+  requests: z.array(z.object({ id: Id, title: z.string(), stage: DesignStage, assignee: UserSummary.nullable() })),
+  /** Director+ or the event's host may mark it not needed. */
+  canSetNotNeeded: z.boolean(),
+});
+export type DesignUpcomingEvent = z.infer<typeof DesignUpcomingEvent>;
+
+/** GET /api/design-requests: the whole board (club scale, no paging). */
+export const DesignRequestsListResponse = z.object({
+  items: z.array(DesignRequestItem),
+  designers: z.array(UserSummary),
+  viewer: z.object({ isDesigner: z.boolean(), canAssign: z.boolean() }),
+  /** Draft and published events starting in the next six weeks, soonest first. */
+  upcomingEvents: z.array(DesignUpcomingEvent),
+});
+export type DesignRequestsListResponse = z.infer<typeof DesignRequestsListResponse>;
+export const DesignRequestResponse = z.object({ request: DesignRequestDetail, designers: z.array(UserSummary) });
+export type DesignRequestResponse = z.infer<typeof DesignRequestResponse>;
+
+export const DesignRequestCreateRequest = z.object({
+  title: z.string().trim().min(1).max(200),
+  type: DesignType,
+  formats: z.string().trim().max(500).optional(),
+  dueDate: IsoDate.nullable().optional(),
+  urgency: DesignUrgency.optional(),
+  brief: z.string().trim().min(1).max(4000),
+  references: z.string().trim().max(4000).optional(),
+  eventId: Id.nullable().optional(),
+  program: z.string().trim().max(200).nullable().optional(),
+});
+export type DesignRequestCreateRequest = z.infer<typeof DesignRequestCreateRequest>;
+export const DesignRequestUpdateRequest = DesignRequestCreateRequest.partial();
+export type DesignRequestUpdateRequest = z.infer<typeof DesignRequestUpdateRequest>;
+export const DesignAssignRequest = z.object({ assigneeId: Id.nullable() });
+export const DesignMoveRequest = z.object({ stage: DesignStage, confirmDeliveryOverride: z.boolean().optional() });
+export const DesignCommentRequest = z.object({ body: z.string().trim().min(1).max(4000) });
+/** multipart fields of POST /api/design-requests/:id/files, plus `file` (PDF, PNG, JPEG, WebP, HEIC; ≤ 10 MB). */
+export const DesignFileUploadFields = z.object({ kind: DesignFileKind.default('reference') });
+
+/** GET /api/events/:id/design-request-draft: a request prefilled from the event. */
+export const DesignRequestDraft = z.object({
+  title: z.string(), type: DesignType, formats: z.string(), dueDate: IsoDate.nullable(), urgency: DesignUrgency,
+  brief: z.string(), eventId: Id, event: DesignEventRef,
+});
+export type DesignRequestDraft = z.infer<typeof DesignRequestDraft>;
+export const DesignRequestDraftResponse = z.object({ draft: DesignRequestDraft });
+/** POST /api/events/:id/design-requests: every field optional; missing ones come from the draft. The event link is fixed. */
+export const DesignRequestFromEventRequest = DesignRequestCreateRequest.omit({ eventId: true }).partial();
+/** PUT /api/events/:id/design-need: anyone may say needed; not_needed is director+ or the host (403). */
+export const EventDesignNeedRequest = z.object({ designNeed: DesignNeed });
+export const EventDesignNeedResponse = z.object({ event: DesignUpcomingEvent });
+export type EventDesignNeedResponse = z.infer<typeof EventDesignNeedResponse>;
+
+export const OwnerTransferRequest = z.object({ toUserId: Id });
+
+type Auth = 'owner' | 'leadership' | 'public' | 'officer' | 'director' | `token:${(typeof SERVICE_TOKEN_SCOPES)[number]}`;
+interface EndpointSpec {
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+  path: string;
+  auth: Auth;
+  query?: z.ZodType;
+  body?: z.ZodType | 'multipart';
+  response: z.ZodType | 'csv' | 'redirect' | 'binary';
+}
+
+export const Member = z.object({
+  person_id: z.string(), first_name: z.string(), last_name: z.string(),
+  preferred_name: z.string().nullable(), uw_email: z.string().nullable(), cs_email: z.string().nullable(), personal_email: z.string().nullable(),
+  major: z.string().nullable(), grad_year: z.string().nullable(), campus: z.string().nullable(), pronouns: z.string().nullable(), demographics: z.string().nullable(),
+  join_date: z.string(), agreed_to_membership_agreement: z.number().int().min(0).max(1), has_been_cseed_officer: z.number().int().min(0).max(1),
+});
+export type Member = z.infer<typeof Member>;
+export const MembersQuery = z.object({q:z.string().max(200).optional(),campus:z.string().max(100).optional(),gradYear:z.string().max(20).optional(),officer:z.enum(['yes','no']).optional(),limit:QueryInt.min(1).max(200).default(50),offset:QueryInt.min(0).max(1000000).default(0)});
+export const MemberOfficer = z.object({id:Id,name:z.string(),title:z.string().nullable(),subteam:z.string().nullable(),email:z.string(),memberId:z.string().nullable()});
+export const MembersResponse = z.object({officers:z.array(MemberOfficer),officerRows:z.array(MemberOfficer),items:z.array(Member),total:z.number().int(),limit:z.number().int(),offset:z.number().int(),connected:z.boolean(),lastSync:z.number().nullable(),syncError:z.string(),facets:z.object({campus:z.array(z.string()),grad_year:z.array(z.string())})});
+export const MemberResponse = z.object({member:Member});
+export const MemberUpdateRequest = z.object({first_name:z.string().trim().min(1).max(254).optional(),last_name:z.string().trim().min(1).max(254).optional(),preferred_name:z.string().max(254).nullable().optional(),uw_email:z.email().max(254).nullable().optional(),cs_email:z.email().max(254).nullable().optional(),personal_email:z.email().max(254).nullable().optional(),major:z.string().max(254).nullable().optional(),grad_year:z.string().max(254).nullable().optional(),campus:z.string().max(254).nullable().optional(),pronouns:z.string().max(254).nullable().optional(),auditNote:z.string().trim().min(1).max(2000)}).strict();
+export const CloudflareSyncResponse = z.object({ok:z.literal(true),connected:z.boolean()});
+export const CloudflareWidget = z.object({id:z.string(),connected:z.boolean(),lastSync:z.number().nullable(),error:z.string(),data:z.unknown().nullable()});
+export const CloudflareWidgetsResponse = z.object({widgets:z.array(CloudflareWidget)});
+
+// External Contacts
+export const ContactType = z.enum(['speaker', 'mentor', 'both']);
+export const OutreachChannel = z.enum(['email', 'linkedin', 'discord', 'phone', 'in_person']);
+export const OutreachOutcome = z.enum(['awaiting_reply', 'interested', 'confirmed', 'declined', 'follow_up']);
+export const ContactOutreach = z.object({ id: Id, officerId: Id, officerName: z.string(), date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string(), createdAt: z.number().int() });
+export const Contact = z.object({
+ id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType, hasSpokenForUs: z.boolean(), clubSupport: z.boolean(),
+ topics: z.array(z.string()), email: z.string(), linkedin: z.string(), notes: z.string(),
+ createdAt: z.number().int(), updatedAt: z.number().int(),
+ events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+ outreach: z.array(ContactOutreach), lastOutreach: ContactOutreach.nullable(),
+});
+export type Contact = z.infer<typeof Contact>;
+export const ContactCreateRequest = z.object({ hasSpokenForUs: z.boolean().optional(), clubSupport: z.boolean().optional(), name: z.string().trim().min(1).max(200), org: z.string().trim().max(200).optional(), role: z.string().trim().max(200).optional(), type: ContactType,
+ topics: z.array(z.string().trim().min(1).max(100)).max(30).optional(), email: z.union([z.string().trim().pipe(z.email().max(254)), z.literal('')]).optional(), linkedin: z.union([z.string().trim().pipe(z.url({ protocol: /^https?$/ }).max(2000)), z.literal('')]).optional(), notes: z.string().max(10000).optional(), eventIds: z.array(Id).max(100).optional() });
+export const ContactPatchRequest = ContactCreateRequest.partial();
+export const ContactResponse = z.object({ contact: Contact });
+export const ContactsQuery = z.object({ hasSpokenForUs: z.enum(['true', 'false']).optional(), clubSupport: z.enum(['true', 'false']).optional(), q: z.string().trim().max(100).optional(), type: ContactType.optional(), topic: z.string().trim().max(100).optional() });
+export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string().max(10000).optional() });
+
+/**
+ * Machine-readable index of every endpoint; docs/api.md is the human version and a test
+ * keeps the two in sync.
+ */
+export const BUILDSPACE_TRACKS = ['Software', 'Hardware', 'Creative', 'Extended Virtual Reality (XR)'] as const;
+export const BUILDSPACE_STAGES = ['Ideating', 'Building', 'Demo-ready', 'Shipped', 'At risk'] as const;
+export const BuildspaceProjectBody = z.object({
+ name: z.string().trim().min(1).max(200), description: z.string().max(10000),
+ track: z.enum(BUILDSPACE_TRACKS), stage: z.enum(BUILDSPACE_STAGES),
+ links: z.array(z.url().refine(s => /^https?:\/\//.test(s))).max(10), mentorIds: z.array(Id).max(2),
+});
+export const BuildspaceProject = BuildspaceProjectBody.extend({id: Id, updatedAt: z.number().int()});
+export type BuildspaceProject = z.infer<typeof BuildspaceProject>;
+export const BuildspacePersonBody = z.object({
+ name: z.string().trim().min(1).max(200), memberId: Id.nullable().optional(), discordId: DiscordId.nullable().optional(), projectId: Id, joinedOn: IsoDate,
+});
+export const BuildspacePerson = BuildspacePersonBody.extend({id: Id, memberId: Id.nullable(), discordId: DiscordId.nullable()});
+export type BuildspacePerson = z.infer<typeof BuildspacePerson>;
+export const BuildspaceActivityBody = z.object({
+ projectId: Id, personId: Id.nullable().optional(), mentorId: Id.nullable().optional(),
+ kind: z.enum(['weekly','mentor','request','purchase','absence']), date: IsoDate,
+ body: z.string().trim().min(1).max(10000), status: z.enum(['open','resolved','on-track','needs-help']), purchaseId: Id.nullable().optional(),
+});
+export const BuildspaceActivity = BuildspaceActivityBody.extend({
+ id: Id, personId: Id.nullable(), mentorId: Id.nullable(), purchaseId: Id.nullable(),
+ source: z.enum(['manual','discord']), externalId: z.string().nullable(), createdAt: z.number().int(),
+ purchaseTitle: z.string().nullable(), purchaseStatus: z.string().nullable(), purchaseNeededBy: IsoDate.nullable(),
+});
+export type BuildspaceActivity = z.infer<typeof BuildspaceActivity>;
+/** Check-in weeks are date ranges in the club time zone; see docs/buildspace.md. */
+export const BuildspaceWeek = z.object({start: IsoDate, due: IsoDate});
+export const DueTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+export const BuildspaceWeekRule = z.object({effectiveFrom: IsoDate, dueWeekday: z.number().int().min(0).max(6), dueTime: DueTime.nullable(), updatedAt: z.number().int(), updatedBy: z.string().nullable()});
+export const BuildspaceSchedule = z.object({
+ timezone: z.string(), today: IsoDate, current: BuildspaceWeekRule, pending: BuildspaceWeekRule.nullable(),
+ week: BuildspaceWeek, dueAt: IsoDateTime, pastDue: z.boolean(), pendingFirstWeek: BuildspaceWeek.nullable(),
+});
+export type BuildspaceSchedule = z.infer<typeof BuildspaceSchedule>;
+export const BuildspaceScheduleBody = z.object({dueWeekday: z.number().int().min(0).max(6), dueTime: DueTime.nullable().optional()});
+export const BuildspaceEntryResponse = z.object({ok: z.literal(true), week: BuildspaceWeek});
+export const BuildspaceResponse = z.object({
+ projects: z.array(BuildspaceProject), people: z.array(BuildspacePerson),
+ mentors: z.array(z.object({id: Id, name: z.string(), org: z.string(), topics: z.array(z.string())})),
+ activity: z.array(BuildspaceActivity), weekStart: IsoDate, weekDue: IsoDate, today: IsoDate, schedule: BuildspaceSchedule,
+});
+export type BuildspaceData = z.infer<typeof BuildspaceResponse>;
+export const BuildspaceIngest = z.object({
+ discordId: DiscordId, externalId: z.string().trim().min(1).max(100), kind: z.literal('weekly'), date: IsoDate,
+ body: z.string().trim().min(1).max(10000), status: z.enum(['open','resolved','on-track','needs-help']),
+});
+
+export const ENDPOINTS = {
+ buildspaceList: {method: 'GET', path: '/api/buildspace', auth: 'officer', response: BuildspaceResponse},
+ buildspaceProjectSave: {method: 'PUT', path: '/api/buildspace/projects/:id', auth: 'officer', body: BuildspaceProjectBody, response: z.object({project: BuildspaceProject})},
+ buildspacePersonSave: {method: 'PUT', path: '/api/buildspace/people/:id', auth: 'officer', body: BuildspacePersonBody, response: z.object({person: BuildspacePerson})},
+ buildspaceActivityCreate: {method: 'POST', path: '/api/buildspace/activity', auth: 'officer', body: BuildspaceActivityBody, response: BuildspaceEntryResponse},
+ buildspaceActivityResolve: {method: 'POST', path: '/api/buildspace/activity/:id/resolve', auth: 'officer', response: z.object({ok: z.literal(true)})},
+ buildspaceIngest: {method: 'POST', path: '/api/ingest/buildspace', auth: 'token:ingest:buildspace', body: BuildspaceIngest, response: BuildspaceEntryResponse},
+ buildspaceSchedulePut: {method: 'PUT', path: '/api/buildspace/schedule', auth: 'leadership', body: BuildspaceScheduleBody, response: BuildspaceSchedule},
+  membersList: {method:'GET',path:'/api/members',auth:'officer',query:MembersQuery,response:MembersResponse},
+  membersExport: {method:'GET',path:'/api/members/export',auth:'director',query:MembersQuery,response:'csv'},
+  memberDetail: {method:'GET',path:'/api/members/:id',auth:'officer',response:MemberResponse},
+  memberUpdate: {method:'PATCH',path:'/api/members/:id',auth:'director',body:MemberUpdateRequest,response:MemberResponse},
+  cloudflareSync: {method:'POST',path:'/api/cloudflare/sync',auth:'director',response:CloudflareSyncResponse},
+  cloudflareWidgets: {method:'GET',path:'/api/cloudflare/widgets',auth:'officer',response:CloudflareWidgetsResponse},
+
+ contactsList: { method: 'GET', path: '/api/contacts', auth: 'officer', query: ContactsQuery, response: z.object({ items: z.array(Contact) }) },
+ contactCreate: { method: 'POST', path: '/api/contacts', auth: 'officer', body: ContactCreateRequest, response: ContactResponse },
+ contactDetail: { method: 'GET', path: '/api/contacts/:id', auth: 'officer', response: ContactResponse },
+ contactUpdate: { method: 'PATCH', path: '/api/contacts/:id', auth: 'officer', body: ContactPatchRequest, response: ContactResponse },
+ contactDelete: { method: 'DELETE', path: '/api/contacts/:id', auth: 'officer', response: OkResponse },
+ contactOutreachCreate: { method: 'POST', path: '/api/contacts/:id/outreach', auth: 'officer', body: OutreachCreateRequest, response: ContactResponse },
+  ownerAdd: { method: 'POST', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
+  ownerRemove: { method: 'DELETE', path: '/api/admin/owners/:userId', auth: 'owner', response: AdminUserResponse },
+  ownerTransfer: { method: 'POST', path: '/api/admin/owners/transfer', auth: 'owner', body: OwnerTransferRequest, response: AdminUsersResponse },
+  clubSettingsGet: { method: 'GET', path: '/api/club/settings', auth: 'officer', response: ClubSettings },
+  clubSettingsPut: { method: 'PUT', path: '/api/club/settings', auth: 'leadership', body: ClubSettings, response: ClubSettings },
+  prefsGet: { method: 'GET', path: '/api/me/prefs', auth: 'officer', response: WidgetPrefs },
+  prefsPut: { method: 'PUT', path: '/api/me/prefs', auth: 'officer', body: PrefsUpdate, response: WidgetPrefs },
+  calendarEmailsList: { method: 'GET', path: '/api/me/calendar-emails', auth: 'officer', response: CalendarEmailsResponse },
+  calendarEmailCreate: { method: 'POST', path: '/api/me/calendar-emails', auth: 'officer', body: CalendarEmailCreateRequest, response: CalendarEmailResponse },
+  calendarEmailUpdate: { method: 'PATCH', path: '/api/me/calendar-emails/:id', auth: 'officer', body: CalendarEmailUpdateRequest, response: CalendarEmailResponse },
+  calendarEmailDelete: { method: 'DELETE', path: '/api/me/calendar-emails/:id', auth: 'officer', response: OkResponse },
+  invitesList: { method: 'GET', path: '/api/invites', auth: 'director', response: InvitesResponse },
+  inviteCreate: { method: 'POST', path: '/api/invites', auth: 'director', body: InviteCreateRequest, response: InviteResponse },
+  inviteUpdate: { method: 'PATCH', path: '/api/invites/:id', auth: 'director', body: InviteUpdateRequest, response: InviteUpdateResponse },
+  inviteRevoke: { method: 'DELETE', path: '/api/invites/:id', auth: 'director', response: OkResponse },
+  officersList: { method: 'GET', path: '/api/officers', auth: 'officer', response: OfficersResponse },
+  officerDetail: { method: 'GET', path: '/api/officers/:id', auth: 'officer', response: OfficerResponse },
+  officerUpdate: { method: 'PATCH', path: '/api/officers/:id', auth: 'director', body: OfficerUpdateRequest, response: OfficerResponse },
+  profileGet: { method: 'GET', path: '/api/me/profile', auth: 'officer', response: ProfileResponse },
+  profilePut: { method: 'PUT', path: '/api/me/profile', auth: 'officer', body: ProfileUpsertRequest, response: ProfileResponse },
+  onboardingSave: { method: 'PUT', path: '/api/me/onboarding', auth: 'officer', body: OnboardingSaveRequest, response: OnboardingResponse },
+  onboardingComplete: { method: 'POST', path: '/api/me/onboarding/complete', auth: 'officer', response: OnboardingCompleteResponse },
+  calendarFeed: { method: 'GET', path: '/api/calendar/feed', auth: 'officer', query: z.object({ start: z.string(), end: z.string(), sources: z.string().optional() }), response: CalendarFeed },
+  calendarWidgetGet: { method: 'GET', path: '/api/me/calendar-widget', auth: 'officer', response: CalendarWidgetOptions },
+  calendarWidgetPut: { method: 'PUT', path: '/api/me/calendar-widget', auth: 'officer', body: CalendarWidgetUpdate, response: CalendarWidgetOptions },
+  calendarGet: { method: 'GET', path: '/api/me/calendar', auth: 'officer', response: CalendarSettings },
+  calendarPut: { method: 'PUT', path: '/api/me/calendar', auth: 'officer', body: CalendarModeRequest, response: CalendarSettings },
+  calendarTest: { method: 'POST', path: '/api/me/calendar/test', auth: 'officer', response: CalendarTestResponse },
+  googleConnect: { method: 'GET', path: '/api/me/calendar/google/connect', auth: 'officer', response: 'redirect' },
+  googleDisconnect: { method: 'DELETE', path: '/api/me/calendar/google', auth: 'officer', response: CalendarSettings },
+  googleCallback: { method: 'GET', path: '/auth/google/callback', auth: 'public', response: 'redirect' },
+  designRequestsList: { method: 'GET', path: '/api/design-requests', auth: 'officer', response: DesignRequestsListResponse },
+  designRequestCreate: { method: 'POST', path: '/api/design-requests', auth: 'officer', body: DesignRequestCreateRequest, response: DesignRequestResponse },
+  designRequestDetail: { method: 'GET', path: '/api/design-requests/:id', auth: 'officer', response: DesignRequestResponse },
+  designRequestUpdate: { method: 'PATCH', path: '/api/design-requests/:id', auth: 'officer', body: DesignRequestUpdateRequest, response: DesignRequestResponse },
+  designRequestDelete: { method: 'DELETE', path: '/api/design-requests/:id', auth: 'officer', response: OkResponse },
+  designRequestAssign: { method: 'POST', path: '/api/design-requests/:id/assign', auth: 'officer', body: DesignAssignRequest, response: DesignRequestResponse },
+  designRequestMove: { method: 'POST', path: '/api/design-requests/:id/move', auth: 'officer', body: DesignMoveRequest, response: DesignRequestResponse },
+  designRequestApprove: { method: 'POST', path: '/api/design-requests/:id/approve', auth: 'officer', response: DesignRequestResponse },
+  designRequestComment: { method: 'POST', path: '/api/design-requests/:id/comments', auth: 'officer', body: DesignCommentRequest, response: DesignRequestResponse },
+  designRequestUpload: { method: 'POST', path: '/api/design-requests/:id/files', auth: 'officer', body: 'multipart', response: DesignRequestResponse },
+  designFileDownload: { method: 'GET', path: '/api/design-files/:id', auth: 'officer', response: 'binary' },
+  designRequestDraftFromEvent: { method: 'GET', path: '/api/events/:id/design-request-draft', auth: 'officer', response: DesignRequestDraftResponse },
+  designRequestCreateFromEvent: { method: 'POST', path: '/api/events/:id/design-requests', auth: 'officer', body: DesignRequestFromEventRequest, response: DesignRequestResponse },
+  eventDesignNeed: { method: 'PUT', path: '/api/events/:id/design-need', auth: 'officer', body: EventDesignNeedRequest, response: EventDesignNeedResponse },
+
+  health: { method: 'GET', path: '/api/health', auth: 'public', response: HealthResponse },
+  me: { method: 'GET', path: '/api/me', auth: 'officer', response: MeResponse },
+  meStats: { method: 'GET', path: '/api/me/stats', auth: 'officer', response: MyStats },
+  lookups: { method: 'GET', path: '/api/lookups', auth: 'officer', response: LookupsResponse },
+  overview: { method: 'GET', path: '/api/overview', auth: 'officer', response: OverviewResponse },
+
+  eventsList: { method: 'GET', path: '/api/events', auth: 'officer', query: EventsListQuery, response: EventsListResponse },
+  eventCreate: { method: 'POST', path: '/api/events', auth: 'officer', body: EventUpsertRequest, response: EventUpsertResponse },
+  eventDetail: { method: 'GET', path: '/api/events/:id', auth: 'officer', response: EventDetailResponse },
+  eventUpdate: { method: 'PATCH', path: '/api/events/:id', auth: 'officer', body: EventPatchRequest, response: EventUpsertResponse },
+  eventDelete: { method: 'DELETE', path: '/api/events/:id', auth: 'officer', response: OkResponse },
+  eventCoverGet: { method: 'GET', path: '/api/events/:id/cover', auth: 'officer', response: 'binary' },
+  eventCoverPut: { method: 'PUT', path: '/api/events/:id/cover', auth: 'officer', body: 'multipart', response: EventUpsertResponse },
+  eventCoverDelete: { method: 'DELETE', path: '/api/events/:id/cover', auth: 'officer', response: EventUpsertResponse },
+  eventMetrics: { method: 'GET', path: '/api/events/:id/metrics', auth: 'officer', response: EventMetricsResponse },
+  eventsImport: { method: 'POST', path: '/api/events/import', auth: 'officer', body: 'multipart', response: CsvImportResponse },
+  ingestLuma: { method: 'POST', path: '/api/ingest/luma', auth: 'token:ingest:luma', body: LumaIngestRequest, response: LumaIngestResponse },
+
+  requestsList: { method: 'GET', path: '/api/requests', auth: 'officer', query: PurchaseRequestsListQuery, response: PurchaseRequestsListResponse },
+  requestCreate: { method: 'POST', path: '/api/requests', auth: 'officer', body: PurchaseRequestCreateRequest, response: PurchaseRequestResponse },
+  requestDetail: { method: 'GET', path: '/api/requests/:id', auth: 'officer', response: PurchaseRequestResponse },
+  requestUpdate: { method: 'PATCH', path: '/api/requests/:id', auth: 'officer', body: PurchaseRequestUpdateRequest, response: PurchaseRequestResponse },
+  requestDelete: { method: 'DELETE', path: '/api/requests/:id', auth: 'officer', response: OkResponse },
+  requestSubmit: { method: 'POST', path: '/api/requests/:id/submit', auth: 'officer', response: PurchaseRequestResponse },
+  requestApprove: { method: 'POST', path: '/api/requests/:id/approve', auth: 'director', body: PurchaseDecisionRequest, response: PurchaseRequestResponse },
+  requestDeny: { method: 'POST', path: '/api/requests/:id/deny', auth: 'director', body: PurchaseDenyRequest, response: PurchaseRequestResponse },
+  requestTransition: { method: 'POST', path: '/api/requests/:id/transition', auth: 'director', body: PurchaseTransitionRequest, response: PurchaseRequestResponse },
+  requestAttach: { method: 'POST', path: '/api/requests/:id/attachments', auth: 'officer', body: 'multipart', response: AttachmentUploadResponse },
+
+  attachmentDownload: { method: 'GET', path: '/api/attachments/:id', auth: 'officer', response: 'binary' },
+
+  financeSummary: { method: 'GET', path: '/api/finance/summary', auth: 'officer', query: FinanceQuery, response: FinanceSummaryResponse },
+  financeReport: { method: 'GET', path: '/api/finance/reports/:report', auth: 'officer', query: FinanceReportQuery, response: FinanceReportResponse },
+  budgetsGet: { method: 'GET', path: '/api/finance/budgets', auth: 'officer', query: FinanceQuery, response: BudgetsResponse },
+  budgetsPut: { method: 'PUT', path: '/api/finance/budgets', auth: 'director', body: BudgetsUpsertRequest, response: BudgetsResponse },
+  periods: { method: 'GET', path: '/api/finance/periods', auth: 'director', response: FiscalPeriodsResponse },
+  periodsCreate: { method: 'POST', path: '/api/finance/periods', auth: 'director', body: FiscalYearPeriodsCreateRequest, response: FiscalPeriodsResponse },
+  periodClose: { method: 'POST', path: '/api/finance/periods/:id/close', auth: 'director', body: FiscalPeriodCloseRequest, response: FiscalPeriodsResponse },
+  accounts: { method: 'GET', path: '/api/finance/accounts', auth: 'director', response: ChartOfAccountsResponse },
+
+  adminUsers: { method: 'GET', path: '/api/admin/users', auth: 'director', response: AdminUsersResponse },
+  adminUserCreate: { method: 'POST', path: '/api/admin/users', auth: 'director', body: AdminUserCreateRequest, response: AdminUserResponse },
+  adminUserUpdate: { method: 'PATCH', path: '/api/admin/users/:id', auth: 'director', body: AdminUserUpdateRequest, response: AdminUserResponse },
+  adminTokens: { method: 'GET', path: '/api/admin/tokens', auth: 'director', response: ServiceTokensResponse },
+  adminTokenCreate: { method: 'POST', path: '/api/admin/tokens', auth: 'director', body: ServiceTokenCreateRequest, response: ServiceTokenCreateResponse },
+  adminTokenRevoke: { method: 'DELETE', path: '/api/admin/tokens/:id', auth: 'director', response: OkResponse },
+  adminAudit: { method: 'GET', path: '/api/admin/audit', auth: 'director', query: AuditLogQuery, response: AuditLogResponse },
+
+  search: { method: 'GET', path: '/api/search', auth: 'officer', query: SearchQuery, response: SearchResponse },
+
+  agentJobs: { method: 'GET', path: '/api/agent/jobs', auth: 'token:agent:jobs', query: AgentJobsQuery, response: AgentJobsResponse },
+  agentJobClaim: { method: 'POST', path: '/api/agent/jobs/:id/claim', auth: 'token:agent:jobs', response: AgentJobResponse },
+  agentJobComplete: { method: 'POST', path: '/api/agent/jobs/:id/complete', auth: 'token:agent:jobs', body: AgentJobCompleteRequest, response: AgentJobResponse },
+
+  authLogin: { method: 'GET', path: '/auth/login', auth: 'public', response: 'redirect' },
+  authCallback: { method: 'GET', path: '/auth/callback', auth: 'public', response: 'redirect' },
+  authLogout: { method: 'POST', path: '/auth/logout', auth: 'officer', response: 'redirect' },
+  // authDev (POST /auth/dev) and authDevInfo (GET /auth/dev/info) are deliberately left out of the web copy: dev-only, never called
+  // through api(), and its path shouldn't ship in the production bundle.
+} as const satisfies Record<string, EndpointSpec>;
+export type EndpointName = keyof typeof ENDPOINTS;

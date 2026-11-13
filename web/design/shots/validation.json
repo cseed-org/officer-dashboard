@@ -1,0 +1,282 @@
+{
+  "screenshots": 20,
+  "layouts": [
+    {
+      "name": "home",
+      "width": 1440,
+      "theme": "light",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "events",
+      "width": 1440,
+      "theme": "light",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "finance",
+      "width": 1440,
+      "theme": "light",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "admin",
+      "width": 1440,
+      "theme": "light",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "settings",
+      "width": 1440,
+      "theme": "light",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "home",
+      "width": 820,
+      "theme": "light",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "events",
+      "width": 820,
+      "theme": "light",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "finance",
+      "width": 820,
+      "theme": "light",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "admin",
+      "width": 820,
+      "theme": "light",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "settings",
+      "width": 820,
+      "theme": "light",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "home",
+      "width": 390,
+      "theme": "light",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "events",
+      "width": 390,
+      "theme": "light",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "finance",
+      "width": 390,
+      "theme": "light",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "admin",
+      "width": 390,
+      "theme": "light",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "settings",
+      "width": 390,
+      "theme": "light",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(255, 255, 255)",
+      "stylesheets": 3
+    },
+    {
+      "name": "home",
+      "width": 1440,
+      "theme": "dark",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "events",
+      "width": 1440,
+      "theme": "dark",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "finance",
+      "width": 1440,
+      "theme": "dark",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "admin",
+      "width": 1440,
+      "theme": "dark",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "settings",
+      "width": 1440,
+      "theme": "dark",
+      "pageWidth": 1440,
+      "viewport": 1440,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "home",
+      "width": 820,
+      "theme": "dark",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "events",
+      "width": 820,
+      "theme": "dark",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "finance",
+      "width": 820,
+      "theme": "dark",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "admin",
+      "width": 820,
+      "theme": "dark",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "settings",
+      "width": 820,
+      "theme": "dark",
+      "pageWidth": 820,
+      "viewport": 820,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "home",
+      "width": 390,
+      "theme": "dark",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "events",
+      "width": 390,
+      "theme": "dark",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "finance",
+      "width": 390,
+      "theme": "dark",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "admin",
+      "width": 390,
+      "theme": "dark",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    },
+    {
+      "name": "settings",
+      "width": 390,
+      "theme": "dark",
+      "pageWidth": 390,
+      "viewport": 390,
+      "background": "rgb(24, 26, 24)",
+      "stylesheets": 3
+    }
+  ],
+  "checks": [
+    "No horizontal page overflow at 390, 820, 1440 in both themes",
+    "All pages load three shared stylesheets",
+    "No browser script errors",
+    "System theme follows emulated OS",
+    "Finance tabs, request drawer, Escape and mobile navigation"
+  ]
+}

@@ -1,0 +1,290 @@
+# CSEED officer dashboard · visual specification
+
+## Principles
+
+A calm working ledger. White is the canvas; structure comes from spacing, typography and one-pixel rules. Square inspires the number density and predictable tables; Notion informs the quiet sidebar, blocks and inline properties. Precision means aligned columns, explicit states, legible metadata and generous separation between tasks—not decoration.
+
+Use a single ink primary action for the current task. Other actions are hairline buttons or underlined text. Status is a five-pixel dot plus a written label; never a coloured capsule. Yellow (#f5d140) appears only in the tiny wordmark underline, active-navigation edge and a secondary focus accent. No gradients, emoji, glow or ornamental illustrations.
+
+Use system sans-serif throughout, including headings. This is an intentional choice over the v1 serif: the same letterforms connect a page title to a financial line item, and load immediately without font downloads. System monospace is reserved for identifiers and literal secrets. Numeric columns use the main font with tabular figures. Retain the CSEED wordmark; use the existing brand artwork when integrating, with accessible text and a dark variant as needed.
+
+Light is the default. Dark is a separately specified neutral palette, not an inversion. Compact density reduces gaps and row padding without shrinking text. Make state explicit in words, including missing metrics, empty lists, closed periods and failed imports. Never imply that zero and unavailable data are equivalent.
+
+## Tokens and contrast
+
+Import `tokens.css`, then `base.css`, then `components.css`. No framework, external styles or remote fonts. `:root[data-theme="dark"]` explicitly selects dark; `data-theme="system"` follows the OS; missing theme means light. `data-density="compact"` selects compact spacing.
+
+All exact light/dark colour values are in `tokens.css`; measured WCAG relative-luminance ratios are in [contrast.md](contrast.md). Text and semantic status colours exceed 4.5:1 on their intended surfaces; control boundaries exceed 3:1. Decorative separators intentionally have lower contrast and must not be the sole signifier of an interactive control. Yellow on white fails text contrast: it is never text or a sole focus indicator. Focus has a two-pixel ink outline, three-pixel offset and inner yellow accent; the ink outline provides accessible contrast in both themes. Disabled controls are exempt and visibly disabled, never the only explanation of a restriction.
+
+Type scale: 12px metadata, 13px controls/navigation, 14px body, 16px section headings with semibold weight, 28px page title, 32px KPI figures. Body line height 1.5; headings 1.25. Phone titles 21.6px and KPI figures 20.8px. Font weights 400, 500, 600; use 700 only for the wordmark/avatar. No uppercase headings except short command-palette group labels.
+
+Spacing: 4, 8, 12, 16, 20, 24, 32, 40px. Comfortable block padding 20, gap 24 and table vertical padding 12px; compact uses 16, 16 and 8px. Optical exceptions are allowed for icon/text separation, small label baselines and one-pixel borders. Main desktop padding 40px top, 48px sides. Radius 4px for panels and controls; 2px for brand mark; circles only for avatars and status dots. One-pixel hairlines. Cards have no elevation. Only overlays have a restrained shadow (6–10% black). Hover transition 140ms, drawer movement 180ms; no skeleton shimmer. Reduced-motion preference removes all transitions and animations.
+
+## Component contract
+
+Use the existing builder markup. These are exact classes, not illustrative names.
+
+| Component | Classes and state contract |
+|---|---|
+| Shell | `.app`, `.sidebar`, `.main`, `.topbar`, `.nav-scrim`; `.nav-open` on root opens phone sheet. `.skip-link` targets main. |
+| Brand / identity | `.wordmark`, `.wordmark-mark`, `.wordmark-text`, `.wordmark-sub`, `.sidebar-foot`, `.user-chip`, `.user-chip-text`, `.user-chip-name`, `.user-chip-role`, `.avatar`, `.avatar--lg`. |
+| Navigation | `.nav-list`, `.nav-link`, `.nav-label`, `.icon`; active link uses `aria-current="page"`. Icon-only rail must retain an accessible name and tooltip. |
+| Search | `.search-trigger`, `.search-trigger-text`, `.search-trigger-kbd`. Show ⌘K on Mac, Ctrl K elsewhere. Opens native dialog `.palette` with `.palette-inner`, `.palette-search`, `.palette-input`, `.palette-results`, `.palette-group-label`, `.palette-option`, `.palette-option-title`, `.palette-option-sub`, `.palette-status`, `.palette-foot`. Active option uses `aria-selected`. |
+| Page header | `.page-header` contains one h1; `.page-sub` and `.eyebrow` provide context. `.toolbar`, `.toolbar-main`, `.toolbar-actions`, `.toolbar-search`, `.filters` handle actions below the title. |
+| Tabs | `.tabs`, `.tab`, `.tab-count`, `.tab-panel`; `role=tab`, `aria-selected`, roving tab index and arrow keys. `.segmented`, `.segment[aria-pressed=true]` for view toggles; `.chips`, `.chip` are rectangular filter controls, never status badges. |
+| KPIs | `.kpis` containing `.kpi` (or `.kpi.kpi--link`), `.kpi-label`, `.kpi-value`, `.kpi-sub`; `.kpi-value--negative` only for an actual negative outcome. |
+| Blocks | `.stack`, `.stack--tight`, `.home-grid`, `.block`, `.block-head`, `.block-body`, `.block--full`, `.block--bare`; `.section`, `.section-head`, `.section-actions` for unboxed sections. |
+| Tables | `.table-wrap` scroll container; `.dt`, optional `.dt--dense`, `.dt--wide`, `.dt--edit`. Sticky header in scroll region. `.num` right-aligns tabular figures, `.mono` only for codes. `.cell-title`, `.cell-sub`, `.dt-primary`, `.dt-hide-phone`. Every td gets `data-label` for phone layout. Caption and scoped column headers required. `.dt-caption` shows caption; `.visually-hidden` retains it for assistive technology. |
+| Status | `.badge` with `--positive`, `--negative`, `--attention`, `--info` modifiers; always a text label. `.flag` for a secondary warning. Pending = attention, approved/settled = positive, denied/failed = negative, draft = neutral. |
+| Buttons | `.btn` secondary, `.btn--primary` ink, `.btn--danger` red text with hairline, `.btn--text` transparent, `.btn--small`, `.btn--block`; `.icon-btn` must have an accessible name; `.linkish`, `.linkish--danger` underlined text. Use native disabled. |
+| Forms | `.form`, `.fieldset`, `.field`, `.field-label`, `.field-hint`, `.field-error`, `.field--inline`, `.field--wide`, `.grid-fields`, `.input`, `.select`, `.textarea`, `.money`, `.input--money`. Error sets `aria-invalid` and connects text with `aria-describedby`. `.choice-row`, `.choice`, `.choice-title`, `.choice-sub` contain native radios. |
+| File import | `.dropzone`, `.dropzone.is-over`, `.files`, `.file-name`, `.file-meta`; retain a keyboard-accessible file input and written supported format. Preview rows and errors before committing import. |
+| Drawer / side panel | Native dialog `.drawer` or `.drawer.drawer--lg`, `.drawer-inner`, `.drawer-head`, `.drawer-body`. Width 560 or 760px; full viewport on phone. `.side-layout` / `.side-panel` for persistent desktop master/detail illustration. |
+| Dialog | Native `.dialog`, `.dialog-inner`, `.dialog-head`, `.dialog-body`. Label with heading; focus initial meaningful control, trap focus, Escape closes, restore trigger focus. Prevent background scroll. CSS alone does not implement interaction. |
+| Feedback | `.notice`, `.notice--positive/negative/attention/info`, `.notice-stack`; `.toast` for transient status. Use `role=status` / polite live region for completion, alert for blocking errors. Do not auto-dismiss errors. |
+| States | `.state`, `.state--empty`, `.state--loading`, `.state--error`, `.state-title`, `.state-body`, `.state-action`; `.skel`, `.skel--row`, `.skel--label`, `.skel--kpi`. Loading has accessible text and aria-busy; empty gives an actionable explanation; error keeps retry available. |
+| Properties / activity | `.facts` is a dl, `.report-meta`, `.detail-meta`; `.list`, `.list-row`, `.list-main`, `.list-side`; `.feed`, `.feed-item`, `.feed-text`, `.feed-time`; `.timeline`, `.timeline-title`, `.timeline-meta`, `.timeline-comment`. |
+| Charts | `.chart`, `.chart-grid`, `.chart-axis`, `.chart-label`, `.chart-line`, `.chart-area`, `.chart-dot`, `.chart-col`, `.chart-tooltip`; `.legend`, `.legend-item`, `.swatch`; `.meter`, `.meter-fill`; `.funnel-*` and `.budget-*` support existing components. Muted slate series, grey secondary, direct numeric labels. Include a textual/table equivalent. Never rely on colour alone. |
+| Focus | Global `:focus-visible`; do not remove it on actionable controls. Programmatically focused headings/main can suppress the decorative outline only when focus placement is intentional. |
+
+## Page composition
+
+Home: title, reporting-period subtitle, five KPIs; recent events full width; requests needing action and budget/actual in adjacent blocks; chronological activity below. Avoid a second primary CTA where no creation task is present.
+
+Events: search and time filter, one Import CSV button, event table. Detail drawer carries date/location properties, attendance metrics, understated trend chart and guests; import dialog uses the file/preview/error pattern.
+
+Requests & Finance: Requests, Budgets, Reports, Periods tabs. Requests default to actionable entries; one New request action opens a drawer. Detail places amount and status above properties, receipts and history; approve/deny/settle controls follow permission and state. Budgets show allocated/spent/committed/available columns. Reports are statement tables with restrained CSV export. Periods expose close state in text and place destructive close/reopen behind a confirmation.
+
+Officers: Directory (default), Invites, Access, Service tokens, Audit log tabs. All officers see the directory; director+ see the management tabs. Access reuses searchable officer controls; ownership actions live in the row menu. Directors manage officer active status; leadership changes roles and manages director/leadership active status, with owner guards enforced on the server. Tokens reveal their secret once in `.secret` with copy action. Audit retains actor, timestamp and target. Settings: separate Theme, Density, Profile sections with native radio groups and inline properties; save preferences immediately and announce the change.
+
+## Responsive layouts
+
+- 1440px: 232px sidebar; 48px main gutters; five KPI columns where content allows; paired overview blocks. Drawer is 560px (760px for a complex detail). Tables stay tabular and scroll vertically with sticky headers.
+- 820px: 64px icon rail, 24px main gutters. Collapse sidebar labels, preserve accessible names. Overview blocks become one column, KPI grid auto-fits. Wide statements use labelled rows before ordinary tables do.
+- 390px: sticky 52px top bar, menu sheet up to 300px with scrim, 16px main gutters. Two KPI columns; stacked blocks; 44px minimum principal controls. Below 640px table rows become labelled records, with the primary cell first. Important financial values remain visible; only explicitly secondary columns may hide. Drawers occupy the viewport. No page-level horizontal scroll; long identifiers wrap. Tabs may scroll locally.
+
+## Alternatives and iteration
+
+Rejected warm beige canvas (insufficiently white), serif display titles (less coherent with utilitarian rows), coloured status fills (too much visual weight), floating rounded cards/shadows (ornamental), external fonts (network cost without a clear benefit), and a saturated yellow primary button (weak contrast and excessive brand area). Open aesthetic question for a later iteration: preserve the compact system typography or adopt a self-hosted sans after viewing the real content. No choice blocks implementation.
+
+Mockups are local HTML documents referencing exactly the three production stylesheets. They show representative content, not live data or a claim of implemented backend behavior. Their small script only supports preview theme/density, tab examples and menu/dialog controls.
+
+### Integration hooks
+
+`.block-action`, `.section-actions`, `.state-action` wrap action groups; `.block-body`, `.budget-label`, `.palette-option-title` permit long content to wrap. `.data-link` wraps external URLs; `.funnel-value` keeps tabular totals together. `.is-future` and `.user-chip--loading` use muted text; `.palette-esc` does not shrink; `.state--error` has an error boundary. `.kpis--4` fixes four equal columns at desktop widths, retaining auto-fit and the two-column phone layout below that.
+
+Intentional structural hooks without separate rules: `.budget-bars` and `.line-chart` inherit `.chart`; `.swatch--spent` inherits `.swatch` (the first series colour); `.toolbar--wrap` inherits the wrapping `.toolbar`; `.state--empty` inherits `.state`. These hooks do not need empty CSS declarations.
+
+## V0.3 additions
+
+Status: proposal from design Pane D0, for the page design Panes D1–D5 and the V0.3 build Panes. Reference page: [mockups/components-v03.html](mockups/components-v03.html), with screenshots `shots/components-v03-{1440,390}-{light,dark}.png`. Every new class lives in [v03.css](v03.css). That file loads after the three production stylesheets, and build Panes move it into `src/styles/` as described in its header. The live system is v2 iteration 2: 12px cards, 8px controls, 14px overlays, the `--c-*` categorical palette, and transform/opacity motion. It supersedes the 4px radius and the "no animation" lines above. Everything below builds on iteration 2.
+
+### Brand typography decision
+
+**cseed.co returns as a second register, used on a few surfaces, not as the app's typeface.** The dashboard keeps system sans for all work. Three brand faces come back, each with one job, and only on brand surfaces:
+
+| Role | Token | Face | Rules |
+|---|---|---|---|
+| Display | `--font-display` | Playfair Display 400, with italic for one word at most | 56/36/28/22px (`.display--xl/l/m/s`), tracking −0.035 to −0.01em. Lowercase CSEED voice ("hey alex, welcome in."). Never on buttons, labels, numbers or tables. |
+| Brand body | `--font-brand` | Poppins 400/500 | Running copy at 16px with line height 1.65 (`.brand-lede`), never below 14px. Onboarding and the gallery intro only. Not the landing page's 275 weight, which is too light for UI. |
+| Brand mono | `--font-mono-brand` | Anonymous Pro 400 | 13px lowercase eyebrows, step counters ("02 / 06") and polaroid captions (`.brand-eyebrow`). Identifiers keep the system mono. |
+| Work | `--font` | System sans | Unchanged: tables, forms, Kanban, calendar, widgets, nav, dialogs. |
+
+**Where the brand shows:**
+- **Brand-forward:** onboarding (paper ground, display headline, highlighter, polaroid collage), the widget gallery sheet (paper, display title, polaroid-framed previews) and first-run empty states (`.state--brand`).
+- **One brand line on a work page:** the Home greeting may set `h1.display`.
+- **Calm:** the Members table, Officers directory, Kanban, calendar, finance and admin use no brand faces, no paper and no polaroids.
+
+**Loading.** The fonts are self-hosted latin-subset woff2 files (OFL), 93 KB for all five. They are now in `web/design/fonts/`, and the build Pane copies them to `web/public/fonts/` with `font-display: swap`. Browsers fetch a face only when text uses it, so work pages download nothing. Preload Playfair and Poppins on `/onboarding` only. The old rule against remote fonts still holds, because these files are served from our origin.
+
+**Highlighter.** `.mark` draws a solid `--seed` stroke behind one or two display words, rotated −1.2°. Ink on yellow measures 10.64:1. It is static and never animates. Use at most one per screen.
+
+### New tokens
+
+Both themes are in `v03.css` (`:root`, `[data-theme="dark"]`, and system dark), and the measured ratios are in [contrast.md](contrast.md).
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--paper` | `#e4e3e1` | `#1a1916` | Brand ground: onboarding, gallery, `.state--brand`. Never behind tables. |
+| `--paper-raised` | `#f4f4f4` | `#24231f` | Fields and raised panels on paper |
+| `--brand-ink` / `--brand-ink-soft` | `#141414` / `#3d3d3d` | `#f1efe8` / `#c4c1b8` | Text on paper |
+| `--brand-control` | `#76756f` | `#87847c` | Field and button borders on paper (≥ 3:1) |
+| `--brand-line` | `#c9c8c3` | `#3a3833` | Decorative rules and the progress track |
+| `--seed` | `#f5e530` | same | Highlighter stroke only |
+| `--polaroid`, `--polaroid-shadow` | `#fff` | `#e8e6df` | Photo frames, which stay light in dark mode because they are objects |
+| `--role-leadership-bg` / `-ink` | `#f5d140` / `#202320` | same | Leadership badge |
+| `--widget-cols`, `--widget-row`, `--widget-gap`, `--radius-widget` | 4, 168px, 16px, 16px | phone: 2, 156px, 12px | Widget grid |
+| `--ease-soft`, `--dur-step` 420ms, `--dur-reveal` 900ms, `--stagger` 120ms, `--rise` 24px, `--wiggle` 0.5deg | | | Brand motion, taken from cseed.co `motion.css`: slow, soft, no bounce |
+| `--overlay-shadow` | | | Lifted widget, dragged card, gallery sheet |
+
+Yellow's role widens slightly. It stays decorative everywhere except where ink text sits on it (the leadership badge and the highlighter). It is never a button fill and never text.
+
+### Component contract (V0.3)
+
+| Component | Classes and state contract |
+|---|---|
+| Role badge | `.role-badge[data-role=officer\|director\|leadership]`, `.role-badge--sm`. Officer has a blue dot and director a violet dot, matching `ROLE_HUE` in `src/lib/colors.ts`. Leadership is an ink label on `--role-leadership-bg` with an ink diamond instead of the dot, so rank never depends on colour alone. The label is always written. `.role-toggle-opt[data-role=leadership]` adds the third option, which is `disabled` with an `aria-describedby` hint for anyone below leadership. Badges go in the people table's role column, the profile drawer and the user chip. |
+| Widget grid | `ul.widget-grid` > `li.widget.widget--s\|m\|l[data-hue]`. S is 1×1, M is 2×1 and L is 2×2 on 4 columns (2 on phone, where S stays half width). The flow is `row dense`. Parts: `.widget-head` > `.widget-icon` + `.widget-title` + optional `.widget-link`, then `.widget-body` (`.widget-figure`, `.widget-sub`, `.widget-split` for figure + sparkline, `.widget-list`), then `.widget-foot`. A disconnected or empty widget uses `.widget-state` > `.widget-state-title` + `.widget-state-body` + a link, saying "Not connected" in words, never "0". Each `li` gets `aria-label` set to the widget name. |
+| Widget edit mode | `.widget-grid.is-editing`, preceded by `.edit-bar` (`.edit-bar-title`, `.edit-bar-hint`, Add widget plus a primary Done button). Each widget holds `.widget-edit` > `button.widget-handle` (grip; its name says "Move …; arrow keys move it, Enter drops it"), `.widget-label`, `button.widget-remove` ("Remove …") and `.widget-sizes[role=group]` > `button.widget-size[aria-pressed]` (sizes the widget does not support are `disabled`). Content dims to 42% and turns inert. `.widget.is-lifted` marks the one being dragged, `li.widget-slot` (with `--span-c` and `--span-r`) its drop target, and `button.widget-add` the add tile that ends the grid. Announce moves in a polite live region ("Next event, position 3 of 6"). Changes save to `user_prefs` on Done. Removing a widget needs no confirmation and shows "Removed Web Analytics · Undo" in a `.toast`. |
+| Widget gallery | Native `dialog.gallery` > `.gallery-inner` > `.gallery-head` (`.brand-eyebrow`, `h2.display.display--l` with an optional `.mark`, close button, `.brand-lede`), `.gallery-cats` (chips), and `.gallery-body` > `ul.gallery-grid` > `li.gallery-item[style=--tilt]`. Each item holds `.gallery-preview` (a polaroid frame around a real `.widget` at M size, `aria-hidden`), `.gallery-name`, `.gallery-sub` and `.gallery-actions` (sizes plus an Add button, or `.gallery-added` "On your home" once `.is-added`). It is a centred 920px sheet on desktop and a bottom sheet at 92dvh on phone. Cloudflare widgets appear even with no token and say so in `.gallery-sub`. |
+| Kanban | `.kanban[role=region][tabindex=0]` (it scrolls locally, never the page) > `section.kanban-col[data-stage=new\|accepted\|in-progress\|in-review\|delivered]` > `.kanban-col-head` (`h3.kanban-col-name`, `.kanban-count`) + `ul.kanban-list` > `li.kanban-card`. A card holds `.kanban-card-title` (a link to the detail drawer), `.kanban-card-meta` (`.kanban-tag[data-hue]` for the type, `.kanban-due` with `.is-soon` or `.is-overdue` and the word "Overdue"), an optional `.kanban-link` to the linked event, and `.kanban-card-foot` (`.kanban-people` avatars or `.kanban-unassigned`, plus a ⋯ menu). States: `.kanban-card.is-dragging`, `li.kanban-drop` placeholder, and `.kanban-empty` text in an empty column. Stage hues are grey, blue, amber, violet and green, shown as dots only. Columns are minmax(200px, 1fr), so five fit at 1440. On phone each column is 84% wide with scroll snap. **Keyboard and touch:** the ⋯ menu has "Move to → stage" and that is the accessible path; dragging is an enhancement. |
+| Calendar month | `.cal` > `.cal-head` (`.cal-nav` with prev/next `icon-btn`, `h3.cal-title`, Today, and `.segmented` Month/Week/List) + `.cal-month[role=grid]` > `.cal-dow` × 7 (Monday first) + `.cal-day[role=gridcell]` with `.is-outside`, `.is-today` (ink disc on the date) and `.is-selected`. Each day holds `.cal-date` and up to two `a.cal-event[data-hue]` (`.cal-event-time`, `.cal-event-title`, `.is-draft` outlined), then `button.cal-more`. Event hue = team. On phone, day cells show `.cal-dots` and the selected day's events list below in `ul.cal-agenda`. Every day cell's `aria-label` includes the date and the event count. |
+| Calendar week | `.cal-week` (52px gutter + 7 columns, `--slot` 22px per 30 minutes, `--rows` set on `.cal-gutter` and `.cal-col`) > `.cal-week-corner`, `.cal-week-day` (`.is-today`), `.cal-gutter` > `.cal-hour`, and `.cal-col` > `.cal-block[data-hue][style=--start;--len]` (`.cal-block-title`, `.cal-block-time`) plus `.cal-now[style=--now]`. The default span is 9 am to 9 pm. On phone the week view is replaced by the agenda. |
+| Onboarding shell | `.onb` (fixed, full screen, paper, Poppins) > `.onb-top` (wordmark, `ol.onb-progress[aria-label="Setup progress, step N of 6"]` > `li.onb-seg` with `.is-done` or `[aria-current=step]`, and `.onb-count` in brand mono, `aria-hidden`) + `.onb-main` (two columns with `.onb-art`, or `.onb-main--single`) > `.onb-step` (`.brand-eyebrow`, `h1/h2.display.onb-title[tabindex=-1]`, `.brand-lede.onb-lede`, `.onb-form`, `dl.onb-prefill`, `ul.onb-checks`) + `.onb-foot` (Back as `btn--text`, primary Continue, and `.onb-skip` "Finish later" on desktop). `.onb-art` > `figure.polaroid[style=--tilt]` with `img` and `figcaption`. The art is hidden below 1100px. On phone the foot sticks to the bottom with the safe-area inset and the primary button fills it. `.onb--framed` exists for mockups only. Steps: hello → confirm (pre-filled name, subteam and Discord ID are read-only, "Pre-filled by <inviter> when they invited you", corrections go back through the inviter's Discord invite; the inviter may be a director or leadership) → profile (phone and birthday required; phone hint "Visible to directors and leadership only") → calendar (email picker + delivery mode) → widgets (`fieldset` of checkbox `.choice` cards with a polite live count; see D2 note) → done. The invalid-invite screen is `.onb-main--single` with progress, count, art and foot hidden and a single "Return to sign in" button. |
+| Onboarding motion | Add `.onb-step.is-entering` / `.is-leaving`, and `.onb[data-dir=back]` to mirror. Content enters with a 420ms rise and slide, staggered 120ms (headline, lede, form). The old step leaves in 240ms. Progress fills in 320ms. Polaroids settle over 900ms with a 120ms stagger. The highlighter never animates. There is no confetti and no loops. **Reduced motion:** `base.css` removes every animation and transition, and `v03.css` restates the end states (opacity 1, final tilt), so steps swap instantly. In both modes, focus moves to the new step's heading after each step change. |
+| Calendar-email picker | `.email-picker` > `.field-label` + `button.email-picker-btn[aria-haspopup=listbox][aria-expanded]` (`.email-picker-value`, `.email-picker-chev`) + `ul.email-picker-list[role=listbox]` (`--float` when overlaying) > `li.email-option[role=option][aria-selected]` (`.email-option-check`, `.email-option-text`, optional `.email-option-tag`) + `li.email-option--add` "Add another…". At 5 saved, the add option is `aria-disabled="true"` and followed by `.email-picker-note` ("5 of 5 saved. Remove one in Settings to add another."). Choosing add swaps it for `form.email-picker-add` (input, Save, Cancel, and a "4 of 5 after saving" note). `.email-picker-count` sits below the button. Keyboard follows the select-only combobox pattern: arrows, Home/End, Enter and Escape. Removal lives in Settings, not in the picker. |
+| Invite dialog | A native `.dialog` with heading "Invite an officer". **Ready:** Name, Discord ID (mono, with a hint on how to copy it), Subteam, and `fieldset` > `.invite-delivery` with two checkbox `.choice` cards, Discord DM and Copy link; at least one must stay checked. **Sending:** a `.facts` summary, then `.invite-status[role=status]` with a `.spinner` and "Sending DM to Taylor…", and the primary button disabled as "Sending…". The spinner turns into a static ring under reduced motion, and the text carries the state. **Sent:** `.invite-status--sent` reading "DM sent ✓ <time>4:12 PM</time>", the `.invite-link` row (mono `code` + Copy link) with `.invite-copied` "Link copied ✓", and the buttons Done and Invite another. **Failed:** `.invite-status--failed[role=alert]` gives the reason in plain words and keeps the link as a fallback, with Retry DM. The Officers table shows the same "DM sent ✓ Nov 1, 4:12 PM" in the invitee's status cell. |
+| Brand empty state | `.state.state--brand` (paper, Playfair 24px `.state-title`) with optional `.state-photos` > two `figure.polaroid`. Use it only for first-run emptiness (no design requests, no speakers, empty home). Filtered-to-nothing results keep the plain `.state`. |
+
+### Rules for D1–D5
+
+- Reuse v2 classes first. Add a class only when a page truly needs one, and add it to `v03.css` and this table in the same PR.
+- Brand register: onboarding (D2) is the most brand-forward surface. The gallery and empty states (D1, D5) come next. Officers, Members, Events, Speakers and the Kanban (D3–D5) stay on the work register.
+- Photos come from cseed.co (`web/design/img/` holds three for mockups). The build uses real club photos with `alt=""` when they are decorative. Never use stock imagery.
+- Both themes, 1440 and 390, with no page-level horizontal scroll: `node web/design/capture.mjs <page>` captures just your page and fails on overflow.
+- Phone principal controls stay at least 44px. The widget handle and remove button grow to 40 and 36px on phone, and the size buttons sit in the same 44px row.
+
+### Events V0.3 page contract
+
+Reference: `mockups/events-v03.html`, generated with `python3 web/design/build-events-v03.py` using the v2 builder helpers. The work register applies throughout. `.event-copy` lays out a field/value and its copy button (stacked on phone); `.event-cover` bounds the cover preview to 240px. Both live in `v03.css`. Native dialogs lock background scroll and retain Escape/focus return. Month and week use the shared calendar styling (month is a labelled group rather than an interactive ARIA grid); phone week uses its agenda. The month phone agenda lists the month's scheduled events rather than requiring precision taps on small date cells.
+
+Every officer can create/edit/delete events, import CSV, and request design; directors, leadership and leadership with owner status share those event actions. Ownership adds no event-specific power. The role selector demonstrates that equivalence. Luma publication is manual: field copies, cover download, external create link, and validated HTTPS lu.ma/luma.com URL entry. Linked means URL saved, never attendee sync. Notion is disabled and labelled Coming soon. Event health distinguishes registrations, check-ins and reflections and gives CSV freshness. CSV preview includes a blocking row error; correction precedes import. The design request starts with the event title, formats, due date and brief prefilled. Delete requires confirmation and explains the separate Luma step.
+
+Preview controls are illustrative and have no persistence. Current sample cover is an existing CSEED photo, explicitly awaiting approved event artwork. No Luma or Notion API is called. Calendar navigation is fixed to November 2026 in this fixture. Empty/loading/error examples replace the active populated view; their controls and role selection are review tools outside the intended production layout. Only Founder stories opens the working editor/kit; the remaining records are contextual samples. Cover download is used instead of clipboard image copy because the next Luma step is file upload. Background scroll lock and hidden-state rules are scoped to `.events-v03`.
+
+Events contrast is measured on rendered elements, not tokens: `capture-events-v03.mjs` samples the computed colour of every visible text node and form value/placeholder in each captured state (list, month, week, every dialog, invalid/linked URL, empty/loading/error, deleted) against its composited background, in both themes and at 1440 and 390, and fails below 4.5:1 (3:1 for large text). Disabled controls are exempt. Results are in `shots/validation-events-v03-details.json`. This surfaced one shared defect: the browser-default placeholder colour measured 3.61:1 on the dark surface. `v03.css` now sets `.input::placeholder, .textarea::placeholder` to `--muted`, and production `src/styles` should adopt the same rule.
+
+Fixture details: empty/loading/error hide event health and the view toggle, and they retitle the heading. "Create first event" and "New event" open a blank editor without Delete. After a delete, focus moves to the period heading, every Founder stories entry is hidden (list, month cell, month and week agendas, week block) and a status note repeats the separate Luma step. Contextual calendar events are non-interactive `span.cal-event` (with `cursor:default`) rather than disabled buttons. Day cells carry no `aria-label`. Copy buttons keep their field name ("Copied name ✓") and revert after 2.5s.
+
+Open for implementation: the fixture's Luma check accepts any non-root, non-`/create` path on lu.ma/luma.com (including `/discover` and `/calendar`). The real form needs a stricter event-slug rule or a server-side check.
+
+### D2 onboarding page additions
+
+Reference: [mockups/onboarding-v03.html](mockups/onboarding-v03.html), interaction and state details in [onboarding-notes.md](onboarding-notes.md). Reuses `.onb-*`, `.polaroid`, form, choice, role and feedback contracts above. Page-local `.onb-review` is a wrapping design-preview strip for step/state/role examples and is omitted from production. The page `<style>` holds only the review strip and the four-row grid it needs. Production rules live in `v03.css` under the D2 block: paper `.onb-form .choice` cards (`--paper-raised`, `--brand-control` border, 64px), the `.onb-prefill` definition grid, `.onb-form details/summary` disclosure, 44px `.onb-form .btn`, `.onb .field-hint` in `--brand-ink-soft` (8.47:1 on light paper), the phone single column and 36px title, the two `.onb-art` polaroid sizes, and `[hidden]` overrides for `.onb-art/.onb-foot/.onb-progress/.onb-count`. No new tokens. Widgets use checkbox choice cards instead of polaroid `.gallery-item` previews: real checkboxes give native keyboard and screen-reader semantics, and previews of unconnected widgets would show empty frames. Revisit once widget previews exist. Native `.select` is used for this onboarding email picker so its keyboard behavior comes from the browser; the custom listbox contract remains available for the Officers page.
+
+### D5 page fixtures
+
+`build-speakers-design.py` reuses the shell/helpers from `build-mockups.py` without regenerating the existing pages. It builds `mockups/speakers-v03.html` and `mockups/design-requests-v03.html`; both load `v03.css` after production CSS. No new component classes or tokens are needed. Work pages retain system sans; first-run empty states use `.state--brand`.
+
+Preview controls expose Ready / Empty / Loading / Error and officer / director / leadership / owner. All ranks can edit contacts and log outreach. Ownership is an additional designation, not a new permission tier for these pages. Design assignment follows design-team membership; requester identity controls review approval independently of rank. The detail's “Acting as” selector demonstrates that distinction. Designer actions use a native dialog and stage select, providing the touch/keyboard alternative to dragging. Comments, creation and saving announce prototype confirmation without writing to an API. Delivered filenames are illustrative, not downloadable artifacts.
+
+Contacts show dated outreach independently from general notes and linked past events. “Last reached out by” derives from the latest dated log entry, not the latest profile edit. Reserved `.example` addresses prevent sample contacts being mistaken for real contact information. The board uses all five contracted stages, written urgency, formats and linked events; the List toggle exposes the same requests as labelled phone records. Native dialogs close the previous drawer when opening a nested flow, support Escape and preserve native focus handling. Production must retain drafts across network failure and restore origin focus after nested flows.
+
+Review: `node web/design/capture.mjs speakers-v03 design-requests-v03` captures both themes at 1440/390 and checks 820 as well. Use each page's preview controls and buttons to inspect the remaining states. Open design questions: none; the build should confirm membership in the design team and current requester from authenticated data.
+
+`node web/design/verify-speakers-design.mjs` exercises the role and data-state selectors, contact/add/outreach drawers, request form, requester-only approval and phone list in both themes at 1440/390 (92 checks). It also captures each flow in `shots/`. All label controls include explicit accessible names, including selects whose option text would otherwise obscure the label in automation.
+
+**Build notes (Design Requests, Pane F).** The page loads `src/styles/design-requests.css`, which carries the Kanban and `.state--brand` rules from `v03.css` plus the few tokens they need, so no shared stylesheet changes. Page-local additions: `.kanban-card-sub` (formats line), `.kanban-col.is-over` (drop target while dragging), and the drawer helpers `.design-prose` (pre-wrapped brief, references and comments), `.design-actions`, `.design-worker` (Designer actions panel) and `.design-upload`. Phones open on the List view; the board stays one tap away. The mockup's "Acting as" selector is replaced by real permissions from the API (`DesignRequestDetail.permissions`).
+
+### Home V0.3 design fixture (D1)
+
+`python3 web/design/build-home-v03.py` rebuilds `mockups/home-v03.html` using the existing shell builder. `home-v03.css` and `home-v03.js` are design-only assets; no application files change. Run `node web/design/capture.mjs home-v03`, then `node web/design/verify-home-v03.mjs` for interaction checks and the extra captures (`home-v03-<state>-*`, `home-v03-role-<role>-*`, `home-v03-edit-*`, `home-v03-lift-*`, `home-v03-gallery-*`). URL parameters: `role`, `state` (`disconnected|connected|empty|loading|error|mixed`), `mode=edit|gallery`, and `lift=<id>&slot=<index>` for a lifted widget with its drop slot.
+
+**Layout and sizes.** Home uses the shared S/M/L grid and gallery. The default layout is the five existing home cards, Web Analytics (on by default, L) and D1 Member signups (S). S shows one summary (plus the sync time for synced widgets), M the principal metrics, L adds breakdowns: Web Analytics top pages/referrers/countries; Traffic threats by action and requests by country; Performance per-page p75 with an "Insufficient samples" row; Workers/D1 daily request bars (text equivalent in `.visually-hidden`) and storage; My actions the full list. Every widget supports every size. L content fits the 2×2 cell; widget bodies never scroll.
+
+**Sync and connection states.** Cloudflare/D1 start at **Not connected**, never zero. One vocabulary drives the page line under the grid and the widget footers: connected "Synced daily, last 7:02 AM"; not connected "Not connected · syncs daily once leadership connects cseed.co"; loading "Checking today's sync…"; error "Sync failed 7:02 AM · no earlier snapshot"; mixed "Stale · Oct 31, 7:02 AM". A not-connected L widget shows a preview of the metric names it will hold (no numbers), so the default first view is not a blank card. "Connection details" is a `<details>` inside the widget and is role-aware: leadership/owner see which deployment config to set (`CLOUDFLARE_API_TOKEN`, D1 account/database/token); officers and directors are told leadership connects it. There is no token-entry form.
+
+**States.** Loading sets `aria-busy="true"` on each `li` with `.skel--kpi`/`.skel--row` placeholders and visually hidden "Loading <widget>". Error adds `.state--error` on the `li` (negative border) and a `.badge--negative` "Failed"; synced widgets say "Sync failed", club widgets "Couldn't load", both with Retry. **Mixed** is the realistic failure: club cards are normal and synced widgets show the previous snapshot under a "Stale" badge with its timestamp. Empty means connected with no records, never inferred from a missing connection.
+
+**Roles.** My actions differs by role: officer (own follow-ups, design approvals, receipts), director (purchase reviews for their scope, the invite "DM sent ✓" item, member-record fixes), leadership (club-wide approvals, role changes, leadership grants), owner (leadership plus an ownership item). Member signups L links officers to "View members" and director+ to "Edit member records". Owner is leadership plus a written Owner label, not a fourth rank. Analytics are readable by all four. The role explanation is a design annotation inside the dashed `.home-preview` box, not product UI.
+
+**Edit mode.** The `.edit-bar` holds Add widget and Done (the toolbar's Add widget hides while editing). Grips support drag, touch drag and keyboard reorder (arrows move one place, Enter/Space lifts or drops); moves announce position and the preceding neighbour. While dragging, the widget gets `.is-lifted` and an `li.widget-slot` with the dragged widget's `--span-c/--span-r` marks the drop target. Footers hide while editing so the size pill never covers text; on phone, S labels wrap to two lines and S links hide. Size buttons are named Small/Medium/Large. Remove shows an Undo toast that auto-dismisses after 8s and clears on Done. Done simulates saving; production persists `user_prefs` server-side. No localStorage layout.
+
+**Gallery.** Native modal, Escape, focus return and background scroll lock. Each polaroid holds a real `.widget.widget--m` with the S summary of the connected sample, labelled "Sample" for synced widgets; `.gallery-sub` states the token requirement and "Not connected yet". Adding keeps the sheet open and moves focus to the next Add button.
+
+Design-only classes (in `home-v03.css`, no new colour tokens): `.home-preview` and `.home-role-note` (preview controls and role annotation); `.home-widgets` scopes Home density; `.home-details` holds L-only breakdowns and `.home-detail-hint` points to them at smaller sizes; `.home-metrics` (`--3` for three columns) groups numeric pairs; `.home-analytics` (`--2`) lays out breakdown groups with `.home-sub-head`; `.home-bars` is the usage column chart; `.home-connect` is the connection-details disclosure; `.home-ghost`/`.home-ghost-list` the not-connected preview; `.home-add-slot` keeps the add tile inside valid list markup. For the shared gallery's flex column, Home keeps the header and categories from shrinking and gives the body `min-height:0`.
+
+Open design questions: none. Account persistence and connection setup are implementation work.
+
+### V0.4 Home block grid
+
+Supersedes the V0.3 "Widget grid", "Widget edit mode" and "Widget gallery" rows above and the S/M/L sizing in the Home V0.3 fixture. Reference: [mockups/home-v04.html](mockups/home-v04.html) (`?mode=edit`, `?mode=edit&drag=<id>`, `?mode=edit&gallery=1`, `?theme=dark`). Production rules live in `src/styles/home-grid.css`; the mockup loads that file directly, so the mockup and the app cannot drift.
+
+**Grid.** Home is a grid of square-ish base blocks: `.blocks-wrap` (size container) > `ul.blocks[aria-label="Home widgets"]` > `li.blk[data-widget][data-w][data-h]`. Four columns when Home is at least 600px wide, two below that; between 600 and 959px, 2×2 widgets take the full row and 1×2 widgets use a 2×1 footprint so tables and feeds stay readable without leaving a hole beside two stat tiles (the container width decides, not the viewport, so the sidebar never forces four cramped columns). Rows are `minmax(--block-row, auto)`: 152px (136px on two columns) at minimum, growing only if content needs it, so nothing is clipped and widgets never scroll inside. Flow is `row dense`: later small widgets fill holes left by larger ones. On two columns, anything two blocks tall or four wide takes the full row and 1×1 tiles pair up.
+
+**Sizes.** A size is `W×H` blocks: `1x1`, `2x1`, `1x2`, `2x2`, `4x1`, `4x2`. Each widget declares the sizes it supports and a default:
+
+| Widget | Sizes | Default |
+|---|---|---|
+| Stat tiles: upcoming events, avg check-in rate, reflection rate, budget remaining, pending requests (formerly the one "Key figures" row) | 1×1, 2×1 | 1×1 |
+| My actions, Recent events, Budget vs actual | 2×2, 4×2 | 2×2 |
+| Activity | 1×2, 2×2, 4×2 | 1×2 |
+| Web Analytics | 1×1 summary, 2×2 detail, 4×2 detail with breakdowns | 1×1 |
+| Traffic & security, Performance, Workers/D1, Member signups | 1×1 summary, 2×2 detail | 1×1 |
+
+The default layout fills a clean 4×5 rectangle on desktop: four stat tiles; My actions and Recent events (2×2 each); Budget vs actual (2×2), Activity (1×2), Pending requests and Web Analytics (1×1 each).
+
+**Tile.** Every widget is one `.tile` (solid 1px `--line` border, `--radius-widget`, a faint shadow, `--surface`): `.tile-head` (`h2.tile-title`, optional `.tile-link`) then `.tile-body`. Stat tiles are `a.tile.tile--stat` (the whole tile is the link) holding `.kpi-head`, `.kpi-value`, optional `.kpi-trend` and `.kpi-sub`. `.state` empty states inside a tile drop their own frame. Cloudflare widgets render as `.tile.cf-widget` with the detail level taken from the size (1×1 summary, 2×2 principal metrics, 4×2 plus breakdowns).
+
+**No dashed borders on Home**, in view or edit mode. Edit state, drop targets and the add tile use solid edges, soft fills and shadows.
+
+**Edit mode.** "Edit home" turns the toolbar into a sticky `.blocks-bar.is-editing` ("Arrange your home", a hint, Add widget, Cancel, primary Done) and adds `.is-editing` to the grid. Each tile gets a soft blue ring, its content dims to 38% and turns inert, and `.blk-tools` overlays: `button.blk-handle` (grip), `.blk-name`, `button.blk-remove` ("Remove <name>"), and `.blk-sizes[role=group]` > `button.blk-size[aria-pressed]` labelled "1×1" with the accessible name "1 by 1 blocks"; only the widget's allowed sizes appear. Tile surfaces sway ±0.3° over 3.2s with staggered phases while the controls on top hold still; reduced motion removes the sway and keeps every control. The grid ends with `button.blk-add` (solid border, `--sunken` fill, "Add widget · N available"), placed explicitly just past the last occupied cell so it never fills a gap above a widget.
+
+**Reorder.** Pointer drag (mouse, pen and touch) on the grip: the widget's own cell becomes the drop target as a soft filled highlight (`.blk.is-dragging`, `--block-drop` fill with an inset ring) and a lifted `.blk-float` card with the name and size follows the pointer; crossing another widget moves the target there. Escape cancels the drag. Keyboard: on a focused grip, arrow keys move one place (Left/Up earlier, Right/Down later), Home/End to the ends; focus stays on the grip, the moved tile flashes the same fill, and a polite live region says "Recent events, position 3 of 10".
+
+**Add.** Add widget opens `dialog.blk-gallery` (native modal; Escape and focus return): one `.blk-gallery-item` per widget not on Home, with its name, the sizes it supports as text plus decorative `.blk-glyph` footprints, and "Add <name>". Adding uses the widget's smallest allowed size and places it in the free spot closest to the top that fits (rows top to bottom, then left to right; the end of the grid only when no gap fits) without moving any other widget; it is saved last in the order, which Home's dense packing puts in that same spot on reload. The sheet stays open. A bottom sheet on phone.
+
+**Persistence and migration.** Done saves `{widgetLayout: [{id, size}]}` to `PUT /api/me/prefs` (array order is visual order); Cancel restores the saved layout. Layouts saved before V0.4 use S/M/L and the single `kpis` widget; the web client migrates them in code on load: `kpis` expands in place into the five 1×1 stat tiles, S becomes the smallest allowed size, M becomes 2×2 (or the nearest allowed size), L becomes 4×2 (or the largest allowed), and a size a widget does not support snaps to its nearest allowed size. Unknown widget IDs are kept and shown in edit mode as "Unavailable widget". Home automatically saves the converted layout once on first load when the stored format is legacy; ordinary V0.4 loads do not write preferences. If that save fails, an error offers a manual retry through Edit home and Done; the server still accepts S/M/L so an old open tab can save.
+
+### D3 · Officers and Members fixtures
+
+`mockups/officers-v03.html` and `mockups/members-v03.html` are generated with
+`python3 web/design/build-people.py`, which reuses the `build-mockups.py` shell. Rows render
+in `people-preview.js` from one embedded JSON sample, so the directory, drawers, filters and
+confirm steps always agree. `node web/design/check-people.mjs` (from the repo root) asserts the
+contract below at 1440 and 390 in both themes and captures the overlay screenshots.
+No new color tokens or fonts. Brand typography and imagery stay off these work pages.
+
+**Classes added in `v03.css`.** `.people-group` (a subteam section with a fixed column grid at
+desktop widths). `.people-cell` wraps each cell's value and secondary text; on phones it sits
+beside a fixed 90px label. `.prototype-toggle` sets prototype-only switches (such as "make the DM
+fail") apart from real actions with a dashed rule. Row names reuse `.linkish.cell-title`: every
+row opens its record, and on phones the name is a 44px target.
+
+**Roles.** Officer: directory and profiles without phone. Director+: phone, invites, invite list,
+member edit and CSV export. Leadership: role change, deactivate and reactivate, never on their own
+record. An owner's role can only be changed by an owner. Owner: make co-owner (which grants
+leadership), transfer ownership and remove owner status; the last owner cannot be removed. The
+server enforces all of this and omits phone from officer responses.
+
+**Overlays.** Profiles and records are `.drawer`s. Invites and every confirm step are centred
+`.dialog`s with a normal `.action-row`, never a drawer on a drawer. Dialogs are labelled by their
+`h2` (`aria-labelledby`), focus the first useful control, close on Escape, return focus to the
+trigger and lock background scroll. A result is announced once: in the open dialog's
+`[data-result]` status, otherwise in the page notice.
+
+**Officers.** States: ready, no officers yet (only the bootstrap owner, with an Invite CTA for
+director+), loading, error, and filtered to nothing. Filters: text, subteam, role (including Owner)
+and status (Active, Deactivated). The role picker preselects the current role; Review stays
+disabled until it changes. The invite list shows sent time and expiry (7 days), delivery, status
+(Awaiting sign-in, DM failed, Expired, Accepted, Revoked) and Resend, Retry DM, Copy link,
+Revoke or Remove. My profile holds the calendar picker (native select, five-address limit) with the
+saved-address list and its Remove buttons beside it, outside the picker.
+
+**Members.** A 25-row server pagination contract (1,086 in the sample; 8 drawn). Search and
+filters run on the server; CSV covers all matching records and is recorded in the audit log.
+Edit needs a changed field and an audit note. The confirm dialog lists only the changed fields
+(current → new), the write target, the note and the actor. A failed write keeps the dialog
+and the edits, with an alert. A successful write refreshes the mirror. States: ready, empty
+(no matches), loading, page error (table hidden, filters kept), **sync failed** (the last mirror
+stays visible with its date, the banner uses `notice--attention`, and edits pause) and **not
+connected** (no credentials and no mirror: say so, never show a zero count). Never replace a
+failed sync with an empty directory.
+
+## V0.4 Design page
+
+Reference: [mockups/design-v04.html](mockups/design-v04.html) (`python3 web/design/build-design-v04.py`, captured with `node web/design/capture.mjs design-v04` into `shots/design-v04-{1440,390}-{light,dark}.png`). The page title becomes **Design**. Classes live in `src/styles/design-requests.css`, which the mockup loads directly, so there is one copy.
+
+Order: toolbar (New design request; `.segmented` Board / List / My work), then the upcoming events rail, then the summary filters and the board, list or My work. Work register throughout; the brand touches are the Anonymous Pro `.brand-eyebrow` ("next six weeks") beside the rail heading and a 3px `--seed` edge on events that still need design (decorative; the state is always written).
+
+| Component | Classes and state contract |
+|---|---|
+| Upcoming events rail | `section.design-rail` > `.design-rail-head` (`h2.design-rail-title` + eyebrow, `.design-rail-note` "**3 need design** · 2 requested · 1 done", or "Nothing needs design") + `ul.design-rail-list[tabindex=0]` (horizontal scroller; 82% wide snapping tiles on phone) > `li.rail-event[data-need=needs\|requested\|done\|not-needed]`. A tile holds `.rail-date` (month, day, weekday; `aria-hidden`, with the date repeated in visually hidden text), `.rail-title` (link to the event), `.rail-sub` (status: Draft in italics or Published, then team · host or "No host yet"), the indicator, and `.rail-actions`. Empty: `.rail-empty` with a link to Events. |
+| Design indicator | `span.design-need[data-need]`: a 7px dot plus the written state. Needs design (amber), Requested (blue, followed by `.design-need-sub` "In progress · Jordan" or "2 requests open"), Done (green), Not needed (hollow ring, muted text). Never a filled capsule. |
+| Rail actions | Needs design: a hairline `Request design` button (opens the prefilled request) and, for director+ or the event's host only, `Mark not needed` (`.linkish`). Requested: Open request, Request another. Done: See delivered files. Not needed: Needs design after all (anyone). |
+| Summary filters | `.design-summary` > `.design-filters[role=group]` > `button.design-filter[aria-pressed][data-filter=all\|mine\|unassigned\|due]` with `.design-filter-n` (Due soon's count is `.is-alert`), then `label.design-type` with a type `select`. Filters and type live in the URL (`?filter=`, `?type=`) and apply to Board and List. Mine = assigned to me or requested by me. A filter that empties the board shows a plain `.state` with Clear filters. |
+| Card (V0.4) | `.kanban-card-top` (title + `.urgent-flag` "High" with a small triangle, open work only), `.kanban-card-meta` (type tag + `.due-chip` with `.is-soon`, `.is-overdue` or `.is-none` and the words "Due soon"/"Overdue"/"No due date"; delivered cards say "Delivered"), `p.kanban-event` (event link + `.kanban-event-when` date), foot (avatar + name, then the actions trigger). `.kanban-card.is-mine` draws a 3px ink inset edge on cards assigned to the viewer. |
+| Actions trigger | The bare "⋯" on cards is replaced by a labelled `button.card-actions` "Actions ▾" (40px tall on phone). Its `.row-menu-list.is-floating` is `position: fixed`, placed from the button and flipped upward near the bottom edge, so the Kanban's horizontal scroller can no longer clip it; it follows its button when the page or board scrolls. Tables keep the "⋯" row menu. |
+| My work | `.mywork` > `section.mywork-section` (`h3.mywork-head` + count) > `ul.mywork-list` of the same cards (one column on phone). Sections: Assigned to you (designers), Waiting on your approval, Your open requests, Up for grabs (designers and director+). Nearest due first. |
+
+Times: dates use the `src/lib/format.ts` helpers, which follow the viewer's effective time zone (`src/lib/timezone.ts`); the board line reads "Deadlines shown in <effective zone>". No zones are hard-coded.

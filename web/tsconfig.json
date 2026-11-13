@@ -1,0 +1,12 @@
+{
+  "extends": "astro/tsconfigs/strict.json",
+  "include": [".astro/types.d.ts", "**/*"],
+  "exclude": ["dist", "node_modules", "tmp", "test-results", "playwright-report"],
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "types": ["node"]
+  }
+}

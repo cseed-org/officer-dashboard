@@ -1,0 +1,9 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+import DesignPage from '../ui/pages/DesignPage';
+import '../styles/design-requests.css';
+---
+
+<AppLayout title="Design" page="design">
+  <DesignPage client:load />
+</AppLayout>

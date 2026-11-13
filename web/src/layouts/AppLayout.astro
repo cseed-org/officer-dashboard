@@ -1,0 +1,181 @@
+---
+/**
+ * Every page: the pre-paint theme script, the Notion-style sidebar (icons-only on tablet,
+ * a top bar + menu sheet on phone), the main column and the ⌘K command palette.
+ */
+import '../styles/tokens.css';
+import '../styles/base.css';
+import '../styles/components.css';
+import '../styles/v03.css';
+import { Icon, type IconName } from '../ui/components/Icon';
+import CommandPalette from '../ui/shell/CommandPalette';
+import UserChip from '../ui/shell/UserChip';
+import SidebarResizer from '../ui/shell/SidebarResizer';
+import { EARLY_PAGE, EARLY_SHARED, earlyScript } from '../lib/early';
+
+export type PageKey = 'buildspace' | 'home' | 'events' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'contacts' | 'design';
+interface Props {
+  title: string;
+  customHeader?: boolean;
+  page?: PageKey;
+  /** No shell (login, 404). */
+  bare?: boolean;
+  description?: string;
+}
+const { title, page, bare = false, customHeader = false, description = 'CSEED officer dashboard' } = Astro.props;
+
+// Signed-in pages start their first API reads while the HTML parses (lib/early.ts).
+const EARLY = bare ? null : earlyScript([...EARLY_SHARED, ...((page && EARLY_PAGE[page]) ?? [])]);
+
+const NAV: { key: PageKey; label: string; href: string; icon: IconName; directorOnly?: boolean }[] = [
+  { key: 'home', label: 'Home', href: '/', icon: 'home' },
+  { key: 'buildspace', label: 'Buildspace', href: '/buildspace', icon: 'blocks' },
+  { key: 'events', label: 'Events', href: '/events', icon: 'calendar' },
+  { key: 'finance', label: 'Requests & Finance', href: '/finance', icon: 'wallet' },
+  { key: 'officers', label: 'Officers', href: '/officers', icon: 'user' },
+  { key: 'members', label: 'Members', href: '/members', icon: 'user' },
+  { key: 'contacts', label: 'External Contacts', href: '/contacts', icon: 'user' },
+  { key: 'design', label: 'Design', href: '/design', icon: 'inbox' },
+];
+const PREPAINT = `(function(){var d=document.documentElement,t,n,r,w;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role');w=+localStorage.getItem('cseed-sidebar')}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}})();`;
+/**
+ * First paint with the user's saved sidebar width (from the server, so a new device, a cleared
+ * cache or a width changed elsewhere never jumps). The head script in lib/early.ts is already
+ * fetching /api/me/prefs; until it answers, `data-sidebar-wait` keeps the shell hidden (CSS),
+ * with a short timeout so a slow or failed request cannot blank the page. A response that
+ * arrives after the shell was revealed only updates the localStorage copy (the next page paints
+ * it); the current page is never resized under the user.
+ */
+const SIDEBARWAIT = `(function(){var d=document.documentElement,p=window.__cseedEarly&&window.__cseedEarly['/api/me/prefs'];if(!p)return;d.setAttribute('data-sidebar-wait','');var t,waiting=true,done=function(){waiting=false;clearTimeout(t);d.removeAttribute('data-sidebar-wait')};t=setTimeout(function(){window.__cseedSidebarLate=true;done()},1500);p.then(function(r){return r.ok?r.clone().json():null}).then(function(j){if(!j||typeof j.sidebarWidth!=='number')return;var w=j.sidebarWidth;try{if(w)localStorage.setItem('cseed-sidebar',String(w));else localStorage.removeItem('cseed-sidebar')}catch(e){}if(!waiting)return;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}else{delete d.dataset.sidebar;d.style.removeProperty('--sidebar')}}).catch(function(){}).then(done)})();`;
+/**
+ * Phone menu sheet as a modal: dialog semantics while open, focus moved in and trapped
+ * (Tab cycles inside), the rest of the page inert, Escape / scrim / close button close it and
+ * focus returns to the menu button. Desktop and tablet never open it.
+ */
+const NAVSCRIPT = `(function () {
+  var h = document.documentElement, btn = document.querySelector('[data-nav-toggle]'), s = document.getElementById('sidebar');
+  if (!btn || !s) return;
+  var others = [document.querySelector('.topbar'), document.getElementById('main')];
+  var focusables = function () {
+    return Array.prototype.filter.call(s.querySelectorAll('a[href],button:not([disabled]),input,select,textarea,[tabindex]:not([tabindex="-1"])'), function (el) { return el.offsetParent !== null; });
+  };
+  function set(open, restore) {
+    if (open === h.classList.contains('nav-open')) return;
+    h.classList.toggle('nav-open', open);
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) { s.setAttribute('role', 'dialog'); s.setAttribute('aria-modal', 'true'); s.setAttribute('aria-label', 'Menu'); }
+    else { s.removeAttribute('role'); s.removeAttribute('aria-modal'); s.removeAttribute('aria-label'); }
+    others.forEach(function (el) { if (el) el.inert = open; });
+    if (open) { var f = focusables(); if (f[0]) f[0].focus(); }
+    else if (restore) btn.focus();
+  }
+  btn.addEventListener('click', function () { set(!h.classList.contains('nav-open'), false); });
+  document.addEventListener('keydown', function (e) {
+    if (!h.classList.contains('nav-open')) return;
+    if (e.key === 'Escape') { e.preventDefault(); set(false, true); return; }
+    if (e.key !== 'Tab') return;
+    var f = focusables(); if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !s.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (document.activeElement === last || !s.contains(document.activeElement))) { e.preventDefault(); first.focus(); }
+  });
+  s.addEventListener('click', function (e) {
+    if (e.target.closest('[data-nav-close]')) set(false, true);
+    else if (e.target.closest('a,[data-open-search]')) set(false, false);
+  });
+  var sc = document.querySelector('[data-nav-scrim]');
+  if (sc) sc.addEventListener('click', function () { set(false, true); });
+  matchMedia('(min-width: 768px)').addEventListener('change', function () { set(false, false); });
+})();`;
+---
+
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="color-scheme" content="light dark" />
+    <title>{title} · CSEED officers</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script is:inline set:html={PREPAINT} />
+    {EARLY && <script is:inline set:html={EARLY} />}
+    {EARLY && <script is:inline set:html={SIDEBARWAIT} />}
+  </head>
+  <body class={bare ? 'is-bare' : undefined}>
+    <a class="skip-link" href="#main">Skip to content</a>
+    {
+      bare ? (
+        <main id="main" class="bare-main" tabindex="-1">
+          <slot />
+        </main>
+      ) : (
+        <div class="app" data-page={page}>
+          <header class="topbar">
+            <button type="button" class="icon-btn" data-tour="nav-toggle" data-nav-toggle aria-controls="sidebar" aria-expanded="false" aria-label="Menu">
+              <Icon name="menu" />
+            </button>
+            <a class="wordmark wordmark--top" href="/" aria-label="CSEED officers, home">
+              <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-wordmark.png" alt="" width="78" height="18" />
+              <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-wordmark-white.png" alt="" width="78" height="18" />
+            </a>
+            <button type="button" class="icon-btn" data-tour="search" data-open-search aria-label="Search">
+              <Icon name="search" />
+            </button>
+          </header>
+          <div class="nav-scrim" data-nav-scrim aria-hidden="true" />
+          <nav class="sidebar" id="sidebar" data-tour="sidebar" aria-label="Main">
+            <button type="button" class="icon-btn sheet-close" data-nav-close aria-label="Close menu">
+              <Icon name="close" />
+            </button>
+            <a class="wordmark" href="/" aria-label="CSEED officers, home">
+              <span class="wordmark-mark" aria-hidden="true">C</span>
+              <span class="wordmark-text">
+                <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-wordmark.png" alt="" width="78" height="18" />
+                <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-wordmark-white.png" alt="" width="78" height="18" />
+                <span class="wordmark-sub">officers</span>
+              </span>
+            </a>
+            <button type="button" class="search-trigger" data-tour="search" data-open-search aria-label="Search (Ctrl K)">
+              <Icon name="search" size={16} />
+              <span class="search-trigger-text">Search</span>
+              <kbd class="search-trigger-kbd" data-shortcut>Ctrl K</kbd>
+            </button>
+            <ul class="nav-list" role="list">
+              {
+                NAV.map((n) => (
+                  <li data-director-only={n.directorOnly ? '' : undefined}>
+                    <a class="nav-link" href={n.href} aria-current={page === n.key ? 'page' : undefined} title={n.label} data-nav={n.key}>
+                      <Icon name={n.icon} />
+                      <span class="nav-label">{n.label}</span>
+                    </a>
+                  </li>
+                ))
+              }
+            </ul>
+            <div class="sidebar-foot">
+              <a class="nav-link" href="/settings" aria-current={page === 'settings' ? 'page' : undefined} title="Settings" data-nav="settings">
+                <Icon name="settings" />
+                <span class="nav-label">Settings</span>
+              </a>
+              <UserChip client:load />
+            </div>
+          </nav>
+          <SidebarResizer client:load />
+          <main id="main" class:list={['main', { 'main--home': page === 'home' }]} tabindex="-1">
+            {!customHeader && <header class="page-header">
+              <h1 class={page === 'home' ? 'home-heading' : undefined} data-tour={page === 'home' ? 'greeting' : undefined}>{title}</h1>
+              {page === 'home' && <span class="visually-hidden" aria-live="polite" aria-atomic="true" data-home-greeting-announcement></span>}
+              <slot name="header" />
+            </header>}
+            <slot />
+          </main>
+        </div>
+      )
+    }
+    {!bare && <CommandPalette client:load />}
+    {!bare && <script is:inline set:html={NAVSCRIPT} />}
+  </body>
+</html>

@@ -1,0 +1,7 @@
+---
+import MembersPage from '../ui/pages/MembersPage';
+import AppLayout from '../layouts/AppLayout.astro';
+---
+<AppLayout title="Members" page="members" customHeader>
+  <MembersPage client:load />
+</AppLayout>

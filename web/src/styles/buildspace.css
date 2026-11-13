@@ -1,0 +1,609 @@
+.buildspace {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.bs-intro,
+.bs-toolbar,
+.bs-result,
+.bs-card-top,
+.bs-card-signals,
+.bs-detail-meta,
+.bs-timeline-head,
+.bs-activity-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.bs-intro p {
+  font-size: 22px;
+  margin: 6px 0 0;
+  letter-spacing: -0.5px;
+}
+.bs-summary {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--sunken);
+}
+.bs-summary button {
+  padding: 18px 12px;
+  text-align: left;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.bs-summary button:last-child {
+  border-right: 0;
+}
+.bs-summary strong {
+  display: block;
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.bs-summary span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 7px;
+}
+.bs-summary button:hover,
+.bs-summary button[aria-pressed="true"] {
+  background: var(--hover);
+}
+.bs-summary button[aria-pressed="true"] {
+  box-shadow: inset 0 -3px var(--text);
+}
+.bs-alert {
+  color: var(--attention);
+}
+.bs-muted,
+.bs-sub,
+.bs-footnote {
+  color: var(--muted);
+  font-size: 12px;
+}
+.bs-sub {
+  display: block;
+  margin-top: 5px;
+}
+.bs-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 6px;
+}
+.bs-filters {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bs-filters label {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+  min-width: 125px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.bs-filters .bs-search {
+  flex: 2;
+  min-width: 230px;
+}
+.bs-filters input,
+.bs-filters select {
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+}
+.bs-result {
+  font-size: 12px;
+  color: var(--muted);
+}
+.bs-result select {
+  font-size: 12px;
+  min-height: 34px;
+}
+.bs-table {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+}
+.bs-table th {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.bs-table td {
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.bs-table tbody tr:hover {
+  background: var(--sunken);
+}
+.bs-table td:first-child {
+  min-width: 180px;
+}
+.bs-title {
+  border: 0;
+  background: transparent;
+  padding: 3px 0;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: none;
+}
+.bs-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.bs-table td .bs-title + .bs-title {
+  display: block;
+  margin-top: 6px;
+}
+.bs-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.bs-track:before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-blue);
+}
+.bs-track[data-track="Hardware"]:before {
+  background: var(--c-teal);
+}
+.bs-track[data-track="Creative"]:before {
+  background: var(--c-coral);
+}
+.bs-track[data-track^="Extended"]:before {
+  background: var(--c-violet);
+}
+.bs-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 24px;
+  align-items: start;
+}
+.bs-group {
+  min-width: 0;
+}
+.bs-group > h3 {
+  margin-top: 0;
+}
+.bs-group > h3,
+.bs-lane > h3 {
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bs-group > h3 span,
+.bs-lane > h3 span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-weight: 400;
+}
+.bs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+}
+.bs-card {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  min-width: 0;
+}
+.bs-card h3 {
+  font-size: 19px;
+  margin: 16px 0 10px;
+  letter-spacing: -0.4px;
+}
+.bs-card p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 0 0 14px;
+}
+.bs-card .eyebrow {
+  font-size: 10px;
+}
+.bs-card-foot {
+  display: grid;
+  gap: 7px;
+  font-size: 11px;
+  margin-top: 22px;
+}
+.bs-card-signals {
+  font-size: 10px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  padding-top: 13px;
+  margin-top: 17px;
+}
+.bs-board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(240px, 1fr));
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+}
+.bs-lane {
+  padding: 14px;
+  background: var(--sunken);
+  border-radius: var(--radius-card);
+  align-self: start;
+}
+.bs-lane .bs-card {
+  margin-top: 12px;
+  padding: 16px;
+}
+.bs-lane .bs-card h3 {
+  font-size: 17px;
+}
+.bs-footnote {
+  line-height: 1.6;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin: 0;
+}
+.bs-detail {
+  display: grid;
+  gap: 24px;
+}
+.bs-detail p {
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0;
+}
+.bs-detail h3 {
+  font-size: 14px;
+  margin: 0 0 12px;
+}
+.bs-detail section {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 22px;
+}
+.bs-detail-meta {
+  justify-content: start;
+}
+.bs-detail-meta .btn {
+  margin-left: auto;
+}
+.bs-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+}
+.bs-detail-tabs button {
+  font-size: 11px;
+}
+.bs-person-list {
+  display: grid;
+  gap: 6px;
+}
+.bs-person-list button {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  background: var(--sunken);
+  color: var(--text);
+  border: 0;
+  padding: 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+}
+.bs-form {
+  display: grid;
+  gap: 18px;
+}
+.bs-form > label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+}
+.bs-form input,
+.bs-form select,
+.bs-form textarea {
+  width: 100%;
+  min-width: 0;
+}
+.bs-form fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  font-size: 12px;
+}
+.bs-form legend {
+  padding: 0 6px;
+}
+.bs-form .bs-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.bs-check input {
+  width: 18px;
+  height: 18px;
+}
+.bs-form > .btn {
+  justify-self: start;
+}
+.bs-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.bs-timeline > li {
+  border-left: 2px solid var(--line);
+  padding: 0 0 28px 20px;
+  margin-left: 4px;
+  position: relative;
+}
+.bs-timeline > li:before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  background: var(--muted);
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  position: absolute;
+  left: -8px;
+  top: 1px;
+}
+.bs-timeline-head {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.bs-activity-meta {
+  justify-content: start;
+  color: var(--muted);
+  font-size: 10px;
+  margin: 10px 0;
+}
+.bs-timeline a {
+  font-size: 12px;
+}
+.bs-detail a {
+  overflow-wrap: anywhere;
+}
+@media (min-width: 1500px) {
+  .bs-summary button {
+    padding: 20px;
+  }
+  .bs-summary span {
+    font-size: 12px;
+  }
+}
+@media (max-width: 1100px) {
+  .bs-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .bs-summary button {
+    border-bottom: 1px solid var(--line);
+  }
+  .bs-filters .bs-search {
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 600px) {
+  .buildspace {
+    gap: 20px;
+  }
+  .bs-intro {
+    align-items: start;
+  }
+  .bs-intro p {
+    font-size: 20px;
+  }
+  .bs-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .bs-summary button {
+    padding: 14px;
+  }
+  .bs-summary button:last-child {
+    grid-column: span 2;
+  }
+  .bs-summary strong {
+    font-size: 24px;
+  }
+  .bs-toolbar {
+    gap: 14px;
+  }
+  .bs-filters label {
+    flex-basis: calc(50% - 10px);
+  }
+  .bs-cards {
+    grid-template-columns: 1fr;
+  }
+  .bs-table {
+    min-width: 770px;
+  }
+  .bs-table .bs-title {
+    min-height: 44px;
+  }
+  .bs-result {
+    align-items: start;
+  }
+  .bs-result > .action-row {
+    flex-wrap: wrap;
+  }
+  .bs-board {
+    grid-template-columns: repeat(5, 280px);
+  }
+  .bs-detail-tabs button {
+    min-height: 44px;
+  }
+  .bs-detail-meta {
+    gap: 10px;
+  }
+  .bs-detail-meta .btn {
+    margin-left: 0;
+  }
+  .bs-person-list button {
+    min-height: 44px;
+  }
+  .bs-title {
+    min-height: 36px;
+  }
+}
+@media (max-width: 600px) {
+  .bs-table {
+    min-width: 0;
+  }
+  .bs-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .bs-table,
+  .bs-table tbody,
+  .bs-table tr,
+  .bs-table td {
+    display: block;
+    width: 100%;
+  }
+  .bs-table tr {
+    border-bottom: 1px solid var(--line);
+    padding: 16px 0;
+  }
+  .bs-table td {
+    padding: 5px 0;
+    border: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .bs-table td:first-child {
+    padding-bottom: 12px;
+    min-width: 0;
+  }
+  .bs-table td:not(:first-child) {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    text-align: right;
+  }
+  .bs-table td:not(:first-child):before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    text-align: left;
+    flex-shrink: 0;
+  }
+  .bs-table td .bs-sub {
+    margin: 3px 0;
+  }
+  .bs-table td .bs-title {
+    min-height: 44px;
+  }
+}
+
+.bs-card-foot strong {
+  color: var(--muted);
+  font-weight: 500;
+  margin-right: 4px;
+}
+.bs-activity-counts {
+  display: inline-flex;
+  gap: 10px;
+  white-space: nowrap;
+}
+.bs-activity-counts > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.bs-activity-counts > .has-activity {
+  color: var(--attention);
+}
+.bs-partner {
+  display: block;
+  padding: 3px 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bs-partner:hover {
+  text-decoration: underline;
+}
+@media (max-width: 600px) {
+  .bs-partner {
+    min-height: 44px;
+  }
+}
+
+/* Continue the shell background below the sticky sidebar on tall pages. */
+@media (min-width: 768px) {
+  body:has(.app[data-page="buildspace"]) {
+    min-height: 100vh;
+    background: linear-gradient(to right, var(--sunken) 0 var(--sidebar), var(--bg) var(--sidebar) 100%);
+  }
+}
+@media (min-width: 768px) and (max-width: 1099px) {
+  body:has(.app[data-page="buildspace"]) {
+    background: linear-gradient(to right, var(--sunken) 0 64px, var(--bg) 64px 100%);
+  }
+}
+
+/* V0.6 motion parity: shared tokens and utilities (docs/motion-performance-v05.md).
+   Views crossfade through the shared .async-outgoing overlay; the incoming view owns
+   layout, so the overlay never resizes the page. Lists/cards use .motion-list stagger. */
+.bs-view {position: relative; min-width: 0;}
+.bs-view-in {min-width: 0;}
+.bs-view-out .async-outgoing {z-index: 1;}
+.bs-view-out .async-outgoing * {animation: none !important;}
+.bs-toolbar .tabs {border-bottom: 0;}
+.bs-detail-panel {display: grid; gap: 24px; min-width: 0;}
+
+/* Check-in schedule popover (same pattern as the calendar Options popover). */
+.bs-schedule {position: relative;}
+.bs-schedule > summary {list-style: none;}
+.bs-schedule > summary::-webkit-details-marker {display: none;}
+.bs-schedule-panel {position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(340px, calc(100vw - 32px)); display: grid; gap: 12px; padding: 16px; border: 1px solid var(--control); border-radius: var(--radius-overlay); background: var(--surface); color: var(--text); box-shadow: var(--block-lift); font-size: 13px; animation: pop-in var(--dur-2) var(--ease-out) backwards;}
+.bs-intro .bs-schedule-panel p {margin: 0; font-size: 13px; line-height: 1.5; letter-spacing: 0;}
+.bs-intro .bs-schedule-panel p.small {font-size: 12px;}
+.bs-schedule-title {font-size: 14px; margin: 0;}
+.bs-schedule-pending {padding: 8px 10px; border-radius: var(--radius-control); background: var(--sunken);}
+.bs-schedule-form {gap: 12px;}
+.bs-schedule-form .action-row {justify-content: flex-end;}
+/* Phones: the panel opens in flow under its button, so it can never leave the gutter. */
+@media (max-width: 600px) {
+  .bs-schedule[open] {flex: 1 1 100%;}
+  .bs-schedule-panel {position: static; width: auto; margin-top: 8px;}
+}
+.bs-toolbar .tab-count {margin-left: 6px;}

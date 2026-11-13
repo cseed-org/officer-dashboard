@@ -1,0 +1,18 @@
+# Continuous replication of the SQLite file to R2 or any S3-compatible bucket.
+# Used by the container entrypoint when LITESTREAM_BUCKET is set. Credentials come from
+# LITESTREAM_ACCESS_KEY_ID / LITESTREAM_SECRET_ACCESS_KEY.
+#
+# Cloudflare R2:  LITESTREAM_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com  LITESTREAM_REGION=auto
+# AWS S3:         leave LITESTREAM_ENDPOINT empty and set LITESTREAM_REGION=us-west-2
+dbs:
+  - path: ${DB_PATH}
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: ${LITESTREAM_PATH}
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        force-path-style: true
+        sync-interval: 1s       # at most ~1s of writes lost if the container dies
+        snapshot-interval: 6h
+        retention: 72h

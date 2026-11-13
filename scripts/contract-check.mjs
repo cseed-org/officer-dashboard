@@ -1,0 +1,591 @@
+#!/usr/bin/env node
+/**
+ * Contract check: proves the Go server speaks the JSON API that src/core/contracts.ts defines.
+ *
+ * It builds (or is given) the Go binary, seeds a temporary SQLite database with the FY2027
+ * sample books, starts the server on a free port, then
+ *   1. calls every GET endpoint,
+ *   2. scripts a purchase lifecycle (create → attach → submit → approve by ANOTHER director →
+ *      fulfil/settle → close), a reimbursement on a restricted grant, the purchasing-agent
+ *      job flow, a Luma ingest, a CSV import, event, budget and fiscal-period writes,
+ * and validates every request body, query string and response against the zod schemas in
+ * ENDPOINTS (error responses against ApiError). Any schema error, unexpected status or
+ * endpoint that was never exercised fails the run.
+ *
+ *   node scripts/contract-check.mjs [--bin path/to/dashboard] [--keep] [--verbose]
+ *
+ * Needs `npm ci` (zod, esbuild). Go is only needed when --bin is not given.
+ */
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
+import { build } from 'esbuild';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const args = process.argv.slice(2);
+const flag = (name) => args.includes(name);
+const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
+const verbose = flag('--verbose');
+
+const work = mkdtempSync(join(tmpdir(), 'contract-check-'));
+let server;
+const cleanup = () => {
+  server?.kill('SIGTERM');
+  if (!flag('--keep')) rmSync(work, { recursive: true, force: true });
+};
+process.on('exit', cleanup);
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
+
+// ───────────── schemas ─────────────
+// contracts.ts has extensionless relative imports, so bundle it (zod included) for node.
+const bundle = join(work, 'contracts.mjs');
+await build({ entryPoints: [join(root, 'src/core/contracts.ts')], bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'error' });
+const { ENDPOINTS, ApiError } = await import(pathToFileURL(bundle).href);
+const registryBundle = join(work, 'widget-registry.mjs');
+await build({ entryPoints: [join(root, 'web/src/ui/widgets/defaultLayout.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
+const { defaultWidgetLayout } = await import(pathToFileURL(registryBundle).href);
+
+// ───────────── binary, database, server ─────────────
+let bin = option('--bin');
+if (!bin) {
+  bin = join(work, 'dashboard');
+  process.stdout.write('building the Go server… ');
+  const built = spawnSync(process.env.GO ?? 'go', ['build', '-o', bin, './cmd/dashboard'], { cwd: join(root, 'server'), stdio: ['ignore', 'inherit', 'inherit'] });
+  if (built.status !== 0) throw new Error('go build failed');
+  console.log('done');
+}
+const dbPath = join(work, 'check.db');
+const env = { ...process.env, DB_PATH: dbPath, RECEIPTS_DIR: join(work, 'receipts') };
+for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID', 'BOOTSTRAP_OWNER_DISCORD_ID', 'BOOTSTRAP_OWNER_NAME', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_ZONE_ID', 'D1_DATABASE_ID', 'DISCORD_BOT_TOKEN', 'SMTP_HOST', 'SMTP_FROM', 'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET']) delete env[k];
+const seeded = spawnSync(bin, ['seed', '-reset'], { env, encoding: 'utf8' });
+if (seeded.status !== 0) throw new Error(`seed failed: ${seeded.stderr}`);
+console.log(seeded.stdout.trim());
+
+const port = await new Promise((ok) => {
+  const s = createServer().listen(0, '127.0.0.1', () => {
+    const p = s.address().port;
+    s.close(() => ok(p));
+  });
+});
+const base = `http://127.0.0.1:${port}`;
+server = spawn(bin, ['serve'], { env: { ...env, ADDR: `127.0.0.1:${port}`, APP_URL: base }, stdio: ['ignore', 'ignore', verbose ? 'inherit' : 'ignore'] });
+server.on('exit', (code) => code && console.error(`server exited with ${code}`));
+for (let i = 0; ; i++) {
+  try {
+    if ((await fetch(`${base}/api/health`)).ok) break;
+  } catch {}
+  if (i > 100) throw new Error('server did not start');
+  await new Promise((r) => setTimeout(r, 50));
+}
+
+// ───────────── sessions without Discord: insert rows the way the server would ─────────────
+const db = new DatabaseSync(dbPath);
+db.exec('PRAGMA busy_timeout = 5000');
+function sessionFor(userId) {
+  const token = randomBytes(32).toString('base64url');
+  const id = createHash('sha256').update(token).digest('hex');
+  db.prepare('INSERT INTO sessions (id, user_id, expires_at, user_agent, created_at) VALUES (?, ?, ?, ?, ?)').run(id, userId, Date.now() + 864e5, 'contract-check', Date.now());
+  return { cookie: `cseed_session=${token}` };
+}
+const anon = {};
+const directorA = sessionFor('user-director');
+const officer = sessionFor('user-priya');
+const leadership = sessionFor('user-leadership');
+
+// ───────────── the caller ─────────────
+const covered = new Set();
+const failures = [];
+let responses = 0;
+const log = [];
+
+function fail(label, message, detail) {
+  failures.push(`${label}: ${message}${detail ? `\n    ${JSON.stringify(detail).slice(0, 600)}` : ''}`);
+}
+
+/**
+ * Calls an endpoint by its ENDPOINTS name. `expect` is the status the script is asserting
+ * (default 200). Bodies and queries are validated before sending, responses after.
+ */
+async function call(name, { who = anon, params = {}, query, body, form, expect = 200, headers = {}, csv = false } = {}) {
+  const spec = ENDPOINTS[name];
+  if (!spec) throw new Error(`unknown endpoint ${name}`);
+  covered.add(name);
+  const label = `${name} ${spec.method} ${spec.path}${expect === 200 ? '' : ` (expect ${expect})`}`;
+  let path = spec.path.replace(/:(\w+)/g, (_, k) => encodeURIComponent(params[k] ?? (fail(label, `missing path param ${k}`), k)));
+  if (query !== undefined) {
+    if (spec.query && expect === 200) {
+      const r = spec.query.safeParse(query);
+      if (!r.success) fail(label, 'script query violates the query schema', r.error.issues);
+    }
+    const qs = new URLSearchParams(query).toString();
+    if (qs) path += `?${qs}`;
+  }
+  const init = { method: spec.method, redirect: 'manual', headers: { ...headers } };
+  if (who.cookie) init.headers.cookie = who.cookie;
+  if (who.bearer) init.headers.authorization = `Bearer ${who.bearer}`;
+  if (form) {
+    init.body = form;
+  } else if (body !== undefined) {
+    if (spec.body && spec.body !== 'multipart' && expect === 200) {
+      const r = spec.body.safeParse(body);
+      if (!r.success) fail(label, 'script body violates the request schema', r.error.issues);
+    }
+    init.body = JSON.stringify(body);
+    init.headers['content-type'] = 'application/json';
+  }
+  const started = performance.now();
+  const res = await fetch(base + path, init);
+  const ms = performance.now() - started;
+  const type = res.headers.get('content-type') ?? '';
+  let json;
+  let raw;
+  if (type.includes('application/json')) json = await res.json();
+  else raw = Buffer.from(await res.arrayBuffer());
+  responses++;
+  let verdict = 'ok';
+  if (res.status !== expect) {
+    verdict = `status ${res.status}`;
+    fail(label, `expected ${expect}, got ${res.status}`, json ?? raw?.toString().slice(0, 200));
+  } else if (expect >= 400) {
+    const r = ApiError.safeParse(json);
+    if (!r.success) {
+      verdict = 'bad ApiError';
+      fail(label, 'error body is not an ApiError', { json, issues: r.error.issues });
+    }
+  } else if (csv || spec.response === 'csv') {
+    const text = raw?.toString() ?? '';
+    if (!type.startsWith('text/csv') || !res.headers.get('content-disposition')?.includes('attachment')) fail(label, 'CSV headers wrong', { type });
+    if (!(name === 'membersExport' ? text.startsWith('Person ID,First name,Last name') && text.endsWith('\r\n') : text.startsWith('"fiscalYear"') && text.endsWith('\r\n'))) fail(label, 'CSV body is not the report table', text.slice(0, 120));
+  } else if (typeof spec.response !== 'string') {
+    const r = spec.response.safeParse(json);
+    if (!r.success) {
+      verdict = 'SCHEMA ERROR';
+      fail(label, 'response violates the contract', r.error.issues.slice(0, 5));
+    }
+  }
+  log.push(`${verdict === 'ok' ? '✓' : '✗'} ${String(res.status).padEnd(3)} ${spec.method.padEnd(6)} ${path.padEnd(58)} ${ms.toFixed(1).padStart(6)} ms`);
+  return { status: res.status, json, raw, headers: res.headers };
+}
+
+const today = new Date().toISOString().slice(0, 10);
+const must = (cond, message, detail) => cond || fail('assertion', message, detail);
+const money = (c) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+// ───────────── 1. every GET endpoint, on the freshly seeded books ─────────────
+await call('health');
+const me = await call('me', { who: officer });
+must(me.json?.user?.id === 'user-priya', 'me returns the signed-in user');
+const lookups = await call('lookups', { who: officer });
+await call('overview', { who: officer });
+await call('search', { who: officer, query: { q: 'demo', limit: '10' } });
+must((await call('search', { who: officer, query: { q: 'priya' } })).json.results.length === 0, 'officers get no user results');
+must((await call('search', { who: directorA, query: { q: 'priya' } })).json.results.some((r) => r.kind === 'user'), 'directors find users');
+const events = await call('eventsList', { who: officer, query: { limit: '3' } });
+must(events.json.nextCursor, 'event list pages');
+await call('eventsList', { who: officer, query: { cursor: events.json.nextCursor, when: 'all' } });
+const eventId = events.json.items[0].id;
+await call('eventDetail', { who: officer, params: { id: eventId } });
+await call('eventMetrics', { who: officer, params: { id: 'event-kickoff' } });
+const requests = await call('requestsList', { who: officer, query: { scope: 'all', limit: '50' } });
+const byDeadline = await call('requestsList', { who: officer, query: { scope: 'all', sort: 'deadline', limit: '2' } });
+must(byDeadline.json.items.every((r) => r.neededBy) && byDeadline.json.nextCursor, 'deadline sort lists dated requests with a date cursor');
+await call('requestsList', { who: officer, query: { scope: 'all', sort: 'deadline', limit: '2', cursor: byDeadline.json.nextCursor } });
+for (const r of requests.json.items.slice(0, 6)) await call('requestDetail', { who: officer, params: { id: r.id } });
+await call('financeSummary', { who: officer, query: { fiscalYear: '2027', asOf: '2026-10-31' } });
+await call('budgetsGet', { who: officer, query: { fiscalYear: '2027' } });
+const REPORTS = ['trial-balance', 'statement-of-activities', 'statement-of-financial-position', 'statement-of-functional-expenses', 'budget-vs-actual', 'fund-balances', 'form-990'];
+const reports = {};
+for (const report of REPORTS) reports[report] = (await call('financeReport', { who: directorA, params: { report }, query: { fiscalYear: '2027', asOf: '2026-10-31' } })).json;
+await call('financeReport', { who: directorA, params: { report: 'trial-balance' }, query: { fiscalYear: '2027', format: 'csv' }, csv: true });
+await call('financeReport', { who: officer, params: { report: 'trial-balance' }, expect: 403 });
+await call('financeReport', { who: officer, params: { report: 'budget-vs-actual' } });
+await call('periods', { who: directorA });
+await call('accounts', { who: directorA });
+await call('adminUsers', { who: directorA });
+await call('adminTokens', { who: directorA });
+await call('adminAudit', { who: directorA, query: { limit: '5' } });
+await call('adminUsers', { who: officer, expect: 403 });
+await call('lookups', { expect: 401 });
+
+// The seeded FY2027 statements foot — show the numbers.
+{
+  const sum = (rows, k) => rows.reduce((a, r) => a + r[k], 0);
+  const a = reports['statement-of-activities'];
+  const p = reports['statement-of-financial-position'];
+  const rev = sum(a.revenue, 'withoutDonorCents');
+  const exp = sum(a.expenses, 'withoutDonorCents');
+  const change = a.changeInNetAssets.withoutDonorCents;
+  console.log('\nSeeded FY2027 statements (asOf 2026-10-31)');
+  console.log(`  unrestricted: ${money(rev)} − ${money(exp)} + ${money(a.releasesCents)} released = ${money(rev - exp + a.releasesCents)}  (statement says ${money(change)})`);
+  console.log(`  net assets ending ${money(a.netAssetsEnding.totalCents)} = total assets ${money(p.totals.assetsCents)}  (balanced: ${p.totals.balanced})`);
+  must(rev - exp + a.releasesCents === 139500 && change === 139500, 'unrestricted change foots to $1,395.00', { rev, exp, rel: a.releasesCents, change });
+  must(a.netAssetsEnding.totalCents === 1190860 && p.totals.assetsCents === 1190860, 'net assets ending = assets = $11,908.60');
+  must(p.totals.balanced, 'statement of financial position balances');
+  const tb = reports['trial-balance'].totals;
+  must(tb.debitCents === tb.creditCents, 'trial balance balances', tb);
+}
+
+// ───────────── 2. make sure today has an open fiscal period to post into ─────────────
+{
+  const periods = (await call('periods', { who: directorA })).json.periods;
+  if (!periods.some((p) => p.startDate <= today && today <= p.endDate && p.status === 'open')) {
+    const [y, m] = today.split('-').map(Number);
+    const fy = m >= 7 ? y + 1 : y;
+    await call('periodsCreate', { who: directorA, body: { fiscalYear: fy } });
+  }
+}
+
+// ───────────── 3. purchase lifecycle: club purchase settled below the estimate ─────────────
+const createdB = await call('adminUserCreate', { who: leadership, body: { discordId: '100000000000000077', name: 'Second Director', subteamId: 'team-operations', role: 'director', title: 'Treasurer', email: 'second@example.org' } });
+const directorB = sessionFor(createdB.json.user.id);
+// Accounts added from Access finish setup before the rest of the API opens (V0.4).
+{
+  const gated = await call('eventsList', { who: directorB, expect: 403 });
+  must(gated.json.error.code === 'onboarding_required', 'new account is held on setup', gated.json);
+  must((await call('me', { who: directorB })).json.onboarding?.subteam?.id === 'team-operations', 'admin-created account has an onboarding invite');
+  await call('profilePut', { who: directorB, body: { phone: '+1 206 555 0123', birthday: '01-15' } });
+  await call('onboardingComplete', { who: directorB });
+}
+await call('adminUserUpdate', { who: directorA, params: { id: createdB.json.user.id }, body: { title: 'Co-director' } });
+
+const account = lookups.json.expenseAccounts.find((a) => a.code === '5100').id;
+const generalFund = lookups.json.funds.find((f) => f.code === 'GEN').id;
+const grantFund = lookups.json.funds.find((f) => f.code === 'GR-BUILDSPACE').id;
+const fields = { title: 'Contract check kits', vendor: 'Adafruit', quantity: 2, unitCostCents: 5000, taxShipCents: 0, expenseAccountId: account, fundId: generalFund, functionalClass: 'program', justification: 'Exercise every endpoint', itemUrl: 'https://www.adafruit.com/', neededBy: '2027-01-15', eventId };
+
+const draft = await call('requestCreate', { who: directorA, body: { ...fields, type: 'club_purchase', submit: false } });
+const id = draft.json.request.id;
+must(draft.json.request.status === 'draft' && draft.json.request.totalCents === 10000, 'draft totals 100.00');
+must(/^\d{4}-\d{4}$/.test(draft.json.request.number), 'request number is FY-NNNN', draft.json.request.number);
+await call('requestUpdate', { who: directorA, params: { id }, body: { title: 'Contract check kits (edited)', taxShipCents: 0 } });
+const upload = () => {
+  const f = new FormData();
+  f.set('kind', 'receipt');
+  f.set('file', new Blob(['%PDF-1.4\n% contract check receipt\n'], { type: 'application/pdf' }), 'receipt.pdf');
+  return f;
+};
+const attached = await call('requestAttach', { who: directorA, params: { id }, form: upload() });
+const attachmentId = attached.json.attachment.id;
+const download = await call('attachmentDownload', { who: directorA, params: { id: attachmentId } });
+must(download.raw?.toString().startsWith('%PDF-1.4'), 'receipt downloads byte for byte');
+await call('attachmentDownload', { who: officer, params: { id: attachmentId }, expect: 403 }); // receipts: requester and directors only
+await call('requestSubmit', { who: directorA, params: { id } });
+await call('requestApprove', { who: directorA, params: { id }, body: {}, expect: 403 }); // no self-approval
+const approved = await call('requestApprove', { who: directorB, params: { id }, body: { comment: 'Looks right.' } });
+must(approved.json.request.status === 'approved', 'a second director approves');
+const committed = (await call('financeSummary', { who: officer })).json.totals.committedCents;
+await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilling' } });
+const settled = await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilled', actualTotalCents: 9500, attachmentIds: [attachmentId], orderReference: 'ORD-1', comment: '5% discount' } });
+must(settled.json.request.actualTotalCents === 9500 && settled.json.request.journalEntryIds.length === 1, 'settled at the actual 95.00 with one journal entry');
+const afterSettle = (await call('financeSummary', { who: officer })).json.totals.committedCents;
+must(afterSettle === committed - 10000, 'settling releases the 100.00 commitment', { before: committed, after: afterSettle });
+await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilled', actualTotalCents: 9500 }, expect: 409 }); // already settled
+const closed = await call('requestTransition', { who: directorB, params: { id }, body: { to: 'closed' } });
+must(closed.json.request.status === 'closed', 'closed');
+await call('requestUpdate', { who: directorA, params: { id }, body: { title: 'too late' }, expect: 409 });
+
+// Reimbursement against a restricted grant: expense + restriction release, then payout on close.
+const grantOpen = today >= '2026-08-01' && today <= '2027-06-30'; // the sample grant's spending window
+const reimb = await call('requestCreate', { who: officer, body: { ...fields, title: 'Contract check pizza', vendor: 'Pagliacci', type: 'reimbursement', fundId: grantOpen ? grantFund : generalFund, expenseAccountId: lookups.json.expenseAccounts.find((a) => a.code === '5200').id, submit: true, eventId: undefined } });
+const rid = reimb.json.request.id;
+await call('requestApprove', { who: directorA, params: { id: rid }, body: {} });
+const paid = await call('requestTransition', { who: directorB, params: { id: rid }, body: { to: 'reimbursed', actualTotalCents: 8000 } });
+must(paid.json.request.journalEntryIds.length === (grantOpen ? 2 : 1), 'restricted settlement posts the expense and the release');
+const paidOut = await call('requestTransition', { who: directorA, params: { id: rid }, body: { to: 'closed' } });
+must(paidOut.json.request.journalEntryIds.length === (grantOpen ? 3 : 2), 'closing a reimbursement posts the payout');
+await call('requestDetail', { who: officer, params: { id: rid } });
+
+// Deny + delete a draft.
+const toDeny = await call('requestCreate', { who: officer, body: { ...fields, type: 'club_purchase', submit: true, eventId: undefined } });
+await call('requestDeny', { who: directorA, params: { id: toDeny.json.request.id }, body: { comment: 'Out of budget' } });
+const scratch = await call('requestCreate', { who: officer, body: { ...fields, type: 'reimbursement', eventId: undefined } });
+await call('requestDelete', { who: officer, params: { id: scratch.json.request.id } });
+
+// ───────────── 4. the purchasing agent, with a service token ─────────────
+const issued = await call('adminTokenCreate', { who: directorA, body: { name: 'contract check agent', scopes: ['agent:jobs', 'ingest:luma'], expiresInDays: 30 } });
+const agent = { bearer: issued.json.plaintext };
+const jobRequest = await call('requestCreate', { who: officer, body: { ...fields, type: 'club_purchase', submit: true, eventId: undefined } });
+await call('requestApprove', { who: directorA, params: { id: jobRequest.json.request.id }, body: {} });
+const jobs = await call('agentJobs', { who: agent, query: { status: 'queued' } });
+const job = jobs.json.jobs.find((j) => j.request.id === jobRequest.json.request.id);
+must(job, 'the approved club purchase queued a job');
+await call('agentJobClaim', { who: agent, params: { id: job.id } });
+await call('agentJobClaim', { who: agent, params: { id: job.id }, expect: 409 });
+const done = await call('agentJobComplete', { who: agent, params: { id: job.id }, body: { outcome: 'done', actualTotalCents: 9800, orderReference: 'AGENT-1', notes: 'bought' } });
+must(done.json.job.request.status === 'fulfilled', 'the agent settles within tolerance');
+// A settlement far above the estimate is held for a director.
+const heldRequest = await call('requestCreate', { who: officer, body: { ...fields, type: 'club_purchase', submit: true, eventId: undefined } });
+await call('requestApprove', { who: directorA, params: { id: heldRequest.json.request.id }, body: {} });
+const heldJob = (await call('agentJobs', { who: agent })).json.jobs.find((j) => j.request.id === heldRequest.json.request.id);
+await call('agentJobClaim', { who: agent, params: { id: heldJob.id } });
+await call('agentJobComplete', { who: agent, params: { id: heldJob.id }, body: { outcome: 'done', actualTotalCents: 50000 }, expect: 409 });
+const held = await call('requestDetail', { who: directorA, params: { id: heldRequest.json.request.id } });
+must(held.json.request.settlementHold?.attemptedCents === 50000, 'the hold is visible on the request', held.json.request.settlementHold);
+await call('agentJobs', { who: agent, query: { status: 'held' } });
+await call('agentJobs', { who: officer, expect: 401 });
+
+// Luma ingest + CSV import
+const ingest = await call('ingestLuma', { who: agent, body: { event: { lumaId: 'contract-check', name: 'Contract check mixer', startsAt: '2026-12-05T18:00:00-08:00', endsAt: '2026-12-05T20:00:00-08:00', location: 'Room 5', url: 'https://lu.ma/contract-check' }, guests: [{ email: 'Ann@Example.org', name: 'Ann', approvalStatus: 'approved', registeredAt: '2026-11-20T10:00:00Z', checkedInAt: '2026-12-05T18:05:00-08:00' }, { email: 'bo@example.org' }] } });
+must(ingest.json.created === 2 && ingest.json.metrics.checkedIn === 1, 'ingest creates two guests', ingest.json);
+const again = await call('ingestLuma', { who: agent, body: { event: { lumaId: 'contract-check', name: 'Contract check mixer', startsAt: '2026-12-05T18:00:00-08:00' }, guests: [{ email: 'ann@example.org' }] } });
+must(again.json.created === 0 && again.json.updated === 1, 'ingest is idempotent');
+const csv = (kind, text, extra = {}) => {
+  const f = new FormData();
+  f.set('kind', kind);
+  for (const [k, v] of Object.entries(extra)) f.set(k, v);
+  f.set('file', new Blob([text], { type: 'text/csv' }), `${kind}.csv`);
+  return f;
+};
+const dry = await call('eventsImport', { who: officer, form: csv('reflections', 'Email,Timestamp\nann@example.org,2026-12-06T09:00:00Z\n', { eventId: ingest.json.eventId, dryRun: 'true' }) });
+must(dry.json.dryRun === true && dry.json.metrics.matchedReflections === 1, 'dry run reports the match');
+const real = await call('eventsImport', { who: officer, form: csv('reflections', 'Email,Timestamp\nann@example.org,2026-12-06T09:00:00Z\n', { eventId: ingest.json.eventId }) });
+must(real.json.created === 1, 'import writes the reflection');
+await call('eventsImport', { who: officer, form: csv('luma_guests', 'Name,Email\nZed,zed@example.org\nBad,not-an-email\n', { lumaEventId: 'contract-csv', eventName: 'CSV event', eventStartsAt: '2026-12-10T18:00:00-08:00' }) });
+await call('eventsImport', { who: officer, form: csv('reflections', 'Name\nAnn\n', { eventId }), expect: 422 });
+
+// Events
+const newEvent = await call('eventCreate', { who: officer, body: { name: 'Contract check social', startsAt: '2026-12-12T19:00:00-08:00', endsAt: '2026-12-12T21:00:00-08:00', location: 'Atrium', url: 'https://example.org/social', hostUserId: 'user-ava' } });
+await call('eventUpdate', { who: officer, params: { id: newEvent.json.event.id }, body: { location: 'Lobby', endsAt: null } });
+await call('eventDetail', { who: officer, params: { id: newEvent.json.event.id } });
+// V0.3: a draft with the handoff fields, a cover, the pasted Luma link, then delete.
+const evDraft = await call('eventCreate', {
+  who: officer,
+  body: { name: 'Contract check draft', startsAt: '2026-12-14T18:00:00-08:00', description: 'Kit copy', capacity: 80, hostSubteamId: 'team-events', hostUserId: 'user-priya' },
+});
+const draftId = evDraft.json.event.id;
+must(evDraft.json.event.status === 'draft', 'new events start as drafts');
+const draftDetail = await call('eventDetail', { who: officer, params: { id: draftId } });
+must(draftDetail.json.event.notion.placeholder === true, 'the Notion stub stores a placeholder');
+await call('eventUpdate', { who: officer, params: { id: draftId }, body: { lumaUrl: 'https://lu.ma/discover' }, expect: 400 });
+const linked = await call('eventUpdate', { who: officer, params: { id: draftId }, body: { lumaUrl: 'https://lu.ma/contract-draft', status: 'published' } });
+must(linked.json.event.lumaUrl === 'https://lu.ma/contract-draft', 'Luma link saved');
+const coverForm = () => {
+  const f = new FormData();
+  f.set('file', new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])], { type: 'image/png' }), 'cover.png');
+  return f;
+};
+const covered1 = await call('eventCoverPut', { who: officer, params: { id: draftId }, form: coverForm() });
+must(covered1.json.event.coverUrl?.startsWith(`/api/events/${draftId}/cover`), 'cover URL listed');
+const coverBytes = await call('eventCoverGet', { who: officer, params: { id: draftId } });
+must(coverBytes.raw?.[0] === 0x89, 'cover served byte for byte');
+await call('eventCoverDelete', { who: officer, params: { id: draftId } });
+await call('eventDelete', { who: officer, params: { id: draftId } });
+await call('eventDetail', { who: officer, params: { id: draftId }, expect: 404 });
+
+// ───────────── 5. director-only finance and admin writes ─────────────
+const budgets = (await call('budgetsGet', { who: officer, query: { fiscalYear: '2027' } })).json;
+await call('budgetsPut', { who: directorA, body: { fiscalYear: 2027, lines: budgets.lines.map((l) => ({ accountId: l.account.id, fundId: l.fund?.id ?? null, amountCents: l.amountCents, notes: l.notes })) } });
+const julyOfFY2027 = (await call('periods', { who: directorA })).json.periods.find((p) => p.startDate === '2026-07-01');
+await call('periodClose', { who: directorA, params: { id: julyOfFY2027.id }, body: { to: 'locked' } });
+await call('periodClose', { who: directorA, params: { id: julyOfFY2027.id }, body: { to: 'closed' }, expect: 409 });
+await call('periodsCreate', { who: directorA, body: { fiscalYear: 2099 } });
+await call('periodsCreate', { who: directorA, body: { fiscalYear: 2099 }, expect: 409 });
+await call('adminTokenRevoke', { who: directorA, params: { id: issued.json.token.id } });
+await call('agentJobs', { who: agent, expect: 401 });
+const audit = await call('adminAudit', { who: directorA, query: { entityType: 'purchase_request', entityId: id } });
+must(audit.json.items.some((a) => a.action === 'request.fulfilled'), 'the audit log recorded the settlement');
+
+// Ownership is restricted to owners, independent of leadership rank.
+await call('ownerAdd', { who: directorA, params: { userId: 'user-ava' }, expect: 403 });
+await call('ownerAdd', { who: leadership, params: { userId: 'user-ava' } });
+await call('ownerRemove', { who: leadership, params: { userId: 'user-ava' } });
+await call('ownerTransfer', { who: leadership, body: { toUserId: 'user-ava' } });
+await call('ownerAdd', { who: leadership, params: { userId: 'user-priya' }, expect: 403 });
+
+// Error shapes
+await call('requestDetail', { who: officer, params: { id: 'nope' }, expect: 404 });
+await call('eventCreate', { who: officer, body: {}, expect: 400 });
+await call('search', { who: officer, query: {}, expect: 400 });
+
+// V0.3 foundation endpoints, ownership and calendar limits.
+must(JSON.stringify((await call('prefsGet', { who: officer })).json.widgetLayout) === JSON.stringify(defaultWidgetLayout), 'server defaults match the web registry');
+const layout = { widgetLayout: [{ id: 'budget', size: 'L' }] };
+await call('prefsPut', { who: officer, body: layout });
+must(JSON.stringify((await call('prefsGet', { who: officer })).json.widgetLayout) === JSON.stringify(layout.widgetLayout), 'layout persists');
+const club = (await call('clubSettingsGet', { who: officer })).json;
+await call('clubSettingsPut', { who: directorA, body: club, expect: 403 });
+await call('clubSettingsPut', { who: officer, body: club, expect: 403 });
+await call('clubSettingsPut', { who: leadership, body: { location: 'Seattle, WA', clubTimezone: 'America/Los_Angeles' } });
+await call('prefsPut', { who: officer, body: { timezoneMode: 'manual', timezone: 'Asia/Tokyo' } });
+must((await call('prefsGet', { who: officer })).json.effectiveTimezone === 'Asia/Tokyo', 'manual time zone persists');
+await call('prefsPut', { who: officer, body: { timezoneMode: 'club', timezone: '' } });
+await call('calendarEmailsList', { who: officer });
+await call('meStats', { who: officer });
+const savedEmail = await call('calendarEmailCreate', { who: officer, body: { email: 'one@example.org' } });
+await call('calendarEmailUpdate', { who: officer, params: { id: savedEmail.json.email.id }, body: { email: 'changed@example.org' } });
+await call('calendarEmailUpdate', { who: directorA, params: { id: savedEmail.json.email.id }, body: { active: true }, expect: 404 });
+for (let i=0;i<4;i++) await call('calendarEmailCreate', { who: officer, body: { email: `calendar${i}@example.org` } });
+await call('calendarEmailCreate', { who: officer, body: { email: 'six@example.org' }, expect: 409 });
+await call('calendarEmailDelete', { who: officer, params: { id: savedEmail.json.email.id } });
+await call('inviteCreate', { who: officer, body: {}, expect: 403 });
+const invited = await call('inviteCreate', { who: directorA, body: { name:'New officer',discordId:'100000000000000088',subteamId:'team-events',method:'link' } });
+// V0.3 officers: invites, directory, profile, onboarding and calendar delivery (no bot, SMTP or Google configured).
+const dmLess = await call('inviteCreate', { who: directorA, body: { name:'DM officer',discordId:'100000000000000089',subteamId:'team-build',method:'both' } });
+must(dmLess.json.dm.status === 'not_configured' && dmLess.json.link.includes('/login?invite='), 'no bot token falls back to copy-link');
+await call('inviteCreate', { who: directorA, body: { name:'Priya again',discordId:'100000000000000002',subteamId:'team-events' }, expect: 409 });
+must((await call('invitesList', { who: directorA })).json.invites.length >= 2, 'invites listed');
+await call('invitesList', { who: officer, expect: 403 });
+await call('inviteUpdate', { who: officer, params: { id: invited.json.invite.id }, body: { name: 'x' }, expect: 403 });
+const edited = await call('inviteUpdate', { who: directorA, params: { id: invited.json.invite.id }, body: { name: 'New officer (fixed)', subteamId: 'team-build' } });
+must(edited.json.invite.name === 'New officer (fixed)' && edited.json.invite.subteam?.id === 'team-build', 'invite details edited', edited.json.invite);
+await call('inviteRevoke', { who: directorA, params: { id: dmLess.json.invite.id } });
+const officersOfficer = await call('officersList', { who: officer });
+must(officersOfficer.json.officers.every((o) => o.phone === undefined), 'officers never see phone');
+must((await call('officersList', { who: directorA })).json.officers.some((o) => typeof o.phone === 'string'), 'directors see phone');
+await call('officerDetail', { who: officer, params: { id: 'user-ava' } });
+await call('officerUpdate', { who: directorA, params: { id: 'user-marcus' }, body: { subteamId: 'team-events', title: 'Events crew' } });
+await call('officerUpdate', { who: officer, params: { id: 'user-marcus' }, body: { title: 'x' }, expect: 403 });
+await call('profileGet', { who: officer });
+await call('profilePut', { who: officer, body: { phone: '+1 206 555 0199', birthday: '04-21', pronouns: 'she/her' } });
+await call('profilePut', { who: officer, body: { phone: '1', birthday: '2004-04-21' }, expect: 400 });
+// Accept the invite the way sign-in does, then walk onboarding.
+db.prepare(`INSERT INTO users (id, discord_id, name, role, active, created_at, updated_at) VALUES ('user-invitee', '100000000000000088', 'New officer', 'officer', 1, ?, ?)`).run(Date.now(), Date.now());
+db.prepare(`UPDATE invites SET accepted_at = ?, user_id = 'user-invitee' WHERE id = ?`).run(Date.now(), invited.json.invite.id);
+const invitee = sessionFor('user-invitee');
+must((await call('me', { who: invitee })).json.onboarding?.step === 1, 'invitee starts onboarding');
+await call('onboardingSave', { who: invitee, body: { step: 3 } });
+await call('onboardingComplete', { who: invitee, expect: 409 });
+await call('profilePut', { who: invitee, body: { phone: '+1 206 555 0123', birthday: '12-01' } });
+await call('calendarFeed', { who: invitee, query: { start: '2026-11-01', end: '2026-12-01' }, expect: 403 });
+await call('calendarFeed', { who: officer, query: { start: '2026-11-01', end: '2026-12-01' } });
+await call('calendarWidgetGet', { who: invitee });
+await call('calendarWidgetPut', { who: invitee, body: { view: 'month', colourBy: 'source', showWeekends: true, sources: [] } });
+await call('calendarWidgetPut', { who: invitee, body: { view: 'week', colourBy: 'source', showWeekends: false, events: true, design: true } });
+await call('calendarGet', { who: invitee });
+await call('calendarPut', { who: invitee, body: { mode: 'ics' } });
+await call('calendarPut', { who: invitee, body: { mode: 'google' }, expect: 409 });
+await call('calendarTest', { who: invitee });
+await call('googleDisconnect', { who: invitee });
+await call('onboardingComplete', { who: invitee });
+must((await call('me', { who: invitee })).json.onboarding === null, 'onboarding done');
+await call('adminUserUpdate', { who: directorA, params:{id:'user-priya'}, body:{role:'leadership'}, expect:403 });
+await call('adminUserUpdate', { who: leadership, params:{id:createdB.json.user.id}, body:{role:'leadership'} });
+
+// Design requests: board, designer flow, requester-only approval, files, prefill from an event.
+const designer = sessionFor('user-riley');
+const designBoard = await call('designRequestsList', { who: officer });
+must(designBoard.json.designers.some((d) => d.id === 'user-riley'), 'the seeded designer is on the board', designBoard.json.designers);
+const designDraft = await call('designRequestDraftFromEvent', { who: officer, params: { id: eventId } });
+const dr = await call('designRequestCreate', { who: officer, body: { title: 'Contract check poster', type: 'poster', formats: 'A3 PDF', dueDate: '2026-12-01', urgency: 'high', brief: 'Exercise the board', references: 'Fall template', eventId, program: null } });
+const drId = dr.json.request.id;
+await call('designRequestDetail', { who: designer, params: { id: drId } });
+await call('designRequestUpdate', { who: officer, params: { id: drId }, body: { title: 'Contract check poster v2', program: 'Officer program' } });
+await call('designRequestMove', { who: officer, params: { id: drId }, body: { stage: 'accepted' }, expect: 403 });
+await call('designRequestAssign', { who: designer, params: { id: drId }, body: { assigneeId: 'user-riley' } });
+await call('designRequestMove', { who: designer, params: { id: drId }, body: { stage: 'in-review' } });
+await call('designRequestComment', { who: designer, params: { id: drId }, body: { body: 'Ready for your review.' } });
+const designFile = new FormData();
+designFile.set('kind', 'review');
+designFile.set('file', new Blob(['%PDF-1.4\n% design proof\n'], { type: 'application/pdf' }), 'proof.pdf');
+const uploaded = await call('designRequestUpload', { who: designer, params: { id: drId }, form: designFile });
+await call('designFileDownload', { who: officer, params: { id: uploaded.json.request.files[0].id } });
+await call('designRequestApprove', { who: directorA, params: { id: drId }, expect: 403 });
+const deliveredReq = await call('designRequestApprove', { who: officer, params: { id: drId } });
+must(deliveredReq.json.request.stage === 'delivered', 'requester approval delivers', deliveredReq.json.request.stage);
+const fromEvent = await call('designRequestCreateFromEvent', { who: officer, params: { id: eventId }, body: { type: 'social' } });
+must(fromEvent.json.request.event?.id === eventId && fromEvent.json.request.title === designDraft.json.draft.title, 'event prefill creates a linked request');
+await call('designRequestDelete', { who: officer, params: { id: fromEvent.json.request.id } });
+must(Array.isArray(designBoard.json.upcomingEvents), 'the board lists upcoming events');
+await call('eventDesignNeed', { who: officer, params: { id: eventId }, body: { designNeed: 'needed' } });
+const skipped = await call('eventDesignNeed', { who: directorA, params: { id: eventId }, body: { designNeed: 'not_needed' } });
+must(skipped.json.event.designNeed === 'not_needed', 'a director marks an event as not needing design', skipped.json.event);
+
+// Membership mirror and disconnected Cloudflare. Remote writes are fake-server tested in Go.
+const member = {person_id:'contract-member',first_name:'Ada',last_name:'Member',preferred_name:null,uw_email:'ada@uw.edu',cs_email:null,personal_email:null,major:'CS',grad_year:'2028',campus:'Seattle',pronouns:null,demographics:null,join_date:'2026-10-31',agreed_to_membership_agreement:1,has_been_cseed_officer:0};
+db.prepare('INSERT INTO members_mirror(person_id,first_name,last_name,uw_email,major,grad_year,campus,join_date,has_been_officer,record_json) VALUES(?,?,?,?,?,?,?,?,?,?)').run(member.person_id,member.first_name,member.last_name,member.uw_email,member.major,member.grad_year,member.campus,member.join_date,0,JSON.stringify(member));
+await call('membersList',{who:officer,query:{q:'Ada',limit:'50',offset:'0'}});
+await call('memberDetail',{who:officer,params:{id:member.person_id}});
+await call('memberUpdate',{who:directorA,params:{id:member.person_id},body:{major:'Math',auditNote:'Correction'},expect:503});
+await call('memberUpdate',{who:officer,params:{id:member.person_id},body:{major:'Math',auditNote:'Correction'},expect:403});
+await call('membersExport',{who:directorA,csv:true});
+await call('cloudflareWidgets',{who:officer});
+await call('cloudflareSync',{who:directorA});
+await call('cloudflareSync',{who:officer,expect:403});
+
+// Speakers CRM: all writes as an officer, dated outreach independent of profile edits.
+const contact = await call('contactCreate', { who: officer, body: { name: 'Contract speaker', org: 'CSEED example', type: 'both', topics: ['Climate tech'], eventIds: [eventId] } });
+const contactParams = { id: contact.json.contact.id };
+await call('contactsList', { who: officer, query: { q: 'contract', type: 'mentor', topic: 'Climate tech' } });
+await call('contactDetail', { who: officer, params: contactParams });
+await call('contactUpdate', { who: officer, params: contactParams, body: { notes: 'General context', email: 'speaker@example.org' } });
+await call('contactOutreachCreate', { who: officer, params: contactParams, body: { date: '2026-10-30T12:00:00-07:00', channel: 'email', outcome: 'interested', note: 'Send the outline' } });
+const backdated = await call('contactOutreachCreate', { who: directorA, params: contactParams, body: { date: '2026-10-29T12:00:00Z', channel: 'linkedin', outcome: 'awaiting_reply' } });
+must(backdated.json.contact.lastOutreach.officerId === 'user-priya', 'backdated outreach does not replace latest contact');
+await call('search', { who: officer, query: { q: 'Contract speaker' } });
+await call('contactCreate', { who: officer, body: { name: '', type: 'speaker' }, expect: 400 });
+await call('contactUpdate', { who: officer, params: contactParams, body: { eventIds: ['missing'] }, expect: 400 });
+await call('contactDelete', { who: officer, params: contactParams });
+await call('contactDetail', { who: officer, params: contactParams, expect: 404 });
+
+// Buildspace: project membership, manual history, scoped and replay-safe Discord ingestion.
+await call('buildspaceList', { who: officer });
+await call('buildspaceList', { expect: 401 });
+await call('buildspaceProjectSave', {who: officer, params: {id: 'contract-buildspace'}, body: {
+ name: 'Contract garden', description: 'A campus garden prototype', track: 'Hardware', stage: 'Building', links: ['https://example.org/garden'], mentorIds: ['bs-mentor-jordan'],
+}});
+await call('buildspacePersonSave', {who: officer, params: {id: 'contract-builder'}, body: {
+ name: 'Contract builder', projectId: 'contract-buildspace', joinedOn: today, memberId: null, discordId: '123456789012345678',
+}});
+await call('buildspaceActivityCreate', {who: officer, body: {projectId: 'contract-buildspace', personId: 'contract-builder', kind: 'request', date: today, body: 'Need a sensor', status: 'open'}});
+let bs = await call('buildspaceList', {who: officer});
+const bsRequest = bs.json.activity.find(a => a.body === 'Need a sensor');
+await call('buildspaceActivityResolve', {who: officer, params: {id: bsRequest.id}});
+const bsToken = await call('adminTokenCreate', {who: directorA, body: {name: 'Buildspace bot', scopes: ['ingest:buildspace'], expiresInDays: 30}});
+const bsWho = {bearer: bsToken.json.plaintext};
+const bsUpdate = {discordId: '123456789012345678', externalId: 'contract-discord-message-1', kind: 'weekly', date: today, body: 'First working prototype', status: 'on-track'};
+const bsIngested = await call('buildspaceIngest', {who: bsWho, body: bsUpdate});
+must(bsIngested.json.week.start <= today && today <= bsIngested.json.week.due, 'Ingest reports the check-in week containing its date');
+await call('buildspaceIngest', {who: bsWho, body: bsUpdate});
+await call('buildspaceIngest', {who: bsWho, body: {...bsUpdate, body: 'Conflicting replay'}, expect: 409});
+await call('buildspaceIngest', {who: officer, body: bsUpdate, expect: 401});
+bs = await call('buildspaceList', {who: officer});
+must(bs.json.activity.filter(a => a.externalId === bsUpdate.externalId).length === 1, 'Discord retries do not duplicate check-ins');
+await call('adminTokenRevoke', {who: directorA, params: {id: bsToken.json.token.id}});
+await call('buildspaceIngest', {who: bsWho, body: bsUpdate, expect: 401});
+
+// The check-in due day is a leadership-only, audited Buildspace setting.
+await call('buildspaceSchedulePut', {who: officer, body: {dueWeekday: 3}, expect: 403});
+await call('buildspaceSchedulePut', {who: directorA, body: {dueWeekday: 3}, expect: 403});
+await call('buildspaceSchedulePut', {who: leadership, body: {dueWeekday: 3, dueTime: '25:00'}, expect: 400});
+const bsSchedule = await call('buildspaceSchedulePut', {who: leadership, body: {dueWeekday: 3, dueTime: '18:00'}});
+must(bsSchedule.json.pending?.dueWeekday === 3 && bsSchedule.json.pending.effectiveFrom > bsSchedule.json.week.due, 'A due-day change starts after the current week');
+const bsReverted = await call('buildspaceSchedulePut', {who: leadership, body: {dueWeekday: bsSchedule.json.current.dueWeekday, dueTime: bsSchedule.json.current.dueTime}});
+must(bsReverted.json.pending === null, 'Choosing the current due day cancels a pending change');
+
+// Buildspace calendar sources are opt-in and use the same registry/settings contract.
+const purchaseFeed = await call('calendarFeed', {who: officer, query: {start: '2026-11-01', end: '2026-12-01', sources: 'purchase-deadlines'}});
+must(purchaseFeed.json.items.some(i => i.source === 'purchase-deadlines' && i.detail), 'purchase deadlines carry an amount/status detail');
+for (const source of ['buildspace-absences', 'buildspace-weekly', 'buildspace-mentor']) {
+ await call('calendarFeed', {who: officer, query: {start: '2026-11-01', end: '2026-12-01', sources: source}});
+}
+await call('calendarWidgetPut', {who: officer, body: {view:'month', colourBy:'source', showWeekends:true, sources:['buildspace-absences','buildspace-weekly','buildspace-mentor']}});
+await call('calendarWidgetGet', {who: officer});
+
+// Sidebar width: the request schema accepts exactly what the server accepts (0 or 64..320).
+const widthBody = ENDPOINTS.prefsPut.body;
+for (const w of [0, 64, 240, 320]) must(widthBody.safeParse({sidebarWidth: w}).success, `PrefsUpdate accepts sidebarWidth ${w}`);
+for (const w of [1, 63, 321, -1, 100.5, '200']) must(!widthBody.safeParse({sidebarWidth: w}).success, `PrefsUpdate rejects sidebarWidth ${JSON.stringify(w)}`);
+const widthPut = await call('prefsPut', {who: officer, body: {sidebarWidth: 240}});
+must(widthPut.json.sidebarWidth === 240, 'sidebarWidth saves');
+await call('prefsPut', {who: officer, body: {sidebarWidth: 0}});
+
+// Everything with a zod response schema must have been exercised.
+const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback']); // redirects, and dev-build-only routes: covered by the Go tests
+const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);
+if (missed.length) fail('coverage', `endpoints never called: ${missed.join(', ')}`);
+
+if (verbose) console.log(log.join('\n'));
+const exercised = covered.size;
+console.log(`\n${responses} responses from ${exercised} of ${Object.keys(ENDPOINTS).length} endpoints validated against src/core/contracts.ts`);
+if (failures.length) {
+  console.error(`\n${failures.length} problem(s):\n- ${failures.join('\n- ')}`);
+  if (!verbose) console.error('\n(re-run with --verbose for the full call log)');
+  process.exit(1);
+}
+console.log('contract check passed: 0 schema errors');
+process.exit(0); // the spawned server would otherwise keep the event loop alive
