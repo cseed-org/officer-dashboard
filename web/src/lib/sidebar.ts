@@ -46,6 +46,7 @@ export function applySidebarWidth(w: number) {
     delete root.dataset.sidebar;
     root.style.removeProperty('--sidebar');
     store.set(SIDEBAR_KEY, null);
+    window.dispatchEvent(new Event('cseed-sidebar'));
     return;
   }
   const n = snapWidth(w);

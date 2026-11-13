@@ -113,6 +113,80 @@ test.describe('resizable sidebar', () => {
     expect(await width(page)).toBe(272);
   });
 
+  test('the handle sits on the sidebar edge at rest, resized and after a breakpoint change', async ({ page }) => {
+    const gap = async () => {
+      const h = (await handle(page).boundingBox())!;
+      const edge = (await sidebar(page).boundingBox())!.width;
+      return Math.abs(h.x + h.width / 2 - edge);
+    };
+    expect(await gap()).toBeLessThanOrEqual(1);
+    await dragTo(page, 260);
+    expect(await gap()).toBeLessThanOrEqual(1);
+    await dragTo(page, 10);
+    expect(await gap()).toBeLessThanOrEqual(1);
+    // Back to the stylesheet default across a breakpoint (tablet rail <-> desktop 232px).
+    await page.request.put('/api/me/prefs', { data: { sidebarWidth: 0 } });
+    await page.evaluate(() => localStorage.removeItem('cseed-sidebar'));
+    await page.reload();
+    expect(await gap()).toBeLessThanOrEqual(1);
+    const vp = page.viewportSize()!;
+    await page.setViewportSize({ width: vp.width >= 1100 ? 900 : 1300, height: vp.height });
+    expect(await gap()).toBeLessThanOrEqual(1);
+  });
+
+  for (const cache of ['none', 'stale', 'matching'] as const) {
+    test(`a server-saved width is the first thing painted (local cache: ${cache})`, async ({ page }) => {
+      await page.request.put('/api/me/prefs', { data: { sidebarWidth: 300 } });
+      await page.addInitScript((c) => {
+        try {
+          if (c === 'none') localStorage.removeItem('cseed-sidebar');
+          else localStorage.setItem('cseed-sidebar', c === 'stale' ? '150' : '300');
+        } catch { /* */ }
+        // Every frame in which the shell is visible: its sidebar width and where the content starts.
+        (window as any).__frames = [];
+        const tick = () => {
+          const app = document.querySelector('.app') as HTMLElement | null;
+          const sb = document.getElementById('sidebar');
+          if (app && sb && getComputedStyle(app).visibility !== 'hidden') (window as any).__frames.push(Math.round(sb.getBoundingClientRect().width));
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }, cache);
+      // Hold the preferences back so a late jump would be visible.
+      await page.route('**/api/me/prefs', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        await new Promise((r) => setTimeout(r, 700));
+        await route.continue();
+      });
+      await page.goto('/events');
+      await expect(page.locator('.app')).toBeVisible(); // held hidden until the preferences answer
+      await expect.poll(() => width(page)).toBe(300);
+      await page.waitForTimeout(300);
+      const frames: number[] = await page.evaluate(() => (window as any).__frames);
+      expect(frames.length).toBeGreaterThan(0);
+      expect([...new Set(frames)], 'every visible frame uses the saved width').toEqual([300]);
+    });
+  }
+
+  test('a server reset updates the hydrated handle, its ARIA value and the next key press', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'tablet defaults to the rail, so a reset is not a visible change there');
+    await dragTo(page, 10);
+    await expect.poll(() => savedWidth(page)).toBe(64);
+    await expect(handle(page)).toHaveAttribute('aria-valuenow', '64');
+    // Another device reset the preference: the next refresh (window focus) brings 0.
+    await page.route('**/api/me/prefs', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const res = await route.fetch();
+      await route.fulfill({ response: res, json: { ...(await res.json()), sidebarWidth: 0 } });
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect.poll(() => width(page)).toBe(232);
+    await expect(handle(page)).toHaveAttribute('aria-valuenow', '232');
+    await handle(page).focus();
+    await page.keyboard.press('ArrowRight');
+    expect(await width(page)).toBe(248);
+  });
+
   test('double-click toggles icons only and the last width', async ({ page }) => {
     await dragTo(page, 260);
     expect(await width(page)).toBe(260);

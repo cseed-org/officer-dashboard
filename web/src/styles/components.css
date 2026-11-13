@@ -24,6 +24,8 @@ html:not([data-role='director']):not([data-role='leadership']) [data-director-on
 .main:focus {outline:none;}
 .page-header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:32px;}
 @media (max-width:1099px) and (min-width:768px) {
+  /* The tablet default is the 64px rail; --sidebar follows it so the handle sits on the edge. */
+  html:not([data-sidebar]) {--sidebar:64px;}
   html:not([data-sidebar]) .app {grid-template-columns:64px minmax(0, 1fr);}
   html:not([data-sidebar]) .sidebar {padding:12px 8px;align-items:center;}
   html:not([data-sidebar]) :is(.wordmark-text, .search-trigger-text, .search-trigger-kbd, .nav-label, .user-chip-text) {display:none;}
@@ -678,3 +680,6 @@ a.stat-tile[data-pressed="true"] {border-color:var(--text);}
   html[data-sidebar='wide'] .sidebar .wordmark-mark {display:none;}
   html[data-sidebar='wide'] .main {padding-left:clamp(24px, 4vw, 48px);padding-right:clamp(24px, 4vw, 48px);}
 }
+/* Hold the shell's first paint until the saved width is known (the inline script in AppLayout
+   clears this once /api/me/prefs answers, or after 1.5s), so it never jumps. */
+html[data-sidebar-wait] .app {visibility:hidden;}

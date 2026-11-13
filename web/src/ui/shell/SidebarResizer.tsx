@@ -24,7 +24,7 @@ export default function SidebarResizer() {
     setW(n);
     saveSidebarWidth(n, (v) => api('prefsPut', { body: { sidebarWidth: v } }));
   };
-  const toggle = () => commit(w <= SIDEBAR_MIN ? lastWideWidth() : SIDEBAR_MIN);
+  const toggle = () => commit(currentWidth() <= SIDEBAR_MIN ? lastWideWidth() : SIDEBAR_MIN);
 
   const onPointerDown = (e: PointerEvent) => {
     if (e.button !== 0) return;
@@ -51,6 +51,7 @@ export default function SidebarResizer() {
   };
   const onKeyDown = (e: KeyboardEvent) => {
     const step = e.shiftKey ? 48 : 16;
+    const w = currentWidth(); // the rendered width, never a stale copy
     let n: number | null = null;
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       const dir = e.key === 'ArrowRight' ? 1 : -1;

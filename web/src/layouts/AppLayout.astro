@@ -39,6 +39,13 @@ const NAV: { key: PageKey; label: string; href: string; icon: IconName; director
 ];
 const PREPAINT = `(function(){var d=document.documentElement,t,n,r,w;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role');w=+localStorage.getItem('cseed-sidebar')}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}})();`;
 /**
+ * First paint with the user's saved sidebar width (from the server, so a new device, a cleared
+ * cache or a width changed elsewhere never jumps). The head script in lib/early.ts is already
+ * fetching /api/me/prefs; until it answers, `data-sidebar-wait` keeps the shell hidden (CSS),
+ * with a short timeout so a slow or failed request cannot blank the page.
+ */
+const SIDEBARWAIT = `(function(){var d=document.documentElement,p=window.__cseedEarly&&window.__cseedEarly['/api/me/prefs'];if(!p)return;d.setAttribute('data-sidebar-wait','');var t,done=function(){clearTimeout(t);d.removeAttribute('data-sidebar-wait')};t=setTimeout(done,1500);p.then(function(r){return r.ok?r.clone().json():null}).then(function(j){if(!j||typeof j.sidebarWidth!=='number')return;var w=j.sidebarWidth;try{if(w)localStorage.setItem('cseed-sidebar',String(w));else localStorage.removeItem('cseed-sidebar')}catch(e){}if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}else{delete d.dataset.sidebar;d.style.removeProperty('--sidebar')}}).catch(function(){}).then(done)})();`;
+/**
  * Phone menu sheet as a modal: dialog semantics while open, focus moved in and trapped
  * (Tab cycles inside), the rest of the page inert, Escape / scrim / close button close it and
  * focus returns to the menu button. Desktop and tablet never open it.
@@ -93,6 +100,7 @@ const NAVSCRIPT = `(function () {
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script is:inline set:html={PREPAINT} />
     {EARLY && <script is:inline set:html={EARLY} />}
+    {EARLY && <script is:inline set:html={SIDEBARWAIT} />}
   </head>
   <body class={bare ? 'is-bare' : undefined}>
     <a class="skip-link" href="#main">Skip to content</a>
