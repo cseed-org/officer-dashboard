@@ -249,4 +249,21 @@ test('builder opens the shared person drawer without navigating and keeps edit a
   await expect(drawer).toBeVisible();
   await page.reload();
   await expect(drawer.locator('.person-hero')).toContainText('Alex Kim');
+  await drawer.getByRole('button', { name: 'Edit builder', exact: true }).click();
+  await expect(page.locator('#buildspace-detail')).toBeVisible();
+  await expect(page).toHaveURL(/edit=person/);
+});
+
+
+test('project check-in authors open the person drawer in place', async ({ page }) => {
+  await devLogin(page, 'director');
+  const activity = await page.request.post('/api/buildspace-launchpad/activity', { data: { projectId: 'bs-moss', personId: 'bs-person-01', kind: 'weekly', date: '2026-11-13', body: 'Drawer check-in fixture', status: 'on-track' } });
+  expect(activity.ok()).toBe(true);
+  await open(page, '/buildspace-launchpad?project=bs-moss');
+  const project = page.locator('#buildspace-detail');
+  await project.getByRole('button', { name: 'Timeline', exact: true }).click();
+  await project.getByRole('button', { name: 'Alex Kim', exact: true }).first().click();
+  await expect(page.locator('#buildspace-person .person-hero')).toContainText('Alex Kim');
+  await expect(page).toHaveURL(/person=bs-person-01/);
+  await expect(project).not.toBeVisible();
 });

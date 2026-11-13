@@ -753,7 +753,10 @@ function BuildspaceContent({
       </div>
       <PersonDrawer
         open={!!qs.get("person") && !form}
-        onClose={personDrawer.close}
+        onClose={() => {
+          const current = new URLSearchParams(location.search);
+          if (!current.has("edit") && !current.has("new")) personDrawer.close();
+        }}
         id="buildspace-person"
         personKey={qs.get("person") || ""}
         name={detailPerson?.name || "Record not found"}
@@ -774,7 +777,11 @@ function BuildspaceContent({
         open={
           !!form || (!qs.get("person") && !!qs.get("project"))
         }
-        onClose={close}
+        onClose={() => {
+          const current = new URLSearchParams(location.search);
+          if (current.has("person") && !current.has("edit") && !current.has("new")) return;
+          close();
+        }}
         id="buildspace-detail"
         size="lg"
         title={
