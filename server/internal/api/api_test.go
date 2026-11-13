@@ -614,7 +614,7 @@ func TestEventsListDetailMetricsCRUD(t *testing.T) {
 		t.Errorf("date range %s", r.Raw)
 	}
 	detail := e.mustOK(e.get("/api/events/event-buildspace-demo", e.officer()))
-	if detail.str("event", "name") != "Buildspace Demo Night" || len(detail.list("requests")) != 2 || detail.num("event", "metrics", "registered") != 92 {
+	if detail.str("event", "name") != "Buildspace + Launchpad Demo Night" || len(detail.list("requests")) != 2 || detail.num("event", "metrics", "registered") != 92 {
 		t.Errorf("detail %.400s", detail.Raw)
 	}
 	metrics := e.mustOK(e.get("/api/events/event-kickoff/metrics", e.officer()))

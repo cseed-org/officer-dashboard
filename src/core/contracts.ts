@@ -1368,13 +1368,13 @@ export const BuildspaceIngest = z.object({
 });
 
 export const ENDPOINTS = {
- buildspaceList: {method: 'GET', path: '/api/buildspace', auth: 'officer', response: BuildspaceResponse},
- buildspaceProjectSave: {method: 'PUT', path: '/api/buildspace/projects/:id', auth: 'officer', body: BuildspaceProjectBody, response: z.object({project: BuildspaceProject})},
- buildspacePersonSave: {method: 'PUT', path: '/api/buildspace/people/:id', auth: 'officer', body: BuildspacePersonBody, response: z.object({person: BuildspacePerson})},
- buildspaceActivityCreate: {method: 'POST', path: '/api/buildspace/activity', auth: 'officer', body: BuildspaceActivityBody, response: BuildspaceEntryResponse},
- buildspaceActivityResolve: {method: 'POST', path: '/api/buildspace/activity/:id/resolve', auth: 'officer', response: z.object({ok: z.literal(true)})},
- buildspaceIngest: {method: 'POST', path: '/api/ingest/buildspace', auth: 'token:ingest:buildspace', body: BuildspaceIngest, response: BuildspaceEntryResponse},
- buildspaceSchedulePut: {method: 'PUT', path: '/api/buildspace/schedule', auth: 'leadership', body: BuildspaceScheduleBody, response: BuildspaceSchedule},
+ buildspaceList: {method: 'GET', path: '/api/buildspace-launchpad', auth: 'officer', response: BuildspaceResponse},
+ buildspaceProjectSave: {method: 'PUT', path: '/api/buildspace-launchpad/projects/:id', auth: 'officer', body: BuildspaceProjectBody, response: z.object({project: BuildspaceProject})},
+ buildspacePersonSave: {method: 'PUT', path: '/api/buildspace-launchpad/people/:id', auth: 'officer', body: BuildspacePersonBody, response: z.object({person: BuildspacePerson})},
+ buildspaceActivityCreate: {method: 'POST', path: '/api/buildspace-launchpad/activity', auth: 'officer', body: BuildspaceActivityBody, response: BuildspaceEntryResponse},
+ buildspaceActivityResolve: {method: 'POST', path: '/api/buildspace-launchpad/activity/:id/resolve', auth: 'officer', response: z.object({ok: z.literal(true)})},
+ buildspaceIngest: {method: 'POST', path: '/api/ingest/buildspace-launchpad', auth: 'token:ingest:buildspace', body: BuildspaceIngest, response: BuildspaceEntryResponse},
+ buildspaceSchedulePut: {method: 'PUT', path: '/api/buildspace-launchpad/schedule', auth: 'leadership', body: BuildspaceScheduleBody, response: BuildspaceSchedule},
   membersList: {method:'GET',path:'/api/members',auth:'officer',query:MembersQuery,response:MembersResponse},
   membersExport: {method:'GET',path:'/api/members/export',auth:'director',query:MembersQuery,response:'csv'},
   memberDetail: {method:'GET',path:'/api/members/:id',auth:'officer',response:MemberResponse},

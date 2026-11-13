@@ -5,6 +5,15 @@ import "net/http"
 func (s *Server) routes(mux *http.ServeMux) {
 	h := func(pattern string, fn handlerFunc) { mux.HandleFunc(pattern, s.wrap(fn)) }
 
+	h("GET /api/buildspace-launchpad", (*Ctx).buildspaceList)
+	h("PUT /api/buildspace-launchpad/projects/{id}", (*Ctx).buildspaceProjectSave)
+	h("PUT /api/buildspace-launchpad/people/{id}", (*Ctx).buildspacePersonSave)
+	h("POST /api/buildspace-launchpad/activity", (*Ctx).buildspaceActivityCreate)
+	h("POST /api/buildspace-launchpad/activity/{id}/resolve", (*Ctx).buildspaceActivityResolve)
+	h("POST /api/ingest/buildspace-launchpad", (*Ctx).buildspaceIngest)
+	h("PUT /api/buildspace-launchpad/schedule", (*Ctx).buildspaceSchedulePut)
+
+	// Legacy API aliases preserve request bodies and existing integrations.
 	h("GET /api/buildspace", (*Ctx).buildspaceList)
 	h("PUT /api/buildspace/projects/{id}", (*Ctx).buildspaceProjectSave)
 	h("PUT /api/buildspace/people/{id}", (*Ctx).buildspacePersonSave)

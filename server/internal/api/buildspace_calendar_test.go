@@ -11,14 +11,14 @@ func TestBuildspaceCalendarOptInDatesAndNotes(t *testing.T) {
 	e := newEnv(t)
 	who := e.officer()
 	project := map[string]any{"name": "Calendar prototype", "description": "", "track": "Software", "stage": "Building", "links": []string{}, "mentorIds": []string{"bs-mentor-maya"}}
-	e.mustOK(e.do("PUT", "/api/buildspace/projects/calendar-project", project, who))
-	e.mustOK(e.do("PUT", "/api/buildspace/people/calendar-person", map[string]any{"name": "Calendar builder", "projectId": "calendar-project", "joinedOn": "2027-03-01"}, who))
+	e.mustOK(e.do("PUT", "/api/buildspace-launchpad/projects/calendar-project", project, who))
+	e.mustOK(e.do("PUT", "/api/buildspace-launchpad/people/calendar-person", map[string]any{"name": "Calendar builder", "projectId": "calendar-project", "joinedOn": "2027-03-01"}, who))
 	for _, kind := range []string{"absence", "mentor"} {
 		body := map[string]any{"projectId": "calendar-project", "personId": "calendar-person", "kind": kind, "date": "2027-03-14", "body": "Private note must not appear in feed", "status": "on-track"}
 		if kind == "mentor" {
 			body["mentorId"] = "bs-mentor-maya"
 		}
-		e.mustOK(e.post("/api/buildspace/activity", body, who))
+		e.mustOK(e.post("/api/buildspace-launchpad/activity", body, who))
 	}
 	path := "/api/calendar/feed?start=2027-03-08&end=2027-03-15"
 	defaults := e.mustOK(e.get("/api/me/calendar-widget", who))
@@ -31,7 +31,7 @@ func TestBuildspaceCalendarOptInDatesAndNotes(t *testing.T) {
 	}
 	for _, v := range feed.list("items") {
 		if strings.HasPrefix(v.(map[string]any)["source"].(string), "buildspace-") {
-			t.Fatal("Buildspace enabled by default")
+			t.Fatal("Buildspace + Launchpad enabled by default")
 		}
 	}
 	ids := []string{"buildspace-absences", "buildspace-weekly", "buildspace-mentor"}
@@ -50,7 +50,7 @@ func TestBuildspaceCalendarOptInDatesAndNotes(t *testing.T) {
 			}
 			if strings.Contains(item["title"].(string), "Calendar prototype") {
 				found = true
-				if !strings.HasPrefix(item["href"].(string), "/buildspace?") {
+				if !strings.HasPrefix(item["href"].(string), "/buildspace-launchpad?") {
 					t.Fatal(item)
 				}
 			}
@@ -64,7 +64,7 @@ func TestBuildspaceCalendarOptInDatesAndNotes(t *testing.T) {
 	if len(before.list("items")) != 0 {
 		t.Fatal(string(before.Raw))
 	}
-	e.mustOK(e.post("/api/buildspace/activity", map[string]any{"projectId": "calendar-project", "personId": "calendar-person", "kind": "weekly", "date": "2027-03-08", "body": "Weekly progress", "status": "on-track"}, who))
+	e.mustOK(e.post("/api/buildspace-launchpad/activity", map[string]any{"projectId": "calendar-project", "personId": "calendar-person", "kind": "weekly", "date": "2027-03-08", "body": "Weekly progress", "status": "on-track"}, who))
 	got := e.mustOK(e.get(path+"&sources=buildspace-weekly", who))
 	for _, v := range got.list("items") {
 		if strings.Contains(v.(map[string]any)["id"].(string), "calendar-person") {
@@ -83,7 +83,7 @@ func TestBuildspaceCalendarOptInDatesAndNotes(t *testing.T) {
 		t.Fatal("next week's deadline missing")
 	}
 	project["stage"] = "Shipped"
-	e.mustOK(e.do("PUT", "/api/buildspace/projects/calendar-project", project, who))
+	e.mustOK(e.do("PUT", "/api/buildspace-launchpad/projects/calendar-project", project, who))
 	for _, v := range e.mustOK(e.get(next, who)).list("items") {
 		if strings.Contains(v.(map[string]any)["id"].(string), "calendar-person") {
 			t.Fatal("shipped project still due")

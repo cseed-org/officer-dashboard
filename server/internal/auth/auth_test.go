@@ -55,7 +55,7 @@ func TestDecideLogin(t *testing.T) {
 }
 
 func TestSafeNextKeepsAppPaths(t *testing.T) {
-	for _, in := range []string{"/", "/buildspace?person=bs-person-01", "/requests", "/requests/new?event=e1#form", "/events/a%20b"} {
+	for _, in := range []string{"/", "/buildspace-launchpad?person=bs-person-01", "/requests", "/requests/new?event=e1#form", "/events/a%20b"} {
 		if got := SafeNext(in); got != in {
 			t.Errorf("SafeNext(%q) = %q", in, got)
 		}

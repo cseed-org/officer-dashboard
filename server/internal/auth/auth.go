@@ -87,7 +87,7 @@ func DecideLogin(user *KnownUser) Decision {
 }
 
 // RedirectSections are the top-level page sections a post-login redirect may land in (besides "/").
-var RedirectSections = []string{"buildspace", "events", "requests", "finance", "admin", "settings", "officers", "members", "speakers", "contacts", "design", "onboarding"}
+var RedirectSections = []string{"buildspace", "buildspace-launchpad", "events", "requests", "finance", "admin", "settings", "officers", "members", "speakers", "contacts", "design", "onboarding"}
 
 // SafeNext returns the post-login redirect target, or "/" unless it is one of the app's own
 // pages. Layers, each enough on its own for the cases it covers:

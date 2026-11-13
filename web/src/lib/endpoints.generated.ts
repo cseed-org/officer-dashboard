@@ -2,13 +2,13 @@
 import type { EndpointName } from './contracts';
 
 const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string }> = {
-  buildspaceList: { method: 'GET', path: '/api/buildspace' },
-  buildspaceProjectSave: { method: 'PUT', path: '/api/buildspace/projects/:id' },
-  buildspacePersonSave: { method: 'PUT', path: '/api/buildspace/people/:id' },
-  buildspaceActivityCreate: { method: 'POST', path: '/api/buildspace/activity' },
-  buildspaceActivityResolve: { method: 'POST', path: '/api/buildspace/activity/:id/resolve' },
-  buildspaceIngest: { method: 'POST', path: '/api/ingest/buildspace' },
-  buildspaceSchedulePut: { method: 'PUT', path: '/api/buildspace/schedule' },
+  buildspaceList: { method: 'GET', path: '/api/buildspace-launchpad' },
+  buildspaceProjectSave: { method: 'PUT', path: '/api/buildspace-launchpad/projects/:id' },
+  buildspacePersonSave: { method: 'PUT', path: '/api/buildspace-launchpad/people/:id' },
+  buildspaceActivityCreate: { method: 'POST', path: '/api/buildspace-launchpad/activity' },
+  buildspaceActivityResolve: { method: 'POST', path: '/api/buildspace-launchpad/activity/:id/resolve' },
+  buildspaceIngest: { method: 'POST', path: '/api/ingest/buildspace-launchpad' },
+  buildspaceSchedulePut: { method: 'PUT', path: '/api/buildspace-launchpad/schedule' },
   membersList: { method: 'GET', path: '/api/members' },
   membersExport: { method: 'GET', path: '/api/members/export' },
   memberDetail: { method: 'GET', path: '/api/members/:id' },

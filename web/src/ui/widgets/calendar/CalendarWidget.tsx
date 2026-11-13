@@ -27,9 +27,9 @@ const fallbackSources: CalendarFeedSource[] = [
   { id: 'events', label: 'Club events', icon: 'calendar', hue: 'blue' },
   { id: 'design', label: 'Design deadlines', icon: 'pen', hue: 'amber' },
   { id: 'purchase-deadlines', label: 'Purchase deadlines', icon: 'wallet', hue: 'green' },
-  { id: 'buildspace-absences', label: 'Buildspace absences', icon: 'user', hue: 'coral' },
-  { id: 'buildspace-weekly', label: 'Buildspace weekly check-ins', icon: 'check', hue: 'teal' },
-  { id: 'buildspace-mentor', label: 'Buildspace mentor check-ins', icon: 'user', hue: 'violet' },
+  { id: 'buildspace-absences', label: 'Buildspace + Launchpad absences', icon: 'user', hue: 'coral' },
+  { id: 'buildspace-weekly', label: 'Buildspace + Launchpad weekly check-ins', icon: 'check', hue: 'teal' },
+  { id: 'buildspace-mentor', label: 'Buildspace + Launchpad mentor check-ins', icon: 'user', hue: 'violet' },
 ];
 
 /** "Nov 9 – 15", "Nov 30 – Dec 6". */

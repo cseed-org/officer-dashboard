@@ -109,7 +109,7 @@ func TestCalendarSourceRegistryExtension(t *testing.T) {
 			if window.UserID != "user-priya" || window.FirstDate != "2026-11-01" || window.EndDate != "2026-11-02" {
 				t.Fatalf("loader scope: %+v", window)
 			}
-			return []store.CalendarItem{{ID: "demo", Title: "Extension date", Date: window.FirstDate, Type: "due", Href: "/buildspace"}}, nil
+			return []store.CalendarItem{{ID: "demo", Title: "Extension date", Date: window.FirstDate, Type: "due", Href: "/buildspace-launchpad"}}, nil
 		},
 	})
 	result := e.mustOK(e.get("/api/calendar/feed?start=2026-11-01&end=2026-11-02&sources=extension", e.officer()))

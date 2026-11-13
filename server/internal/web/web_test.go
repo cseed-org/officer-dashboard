@@ -178,3 +178,12 @@ func TestChangedBuildFileIsNotServedFromStartupCache(t *testing.T) {
 		t.Fatal("served stale startup bytes")
 	}
 }
+
+func TestBuildspaceLegacyRedirect(t *testing.T) {
+	for _, path := range []string{"/buildspace?person=abc", "/buildspace/?person=abc"} {
+		r := get(Handler(site(), Options{}), "GET", path)
+		if r.Code != 301 || r.Header().Get("Location") != "/buildspace-launchpad?person=abc" {
+			t.Fatalf("redirect: %d %s", r.Code, r.Header().Get("Location"))
+		}
+	}
+}

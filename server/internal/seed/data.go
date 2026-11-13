@@ -85,7 +85,7 @@ type Fund struct {
 
 var Funds = []Fund{
 	{"fund-general", "GEN", "General operating", "general", "without_donor", "Unrestricted operations", "", "", "", 0},
-	{"fund-buildspace", "GR-BUILDSPACE", "Buildspace program grant (sample)", "grant", "with_donor", "Buildspace cohort supplies, food and demo night", "donor-foundation", "2026-08-01", "2027-06-30", 500_000},
+	{"fund-buildspace", "GR-BUILDSPACE", "Buildspace + Launchpad program grant (sample)", "grant", "with_donor", "Buildspace + Launchpad cohort supplies, food and demo night", "donor-foundation", "2026-08-01", "2027-06-30", 500_000},
 	{"fund-buildher", "GR-BUILDHER", "BuildHer workshop grant (sample)", "grant", "with_donor", "BuildHer workshop series for women in tech", "donor-city", "2026-10-01", "2027-05-31", 250_000},
 }
 
@@ -98,7 +98,7 @@ type Event struct {
 var Events = []Event{
 	{"event-kickoff", "evt-kickoff26", "Fall Kickoff", "2026-09-18T18:00:00-07:00", "2026-09-18T20:00:00-07:00", "Student Union 210", "user-priya", 64, 0.78, 0.42},
 	{"event-resume", "evt-resume26", "Resume Workshop", "2026-10-02T17:30:00-07:00", "2026-10-02T19:00:00-07:00", "Library Lab B", "user-marcus", 38, 0.66, 0.6},
-	{"event-buildspace-demo", "evt-bsdemo26", "Buildspace Demo Night", "2026-10-09T18:30:00-07:00", "2026-10-09T21:00:00-07:00", "Engineering Atrium", "user-priya", 92, 0.71, 0.35},
+	{"event-buildspace-demo", "evt-bsdemo26", "Buildspace + Launchpad Demo Night", "2026-10-09T18:30:00-07:00", "2026-10-09T21:00:00-07:00", "Engineering Atrium", "user-priya", 92, 0.71, 0.35},
 	{"event-buildher-1", "evt-bh1-26", "BuildHer: Intro to Web Apps", "2026-10-16T17:00:00-07:00", "2026-10-16T19:30:00-07:00", "Engineering 120", "user-ava", 30, 0.83, 0.72},
 	{"event-founder-talk", "evt-founder26", "Founder Fireside", "2026-10-23T18:00:00-07:00", "2026-10-23T19:30:00-07:00", "Business Hall 300", "user-marcus", 51, 0.55, 0.25},
 	{"event-hack-night", "evt-hack26", "Hack Night", "2026-11-13T18:00:00-08:00", "2026-11-13T23:00:00-08:00", "Engineering Atrium", "user-ava", 44, 0, 0},
@@ -116,7 +116,7 @@ type Request struct {
 
 var Requests = []Request{
 	{"req-0001", "2027-0001", "user-priya", "reimbursement", "Kickoff pizza", "Pagliacci", "", 15, 2450, 3750, "5200", "fund-general", "event-kickoff", "program", "Food for 60 attendees at Fall Kickoff", "reimbursed", "2026-09-12", "2026-09-13", &Decision{"approved", "Within the kickoff budget."}},
-	{"req-0002", "2027-0002", "user-ava", "club_purchase", "Arduino starter kits", "Adafruit", "https://www.adafruit.com/", 8, 2195, 1080, "5100", "fund-buildspace", "event-buildspace-demo", "program", "Hardware for Buildspace teams; grant-funded", "fulfilled", "2026-09-20", "2026-09-21", &Decision{"approved", "Charge to the Buildspace grant."}},
+	{"req-0002", "2027-0002", "user-ava", "club_purchase", "Arduino starter kits", "Adafruit", "https://www.adafruit.com/", 8, 2195, 1080, "5100", "fund-buildspace", "event-buildspace-demo", "program", "Hardware for Buildspace + Launchpad teams; grant-funded", "fulfilled", "2026-09-20", "2026-09-21", &Decision{"approved", "Charge to the Buildspace + Launchpad grant."}},
 	{"req-0003", "2027-0003", "user-marcus", "club_purchase", "Figma education upgrade", "Figma", "https://www.figma.com/education/", 1, 14400, 0, "5400", "fund-general", "", "mgmt_general", "Shared design workspace for officers", "denied", "2026-10-05", "2026-10-06", &Decision{"denied", "Education plan is free; apply for that first."}},
 	{"req-0004", "2027-0004", "user-ava", "club_purchase", "BuildHer workshop snacks", "Costco", "", 1, 18500, 1850, "5200", "fund-buildher", "event-hack-night", "program", "Snacks and drinks for 40 people at Hack Night", "approved", "2026-10-27", "2026-10-28", &Decision{"approved", "Approved; keep the receipt."}},
 	{"req-0005", "2027-0005", "user-priya", "reimbursement", "Demo night banner printing", "FedEx Office", "", 2, 4200, 860, "5500", "fund-general", "event-buildspace-demo", "program", "Two vinyl banners for Demo Night", "submitted", "2026-10-29", "", nil},
@@ -167,7 +167,7 @@ var Journal = []Entry{
 		{"1000", "fund-general", 320_000, 0, ""},
 		{"3000", "fund-general", 0, 320_000, ""},
 	}},
-	{"je-0002", "2026-08-15", "Buildspace grant received", "contribution", "", []Line{
+	{"je-0002", "2026-08-15", "Buildspace + Launchpad grant received", "contribution", "", []Line{
 		{"1000", "fund-buildspace", 500_000, 0, ""},
 		{"4110", "fund-buildspace", 0, 500_000, ""},
 	}},
@@ -191,7 +191,7 @@ var Journal = []Entry{
 		{"5100", "fund-buildspace", 18_640, 0, "program"},
 		{"1000", "fund-buildspace", 0, 18_640, ""},
 	}},
-	{"je-0009", "2026-09-24", "Release Buildspace restriction for Arduino kits", "release", "req-0002", []Line{
+	{"je-0009", "2026-09-24", "Release Buildspace + Launchpad restriction for Arduino kits", "release", "req-0002", []Line{
 		{"3100", "fund-buildspace", 18_640, 0, ""},
 		{"3000", "fund-buildspace", 0, 18_640, ""},
 	}},

@@ -43,6 +43,14 @@ func Handler(root fs.FS, opt Options) http.Handler {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		if r.URL.Path == "/buildspace" || r.URL.Path == "/buildspace/" {
+			target := "/buildspace-launchpad"
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
 		clean := path.Clean("/" + r.URL.Path)
 		for _, seg := range strings.Split(clean, "/") {
 			if strings.HasPrefix(seg, ".") && seg != "" {

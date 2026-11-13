@@ -50,9 +50,9 @@ var CalendarSources = []CalendarSource{
 	{ID: "events", Label: "Club events", Icon: "calendar", Hue: "blue", Load: loadCalendarEvents},
 	{ID: "design", Label: "Design deadlines", Icon: "pen", Hue: "amber", Load: loadCalendarDesign},
 	{ID: "purchase-deadlines", Label: "Purchase deadlines", Icon: "wallet", Hue: "green", DefaultRole: auth.RoleDirector, Load: loadPurchaseDeadlines},
-	{ID: "buildspace-absences", Label: "Buildspace absences", Icon: "user", Hue: "coral", DisabledByDefault: true, Load: loadBuildspaceAbsences},
-	{ID: "buildspace-weekly", Label: "Buildspace weekly check-ins", Icon: "check", Hue: "teal", DisabledByDefault: true, Load: loadBuildspaceWeeklyDue},
-	{ID: "buildspace-mentor", Label: "Buildspace mentor check-ins", Icon: "user", Hue: "violet", DisabledByDefault: true, Load: loadBuildspaceMentorCheckIns},
+	{ID: "buildspace-absences", Label: "Buildspace + Launchpad absences", Icon: "user", Hue: "coral", DisabledByDefault: true, Load: loadBuildspaceAbsences},
+	{ID: "buildspace-weekly", Label: "Buildspace + Launchpad weekly check-ins", Icon: "check", Hue: "teal", DisabledByDefault: true, Load: loadBuildspaceWeeklyDue},
+	{ID: "buildspace-mentor", Label: "Buildspace + Launchpad mentor check-ins", Icon: "user", Hue: "violet", DisabledByDefault: true, Load: loadBuildspaceMentorCheckIns},
 }
 
 // DefaultCalendarSourceIDs lists the sources a new account with this role sees.
