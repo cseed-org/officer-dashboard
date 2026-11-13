@@ -667,8 +667,9 @@ function OfficerDrawer({
     setTeam(officer?.subteam?.id ?? '');
     setTitle(officer?.title ?? '');
     setTerm(officer?.startTerm ?? '');
-    setNote(null);
   }, [officer?.id, officer?.role, officer?.subteam?.id, officer?.title, officer?.startTerm]);
+  // "Saved ✓" survives the list refresh that the save triggers; a different person clears it.
+  useEffect(() => setNote(null), [officer?.id]);
   useEffect(() => {
     setActivity(null);
     setActivityError(null);

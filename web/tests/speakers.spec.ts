@@ -18,11 +18,14 @@ const shot = async (page: Page, name: string, project: string, theme: string) =>
 const entry = (page: Page, name: string) =>
   page.locator('main [data-contact-row]').filter({ visible: true, hasText: name });
 
+/** The page's Add contact button (the Add drawer's submit button has the same name). */
+const addButton = (page: Page) => page.locator('[data-people-card="contacts"]').getByRole('button', { name: 'Add contact', exact: true });
+
 /** Switch the open contact drawer to one of its tabs. */
 const tab = (page: Page, name: 'Overview' | 'Activity' | 'Manage') => openDialog(page).getByRole('tab', { name, exact: true }).click();
 
 async function addContact(page: Page, c: { name: string; org?: string; type?: string; topics?: string; email?: string; spoken?: boolean }) {
-  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  await addButton(page).click();
   const d = openDialog(page);
   await expect(d.getByRole('heading', { level: 2, name: 'Add contact' })).toBeFocused();
   await d.getByLabel('Name').fill(c.name);
@@ -44,7 +47,7 @@ test('contacts: field-named validation error, error styling, add draft kept on c
   await settle(page);
 
   // A whitespace-only name passes `required` but the API rejects it: the alert names the field.
-  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  await addButton(page).click();
   let d = openDialog(page);
   await d.getByLabel('Name').fill('   ');
   await d.getByRole('button', { name: 'Add contact' }).click();
@@ -64,7 +67,7 @@ test('contacts: field-named validation error, error styling, add draft kept on c
   await d.getByLabel('Organization').fill('Draft Org');
   await page.keyboard.press('Escape');
   await expect(openDialog(page)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  await addButton(page).click();
   d = openDialog(page);
   await expect(d.getByLabel('Name')).toHaveValue(name);
   await expect(d.getByLabel('Organization')).toHaveValue('Draft Org');
@@ -76,7 +79,7 @@ test('contacts: field-named validation error, error styling, add draft kept on c
   await expect(d.getByRole('heading', { level: 2, name })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(openDialog(page)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  await addButton(page).click();
   await expect(openDialog(page).getByLabel('Name')).toHaveValue('');
   await page.keyboard.press('Escape');
 
@@ -103,7 +106,7 @@ for (const theme of THEMES) {
     expect(await overflow(page)).toEqual([]);
 
     // Add: name is required (native validation keeps the drawer open).
-    await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+    await addButton(page).click();
     let d = openDialog(page);
     await d.getByRole('button', { name: 'Add contact' }).click();
     await expect(d.getByLabel('Name')).toBeFocused();
@@ -286,7 +289,7 @@ test('contacts: marking a contact as club support tags it, filters it and lists 
   await devLogin(page, 'officer');
   await page.goto('/contacts');
   await settle(page);
-  await page.getByRole('button', { name: 'Add contact', exact: true }).click();
+  await addButton(page).click();
   let d = openDialog(page);
   await d.getByLabel('Name').fill(name);
   await d.getByLabel('Club support contact (shown under Board Members)').check();
