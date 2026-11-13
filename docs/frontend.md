@@ -118,9 +118,25 @@ tests/            Playwright
 
 External Contacts uses `/contacts`. The legacy `/speakers` route redirects to it (including contact deep links). The directory offers All / Has spoken / Not yet speaking-history filters and an editable “Has spoken for CSEED before” checkbox.
 
-## Onboarding intro (V0.9)
+## Onboarding hello screen (V0.10)
 
-`src/ui/onboarding/` holds `WelcomeIntro({ onDone })`: a full-screen "Hello, welcome to cseed" cycling through 15 languages (`greetings.ts`; `cseed` is always lowercase LTR Latin). Any click, tap, Enter or Space plays a snake that eats the greeting, eats apples spelling "cseed", then shrinks into the top-left logo and calls `onDone`; a second press fast-forwards. `snakePlan.ts` is pure geometry/timing that bakes per-segment Web Animations keyframes (transform and opacity only, no dependencies). The destination is the app shell's logo: the onboarding header draws the same `cseed-wordmark` images and classes as `AppLayout.astro` (`ShellLogo`/`LogoImages` in `LogoMark.tsx`) at the shell's coordinates (sidebar at desktop, centred in the top bar on phones, the C rail mark at 768–1099px). The snake lands on `[data-onb-logo]`, measured at dismiss time, and the spec compares it with the real shell logo at each width. While it plays the intro is a modal: the rest of the page is inert, Tab stays on Skip/Continue, and focus returns to the step heading. Skip, or `prefers-reduced-motion`, drops the snake for a plain fade. For now it is switched on with `/onboarding?intro=1`; the intake form and tour wire it in later. Evidence: `docs/evidence/onboarding-intro/`; spec: `tests/onboarding-intro.spec.ts` (`INTRO_FRAMES=<dir>` records frames).
+`src/ui/onboarding/` holds `WelcomeIntro({ onDone, media })`, the first step of onboarding. It shows "Hello, welcome to cseed" in 15 languages (`greetings.ts`; `cseed` is always lowercase LTR Latin), set in glass letters: a translucent fill clipped to the text, a specular band, a rim and a cast shadow. Chromium also gets an SVG bevel on the letters and refraction on the glass Skip/hint pills. Other browsers keep the blur-only glass. Behind it, a drifting mesh of colour takes a new random vivid palette every 1.2s, cross-faded over 0.9s between two stacked layers (`palette.ts`; each hue jumps 70–220°, so it never strobes). The background video, when present, plays underneath.
+
+There is no start button. A click, a tap or any key starts it. Tab still moves focus (overlay ↔ Skip), modifier keys do nothing, and Escape skips. Starting brings up the group photo as a glass-framed card from the tap point and starts the arcade snake. The snake moves one grid cell per tick with 90° turns. It eats the greeting, wraps off the right edge to a lane above the word, and eats an apple on every word cell. On each bite the tail stays put (classic growth), so its body ends up exactly on `WORD_PATH`, spelling **cseed** on the grid. The route is the shortest one that writes c-s-e-e-d in one stroke: 58 letter cells plus 15 joins. The joins are dimmed once it is spelled, like the blacked-out tube of a neon sign. It holds about 1s, then the word shrinks into the shell logo and the overlay fades over the intake. A second press fast-forwards. `snakePlan.ts` is pure (grid, route, per-tick body, timing, morph) and unit-tested in `tests/onboarding-snake.spec.ts`. The component renders it with pooled squares moved by `transform` once per tick. Everything else is Web Animations on transform/opacity. With `prefers-reduced-motion` there is no snake and no colour change: the photo fades in, stays 1.5s, then a plain fade to the logo. Skip goes straight to the logo.
+
+The landing spot is measured, never hard-coded. `ShellLogo` (`LogoMark.tsx`) renders an invisible copy of the shell's top bar and sidebar header (`.onb-ghost`, the same classes as `AppLayout.astro`, laid out by the same CSS and `<html data-sidebar>`). It copies whichever logo the ghost shows, the wordmark or the rail's C mark, and that logo's box. The intro lands on `[data-onb-logo]`. While it plays the intro is a modal: the rest of the page is inert and focus returns to the step heading afterwards. Spec: `tests/onboarding-intro.spec.ts`, which checks the landing against the real shell at 820/900/1099/1100/390 (`INTRO_FRAMES=<dir>` records frames).
+
+### Hello screen media (drop-in files)
+
+Put these in `web/public/media/` and rebuild. `src/pages/onboarding.astro` looks for them at build time, so a missing file never costs a 404.
+
+| File | What | If missing |
+| --- | --- | --- |
+| `hello-loop.webm` and/or `hello-loop.mp4` | Background video: muted, looped, `playsinline`, under the colour (about 70% colour over it). Keep it short (≤ 10s), ≤ 1920px wide and a few MB; H.264 MP4 for Safari, VP9/AV1 WebM for the rest. | Animated gradient |
+| `hello-poster.jpg` | First frame shown while the video loads | No poster |
+| `hello-group.jpg` (or `.jpeg`, `.webp`, `.png`) | The group photo revealed on the first tap, cropped to fill a landscape card (portrait on phones), so keep faces near the middle; about 2000px wide | `hello-group-placeholder.svg` (illustration) |
+
+The intro also falls back at runtime if a file fails to load. The Go server serves `.mp4`/`.webm` with video types and byte ranges.
 
 ## Resizable sidebar (V0.9)
 
