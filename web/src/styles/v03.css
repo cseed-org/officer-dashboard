@@ -429,3 +429,5 @@ body:has(dialog[open]){overflow:hidden}
 .dt-primary .linkish{text-align:left}.prototype-toggle{display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px dashed var(--line)}
 @media(max-width:640px){.dt-primary .linkish{min-height:44px;display:inline-flex;align-items:center}.dt .action-row .btn{min-height:44px}}
 @media(min-width:641px){.people-group .dt{table-layout:fixed}.people-group .dt th:first-child{width:46%}.people-group .dt th:nth-child(2){width:30%}}
+.onb-top .wordmark {gap:10px;}
+.onb-logo {display:block;flex:none;width:28px;height:28px;}

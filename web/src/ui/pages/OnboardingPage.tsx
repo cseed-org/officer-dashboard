@@ -7,6 +7,8 @@ import { choiceOf, layoutForChoices, onboardingChoices } from '../widgets/regist
 import { Icon } from '../components/Icon';
 import { ProfileForm, type ProfileFormHandle } from '../views/ProfileForm';
 import { CalendarPanel } from '../views/CalendarPanel';
+import { WelcomeIntro } from '../onboarding/WelcomeIntro';
+import { LogoMark } from '../onboarding/LogoMark';
 
 const NAMES = ['Hello', 'Confirm', 'Profile', 'Calendar', 'Widgets', 'Done'];
 const WIDGET_SUB: Record<string, string> = {
@@ -92,7 +94,7 @@ function Unavailable() {
   );
 }
 
-export default function OnboardingPage() {
+function OnboardingFlow() {
   const [unavailable, setUnavailable] = useState(false);
   const [data, setData] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -568,7 +570,10 @@ export default function OnboardingPage() {
         Skip to setup
       </a>
       <header class="onb-top">
-        <span class="wordmark">CSEED</span>
+        <span class="wordmark">
+          <LogoMark class="onb-logo" data-onb-logo />
+          CSEED
+        </span>
         <ol class="onb-progress" aria-label={`Setup progress, step ${step} of 6`}>
           {NAMES.map((n, i) => (
             <li key={n} class={`onb-seg${i + 1 < step ? ' is-done' : ''}`} aria-current={i + 1 === step ? 'step' : undefined}>
@@ -629,5 +634,27 @@ export default function OnboardingPage() {
         </button>
       </footer>
     </div>
+  );
+}
+
+/**
+ * `?intro=1` opens the V0.9 welcome intro (multilingual greeting, snake, logo hand-off) on top
+ * of the existing setup. The intro lands on the header logo, then hands over to the steps.
+ */
+export default function OnboardingPage() {
+  const [intro, setIntro] = useState(false);
+  useEffect(() => setIntro(new URLSearchParams(location.search).get('intro') === '1'), []);
+  return (
+    <>
+      <OnboardingFlow />
+      {intro && (
+        <WelcomeIntro
+          onDone={() => {
+            setIntro(false);
+            document.getElementById('step-title')?.focus({ preventScroll: true });
+          }}
+        />
+      )}
+    </>
   );
 }
