@@ -167,6 +167,11 @@ func contentType(name string) string {
 		return "text/plain; charset=utf-8"
 	case ".webmanifest":
 		return "application/manifest+json"
+	// The hello screen's background video (web/public/media); the system MIME table may not know these.
+	case ".mp4":
+		return "video/mp4"
+	case ".webm":
+		return "video/webm"
 	default:
 		if t := mime.TypeByExtension(ext); t != "" {
 			return t

@@ -44,6 +44,27 @@ func TestServesFilesIndexesAndExtensionlessPages(t *testing.T) {
 	}
 }
 
+func TestHelloMediaTypesAndRanges(t *testing.T) {
+	fsys := site()
+	fsys["media/hello-loop.mp4"] = &fstest.MapFile{Data: []byte("0123456789")}
+	fsys["media/hello-loop.webm"] = &fstest.MapFile{Data: []byte("0123456789")}
+	fsys["media/hello-group.jpg"] = &fstest.MapFile{Data: []byte("jpeg")}
+	h := Handler(fsys, Options{})
+	for p, want := range map[string]string{"/media/hello-loop.mp4": "video/mp4", "/media/hello-loop.webm": "video/webm", "/media/hello-group.jpg": "image/jpeg"} {
+		if ct := get(h, "GET", p).Header().Get("Content-Type"); ct != want {
+			t.Errorf("%s content type %q, want %q", p, ct, want)
+		}
+	}
+	// Video players (Safari above all) need byte ranges.
+	req := httptest.NewRequest("GET", "/media/hello-loop.mp4", nil)
+	req.Header.Set("Range", "bytes=2-5")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusPartialContent || rec.Body.String() != "2345" {
+		t.Errorf("range → %d %q", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCachePolicy(t *testing.T) {
 	h := Handler(site(), Options{})
 	if cc := get(h, "GET", "/_astro/app.abc123.js").Header().Get("Cache-Control"); !strings.Contains(cc, "immutable") {
