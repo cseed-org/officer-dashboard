@@ -207,15 +207,16 @@ test('Pointer drag: the drop target is a soft fill, the move saves', async ({ pa
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
-  const target = grid(page).locator('li.is-dragging');
-  await expect(target).toHaveAttribute('data-widget', 'kpi-pending');
+  const target = hint(page);
+  await expect(target).toHaveCount(1);
+  await expect(widget(page, 'kpi-pending')).toHaveClass(/is-lifted/);
   const look = await target.evaluate((e) => { const s = getComputedStyle(e); return { border: s.borderTopStyle, bg: s.backgroundColor }; });
   expect(look.border).not.toBe('dashed');
   expect(look.bg).not.toBe('rgba(0, 0, 0, 0)');
-  await expect(page.locator('.blk-float')).toContainText(/pending requests/i);
+  await expect(widget(page, 'kpi-pending')).toContainText(/pending requests/i);
   await page.mouse.up();
   expect((await order(page)).indexOf('kpi-pending')).toBeLessThan(DEFAULT_IDS.indexOf('kpi-pending'));
-  await expect(page.locator('.blk-float')).toHaveCount(0);
+  await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
   await done(page);
   expect((await savedLayout(page)).map(w => w.id)).toEqual(await order(page));
 
@@ -506,7 +507,7 @@ test('Resize commits only at snap boundaries; neighbours pack around the resized
   expect(await card.evaluate(el => el.getAnimations().length)).toBe(0);
 });
 
-test('Whole-tile drag has a threshold, an inert static copy, and native cursors', async ({ page }, info) => {
+test('Whole-tile drag has a threshold, a lifted live card, and native cursors', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'mouse cursor and drag geometry');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }]);
@@ -520,13 +521,11 @@ test('Whole-tile drag has a threshold, an inert static copy, and native cursors'
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 3, y);
-  await expect(page.locator('.blk-float')).toHaveCount(0);
+  await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
   await page.mouse.move(x + 5, y);
-  const clone = page.locator('.blk-float');
+  const clone = grid(page).locator('.is-lifted');
   await expect(clone).toBeVisible();
-  await expect(clone.locator('[id], .blk-tools')).toHaveCount(0);
-  expect(await clone.evaluate(el => (el as HTMLElement).inert)).toBe(true);
-  expect(await clone.evaluate(el => getComputedStyle(el).transform)).toBe('none');
+  expect(await clone.evaluate(el => getComputedStyle(el).position)).toBe('fixed');
   expect(await page.locator('html').evaluate(el => getComputedStyle(el).cursor)).toBe('grabbing');
   expect(feedRequests).toBe(0);
   await page.keyboard.press('Escape');
@@ -757,7 +756,7 @@ for (const [width, cols] of [[1280, 4], [1920, 6]] as const) {
     let to = await dragOver(page, 'kpi-checkin');
     await to(0, 0);
     await expect.poll(() => cellOf(page, 'kpi-checkin')).toEqual({ x: 0, y: 0, w: 1, h: 1 });
-    expect(await hint(page).getAttribute('data-widget')).toBe('kpi-checkin');
+    await expect(widget(page, 'kpi-checkin')).toHaveClass(/is-lifted/);
     expect(await hint(page).evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
     await page.mouse.up();
     expect(await cellOf(page, 'kpi-checkin')).toEqual({ x: 0, y: 0, w: 1, h: 1 });
@@ -876,17 +875,100 @@ for (const theme of THEMES) {
     const ring = await hint(page).evaluate((e) => getComputedStyle(e, '::after').boxShadow);
     expect(ring).toContain('inset');
     expect(await hint(page).evaluate((e) => [e.getBoundingClientRect().width, e.getBoundingClientRect().height])).toEqual(
-      await page.locator('.blk-float').evaluate((e) => [parseFloat(e.style.width), parseFloat(e.style.height)]));
+      await grid(page).locator('li.is-lifted').evaluate((e) => [parseFloat((e as HTMLElement).style.width), parseFloat((e as HTMLElement).style.height)]));
     // Moving the target scales the ring in; reduced motion keeps it still.
+    // Count ring animations as they start: the 220ms animation is too short to sample reliably.
+    await page.evaluate(() => {
+      const w = window as unknown as { ringStarts: number };
+      w.ringStarts = 0;
+      const animate = Element.prototype.animate;
+      Element.prototype.animate = function (this: Element, ...args: Parameters<Element['animate']>) {
+        if ((args[1] as KeyframeAnimationOptions | undefined)?.pseudoElement === '::after') w.ringStarts++;
+        return animate.apply(this, args);
+      };
+    });
     await to(0, 0);
     await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: 0, w: 4, h: 2 });
-    expect(await hint(page).evaluate((e) => e.getAnimations({ subtree: true }).length)).toBeGreaterThan(0);
+    expect(await page.evaluate(() => (window as unknown as { ringStarts: number }).ringStarts)).toBeGreaterThan(0);
+    const starts = await page.evaluate(() => (window as unknown as { ringStarts: number }).ringStarts);
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await to(0, 1);
     await expect.poll(() => cellOf(page, 'calendar')).toEqual({ x: 0, y: 1, w: 4, h: 2 });
-    expect(await hint(page).evaluate((e) => e.getAnimations({ subtree: true }).length)).toBe(0);
+    expect(await page.evaluate(() => (window as unknown as { ringStarts: number }).ringStarts)).toBe(starts);
     await page.mouse.up();
     await expect(grid(page).locator('li.blk-spot')).toHaveCount(0);
     await page.getByRole('button', { name: 'Cancel' }).click();
   });
 }
+
+/** Layout boxes (ignore in-flight FLIP transforms): what each card really occupies in the grid. */
+const layoutBoxes = (page: Page) => grid(page).locator(':scope > li.blk:not(.is-lifted):not(.blk-add-cell)').evaluateAll(els => els.map(e => {
+  const l = e as HTMLElement;
+  return { id: l.dataset.widget ?? 'slot', x: l.offsetLeft, y: l.offsetTop, w: l.offsetWidth, h: l.offsetHeight };
+}));
+const intersecting = (boxes: { id: string; x: number; y: number; w: number; h: number }[]) => {
+  const out: string[] = [];
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i]!, b = boxes[j]!;
+    if (a.x < b.x + b.w - 1 && b.x < a.x + a.w - 1 && a.y < b.y + b.h - 1 && b.y < a.y + a.h - 1) out.push(`${a.id}/${b.id}`);
+  }
+  return out;
+};
+/** The card's content is really rendered: its header and a body that has height. */
+async function expectFull(card: ReturnType<typeof widget>) {
+  const tile = card.locator('.blk-body > *').first();
+  await expect(tile).toBeVisible();
+  const [tileBox, cardBox] = [(await tile.boundingBox())!, (await card.boundingBox())!];
+  // The tile fills its card; a collapsed one would be just a title line tall.
+  expect(tileBox.height).toBeGreaterThan(cardBox.height * 0.8);
+}
+
+test('Dragging keeps the card at full size with its content; neighbours never overlap', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'mouse drag runs once');
+  await page.setViewportSize({ width: 1440, height: 1600 });
+  await openHome(page);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const card = widget(page, 'calendar');
+  const before = (await card.boundingBox())!;
+  const bodyBefore = await card.locator('.blk-body').first().evaluate(e => e.textContent);
+  const move = await dragOver(page, 'calendar');
+  for (const [x, y] of [[0, 0], [2, 1], [1, 3], [3, 0]] as const) {
+    await move(x, y, 8);
+    const lifted = grid(page).locator('li.is-lifted');
+    await expect(lifted).toHaveCount(1);
+    const box = (await lifted.boundingBox())!;
+    // The lift is a slight scale (≤ 3%); never a collapse.
+    expect(Math.abs(box.width / before.width - 1)).toBeLessThan(0.04);
+    expect(Math.abs(box.height / before.height - 1)).toBeLessThan(0.04);
+    await expectFull(lifted);
+    expect(await lifted.locator('.blk-body').first().evaluate(e => e.textContent)).toBe(bodyBefore);
+    await page.waitForTimeout(260);
+    expect(intersecting(await layoutBoxes(page))).toEqual([]);
+  }
+  await page.mouse.up();
+  await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
+  await expectFull(card);
+  await expect.poll(async () => { const b = (await card.boundingBox())!; return Math.abs(b.width - before.width) < 2 || b.width > 0; }).toBe(true);
+  expect(intersecting(await layoutBoxes(page))).toEqual([]);
+});
+
+test('Resizing keeps every card rendered and neighbours reflow without overlap', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'mouse resize runs once');
+  await page.setViewportSize({ width: 1440, height: 1600 });
+  await openHome(page);
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const card = widget(page, 'calendar');
+  const grip = card.locator('.blk-resize--both');
+  const g = (await grip.boundingBox())!;
+  await page.mouse.move(g.x + 20, g.y + 20);
+  await page.mouse.down();
+  const rect = (await card.boundingBox())!;
+  for (const [dx, dy] of [[rect.width * 0.6, 0], [rect.width * 0.6, rect.height * 0.8], [-rect.width * 0.4, -rect.height * 0.4], [rect.width, rect.height]]) {
+    await page.mouse.move(g.x + 20 + dx, g.y + 20 + dy, { steps: 8 });
+    await page.waitForTimeout(260);
+    for (const id of await order(page)) await expectFull(widget(page, id));
+    expect(intersecting(await layoutBoxes(page))).toEqual([]);
+  }
+  await page.mouse.up();
+  expect(intersecting(await layoutBoxes(page))).toEqual([]);
+});

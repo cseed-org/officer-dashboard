@@ -135,16 +135,15 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
    the same fill on the moved widget. */
 .blk.is-dragging .blk-body, .blk.is-resizing .blk-body, .blk.is-moved .blk-body {animation: none !important;}
 .blk.is-dragging {background: var(--block-drop);}
+/* The real card lifts out of the grid at its full size and follows the pointer; its cell is the placeholder. */
+.blk.is-lifted {position: fixed; z-index: 50; inset-inline-end: auto; margin: 0; box-shadow: var(--block-lift); transform: scale(1.02); transform-origin: center; will-change: left, top; cursor: grabbing; touch-action: none;}
+.blk.is-lifted .blk-tools {display: none;}
+@media (prefers-reduced-motion: reduce) {.blk.is-lifted {transform: none;}}
 .blk.is-dragging::after {content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px var(--block-target), 0 0 0 4px var(--block-spot); pointer-events: none;}
 .blk-spot {border-radius: var(--block-radius); background: var(--block-spot); box-shadow: inset 0 0 0 1px var(--block-ring); pointer-events: none; animation: blk-spot-in var(--dur-1, 160ms) ease-out both;}
 @keyframes blk-spot-in {from {opacity: 0;}}
 @media (prefers-reduced-motion: reduce) {.blk-spot {animation: none;}}
-.blk.is-dragging > * {visibility: hidden;}
 .blk.is-moved .tile {background: var(--block-drop);}
-.blk-float {position: fixed; z-index: 50; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--block-radius); background: var(--surface); box-shadow: var(--block-lift); font-weight: 600; pointer-events: none; transform: rotate(-1.2deg) scale(1.02);}
-.blk-float-size {font-size: 12px; font-weight: 500; color: var(--muted);}
-@media (prefers-reduced-motion: reduce) {.blk-float {transform: none;}}
-
 /* The add tile ends the grid in edit mode. Solid, soft fill: never a dashed outline. */
 .blk-add {flex: 1; display: grid; place-content: center; justify-items: center; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: var(--block-radius); background: var(--sunken); color: var(--text); font: inherit; font-weight: 500; cursor: pointer; transition: background-color var(--dur-1) ease;}
 .blk-add:hover {background: var(--hover);}
@@ -181,8 +180,6 @@ a.tile:hover, .kpi--link.tile:hover {border-color: var(--control);}
 .blk-resize--y {bottom: 0; left: 16px; right: 44px; height: 14px; cursor: ns-resize;}
 .blk.is-resizing {outline: 3px solid var(--c-blue); outline-offset: 3px; background: var(--block-drop);}
 .blk.is-resizing::after {content: attr(data-size-label); position: absolute; bottom: 12px; left: 12px; padding: 4px 8px; background: var(--surface); border-radius: 8px; pointer-events: none;}
-.blk-float {width: min(320px, 65vw); max-height: 300px; overflow: hidden; padding: 0;}
-.blk-float > .tile {min-height: 140px;}
 @media (prefers-reduced-motion: no-preference) {
   .blocks.is-entering > .blk {animation: blk-enter var(--dur-2) var(--ease-out) backwards;}
   @keyframes blk-enter {from {opacity: .7; transform: scale(.97);} to {opacity: 1; transform: scale(1);}}
@@ -236,8 +233,6 @@ html.is-dragging, html.is-dragging * {cursor: grabbing !important;}
 .blk-resize--x::after {width: 4px; height: 28px; top: calc(50% - 14px); left: 4px;}
 .blk-resize--y::after {height: 4px; width: 28px; left: calc(50% - 14px); top: 4px;}
 .blk:hover .blk-resize::after, .blk.is-resizing .blk-resize::after {background: var(--c-blue);}
-.blk-float {max-height: none; list-style: none;}
-.blk-float .blk-body {animation: none !important;}
 @media (pointer: coarse) {
   .blk-resize--x::after, .blk-resize--y::after {background: var(--c-blue);}
 }

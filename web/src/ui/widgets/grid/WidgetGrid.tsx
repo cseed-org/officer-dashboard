@@ -9,13 +9,14 @@ import { addSlot, blocks, fitsAt, gridColumns, migrateLayout, moveInOrder, pack,
 import { defaultWidgetLayout, widgetDef, widgetRegistry, type BlockSize } from '../registry';
 import '../../../styles/home-grid.css';
 
-import { useGridDrag } from './useGridDrag';
 import { useGridResize, snappedSize } from './useGridResize';
 import { useGridFlip } from './flip';
 
 type Resize = { id: string; x: number; y: number; size: BlockSize; snapshot: Placement[]; pin: Pin; axis: string; width: number; height: number };
 /** `at` is the last valid drop cell (the dragged widget's top-left), or null before the first. */
-type Drag = { id: string; x: number; y: number; snapshot: Placement[]; at: { x: number; y: number } | null };
+type Drag = { id: string; x: number; y: number; snapshot: Placement[]; at: { x: number; y: number } | null;
+  /** The card lifts out of the grid at its pre-drag box and follows the pointer by this grab offset. */
+  box?: { ox: number; oy: number; width: number; height: number } };
 
 /**
  * Home as a grid of blocks (spec § "V0.4 Home block grid"). The layout lives on the server
@@ -52,7 +53,6 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   const [resizing, setResizing] = useState<Resize | null>(null);
   const [removed, setRemoved] = useState<Placement[] | null>(null);
   const previewSize = useGridResize();
-  const floating = useGridDrag();
   const pendingDrag = useRef<Drag | null>(null);
   const captured = useRef<{ element: HTMLElement; id: number } | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
@@ -63,6 +63,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   const [moved, setMoved] = useState<string | null>(null);
   const [live, setLive] = useState('');
   const pointerY = useRef(0);
+  const settleFrom = useRef<{ id: string; rect: DOMRect } | null>(null);
   const focusAfter = useRef<string | null>(null);
   const gallery = useRef<HTMLDialogElement>(null);
   const grid = useRef<HTMLUListElement>(null);
@@ -104,19 +105,35 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     const previous = lastTarget.current;
     lastTarget.current = targetKey;
     if (!previous || !targetKey || previous === targetKey || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    grid.current?.querySelector('li.is-dragging')?.animate(
+    grid.current?.querySelector('li.is-placeholder')?.animate(
       [{ transform: 'scale(.94)', opacity: 0.35 }, { transform: 'scale(1)', opacity: 1 }],
       { duration: 220, easing: 'cubic-bezier(.2, .8, .2, 1)', pseudoElement: '::after' });
   }, [targetKey]);
+
+  // Dropping: the card eases from where it was held to its cell (transform only; skipped with reduced motion).
+  useLayoutEffect(() => {
+    const from = settleFrom.current;
+    if (!from || drag) return;
+    settleFrom.current = null;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const el = grid.current?.querySelector<HTMLElement>(`[data-widget="${CSS.escape(from.id)}"]`);
+    if (!el) return;
+    const to = el.getBoundingClientRect();
+    el.animate([
+      { transformOrigin: 'top left', transform: `translate(${from.rect.left - to.left}px, ${from.rect.top - to.top}px)` },
+      { transformOrigin: 'top left', transform: 'none' },
+    ], { duration: 200, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+  }, [drag]);
 
   function releasePointer() {
     const capture = captured.current;
     if (capture?.element.hasPointerCapture(capture.id)) capture.element.releasePointerCapture(capture.id);
     captured.current = null;
     pendingDrag.current = null;
-    floating.clear();
+    document.documentElement.classList.remove('is-dragging');
   }
   function cancelPointer() {
+    settleFrom.current = null;
     const snapshot = drag?.snapshot ?? resizing?.snapshot ?? pendingDrag.current?.snapshot;
     if (snapshot) setLayout(snapshot);
     releasePointer();
@@ -258,13 +275,13 @@ export default function WidgetGrid({ children, entering = false }: { children: (
       if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) < 4) return;
       const tile = grid.current?.querySelector<HTMLElement>(`[data-widget="${CSS.escape(pending.id)}"]`);
       if (!tile) return;
-      floating.start(tile);
-      active = pending;
+      const rect = tile.getBoundingClientRect();
+      document.documentElement.classList.add('is-dragging');
+      active = { ...pending, box: { ox: pending.x - rect.left, oy: pending.y - rect.top, width: rect.width, height: rect.height } };
       pendingDrag.current = null;
     }
     if (!active) return;
     e.preventDefault();
-    floating.move(e.clientX, e.clientY);
     // The target is the grid cell under the pointer (the floating copy's top-left), from the grid's
     // own tracks, so empty gaps and the row below the last tile are targets too. A spot the
     // footprint can't fit keeps the last valid target. The dragged widget is pinned there and the
@@ -296,6 +313,8 @@ export default function WidgetGrid({ children, entering = false }: { children: (
     if (!drag) return;
     announce(drag.id, layout!);
     setMoved(drag.id);
+    const lifted = grid.current?.querySelector<HTMLElement>('li.is-lifted');
+    if (lifted) settleFrom.current = { id: drag.id, rect: lifted.getBoundingClientRect() };
     setDrag(null);
   }
   function resize(id: string, size: BlockSize) {
@@ -372,7 +391,9 @@ export default function WidgetGrid({ children, entering = false }: { children: (
           const { w: cw, h: ch } = blocks(w.size);
           const name = title(w.id);
           const cell = placed.find(p => p.id === w.id);
-          return <li key={w.id} class={`blk${drag?.id === w.id ? ' is-dragging is-placeholder' : ''}${resizing?.id === w.id ? ' is-resizing' : ''}${moved === w.id && !drag ? ' is-moved' : ''}`} data-widget={w.id} data-flip={w.id} onPointerDown={e => onPointerDown(e, w.id)} data-size={w.size} data-size-label={sizeLabel(w.size).replace('×', ' × ')} data-w={cw} data-h={ch} style={{ '--i': i, ...(cell ? { gridColumn: `${cell.x + 1} / span ${cell.w}`, gridRow: `${cell.y + 1} / span ${cell.h}` } : {}) }}>
+          const lifted = drag?.id === w.id && !!drag.box;
+          const liftStyle = lifted ? { left: `${Math.max(0, Math.min(drag!.x - drag!.box!.ox, innerWidth - drag!.box!.width))}px`, top: `${drag!.y - drag!.box!.oy}px`, width: `${drag!.box!.width}px`, height: `${drag!.box!.height}px` } : null;
+          return <li key={w.id} class={`blk${lifted ? ' is-lifted' : ''}${resizing?.id === w.id ? ' is-resizing' : ''}${moved === w.id && !drag ? ' is-moved' : ''}`} data-widget={w.id} data-flip={w.id} onPointerDown={e => onPointerDown(e, w.id)} data-size={w.size} data-size-label={sizeLabel(w.size).replace('×', ' × ')} data-w={cw} data-h={ch} style={{ '--i': i, ...liftStyle, ...(cell ? { gridColumn: `${cell.x + 1} / span ${cell.w}`, gridRow: `${cell.y + 1} / span ${cell.h}` } : {}) }}>
             <div class="blk-body" inert={editing || undefined}>
               {def ? children(w.id, w.size) : <section class="tile" aria-label={name}><p class="tile-title">{name}</p></section>}
             </div>
@@ -390,6 +411,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
             </div>}
           </li>;
         })}
+        {drag?.box && target && <li key="slot" class="blk is-dragging is-placeholder" aria-hidden="true" data-flip="slot" style={{ gridColumn: `${target.x + 1} / span ${target.w}`, gridRow: `${target.y + 1} / span ${target.h}` }} />}
         {editing && <li class="blk blk-add-cell" data-w="1" data-h="1" style={slot ? { gridColumn: `${slot.x + 1} / span 1`, gridRow: `${slot.y + 1} / span 1` } : undefined}>
           <button type="button" class="blk-add" disabled={busy} onClick={() => gallery.current?.showModal()}>
             <span class="blk-add-plus" aria-hidden="true">+</span>Add widget<span class="blk-add-sub">{available.length} available</span>
