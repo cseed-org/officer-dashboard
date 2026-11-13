@@ -11,14 +11,13 @@ import { devLogin, openDialog, overflow, settle, watchErrors } from './helpers';
 /** On phones (< 768px) the drawer covers the whole viewport. */
 async function expectFullScreenOnPhone(page: Page) {
   const vw = page.viewportSize()!.width;
-  const box = await openDialog(page).boundingBox();
-  expect(box).not.toBeNull();
-  if (vw < 768) {
-    expect(Math.round(box!.x)).toBe(0);
-    expect(Math.round(box!.width)).toBe(vw);
-  } else {
-    expect(box!.width).toBeLessThan(vw);
-  }
+  // Polled: the drawer slides in, so an early box is mid-animation.
+  const box = async () => {
+    const b = await openDialog(page).boundingBox();
+    return b ? [Math.round(b.x), Math.round(b.width)] : null;
+  };
+  if (vw < 768) await expect.poll(box).toEqual([0, vw]);
+  else await expect.poll(async () => ((await box())?.[1] ?? vw) < vw).toBe(true);
   expect(await overflow(page)).toEqual([]);
 }
 
@@ -94,8 +93,8 @@ test('Members: a row opens the drawer and old ?id= links land on ?person=', asyn
   await devLogin(page, 'officer');
   await page.goto('/members');
   await settle(page);
-  // A click anywhere on the row (not only the name) opens it.
-  await page.locator('[data-person-row="person-7"] td').nth(1).click();
+  // A click on the row outside the name (here the avatar) opens it too.
+  await page.locator('[data-person-row="person-7"] .avatar').click();
   await expect(page).toHaveURL(/\/members\?person=person-7$/);
   const d = openDialog(page);
   await expect(d.getByRole('heading', { level: 2, name: 'Rowan Ito' })).toBeVisible();
