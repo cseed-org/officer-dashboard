@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { devLogin, overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
 
-// V0.6: Buildspace motion parity and the configurable check-in due day.
-const SHOTS = 'docs/evidence/buildspace-v06';
+// V0.6: Buildspace + Launchpad motion parity and the configurable check-in due day.
+const SHOTS = 'tmp/verify/launchpad';
 
 /** Record every FLIP (Element.animate on a data-flip item) before page scripts run. */
 async function recordFlips(page: Page) {
@@ -32,7 +32,7 @@ const crossfade = (page: Page) => page.evaluate(() => (window as any).crossfade)
 const flips = (page: Page) => page.evaluate(() => (window as any).flips as string[]);
 const clearFlips = (page: Page) => page.evaluate(() => { (window as any).flips = []; });
 
-async function open(page: Page, path = '/buildspace') {
+async function open(page: Page, path = '/buildspace-launchpad') {
   await page.goto(path);
   await settle(page);
   await expect(page.locator('.bs-table, .bs-board, .bs-groups').first()).toBeVisible();
@@ -47,7 +47,7 @@ test('tabs slide one indicator and views crossfade without resizing the page', a
   const errors = watchErrors(page);
   await devLogin(page, 'director');
   await open(page);
-  const tabs = page.getByRole('tablist', { name: 'Buildspace directory' });
+  const tabs = page.getByRole('tablist', { name: 'Buildspace + Launchpad directory' });
   await expect(tabs.getByRole('tab')).toHaveCount(3);
   await expect(tabs.getByRole('tab', { name: /People/ })).toHaveAttribute('aria-selected', 'true');
   const bar = page.locator('.bs-toolbar .tab-indicator');
@@ -97,7 +97,7 @@ test('filters reflow with FLIP and board stage moves glide between lanes', async
   test.skip(info.project.name !== 'desktop', 'one viewport is enough');
   await recordFlips(page);
   await devLogin(page, 'director');
-  await open(page, '/buildspace?tab=projects');
+  await open(page, '/buildspace-launchpad?tab=projects');
   await clearFlips(page);
   await page.getByLabel('Track').selectOption('Hardware');
   await expect(page.locator('.bs-table tbody tr')).toHaveCount(1);
@@ -144,7 +144,7 @@ test('reduced motion: no crossfade overlay, FLIP or entry animations', async ({ 
 test('manual entry form fields enter with the shared stagger and conditional fields animate in', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'one viewport is enough');
   await devLogin(page, 'director');
-  await open(page, '/buildspace?project=bs-moss');
+  await open(page, '/buildspace-launchpad?project=bs-moss');
   await page.getByRole('button', { name: 'Add entry' }).click();
   const form = page.locator('.drawer[open] form.bs-form');
   await expect(form).toHaveClass(/motion-list/);
@@ -157,7 +157,7 @@ test('manual entry form fields enter with the shared stagger and conditional fie
   await expect(page.locator('.drawer[open]')).toHaveCount(0);
 });
 
-test('leadership sets the due day from the Buildspace page; officers can only read it', async ({ page }, info) => {
+test('leadership sets the due day from the Buildspace + Launchpad page; officers can only read it', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'one viewport is enough');
   const errors = watchErrors(page);
   await devLogin(page, 'officer');
@@ -170,12 +170,12 @@ test('leadership sets the due day from the Buildspace page; officers can only re
   await devLogin(page, 'leadership');
   await open(page);
   // Start from no pending change (an interrupted earlier run may have left one).
-  let original = await page.request.get('/api/buildspace').then((r) => r.json());
+  let original = await page.request.get('/api/buildspace-launchpad').then((r) => r.json());
   if (original.schedule.pending) {
     const { dueWeekday, dueTime } = original.schedule.current;
-    expect((await page.request.put('/api/buildspace/schedule', { data: { dueWeekday, dueTime } })).ok()).toBe(true);
+    expect((await page.request.put('/api/buildspace-launchpad/schedule', { data: { dueWeekday, dueTime } })).ok()).toBe(true);
     await open(page);
-    original = await page.request.get('/api/buildspace').then((r) => r.json());
+    original = await page.request.get('/api/buildspace-launchpad').then((r) => r.json());
   }
   const summary = page.getByText('Check-in schedule', { exact: true });
   await summary.click();
@@ -188,7 +188,7 @@ test('leadership sets the due day from the Buildspace page; officers can only re
   await page.getByRole('button', { name: 'Save schedule' }).click();
   await expect(page.getByText('Check-in schedule saved.')).toBeVisible();
   // The current week keeps its deadline; the change is pending (checked in the panel below).
-  const saved = await page.request.get('/api/buildspace').then((r) => r.json());
+  const saved = await page.request.get('/api/buildspace-launchpad').then((r) => r.json());
   expect(saved.weekDue).toBe(original.weekDue);
   expect(saved.schedule.pending).toMatchObject({ dueWeekday: next, dueTime: '18:00' });
   await summary.click();
@@ -197,7 +197,7 @@ test('leadership sets the due day from the Buildspace page; officers can only re
   await page.getByLabel('Due day').selectOption(String(original.schedule.current.dueWeekday));
   await page.getByLabel('Due time · optional').fill(original.schedule.current.dueTime ?? '');
   await page.getByRole('button', { name: 'Save schedule' }).click();
-  await expect.poll(() => page.request.get('/api/buildspace').then((r) => r.json()).then((b) => b.schedule.pending)).toBeNull();
+  await expect.poll(() => page.request.get('/api/buildspace-launchpad').then((r) => r.json()).then((b) => b.schedule.pending)).toBeNull();
   expect(errors).toEqual([]);
 });
 
@@ -207,7 +207,7 @@ for (const theme of THEMES) {
     const width = info.project.name === 'phone' ? 390 : 1440;
     await useTheme(page, theme);
     await devLogin(page, 'leadership');
-    for (const [name, path] of [['people', '/buildspace'], ['board', '/buildspace?tab=projects&view=board'], ['drawer', '/buildspace?person=bs-person-01']] as const) {
+    for (const [name, path] of [['people', '/buildspace-launchpad'], ['board', '/buildspace-launchpad?tab=projects&view=board'], ['drawer', '/buildspace-launchpad?person=bs-person-01']] as const) {
       await open(page, path);
       await page.waitForTimeout(400);
       expect(await overflow(page)).toEqual([]);
@@ -223,3 +223,11 @@ for (const theme of THEMES) {
     await page.screenshot({ path: `../${SHOTS}/schedule-${width}-${theme}.png` });
   });
 }
+
+test('legacy Buildspace links preserve the selected person', async ({ page }) => {
+  await devLogin(page, 'director');
+  await page.goto('/buildspace?person=bs-person-01');
+  await expect(page).toHaveURL(/\/buildspace-launchpad\?person=bs-person-01/);
+  expect(await overflow(page)).toEqual([]);
+  await expect(page.getByRole('heading', { name: 'Buildspace + Launchpad', exact: true })).toBeVisible();
+});

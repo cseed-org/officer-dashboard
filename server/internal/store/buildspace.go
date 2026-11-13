@@ -60,7 +60,7 @@ type Buildspace struct {
 
 func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 	b := Buildspace{Projects: []BuildspaceProject{}, People: []BuildspacePerson{}, Mentors: []BuildspaceMentor{}, Activity: []BuildspaceActivity{}}
-	rows, err := q.q.QueryContext(ctx, `SELECT id,name,description,track,stage,links,updated_at FROM buildspace_projects ORDER BY name`)
+	rows, err := q.q.QueryContext(ctx, `SELECT id,name,description,track,stage,links,updated_at FROM buildspace_launchpad_projects ORDER BY name`)
 	if err != nil {
 		return b, err
 	}
@@ -83,7 +83,7 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 	if err != nil {
 		return b, err
 	}
-	rows, err = q.q.QueryContext(ctx, `SELECT project_id,contact_id FROM buildspace_mentors ORDER BY contact_id`)
+	rows, err = q.q.QueryContext(ctx, `SELECT project_id,contact_id FROM buildspace_launchpad_mentors ORDER BY contact_id`)
 	if err != nil {
 		return b, err
 	}
@@ -104,7 +104,7 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 	if err != nil {
 		return b, err
 	}
-	rows, err = q.q.QueryContext(ctx, `SELECT id,name,member_id,discord_id,project_id,joined_on FROM buildspace_people ORDER BY name`)
+	rows, err = q.q.QueryContext(ctx, `SELECT id,name,member_id,discord_id,project_id,joined_on FROM buildspace_launchpad_people ORDER BY name`)
 	if err != nil {
 		return b, err
 	}
@@ -121,7 +121,7 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 	if err != nil {
 		return b, err
 	}
-	rows, err = q.q.QueryContext(ctx, `SELECT id,name,org,topics FROM contacts WHERE type IN ('mentor','both') OR id IN (SELECT contact_id FROM buildspace_mentors) ORDER BY name`)
+	rows, err = q.q.QueryContext(ctx, `SELECT id,name,org,topics FROM contacts WHERE type IN ('mentor','both') OR id IN (SELECT contact_id FROM buildspace_launchpad_mentors) ORDER BY name`)
 	if err != nil {
 		return b, err
 	}
@@ -143,7 +143,7 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 	if err != nil {
 		return b, err
 	}
-	rows, err = q.q.QueryContext(ctx, `SELECT a.id,a.project_id,a.person_id,a.mentor_id,a.kind,a.date,a.body,a.status,a.purchase_id,a.source,a.external_id,a.created_at,p.title,p.status,p.needed_by FROM buildspace_activity a LEFT JOIN purchase_requests p ON p.id=a.purchase_id ORDER BY a.date DESC,a.created_at DESC,a.id`)
+	rows, err = q.q.QueryContext(ctx, `SELECT a.id,a.project_id,a.person_id,a.mentor_id,a.kind,a.date,a.body,a.status,a.purchase_id,a.source,a.external_id,a.created_at,p.title,p.status,p.needed_by FROM buildspace_launchpad_activity a LEFT JOIN purchase_requests p ON p.id=a.purchase_id ORDER BY a.date DESC,a.created_at DESC,a.id`)
 	if err != nil {
 		return b, err
 	}
@@ -164,25 +164,25 @@ func (q *Queries) SaveBuildspaceProject(ctx context.Context, p BuildspaceProject
 	if err != nil {
 		return err
 	}
-	if err = q.Exec(ctx, `INSERT INTO buildspace_projects(id,name,description,track,stage,links,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,track=excluded.track,stage=excluded.stage,links=excluded.links,updated_at=excluded.updated_at`, p.ID, p.Name, p.Description, p.Track, p.Stage, string(links), p.UpdatedAt); err != nil {
+	if err = q.Exec(ctx, `INSERT INTO buildspace_launchpad_projects(id,name,description,track,stage,links,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,description=excluded.description,track=excluded.track,stage=excluded.stage,links=excluded.links,updated_at=excluded.updated_at`, p.ID, p.Name, p.Description, p.Track, p.Stage, string(links), p.UpdatedAt); err != nil {
 		return err
 	}
-	if err = q.Exec(ctx, `DELETE FROM buildspace_mentors WHERE project_id=?`, p.ID); err != nil {
+	if err = q.Exec(ctx, `DELETE FROM buildspace_launchpad_mentors WHERE project_id=?`, p.ID); err != nil {
 		return err
 	}
 	for _, id := range p.MentorIDs {
-		if err = q.Exec(ctx, `INSERT INTO buildspace_mentors(project_id,contact_id) VALUES(?,?)`, p.ID, id); err != nil {
+		if err = q.Exec(ctx, `INSERT INTO buildspace_launchpad_mentors(project_id,contact_id) VALUES(?,?)`, p.ID, id); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 func (q *Queries) SaveBuildspacePerson(ctx context.Context, p BuildspacePerson) error {
-	return q.Exec(ctx, `INSERT INTO buildspace_people(id,name,member_id,discord_id,project_id,joined_on) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,member_id=excluded.member_id,discord_id=excluded.discord_id,project_id=excluded.project_id,joined_on=excluded.joined_on`, p.ID, p.Name, p.MemberID, p.DiscordID, p.ProjectID, p.JoinedOn)
+	return q.Exec(ctx, `INSERT INTO buildspace_launchpad_people(id,name,member_id,discord_id,project_id,joined_on) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,member_id=excluded.member_id,discord_id=excluded.discord_id,project_id=excluded.project_id,joined_on=excluded.joined_on`, p.ID, p.Name, p.MemberID, p.DiscordID, p.ProjectID, p.JoinedOn)
 }
 func (q *Queries) InsertBuildspaceActivity(ctx context.Context, a BuildspaceActivity) error {
-	return q.Exec(ctx, `INSERT INTO buildspace_activity(id,project_id,person_id,mentor_id,kind,date,body,status,purchase_id,source,external_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.ProjectID, a.PersonID, a.MentorID, a.Kind, a.Date, a.Body, a.Status, a.PurchaseID, a.Source, a.ExternalID, a.CreatedAt)
+	return q.Exec(ctx, `INSERT INTO buildspace_launchpad_activity(id,project_id,person_id,mentor_id,kind,date,body,status,purchase_id,source,external_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.ProjectID, a.PersonID, a.MentorID, a.Kind, a.Date, a.Body, a.Status, a.PurchaseID, a.Source, a.ExternalID, a.CreatedAt)
 }
 func (q *Queries) ResolveBuildspaceActivity(ctx context.Context, id string) error {
-	return q.Exec(ctx, `UPDATE buildspace_activity SET status='resolved' WHERE id=?`, id)
+	return q.Exec(ctx, `UPDATE buildspace_launchpad_activity SET status='resolved' WHERE id=?`, id)
 }

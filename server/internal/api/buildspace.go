@@ -88,7 +88,7 @@ func (c *Ctx) buildspaceSchedulePut() error {
 		if !changed {
 			return nil
 		}
-		return c.audit(c.Context(), q, "buildspace.schedule.updated", "buildspace_schedule", "weekly", before, out)
+		return c.audit(c.Context(), q, "buildspace_launchpad.schedule.updated", "buildspace_launchpad_schedule", "weekly", before, out)
 	})
 	if err != nil {
 		return err
@@ -145,7 +145,7 @@ func (c *Ctx) buildspaceProjectSave() error {
 		if err = q.SaveBuildspaceProject(c.Context(), p); err != nil {
 			return err
 		}
-		return c.audit(c.Context(), q, "buildspace.project.saved", "buildspace_project", p.ID, before, p)
+		return c.audit(c.Context(), q, "buildspace_launchpad.project.saved", "buildspace_launchpad_project", p.ID, before, p)
 	})
 	if err != nil {
 		return err
@@ -219,7 +219,7 @@ func (c *Ctx) buildspacePersonSave() error {
 		if err = q.SaveBuildspacePerson(c.Context(), p); err != nil {
 			return err
 		}
-		return c.audit(c.Context(), q, "buildspace.person.saved", "buildspace_person", p.ID, before, p)
+		return c.audit(c.Context(), q, "buildspace_launchpad.person.saved", "buildspace_launchpad_person", p.ID, before, p)
 	})
 	if err != nil {
 		return err
@@ -356,7 +356,7 @@ func (c *Ctx) buildspaceActivitySave(ingest bool) error {
 				return err
 			}
 		}
-		return c.audit(c.Context(), q, "buildspace.activity.created", "buildspace_activity", a.ID, nil, a)
+		return c.audit(c.Context(), q, "buildspace_launchpad.activity.created", "buildspace_launchpad_activity", a.ID, nil, a)
 	})
 	if err != nil {
 		return err
@@ -384,7 +384,7 @@ func (c *Ctx) buildspaceActivityResolve() error {
 				if err = q.ResolveBuildspaceActivity(c.Context(), a.ID); err != nil {
 					return err
 				}
-				return c.audit(c.Context(), q, "buildspace.activity.resolved", "buildspace_activity", a.ID, a, map[string]string{"status": "resolved"})
+				return c.audit(c.Context(), q, "buildspace_launchpad.activity.resolved", "buildspace_launchpad_activity", a.ID, a, map[string]string{"status": "resolved"})
 			}
 		}
 		return notFoundErr("Activity not found")

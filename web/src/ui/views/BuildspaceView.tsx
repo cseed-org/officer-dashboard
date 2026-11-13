@@ -174,7 +174,7 @@ function BuildspaceContent({
   const saved = () => {
     reload();
     close();
-    setNotice("Saved to Buildspace.");
+    setNotice("Saved to Buildspace + Launchpad.");
   };
   const edit = qs.get("edit");
   const editingPerson = edit === "person" ? detailPerson : undefined;
@@ -323,12 +323,12 @@ function BuildspaceContent({
     if (flag === f) u.delete("flag");
     else u.set("flag", f);
     const q = u.toString();
-    return `/buildspace${q ? `?${q}` : ""}`;
+    return `/buildspace-launchpad${q ? `?${q}` : ""}`;
   };
   return (
     <div class="buildspace">
       <StatRow
-        label="Buildspace summary"
+        label="Buildspace + Launchpad summary"
         tiles={[
           { label: "Builders", icon: "users", hue: "violet", value: b.people.length, sub: plural(b.projects.length, "project") },
           { label: "Awaiting this week", icon: "clock", hue: "amber", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
@@ -339,7 +339,7 @@ function BuildspaceContent({
       {notice && <Notice tone="positive">{notice}</Notice>}
       <div class="bs-toolbar">
         <Tabs
-          label="Buildspace directory"
+          label="Buildspace + Launchpad directory"
           idPrefix="bs"
           active={tab}
           onChange={(t) => setParams({ tab: t })}
@@ -363,7 +363,7 @@ function BuildspaceContent({
       </div>
       <div class="bs-filters">
         <label class="bs-search">
-          <span class="visually-hidden">Search Buildspace</span>
+          <span class="visually-hidden">Search Buildspace + Launchpad</span>
           <input
             class="input"
             type="search"
@@ -606,7 +606,7 @@ function BuildspaceContent({
             <div
               class="table-wrap"
               tabIndex={0}
-              aria-label="Buildspace directory"
+              aria-label="Buildspace + Launchpad directory"
             >
               <table class="bs-table">
                 <thead>
@@ -766,7 +766,7 @@ function BuildspaceContent({
               (form === "person" ? "builder" : "project")
             : detailPerson?.name || detailProject?.name || "Record not found"
         }
-        eyebrow="Buildspace"
+        eyebrow="Buildspace + Launchpad"
       >
         {form === "project" ? (
           <ProjectForm b={b} project={editingProject} saved={saved} />

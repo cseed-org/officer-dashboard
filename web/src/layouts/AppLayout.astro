@@ -30,7 +30,7 @@ const EARLY = bare ? null : earlyScript([...EARLY_SHARED, ...((page && EARLY_PAG
 type NavItem = { key: PageKey; label: string; href: string; icon: IconName; directorOnly?: boolean };
 const NAV: NavItem[] = [
   { key: 'home', label: 'Home', href: '/', icon: 'home' },
-  { key: 'buildspace', label: 'Buildspace', href: '/buildspace', icon: 'blocks' },
+  { key: 'buildspace', label: 'Buildspace + Launchpad', href: '/buildspace-launchpad', icon: 'rocket' },
   { key: 'events', label: 'Events', href: '/events', icon: 'calendar' },
   { key: 'finance', label: 'Requests & Finance', href: '/finance', icon: 'wallet' },
   { key: 'design', label: 'Design', href: '/design', icon: 'inbox' },

@@ -1,6 +1,7 @@
 /** Line icons for the shell (24px grid, stroke = currentColor). */
 const PATHS: Record<string, string> = {
   pen: 'm16 3 5 5-12 12-6 1 1-6zM14 5l5 5',
+  rocket: 'M14 5c3-3 7-3 7-3s0 4-3 7l-7 7-5-5zM6 11H3l3-5h7M13 16v5l5-3v-7M5 16l-3 6 6-3M16 6h.01',
   blocks: 'M3 13h8v8H3zM13 13h8v8h-8zM8 3h8v8H8z',
   home: 'M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z',
   calendar: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 2v4M16 2v4',

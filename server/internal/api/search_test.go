@@ -28,7 +28,7 @@ func TestSearchFindsEventsAndRequestsForOfficers(t *testing.T) {
 			rq = m
 		}
 	}
-	if ev["id"] != "event-buildspace-demo" || ev["title"] != "Buildspace Demo Night" || ev["href"] != "/events?id=event-buildspace-demo" || ev["subtitle"] != "2026-10-09 · Engineering Atrium" {
+	if ev["id"] != "event-buildspace-demo" || ev["title"] != "Buildspace + Launchpad Demo Night" || ev["href"] != "/events?id=event-buildspace-demo" || ev["subtitle"] != "2026-10-09 · Engineering Atrium" {
 		t.Errorf("event hit %v", ev)
 	}
 	if rq["id"] != "req-0005" || rq["title"] != "Demo night banner printing" || rq["href"] != "/finance?id=req-0005" || rq["subtitle"] != "2027-0005 · FedEx Office · submitted" {

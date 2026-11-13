@@ -13,8 +13,8 @@ export async function postWeeklyCheckIn(
   } = {},
 ) {
   if (!origin || !token)
-    throw new Error("Dashboard URL and Buildspace ingest token are required");
-  const res = await fetch(new URL("/api/ingest/buildspace", origin), {
+    throw new Error("Dashboard URL and Buildspace + Launchpad ingest token are required");
+  const res = await fetch(new URL("/api/ingest/buildspace-launchpad", origin), {
     method: "POST",
     headers: {
       "content-type": "application/json",

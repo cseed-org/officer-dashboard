@@ -118,7 +118,7 @@ func BuildspaceDueMoment(due string, dueTime *string, loc *time.Location) time.T
 }
 
 func (q *Queries) BuildspaceWeekRules(ctx context.Context) ([]BuildspaceWeekRule, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT effective_from,due_weekday,due_time,updated_at,updated_by FROM buildspace_week_rules ORDER BY effective_from`)
+	rows, err := q.q.QueryContext(ctx, `SELECT effective_from,due_weekday,due_time,updated_at,updated_by FROM buildspace_launchpad_week_rules ORDER BY effective_from`)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (q *Queries) BuildspaceWeekRules(ctx context.Context) ([]BuildspaceWeekRule
 		return nil, err
 	}
 	if len(out) == 0 {
-		return nil, errors.New("buildspace_week_rules has no seed rule")
+		return nil, errors.New("buildspace_launchpad_week_rules has no seed rule")
 	}
 	return out, nil
 }
@@ -209,7 +209,7 @@ func (q *Queries) SetBuildspaceDue(ctx context.Context, clock BuildspaceClock, w
 		}
 	}
 	// Anything after the next week boundary is superseded by this choice.
-	if err = q.Exec(ctx, `DELETE FROM buildspace_week_rules WHERE effective_from>?`, clock.Today); err != nil {
+	if err = q.Exec(ctx, `DELETE FROM buildspace_launchpad_week_rules WHERE effective_from>?`, clock.Today); err != nil {
 		return false, err
 	}
 	if same {
@@ -217,9 +217,9 @@ func (q *Queries) SetBuildspaceDue(ctx context.Context, clock BuildspaceClock, w
 	}
 	if pending != nil && pending.EffectiveFrom == from && pending.DueWeekday == weekday && eqPtr(pending.DueTime, dueTime) {
 		// Unchanged pending rule: restore it as it was.
-		return false, q.Exec(ctx, `INSERT INTO buildspace_week_rules(effective_from,due_weekday,due_time,updated_at,updated_by) VALUES(?,?,?,?,?)`, pending.EffectiveFrom, pending.DueWeekday, pending.DueTime, pending.UpdatedAt, pending.UpdatedBy)
+		return false, q.Exec(ctx, `INSERT INTO buildspace_launchpad_week_rules(effective_from,due_weekday,due_time,updated_at,updated_by) VALUES(?,?,?,?,?)`, pending.EffectiveFrom, pending.DueWeekday, pending.DueTime, pending.UpdatedAt, pending.UpdatedBy)
 	}
-	return true, q.Exec(ctx, `INSERT INTO buildspace_week_rules(effective_from,due_weekday,due_time,updated_at,updated_by) VALUES(?,?,?,?,?)`, from, weekday, dueTime, now, by)
+	return true, q.Exec(ctx, `INSERT INTO buildspace_launchpad_week_rules(effective_from,due_weekday,due_time,updated_at,updated_by) VALUES(?,?,?,?,?)`, from, weekday, dueTime, now, by)
 }
 
 func eqPtr(a, b *string) bool {

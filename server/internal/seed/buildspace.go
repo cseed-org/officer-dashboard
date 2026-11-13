@@ -19,7 +19,7 @@ func seedBuildspace(ctx context.Context, q *store.Queries) error {
 	}
 	mentors := []struct{ id, name, org, topics string }{{"bs-mentor-maya", "Maya Chen", "Microsoft", "[\"Product engineering\",\"Accessibility\"]"}, {"bs-mentor-jordan", "Jordan Ellis", "UW CoMotion", "[\"Prototyping\",\"Hardware\"]"}, {"bs-mentor-amara", "Amara Okafor", "Independent designer", "[\"Storytelling\",\"Creative coding\"]"}}
 	for _, m := range mentors {
-		if err := insert(ctx, q, "contacts", "id,name,org,role,type,topics,email,linkedin,notes,created_at,updated_at", m.id, m.name, m.org, "Buildspace mentor", "mentor", m.topics, "", "", "", now, now); err != nil {
+		if err := insert(ctx, q, "contacts", "id,name,org,role,type,topics,email,linkedin,notes,created_at,updated_at", m.id, m.name, m.org, "Buildspace + Launchpad mentor", "mentor", m.topics, "", "", "", now, now); err != nil {
 			return err
 		}
 	}

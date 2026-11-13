@@ -33,7 +33,7 @@ export function scheduleSummary(s: BuildspaceSchedule) {
 }
 
 /**
- * The due-day setting lives on the Buildspace page. Every officer can read it; leadership
+ * The due-day setting lives on the Buildspace + Launchpad page. Every officer can read it; leadership
  * edits it. A change never moves the current week's deadline: it starts the day after.
  */
 export function ScheduleMenu({
