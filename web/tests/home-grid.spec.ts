@@ -963,10 +963,10 @@ test('Resizing keeps every card rendered and neighbours reflow without overlap',
   await page.mouse.move(g.x + 20, g.y + 20);
   await page.mouse.down();
   const rect = (await card.boundingBox())!;
-  for (const [dx, dy] of [[rect.width * 0.6, 0], [rect.width * 0.6, rect.height * 0.8], [-rect.width * 0.4, -rect.height * 0.4], [rect.width, rect.height]]) {
+  for (const [dx, dy] of [[rect.width * 0.6, 0], [rect.width * 0.6, rect.height * 0.8], [-rect.width * 0.4, -rect.height * 0.4], [rect.width, rect.height]] as [number, number][]) {
     await page.mouse.move(g.x + 20 + dx, g.y + 20 + dy, { steps: 8 });
     await page.waitForTimeout(260);
-    for (const id of await order(page)) await expectFull(widget(page, id));
+    for (const id of await order(page)) await expectFull(widget(page, id!));
     expect(intersecting(await layoutBoxes(page))).toEqual([]);
   }
   await page.mouse.up();
