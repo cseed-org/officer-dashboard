@@ -259,12 +259,12 @@ for (const [width, columns] of [[390, 2], [650, 4], [960, 4], [1200, 5], [1450, 
 }
 
 test('V0.9: Design "Waiting on me" counts a request once when it is both assigned to me and awaiting my approval', () => {
-  const me = { id: 'u1', name: 'Me' };
-  const item = (id: string, over: Partial<DesignRequestItem>) => ({ id, stage: 'new', dueDate: null, updatedAt: '2026-11-01T00:00:00Z', requester: { id: 'other', name: 'O' }, assignee: null, ...over }) as DesignRequestItem;
+  const me = { id: 'u1', name: 'Me', avatarUrl: null };
+  const item = (id: string, over: Partial<DesignRequestItem>) => ({ id, stage: 'new', dueDate: null, updatedAt: '2026-11-01T00:00:00Z', requester: { id: 'other', name: 'O', avatarUrl: null }, assignee: null, ...over }) as DesignRequestItem;
   const items = [
     item('both', { stage: 'in-review', requester: me, assignee: me }), // assigned to me AND to approve
     item('assigned', { stage: 'in-progress', assignee: me }),
-    item('approve', { stage: 'in-review', requester: me, assignee: { id: 'x', name: 'X' } }),
+    item('approve', { stage: 'in-review', requester: me, assignee: { id: 'x', name: 'X', avatarUrl: null } }),
     item('delivered', { stage: 'delivered', assignee: me }),
   ];
   expect(designStats(items, 'u1', '2026-11-13').mine).toBe(3);
