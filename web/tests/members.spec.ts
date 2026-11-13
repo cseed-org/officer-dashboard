@@ -75,7 +75,7 @@ for (const theme of THEMES) {
     ).toBeVisible();
     await expect(page.locator("tbody tr")).toHaveCount(25);
     const visibleName = await page
-      .locator(".member-name")
+      .locator(".person-name")
       .first()
       .boundingBox();
     expect(visibleName).not.toBeNull();
@@ -83,7 +83,7 @@ for (const theme of THEMES) {
     expect(visibleName!.x + visibleName!.width).toBeLessThanOrEqual(
       page.viewportSize()!.width,
     );
-    await expect(page.locator(".members-table")).toHaveJSProperty(
+    await expect(page.locator('[data-people-card="members"]')).toHaveJSProperty(
       "scrollLeft",
       0,
     );
@@ -101,8 +101,10 @@ for (const theme of THEMES) {
     await expect(page.locator("tbody tr")).toHaveCount(1);
     await page.getByRole("button", { name: "Member 1000 Seed" }).click();
     const drawer = page.locator("#member-detail[open]");
-    await expect(drawer).toContainText("2026-10-31 · Read-only");
-    await expect(drawer).toContainText("Yes · Read-only");
+    await expect(drawer.locator("[data-person-stats]")).toContainText("2026-10-31");
+    await expect(drawer).toContainText("Has been officerYes");
+    // Officers read the record; only directors get the Manage tab and its edit form.
+    await expect(drawer.getByRole("tab", { name: "Manage" })).toHaveCount(0);
     await expect(drawer.getByLabel("Audit note")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Clear filters" }).click();
@@ -159,6 +161,7 @@ for (const theme of THEMES) {
     await page.goto("/members");
     await page.getByRole("button", { name: "Member 0001 Seed" }).click();
     const drawer = page.locator("#member-detail[open]");
+    await drawer.getByRole("tab", { name: "Manage", exact: true }).click();
     await expect(drawer.getByLabel("Join date", { exact: true })).toHaveCount(
       0,
     );

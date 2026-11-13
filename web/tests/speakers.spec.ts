@@ -14,9 +14,12 @@ const shot = async (page: Page, name: string, project: string, theme: string) =>
   await page.screenshot({ path: `tmp/shots/contacts-${project}-${theme}-${name}.png`, fullPage: !(await openDialog(page).count()) });
 };
 
-/** The directory row (desktop table) or card (phone) for a contact. */
+/** The directory row for a contact (a table row on desktop, a list row on phones). */
 const entry = (page: Page, name: string) =>
-  page.locator('main').locator('.speakers-desktop tr, .speakers-mobile article').filter({ visible: true, hasText: name });
+  page.locator('main [data-contact-row]').filter({ visible: true, hasText: name });
+
+/** Switch the open contact drawer to one of its tabs. */
+const tab = (page: Page, name: 'Overview' | 'Activity' | 'Manage') => openDialog(page).getByRole('tab', { name, exact: true }).click();
 
 async function addContact(page: Page, c: { name: string; org?: string; type?: string; topics?: string; email?: string; spoken?: boolean }) {
   await page.getByRole('button', { name: 'Add contact', exact: true }).click();
@@ -29,7 +32,7 @@ async function addContact(page: Page, c: { name: string; org?: string; type?: st
   if (c.email) await d.getByLabel('Email').fill(c.email);
   if (c.spoken) await d.getByLabel('Has spoken for CSEED before').check();
   await d.getByRole('button', { name: 'Add contact' }).click();
-  await expect(page).toHaveURL(/\/contacts\?id=/);
+  await expect(page).toHaveURL(/\/contacts\?person=/);
   await expect(openDialog(page).getByRole('heading', { level: 2, name: c.name })).toBeVisible();
 }
 
@@ -68,7 +71,7 @@ test('contacts: field-named validation error, error styling, add draft kept on c
 
   // After a successful create the detail heading takes focus, and the next Add starts blank.
   await d.getByRole('button', { name: 'Add contact' }).click();
-  await expect(page).toHaveURL(/\/contacts\?id=/);
+  await expect(page).toHaveURL(/\/contacts\?person=/);
   d = openDialog(page);
   await expect(d.getByRole('heading', { level: 2, name })).toBeFocused();
   await page.keyboard.press('Escape');
@@ -78,9 +81,10 @@ test('contacts: field-named validation error, error styling, add draft kept on c
   await page.keyboard.press('Escape');
 
   // Clean up.
-  const row = page.locator('main').locator('.speakers-desktop tr, .speakers-mobile article').filter({ visible: true, hasText: name });
-  await row.getByRole('button', { name: `View contact ${name}` }).click();
+  const row = entry(page, name);
+  await row.getByRole('button', { name, exact: true }).click();
   d = openDialog(page);
+  await tab(page, 'Manage');
   await d.getByRole('button', { name: 'Delete contact' }).click();
   await d.getByRole('button', { name: 'Confirm delete contact and outreach history' }).click();
   await expect(row).toHaveCount(0);
@@ -109,7 +113,10 @@ for (const theme of THEMES) {
     await addContact(page, { name, org: 'North Shore', type: 'both', topics: `Fundraising, ${m}-topic`, email: `priya.${m}@example.com`, spoken: true });
     await expect(page.getByRole('status').filter({ hasText: 'Contact added.' })).toBeAttached();
     d = openDialog(page);
+    await expect(d.locator('[data-person-stats]')).toContainText('Outreach logged');
+    await tab(page, 'Activity');
     await expect(d.getByText('No outreach yet.')).toBeVisible();
+    await tab(page, 'Manage');
     await expect(d.getByLabel('Has spoken for CSEED before')).toBeChecked();
     await shot(page, 'detail', info.project.name, theme);
 
@@ -172,8 +179,10 @@ for (const theme of THEMES) {
     d = openDialog(page);
     await expect(d.getByRole('heading', { level: 2, name })).toBeVisible();
     await expect(d.getByRole('button', { name: 'Log outreach' })).toBeFocused();
+    await tab(page, 'Activity');
     await expect(d.locator('.timeline li')).toHaveCount(1);
     await expect(d.locator('.timeline')).toContainText('LinkedIn · Interested');
+    await tab(page, 'Manage');
     await expect(d.getByLabel('Organization')).toHaveValue('North Shore Ventures');
 
     // An older entry logged later does not replace "Last reached out by".
@@ -184,7 +193,9 @@ for (const theme of THEMES) {
     await d.getByLabel('Outcome', { exact: true }).selectOption('awaiting_reply');
     await d.getByRole('button', { name: 'Save outreach' }).click();
     d = openDialog(page);
+    await tab(page, 'Activity');
     await expect(d.locator('.timeline li')).toHaveCount(2);
+    await tab(page, 'Manage');
     await d.getByRole('button', { name: 'Save contact' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Contact saved.' })).toBeAttached();
     await shot(page, 'detail-with-outreach', info.project.name, theme);
@@ -231,9 +242,10 @@ for (const theme of THEMES) {
 
     // Delete both (two-step confirm).
     for (const n of [name, mentor]) {
-      await entry(page, n).getByRole('button', { name: `View contact ${n}` }).click();
+      await entry(page, n).getByRole('button', { name: n, exact: true }).click();
       d = openDialog(page);
       await expect(d.getByRole('heading', { level: 2, name: n })).toBeVisible();
+      await tab(page, 'Manage');
       await d.getByRole('button', { name: 'Delete contact' }).click();
       await d.getByRole('button', { name: 'Confirm delete contact and outreach history' }).click();
       await expect(openDialog(page)).toHaveCount(0);
@@ -249,18 +261,22 @@ test('legacy Speakers deep link redirects to External Contacts', async ({ page }
   const response = await page.request.post('/api/contacts', { data: { name: 'Legacy deep link', type: 'speaker' } });
   const { contact } = await response.json();
   await page.goto(`/speakers?id=${contact.id}`);
-  await expect(page).toHaveURL(`/contacts?id=${contact.id}`);
+  // The old detail link lands on the person drawer.
+  await expect(page).toHaveURL(`/contacts?person=${contact.id}`);
   await expect(page.getByRole('heading', { level: 1, name: 'External Contacts' })).toBeVisible();
+  await tab(page, 'Manage');
   await expect(openDialog(page).getByLabel('Has spoken for CSEED before')).not.toBeChecked();
   await openDialog(page).getByLabel('Has spoken for CSEED before').check();
   await openDialog(page).getByRole('button', { name: 'Save contact', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Contact saved.' })).toBeAttached();
   await page.reload();
+  await tab(page, 'Manage');
   await expect(openDialog(page).getByLabel('Has spoken for CSEED before')).toBeChecked();
   await openDialog(page).getByLabel('Has spoken for CSEED before').uncheck();
   await openDialog(page).getByRole('button', { name: 'Save contact', exact: true }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Contact saved.' })).toBeAttached();
   await page.reload();
+  await tab(page, 'Manage');
   await expect(openDialog(page).getByLabel('Has spoken for CSEED before')).not.toBeChecked();
   await page.request.delete(`/api/contacts/${contact.id}`);
 });
@@ -275,21 +291,22 @@ test('contacts: marking a contact as club support tags it, filters it and lists 
   await d.getByLabel('Name').fill(name);
   await d.getByLabel('Club support contact (shown under Board Members)').check();
   await d.getByRole('button', { name: 'Add contact' }).click();
-  await expect(page).toHaveURL(/\/contacts\?id=/);
-  const id = new URL(page.url()).searchParams.get('id')!;
+  await expect(page).toHaveURL(/\/contacts\?person=/);
+  const id = new URL(page.url()).searchParams.get('person')!;
   try {
     await page.keyboard.press('Escape');
     await expect(entry(page, name).locator('[data-club-support]')).toBeVisible();
     // The "Club support only" filter hides everyone else.
     await page.getByLabel('Club support only').check();
     await expect(entry(page, name)).toHaveCount(1);
-    await expect(page.locator('main').locator('.speakers-desktop tbody tr, .speakers-mobile article').filter({ visible: true })).not.toHaveCount(0);
+    await expect(page.locator('main [data-contact-row]').filter({ visible: true })).not.toHaveCount(0);
     await page.goto('/officers');
     await settle(page);
     await expect(page.locator('[data-section="club-support"]')).toContainText(name);
     // Un-tagging removes it from Board Members.
     await page.goto(`/contacts?id=${id}`);
     d = openDialog(page);
+    await tab(page, 'Manage');
     await d.getByLabel('Club support contact (shown under Board Members)').uncheck();
     await d.getByRole('button', { name: 'Save contact' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Contact saved.' })).toBeVisible();

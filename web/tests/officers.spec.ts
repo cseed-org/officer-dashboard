@@ -102,13 +102,15 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   await settle(page);
   await page.getByRole('button', { name: 'Robin Park' }).first().click();
   await expect(openDialog(page).locator('[data-phone]')).toHaveText('+1 206 555 0177');
-  // Directors deactivate officers, but don't change roles.
+  // Directors deactivate officers, but don't change roles (both live on the Manage tab).
+  await openDialog(page).getByRole('tab', { name: 'Manage', exact: true }).click();
   await expect(openDialog(page).getByRole('button', { name: 'Deactivate officer' })).toBeVisible();
   await expect(openDialog(page).getByLabel('Role')).toHaveCount(0);
   await page.keyboard.press('Escape');
   // Only leadership deactivates leadership (or directors).
   await page.getByRole('button', { name: 'Sam Rivera' }).click();
   await expect(openDialog(page)).toContainText('Sam Rivera');
+  await expect(openDialog(page).getByRole('tab', { name: 'Manage', exact: true })).toHaveCount(0);
   await expect(openDialog(page).getByRole('button', { name: 'Deactivate officer' })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.context().clearCookies();
