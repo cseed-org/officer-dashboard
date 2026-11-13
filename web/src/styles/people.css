@@ -1,0 +1,172 @@
+/* V0.10 People pages (Board Members, Members, External Contacts) and the shared PersonDrawer.
+   Option B: one rounded card per page (the Home widget radius, border and shadow), a toolbar
+   inside the card, a sticky column header, grouped rows with hover pills and faint separators.
+   On phones the rows become a list: avatar, name, chip. */
+
+:root {
+  --people-radius: var(--block-radius, var(--radius-widget, 16px));
+  --people-shadow: var(--block-shadow, 0 1px 2px rgb(20 20 20 / .04), 0 1px 1px rgb(20 20 20 / .03));
+  --people-sep: color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+/* ───────────── card + toolbar ───────────── */
+.people-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--people-radius);
+  box-shadow: var(--people-shadow); min-width: 0;
+  /* clip, not hidden: hidden would make the card the sticky header's scroll container. */
+  overflow: clip;
+}
+.people-tools {display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line);}
+.people-tools .field {min-width: 0;}
+.people-search {flex: 1 1 240px; max-width: 360px; position: relative;}
+.people-search .input {padding-left: 34px; width: 100%;}
+.people-search > .icon {position: absolute; left: 11px; bottom: 10px; color: var(--muted); pointer-events: none;}
+.people-tools-end {margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;}
+.people-count {font-size: 13px; color: var(--muted); white-space: nowrap;}
+.people-pills {display: flex; flex-wrap: wrap; gap: 4px; align-items: center;}
+.people-pill {
+  height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid transparent; background: none;
+  font: inherit; font-weight: 500; color: var(--muted); cursor: pointer; white-space: nowrap;
+}
+.people-pill:hover {color: var(--text); background: var(--hover);}
+.people-pill[aria-pressed="true"] {color: var(--text); background: var(--hover); border-color: var(--line);}
+.people-status {padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted);}
+.people-status strong {color: var(--text);}
+.people-foot {display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted);}
+.people-empty {padding: 28px 20px; text-align: center;}
+.people-empty .state-title {font-weight: 600; color: var(--text);}
+
+/* ───────────── table ───────────── */
+.people-table {width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed;}
+.people-table thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--surface); text-align: left;
+  font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.people-table thead th:first-child {padding-left: 20px;}
+.people-sort {display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer;}
+.people-sort:hover {color: var(--text);}
+.people-sort .icon {width: 12px; height: 12px; opacity: .6;}
+.people-sort[data-dir] {color: var(--text);}
+.people-table td {padding: 10px 12px; vertical-align: middle; min-width: 0; overflow-wrap: anywhere;}
+.people-table td:first-child {padding-left: 20px;}
+.people-table td:last-child {padding-right: 16px;}
+.people-table tbody tr {cursor: pointer;}
+.people-table tbody tr + tr td {border-top: 1px solid var(--people-sep);}
+.people-table tbody tr:hover td {background: var(--hover);}
+.people-table tbody tr:hover + tr td {border-top-color: transparent;}
+.people-table tbody tr:hover td:first-child {border-radius: 10px 0 0 10px;}
+.people-table tbody tr:hover td:last-child {border-radius: 0 10px 10px 0;}
+.people-table tbody tr:focus-within td {background: color-mix(in srgb, var(--hover) 70%, transparent);}
+
+/* Group heading row (Officers / Club Support Contacts / Ex-Officers) */
+.people-group-head {display: flex; align-items: center; gap: 6px; padding: 16px 16px 6px 12px;}
+.people-group-head h2 {font-size: 13px; font-weight: 650; margin: 0;}
+.people-group-head .people-count {margin-left: 2px;}
+.people-group-head .people-group-extra {margin-left: auto; font-size: 13px;}
+.people-group + .people-group {border-top: 1px solid var(--people-sep);}
+.people-collapse {display: inline-grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer;}
+.people-collapse:hover {background: var(--hover); color: var(--text);}
+.people-collapse .icon {width: 14px; height: 14px; transition: transform var(--dur-1) var(--ease-out);}
+.people-collapse[aria-expanded="false"] .icon {transform: rotate(-90deg);}
+.people-group-empty {padding: 6px 20px 16px; margin: 0;}
+
+/* Person cell */
+.person-cell {display: flex; align-items: center; gap: 12px; min-width: 0;}
+.person-cell-text {display: flex; flex-direction: column; min-width: 0;}
+.person-name {
+  display: block; max-width: 100%; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--text);
+  text-align: left; cursor: pointer; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.person-name:hover {text-decoration: underline;}
+.person-sub {font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+.person-sub .warn {color: var(--attention);}
+.person-cell .avatar {width: 32px; height: 32px; font-size: 12px;}
+
+/* Role / type chips: tinted pill with a dot, text in text colour. */
+.people-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 999px;
+  font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap;
+  background: color-mix(in srgb, var(--hue, var(--control)) var(--tint), var(--surface));
+}
+.people-chip::before {content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--hue, var(--control));}
+.people-chip--ghost {background: transparent; padding: 0 2px; color: var(--muted);}
+.people-chips {display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center;}
+
+/* Contact icon links */
+.people-contact {display: flex; gap: 2px; align-items: center;}
+.people-contact a {display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--muted);}
+.people-contact a:hover, .people-contact a:focus-visible {background: var(--hover); color: var(--text);}
+
+/* Pagination inside the card */
+.people-foot .action-row {gap: 8px;}
+
+@media (max-width: 640px) {
+  .people-tools {padding: 12px;}
+  .people-search {max-width: none; flex-basis: 100%;}
+  .people-tools-end {margin-left: 0; width: 100%; justify-content: space-between;}
+  .people-pills {flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%;}
+  /* Rows become a list: avatar + name, the role chip on the right; the rest is in the drawer. */
+  .people-table, .people-table tbody {display: block;}
+  .people-table thead {position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);}
+  .people-table tbody tr {display: flex; align-items: center; gap: 10px; padding: 10px 12px;}
+  .people-table tbody tr + tr {border-top: 1px solid var(--people-sep);}
+  .people-table tbody tr + tr td {border-top: 0;}
+  .people-table td {display: none; padding: 0;}
+  .people-table td:first-child {display: block; flex: 1; min-width: 0; padding: 0;}
+  .people-table td[data-cell="chip"] {display: block; flex: none;}
+  .people-table tbody tr:hover td {background: none;}
+  .people-table tbody tr:hover {background: var(--hover);}
+  .person-cell .avatar {width: 40px; height: 40px; font-size: 14px;}
+  .people-group-head {padding: 12px 12px 4px 6px;}
+  .people-foot {padding: 10px 12px;}
+}
+
+/* ───────────── PersonDrawer ───────────── */
+.avatar.avatar--xl, .person-hero .avatar {width: 80px; height: 80px; font-size: 26px;}
+.person-drawer.drawer {width: min(520px, 100vw);}
+.person-drawer .drawer-inner {position: relative;}
+.person-scroll {position: relative; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;}
+.person-band {
+  height: 96px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--hue) 24%, var(--surface)), color-mix(in srgb, var(--hue) 6%, var(--surface)));
+}
+.person-close {position: absolute; top: 10px; right: 10px; z-index: 1; background: color-mix(in srgb, var(--surface) 72%, transparent);}
+.person-hero {position: relative; display: flex; flex-direction: column; gap: 10px; padding: 0 24px 16px; margin-top: -40px;}
+.person-hero .avatar {border: 4px solid var(--surface); box-sizing: content-box; margin-left: -4px;}
+.person-id {display: flex; flex-direction: column; gap: 2px; min-width: 0;}
+.person-id h2 {font-size: 22px; line-height: 1.2; overflow-wrap: anywhere;}
+.person-id h2:focus {outline: none;}
+.person-id .person-sub {white-space: normal; font-size: 14px;}
+.person-chips {display: flex; flex-wrap: wrap; gap: 6px; align-items: center;}
+.person-actions {display: flex; flex-wrap: wrap; gap: 8px;}
+.person-actions .btn {display: inline-flex; align-items: center; gap: 6px;}
+.person-actions .btn .icon {width: 15px; height: 15px;}
+.person-tabs {position: sticky; top: 0; z-index: 1; background: var(--surface); padding: 0 24px;}
+.person-tabs .tabs {border-bottom: 1px solid var(--line);}
+.person-body {display: flex; flex-direction: column; gap: 20px; padding: 16px 24px 32px;}
+.person-stats {display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 0;}
+.person-stats > div {display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; min-width: 0;}
+.person-stats dd {order: -1; margin: 0; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;}
+.person-stats dt {font-size: 12px; color: var(--muted);}
+.person-sec {display: flex; flex-direction: column; gap: 10px; min-width: 0;}
+.person-sec > h3 {font-size: 12px; font-weight: 600; color: var(--muted); margin: 0;}
+.person-facts {grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px;}
+.person-facts dd {overflow-wrap: anywhere;}
+.person-timeline {list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px;}
+.person-timeline li {display: flex; gap: 10px; align-items: flex-start; min-width: 0;}
+.person-timeline-dot {flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--hue, var(--control));}
+.person-timeline-text {display: flex; flex-direction: column; min-width: 0; flex: 1;}
+.person-timeline-text a {color: var(--text); font-weight: 500; overflow-wrap: anywhere;}
+.person-timeline time {white-space: nowrap;}
+.person-body .notice {margin: 0;}
+
+@media (max-width: 767px) {
+  .person-drawer.drawer {width: 100vw; height: 100dvh; border-radius: 0;}
+  .person-hero, .person-body {padding-left: 16px; padding-right: 16px;}
+  .person-tabs {padding: 0 16px;}
+  .person-facts {grid-template-columns: minmax(0, 1fr);}
+}
+@media (prefers-reduced-motion: reduce) {
+  .people-collapse .icon {transition: none;}
+}
+.people-sort[data-dir="asc"] .icon {transform: rotate(180deg);}

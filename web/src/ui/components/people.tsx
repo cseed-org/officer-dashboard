@@ -6,7 +6,7 @@ import { initials } from '../../lib/session';
 import { safeImageUrl } from '../../lib/url';
 
 /** Initials (or the Discord picture) on a stable per-person tint. */
-export function Avatar({ name, id, src, size = 'md' }: { name: string; id?: string | null; src?: string | null; size?: 'sm' | 'md' }) {
+export function Avatar({ name, id, src, size = 'md' }: { name: string; id?: string | null; src?: string | null; size?: 'sm' | 'md' | 'lg' | 'xl' }) {
   const img = safeImageUrl(src);
   return (
     <span class={`avatar avatar--${size}`} data-hue={personHue(id ?? name)} aria-hidden="true">

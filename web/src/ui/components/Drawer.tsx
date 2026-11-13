@@ -16,6 +16,8 @@ export function Drawer({
   size = 'md',
   kind = 'drawer',
   dismissible = true,
+  bare = false,
+  className,
   children,
 }: {
   open: boolean;
@@ -27,6 +29,13 @@ export function Drawer({
   /** `dialog` centres it (CSV import); `drawer` slides in from the right. */
   kind?: 'drawer' | 'dialog';
   dismissible?: boolean;
+  /**
+   * Render no header or body wrapper: the children draw their own (PersonDrawer's hero). They
+   * must include the `#${id}-title` heading (tabIndex -1), which takes focus on open, and a
+   * close button.
+   */
+  bare?: boolean;
+  className?: string;
   children: ComponentChildren;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -53,7 +62,7 @@ export function Drawer({
     <dialog
       ref={ref}
       id={id}
-      class={`${kind} ${kind}--${size}`}
+      class={`${kind} ${kind}--${size}${className ? ` ${className}` : ''}`}
       aria-labelledby={`${id}-title`}
       onClose={() => {
         if (!document.querySelector('dialog[open]')) document.documentElement.classList.remove('has-modal');
@@ -66,6 +75,9 @@ export function Drawer({
         if (dismissible && e.target === ref.current) ref.current?.close();
       }}
     >
+      {bare ? (
+        <div class={`${kind}-inner`}>{open ? children : null}</div>
+      ) : (
       <div class={`${kind}-inner`}>
         <header class={`${kind}-head`}>
           <div class={`${kind}-heading`}>
@@ -80,6 +92,7 @@ export function Drawer({
         </header>
         <div class={`${kind}-body`}>{open && <TimezonePendingNotice />}{open ? children : null}</div>
       </div>
+      )}
     </dialog>
   );
 }

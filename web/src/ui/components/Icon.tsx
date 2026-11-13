@@ -20,6 +20,8 @@ const PATHS: Record<string, string> = {
   inbox: 'M3 13h5l1.5 3h5L16 13h5M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z',
   ledger: 'M4 4h16v16H4zM4 9h16M9 9v11',
   'chevron-down': 'm6 9 6 6 6-6',
+  'chevrons-up-down': 'm7 9 5-5 5 5M7 15l5 5 5-5',
+  mail: 'M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6',
   'arrow-right': 'M5 12h14M13 6l6 6-6 6',
   clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
   link: 'M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1',
