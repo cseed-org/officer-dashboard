@@ -9,6 +9,7 @@ import { setParams, useSearch } from '../../lib/nav';
 import type { FinanceTab } from '../../lib/routes';
 import { Drawer } from '../components/Drawer';
 import { Icon } from '../components/Icon';
+import { StatRow } from '../components/StatRow';
 import { DataTable, Section, Tabs } from '../components/kit';
 import { Async, Empty, ErrorState, errorMessage, Loading, Notice } from '../components/states';
 import { requestColumns } from './columns';
@@ -52,7 +53,7 @@ export default function FinanceView({ me }: { me: CurrentUser }) {
       </div>
 
       <div key={tab} id="fin-panel" role="tabpanel" aria-labelledby={`fin-tab-${tab}`} class="tab-panel">
-        {tab === 'requests' && <RequestsPanel director={director} tick={listTick} />}
+        {tab === 'requests' && <RequestsPanel director={director} tick={listTick} fy={fy} />}
         {tab !== 'requests' && (
           <>
             {tab !== 'periods' && <YearFundFilters lookups={lookups.status === 'ready' ? lookups.data : null} fy={fy} fundId={fundId} />}
@@ -168,7 +169,40 @@ const FILTERS: { key: StatusFilter; label: string; statuses: PurchaseStatus[] }[
   { key: 'cancelled', label: 'cancelled', statuses: ['cancelled'] },
 ];
 
-function RequestsPanel({ director, tick }: { director: boolean; tick: number }) {
+type StatCounts = { pending: number; approved: number; awaiting: number; director: boolean; loading: boolean };
+
+/** Budget figures come from the finance summary; they only load once the fiscal year is known. */
+function BudgetTile({ fy, ...c }: StatCounts & { fy: number }) {
+  const summary = useApi('financeSummary', { query: { fiscalYear: fy } });
+  return <StatRowFor {...c} summary={summary.status === 'ready' ? summary.data.totals : null} summaryLoading={summary.status === 'loading'} />;
+}
+
+function RequestStats({ fy, ...c }: StatCounts & { fy: number | null }) {
+  return fy ? <BudgetTile fy={fy} {...c} /> : <StatRowFor {...c} summary={null} summaryLoading />;
+}
+
+function StatRowFor({ pending, approved, awaiting, director, loading, summary, summaryLoading }: StatCounts & { summary: { budgetCents: number; spentCents: number; committedCents: number } | null; summaryLoading: boolean }) {
+  const used = summary && summary.budgetCents ? (summary.spentCents + summary.committedCents) / summary.budgetCents : null;
+  return (
+    <StatRow
+      label="Requests summary"
+      tiles={[
+        { label: 'Pending', value: pending, sub: 'waiting on a director', alert: pending > 0 && director, loading, href: '/finance?status=pending' },
+        { label: 'Approved', value: approved, sub: 'being bought or delivered', loading },
+        { label: 'Awaiting payment', value: awaiting, sub: 'reimbursement due', loading },
+        {
+          label: 'Spend vs budget',
+          value: summary ? (summary.budgetCents ? `${Math.round((used ?? 0) * 100)}%` : '—') : 0,
+          sub: summary ? (summary.budgetCents ? `${formatCents(summary.spentCents + summary.committedCents)} of ${formatCents(summary.budgetCents)}` : 'no budget set') : undefined,
+          alert: used !== null && used > 1,
+          loading: summaryLoading,
+        },
+      ]}
+    />
+  );
+}
+
+function RequestsPanel({ director, tick, fy }: { director: boolean; tick: number; fy: number | null }) {
   const search = useSearch();
   // Directors land on everyone's requests (they approve them); officers on their own.
   const scope: Scope = (search.get('scope') as Scope | null) ?? (director ? 'all' : 'mine');
@@ -189,8 +223,13 @@ function RequestsPanel({ director, tick }: { director: boolean; tick: number }) 
   const visibleFilters = FILTERS.filter((f) => f.key === 'any' || f.key === status || countFor(f) > 0);
   const setStatus = (k: StatusFilter) => setParams({ status: k === 'any' ? null : k }, { replace: true });
 
+  const n = (...k: PurchaseStatus[]) => k.reduce((a, st) => a + (counts[st] ?? 0), 0);
+  const loading = state.status === 'loading';
   return (
     <div class="stack">
+      {state.status !== 'error' && (
+        <RequestStats fy={fy} pending={n('submitted')} approved={n('approved', 'fulfilling', 'fulfilled')} awaiting={n('reimbursed')} director={director} loading={loading} />
+      )}
       <div class="toolbar toolbar--wrap">
         <div class="segmented" role="group" aria-label="Whose requests">
           {(['mine', 'all'] as const).map((k) => (

@@ -34,6 +34,7 @@ import {
 import { fmtShort, fmtWeekday, plural, todayPacific } from '../../lib/format';
 import { setParams, useSearch } from '../../lib/nav';
 import { href } from '../../lib/routes';
+import { StatRow } from '../components/StatRow';
 import { Drawer } from '../components/Drawer';
 import { DataTable, type Column } from '../components/kit';
 import { Avatar, RowMenu, type MenuItem } from '../components/people';
@@ -49,6 +50,19 @@ const VIEW_LABEL: Record<View, string> = {
 };
 const phone = () => typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches;
 type Menu = (i: DesignRequestItem, d: DesignRequestsListResponse) => MenuItem[];
+
+function designStats(items: DesignRequestItem[], meId: string) {
+  const today = todayPacific();
+  const open = items.filter((i) => i.stage !== 'delivered');
+  const w = myWork(items, meId);
+  return {
+    open: open.length,
+    inProgress: items.filter((i) => i.stage === 'in-progress').length,
+    mine: w.assigned.length + w.approve.length,
+    due: items.filter((i) => matchesFilter(i, 'due', meId, today)).length,
+    overdue: open.filter((i) => dueState(i, today) === 'overdue').length,
+  };
+}
 
 export default function DesignView({ me }: { me: CurrentUser }) {
   const search = useSearch();
@@ -168,8 +182,20 @@ export default function DesignView({ me }: { me: CurrentUser }) {
     );
   };
 
+  const stats = state.status === 'ready' && designStats(state.data.items, me.id);
   return (
     <div class="stack">
+      {state.status !== 'error' && (
+        <StatRow
+          label="Design requests summary"
+          tiles={[
+            { label: 'Open', value: stats ? stats.open : 0, sub: 'not delivered yet', loading: !stats },
+            { label: 'In progress', value: stats ? stats.inProgress : 0, sub: 'being designed now', loading: !stats },
+            { label: 'Waiting on me', value: stats ? stats.mine : 0, sub: 'assigned to me or to approve', alert: !!stats && stats.mine > 0, loading: !stats, href: '/design?filter=mine', pressed: filter === 'mine' },
+            { label: 'Due soon', value: stats ? stats.due : 0, sub: stats && stats.overdue ? `${stats.overdue} overdue` : 'this week or overdue', alert: !!stats && stats.overdue > 0, loading: !stats, href: '/design?filter=due', pressed: filter === 'due' },
+          ]}
+        />
+      )}
       <div class="toolbar">
         <div class="toolbar-main">
           <a class="btn btn--primary" href={href.newDesignRequest()} onClick={(e) => (e.preventDefault(), setParams({ new: 1, eventId: null }))} data-new-design>
