@@ -25,11 +25,13 @@ export function BuildspaceDetail({
   person,
   project,
   reload,
+  onPerson,
 }: {
   b: BuildspaceData;
   person?: BuildspacePerson;
   project: BuildspaceProject;
   reload: () => void;
+  onPerson: (id: string) => void;
 }) {
   const [tab, setTab] = useState("overview"),
     [error, setError] = useState(""),
@@ -168,7 +170,7 @@ export function BuildspaceDetail({
                   .map((p) => (
                     <button
                       key={p.id}
-                      onClick={() => setParams({ project: null, person: p.id })}
+                      onClick={() => onPerson(p.id)}
                     >
                       <span>{p.name}</span>
                       <span class={missed(p, b) ? "bs-alert" : "bs-muted"}>
@@ -393,7 +395,7 @@ export function BuildspaceDetail({
                   )}
                   <span>
                     {a.personId
-                      ? b.people.find((p) => p.id === a.personId)?.name
+                      ? <button class="bs-title" onClick={() => onPerson(a.personId!)}>{b.people.find((p) => p.id === a.personId)?.name || "Former builder"}</button>
                       : "Whole project"}
                     {a.mentorId &&
                       ` · ${mentors.find((m) => m.id === a.mentorId)?.name || "Former mentor"}`}{" "}

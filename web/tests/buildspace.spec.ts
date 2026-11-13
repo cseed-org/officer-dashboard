@@ -231,3 +231,22 @@ test('legacy Buildspace links preserve the selected person', async ({ page }) =>
   expect(await overflow(page)).toEqual([]);
   await expect(page.getByRole('heading', { name: 'Buildspace + Launchpad', exact: true })).toBeVisible();
 });
+
+test('builder opens the shared person drawer without navigating and keeps edit actions', async ({ page }) => {
+  await devLogin(page, 'director');
+  await open(page);
+  await page.evaluate(() => { (window as any).drawerDocument = 'same-document'; });
+  await page.locator('.bs-table').getByRole('button', { name: 'Alex Kim', exact: true }).click();
+  await expect(page).toHaveURL(/person=bs-person-01/);
+  const drawer = page.locator('#buildspace-person');
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator('.person-hero')).toContainText('Alex Kim');
+  await expect(drawer.getByRole('button', { name: 'Edit builder', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).drawerDocument)).toBe('same-document');
+  await page.goBack();
+  await expect(drawer).not.toBeVisible();
+  await page.goForward();
+  await expect(drawer).toBeVisible();
+  await page.reload();
+  await expect(drawer.locator('.person-hero')).toContainText('Alex Kim');
+});
