@@ -429,5 +429,17 @@ body:has(dialog[open]){overflow:hidden}
 .dt-primary .linkish{text-align:left}.prototype-toggle{display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px dashed var(--line)}
 @media(max-width:640px){.dt-primary .linkish{min-height:44px;display:inline-flex;align-items:center}.dt .action-row .btn{min-height:44px}}
 @media(min-width:641px){.people-group .dt{table-layout:fixed}.people-group .dt th:first-child{width:46%}.people-group .dt th:nth-child(2){width:30%}}
-.onb-top .wordmark {gap:10px;}
-.onb-logo {display:block;flex:none;width:28px;height:28px;}
+/* The shell's logo, where AppLayout draws it: sidebar at desktop (20, 26.75), centred in the top bar on phones. */
+.onb-logo-slot {display:block;width:0;height:18px;}
+.onb-shell-logo {position:fixed;z-index:91;left:20px;top:26.75px;display:flex;width:max-content;}
+.onb-shell-logo .wordmark-mark, .wi-logo .wordmark-mark {display:none;}
+@media (min-width: 768px) and (max-width: 1099px) {
+  .onb-shell-logo {left:17.5px;top:30px;}
+  .onb-shell-logo .wordmark-logo, .wi-logo .wordmark-logo {display:none !important;}
+  .onb-shell-logo .wordmark-mark, .wi-logo .wordmark-mark {display:inline-grid;}
+}
+.onb-shell-logo .wordmark-logo {height:18px;}
+@media (max-width: 767px) {
+  .onb-shell-logo {left:calc(50% - 34.664px);top:17.5px;}
+  .onb-shell-logo .wordmark-logo {height:16px;}
+}

@@ -1,21 +1,28 @@
 /**
- * The CSEED sprout from `public/favicon.svg`, without its paper tile so it sits on either
- * theme. The intro's snake turns into this mark and the onboarding header renders the same
- * component at the spot it lands (`data-onb-logo`), so the hand-off is pixel-exact.
+ * The app shell's logo: the same `cseed-wordmark` images and `.wordmark-logo` classes as
+ * `AppLayout.astro` (ink on light, white on dark, swapped by the theme rules in
+ * components.css). `ShellLogo` is the onboarding page's copy of it, placed (see
+ * `.onb-shell-logo` in v03.css) where the shell draws its own at desktop and phone widths,
+ * and it is where the intro's snake lands (`data-onb-logo`). At 768–1099px the shell shows its C rail
+ * mark instead, so that is what lands there. The intro overlay renders the same markup via `LogoImages`.
  */
-export function LogoMark({ size = 28, ...rest }: { size?: number; class?: string; [k: string]: unknown }) {
+export function LogoImages() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="4 4 56 56" width={size} height={size} aria-hidden="true" focusable="false" {...rest}>
-      <g transform="translate(0 -2)">
-        <g fill="#82c61b">
-          <path d="M32 37C24 38 8 36 7 24C6 15 16 12 23 16C29 20 32 29 32 37Z" />
-          <path d="M32 37C40 38 56 36 57 24C58 15 48 12 41 16C35 20 32 29 32 37Z" />
-        </g>
-        <g fill="none" stroke="#358b20" stroke-linecap="round">
-          <path d="M15 23Q25 27 32 36M49 23Q39 27 32 36" stroke-width="3.5" />
-          <path d="M32 36V53" stroke-width="5" />
-        </g>
-      </g>
-    </svg>
+    <>
+      <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-wordmark.png" alt="" width="78" height="18" />
+      <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-wordmark-white.png" alt="" width="78" height="18" />
+      {/* At 768–1099px the shell shows only its C rail mark instead of the wordmark. */}
+      <span class="wordmark-mark" aria-hidden="true">
+        C
+      </span>
+    </>
+  );
+}
+
+export function ShellLogo() {
+  return (
+    <span class="onb-shell-logo" data-onb-logo role="img" aria-label="CSEED">
+      <LogoImages />
+    </span>
   );
 }

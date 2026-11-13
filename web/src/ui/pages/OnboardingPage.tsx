@@ -8,7 +8,7 @@ import { Icon } from '../components/Icon';
 import { ProfileForm, type ProfileFormHandle } from '../views/ProfileForm';
 import { CalendarPanel } from '../views/CalendarPanel';
 import { WelcomeIntro } from '../onboarding/WelcomeIntro';
-import { LogoMark } from '../onboarding/LogoMark';
+import { ShellLogo } from '../onboarding/LogoMark';
 
 const NAMES = ['Hello', 'Confirm', 'Profile', 'Calendar', 'Widgets', 'Done'];
 const WIDGET_SUB: Record<string, string> = {
@@ -570,9 +570,8 @@ function OnboardingFlow() {
         Skip to setup
       </a>
       <header class="onb-top">
-        <span class="wordmark">
-          <LogoMark class="onb-logo" data-onb-logo />
-          CSEED
+        <span class="onb-logo-slot">
+          <ShellLogo />
         </span>
         <ol class="onb-progress" aria-label={`Setup progress, step ${step} of 6`}>
           {NAMES.map((n, i) => (
@@ -644,15 +643,18 @@ function OnboardingFlow() {
 export default function OnboardingPage() {
   const [intro, setIntro] = useState(false);
   useEffect(() => setIntro(new URLSearchParams(location.search).get('intro') === '1'), []);
+  const wasIntro = useRef(false);
+  // Once the intro (and its inert background) is gone, focus returns to the step heading.
+  useEffect(() => {
+    if (intro) wasIntro.current = true;
+    else if (wasIntro.current) document.getElementById('step-title')?.focus({ preventScroll: true });
+  }, [intro]);
   return (
     <>
       <OnboardingFlow />
       {intro && (
         <WelcomeIntro
-          onDone={() => {
-            setIntro(false);
-            document.getElementById('step-title')?.focus({ preventScroll: true });
-          }}
+          onDone={() => setIntro(false)}
         />
       )}
     </>

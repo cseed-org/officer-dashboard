@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { devLogin, devSignIn } from './helpers';
+import { devLoginSkipTour, devSignIn } from './helpers';
 
 /**
  * V0.9 onboarding intro: the multilingual greeting, the snake that eats it and the apples
@@ -12,7 +12,16 @@ const discordId = () => `9${String(Date.now()).padStart(13, '0')}${Math.floor(Ma
 
 async function openIntro(page: Page) {
   const id = discordId();
-  await devLogin(page, 'director');
+  await devLoginSkipTour(page, 'director');
+  await expect(page.locator('.app')).toBeVisible();
+  // The real app-shell logo (sidebar at desktop, top bar on phones): the snake's destination.
+  const shell = await page.evaluate(() => {
+    // Phone: top bar wordmark. 768–1099px: the rail's C mark. Wider: the sidebar wordmark.
+    const sel = innerWidth < 768 ? '.topbar .wordmark-logo' : innerWidth < 1100 ? '.sidebar .wordmark-mark' : '.sidebar .wordmark-logo';
+    const el = Array.from(document.querySelectorAll(sel)).find((e) => e.getBoundingClientRect().width > 0)!;
+    const b = el.getBoundingClientRect();
+    return [b.left, b.top, b.width, b.height];
+  });
   const r = await page.request.post('/api/invites', { data: { name: 'Intro Tester', discordId: id, subteamId: 'team-events', method: 'link' } });
   expect(r.ok()).toBe(true);
   await page.goto('about:blank');
@@ -21,6 +30,7 @@ async function openIntro(page: Page) {
   await expect(page).toHaveURL(/\/onboarding$/);
   await page.goto('/onboarding?intro=1');
   await expect(page.locator('.wi')).toBeVisible();
+  return shell;
 }
 
 const active = (page: Page) => page.locator('[data-wi-phrase][data-active="true"]');
@@ -48,7 +58,7 @@ test('the greeting cycles through languages and keeps cseed lowercase', async ({
 });
 
 test('Enter sends the snake in, it lands on the logo, then onDone fires', async ({ page }) => {
-  await openIntro(page);
+  const shell = await openIntro(page);
   await page.keyboard.press('Enter');
   await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
   await expect(page.locator('[data-wi-snake="head"]')).toHaveCount(1);
@@ -64,19 +74,38 @@ test('Enter sends the snake in, it lands on the logo, then onDone fires', async 
           const b = document.querySelector(s)!.getBoundingClientRect();
           return [b.left, b.top, b.width, b.height];
         };
+        // Keep the last measurement taken once the logo is fully in; resolve when the overlay goes
+        // (a slow machine can skip frames between the logo finishing and the overlay unmounting).
+        let last: { intro: number[]; page: number[] } | null = null;
         const tick = () => {
           const lg = document.querySelector('[data-wi-logo]');
-          const anims = lg?.getAnimations() ?? [];
-          if (lg && anims.length && anims.every((a) => a.playState === 'finished')) resolve({ intro: box('[data-wi-logo]'), page: box('[data-onb-logo]') });
-          else requestAnimationFrame(tick);
+          if (!lg) return last ? resolve(last) : requestAnimationFrame(tick);
+          const anims = lg.getAnimations();
+          if (anims.length && anims.every((a) => a.playState === 'finished')) last = { intro: box('[data-wi-logo]'), page: box('[data-onb-logo]') };
+          requestAnimationFrame(tick);
         };
         tick();
       }),
   );
+  // ...and that is where the real shell draws its logo (same images, same geometry).
   rects.intro.forEach((v, i) => expect(Math.abs(v - rects.page[i]!)).toBeLessThan(0.01));
+  rects.intro.forEach((v, i) => expect(Math.abs(v - shell[i]!), `shell logo ${shell} vs intro ${rects.intro}`).toBeLessThan(0.6));
 
   await expect(overlay(page)).toHaveCount(0, { timeout: 20_000 }); // onDone → the page removes it
   await expect(page.locator('[data-onb-logo]')).toBeVisible();
+  await expect(page.locator('#step-title')).toBeFocused();
+});
+
+test('it is a real modal: Tab stays inside, the setup behind is inert, focus returns after', async ({ page }) => {
+  await openIntro(page);
+  expect(await page.evaluate(() => !!document.querySelector('.onb')?.closest('[inert]'))).toBe(true);
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press(i % 3 === 2 ? 'Shift+Tab' : 'Tab');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('.wi')), `focus escaped after press ${i + 1}`).toBe(true);
+  }
+  await page.getByRole('button', { name: 'Skip' }).click();
+  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
+  expect(await page.evaluate(() => !!document.querySelector('[inert]'))).toBe(false);
   await expect(page.locator('#step-title')).toBeFocused();
 });
 

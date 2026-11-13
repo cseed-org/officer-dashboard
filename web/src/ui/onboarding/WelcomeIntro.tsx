@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ACCESSIBLE_GREETING, GREETINGS, type Greeting } from './greetings';
-import { LogoMark } from './LogoMark';
+import { LogoImages } from './LogoMark';
 import { buildPlan } from './snakePlan';
 import './intro.css';
 
@@ -9,8 +9,8 @@ const CYCLE_MS = 2100;
 const FADE_IN = 520;
 const FADE_OUT = 380;
 const EASE = 'cubic-bezier(.2, .8, .2, 1)';
-/** Where the header logo sits if the page behind hasn't rendered it yet. */
-const FALLBACK = { x: 40, y: 34, size: 28 };
+/** Where the shell logo sits (78×18 at 20,26.75; tablet: the 28px C mark at 17.5,30; phone: 69×16, centred at 17.5) if the page behind hasn't rendered it yet. */
+const fallback = () => (innerWidth >= 768 && innerWidth < 1100 ? { x: 17.5, y: 30, w: 28, h: 28 } : innerWidth < 768 ? { x: innerWidth / 2 - 34.67, y: 17.5, w: 69.33, h: 16 } : { x: 20, y: 26.75, w: 78, h: 18 });
 
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -116,11 +116,10 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]' }: Pro
 
     // The page's own logo is the destination; measure it now (fixed overlay = viewport coords).
     const found = document.querySelector<HTMLElement>(targetSelector)?.getBoundingClientRect();
-    const box = found && found.width ? { x: found.left, y: found.top, size: found.width, h: found.height } : { ...FALLBACK, h: FALLBACK.size };
+    const box = found && found.width ? { x: found.left, y: found.top, w: found.width, h: found.height } : fallback();
     const lg = logo.current!;
     lg.style.left = `${box.x}px`;
     lg.style.top = `${box.y}px`;
-    lg.style.width = `${box.size}px`;
     lg.style.height = `${box.h}px`;
 
     const end = (after: number) => {
@@ -157,7 +156,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]' }: Pro
         vw,
         vh,
         text: textBox ?? { left: vw * 0.2, right: vw * 0.8, top: vh * 0.45, bottom: vh * 0.55 },
-        target: { cx: box.x + box.size / 2, cy: box.y + box.h / 2, size: Math.max(box.size, box.h) },
+        target: { cx: box.x + box.w / 2, cy: box.y + box.h / 2, size: box.h },
       });
 
       // 1. The greeting becomes vertical strips; each vanishes as the head reaches it.
@@ -220,7 +219,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]' }: Pro
 
       // 4. The snake collapses into the logo, which takes its place pixel for pixel.
       const crossAt = plan.duration - 140;
-      run(lg, [{ opacity: 0, transform: 'scale(.55)' }, { opacity: 1, transform: 'scale(1)' }], { delay: crossAt, duration: 220, easing: EASE });
+      run(lg, [{ opacity: 0, transform: 'scale(.8)' }, { opacity: 1, transform: 'scale(1)' }], { delay: crossAt, duration: 220, easing: EASE });
       list.push(
         ...Array.from(layer.querySelectorAll<HTMLElement>('.wi-seg')).map((s) =>
           s.animate([{ opacity: 1 }, { opacity: 0 }], { delay: crossAt + 60, duration: 140, fill: 'forwards' }),
@@ -255,8 +254,33 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]' }: Pro
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   useEffect(() => {
-    root.current?.focus({ preventScroll: true });
+    const el = root.current;
+    const before = document.activeElement as HTMLElement | null;
+    // A real modal: everything outside the overlay is inert while it is up.
+    const inerted: Element[] = [];
+    for (let node: Element | null = el; node && node !== document.documentElement; node = node.parentElement) {
+      for (const sib of Array.from(node.parentElement?.children ?? [])) {
+        if (sib !== node && !sib.hasAttribute('inert') && sib.tagName !== 'SCRIPT') {
+          sib.setAttribute('inert', '');
+          inerted.push(sib);
+        }
+      }
+    }
+    el?.focus({ preventScroll: true });
+    // Tab stays on Skip and Continue.
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !el) return;
+      const f = Array.from(el.querySelectorAll<HTMLElement>('button'));
+      const i = f.indexOf(document.activeElement as HTMLElement);
+      const next = e.shiftKey ? (i <= 0 ? f.length - 1 : i - 1) : i === f.length - 1 ? 0 : i + 1;
+      e.preventDefault();
+      f[next]?.focus();
+    };
+    el?.addEventListener('keydown', trap);
     return () => {
+      el?.removeEventListener('keydown', trap);
+      inerted.forEach((n) => n.removeAttribute('inert'));
+      if (before && before !== document.body && before.isConnected) before.focus({ preventScroll: true });
       clearTimeout(timer.current);
       anims.current.forEach((a) => a.cancel());
     };
@@ -273,7 +297,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]' }: Pro
       </div>
       <div class="wi-fx" ref={fx} aria-hidden="true" />
       <div class="wi-logo" ref={logo} data-wi-logo aria-hidden="true">
-        <LogoMark size={28} />
+        <LogoImages />
       </div>
       <p class="wi-hint" ref={hint} aria-hidden="true">
         Press anywhere to continue
