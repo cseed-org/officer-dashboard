@@ -1011,8 +1011,10 @@ const ClubLink = z.string().max(2048).refine(v => { if (!v) return true; try { c
 export const ClubSettings = z.object({ websiteUrl: ClubLink, notionUrl: ClubLink, driveUrl: ClubLink, clubTimezone: IanaTimezone, location: z.string().trim().min(1).max(200) });
 export type ClubSettings = z.infer<typeof ClubSettings>;
 export const TimezoneMode = z.enum(['club', 'auto', 'manual']);
-export const WidgetPrefs = z.object({ dashboardTutorialSeen: z.boolean().default(false), timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
-export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).extend({ dashboardTutorialSeen: z.boolean() }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined || p.dashboardTutorialSeen !== undefined, 'No preferences supplied');
+/** Left nav width in px: 0 = never resized (default), else 64 (icons only) to 320. The Go handler enforces the same bounds. */
+export const SidebarWidth = z.number().int().refine((v) => v === 0 || (v >= 64 && v <= 320), 'Sidebar width must be 0 (default) or 64 to 320 px');
+export const WidgetPrefs = z.object({ sidebarWidth: SidebarWidth.default(0), dashboardTutorialSeen: z.boolean().default(false), timezoneMode: TimezoneMode, timezone: z.union([IanaTimezone, z.literal('')]), effectiveTimezone: IanaTimezone, widgetLayout: z.array(WidgetPlacement).max(50).refine((v) => new Set(v.map((w) => w.id)).size === v.length, 'Widget IDs must be unique') });
+export const PrefsUpdate = WidgetPrefs.omit({ effectiveTimezone: true }).extend({ dashboardTutorialSeen: z.boolean(), sidebarWidth: SidebarWidth }).partial().refine((p) => p.timezoneMode !== 'manual' || !!p.timezone, 'Choose a manual time zone').refine((p) => p.timezone === undefined || p.timezoneMode !== undefined, 'Specify the time zone mode').refine((p) => p.widgetLayout !== undefined || p.timezoneMode !== undefined || p.dashboardTutorialSeen !== undefined || p.sidebarWidth !== undefined, 'No preferences supplied');
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 export const CalendarWidgetOptions = z.object({
   view: z.enum(['auto', 'agenda', 'week', 'month']),

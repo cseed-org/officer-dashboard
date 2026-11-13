@@ -121,3 +121,14 @@ External Contacts uses `/contacts`. The legacy `/speakers` route redirects to it
 ## Onboarding intro (V0.9)
 
 `src/ui/onboarding/` holds `WelcomeIntro({ onDone })`: a full-screen "Hello, welcome to cseed" cycling through 15 languages (`greetings.ts`; `cseed` is always lowercase LTR Latin). Any click, tap, Enter or Space plays a snake that eats the greeting, eats apples spelling "cseed", then shrinks into the top-left logo and calls `onDone`; a second press fast-forwards. `snakePlan.ts` is pure geometry/timing that bakes per-segment Web Animations keyframes (transform and opacity only, no dependencies). The destination is the app shell's logo: the onboarding header draws the same `cseed-wordmark` images and classes as `AppLayout.astro` (`ShellLogo`/`LogoImages` in `LogoMark.tsx`) at the shell's coordinates (sidebar at desktop, centred in the top bar on phones, the C rail mark at 768–1099px). The snake lands on `[data-onb-logo]`, measured at dismiss time, and the spec compares it with the real shell logo at each width. While it plays the intro is a modal: the rest of the page is inert, Tab stays on Skip/Continue, and focus returns to the step heading. Skip, or `prefers-reduced-motion`, drops the snake for a plain fade. For now it is switched on with `/onboarding?intro=1`; the intake form and tour wire it in later. Evidence: `docs/evidence/onboarding-intro/`; spec: `tests/onboarding-intro.spec.ts` (`INTRO_FRAMES=<dir>` records frames).
+
+## Resizable sidebar (V0.9)
+
+Desktop and tablet users can drag the sidebar's right edge (`SidebarResizer`, a focusable
+`role="separator"`; arrows, Home/End, Enter and double-click also work) between 64px (icons
+only, labels hidden, tooltips via `title`) and 320px. Dragging below 120px snaps to icons only.
+The width is the `sidebarWidth` pref (`PUT /api/me/prefs`, 0 = never resized, else 64 to 320), so
+it follows the user across devices. `lib/sidebar.ts` mirrors it into localStorage
+(`cseed-sidebar`) and the inline PREPAINT script in `AppLayout` sets `<html data-sidebar>` and
+`--sidebar` before first paint; the server value wins once `/api/me/prefs` loads
+(`applyTimezone` calls `syncSidebarFromServer`). Phones keep the menu sheet and have no handle.

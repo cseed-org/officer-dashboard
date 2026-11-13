@@ -566,6 +566,14 @@ for (const source of ['buildspace-absences', 'buildspace-weekly', 'buildspace-me
 await call('calendarWidgetPut', {who: officer, body: {view:'month', colourBy:'source', showWeekends:true, sources:['buildspace-absences','buildspace-weekly','buildspace-mentor']}});
 await call('calendarWidgetGet', {who: officer});
 
+// Sidebar width: the request schema accepts exactly what the server accepts (0 or 64..320).
+const widthBody = ENDPOINTS.prefsPut.body;
+for (const w of [0, 64, 240, 320]) must(widthBody.safeParse({sidebarWidth: w}).success, `PrefsUpdate accepts sidebarWidth ${w}`);
+for (const w of [1, 63, 321, -1, 100.5, '200']) must(!widthBody.safeParse({sidebarWidth: w}).success, `PrefsUpdate rejects sidebarWidth ${JSON.stringify(w)}`);
+const widthPut = await call('prefsPut', {who: officer, body: {sidebarWidth: 240}});
+must(widthPut.json.sidebarWidth === 240, 'sidebarWidth saves');
+await call('prefsPut', {who: officer, body: {sidebarWidth: 0}});
+
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback']); // redirects, and dev-build-only routes: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);
