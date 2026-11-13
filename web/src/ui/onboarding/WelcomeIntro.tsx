@@ -375,8 +375,16 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
-      if ((e.target as HTMLElement | null)?.closest('button, a')) return; // buttons handle their own keys
+      if (e.key === 'Tab' || ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Fn', 'OS'].includes(e.key) || e.isComposing) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (stateRef.current === 'greeting') play(true);
+        else finishNow();
+        return;
+      }
+      // A focused button handles its own Enter/Space.
+      if ((e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') && (e.target as HTMLElement | null)?.closest('button, a')) return;
       e.preventDefault();
       activate();
     };
@@ -425,7 +433,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
       tabIndex={-1}
       role="dialog"
       aria-modal="true"
-      aria-label="Welcome to cseed. Press Enter, click or tap anywhere to begin."
+      aria-label="Welcome to cseed. Press any key, click or tap anywhere to begin."
       data-state={state}
       data-video={videoOn ? 'on' : 'off'}
       data-photo={hasPhoto ? 'on' : 'placeholder'}
@@ -479,7 +487,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
         <LogoImages />
       </div>
       <p class="wi-hint wi-glass-ui" ref={hint} aria-hidden="true">
-        <span class="wi-hint-mouse">Click anywhere or press Enter</span>
+        <span class="wi-hint-mouse">Click anywhere or press any key</span>
         <span class="wi-hint-touch">Tap anywhere to begin</span>
       </p>
       <button
