@@ -282,9 +282,10 @@ test('V0.10: Design lanes map the five stages and only offer moves the viewer ma
   // Only leadership drops into Done (as an override); everyone else waits for the requester.
   expect(laneTarget(item('in-review'), 'done', director)).toBeNull();
   expect(laneTarget(item('in-review'), 'done', leadership)).toBe('delivered');
-  // Delivered work can only be reopened into Doing.
-  expect(laneTarget(item('delivered'), 'review', director)).toBeNull();
+  // Delivered work reopens into Doing, or goes back to Review (the Done toast's Undo).
+  expect(laneTarget(item('delivered'), 'review', director)).toBe('in-review');
   expect(laneTarget(item('delivered'), 'doing', director)).toBe('in-progress');
+  expect(laneTarget(item('delivered'), 'todo', director)).toBeNull();
   // A requester outside the design team may only send their review back to Doing.
   expect(laneTarget(item('in-review'), 'doing', officer)).toBe('in-progress');
   expect(laneTarget(item('new'), 'doing', officer)).toBeNull();

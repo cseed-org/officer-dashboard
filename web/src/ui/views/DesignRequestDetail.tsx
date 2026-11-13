@@ -16,6 +16,7 @@ import { DESIGN_LANES, dueState, firstName, fmtDueLong, LANE_LABEL, laneOf, STAG
 import { bytes, fmtDateTime } from '../../lib/format';
 import { href } from '../../lib/routes';
 import { safeUrl } from '../../lib/url';
+import { Confetti } from '../components/Confetti';
 import { DesignLinks } from '../components/DesignLinks';
 import { Badge, describe, Field } from '../components/kit';
 import { errorMessage, ErrorState, Loading, Notice } from '../components/states';
@@ -83,25 +84,49 @@ export default function DesignRequestDetail({
         onChanged();
       }}
       onDeleted={onDeleted}
+      onRefresh={() => {
+        state.reload();
+        onChanged();
+      }}
     />
   );
 }
 
-function Body({ data, me, onUpdate, onDeleted }: { data: DesignRequestResponse; me: CurrentUser; onUpdate: (d: DesignRequestResponse) => void; onDeleted: (title: string) => void }) {
+function Body({ data, me, onUpdate, onDeleted, onRefresh }: { data: DesignRequestResponse; me: CurrentUser; onUpdate: (d: DesignRequestResponse) => void; onDeleted: (title: string) => void; onRefresh: () => void }) {
   const r = data.request;
   const p = r.permissions;
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(null);
   const [editing, setEditing] = useState(false);
+  /** The Done moment: the stage a request came from when it just landed in Done here (for Undo). */
+  const [landed, setLanded] = useState<DesignStage | null>(null);
 
   const run = async (label: string, fn: () => Promise<DesignRequestResponse>, done: string) => {
+    const from = r.stage;
     setBusy(label);
     setMessage(null);
+    setLanded(null);
     try {
-      onUpdate(await fn());
+      const res = await fn();
+      onUpdate(res);
+      if (res.request.stage === 'delivered' && from !== 'delivered') setLanded(from);
       setMessage({ tone: 'positive', text: done });
     } catch (err) {
       setMessage({ tone: 'negative', text: errorMessage(err) });
+    } finally {
+      setBusy(null);
+    }
+  };
+  const undoDelivery = async (to: DesignStage) => {
+    setBusy('Undoing…');
+    setLanded(null);
+    try {
+      onUpdate(await api('designRequestMove', { params: { id: r.id }, body: { stage: to } }));
+      setMessage({ tone: 'positive', text: `Delivery undone: back in ${STAGE_LABEL[to]}.` });
+    } catch (err) {
+      // Show the server's truth, not what we hoped for.
+      setMessage({ tone: 'negative', text: `Couldn't undo the delivery: ${errorMessage(err)}` });
+      onRefresh();
     } finally {
       setBusy(null);
     }
@@ -124,6 +149,8 @@ function Body({ data, me, onUpdate, onDeleted }: { data: DesignRequestResponse; 
   const files = (k: DesignFileKind) => r.files.filter((f) => f.kind === k);
   const due = dueState(r);
   const requesterIsMe = r.requester.id === me.id;
+  // The approver's only move on a delivered request is taking the approval back (Undo), not designer work.
+  const approverUndoOnly = r.stage === 'delivered' && p.moveTo.length === 1 && p.moveTo[0] === 'in-review' && !p.canAssign;
 
   return (
     <div class="stack" data-state="ready" data-design-detail={r.id} data-stage={r.stage}>
@@ -151,10 +178,22 @@ function Body({ data, me, onUpdate, onDeleted }: { data: DesignRequestResponse; 
         )}
       </div>
 
-      {message && (
-        <Notice tone={message.tone === 'positive' ? 'positive' : 'negative'}>
-          {message.text}
-        </Notice>
+      {landed && r.stage === 'delivered' ? (
+        <div class="notice notice--positive done-moment" role="status" data-done-moment>
+          <Confetti />
+          <span>{message?.text ?? 'Delivered.'}</span>
+          {p.moveTo.includes(landed) && (
+            <button type="button" class="linkish design-undo" disabled={!!busy} onClick={() => void undoDelivery(landed)}>
+              Undo
+            </button>
+          )}
+        </div>
+      ) : (
+        message && (
+          <Notice tone={message.tone === 'positive' ? 'positive' : 'negative'}>
+            {message.text}
+          </Notice>
+        )
       )}
 
       <dl class="facts">
@@ -257,7 +296,7 @@ function Body({ data, me, onUpdate, onDeleted }: { data: DesignRequestResponse; 
         </section>
       )}
 
-      {(p.canAssign || p.canAssignSelf || (p.moveTo.length > 0 && !p.canRequestChanges)) && <DesignerActions r={r} designers={data.designers} me={me} busy={!!busy} run={run} onStep={onUpdate} />}
+      {(p.canAssign || p.canAssignSelf || (p.moveTo.length > 0 && !p.canRequestChanges && !approverUndoOnly)) && <DesignerActions r={r} designers={data.designers} me={me} busy={!!busy} run={run} onStep={onUpdate} />}
 
       {!p.canAssign && !p.canAssignSelf && p.moveTo.length === 0 && <p class="small muted">Stage: {STAGE_LABEL[r.stage]}. Only designers and directors can move requests. The requester can approve or request changes during review.</p>}
       {p.uploadKinds.length > 0 && <Upload r={r} kinds={p.uploadKinds} onUpdate={onUpdate} />}

@@ -76,11 +76,14 @@ export function dueText(item: Pick<DesignRequestItem, 'dueDate' | 'stage' | 'urg
  * Where the viewer may move a card: mirrors designMoveTargets + permissions in the Go API.
  * Designers and director+ move work; designers take unassigned work when moving it.
  * Leadership may deliver with explicit confirmation. Other delivery follows requester approval.
- * A delivered card can be reopened; requesters may send work in review back to In progress.
+ * A delivered card can be reopened to In progress or put back in review (undoing the delivery);
+ * requesters may send work in review back to In progress. The requester who approved may also
+ * undo that approval, but list items don't say who approved, so only the detail
+ * (permissions.moveTo) offers that move.
  */
 export function designMoveTargets(item: DesignRequestItem, viewer: { id: string; isDesigner: boolean; isWorker: boolean; isLeadership?: boolean }): DesignStage[] {
   if (!viewer.isWorker) return item.stage === 'in-review' && item.requester.id === viewer.id ? ['in-progress'] : [];
-  if (item.stage === 'delivered') return ['in-progress'];
+  if (item.stage === 'delivered') return ['in-progress', 'in-review'];
   return DESIGN_STAGES.filter((s) => s !== item.stage && (s !== 'delivered' || viewer.isLeadership));
 }
 

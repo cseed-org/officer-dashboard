@@ -181,6 +181,9 @@ func (d *designCtx) permissions(r *store.DesignRequest) DesignPermissions {
 		}
 	} else if p.CanRequestChanges {
 		p.MoveTo = append(p.MoveTo, "in-progress")
+	} else if r.Stage == "delivered" && r.ApprovedBy != nil && *r.ApprovedBy == v.ID {
+		// The requester who approved may take that approval back (the board's Undo).
+		p.MoveTo = append(p.MoveTo, "in-review")
 	}
 	// References until delivery; review versions while open; delivered files any time
 	// (the design team adds finals before or after approval). Director+ share the team's rights.
@@ -197,10 +200,11 @@ func (d *designCtx) permissions(r *store.DesignRequest) DesignPermissions {
 }
 
 // designMoveTargets is where designers may move a card from a stage. Delivered is reached
-// only by the requester's approval; a delivered card can be reopened to In progress.
+// only by the requester's approval (or a leadership override); a delivered card can be
+// reopened to In progress, or put back in review (undoing the delivery).
 func designMoveTargets(from string) []string {
 	if from == "delivered" {
-		return []string{"in-progress"}
+		return []string{"in-progress", "in-review"}
 	}
 	out := []string{}
 	for _, s := range store.DesignStages {

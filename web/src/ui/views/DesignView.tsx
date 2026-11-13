@@ -45,6 +45,7 @@ import { setParams, useSearch } from '../../lib/nav';
 import { href } from '../../lib/routes';
 import { StatRow } from '../components/StatRow';
 import { Drawer } from '../components/Drawer';
+import { Confetti } from '../components/Confetti';
 import { DesignLinks } from '../components/DesignLinks';
 import { Icon, type IconName } from '../components/Icon';
 import { DataTable, type Column } from '../components/kit';
@@ -110,14 +111,22 @@ export default function DesignView({ me }: { me: CurrentUser }) {
 
   const moving = useRef(false);
   const [movePending, setMovePending] = useState(false);
+  // Toast callbacks (Undo) run after later renders: they read the list through this ref, never
+  // a snapshot from the render that created them.
+  const latest = useRef(state);
+  latest.current = state;
   const move = async (item: DesignRequestItem, to: DesignStage, opts: { undoing?: boolean } = {}) => {
     if (to === 'delivered' && !confirm('Deliver without the requester’s approval? This leadership override will be recorded in the audit log.')) return;
+    const state = latest.current;
     if (state.status !== 'ready' || moving.current) return;
     moving.current = true;
     setMovePending(true);
     const restoreFocus = document.activeElement?.getAttribute('data-request') === item.id;
     const focusCard = () => { if (restoreFocus) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-request="${item.id}"]`)?.focus()); };
     const before = state.data;
+    // Undo starts from the card as the list shows it now.
+    const current = before.items.find((i) => i.id === item.id);
+    if (current) item = current;
     const v = viewer(before);
     state.set({ ...before, items: before.items.map((i) => (i.id === item.id ? { ...i, stage: to } : i)) });
     focusCard();
@@ -128,7 +137,7 @@ export default function DesignView({ me }: { me: CurrentUser }) {
       });
       setLive(`${item.title} moved to ${LANE_LABEL[laneOf(to)]} (${STAGE_LABEL[to]}).`);
       if (to === 'delivered') setParty(Date.now());
-      // Undo puts it back where it was, when the same rules allow that move.
+      // Undo puts it back where it was, when the same rules allow that move (Review → Done → Review included).
       const back = !opts.undoing && designMoveTargets({ ...item, stage: to }, v).includes(item.stage);
       setToast({
         text: to === 'delivered' ? `“${item.title}” delivered` : opts.undoing ? `“${item.title}” moved back to ${LANE_LABEL[laneOf(to)]}` : `“${item.title}” moved to ${LANE_LABEL[laneOf(to)]}`,
@@ -136,8 +145,11 @@ export default function DesignView({ me }: { me: CurrentUser }) {
       });
       state.reload();
     } catch (err) {
+      // Show the last known list at once, then the server's truth (a failed Undo must not
+      // leave the card in a lane the server never agreed to).
       state.set(before);
-      setToast({ text: `Couldn't move “${item.title}”: ${errorMessage(err)}` });
+      state.reload();
+      setToast({ text: `Couldn't ${opts.undoing ? 'undo the move of' : 'move'} “${item.title}”: ${errorMessage(err)}` });
     } finally {
       moving.current = false;
       setMovePending(false);
@@ -508,16 +520,6 @@ function CardBody({ item, menu, grip }: { item: DesignRequestItem; menu: MenuIte
   );
 }
 
-/** A short burst over the Done lane when work lands there (nothing under reduced motion). */
-function Confetti() {
-  return (
-    <span class="confetti" aria-hidden="true" data-confetti>
-      {Array.from({ length: 14 }, (_, i) => (
-        <i key={i} style={{ '--a': `${(i / 14) * 360}deg`, '--d': `${26 + (i % 3) * 12}px`, '--c': `var(--c-${['green', 'blue', 'amber', 'coral', 'violet', 'teal', 'green'][i % 7]})` }} />
-      ))}
-    </span>
-  );
-}
 
 function Board({
   pending,
