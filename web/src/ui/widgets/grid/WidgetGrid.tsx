@@ -16,7 +16,9 @@ type Resize = { id: string; x: number; y: number; size: BlockSize; snapshot: Pla
 /** `at` is the last valid drop cell (the dragged widget's top-left), or null before the first. */
 type Drag = { id: string; x: number; y: number; snapshot: Placement[]; at: { x: number; y: number } | null;
   /** The card lifts out of the grid at its pre-drag box and follows the pointer by this grab offset. */
-  box?: { ox: number; oy: number; width: number; height: number } };
+  box?: { ox: number; oy: number; width: number; height: number };
+  /** Set once the pointer pauses: the card settles into the slot the grid vacated for it. */
+  dock?: { left: number; top: number } };
 
 /**
  * Home as a grid of blocks (spec § "V0.4 Home block grid"). The layout lives on the server
@@ -63,6 +65,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   const [moved, setMoved] = useState<string | null>(null);
   const [live, setLive] = useState('');
   const pointerY = useRef(0);
+  const dockTimer = useRef<number | undefined>(undefined);
   const settleFrom = useRef<{ id: string; rect: DOMRect } | null>(null);
   const focusAfter = useRef<string | null>(null);
   const gallery = useRef<HTMLDialogElement>(null);
@@ -126,6 +129,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
   }, [drag]);
 
   function releasePointer() {
+    clearTimeout(dockTimer.current);
     const capture = captured.current;
     if (capture?.element.hasPointerCapture(capture.id)) capture.element.releasePointerCapture(capture.id);
     captured.current = null;
@@ -294,7 +298,21 @@ export default function WidgetGrid({ children, entering = false }: { children: (
       target = at;
       setLayout(settle(active.snapshot, gridWidth, { id: active.id, ...at }));
     }
-    setDrag({ ...active, x: e.clientX, y: e.clientY, at: target });
+    setDrag({ ...active, x: e.clientX, y: e.clientY, at: target, dock: undefined });
+    // The grid has already reflowed around the target; when the pointer rests, the card slides into
+    // that slot, so at rest it never covers another card (it may pass over them while moving).
+    clearTimeout(dockTimer.current);
+    dockTimer.current = window.setTimeout(() => {
+      const slot = grid.current?.querySelector<HTMLElement>('li.is-placeholder');
+      const el = grid.current;
+      if (!slot || !el) return;
+      const g = el.getBoundingClientRect();
+      const inGrid = slot.offsetParent === el;
+      const r = slot.getBoundingClientRect();
+      const left = inGrid ? g.left + el.clientLeft + slot.offsetLeft : r.left;
+      const top = inGrid ? g.top + el.clientTop + slot.offsetTop : r.top;
+      setDrag(d => d && d.box ? { ...d, dock: { left, top } } : d);
+    }, 100);
   }
   /** The grid cell (column, row) under a viewport point; one row past the last also counts. */
   function cellAt(clientX: number, clientY: number) {
@@ -392,8 +410,8 @@ export default function WidgetGrid({ children, entering = false }: { children: (
           const name = title(w.id);
           const cell = placed.find(p => p.id === w.id);
           const lifted = drag?.id === w.id && !!drag.box;
-          const liftStyle = lifted ? { left: `${Math.max(0, Math.min(drag!.x - drag!.box!.ox, innerWidth - drag!.box!.width))}px`, top: `${drag!.y - drag!.box!.oy}px`, width: `${drag!.box!.width}px`, height: `${drag!.box!.height}px` } : null;
-          return <li key={w.id} class={`blk${lifted ? ' is-lifted' : ''}${resizing?.id === w.id ? ' is-resizing' : ''}${moved === w.id && !drag ? ' is-moved' : ''}`} data-widget={w.id} data-flip={w.id} onPointerDown={e => onPointerDown(e, w.id)} data-size={w.size} data-size-label={sizeLabel(w.size).replace('×', ' × ')} data-w={cw} data-h={ch} style={{ '--i': i, ...liftStyle, ...(cell ? { gridColumn: `${cell.x + 1} / span ${cell.w}`, gridRow: `${cell.y + 1} / span ${cell.h}` } : {}) }}>
+          const liftStyle = lifted ? { left: `${drag!.dock ? drag!.dock.left : Math.max(0, Math.min(drag!.x - drag!.box!.ox, innerWidth - drag!.box!.width))}px`, top: `${drag!.dock ? drag!.dock.top : drag!.y - drag!.box!.oy}px`, width: `${drag!.box!.width}px`, height: `${drag!.box!.height}px` } : null;
+          return <li key={w.id} class={`blk${lifted ? ` is-lifted${drag!.dock ? ' is-docked' : ''}` : ''}${resizing?.id === w.id ? ' is-resizing' : ''}${moved === w.id && !drag ? ' is-moved' : ''}`} data-widget={w.id} data-flip={w.id} onPointerDown={e => onPointerDown(e, w.id)} data-size={w.size} data-size-label={sizeLabel(w.size).replace('×', ' × ')} data-w={cw} data-h={ch} style={{ '--i': i, ...liftStyle, ...(cell ? { gridColumn: `${cell.x + 1} / span ${cell.w}`, gridRow: `${cell.y + 1} / span ${cell.h}` } : {}) }}>
             <div class="blk-body" inert={editing || undefined}>
               {def ? children(w.id, w.size) : <section class="tile" aria-label={name}><p class="tile-title">{name}</p></section>}
             </div>

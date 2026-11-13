@@ -901,7 +901,7 @@ for (const theme of THEMES) {
   });
 }
 
-type Frame = { boxes: { id: string; x: number; y: number; w: number; h: number; leaves: number }[] };
+type Frame = { t: number; boxes: { id: string; x: number; y: number; w: number; h: number; leaves: number }[] };
 /** Start sampling every card's real bounding box (transforms included) on every animation frame. */
 const startFrames = (page: Page) => page.evaluate(() => {
   const w = window as unknown as { frames: unknown[]; sampling: boolean };
@@ -914,7 +914,7 @@ const startFrames = (page: Page) => page.evaluate(() => {
       const leaves = [...li.querySelectorAll<HTMLElement>('.blk-body *')].filter(e => !e.children.length && e.textContent?.trim() && e.getBoundingClientRect().height > 0).length;
       return { id: li.dataset.widget ?? (li.classList.contains('is-placeholder') ? 'slot' : li.dataset.flip ?? 'add'), x: r.left, y: r.top, w: r.width, h: r.height, leaves };
     });
-    w.frames.push({ boxes });
+    w.frames.push({ t: performance.now(), boxes });
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -924,8 +924,8 @@ const stopFrames = (page: Page) => page.evaluate(() => {
   w.sampling = false; return w.frames;
 }) as Promise<Frame[]>;
 /** Pairs of boxes that intersect by more than 1px, ignoring `float` (the card riding the pointer). */
-const hits = (frames: Frame[], float?: string) => frames.flatMap((f, n) => {
-  const boxes = f.boxes.filter(b => b.id !== float && b.w > 0);
+const hits = (frames: Frame[], float?: string, ...skip: string[]) => frames.flatMap((f, n) => {
+  const boxes = f.boxes.filter(b => b.id !== float && !skip.includes(b.id) && b.w > 0);
   const out: string[] = [];
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
     const a = boxes[i]!, b = boxes[j]!;
@@ -937,7 +937,7 @@ const hits = (frames: Frame[], float?: string) => frames.flatMap((f, n) => {
 const MIN_LEAVES = 2;
 
 for (const project of ['desktop', 'tablet']) {
-  test(`Dragging keeps the card full size with its content, and the layout never overlaps in any frame · ${project}`, async ({ page }, info) => {
+  test(`Dragging: neighbours never overlap, the card keeps its size and content, and at rest it overlaps nothing · ${project}`, async ({ page }, info) => {
     test.skip(info.project.name !== project, 'one run per viewport');
     if (project === 'desktop') await page.setViewportSize({ width: 1440, height: 1600 });
     await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-pending', size: '1x1' }]);
@@ -946,26 +946,34 @@ for (const project of ['desktop', 'tablet']) {
     const before = (await card.boundingBox())!;
     const move = await dragOver(page, 'calendar');
     await startFrames(page);
-    // Right across Links, then below, then back: reflows in every direction.
+    const now = () => page.evaluate(() => performance.now());
+    const rests: [number, number][] = [];
+    // Right across Links, then below, then back: reflows in every direction. The pointer pauses at each stop.
     for (const [x, y] of [[1, 0], [3, 0], [0, 1], [2, 1], [0, 0]] as const) {
       await move(x, y, 14);
-      const lifted = grid(page).locator('li.is-lifted');
-      await expect(lifted).toHaveCount(1);
-      const box = (await lifted.boundingBox())!;
-      // Only the lift scale (≤ 3%): never a collapse.
-      expect(Math.abs(box.width / before.width - 1)).toBeLessThan(0.04);
-      expect(Math.abs(box.height / before.height - 1)).toBeLessThan(0.04);
+      const from = await now();
+      await page.waitForTimeout(700);
+      rests.push([from, await now()]);
     }
     await page.mouse.up();
     await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
     await page.waitForTimeout(400);
     const frames = await stopFrames(page);
-    expect(frames.length).toBeGreaterThan(20);
-    // The lifted card rides above the grid by design; every other pair, incl. the drop placeholder,
-    // must stay apart in every frame, and after the drop nothing overlaps at all.
+    expect(frames.length).toBeGreaterThan(40);
+    // (a) Cards other than the dragged one never intersect, in any frame (the drop placeholder counts).
     expect(hits(frames, 'calendar')).toEqual([]);
-    expect(hits(frames.slice(-3))).toEqual([]);
-    // Content stays rendered on every frame, for every card including the dragged one.
+    // (b) Once the pointer pauses (350ms: the grid has reflowed and the card has docked), the dragged
+    // card overlaps no other card; the same holds again after the drop.
+    const resting = frames.filter(f => rests.some(([a, b]) => f.t >= a + 350 && f.t <= b) || f.t >= rests.at(-1)![1] + 200);
+    expect(resting.length).toBeGreaterThan(20);
+    // The card docks into its own slot, so the placeholder is the one box it is meant to cover.
+    expect(hits(resting, undefined, 'slot')).toEqual([]);
+    // (c) The dragged card keeps its size (only the ≤2% lift) and its content in every frame.
+    for (const f of frames) {
+      const c = f.boxes.find(b => b.id === 'calendar')!;
+      expect(Math.abs(c.w / before.width - 1), 'width').toBeLessThan(0.03);
+      expect(Math.abs(c.h / before.height - 1), 'height').toBeLessThan(0.03);
+    }
     for (const f of frames) for (const b of f.boxes) if (b.id !== 'slot' && b.id !== 'add') expect(b.leaves, `${b.id} content`).toBeGreaterThanOrEqual(MIN_LEAVES);
     const after = (await card.boundingBox())!;
     expect(Math.abs(after.width - before.width)).toBeLessThan(1);
