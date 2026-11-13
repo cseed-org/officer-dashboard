@@ -1,7 +1,7 @@
 import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useState } from 'preact/hooks';
 import { useApi } from '../../lib/api/useApi';
-import { addDays, monthGrid, monthLabel, monthOf, mondayOf, pacificToday, weekLabel, whenShort } from '../../lib/calendar';
+import { addDays, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, weekLabel, whenShort } from '../../lib/calendar';
 import type { EventListItem } from '../../lib/contracts';
 import { dollars, fmtDate, fmtTime, fmtWeekday, lumaManageUrl, pct, plural, safeUrl } from '../../lib/format';
 import { setParams, useSearch } from '../../lib/nav';
@@ -9,6 +9,7 @@ import { href } from '../../lib/routes';
 import { ColumnChart, FunnelChart, LineChart } from '../components/charts';
 import { CsvImportForm } from '../components/CsvImportForm';
 import { Drawer } from '../components/Drawer';
+import { StatRow } from '../components/StatRow';
 import { Icon } from '../components/Icon';
 import { type Column, DataTable, Kpi, Section } from '../components/kit';
 import { Async, Empty, ErrorState, Loading, Notice } from '../components/states';
@@ -194,6 +195,15 @@ export default function EventsView() {
                 ? plural(ready!.items.length, 'matching event')
                 : `${plural(ready!.items.length, 'event')} · ${upcoming} upcoming`;
 
+  const live = (e: EventListItem) => e.status !== 'draft' && e.status !== 'cancelled';
+  const items = all.status === 'ready' ? all.data.items : [];
+  const stats = all.status === 'ready' && {
+    upcoming: items.filter((e) => live(e) && new Date(e.startsAt).getTime() >= now).length,
+    thisMonth: items.filter((e) => live(e) && monthOf(pacificParts(e.startsAt).date) === monthOf(today)).length,
+    attendees: items.reduce((n, e) => n + e.metrics.checkedIn, 0),
+    drafts: items.filter((e) => e.status === 'draft').length,
+  };
+  const loadingStats = all.status === 'loading';
   const health = all.status === 'ready' ? healthEvent(all.data.items, now) : undefined;
   const closeAll = () => setParams({ ...PANELS });
   /** After a delete: wait until every dialog has closed (each returns focus to its opener), then focus the heading. */
@@ -208,6 +218,17 @@ export default function EventsView() {
 
   return (
     <div class="stack events-page">
+      {all.status !== 'error' && (
+        <StatRow
+          label="Events summary"
+          tiles={[
+            { label: 'Upcoming', value: stats ? stats.upcoming : 0, sub: 'on the calendar', loading: loadingStats },
+            { label: 'This month', value: stats ? stats.thisMonth : 0, sub: monthLabel(monthOf(today)), loading: loadingStats },
+            { label: 'Attendees', value: stats ? stats.attendees : 0, sub: 'checked in, all events', loading: loadingStats },
+            { label: 'Drafts', value: stats ? stats.drafts : 0, sub: 'not published yet', loading: loadingStats },
+          ]}
+        />
+      )}
       <div class="toolbar">
         <div class="toolbar-main">
           {view === 'list' && (

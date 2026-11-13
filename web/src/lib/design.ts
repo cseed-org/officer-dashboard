@@ -157,3 +157,16 @@ export function myWork(items: DesignRequestItem[], meId: string) {
     unassigned: items.filter((i) => i.assignee === null && i.stage !== 'delivered').sort(byDue),
   };
 }
+
+/** Header figures for the Design page. "Waiting on me" counts distinct requests (assigned and to-approve can overlap). */
+export function designStats(items: DesignRequestItem[], meId: string, today = todayPacific()) {
+  const open = items.filter((i) => i.stage !== 'delivered');
+  const w = myWork(items, meId);
+  return {
+    open: open.length,
+    inProgress: items.filter((i) => i.stage === 'in-progress').length,
+    mine: new Set([...w.assigned, ...w.approve].map((i) => i.id)).size,
+    due: items.filter((i) => matchesFilter(i, 'due', meId, today)).length,
+    overdue: open.filter((i) => dueState(i, today) === 'overdue').length,
+  };
+}

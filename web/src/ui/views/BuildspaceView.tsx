@@ -10,6 +10,8 @@ import { fmtShort } from "../../lib/format";
 import { setParams, useSearch } from "../../lib/nav";
 import { Async, Empty, Notice } from "../components/states";
 import { Badge, Tabs } from "../components/kit";
+import { plural } from "../../lib/format";
+import { StatRow } from "../components/StatRow";
 import { Icon } from "../components/Icon";
 import { Drawer } from "../components/Drawer";
 import { useCrossfade, useFlip } from "../components/motion";
@@ -304,55 +306,26 @@ function BuildspaceContent({
       : group === "project"
         ? projects.map((p) => ({ id: p.id, label: p.name }))
         : BUILDSPACE_TRACKS.map((t) => ({ id: t, label: t }));
+  const awaiting = b.people.filter((p) => missed(p, b)).length;
+  const unmentored = b.projects.filter((p) => !p.mentorIds.length).length;
+  const flagHref = (f: string) => {
+    const u = new URLSearchParams(qs);
+    if (flag === f) u.delete("flag");
+    else u.set("flag", f);
+    const q = u.toString();
+    return `/buildspace${q ? `?${q}` : ""}`;
+  };
   return (
     <div class="buildspace">
-      <section class="bs-summary" aria-label="Buildspace summary">
-        {BUILDSPACE_TRACKS.map((t) => (
-          <button
-            key={t}
-            aria-pressed={qs.get("track") === t}
-            onClick={() =>
-              setParams({ track: qs.get("track") === t ? null : t })
-            }
-          >
-            <strong>
-              {b.people.filter((x) => project(x.projectId).track === t).length}
-            </strong>
-            <span>{trackShort(t)} builders</span>
-          </button>
-        ))}
-        <button
-          aria-pressed={flag === "missed"}
-          onClick={() =>
-            setParams({ flag: flag === "missed" ? null : "missed" })
-          }
-        >
-          <strong class="bs-alert">
-            {b.people.filter((p) => missed(p, b)).length}
-          </strong>
-          <span>Awaiting this week</span>
-        </button>
-        <button
-          aria-pressed={flag === "requests"}
-          onClick={() =>
-            setParams({ flag: flag === "requests" ? null : "requests" })
-          }
-        >
-          <strong>{b.activity.filter(openActivity).length}</strong>
-          <span>Open requests</span>
-        </button>
-        <button
-          aria-pressed={flag === "unmentored"}
-          onClick={() =>
-            setParams({ flag: flag === "unmentored" ? null : "unmentored" })
-          }
-        >
-          <strong class="bs-alert">
-            {b.projects.filter((p) => !p.mentorIds.length).length}
-          </strong>
-          <span>Unmentored projects</span>
-        </button>
-      </section>
+      <StatRow
+        label="Buildspace summary"
+        tiles={[
+          { label: "Builders", value: b.people.length, sub: plural(b.projects.length, "project") },
+          { label: "Awaiting this week", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
+          { label: "Open requests", value: b.activity.filter(openActivity).length, sub: "from builders", href: flagHref("requests"), pressed: flag === "requests" },
+          { label: "Unmentored", value: unmentored, sub: "projects without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
+        ]}
+      />
       {notice && <Notice tone="positive">{notice}</Notice>}
       <div class="bs-toolbar">
         <Tabs
