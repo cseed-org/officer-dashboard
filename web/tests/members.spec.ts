@@ -230,11 +230,18 @@ for (const theme of THEMES) {
       timeout: 15_000,
     });
     expect(res.ok()).toBe(true);
-    await page.goto("/");
-    const w = page.locator('[data-widget="web-analytics"]');
-    await expect(w).toContainText("Not connected");
-    await expect(w).toContainText("Synced daily, last never");
-    await page.request.put("/api/me/prefs", { data: { widgetLayout: defaultWidgetLayout }, timeout: 15_000 });
-    expect(await overflow(page)).toEqual([]);
+    // Restore the shared officer's layout even when an assertion fails, so later specs
+    // (purchase-deadline's Home check) never inherit a one-widget layout.
+    try {
+      await page.goto("/");
+      const w = page.locator('[data-widget="web-analytics"]');
+      // Disconnected: the empty state and the connection help, no sync footer.
+      await expect(w).toContainText("Not connected yet");
+      await expect(w.locator("summary")).toHaveText("Connection details");
+      await expect(w).not.toContainText("Synced daily");
+      expect(await overflow(page)).toEqual([]);
+    } finally {
+      await page.request.put("/api/me/prefs", { data: { widgetLayout: defaultWidgetLayout }, timeout: 15_000 });
+    }
   });
 }
