@@ -901,74 +901,99 @@ for (const theme of THEMES) {
   });
 }
 
-/** Layout boxes (ignore in-flight FLIP transforms): what each card really occupies in the grid. */
-const layoutBoxes = (page: Page) => grid(page).locator(':scope > li.blk:not(.is-lifted):not(.blk-add-cell)').evaluateAll(els => els.map(e => {
-  const l = e as HTMLElement;
-  return { id: l.dataset.widget ?? 'slot', x: l.offsetLeft, y: l.offsetTop, w: l.offsetWidth, h: l.offsetHeight };
-}));
-const intersecting = (boxes: { id: string; x: number; y: number; w: number; h: number }[]) => {
+type Frame = { boxes: { id: string; x: number; y: number; w: number; h: number; leaves: number }[] };
+/** Start sampling every card's real bounding box (transforms included) on every animation frame. */
+const startFrames = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as { frames: unknown[]; sampling: boolean };
+  w.frames = []; w.sampling = true;
+  const tick = () => {
+    if (!w.sampling) return;
+    const boxes = [...document.querySelectorAll<HTMLElement>('ul.blocks > li.blk')].map(li => {
+      const r = li.getBoundingClientRect();
+      // Rendered text leaves in the body: a collapsed card keeps only its title.
+      const leaves = [...li.querySelectorAll<HTMLElement>('.blk-body *')].filter(e => !e.children.length && e.textContent?.trim() && e.getBoundingClientRect().height > 0).length;
+      return { id: li.dataset.widget ?? (li.classList.contains('is-placeholder') ? 'slot' : li.dataset.flip ?? 'add'), x: r.left, y: r.top, w: r.width, h: r.height, leaves };
+    });
+    w.frames.push({ boxes });
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+});
+const stopFrames = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as { frames: unknown[]; sampling: boolean };
+  w.sampling = false; return w.frames;
+}) as Promise<Frame[]>;
+/** Pairs of boxes that intersect by more than 1px, ignoring `float` (the card riding the pointer). */
+const hits = (frames: Frame[], float?: string) => frames.flatMap((f, n) => {
+  const boxes = f.boxes.filter(b => b.id !== float && b.w > 0);
   const out: string[] = [];
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
     const a = boxes[i]!, b = boxes[j]!;
-    if (a.x < b.x + b.w - 1 && b.x < a.x + a.w - 1 && a.y < b.y + b.h - 1 && b.y < a.y + a.h - 1) out.push(`${a.id}/${b.id}`);
+    if (a.x < b.x + b.w - 1 && b.x < a.x + a.w - 1 && a.y < b.y + b.h - 1 && b.y < a.y + a.h - 1) out.push(`frame ${n}: ${a.id}/${b.id}`);
   }
   return out;
-};
-/** The card's content is really rendered: its header and a body that has height. */
-async function expectFull(card: ReturnType<typeof widget>) {
-  const tile = card.locator('.blk-body > *').first();
-  await expect(tile).toBeVisible();
-  const [tileBox, cardBox] = [(await tile.boundingBox())!, (await card.boundingBox())!];
-  // The tile fills its card; a collapsed one would be just a title line tall.
-  expect(tileBox.height).toBeGreaterThan(cardBox.height * 0.8);
+});
+/** The layout the grid shows: cards, the drop placeholder and the add tile. */
+const MIN_LEAVES = 2;
+
+for (const project of ['desktop', 'tablet']) {
+  test(`Dragging keeps the card full size with its content, and the layout never overlaps in any frame · ${project}`, async ({ page }, info) => {
+    test.skip(info.project.name !== project, 'one run per viewport');
+    if (project === 'desktop') await page.setViewportSize({ width: 1440, height: 1600 });
+    await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-pending', size: '1x1' }]);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    const card = widget(page, 'calendar');
+    const before = (await card.boundingBox())!;
+    const move = await dragOver(page, 'calendar');
+    await startFrames(page);
+    // Right across Links, then below, then back: reflows in every direction.
+    for (const [x, y] of [[1, 0], [3, 0], [0, 1], [2, 1], [0, 0]] as const) {
+      await move(x, y, 14);
+      const lifted = grid(page).locator('li.is-lifted');
+      await expect(lifted).toHaveCount(1);
+      const box = (await lifted.boundingBox())!;
+      // Only the lift scale (≤ 3%): never a collapse.
+      expect(Math.abs(box.width / before.width - 1)).toBeLessThan(0.04);
+      expect(Math.abs(box.height / before.height - 1)).toBeLessThan(0.04);
+    }
+    await page.mouse.up();
+    await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
+    await page.waitForTimeout(400);
+    const frames = await stopFrames(page);
+    expect(frames.length).toBeGreaterThan(20);
+    // The lifted card rides above the grid by design; every other pair, incl. the drop placeholder,
+    // must stay apart in every frame, and after the drop nothing overlaps at all.
+    expect(hits(frames, 'calendar')).toEqual([]);
+    expect(hits(frames.slice(-3))).toEqual([]);
+    // Content stays rendered on every frame, for every card including the dragged one.
+    for (const f of frames) for (const b of f.boxes) if (b.id !== 'slot' && b.id !== 'add') expect(b.leaves, `${b.id} content`).toBeGreaterThanOrEqual(MIN_LEAVES);
+    const after = (await card.boundingBox())!;
+    expect(Math.abs(after.width - before.width)).toBeLessThan(1);
+    expect(Math.abs(after.height - before.height)).toBeLessThan(1);
+  });
+
+  test(`Resizing keeps every card rendered and nothing overlaps in any frame · ${project}`, async ({ page }, info) => {
+    test.skip(info.project.name !== project, 'one run per viewport');
+    if (project === 'desktop') await page.setViewportSize({ width: 1440, height: 1600 });
+    await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'kpi-pending', size: '1x1' }]);
+    await page.getByRole('button', { name: 'Edit home' }).click();
+    const card = widget(page, 'calendar');
+    const grip = card.locator('.blk-resize--both');
+    const g = (await grip.boundingBox())!;
+    const rect = (await card.boundingBox())!;
+    await page.mouse.move(g.x + 20, g.y + 20);
+    await page.mouse.down();
+    await startFrames(page);
+    // Grow to 4×2, shrink back, grow again.
+    for (const [dx, dy] of [[rect.width, rect.height], [0, 0], [rect.width, rect.height]] as [number, number][]) {
+      await page.mouse.move(g.x + 20 + dx, g.y + 20 + dy, { steps: 12 });
+      await page.waitForTimeout(300);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    const frames = await stopFrames(page);
+    expect(frames.length).toBeGreaterThan(20);
+    expect(hits(frames)).toEqual([]);
+    for (const f of frames) for (const b of f.boxes) if (b.id !== 'slot' && b.id !== 'add') expect(b.leaves, `${b.id} content`).toBeGreaterThanOrEqual(MIN_LEAVES);
+  });
 }
-
-test('Dragging keeps the card at full size with its content; neighbours never overlap', async ({ page }, info) => {
-  test.skip(info.project.name !== 'desktop', 'mouse drag runs once');
-  await page.setViewportSize({ width: 1440, height: 1600 });
-  await openHome(page);
-  await page.getByRole('button', { name: 'Edit home' }).click();
-  const card = widget(page, 'calendar');
-  const before = (await card.boundingBox())!;
-  const bodyBefore = await card.locator('.blk-body').first().evaluate(e => e.textContent);
-  const move = await dragOver(page, 'calendar');
-  for (const [x, y] of [[0, 0], [2, 1], [1, 3], [3, 0]] as const) {
-    await move(x, y, 8);
-    const lifted = grid(page).locator('li.is-lifted');
-    await expect(lifted).toHaveCount(1);
-    const box = (await lifted.boundingBox())!;
-    // The lift is a slight scale (≤ 3%); never a collapse.
-    expect(Math.abs(box.width / before.width - 1)).toBeLessThan(0.04);
-    expect(Math.abs(box.height / before.height - 1)).toBeLessThan(0.04);
-    await expectFull(lifted);
-    expect(await lifted.locator('.blk-body').first().evaluate(e => e.textContent)).toBe(bodyBefore);
-    await page.waitForTimeout(260);
-    expect(intersecting(await layoutBoxes(page))).toEqual([]);
-  }
-  await page.mouse.up();
-  await expect(grid(page).locator('.is-lifted')).toHaveCount(0);
-  await expectFull(card);
-  await expect.poll(async () => { const b = (await card.boundingBox())!; return Math.abs(b.width - before.width) < 2 || b.width > 0; }).toBe(true);
-  expect(intersecting(await layoutBoxes(page))).toEqual([]);
-});
-
-test('Resizing keeps every card rendered and neighbours reflow without overlap', async ({ page }, info) => {
-  test.skip(info.project.name !== 'desktop', 'mouse resize runs once');
-  await page.setViewportSize({ width: 1440, height: 1600 });
-  await openHome(page);
-  await page.getByRole('button', { name: 'Edit home' }).click();
-  const card = widget(page, 'calendar');
-  const grip = card.locator('.blk-resize--both');
-  const g = (await grip.boundingBox())!;
-  await page.mouse.move(g.x + 20, g.y + 20);
-  await page.mouse.down();
-  const rect = (await card.boundingBox())!;
-  for (const [dx, dy] of [[rect.width * 0.6, 0], [rect.width * 0.6, rect.height * 0.8], [-rect.width * 0.4, -rect.height * 0.4], [rect.width, rect.height]] as [number, number][]) {
-    await page.mouse.move(g.x + 20 + dx, g.y + 20 + dy, { steps: 8 });
-    await page.waitForTimeout(260);
-    for (const id of await order(page)) await expectFull(widget(page, id!));
-    expect(intersecting(await layoutBoxes(page))).toEqual([]);
-  }
-  await page.mouse.up();
-  expect(intersecting(await layoutBoxes(page))).toEqual([]);
-});

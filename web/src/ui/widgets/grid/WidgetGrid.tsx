@@ -412,7 +412,7 @@ export default function WidgetGrid({ children, entering = false }: { children: (
           </li>;
         })}
         {drag?.box && target && <li key="slot" class="blk is-dragging is-placeholder" aria-hidden="true" data-flip="slot" style={{ gridColumn: `${target.x + 1} / span ${target.w}`, gridRow: `${target.y + 1} / span ${target.h}` }} />}
-        {editing && <li class="blk blk-add-cell" data-w="1" data-h="1" style={slot ? { gridColumn: `${slot.x + 1} / span 1`, gridRow: `${slot.y + 1} / span 1` } : undefined}>
+        {editing && <li class="blk blk-add-cell" data-flip="add" data-w="1" data-h="1" style={slot ? { gridColumn: `${slot.x + 1} / span 1`, gridRow: `${slot.y + 1} / span 1` } : undefined}>
           <button type="button" class="blk-add" disabled={busy} onClick={() => gallery.current?.showModal()}>
             <span class="blk-add-plus" aria-hidden="true">+</span>Add widget<span class="blk-add-sub">{available.length} available</span>
           </button>
