@@ -273,3 +273,21 @@ func (c *Ctx) calendarEmailMutate(create, remove bool) error {
 	}
 	return nil
 }
+
+// meStats serves the signed-in user's own hosting numbers (Settings stat tiles).
+func (c *Ctx) meStats() error {
+	u, err := c.officer()
+	if err != nil {
+		return err
+	}
+	s, err := c.S.db.Read().MyHostingStats(c.Context(), u.ID, c.S.now().UnixMilli())
+	if err != nil {
+		return err
+	}
+	out := map[string]any{"eventsHosted": s.EventsHosted, "attendees": s.Attendees, "lastEvent": nil}
+	if s.LastEvent != nil {
+		out["lastEvent"] = map[string]any{"id": s.LastEvent.ID, "name": s.LastEvent.Name, "startsAt": s.LastEvent.StartsAt}
+	}
+	writeJSON(c.W, 200, out)
+	return nil
+}

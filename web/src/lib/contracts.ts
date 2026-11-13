@@ -1015,6 +1015,13 @@ export const CalendarWidgetOptions = z.object({
   showWeekends: z.boolean(),
 });
 export type CalendarWidgetOptions = z.infer<typeof CalendarWidgetOptions>;
+/** The signed-in user's own hosting numbers (hosted = events.host_user_id, published/completed and already started). */
+export const MyStats = z.object({
+  eventsHosted: z.number().int().min(0),
+  attendees: z.number().int().min(0),
+  lastEvent: z.object({ id: Id, name: z.string(), startsAt: IsoDateTime }).nullable(),
+});
+export type MyStats = z.infer<typeof MyStats>;
 export const CalendarWidgetUpdate = z.union([CalendarWidgetOptions, CalendarWidgetOptions.omit({ sources: true }).extend({ events: z.boolean(), design: z.boolean() })]);
 export const CalendarFeedItem = z.object({
   id: Id, source: Id, type: z.string(), title: z.string(),
@@ -1403,6 +1410,7 @@ export const ENDPOINTS = {
 
   health: { method: 'GET', path: '/api/health', auth: 'public', response: HealthResponse },
   me: { method: 'GET', path: '/api/me', auth: 'officer', response: MeResponse },
+  meStats: { method: 'GET', path: '/api/me/stats', auth: 'officer', response: MyStats },
   lookups: { method: 'GET', path: '/api/lookups', auth: 'officer', response: LookupsResponse },
   overview: { method: 'GET', path: '/api/overview', auth: 'officer', response: OverviewResponse },
 

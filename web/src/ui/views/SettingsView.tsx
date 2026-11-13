@@ -6,6 +6,9 @@ import type { CurrentUser } from '../../lib/contracts';
 import { type Density, getDensity, getTheme, setDensity, setTheme, type ThemePref } from '../../lib/prefs';
 import { clearCachedRole, initials } from '../../lib/session';
 import { Section } from '../components/kit';
+import { StatRow } from '../components/StatRow';
+import { fmtDate } from '../../lib/format';
+import { href } from '../../lib/routes';
 import { useApi } from '../../lib/api/useApi';
 import { ErrorState, Loading } from '../components/states';
 import { ProfileForm } from './ProfileForm';
@@ -26,9 +29,58 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
   const [theme, setThemeState] = useState<ThemePref>(getTheme);
   const [density, setDensityState] = useState<Density>(getDensity);
   const profile = useApi('profileGet');
+  const stats = useApi('meStats');
+  const st = stats.status === 'ready' ? stats.data : null;
+  const lastEvent = st?.lastEvent ?? null;
 
   return (
     <div class="stack settings">
+      <StatRow
+        label="Your hosting stats"
+        tiles={[
+          { label: 'Events hosted', value: st ? st.eventsHosted : 0, sub: 'that you hosted', loading: stats.status === 'loading' },
+          { label: 'Attendees', value: st ? st.attendees : 0, sub: 'checked in at your events', loading: stats.status === 'loading' },
+          { label: 'Discord messages', value: 'Coming soon', sub: 'sent in the club server' },
+          lastEvent
+            ? { label: 'Last event hosted', value: lastEvent.name, sub: fmtDate(lastEvent.startsAt), href: href.event(lastEvent.id) }
+            : { label: 'Last event hosted', value: '—', sub: stats.status === 'error' ? 'Could not load' : 'You have not hosted an event yet', loading: stats.status === 'loading' },
+        ]}
+      />
+
+      <h2 class="settings-group" id="g-account">Account</h2>
+      <Section title="your profile" id="profile">
+        <div class="profile">
+          {safeImageUrl(me.avatarUrl) ? <img class="avatar avatar--lg" src={safeImageUrl(me.avatarUrl)!} alt="" width={56} height={56} /> : <span class="avatar avatar--lg" aria-hidden="true">{initials(me.name)}</span>}
+          <dl class="facts">
+            <div>
+              <dt>name</dt>
+              <dd>{me.name}</dd>
+            </div>
+            <div>
+              <dt>role</dt>
+              <dd data-profile-role>{me.role}</dd>
+            </div>
+            <div>
+              <dt>title</dt>
+              <dd>{me.title ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>Discord id</dt>
+              <dd class="mono">{me.discordId}</dd>
+            </div>
+          </dl>
+        </div>
+        <p class="muted small">Your name and picture come from Discord. A director can change your role or subteam.</p>
+        {profile.status === 'loading' ? (
+          <Loading rows={3} label="Loading your profile" />
+        ) : profile.status === 'error' ? (
+          <ErrorState error={profile.error} onRetry={profile.reload} />
+        ) : (
+          <ProfileForm data={profile.data} onSaved={profile.set} />
+        )}
+      </Section>
+
+      <h2 class="settings-group" id="g-preferences">Preferences</h2>
       <Section title="appearance" id="appearance">
         <fieldset class="fieldset">
           <legend>theme</legend>
@@ -76,44 +128,21 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
       </Section>
 
       <TimezonePanel me={me} />
+
+      <h2 class="settings-group" id="g-club">Club</h2>
       <ClubLinksPanel me={me} />
-      <Section title="dashboard" id="dashboard"><a class="btn" href="/?tutorial=1">Replay dashboard tutorial</a></Section>
 
-      <Section title="your profile" id="profile">
-        <div class="profile">
-          {safeImageUrl(me.avatarUrl) ? <img class="avatar avatar--lg" src={safeImageUrl(me.avatarUrl)!} alt="" width={56} height={56} /> : <span class="avatar avatar--lg" aria-hidden="true">{initials(me.name)}</span>}
-          <dl class="facts">
-            <div>
-              <dt>name</dt>
-              <dd>{me.name}</dd>
-            </div>
-            <div>
-              <dt>role</dt>
-              <dd data-profile-role>{me.role}</dd>
-            </div>
-            <div>
-              <dt>title</dt>
-              <dd>{me.title ?? '—'}</dd>
-            </div>
-            <div>
-              <dt>Discord id</dt>
-              <dd class="mono">{me.discordId}</dd>
-            </div>
-          </dl>
-        </div>
-        <p class="muted small">Your name and picture come from Discord. A director can change your role or subteam.</p>
-        {profile.status === 'loading' ? (
-          <Loading rows={3} label="Loading your profile" />
-        ) : profile.status === 'error' ? (
-          <ErrorState error={profile.error} onRetry={profile.reload} />
-        ) : (
-          <ProfileForm data={profile.data} onSaved={profile.set} />
-        )}
-      </Section>
-
+      <h2 class="settings-group" id="g-integrations">Calendar &amp; dashboard</h2>
       <Section title="calendar" id="calendar">
         <CalendarPanel next="/settings" removable />
       </Section>
+
+      <Section title="dashboard" id="dashboard">
+        <p class="muted small">Take the guided tour of the Home dashboard again.</p>
+        <div><a class="btn" href="/?tutorial=1" data-replay-tour>Replay dashboard tour</a></div>
+      </Section>
+
+      <h2 class="settings-group" id="g-session">Session</h2>
 
       <Section title="session" id="session">
         <form

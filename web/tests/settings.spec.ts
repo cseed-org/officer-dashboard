@@ -57,3 +57,26 @@ test('signed-out visitors are sent to /login, which links to Discord and back to
   }
   await expect(page).toHaveURL(/\/finance\?id=req-0005/);
 });
+
+test('settings opens with the four personal stat tiles, a Discord placeholder, and a tour replay entry', async ({ page }) => {
+  await devLogin(page, 'director');
+  await page.goto('/settings');
+  await settle(page);
+  const row = page.locator('[data-stat-row]');
+  await expect(row.locator('.stat-tile')).toHaveCount(4);
+  await expect(row.locator('[data-stat="events-hosted"]')).toBeVisible();
+  await expect(row.locator('[data-stat="attendees"]')).toBeVisible();
+  const discord = row.locator('[data-stat="discord-messages"]');
+  await expect(discord).toContainText('Coming soon');
+  await expect(discord).not.toContainText(/\d/);
+  const last = row.locator('[data-stat="last-event-hosted"]');
+  await expect(last).toBeVisible();
+  // Either an event link or the empty state.
+  const link = await last.evaluate((el) => el.tagName === 'A');
+  if (link) await expect(last).toHaveAttribute('href', /^\/events\?id=/);
+  else await expect(last).toContainText('not hosted');
+  // The grouped sections and the tour entry are still there.
+  await expect(page.getByRole('heading', { name: 'your profile' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Replay dashboard tour' })).toHaveAttribute('href', '/?tutorial=1');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
