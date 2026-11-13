@@ -11,57 +11,85 @@ async function create(page: Page, title: string) {
   return (await response.json()).request.id as string;
 }
 
+const lane = (page: Page, l: 'todo' | 'doing' | 'review' | 'done') => page.locator(`.lane[data-lane="${l}"]`);
+/** On phones only the chosen lane shows: open its tab first. */
+async function showLane(page: Page, l: 'todo' | 'doing' | 'review' | 'done') {
+  const tab = page.locator(`.board-tab[data-lane="${l}"]`);
+  if (await tab.isVisible()) await tab.click();
+}
+
 for (const role of ['leadership', 'director']) {
   test(`${role} moves unassigned requests by menu, keyboard and pointer`, async ({ page }, info) => {
     await login(page, role);
     const title = `${role} moves ${info.project.name} ${Date.now()}`;
     const id = await create(page, title);
-    await page.goto('/design?view=board');
-    await settle(page);
-    const card = page.locator(`[data-request="${id}"]`);
-    await card.getByRole('button', { name: `Actions for ${title}` }).click();
-    await page.getByRole('menuitem', { name: 'Move to Accepted', exact: true }).click();
-    await expect(page.locator('.kanban-col[data-stage="accepted"]')).toContainText(title);
-    await expect(page.locator('[data-board]')).toHaveAttribute('aria-busy', 'false');
-    await card.focus();
-    await page.keyboard.press('Space');
-    await expect(page.locator('.kanban-col[data-stage="delivered"]')).toHaveAttribute('data-drop-allowed', String(role === 'leadership'));
-    await page.keyboard.press('ArrowRight'); // New
-    await page.keyboard.press('ArrowRight'); // In progress
-    const keyboardMove = page.waitForResponse(r => r.url().endsWith(`/api/design-requests/${id}/move`) && r.request().method() === 'POST');
-    await page.keyboard.press('Space');
-    expect((await keyboardMove).ok()).toBe(true);
-    await expect(page.locator('.kanban-col[data-stage="in-progress"]')).toContainText(title);
-    // Pointer capture supports touch too, independently of HTML's mouse-only native drag.
-    await expect(card.getByRole('button', { name: `Drag ${title}`, exact: true })).toBeEnabled();
-    await card.getByRole('button', { name: `Drag ${title}`, exact: true }).scrollIntoViewIfNeeded();
-    const handle = (await card.getByRole('button', { name: `Drag ${title}`, exact: true }).boundingBox())!;
-    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-    await page.mouse.down();
-    const column = page.locator('.kanban-col[data-stage="in-review"]');
-    await column.scrollIntoViewIfNeeded();
-    const target = (await column.boundingBox())!;
-    await page.mouse.move(target.x + target.width / 2, target.y + 35, { steps: 12 });
-    await page.mouse.up();
-    await expect(column).toContainText(title);
-    if (role === 'leadership') {
+    try {
+      await page.goto('/design?view=board');
+      await settle(page);
+      const card = page.locator(`[data-request="${id}"]`);
+      // New sits in To do with the "Needs approval" chip; accepting it keeps it in To do.
+      await expect(card.locator('.approval-chip')).toHaveText('Needs approval');
       await card.getByRole('button', { name: `Actions for ${title}` }).click();
-      page.once('dialog', (dialog) => dialog.dismiss());
-      await page.getByRole('menuitem', { name: 'Move to Delivered', exact: true }).click();
-      await expect(column).toContainText(title);
-      await card.getByRole('button', { name: `Actions for ${title}` }).click();
-      page.once('dialog', (dialog) => dialog.accept());
-      await page.getByRole('menuitem', { name: 'Move to Delivered', exact: true }).click();
-      await expect(page.locator('.kanban-col[data-stage="delivered"]')).toContainText(title);
-    }
-    if (info.project.name === 'desktop' && role === 'director') {
-      const nativeMove = page.waitForResponse(r => r.url().endsWith(`/api/design-requests/${id}/move`) && r.request().method() === 'POST');
+      await page.getByRole('menuitem', { name: 'Move to Accepted', exact: true }).click();
+      await expect(lane(page, 'todo')).toContainText(title);
+      await expect(card.locator('.approval-chip')).toHaveCount(0);
       await expect(page.locator('[data-board]')).toHaveAttribute('aria-busy', 'false');
-      await card.dragTo(page.locator('.kanban-col[data-stage="accepted"]'), { targetPosition: { x: 60, y: 25 } });
-      expect((await nativeMove).ok()).toBe(true);
-      await expect(page.locator('.kanban-col[data-stage="accepted"]')).toContainText(title);
+      // Keyboard: Space picks up, arrows choose an allowed lane, Space drops.
+      await card.focus();
+      await page.keyboard.press('Space');
+      await expect(lane(page, 'done')).toHaveAttribute('data-drop-allowed', String(role === 'leadership'));
+      await expect(lane(page, 'doing')).toHaveAttribute('data-drop-allowed', 'true');
+      if (role !== 'leadership') await expect(lane(page, 'done')).toHaveClass(/is-unavailable/);
+      await page.keyboard.press('ArrowRight'); // Doing
+      const keyboardMove = page.waitForResponse(r => r.url().endsWith(`/api/design-requests/${id}/move`) && r.request().method() === 'POST');
+      await page.keyboard.press('Space');
+      expect((await keyboardMove).ok()).toBe(true);
+      await expect(lane(page, 'doing')).toContainText(title);
+      // Undo puts it back in To do.
+      await expect(page.locator('.design-toast')).toContainText('moved to Doing');
+      await page.locator('.design-toast').getByRole('button', { name: 'Undo' }).click();
+      await expect(lane(page, 'todo')).toContainText(title);
+      await expect(page.locator('[data-board]')).toHaveAttribute('aria-busy', 'false');
+      // Pointer capture on the grip supports touch too (and drops on a phone's lane tab).
+      await showLane(page, 'todo');
+      const grip = card.getByRole('button', { name: `Drag ${title}`, exact: true });
+      await expect(grip).toBeEnabled();
+      await grip.scrollIntoViewIfNeeded();
+      const handle = (await grip.boundingBox())!;
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+      await page.mouse.down();
+      const tab = page.locator('.board-tab[data-lane="review"]');
+      const target = (await tab.isVisible()) ? tab : lane(page, 'review');
+      await target.scrollIntoViewIfNeeded();
+      const box = (await target.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + Math.min(35, box.height / 2), { steps: 12 });
+      await page.mouse.up();
+      await expect(lane(page, 'review')).toContainText(title);
+      if (role === 'leadership') {
+        await showLane(page, 'review');
+        await card.getByRole('button', { name: `Actions for ${title}` }).click();
+        page.once('dialog', (dialog) => dialog.dismiss());
+        await page.getByRole('menuitem', { name: 'Move to Delivered', exact: true }).click();
+        await expect(lane(page, 'review')).toContainText(title);
+        await card.getByRole('button', { name: `Actions for ${title}` }).click();
+        page.once('dialog', (dialog) => dialog.accept());
+        await page.getByRole('menuitem', { name: 'Move to Delivered', exact: true }).click();
+        await expect(lane(page, 'done')).toContainText(title);
+        // The Done moment: a burst on the lane (motion allowed) and a toast.
+        await expect(page.locator('[data-confetti]').first()).toBeAttached();
+        await expect(page.locator('.design-toast')).toContainText('delivered');
+      }
+      if (info.project.name === 'desktop' && role === 'director') {
+        const nativeMove = page.waitForResponse(r => r.url().endsWith(`/api/design-requests/${id}/move`) && r.request().method() === 'POST');
+        await expect(page.locator('[data-board]')).toHaveAttribute('aria-busy', 'false');
+        await card.dragTo(lane(page, 'todo'), { targetPosition: { x: 60, y: 25 } });
+        expect((await nativeMove).ok()).toBe(true);
+        // Dropping in To do from later work sets Accepted.
+        await expect.poll(async () => (await (await page.request.get(`/api/design-requests/${id}`)).json()).request.stage).toBe('accepted');
+      }
+    } finally {
+      await page.request.delete(`/api/design-requests/${id}`);
     }
-    await page.request.delete(`/api/design-requests/${id}`);
   });
 }
 
@@ -71,10 +99,10 @@ test('a failed optimistic move rolls back with a visible error', async ({ page }
   await page.goto('/design?view=board');
   await settle(page);
   await page.route(`**/api/design-requests/${id}/move`, route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'forbidden', message: 'Permission changed' } }) }));
-  await page.locator(`[data-request="${id}"] .card-actions`).click();
+  await page.locator(`[data-request="${id}"]`).getByRole('button', { name: /^Actions for / }).click();
   await page.getByRole('menuitem', { name: 'Move to Accepted', exact: true }).click();
   await expect(page.locator('.toast')).toContainText('Permission changed');
-  await expect(page.locator(`.kanban-col[data-stage="new"] [data-request="${id}"]`)).toContainText('Rollback');
+  await expect(page.locator(`.lane[data-lane="todo"] [data-request="${id}"]`)).toContainText('Rollback');
   await page.request.delete(`/api/design-requests/${id}`);
 });
 
@@ -172,7 +200,7 @@ for (const theme of THEMES) {
       await page.request.delete(`/api/design-requests/${linkedId}`);
       await page.request.delete(`/api/events/${eventId}`);
       if (user === 'user-ava') {
-        await page.locator('.kanban-card .card-actions').first().click();
+        await page.locator('.kanban-card:visible').first().getByRole('button', { name: /^Actions for / }).click();
         await expect(page.getByRole('menuitem', { name: 'Only designers and directors can move requests' })).toHaveAttribute('aria-disabled', 'true');
         await page.keyboard.press('Escape');
       }

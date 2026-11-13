@@ -55,6 +55,16 @@ and keeps redirects on :4340, so dev sign-in works: open `/login` and use the
 
 The app also serves `/officers`, `/members`, `/contacts`, `/design`, and `/onboarding` from their corresponding `<route>/index.html` files.
 
+**Design board (V0.10).** `/design` shows four lanes over the five stages: To do (`new` + `accepted`;
+`new` cards carry a "Needs approval" chip), Doing (`in-progress`), Review (`in-review`), Done
+(`delivered`, a gallery). Query: `?view=board|list|mine`, `?filter=mine|unassigned|due`, `?type=`,
+`?id=<request>` (detail), `?new=1[&eventId=]`, and `?lane=doing|review|done`, the lane a phone shows
+(stage tabs below 640px). A drop on a lane sets its stage only when `laneTarget` in `lib/design.ts`
+allows it (it mirrors the server's move rules); refused lanes fade while dragging. Keyboard: Space picks
+up, arrows choose a lane, Space drops, Escape cancels, Enter opens. Cards and the detail show the
+`DesignLinks` buttons (Figma/Canva + Folder): there is no data yet, so they render "Not linked yet".
+Pass `links={{ design, folder }}` once something stores them.
+
 Each page is a static file. Details, drawers, tabs and filters live in the query
 string, so **no rewrite or SPA fallback is needed**: serve `<path>/index.html` for `<path>`
 and `<path>/` (Astro `build.format: 'directory'`), static assets as files, and `404.html`

@@ -94,6 +94,27 @@ func TestDesignRequestLifecycle(t *testing.T) {
 	}
 	expectStatus(t, "edit delivered", e.do("PATCH", "/api/design-requests/"+id, map[string]any{"title": "x"}, priya), 409)
 
+	// Undo: the requester who approved may put it back in review (approval cleared);
+	// another officer may not, and the approver gets no other move.
+	approved := e.mustOK(e.get("/api/design-requests/"+id, priya))
+	if !slices.Equal(stringsOf(approved.list("request", "permissions", "moveTo")), []string{"in-review"}) {
+		t.Fatalf("approver permissions after delivery %s", approved.Raw)
+	}
+	if moveTo := stringsOf(e.mustOK(e.get("/api/design-requests/"+id, ava)).list("request", "permissions", "moveTo")); len(moveTo) != 0 {
+		t.Fatalf("bystander may move a delivered request: %v", moveTo)
+	}
+	expectStatus(t, "bystander undoes delivery", e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "in-review"}, ava), 403)
+	expectStatus(t, "approver reopens to progress", e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "in-progress"}, priya), 403)
+	undone := e.mustOK(e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "in-review"}, priya))
+	if undone.str("request", "stage") != "in-review" || undone.at("request", "approvedAt") != nil || undone.at("request", "approvedBy") != nil {
+		t.Fatalf("undo approval %s", undone.Raw)
+	}
+	e.mustOK(e.post("/api/design-requests/"+id+"/approve", nil, priya))
+	// The design team may reopen a delivered card into any earlier stage (Undo restores where it came from).
+	if moveTo := stringsOf(e.mustOK(e.get("/api/design-requests/"+id, riley)).list("request", "permissions", "moveTo")); !slices.Equal(moveTo, []string{"new", "accepted", "in-progress", "in-review"}) {
+		t.Fatalf("designer moves from delivered %v", moveTo)
+	}
+
 	// Reopening clears the approval.
 	reopened := e.mustOK(e.post("/api/design-requests/"+id+"/move", map[string]any{"stage": "in-progress"}, riley))
 	if reopened.at("request", "approvedAt") != nil {
@@ -214,4 +235,17 @@ func TestLeadershipDesignOverride(t *testing.T) {
 		t.Fatal("staff assignment changes must be audited")
 	}
 	e.mustOK(e.post(path+"/move", map[string]any{"stage": "in-progress"}, director))
+
+	// A direct delivery from To do (New or Accepted) can be undone to exactly that stage.
+	for _, from := range []string{"accepted", "new"} {
+		e.mustOK(e.post(path+"/move", map[string]any{"stage": from}, lead))
+		e.mustOK(e.post(path+"/move", map[string]any{"stage": "delivered", "confirmDeliveryOverride": true}, lead))
+		back := e.mustOK(e.post(path+"/move", map[string]any{"stage": from}, lead))
+		if back.str("request", "stage") != from {
+			t.Fatalf("undo %s -> delivered: %s", from, back.Raw)
+		}
+	}
+	// Officers outside the design team still cannot reopen delivered work.
+	e.mustOK(e.post(path+"/move", map[string]any{"stage": "delivered", "confirmDeliveryOverride": true}, lead))
+	expectStatus(t, "bystander reopens", e.post(path+"/move", map[string]any{"stage": "accepted"}, e.as("user-ava")), 403)
 }
