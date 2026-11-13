@@ -354,7 +354,8 @@ test('Coachmarks spotlight real controls and discard their temporary edit previe
   expect(hole.h).toBeGreaterThanOrEqual(r.height);
   await nextStop();
   await expect(page.locator('[data-tour="add"]')).toHaveClass(/is-tour-target/);
-  for (let i = 0; i < 2; i++) await nextStop(); // sidebar, search
+  // sidebar, 'Resize the sidebar' (width >= 768 only), search
+  for (let i = 0; i < ((page.viewportSize()?.width ?? 1440) >= 768 ? 3 : 2); i++) await nextStop();
   await tour.getByRole('button', { name: 'Finish', exact: true }).click();
   await expect(tour).not.toBeVisible();
   await expect(widget(page, 'links')).toHaveCount(0);
