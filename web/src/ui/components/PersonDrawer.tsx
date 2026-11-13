@@ -41,8 +41,9 @@ export function usePersonParam(legacy?: string) {
   const open = (id: string) => {
     if (new URLSearchParams(location.search).get('person') === id) return;
     const replace = new URLSearchParams(location.search).has('person');
+    const marked = history.state?.[MARK];
     setParams({ person: id }, { replace });
-    if (!replace) history.replaceState({ ...(history.state ?? {}), [MARK]: true }, '', location.href);
+    if (!replace || marked) history.replaceState({ ...(history.state ?? {}), [MARK]: true }, '', location.href);
   };
   const close = () => {
     if (!new URLSearchParams(location.search).has('person')) return; // Back already closed it

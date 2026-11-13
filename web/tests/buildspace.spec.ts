@@ -267,3 +267,35 @@ test('project check-in authors open the person drawer in place', async ({ page }
   await expect(page).toHaveURL(/person=bs-person-01/);
   await expect(project).not.toBeVisible();
 });
+
+test('switching partners preserves the drawer history entry', async ({ page }) => {
+  await devLogin(page, 'director');
+  await page.goto('/events');
+  await open(page);
+  await page.locator('.bs-table').getByRole('button', { name: 'Alex Kim', exact: true }).click();
+  const drawer = page.locator('#buildspace-person');
+  await drawer.locator('.bs-person-list button').first().click();
+  await expect(page).not.toHaveURL(/person=bs-person-01/);
+  await page.keyboard.press('Escape');
+  await expect(drawer).not.toBeVisible();
+  await expect(page).toHaveURL(/\/buildspace-launchpad$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/events$/);
+});
+
+test('profile tabs, missing builder and edit cancellation use shared drawer behavior', async ({ page }) => {
+  await devLogin(page, 'director');
+  await open(page, '/buildspace-launchpad?person=bs-person-01');
+  const drawer = page.locator('#buildspace-person');
+  await expect(drawer.locator('[data-person-stats]')).toContainText('Joined');
+  await drawer.getByRole('tab', { name: 'Timeline', exact: true }).click();
+  await expect(drawer.getByRole('button', { name: 'Alex Kim', exact: true })).toHaveCount(0);
+  await drawer.getByRole('button', { name: 'Edit builder', exact: true }).click();
+  await expect(page.locator('#buildspace-detail')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeVisible();
+  await expect(page).not.toHaveURL(/edit=/);
+  await page.goto('/buildspace-launchpad?person=nope');
+  await expect(drawer).toContainText('This record could not be found');
+  await expect(drawer.locator('.person-hero')).not.toContainText('Record not found');
+});

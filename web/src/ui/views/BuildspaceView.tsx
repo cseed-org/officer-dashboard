@@ -759,19 +759,29 @@ function BuildspaceContent({
         }}
         id="buildspace-person"
         personKey={qs.get("person") || ""}
-        name={detailPerson?.name || "Record not found"}
-        eyebrow="Buildspace + Launchpad builder"
-        subtitle={detailPerson ? project(detailPerson.projectId).name : undefined}
-        tabs={[{ key: "overview", label: "Overview", render: () => detailPerson ? (
-          <BuildspaceDetail
-            key={detailPerson.id}
-            b={b}
-            person={detailPerson}
-            project={project(detailPerson.projectId)}
-            reload={reload}
-            onPerson={personDrawer.open}
-          />
-        ) : <Empty title="This record could not be found" /> }]}
+        name={detailPerson?.name || "Builder"}
+        status={!detailPerson ? <Empty title="This record could not be found" /> : undefined}
+        eyebrow={detailPerson ? "Buildspace + Launchpad builder" : undefined}
+        subtitle={detailPerson ? <button class="bs-title" onClick={() => setParams({ person: null, project: detailPerson.projectId })}>{project(detailPerson.projectId).name}</button> : undefined}
+        actions={detailPerson ? [
+          { label: "Edit builder", icon: "pen", onClick: () => setParams({ edit: "person" }) },
+          ...(detailPerson.memberId ? [{ label: "Member record", icon: "user", href: `/members?person=${encodeURIComponent(detailPerson.memberId)}` }] : []),
+        ] : []}
+        stats={detailPerson ? [{ label: "Joined", value: detailPerson.joinedOn }] : []}
+        chips={detailPerson ? <><Badge tone="info">{project(detailPerson.projectId).track}</Badge> {stageBadge(project(detailPerson.projectId))} {weekBadge(detailPerson)}</> : undefined}
+        tabs={["overview", "timeline", "requests", "purchases", "absences", "add entry"].map((section) => ({
+          key: section, label: section[0]!.toUpperCase() + section.slice(1), render: () => detailPerson ? (
+            <BuildspaceDetail
+              key={detailPerson.id}
+              b={b}
+              person={detailPerson}
+              project={project(detailPerson.projectId)}
+              reload={reload}
+              onPerson={personDrawer.open}
+              section={section}
+            />
+          ) : null,
+        }))}
       />
       <Drawer
         open={
@@ -780,7 +790,8 @@ function BuildspaceContent({
         onClose={() => {
           const current = new URLSearchParams(location.search);
           if (current.has("person") && !current.has("edit") && !current.has("new")) return;
-          close();
+          if (current.has("edit") && current.has("person")) setParams({ edit: null });
+          else close();
         }}
         id="buildspace-detail"
         size="lg"
