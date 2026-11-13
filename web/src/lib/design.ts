@@ -170,3 +170,78 @@ export function designStats(items: DesignRequestItem[], meId: string, today = to
     overdue: open.filter((i) => dueState(i, today) === 'overdue').length,
   };
 }
+
+// ───────────── V0.10 board lanes: To do / Doing / Review / Done over the five stages ─────────────
+
+export const DESIGN_LANES = ['todo', 'doing', 'review', 'done'] as const;
+export type DesignLane = (typeof DESIGN_LANES)[number];
+export const LANE_LABEL: Record<DesignLane, string> = { todo: 'To do', doing: 'Doing', review: 'Review', done: 'Done' };
+/** The stages a lane holds, in the order a drop prefers them (To do takes Accepted before New). */
+export const LANE_STAGES: Record<DesignLane, DesignStage[]> = {
+  todo: ['accepted', 'new'],
+  doing: ['in-progress'],
+  review: ['in-review'],
+  done: ['delivered'],
+};
+export const laneOf = (stage: DesignStage): DesignLane =>
+  stage === 'new' || stage === 'accepted' ? 'todo' : stage === 'in-progress' ? 'doing' : stage === 'in-review' ? 'review' : 'done';
+
+type Viewer = Parameters<typeof designMoveTargets>[1];
+/** The stage a drop on `lane` sets, or null when the viewer may not move the card there (or it is already there). */
+export function laneTarget(item: DesignRequestItem, lane: DesignLane, viewer: Viewer): DesignStage | null {
+  if (laneOf(item.stage) === lane) return null;
+  const allowed = designMoveTargets(item, viewer);
+  return LANE_STAGES[lane].find((s) => allowed.includes(s)) ?? null;
+}
+/** Why a lane refuses a card while dragging (shown on the dimmed lane). */
+export function laneRefusal(lane: DesignLane, viewer: Viewer): string {
+  if (lane === 'done' && !viewer.isLeadership) return 'The requester approves into Done';
+  return 'Not allowed from here';
+}
+
+/** "Needs approval": a new request the design team has not accepted yet. */
+export const needsApproval = (i: Pick<DesignRequestItem, 'stage'>) => i.stage === 'new';
+
+/** This week: open work that is overdue, due within seven days, or waiting on my approval; most urgent first. */
+export function thisWeek(items: DesignRequestItem[], meId: string, today = todayPacific(), limit = 4): DesignRequestItem[] {
+  const week = (i: DesignRequestItem) => {
+    if (!i.dueDate || i.stage === 'delivered') return false;
+    return (Date.parse(`${i.dueDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / dayMs <= 7;
+  };
+  const approve = (i: DesignRequestItem) => i.stage === 'in-review' && i.requester.id === meId;
+  return items.filter((i) => week(i) || approve(i)).sort(byDue).slice(0, limit);
+}
+
+/** Group a lane's cards by designer: me first, then by name, unassigned last; nearest due first inside. */
+export function byDesigner(items: DesignRequestItem[], meId: string): { key: string; name: string; person: DesignRequestItem['assignee']; items: DesignRequestItem[] }[] {
+  const groups = new Map<string, { key: string; name: string; person: DesignRequestItem['assignee']; items: DesignRequestItem[] }>();
+  for (const i of items) {
+    const key = i.assignee?.id ?? '';
+    if (!groups.has(key)) groups.set(key, { key, name: i.assignee ? (i.assignee.id === meId ? 'You' : i.assignee.name) : 'Unassigned', person: i.assignee, items: [] });
+    groups.get(key)!.items.push(i);
+  }
+  const rank = (g: { key: string }) => (g.key === meId ? 0 : g.key === '' ? 2 : 1);
+  return [...groups.values()].map((g) => ({ ...g, items: g.items.sort(byDue) })).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
+/** Design-file links on a request. No data source yet: an agent fills these later. */
+export interface DesignLinkSet {
+  /** The working file (Figma or Canva, picked from the URL). */
+  design?: string | null;
+  /** The shared folder with exports and assets. */
+  folder?: string | null;
+}
+export type DesignTool = 'figma' | 'canva' | 'file';
+/** Figma or Canva from a link's host; anything else is a generic design file. */
+export function designTool(url: string | null | undefined): DesignTool {
+  if (!url) return 'file';
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host === 'figma.com' || host.endsWith('.figma.com')) return 'figma';
+    if (host === 'canva.com' || host.endsWith('.canva.com') || host === 'canva.link') return 'canva';
+  } catch {
+    /* not a URL */
+  }
+  return 'file';
+}
+export const DESIGN_TOOL_LABEL: Record<DesignTool, string> = { figma: 'Figma', canva: 'Canva', file: 'Design file' };

@@ -13,6 +13,8 @@ async function signIn(page: Page, user: 'user-priya' | 'user-riley' | 'user-dire
 }
 
 const card = (page: Page, title: string) => page.locator('.kanban-card', { hasText: title });
+/** A board lane (To do / Doing / Review / Done); the phone tab with the same data-lane is a button. */
+const lane = (page: Page, l: 'todo' | 'doing' | 'review' | 'done') => page.locator(`.lane[data-lane="${l}"]`);
 
 for (const theme of THEMES) test(`a design request moves across the board (${theme})`, async ({ page }, info) => {
   await useTheme(page, theme);
@@ -47,8 +49,10 @@ for (const theme of THEMES) test(`a design request moves across the board (${the
   await settle(page);
   await card(page, title).getByRole('button', { name: `Actions for ${title}` }).click();
   await page.getByRole('menuitem', { name: 'Move to Accepted' }).click();
-  await expect(page.locator('.kanban-col[data-stage="accepted"]').locator('.kanban-card', { hasText: title })).toBeVisible();
-  await expect(card(page, title).getByText('Riley Park')).toBeVisible();
+  // Accepted stays in To do, without the "Needs approval" chip, now with Riley as designer.
+  await expect(lane(page, 'todo').locator('.kanban-card', { hasText: title })).toBeVisible();
+  await expect(card(page, title).locator('.approval-chip')).toHaveCount(0);
+  await expect(card(page, title)).toContainText('Riley Park');
   // Then via the drawer's Designer actions (the keyboard/touch path).
   await card(page, title).getByRole('link', { name: title }).click();
   const actions = page.locator('dialog[open] [data-designer-actions]');
@@ -62,7 +66,7 @@ for (const theme of THEMES) test(`a design request moves across the board (${the
 
   // A director has no approval shortcut.
   await signIn(page, 'user-director');
-  await page.goto('/design');
+  await page.goto('/design?view=list'); // every request in one table, whatever lane a phone shows
   await settle(page);
   await page.getByRole('link', { name: title }).first().click();
   await expect(page.locator('dialog[open] [data-design-detail]')).toBeVisible();
@@ -70,20 +74,20 @@ for (const theme of THEMES) test(`a design request moves across the board (${the
 
   // The requester asks for changes; the designer returns a revised version to review.
   await signIn(page, 'user-priya');
-  await page.goto('/design');
+  await page.goto('/design?view=list'); // every request in one table, whatever lane a phone shows
   await settle(page);
   await page.getByRole('link', { name: title }).first().click();
   await page.getByRole('button', { name: 'Request changes' }).click();
   await expect(page.locator('dialog[open] [data-design-detail]')).toHaveAttribute('data-stage', 'in-progress');
   await signIn(page, 'user-riley');
-  await page.goto('/design?view=board');
+  await page.goto('/design?view=board&lane=doing'); // phones show the Doing tab
   await settle(page);
   await card(page, title).getByRole('button', { name: `Actions for ${title}` }).click();
   await page.getByRole('menuitem', { name: 'Move to In review', exact: true }).click();
-  await expect(page.locator('.kanban-col[data-stage="in-review"]')).toContainText(title);
+  await expect(lane(page, 'review')).toContainText(title);
   // The requester approves the revision; that delivers it.
   await signIn(page, 'user-priya');
-  await page.goto('/design');
+  await page.goto('/design?view=list'); // every request in one table, whatever lane a phone shows
   await settle(page);
   await page.getByRole('link', { name: title }).first().click();
   await page.getByRole('button', { name: 'Approve this version' }).click();
@@ -91,13 +95,16 @@ for (const theme of THEMES) test(`a design request moves across the board (${the
   await page.keyboard.press('Escape');
   await page.goto('/design?view=board');
   await settle(page);
-  await expect(page.locator('.kanban-col[data-stage="delivered"]').locator('.kanban-card', { hasText: title })).toBeVisible();
+  await expect(lane(page, 'done')).toContainText(title);
 
   if (phone) {
-    // Phones open on the list.
+    // Phones open on the board, one lane at a time behind stage tabs.
     await page.goto('/design');
     await settle(page);
-    await expect(page.getByRole('table', { name: 'Design requests list' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /To do/ })).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('tab', { name: /Done/ }).click();
+    await expect(lane(page, 'done').locator('.kanban-card', { hasText: title })).toBeVisible();
+    await expect(lane(page, 'todo')).toBeHidden();
   }
   expect(errors).toEqual([]);
 });
@@ -185,18 +192,18 @@ test('board filters, My work and an actions menu that is not clipped', async ({ 
   await signIn(page, 'user-riley');
   await page.goto('/design?view=board');
   await settle(page);
-  const all = await page.locator('[data-board] .kanban-card').count();
+  const all = await page.locator('[data-board] .kanban-card:visible').count();
   await page.locator('[data-filter="unassigned"]').click();
   await expect(page).toHaveURL(/filter=unassigned/);
   await expect(page.locator('[data-filter="unassigned"]')).toHaveAttribute('aria-pressed', 'true');
-  const unassigned = await page.locator('[data-board] .kanban-card, [data-state="filtered"]').count();
+  const unassigned = await page.locator('[data-board] .kanban-card:visible, [data-state="filtered"]').count();
   expect(unassigned).toBeLessThanOrEqual(all);
-  for (const c of await page.locator('[data-board] .kanban-card').all()) await expect(c.locator('.kanban-unassigned')).toBeVisible();
+  for (const c of await page.locator('[data-board] .kanban-card:visible').all()) await expect(c.locator('.kanban-card-foot .avatar-empty')).toBeVisible();
   await page.locator('[data-filter="all"]').click();
 
-  // The labelled Actions menu floats above the board instead of being cut off by its scroller.
-  const first = page.locator('[data-board] .kanban-card').first();
-  await first.locator('.card-actions').click();
+  // The ⋯ actions menu floats above the board instead of being cut off by its scroller.
+  const first = page.locator('[data-board] .kanban-card:visible').first();
+  await first.getByRole('button', { name: /^Actions for / }).click();
   const menu = page.getByRole('menu');
   await expect(menu).toBeVisible();
   const box = (await menu.boundingBox())!;

@@ -12,13 +12,36 @@ import {
   type DesignStage,
   type UserSummary,
 } from '../../lib/contracts';
-import { dueState, firstName, fmtDueLong, STAGE_HUE, STAGE_LABEL, TYPE_LABEL } from '../../lib/design';
+import { DESIGN_LANES, dueState, firstName, fmtDueLong, LANE_LABEL, laneOf, STAGE_HUE, STAGE_LABEL, TYPE_LABEL } from '../../lib/design';
 import { bytes, fmtDateTime } from '../../lib/format';
 import { href } from '../../lib/routes';
 import { safeUrl } from '../../lib/url';
+import { DesignLinks } from '../components/DesignLinks';
 import { Badge, describe, Field } from '../components/kit';
 import { errorMessage, ErrorState, Loading, Notice } from '../components/states';
 import DesignRequestForm, { type Created } from './DesignRequestForm';
+
+/** The one-click next step in the detail (the select in Designer actions still offers every move). */
+const NEXT: Partial<Record<DesignStage, { to: DesignStage; label: string }>> = {
+  new: { to: 'accepted', label: 'Accept request' },
+  accepted: { to: 'in-progress', label: 'Start designing' },
+  'in-progress': { to: 'in-review', label: 'Send to review' },
+};
+
+/** To do → Doing → Review → Done, with the request's lane filled in. */
+function LaneSteps({ stage }: { stage: DesignStage }) {
+  const at = DESIGN_LANES.indexOf(laneOf(stage));
+  return (
+    <div class="lane-steps" data-lane={laneOf(stage)} aria-label={`Stage: ${LANE_LABEL[laneOf(stage)]} (${STAGE_LABEL[stage]})`} role="img">
+      {DESIGN_LANES.map((l, i) => (
+        <span class={`lane-step${i <= at ? ' is-done' : ''}${i === at ? ' is-current' : ''}`} key={l}>
+          <i aria-hidden="true" />
+          <span aria-hidden="true">{LANE_LABEL[l]}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const KIND_LABEL: Record<DesignFileKind, string> = { reference: 'Reference', review: 'Review version', delivered: 'Delivered file' };
 
@@ -109,6 +132,23 @@ function Body({ data, me, onUpdate, onDeleted }: { data: DesignRequestResponse; 
         <p class="page-sub">
           Requested by {requesterIsMe ? `${r.requester.name} (you)` : r.requester.name} · {r.assignee ? `Assigned to ${r.assignee.id === me.id ? `${r.assignee.name} (you)` : r.assignee.name}` : 'Unassigned'}
         </p>
+      </div>
+
+      <LaneSteps stage={r.stage} />
+      <div class="design-links-row">
+        {/* No link data yet: an agent will fill these (see DesignLinks). */}
+        <DesignLinks links={{}} variant="full" title={r.title} />
+        {NEXT[r.stage] && p.moveTo.includes(NEXT[r.stage]!.to) && (
+          <button
+            type="button"
+            class="btn btn--primary design-next"
+            disabled={!!busy}
+            data-next-step
+            onClick={() => run('Moving…', () => api('designRequestMove', { params: { id: r.id }, body: { stage: NEXT[r.stage]!.to } }), `Moved to ${STAGE_LABEL[NEXT[r.stage]!.to]}.`)}
+          >
+            {NEXT[r.stage]!.label} →
+          </button>
+        )}
       </div>
 
       {message && (
@@ -322,8 +362,6 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
           </button>
         )}
       </div>
-      {!changed && <p class="small muted">Choose a different assignee or stage to update the request.</p>}
-      <p class="small muted">Designers self-assign and move work. Directors can assign and move any request. Delivery follows the requester's approval; leadership can confirm an override.</p>
     </section>
   );
 }

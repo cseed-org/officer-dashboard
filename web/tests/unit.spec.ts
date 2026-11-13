@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { designStats } from '../src/lib/design';
+import { byDesigner, designStats, designTool, laneOf, laneTarget, thisWeek } from '../src/lib/design';
 import type { DesignRequestItem } from '../src/lib/contracts';
 import { isGradMonth, isLinkedIn } from '../src/lib/profileRules';
 import { normalizeHref } from '../src/lib/routes';
@@ -268,4 +268,50 @@ test('V0.9: Design "Waiting on me" counts a request once when it is both assigne
     item('delivered', { stage: 'delivered', assignee: me }),
   ];
   expect(designStats(items, 'u1', '2026-11-13').mine).toBe(3);
+});
+
+test('V0.10: Design lanes map the five stages and only offer moves the viewer may make', () => {
+  expect((['new', 'accepted', 'in-progress', 'in-review', 'delivered'] as const).map(laneOf)).toEqual(['todo', 'todo', 'doing', 'review', 'done']);
+  const item = (stage: DesignRequestItem['stage'], requester = 'req') => ({ id: 'i', stage, requester: { id: requester, name: 'R', avatarUrl: null }, assignee: null }) as unknown as DesignRequestItem;
+  const director = { id: 'd', isDesigner: false, isWorker: true, isLeadership: false };
+  const leadership = { ...director, isLeadership: true };
+  const officer = { id: 'req', isDesigner: false, isWorker: false, isLeadership: false };
+  // To do prefers Accepted; a card never "moves" into its own lane.
+  expect(laneTarget(item('in-progress'), 'todo', director)).toBe('accepted');
+  expect(laneTarget(item('new'), 'todo', director)).toBeNull();
+  // Only leadership drops into Done (as an override); everyone else waits for the requester.
+  expect(laneTarget(item('in-review'), 'done', director)).toBeNull();
+  expect(laneTarget(item('in-review'), 'done', leadership)).toBe('delivered');
+  // Delivered work can only be reopened into Doing.
+  expect(laneTarget(item('delivered'), 'review', director)).toBeNull();
+  expect(laneTarget(item('delivered'), 'doing', director)).toBe('in-progress');
+  // A requester outside the design team may only send their review back to Doing.
+  expect(laneTarget(item('in-review'), 'doing', officer)).toBe('in-progress');
+  expect(laneTarget(item('new'), 'doing', officer)).toBeNull();
+});
+
+test('V0.10: DesignLinks picks Figma or Canva from the URL host', () => {
+  expect(designTool('https://www.figma.com/design/abc/Poster')).toBe('figma');
+  expect(designTool('https://figma.com/file/x')).toBe('figma');
+  expect(designTool('https://www.canva.com/design/DAF/edit')).toBe('canva');
+  expect(designTool('https://canva.link/abc')).toBe('canva');
+  expect(designTool('https://evilfigma.com/x')).toBe('file');
+  expect(designTool('https://drive.google.com/drive/folders/1')).toBe('file');
+  expect(designTool('not a url')).toBe('file');
+  expect(designTool(null)).toBe('file');
+});
+
+test('V0.10: This week and designer groups on the Design board', () => {
+  const me = { id: 'u1', name: 'Me', avatarUrl: null };
+  const item = (id: string, over: Partial<DesignRequestItem>) => ({ id, stage: 'accepted', dueDate: null, updatedAt: '2026-11-01T00:00:00Z', requester: { id: 'o', name: 'O', avatarUrl: null }, assignee: null, ...over }) as DesignRequestItem;
+  const items = [
+    item('late', { dueDate: '2026-11-10' }),
+    item('soon', { dueDate: '2026-11-19' }),
+    item('later', { dueDate: '2026-11-21' }),
+    item('approve', { stage: 'in-review', requester: me }),
+    item('done', { stage: 'delivered', dueDate: '2026-11-12' }),
+  ];
+  expect(thisWeek(items, 'u1', '2026-11-13').map((i) => i.id)).toEqual(['late', 'soon', 'approve']);
+  const groups = byDesigner([item('a', { assignee: { id: 'z', name: 'Zed', avatarUrl: null } }), item('b', {}), item('c', { assignee: me }), item('d', { assignee: { id: 'y', name: 'Ann', avatarUrl: null } })], 'u1');
+  expect(groups.map((g) => g.name)).toEqual(['You', 'Ann', 'Zed', 'Unassigned']);
 });
