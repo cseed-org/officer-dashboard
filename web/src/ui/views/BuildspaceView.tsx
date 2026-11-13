@@ -1,3 +1,4 @@
+import { PersonDrawer, usePersonParam } from "../components/PersonDrawer";
 import { useRef, useState } from "preact/hooks";
 import {
   BUILDSPACE_STAGES,
@@ -83,6 +84,7 @@ function BuildspaceContent({
   setNotice: (s: string) => void;
 }) {
   const qs = useSearch();
+  const personDrawer = usePersonParam();
   const tab =
     qs.get("tab") === "projects"
       ? "projects"
@@ -538,7 +540,7 @@ function BuildspaceContent({
                                 <h3>
                                   <button
                                     class="bs-title"
-                                    onClick={() => setParams({ person: p.id })}
+                                    onClick={() => personDrawer.open(p.id)}
                                   >
                                     {p.name}
                                   </button>
@@ -638,7 +640,7 @@ function BuildspaceContent({
                             <td data-label="Builder / project">
                               <button
                                 class="bs-title"
-                                onClick={() => setParams({ person: p.id })}
+                                onClick={() => personDrawer.open(p.id)}
                               >
                                 {p.name}
                               </button>
@@ -657,7 +659,7 @@ function BuildspaceContent({
                                     class="bs-partner"
                                     aria-label={`Open partner ${partner.name}`}
                                     onClick={() =>
-                                      setParams({ person: partner.id })
+                                      personDrawer.open(partner.id)
                                     }
                                   >
                                     {partner.name}
@@ -749,15 +751,48 @@ function BuildspaceContent({
         </div>
         <div ref={outRef} class="bs-view-out" />
       </div>
+      <PersonDrawer
+        open={!!qs.get("person") && !form}
+        onClose={() => {
+          const current = new URLSearchParams(location.search);
+          if (!current.has("edit") && !current.has("new")) personDrawer.close();
+        }}
+        id="buildspace-person"
+        personKey={qs.get("person") || ""}
+        name={detailPerson?.name || "Builder"}
+        status={!detailPerson ? <Empty title="This record could not be found" /> : undefined}
+        eyebrow={detailPerson ? "Buildspace + Launchpad builder" : undefined}
+        subtitle={detailPerson ? <button class="bs-title" onClick={() => setParams({ person: null, project: detailPerson.projectId })}>{project(detailPerson.projectId).name}</button> : undefined}
+        actions={detailPerson ? [
+          { label: "Edit builder", icon: "pen", onClick: () => setParams({ edit: "person" }) },
+          ...(detailPerson.memberId ? [{ label: "Member record", icon: "user", href: `/members?person=${encodeURIComponent(detailPerson.memberId)}` }] : []),
+        ] : []}
+        stats={detailPerson ? [{ label: "Joined", value: detailPerson.joinedOn }] : []}
+        chips={detailPerson ? <><Badge tone="info">{project(detailPerson.projectId).track}</Badge> {stageBadge(project(detailPerson.projectId))} {weekBadge(detailPerson)}</> : undefined}
+        tabs={["overview", "timeline", "requests", "purchases", "absences", "add entry"].map((section) => ({
+          key: section, label: section[0]!.toUpperCase() + section.slice(1), render: () => detailPerson ? (
+            <BuildspaceDetail
+              key={detailPerson.id}
+              b={b}
+              person={detailPerson}
+              project={project(detailPerson.projectId)}
+              reload={reload}
+              onPerson={personDrawer.open}
+              section={section}
+            />
+          ) : null,
+        }))}
+      />
       <Drawer
         open={
-          !!form ||
-          !!detailPerson ||
-          !!detailProject ||
-          !!qs.get("person") ||
-          !!qs.get("project")
+          !!form || (!qs.get("person") && !!qs.get("project"))
         }
-        onClose={close}
+        onClose={() => {
+          const current = new URLSearchParams(location.search);
+          if (current.has("person") && !current.has("edit") && !current.has("new")) return;
+          if (current.has("edit") && current.has("person")) setParams({ edit: null });
+          else close();
+        }}
         id="buildspace-detail"
         size="lg"
         title={
@@ -772,13 +807,13 @@ function BuildspaceContent({
           <ProjectForm b={b} project={editingProject} saved={saved} />
         ) : form === "person" ? (
           <PersonForm b={b} person={editingPerson} saved={saved} />
-        ) : detailPerson || detailProject ? (
+        ) : detailProject && !qs.get("person") ? (
           <BuildspaceDetail
-            key={detailPerson?.id || detailProject?.id}
+            key={detailProject.id}
             b={b}
-            person={detailPerson}
-            project={detailProject || project(detailPerson!.projectId)}
+            project={detailProject}
             reload={reload}
+            onPerson={personDrawer.open}
           />
         ) : (
           <Empty title="This record could not be found" />

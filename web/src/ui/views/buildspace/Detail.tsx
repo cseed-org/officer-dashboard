@@ -25,16 +25,21 @@ export function BuildspaceDetail({
   person,
   project,
   reload,
+  onPerson,
+  section,
 }: {
   b: BuildspaceData;
   person?: BuildspacePerson;
   project: BuildspaceProject;
   reload: () => void;
+  onPerson: (id: string) => void;
+  section?: string;
 }) {
-  const [tab, setTab] = useState("overview"),
+  const [localTab, setTab] = useState("overview"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
+  const tab = section ?? localTab;
   const activities = b.activity.filter(
     (a) =>
       a.projectId === project.id &&
@@ -72,7 +77,7 @@ export function BuildspaceDetail({
   };
   return (
     <div class="bs-detail">
-      <div class="bs-detail-meta">
+      {!section && <div class="bs-detail-meta">
         <span class="bs-track" data-track={project.track}>
           {project.track}
         </span>
@@ -85,8 +90,8 @@ export function BuildspaceDetail({
         >
           Edit {person ? "builder" : "project"}
         </button>
-      </div>
-      {person && (
+      </div>}
+      {person && !section && (
         <p>
           Building{" "}
           <button
@@ -107,7 +112,7 @@ export function BuildspaceDetail({
           )}
         </p>
       )}
-      {person && (
+      {person && !section && (
         <Notice tone={missed(person, b) ? "attention" : "positive"}>
           {missed(person, b)
             ? b.schedule.pastDue
@@ -121,7 +126,7 @@ export function BuildspaceDetail({
           No mentor assigned. Edit this project to assign one or two mentors.
         </Notice>
       )}
-      <div class="segmented bs-detail-tabs" aria-label="Record sections">
+      {!section && <div class="segmented bs-detail-tabs" aria-label="Record sections">
         {[
           "overview",
           "timeline",
@@ -138,7 +143,7 @@ export function BuildspaceDetail({
             {t[0]!.toUpperCase() + t.slice(1)}
           </button>
         ))}
-      </div>
+      </div>}
       {error && <Notice tone="negative">{error}</Notice>}
       {message && <Notice tone="positive">{message}</Notice>}
       <div class="bs-detail-panel tab-panel" key={tab}>
@@ -168,7 +173,7 @@ export function BuildspaceDetail({
                   .map((p) => (
                     <button
                       key={p.id}
-                      onClick={() => setParams({ project: null, person: p.id })}
+                      onClick={() => onPerson(p.id)}
                     >
                       <span>{p.name}</span>
                       <span class={missed(p, b) ? "bs-alert" : "bs-muted"}>
@@ -392,9 +397,9 @@ export function BuildspaceDetail({
                     </span>
                   )}
                   <span>
-                    {a.personId
-                      ? b.people.find((p) => p.id === a.personId)?.name
-                      : "Whole project"}
+                    {a.personId && a.personId !== person?.id && b.people.some((p) => p.id === a.personId)
+                      ? <button class="bs-title" onClick={() => onPerson(a.personId!)}>{b.people.find((p) => p.id === a.personId)?.name || "Former builder"}</button>
+                      : a.personId ? (b.people.find((p) => p.id === a.personId)?.name || "Former builder") : "Whole project"}
                     {a.mentorId &&
                       ` · ${mentors.find((m) => m.id === a.mentorId)?.name || "Former mentor"}`}{" "}
                     · {a.source === "discord" ? "Discord" : "Manual"}
