@@ -42,9 +42,11 @@ const PREPAINT = `(function(){var d=document.documentElement,t,n,r,w;try{t=local
  * First paint with the user's saved sidebar width (from the server, so a new device, a cleared
  * cache or a width changed elsewhere never jumps). The head script in lib/early.ts is already
  * fetching /api/me/prefs; until it answers, `data-sidebar-wait` keeps the shell hidden (CSS),
- * with a short timeout so a slow or failed request cannot blank the page.
+ * with a short timeout so a slow or failed request cannot blank the page. A response that
+ * arrives after the shell was revealed only updates the localStorage copy (the next page paints
+ * it); the current page is never resized under the user.
  */
-const SIDEBARWAIT = `(function(){var d=document.documentElement,p=window.__cseedEarly&&window.__cseedEarly['/api/me/prefs'];if(!p)return;d.setAttribute('data-sidebar-wait','');var t,done=function(){clearTimeout(t);d.removeAttribute('data-sidebar-wait')};t=setTimeout(done,1500);p.then(function(r){return r.ok?r.clone().json():null}).then(function(j){if(!j||typeof j.sidebarWidth!=='number')return;var w=j.sidebarWidth;try{if(w)localStorage.setItem('cseed-sidebar',String(w));else localStorage.removeItem('cseed-sidebar')}catch(e){}if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}else{delete d.dataset.sidebar;d.style.removeProperty('--sidebar')}}).catch(function(){}).then(done)})();`;
+const SIDEBARWAIT = `(function(){var d=document.documentElement,p=window.__cseedEarly&&window.__cseedEarly['/api/me/prefs'];if(!p)return;d.setAttribute('data-sidebar-wait','');var t,waiting=true,done=function(){waiting=false;clearTimeout(t);d.removeAttribute('data-sidebar-wait')};t=setTimeout(function(){window.__cseedSidebarLate=true;done()},1500);p.then(function(r){return r.ok?r.clone().json():null}).then(function(j){if(!j||typeof j.sidebarWidth!=='number')return;var w=j.sidebarWidth;try{if(w)localStorage.setItem('cseed-sidebar',String(w));else localStorage.removeItem('cseed-sidebar')}catch(e){}if(!waiting)return;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}else{delete d.dataset.sidebar;d.style.removeProperty('--sidebar')}}).catch(function(){}).then(done)})();`;
 /**
  * Phone menu sheet as a modal: dialog semantics while open, focus moved in and trapped
  * (Tab cycles inside), the rest of the page inert, Escape / scrim / close button close it and

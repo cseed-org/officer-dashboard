@@ -61,6 +61,14 @@ let busy = false;
 let timer = 0;
 /** The server's saved width wins once prefs load, unless the user is mid-resize or has an unsaved change. */
 export function syncSidebarFromServer(w: number) {
+  // The page's first prefs response arrived after AppLayout's head script revealed the shell
+  // (slow network): never resize under the user; remember it so the next page paints it.
+  const w2 = window as unknown as { __cseedSidebarLate?: boolean };
+  if (w2.__cseedSidebarLate) {
+    w2.__cseedSidebarLate = false;
+    store.set(SIDEBAR_KEY, w ? String(w) : null);
+    return;
+  }
   if (busy || timer) return;
   if (w !== (Number(store.get(SIDEBAR_KEY)) || 0)) applySidebarWidth(w);
 }

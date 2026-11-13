@@ -168,6 +168,44 @@ test.describe('resizable sidebar', () => {
     });
   }
 
+  test('a prefs response after the shell was revealed does not resize this page; the next navigation paints it', async ({ page }) => {
+    await page.request.put('/api/me/prefs', { data: { sidebarWidth: 300 } });
+    await page.addInitScript(() => {
+      try { localStorage.setItem('cseed-sidebar', '150'); } catch { /* */ }
+      (window as any).__frames = [];
+      const tick = () => {
+        const app = document.querySelector('.app') as HTMLElement | null;
+        const sb = document.getElementById('sidebar');
+        if (app && sb && getComputedStyle(app).visibility !== 'hidden') (window as any).__frames.push(Math.round(sb.getBoundingClientRect().width));
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    let hold = true;
+    await page.route('**/api/me/prefs', async (route) => {
+      if (route.request().method() !== 'GET' || !hold) return route.continue();
+      await new Promise((r) => setTimeout(r, 2500)); // past the 1.5s reveal timeout
+      await route.continue();
+    });
+    await page.goto('/events');
+    await expect(page.locator('.app')).toBeVisible();
+    const revealed = await width(page);
+    expect(revealed).toBe(150); // the cached width, shown at the timeout
+    await page.waitForTimeout(2500); // the response lands now
+    expect(await width(page), 'not resized under the user').toBe(150);
+    const frames: number[] = await page.evaluate(() => (window as any).__frames);
+    expect([...new Set(frames)]).toEqual([150]);
+    expect(await page.evaluate(() => localStorage.getItem('cseed-sidebar'))).toBe('300');
+    // The next navigation paints the server width from the first frame.
+    hold = false;
+    await page.addInitScript(() => { (window as any).__frames = []; });
+    await page.goto('/events');
+    await expect(page.locator('.app')).toBeVisible();
+    expect(await width(page)).toBe(300);
+    const next: number[] = await page.evaluate(() => (window as any).__frames);
+    expect([...new Set(next)]).toEqual([300]);
+  });
+
   test('a server reset updates the hydrated handle, its ARIA value and the next key press', async ({ page }, info) => {
     test.skip(info.project.name !== 'desktop', 'tablet defaults to the rail, so a reset is not a visible change there');
     await dragTo(page, 10);
