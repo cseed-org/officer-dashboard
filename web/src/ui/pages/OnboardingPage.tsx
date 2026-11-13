@@ -6,7 +6,7 @@ import { clearCachedRole } from '../../lib/session';
 import { applyChoices, choiceOf, layoutForChoices, onboardingChoices } from '../widgets/registry';
 import { ProfileForm, type ProfileFormHandle, type ProfileSection } from '../views/ProfileForm';
 import { CalendarPanel } from '../views/CalendarPanel';
-import { WelcomeIntro } from '../onboarding/WelcomeIntro';
+import { WelcomeIntro, type HelloMedia } from '../onboarding/WelcomeIntro';
 import { ShellLogo } from '../onboarding/LogoMark';
 
 /**
@@ -483,12 +483,12 @@ function OnboardingFlow({ intro, onIntroStart }: { intro: boolean; onIntroStart:
 }
 
 /** The welcome intro is the first step of the flow; it hands over to the intake without a cut. */
-export default function OnboardingPage() {
+export default function OnboardingPage({ media }: { media?: HelloMedia }) {
   const [intro, setIntro] = useState(false);
   return (
     <>
       <OnboardingFlow intro={intro} onIntroStart={setIntro} />
-      {intro && <WelcomeIntro onDone={() => setIntro(false)} />}
+      {intro && <WelcomeIntro onDone={() => setIntro(false)} media={media} />}
     </>
   );
 }

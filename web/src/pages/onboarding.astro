@@ -1,8 +1,25 @@
 ---
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import AppLayout from '../layouts/AppLayout.astro';
 import OnboardingPage from '../ui/pages/OnboardingPage';
+import type { HelloMedia } from '../ui/onboarding/WelcomeIntro';
+
+/* The hello screen's media slots (docs/frontend.md): drop the files into web/public/media/ and
+   rebuild. Checked at build time, so a missing file never costs the browser a 404; the intro
+   still falls back at runtime if one fails to load. */
+const dir = join(process.cwd(), 'public', 'media');
+const has = (f: string) => existsSync(join(dir, f));
+const media: HelloMedia = {
+  video: [
+    ...(has('hello-loop.webm') ? [{ src: '/media/hello-loop.webm', type: 'video/webm' }] : []),
+    ...(has('hello-loop.mp4') ? [{ src: '/media/hello-loop.mp4', type: 'video/mp4' }] : []),
+  ],
+  poster: has('hello-poster.jpg') ? '/media/hello-poster.jpg' : undefined,
+  photo: ['hello-group.jpg', 'hello-group.jpeg', 'hello-group.webp', 'hello-group.png'].filter(has).map((f) => `/media/${f}`)[0],
+};
 ---
 
 <AppLayout title="Welcome to CSEED" bare description="Set up your CSEED officer account">
-  <OnboardingPage client:load />
+  <OnboardingPage client:load media={media} />
 </AppLayout>

@@ -1,29 +1,71 @@
-/* Onboarding welcome intro. Transform + opacity only; no filters, no layout animation. */
-.wi {position:fixed;inset:0;z-index:200;overflow:hidden;cursor:pointer;color:var(--brand-ink, #141414);font-family:var(--font-brand, system-ui), 'Noto Sans', system-ui, sans-serif;-webkit-tap-highlight-color:transparent;user-select:none;}
-.wi-bg {position:absolute;inset:0;background:var(--paper, #e4e3e1);}
-.wi-stage, .wi-fx {position:absolute;inset:0;pointer-events:none;}
-.wi-phrase {position:absolute;inset:0;display:grid;place-items:center;margin:0;padding:0 6vw;text-align:center;font-weight:500;font-size:clamp(26px, 5.4vw, 66px);line-height:1.25;letter-spacing:-.02em;opacity:0;will-change:opacity, transform;text-wrap:balance;}
-.wi-phrase > span {display:block;max-width:92vw;}
-.wi-phrase[lang="ar"] {letter-spacing:0;}
-.wi-cs {display:inline-block;direction:ltr;unicode-bidi:isolate;font-family:var(--font-brand, system-ui), sans-serif;letter-spacing:-.03em;}
-.wi-skip {position:absolute;top:calc(20px + env(safe-area-inset-top, 0px));right:clamp(16px, 4vw, 32px);z-index:3;font:inherit;font-size:14px;font-weight:500;color:var(--brand-ink-soft, #4a4a4a);background:transparent;border:1px solid var(--brand-line, rgba(0,0,0,.18));border-radius:999px;padding:8px 16px;min-height:40px;cursor:pointer;}
-.wi-skip:hover {color:var(--brand-ink, #141414);border-color:currentColor;}
+/* Onboarding hello screen (V0.10, mockup B: mesh aurora, glass letters, arcade snake).
+   Motion is transform + opacity only. The colour washes repaint once per palette change,
+   while the cross-fade between them and the drift run on the compositor. */
+.wi {position:fixed;inset:0;z-index:200;overflow:hidden;cursor:pointer;color:#fff;font-family:var(--font-brand, system-ui), 'Noto Sans', system-ui, sans-serif;-webkit-tap-highlight-color:transparent;user-select:none;}
 .wi:focus {outline:none;}
-.wi-hint {position:absolute;left:0;right:0;bottom:calc(28px + env(safe-area-inset-bottom, 0px));margin:0;text-align:center;font-size:13px;letter-spacing:.02em;color:var(--brand-ink-soft, #4a4a4a);opacity:0;pointer-events:none;}
-.wi-continue:focus-visible {position:fixed !important;left:50%;bottom:64px;width:auto;height:auto;clip:auto;overflow:visible;transform:translateX(-50%);padding:10px 18px;border-radius:999px;background:var(--brand-ink, #141414);color:var(--paper, #e4e3e1);font:inherit;border:0;z-index:4;}
-.wi-skip:focus-visible {outline:2px solid currentColor;outline-offset:2px;}
-.wi-seg {position:absolute;left:0;top:0;border-radius:50%;background:#82c61b;will-change:transform, opacity;opacity:0;}
-.wi-seg:nth-child(4n+1), .wi-seg:nth-child(4n+2) {background:#6bb016;}
-.wi-seg--head {background:#358b20 !important;z-index:2;}
-.wi-eye {position:absolute;width:30%;height:30%;border-radius:50%;background:#fff;box-shadow:inset -1px 0 0 #141414;}
-.wi-eye--l {right:16%;top:14%;}
-.wi-eye--r {right:16%;bottom:14%;}
-.wi-apple {position:absolute;left:0;top:0;border-radius:50%;background:#e5484d;will-change:transform, opacity;opacity:0;}
-.wi-apple::after {content:'';position:absolute;left:52%;top:-18%;width:46%;height:30%;border-radius:100% 0;background:#4fa22a;transform:rotate(-15deg);}
-.wi-slice {position:absolute;inset:0;margin:0;pointer-events:none;}
-.wi-logo {position:absolute;opacity:0;will-change:transform, opacity;}
-.wi-logo {display:flex;width:max-content;}
-.wi-logo .wordmark-logo {height:100%;width:auto;}
-@media (max-width: 480px) {
-  .wi-phrase {font-size:clamp(24px, 7.4vw, 40px);}
-}
+
+/* ── Background: video slot, its animated-gradient fallback, two colour washes ── */
+.wi-bg {position:absolute;inset:0;background:#2a1f4f;}
+.wi-video, .wi-fallback {position:absolute;inset:0;width:100%;height:100%;}
+.wi-video {object-fit:cover;}
+.wi-fallback {inset:-20%;width:140%;height:140%;background:linear-gradient(125deg, #3b2a8f, #b02e7a 38%, #1f6f9e 70%, #3b2a8f);animation:wi-fallback 18s ease-in-out infinite alternate;will-change:transform;}
+.wi[data-video="on"] .wi-fallback {display:none;}
+@keyframes wi-fallback {to {transform:translate(6%, -4%) rotate(8deg) scale(1.05);}}
+.wi-washes {position:absolute;inset:-12%;width:124%;height:124%;animation:wi-drift 16s ease-in-out infinite alternate;will-change:transform;}
+/* With a video, the colour sits over it like a lit gel so the footage still shows through. */
+.wi[data-video="on"] .wi-washes {opacity:.72;}
+.wi-wash {position:absolute;inset:0;opacity:0;will-change:opacity;}
+@keyframes wi-drift {from {transform:translate(-2%, -1%) scale(1) rotate(0deg);} to {transform:translate(2%, 2%) scale(1.08) rotate(6deg);}}
+
+/* ── The greeting: the letters themselves are glass ──
+   A translucent fill with a specular band, a bright rim and a cast shadow. These work in every
+   browser and keep the text readable on any palette. Chromium adds the SVG bevel and refraction
+   (.wi--refract, see WelcomeIntro). */
+.wi-stage, .wi-fx, .wi-board, .wi-snake {position:absolute;inset:0;pointer-events:none;}
+.wi-phrase {position:absolute;inset:0;display:grid;place-items:center;margin:0;padding:0 6vw;text-align:center;opacity:0;will-change:opacity, transform;}
+.wi-text {display:block;max-width:92vw;font-weight:500;font-size:clamp(32px, 7vw, 96px);line-height:1.08;letter-spacing:-.035em;text-wrap:balance;color:transparent;
+  background:linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(255,255,255,.66) 44%, rgba(255,255,255,.44) 54%, rgba(255,255,255,.86) 100%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-stroke:1.2px rgba(255,255,255,.78);
+  filter:drop-shadow(0 1px 0 rgba(0,0,0,.2)) drop-shadow(0 12px 22px rgba(20,10,40,.3));}
+.wi--refract .wi-text {filter:url(#wi-glass-text) drop-shadow(0 12px 22px rgba(20,10,40,.3));}
+.wi-phrase[lang="ar"] .wi-text, .wi-phrase[lang="hi"] .wi-text {letter-spacing:0;line-height:1.3;}
+.wi-cs {display:inline-block;direction:ltr;unicode-bidi:isolate;letter-spacing:-.04em;}
+.wi-slice {position:absolute;top:0;bottom:0;overflow:hidden;pointer-events:none;will-change:opacity, transform;}
+.wi-slice > .wi-phrase {opacity:1;right:auto;}
+
+/* ── The group photo: a floating card with a glass rim ── */
+.wi-photo {position:absolute;inset:max(84px, 12vh) max(16px, 9vw);margin:0;border-radius:28px;overflow:hidden;opacity:0;background:#c9a98c;
+  box-shadow:0 0 0 1px rgba(255,255,255,.55), 0 40px 90px -30px rgba(0,0,0,.55);will-change:opacity, transform;}
+.wi-photo img {display:block;width:100%;height:100%;object-fit:cover;}
+.wi-photo::after {content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  box-shadow:inset 0 1.5px 0 rgba(255,255,255,.7), inset 0 0 0 6px rgba(255,255,255,.14), inset 0 -40px 60px -40px rgba(0,0,0,.25);}
+@media (max-width: 767px) {.wi-photo {inset:22% 16px;border-radius:22px;}}
+
+/* ── The arcade board and snake ── */
+.wi-board {opacity:0;background-image:radial-gradient(circle, rgba(255,255,255,.5) 1.3px, transparent 1.7px);background-size:var(--wi-c, 32px) var(--wi-c, 32px);}
+.wi-snake {transform-origin:0 0;will-change:transform, opacity;}
+.wi-seg {position:absolute;left:0;top:0;background:#141414;border-radius:var(--wi-r, 3px);opacity:0;will-change:transform;}
+.wi-seg--head {z-index:2;}
+.wi-eye {position:absolute;right:18%;width:20%;height:20%;background:#fff;border-radius:1px;}
+.wi-eye--l {top:18%;}
+.wi-eye--r {bottom:18%;}
+/* Letters in one stroke need joins; dim them so "cseed" reads (like a neon sign's blacked-out tube). */
+.wi-seg[data-kind="join"] {transition:background-color .3s;}
+.wi[data-state="spelled"] .wi-seg[data-kind="join"] {background:rgba(20,20,20,.26);}
+.wi-apple {position:absolute;left:0;top:0;border-radius:var(--wi-r, 3px);background:#e5484d;box-shadow:inset 0 0 0 2px rgba(0,0,0,.12);opacity:0;will-change:transform, opacity;}
+.wi-apple::after {content:'';position:absolute;left:50%;top:-30%;width:30%;height:30%;background:#3d8f3f;}
+.wi-apple[data-kind="join"] {background:rgba(229,72,77,.42);box-shadow:none;}
+.wi-apple[data-kind="join"]::after {display:none;}
+
+/* ── Logo, Skip, hint ── */
+.wi-logo {position:absolute;display:flex;width:max-content;opacity:0;will-change:transform, opacity;}
+.wi-glass-ui {color:#fff;background:linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,.1));border:1px solid rgba(255,255,255,.55);
+  -webkit-backdrop-filter:blur(14px) saturate(170%);backdrop-filter:blur(14px) saturate(170%);box-shadow:inset 0 1px 0 rgba(255,255,255,.6), 0 6px 20px -8px rgba(0,0,0,.35);}
+.wi--refract .wi-glass-ui {backdrop-filter:url(#wi-refract) blur(12px) saturate(170%);}
+.wi-skip {position:absolute;top:calc(20px + env(safe-area-inset-top, 0px));right:clamp(16px, 4vw, 32px);z-index:3;font:inherit;font-size:14px;font-weight:500;border-radius:999px;padding:8px 16px;min-height:40px;cursor:pointer;}
+.wi-skip:hover {background:rgba(255,255,255,.34);}
+.wi-skip:focus-visible {outline:2px solid #fff;outline-offset:2px;}
+.wi-hint {position:absolute;left:50%;bottom:calc(28px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);margin:0;padding:7px 14px;border-radius:999px;font-size:13px;letter-spacing:.02em;white-space:nowrap;opacity:0;pointer-events:none;}
+.wi-hint-touch {display:none;}
+@media (hover: none) {.wi-hint-touch {display:inline;} .wi-hint-mouse {display:none;}}
+.wi-svg {position:absolute;width:0;height:0;overflow:hidden;}
