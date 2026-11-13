@@ -733,3 +733,5 @@ html[data-people='closed'] .nav-folder:not([data-current]):not([data-state]) .na
 }
 /* A sticky sidebar is its own stacking context: lift it above the page while a flyout is open. */
 .sidebar:has(.nav-folder[data-flyout='open']) {z-index:55;}
+/* A flyout that is open must show even when the folder was collapsed in wide/phone mode (the collapse rules above are more specific than the rail rules). */
+.nav-folder[data-flyout='open'] .nav-folder-panel {visibility:visible !important;grid-template-rows:1fr !important;}

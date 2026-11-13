@@ -129,6 +129,34 @@ test.describe('sidebar People folder', () => {
     await expect(page.locator('.nav-folder')).toHaveAttribute('data-current', '');
   });
 
+  test('a folder collapsed on the wide sidebar still opens its flyout in the rail', async ({ page }, info) => {
+    test.skip(info.project.name === 'phone', 'no rail on phones');
+    await page.evaluate(() => localStorage.setItem('cseed-people', '0'));
+    await page.goto('/events');
+    await setRail(page);
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await toggle(page).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(toggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(panel(page)).toBeVisible();
+    await expect(panel(page).locator('a').first()).toBeFocused();
+    expect(await panel(page).evaluate((e) => getComputedStyle(e).visibility)).toBe('visible');
+    await page.keyboard.press('Escape');
+    await expect(panel(page)).toBeHidden();
+    await expect(toggle(page)).toBeFocused();
+    // Still collapsed (saved) on the wide sidebar, then shrink to the rail in the same document.
+    if (info.project.name === 'desktop') {
+      await page.request.put('/api/me/prefs', { data: { sidebarWidth: 0 } });
+      await page.evaluate(() => { localStorage.removeItem('cseed-sidebar'); });
+      await page.reload();
+      await expect(toggle(page)).toHaveAttribute('aria-expanded', 'false');
+      await page.evaluate(() => { document.documentElement.dataset.sidebar = 'rail'; document.documentElement.style.setProperty('--sidebar', '64px'); window.dispatchEvent(new Event('cseed-sidebar')); });
+      await toggle(page).click();
+      await expect(panel(page)).toBeVisible();
+      await expect(panel(page).getByRole('link', { name: 'Members' })).toBeVisible();
+    }
+  });
+
   test('phone menu sheet: expandable group', async ({ page }, info) => {
     test.skip(info.project.name !== 'phone', 'phone only');
     await reset(page);
