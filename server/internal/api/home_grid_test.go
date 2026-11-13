@@ -74,3 +74,27 @@ func TestDashboardTutorialAndLinks(t *testing.T) {
 		expectStatus(t, "unsafe link", e.do("PUT", "/api/club/settings", body, e.as("user-leadership")), 400)
 	}
 }
+
+func TestSidebarWidthPref(t *testing.T) {
+	e := newEnv(t)
+	if got := e.mustOK(e.get("/api/me/prefs", e.officer())); !strings.Contains(string(got.Raw), `"sidebarWidth":0`) {
+		t.Fatal("default width", string(got.Raw))
+	}
+	put := e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"sidebarWidth": 280}, e.officer()))
+	if !strings.Contains(string(put.Raw), `"sidebarWidth":280`) || !strings.Contains(string(put.Raw), `"id":"links"`) {
+		t.Fatal(string(put.Raw))
+	}
+	// A timezone-only update leaves the width alone; another user is unaffected.
+	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"timezoneMode": "club"}, e.officer()))
+	if got := e.mustOK(e.get("/api/me/prefs", e.officer())); !strings.Contains(string(got.Raw), `"sidebarWidth":280`) {
+		t.Fatal("width lost", string(got.Raw))
+	}
+	if got := e.mustOK(e.get("/api/me/prefs", e.director())); !strings.Contains(string(got.Raw), `"sidebarWidth":0`) {
+		t.Fatal("width leaked", string(got.Raw))
+	}
+	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"sidebarWidth": 64}, e.officer()))
+	e.mustOK(e.do("PUT", "/api/me/prefs", map[string]any{"sidebarWidth": 0}, e.officer()))
+	for _, bad := range []any{63, 321, -1, "wide", 100.5} {
+		expectStatus(t, "width", e.do("PUT", "/api/me/prefs", map[string]any{"sidebarWidth": bad}, e.officer()), 400)
+	}
+}

@@ -2,6 +2,7 @@ import { hasUnsavedEdits, watchUnsavedEdits } from './unsaved';
 /** One effective wall clock for every island. Date-only values remain calendar dates. */
 import { api } from './api/client';
 import type { ClubSettings, WidgetPrefs } from './contracts';
+import { syncSidebarFromServer } from './sidebar';
 
 export const DEFAULT_TIMEZONE = 'America/Los_Angeles';
 let zone = DEFAULT_TIMEZONE;
@@ -14,6 +15,7 @@ export const pendingTimezone = () => pending?.effectiveTimezone;
 export function applyTimezone(p: WidgetPrefs) {
   prefs = p;
   pending = null;
+  syncSidebarFromServer(p.sidebarWidth);
   if (zone === p.effectiveTimezone) { window.dispatchEvent(new Event('cseed-timezone-pending')); return; }
   if (hasUnsavedEdits()) {
     pending = p;

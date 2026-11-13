@@ -24,11 +24,11 @@ html:not([data-role='director']):not([data-role='leadership']) [data-director-on
 .main:focus {outline:none;}
 .page-header {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:32px;}
 @media (max-width:1099px) and (min-width:768px) {
-  .app {grid-template-columns:64px minmax(0, 1fr);}
-  .sidebar {padding:12px 8px;align-items:center;}
-  .wordmark-text, .search-trigger-text, .search-trigger-kbd, .nav-label, .user-chip-text {display:none;}
-  .search-trigger {justify-content:center;width:40px;height:40px;}
-  .nav-link {justify-content:center;width:40px;height:40px;padding:0;}
+  html:not([data-sidebar]) .app {grid-template-columns:64px minmax(0, 1fr);}
+  html:not([data-sidebar]) .sidebar {padding:12px 8px;align-items:center;}
+  html:not([data-sidebar]) :is(.wordmark-text, .search-trigger-text, .search-trigger-kbd, .nav-label, .user-chip-text) {display:none;}
+  html:not([data-sidebar]) .search-trigger {justify-content:center;width:40px;height:40px;}
+  html:not([data-sidebar]) .nav-link {justify-content:center;width:40px;height:40px;padding:0;}
   .main {padding:24px;}
 }
 @media (max-width:767px) {
@@ -657,3 +657,24 @@ a.stat-tile[data-pressed="true"] {border-color:var(--text);}
 .stat-tile-value--alert {color:var(--negative);}
 .stat-tile-sub {font-size:12px;line-height:1.4;color:var(--muted);overflow-wrap:anywhere;}
 @media (max-width:767px) {.stat-row {grid-template-columns:repeat(2, minmax(0, 1fr));} .stat-tile {padding:14px;} .stat-tile-value {font-size:1.5rem;}}
+
+/* V0.9 resizable sidebar (desktop + tablet). --sidebar is set inline on <html> by the PREPAINT
+   script / lib/sidebar.ts; data-sidebar="rail" is icons only, "wide" shows labels at that width. */
+.sidebar-resizer {display:none;}
+@media (min-width: 768px) {
+  .sidebar-resizer {display:block;position:fixed;z-index:20;top:0;bottom:0;left:calc(var(--sidebar) - 4px);width:8px;cursor:col-resize;touch-action:none;}
+  .sidebar-resizer::after {content:'';position:absolute;top:0;bottom:0;left:3px;width:2px;background:transparent;transition:background-color var(--dur-1) ease;}
+  .sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after, .is-resizing .sidebar-resizer::after {background:var(--brand);}
+  .sidebar-resizer:focus-visible {outline:none;}
+  .is-resizing, .is-resizing * {cursor:col-resize !important;user-select:none;}
+  .is-resizing .app, .is-resizing .sidebar {transition:none;}
+  html[data-sidebar] .sidebar {overflow-x:hidden;}
+  html[data-sidebar='rail'] .sidebar {padding:12px 8px;align-items:center;}
+  html[data-sidebar='rail'] :is(.wordmark-text, .search-trigger-text, .search-trigger-kbd, .nav-label, .user-chip-text) {display:none;}
+  html[data-sidebar='rail'] .search-trigger {justify-content:center;width:40px;height:40px;padding:0;}
+  html[data-sidebar='rail'] .nav-link {justify-content:center;width:40px;height:40px;padding:0;}
+  html[data-sidebar='rail'] .sidebar .wordmark-mark {display:inline-grid;}
+  html[data-sidebar='rail'] .main {padding-left:24px;padding-right:24px;}
+  html[data-sidebar='wide'] .sidebar .wordmark-mark {display:none;}
+  html[data-sidebar='wide'] .main {padding-left:clamp(24px, 4vw, 48px);padding-right:clamp(24px, 4vw, 48px);}
+}

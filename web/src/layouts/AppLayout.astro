@@ -10,6 +10,7 @@ import '../styles/v03.css';
 import { Icon, type IconName } from '../ui/components/Icon';
 import CommandPalette from '../ui/shell/CommandPalette';
 import UserChip from '../ui/shell/UserChip';
+import SidebarResizer from '../ui/shell/SidebarResizer';
 import { EARLY_PAGE, EARLY_SHARED, earlyScript } from '../lib/early';
 
 export type PageKey = 'buildspace' | 'home' | 'events' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'contacts' | 'design';
@@ -36,7 +37,7 @@ const NAV: { key: PageKey; label: string; href: string; icon: IconName; director
   { key: 'contacts', label: 'External Contacts', href: '/contacts', icon: 'user' },
   { key: 'design', label: 'Design', href: '/design', icon: 'inbox' },
 ];
-const PREPAINT = `(function(){var d=document.documentElement,t,n,r;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role')}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r})();`;
+const PREPAINT = `(function(){var d=document.documentElement,t,n,r,w;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role');w=+localStorage.getItem('cseed-sidebar')}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}})();`;
 /**
  * Phone menu sheet as a modal: dialog semantics while open, focus moved in and trapped
  * (Tab cycles inside), the rest of the page inert, Escape / scrim / close button close it and
@@ -152,6 +153,7 @@ const NAVSCRIPT = `(function () {
               <UserChip client:load />
             </div>
           </nav>
+          <SidebarResizer client:load />
           <main id="main" class:list={['main', { 'main--home': page === 'home' }]} tabindex="-1">
             {!customHeader && <header class="page-header">
               <h1 class={page === 'home' ? 'home-heading' : undefined}>{title}</h1>

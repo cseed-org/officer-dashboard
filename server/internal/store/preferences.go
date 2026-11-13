@@ -67,3 +67,16 @@ func (q *Queries) DashboardTutorialSeen(ctx context.Context, userID string) (boo
 func (q *Queries) SaveDashboardTutorialSeen(ctx context.Context, userID string, seen bool) error {
 	return q.Exec(ctx, `UPDATE user_prefs SET dashboard_tutorial_seen=? WHERE user_id=?`, seen, userID)
 }
+
+// SidebarWidth is the user's saved left-nav width in px; 0 means they never resized it.
+func (q *Queries) SidebarWidth(ctx context.Context, userID string) (int64, error) {
+	var w int64
+	err := q.q.QueryRowContext(ctx, `SELECT sidebar_width FROM user_prefs WHERE user_id=?`, userID).Scan(&w)
+	if notFound(err) == ErrNotFound {
+		return 0, nil
+	}
+	return w, err
+}
+func (q *Queries) SaveSidebarWidth(ctx context.Context, userID string, w int64) error {
+	return q.Exec(ctx, `UPDATE user_prefs SET sidebar_width=? WHERE user_id=?`, w, userID)
+}

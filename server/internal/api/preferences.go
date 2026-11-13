@@ -33,6 +33,9 @@ var defaultWidgets = []store.WidgetPlacement{
 // can still save.
 var widgetSizes = []string{"1x1", "2x1", "1x2", "2x2", "4x1", "4x2", "S", "M", "L"}
 
+// Left nav sidebar width limits in px (keep in step with web/src/lib/sidebar.ts).
+const minSidebarWidth, maxSidebarWidth = 64, 320
+
 func (c *Ctx) prefsGet() error {
 	u, err := c.officer()
 	if err != nil {
@@ -61,7 +64,11 @@ func (c *Ctx) writePrefs(userID string) error {
 	if err != nil {
 		return err
 	}
-	writeJSON(c.W, 200, map[string]any{"dashboardTutorialSeen": tutorialSeen, "widgetLayout": json.RawMessage(raw), "timezoneMode": pref.Mode, "timezone": pref.Zone, "effectiveTimezone": zone.String()})
+	sidebarWidth, err := q.SidebarWidth(ctx, userID)
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"sidebarWidth": sidebarWidth, "dashboardTutorialSeen": tutorialSeen, "widgetLayout": json.RawMessage(raw), "timezoneMode": pref.Mode, "timezone": pref.Zone, "effectiveTimezone": zone.String()})
 	return nil
 }
 func (c *Ctx) prefsPut() error {
@@ -74,6 +81,7 @@ func (c *Ctx) prefsPut() error {
 	var hasLayout bool
 	var tutorialSeen validate.Field[bool]
 	var mode, zone validate.Field[string]
+	var sidebarWidth validate.Field[int64]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		tutorialSeen = r.BoolField("dashboardTutorialSeen")
 		hasLayout = r.Has("widgetLayout")
@@ -86,6 +94,10 @@ func (c *Ctx) prefsPut() error {
 			seen[id] = true
 			layout = append(layout, store.WidgetPlacement{ID: id, Size: size})
 		})
+		sidebarWidth = r.Int("sidebarWidth", validate.I{Min: validate.Lo(0)})
+		if sidebarWidth.Set && sidebarWidth.V != 0 && (sidebarWidth.V < minSidebarWidth || sidebarWidth.V > maxSidebarWidth) {
+			r.Issues.Add("sidebarWidth", "Sidebar width must be 0 (default) or 64 to 320 px")
+		}
 		mode = r.Str("timezoneMode", validate.S{Enum: []string{"auto", "club", "manual"}})
 		zone = r.Str("timezone", validate.S{Max: 100})
 		if zone.Set && zone.V != "" && !validTimezone(zone.V) {
@@ -97,7 +109,7 @@ func (c *Ctx) prefsPut() error {
 		if zone.Set && !mode.Set {
 			r.Issues.Add("timezoneMode", "Specify the time zone mode")
 		}
-		if !hasLayout && !mode.Set && !tutorialSeen.Set {
+		if !hasLayout && !mode.Set && !tutorialSeen.Set && !sidebarWidth.Set {
 			r.Issues.AddForm("No preferences supplied")
 		}
 	}); err != nil {
@@ -128,6 +140,15 @@ func (c *Ctx) prefsPut() error {
 			if err := q.SaveDashboardTutorialSeen(ctx, u.ID, tutorialSeen.V); err != nil {
 				return err
 			}
+		}
+		if sidebarWidth.Set {
+			if err := q.SaveSidebarWidth(ctx, u.ID, sidebarWidth.V); err != nil {
+				return err
+			}
+		}
+		// Resizing the sidebar is cosmetic; it is not worth an audit row per drag.
+		if sidebarWidth.Set && !hasLayout && !mode.Set && !tutorialSeen.Set {
+			return nil
 		}
 		after := prior
 		if mode.Set {
