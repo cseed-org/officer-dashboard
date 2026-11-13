@@ -57,7 +57,7 @@ test.describe('resizable sidebar', () => {
     expect(await width(page)).toBe(64);
     await expect(handle(page)).toHaveAttribute('aria-valuenow', '64');
     await expect(page.locator('#sidebar .nav-label').first()).toBeHidden();
-    const links = page.locator('#sidebar .nav-list .nav-link');
+    const links = page.locator('#sidebar .nav-list > li > .nav-link');
     expect(await links.count()).toBeGreaterThan(3);
     for (let i = 0; i < (await links.count()); i++) {
       const l = links.nth(i);

@@ -689,3 +689,49 @@ a.stat-tile[data-pressed="true"] {border-color:var(--text);}
 /* Hold the shell's first paint until the saved width is known (the inline script in AppLayout
    clears this once /api/me/prefs answers, or after 1.5s), so it never jumps. */
 html[data-sidebar-wait] .app {visibility:hidden;}
+
+/* V0.10 sidebar People folder. Height animates with the grid 1fr -> 0fr trick (no measuring);
+   base.css removes the transitions under prefers-reduced-motion. */
+.nav-folder {display:block;}
+.nav-folder-toggle {width:100%;border:0;background:transparent;font:inherit;font-size:13px;text-align:left;cursor:pointer;}
+.nav-folder-toggle .nav-label {flex:1;min-width:0;}
+.nav-chevron {display:inline-grid;color:var(--muted);transition:transform var(--dur-2) var(--ease-out);}
+.nav-folder-toggle[aria-expanded='false'] .nav-chevron {transform:rotate(-90deg);}
+.nav-folder-panel {display:grid;grid-template-rows:1fr;transition:grid-template-rows var(--dur-2) var(--ease-out), visibility 0s;}
+.nav-sublist {list-style:none;margin:0;padding:2px 0 0;display:grid;gap:2px;overflow:hidden;min-height:0;}
+.nav-link--sub {padding-left:20px;}
+/* Collapsed: saved choice (set before paint on <html>), unless the folder holds the current page. */
+html[data-people='closed'] .nav-folder:not([data-current]):not([data-state]) .nav-folder-panel, .nav-folder[data-state='closed'] .nav-folder-panel {grid-template-rows:0fr;visibility:hidden;transition:grid-template-rows var(--dur-2) var(--ease-out), visibility 0s var(--dur-2);}
+html[data-people='closed'] .nav-folder:not([data-current]):not([data-state]) .nav-chevron, .nav-folder[data-state='closed'] .nav-chevron {transform:rotate(-90deg);}
+.nav-folder[data-state='open'] .nav-folder-panel {grid-template-rows:1fr;visibility:visible;}
+.nav-folder[data-state='open'] .nav-chevron {transform:none;}
+/* The current page's folder shows it as current even when collapsed. */
+.nav-folder[data-current] > .nav-folder-toggle {font-weight:600;}
+
+/* Icons-only rail: one People icon; the group becomes a flyout beside the rail. */
+@media (max-width:1099px) and (min-width:768px) {
+  html:not([data-sidebar]) .nav-chevron {display:none;}
+  html:not([data-sidebar]) .nav-folder-toggle {justify-content:center;}
+  html:not([data-sidebar]) .nav-folder-panel {position:fixed;z-index:60;display:none;visibility:visible;min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-card, 8px);box-shadow:0 8px 24px rgb(0 0 0 / .14);transition:none;}
+  html:not([data-sidebar]) .nav-folder[data-flyout='open'] .nav-folder-panel {display:block;}
+  html:not([data-sidebar]) .nav-folder-panel .nav-sublist {overflow:visible;padding:0;}
+  html:not([data-sidebar]) .nav-folder-panel .nav-link {width:auto;height:auto;justify-content:flex-start;padding:6px 10px;}
+  html:not([data-sidebar]) .nav-folder-panel .nav-label {display:inline;}
+  html:not([data-sidebar]) .nav-link--sub {padding-left:10px;}
+  html:not([data-sidebar]) .nav-folder[data-current] > .nav-folder-toggle {background:color-mix(in srgb, var(--c-blue) var(--tint), var(--surface));box-shadow:inset 2px 0 0 var(--brand);}
+}
+@media (min-width:768px) {
+  html[data-sidebar='rail'] .nav-chevron {display:none;}
+  html[data-sidebar='rail'] .nav-folder-toggle {justify-content:center;}
+  html[data-sidebar='rail'] .nav-folder-panel {position:fixed;z-index:60;display:none;visibility:visible;min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-card, 8px);box-shadow:0 8px 24px rgb(0 0 0 / .14);transition:none;}
+  html[data-sidebar='rail'] .nav-folder[data-flyout='open'] .nav-folder-panel {display:block;}
+  html[data-sidebar='rail'] .nav-folder-panel .nav-sublist {overflow:visible;padding:0;}
+  html[data-sidebar='rail'] .nav-folder-panel .nav-link {width:auto;height:auto;justify-content:flex-start;padding:6px 10px;}
+  html[data-sidebar='rail'] .nav-folder-panel .nav-label {display:inline;}
+  html[data-sidebar='rail'] .nav-link--sub {padding-left:10px;}
+  html[data-sidebar='rail'] .nav-folder[data-current] > .nav-folder-toggle {background:color-mix(in srgb, var(--c-blue) var(--tint), var(--surface));box-shadow:inset 2px 0 0 var(--brand);}
+}
+/* A sticky sidebar is its own stacking context: lift it above the page while a flyout is open. */
+.sidebar:has(.nav-folder[data-flyout='open']) {z-index:55;}
+/* A flyout that is open must show even when the folder was collapsed in wide/phone mode (the collapse rules above are more specific than the rail rules). */
+.nav-folder[data-flyout='open'] .nav-folder-panel {visibility:visible !important;grid-template-rows:1fr !important;}
