@@ -39,6 +39,31 @@ async function openIntro(page: Page) {
   return shell;
 }
 
+/**
+ * Starts the intro by `how` (a DOM click on the overlay or on Skip, or a key) and, in the same task,
+ * freezes every animation at its start and reads what the layers really show: the computed
+ * opacity of the photo, the dot grid and the background at that moment, plus a sample taken
+ * part-way through each of their animations (`at` ms in).
+ */
+const startFrozen = (page: Page, how: 'overlay' | 'skip' | 'key', at = 0) =>
+  page.evaluate(
+    ({ how, at }) => {
+      if (how === 'skip') document.querySelector<HTMLElement>('.wi-skip')!.click();
+      else if (how === 'overlay') document.querySelector<HTMLElement>('.wi')!.click();
+      else window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true }));
+      const anims = document.getAnimations();
+      anims.forEach((a) => {
+        a.pause();
+        a.currentTime = at;
+      });
+      const op = (s: string) => +getComputedStyle(document.querySelector(s)!).opacity;
+      const out = { photo: op('.wi-photo'), board: op('.wi-board'), bg: op('.wi-bg') };
+      anims.forEach((a) => a.play());
+      return out;
+    },
+    { how, at },
+  );
+
 const active = (page: Page) => page.locator('[data-wi-phrase][data-active="true"]');
 const overlay = (page: Page) => page.locator('.wi');
 const box = (page: Page, sel: string) => page.locator(sel).evaluate((e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; });
@@ -91,6 +116,22 @@ test('the greeting cycles through languages in glass letters, with no start butt
   await expect.poll(washes, { timeout: 4000 }).not.toBe(w0);
 });
 
+test('the photo and the grid reveal from nothing; the exit fade does not jump them to full', async ({ page }) => {
+  await openIntro(page);
+  // Review F-1: at the start both are hidden, part-way through their reveals they are part-way.
+  const t0 = await startFrozen(page, 'overlay', 0);
+  expect(t0.photo).toBe(0);
+  expect(t0.board).toBe(0);
+  expect(t0.bg).toBe(1);
+  await page.goto('about:blank');
+  await openIntro(page);
+  const mid = await startFrozen(page, 'overlay', 40);
+  expect(mid.photo).toBeGreaterThan(0);
+  expect(mid.photo).toBeLessThan(0.9);
+  expect(mid.board).toBeGreaterThan(0);
+  expect(mid.board).toBeLessThan(0.9);
+});
+
 test('a click shows the group photo and starts the snake, whose body ends up spelling "cseed", then it lands on the logo', async ({ page }) => {
   const shell = await openIntro(page);
   await overlay(page).click({ position: { x: 200, y: 300 } });
@@ -117,7 +158,8 @@ test('a click shows the group photo and starts the snake, whose body ends up spe
   expect(cells.find((c) => c.head)!.cell).toBe(`${last.x},${last.y}`);
   // Joins are dimmed so the word reads.
   const join = page.locator('[data-wi-snake][data-kind="join"]').first();
-  await expect.poll(() => join.evaluate((e) => getComputedStyle(e).backgroundColor)).toMatch(/rgba\(20, 20, 20, 0\.2\d/);
+  await expect.poll(() => join.evaluate((e) => +getComputedStyle(e).opacity)).toBeLessThan(0.3);
+  expect(await join.evaluate((e) => getComputedStyle(e).backgroundColor)).toBe('rgb(20, 20, 20)'); // dimmed by opacity, never by repainting
 
   const rects = await landing(page);
   expect(rects.end).toBe('scale(1)');
@@ -173,6 +215,18 @@ test('pressing again fast-forwards to the end; Escape skips', async ({ page }) =
 
 test('Skip goes straight to the logo without the snake or the photo', async ({ page }) => {
   await openIntro(page);
+  // Review F-1: the exit fade must not flash the never-revealed photo or grid, at any point.
+  for (const at of [0, 120, 300]) {
+    if (at) {
+      await page.goto('about:blank');
+      await openIntro(page);
+    }
+    const o = await startFrozen(page, 'skip', at);
+    expect(o.photo, `photo at ${at}ms`).toBe(0);
+    expect(o.board, `grid at ${at}ms`).toBe(0);
+    await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
+  }
+  await openIntro(page);
   await page.getByRole('button', { name: 'Skip' }).click();
   await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
   await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
@@ -187,7 +241,10 @@ test('prefers-reduced-motion: no snake and no colour changes; the photo shows, t
   const w0 = await washes();
   await page.waitForTimeout(2600);
   expect(await washes()).toBe(w0);
-  await page.keyboard.press('Space');
+  // The photo fades in from nothing (review F-1: the exit fade used to show it at once).
+  const t0 = await startFrozen(page, 'key', 0);
+  expect(t0.photo).toBe(0);
+  expect(t0.board).toBe(0);
   await expect.poll(() => page.locator('[data-wi-photo]').evaluate((e) => +getComputedStyle(e).opacity)).toBeGreaterThan(0.95);
   await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
   await expect(page.locator('[data-wi-apple]')).toHaveCount(0);

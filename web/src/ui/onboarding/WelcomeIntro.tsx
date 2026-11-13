@@ -203,10 +203,13 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
         { duration: 720, delay, easing: EASE },
       );
     };
-    const out = [bg.current!, ph, board.current!, st];
-    const end = (after: number) => {
-      // Hand-off: everything but the logo fades over the page, whose logo is at the same spot.
-      out.forEach((n) => run(n, [{ opacity: 1 }, { opacity: 0 }], { duration: 240, delay: after, easing: 'ease-out' }));
+    /**
+     * Hand-off: everything but the logo fades over the page, whose logo is at the same spot. The
+     * fade starts from whatever opacity each layer has then (one keyframe) and fills forwards only,
+     * so during its delay it cannot override the layers' own reveals (or reveal what was never shown).
+     */
+    const end = (after: number, layers: Element[]) => {
+      layers.forEach((n) => run(n, [{ opacity: 0 }], { duration: 240, delay: after, easing: 'ease-out', fill: 'forwards' }));
       return run(el, [{ opacity: 1 }, { opacity: 1 }], { duration: after + 240 });
     };
 
@@ -214,13 +217,13 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     if (skip) {
       if (current) run(current, [{ opacity: 1 }, { opacity: 0 }], { duration: reduced.current ? 1 : 160 });
       run(lg, [{ opacity: 0 }, { opacity: 1 }], { duration: reduced.current ? 1 : 200, delay: reduced.current ? 0 : 80 });
-      finished = end(reduced.current ? 60 : 200).finished;
+      finished = end(reduced.current ? 60 : 200, [bg.current!, st]).finished; // the photo and grid never showed
     } else if (reduced.current) {
       // No snake: the photo fades in, stays a moment, then the logo fades in and the overlay goes.
       if (current) run(current, [{ opacity: 1 }, { opacity: 0 }], { duration: 200 });
       revealPhoto();
       run(lg, [{ opacity: 0 }, { opacity: 1 }], { duration: 200, delay: REDUCED_HOLD });
-      finished = end(REDUCED_HOLD + 200).finished;
+      finished = end(REDUCED_HOLD + 200, [bg.current!, ph, st]).finished;
     } else {
       revealPhoto();
       const textBox = (() => {
@@ -233,7 +236,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
         return { left: Math.min(...rects.map((q) => q.left)), right: Math.max(...rects.map((q) => q.right)), top: Math.min(...rects.map((q) => q.top)), bottom: Math.max(...rects.map((q) => q.bottom)) };
       })();
       const plan = buildPlan({ vw, vh, text: textBox ?? { left: vw * 0.2, right: vw * 0.8, top: vh * 0.45, bottom: vh * 0.55 }, target: box });
-      finished = runSnake(plan, current, run, end);
+      finished = runSnake(plan, current, run, (after) => end(after, [bg.current!, ph, board.current!, st]));
     }
 
     finished
@@ -340,6 +343,8 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     const spelled = () => {
       render(last);
       shown = last;
+      // Dim the joins so "cseed" reads (opacity only, on the compositor).
+      if (stateRef.current === 'playing') segs.forEach((el) => el.dataset.kind === 'join' && run(el, [{ opacity: 0.26 }], { duration: 300, fill: 'forwards' }));
       cancelAnimationFrame(raf.current);
       if (stateRef.current === 'playing') go('spelled');
     };
@@ -361,7 +366,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
 
     // 4. Hold on "cseed", then the word shrinks into the logo, which takes its place.
     const { tx, ty, s } = plan.morph;
-    run(bd, [{ opacity: 1 }, { opacity: 0 }], { delay: plan.morphAt - 300, duration: 300 });
+    run(bd, [{ opacity: 0 }], { delay: plan.morphAt - 300, duration: 300, fill: 'forwards' });
     run(sn, [{ transform: 'translate(0, 0) scale(1)' }, { transform: `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) scale(${s.toFixed(5)})` }], { delay: plan.morphAt, duration: plan.morphEnd - plan.morphAt, easing: 'cubic-bezier(.65, 0, .25, 1)' });
     run(sn, [{ opacity: 1 }, { opacity: 0 }], { delay: plan.morphEnd - 100, duration: 140 });
     run(logo.current!, [{ opacity: 0, transform: 'scale(.85)' }, { opacity: 1, transform: 'scale(1)' }], { delay: plan.morphEnd - 160, duration: 220, easing: EASE });
