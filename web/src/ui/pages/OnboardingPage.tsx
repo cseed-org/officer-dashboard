@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError } from '../../lib/api/client';
 import type { CalendarSettings, OnboardingState, ProfileResponse, WidgetPlacement, CurrentUser } from '../../lib/contracts';
 import { clearCachedRole } from '../../lib/session';
-import { choiceOf, layoutForChoices, onboardingChoices } from '../widgets/registry';
+import { applyChoices, choiceOf, layoutForChoices, onboardingChoices } from '../widgets/registry';
 import { ProfileForm, type ProfileFormHandle, type ProfileSection } from '../views/ProfileForm';
 import { CalendarPanel } from '../views/CalendarPanel';
 import { WelcomeIntro } from '../onboarding/WelcomeIntro';
@@ -103,6 +103,7 @@ function OnboardingFlow({ intro, onIntroStart }: { intro: boolean; onIntroStart:
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [cal, setCal] = useState<CalendarSettings | null>(null);
   const [picked, setPicked] = useState<Set<string> | null>(null);
+  const initial = useRef<{ layout: WidgetPlacement[]; picked: Set<string> } | null>(null); // Home as it was when the flow opened
   const profileRef = useRef<ProfileFormHandle>(null);
   const profileWrap = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -156,7 +157,9 @@ function OnboardingFlow({ intro, onIntroStart }: { intro: boolean; onIntroStart:
         setData({ user: me.user, onboarding: me.onboarding });
         hasProfileRef.current = me.onboarding.hasProfile;
         setProfile(p);
-        setPicked(new Set(prefs.widgetLayout.map((w) => choiceOf(w.id)).filter((id): id is string => !!id)));
+        const choices = new Set(prefs.widgetLayout.map((w) => choiceOf(w.id)).filter((id): id is string => !!id));
+        initial.current = { layout: prefs.widgetLayout, picked: choices };
+        setPicked(new Set(choices));
         // Resume at the saved step, never past the basics until they're saved. Google consent
         // returns to the calendar stage.
         const back = new URLSearchParams(location.search).get('google');
@@ -305,8 +308,14 @@ function OnboardingFlow({ intro, onIntroStart }: { intro: boolean; onIntroStart:
     if (step === TOTAL) {
       setBusy(true);
       try {
-        const layout: WidgetPlacement[] = layoutForChoices(picked);
-        await api('prefsPut', { body: { widgetLayout: layout, dashboardTutorialSeen: false } }); // the tour follows, once
+        // An existing officer's Home keeps its order and sizes unless they changed the widgets here;
+        // a new officer's Home is built from their picks.
+        const start = initial.current;
+        const unchanged = !!start && start.picked.size === picked.size && [...picked].every((id) => start.picked.has(id));
+        const body: { dashboardTutorialSeen: boolean; widgetLayout?: WidgetPlacement[] } = { dashboardTutorialSeen: false }; // the tour follows, once
+        if (!returning) body.widgetLayout = layoutForChoices(picked);
+        else if (!unchanged) body.widgetLayout = applyChoices(start?.layout ?? [], picked);
+        await api('prefsPut', { body });
         await api('onboardingComplete');
         done.current = true;
         // Setup is finished: the steps' history entries now lead Home (see onPop).

@@ -120,6 +120,9 @@ test('an existing officer sees the intro and intake once, with their details fil
   await devSignIn(page, { as: 'officer', user: 'user-priya', onboarding: 'reset' });
   await expect(page).toHaveURL(/\/onboarding$/);
   const before = (await (await page.request.get('/api/me/profile')).json()).profile;
+  // Their own Home arrangement: it must come through the flow untouched.
+  const layout = [{ id: 'calendar', size: '2x1' }, { id: 'kpi-upcoming', size: '1x1' }, { id: 'links', size: '2x1' }];
+  expect((await page.request.put('/api/me/prefs', { data: { widgetLayout: layout } })).ok()).toBe(true);
   await skipIntro(page);
   await stage(page, 1);
   await expect(page.locator('#pf-phone')).toHaveValue(before.phone);
@@ -133,6 +136,7 @@ test('an existing officer sees the intro and intake once, with their details fil
   await expect(page).toHaveURL(/\/\?tutorial=onboarding/);
   await expect(page.locator('[data-home-tour]')).toBeVisible();
   await page.getByRole('button', { name: 'Skip tour' }).click();
+  expect((await (await page.request.get('/api/me/prefs')).json()).widgetLayout).toEqual(layout);
   // Their start term did not change, and the next sign-in goes straight to Home.
   const after = (await (await page.request.get('/api/me/profile')).json()).profile;
   expect(after.startTerm).toBe(before.startTerm);

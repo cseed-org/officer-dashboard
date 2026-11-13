@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"strings"
 )
 
 type Invite struct {
@@ -107,11 +105,6 @@ func (q *Queries) MarkOnboarded(ctx context.Context, id string, now int64) error
 	return oneRow(res, err)
 }
 
-func (q *Queries) SetOnboardingStep(ctx context.Context, id string, step int) error {
-	res, err := q.q.ExecContext(ctx, `UPDATE invites SET onboarding_step=? WHERE id=? AND onboarded_at IS NULL`, step, id)
-	return oneRow(res, err)
-}
-
 func (q *Queries) DeletePendingInvite(ctx context.Context, id string) error {
 	res, err := q.q.ExecContext(ctx, `DELETE FROM invites WHERE id=? AND accepted_at IS NULL`, id)
 	return oneRow(res, err)
@@ -133,35 +126,9 @@ func (q *Queries) SubteamExists(ctx context.Context, id string) (bool, error) {
 	return n > 0, err
 }
 
-// AuditCountSince counts an entity's audit rows for one action: all of them, and those
-// at or after since (ms). Used to rate-limit actions that reach other people.
-func (q *Queries) AuditCountSince(ctx context.Context, action, entityID string, since int64) (total, recent int, err error) {
-	err = q.q.QueryRowContext(ctx, `SELECT count(*), coalesce(sum(created_at >= ?),0) FROM audit_log WHERE action=? AND entity_id=?`, since, action, entityID).Scan(&total, &recent)
-	return
-}
-
 // UpdateInviteDetails changes the name and subteam of an invite that hasn't finished
 // onboarding (pending or accepted). The token and expiry stay as they are.
 func (q *Queries) UpdateInviteDetails(ctx context.Context, id, name, subteamID string) error {
 	res, err := q.q.ExecContext(ctx, `UPDATE invites SET name=?,subteam_id=? WHERE id=? AND onboarded_at IS NULL`, name, subteamID, id)
 	return oneRow(res, err)
-}
-
-// LatestAuditAction is the newest of an entity's audit rows among the given actions
-// (by time, then insertion order), or "" when there are none.
-func (q *Queries) LatestAuditAction(ctx context.Context, entityID string, actions ...string) (string, error) {
-	if len(actions) == 0 {
-		return "", nil
-	}
-	args := []any{entityID}
-	marks := make([]string, len(actions))
-	for i, a := range actions {
-		marks[i], args = "?", append(args, a)
-	}
-	var action string
-	err := q.q.QueryRowContext(ctx, `SELECT action FROM audit_log WHERE entity_id=? AND action IN (`+strings.Join(marks, ",")+`) ORDER BY created_at DESC, rowid DESC LIMIT 1`, args...).Scan(&action)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return action, err
 }

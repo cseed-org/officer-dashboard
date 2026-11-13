@@ -11,6 +11,8 @@ export interface TourStep {
   targets: string[];
   /** Shows the grid's edit controls behind the tour (a preview; nothing is saved). */
   edit?: boolean;
+  /** Left out of the tour when its target isn't on the page (a feature that may not be merged or enabled). */
+  optional?: boolean;
 }
 
 const sel = (...names: string[]) => names.map((n) => `[data-tour="${n}"]`);
@@ -23,9 +25,9 @@ export const TOUR_STEPS: TourStep[] = [
   { id: 'resize', title: 'Resize from the corner', text: 'Drag a corner to preview an allowed size, or hold Shift and use the arrow keys. Escape cancels.', targets: sel('resize'), edit: true },
   { id: 'add', title: 'Add and remove', text: 'Add widget opens the gallery. The × on a card removes it, and you can always bring it back. This preview saves nothing.', targets: sel('add'), edit: true },
   { id: 'sidebar', title: 'Find your way', text: 'The sidebar takes you to every part of the dashboard.', targets: sel('sidebar', 'nav-toggle') },
+  { id: 'sidebar-resize', title: 'Make it yours, too', text: 'Drag the sidebar’s edge to make it wider or narrower. Double-click the edge to reset it.', targets: sel('sidebar-resize'), optional: true },
   { id: 'search', title: 'Jump anywhere', text: 'Open the command palette to find any page, event or person. On a keyboard, press Ctrl K (⌘K on a Mac).', targets: sel('search') },
 ];
 
-/** Shown instead of the sidebar text when the sidebar can be resized (its handle is on the page). */
-export const SIDEBAR_RESIZE_TEXT = 'The sidebar takes you to every part of the dashboard. Drag its edge to make it wider or narrower; double-click the edge to reset it.';
-export const SIDEBAR_RESIZE_TARGET = '[data-tour="sidebar-resize"]';
+/** The stops to show now: optional ones only when their target exists on this page. */
+export const availableSteps = (): TourStep[] => TOUR_STEPS.filter((t) => !t.optional || t.targets.some((q) => document.querySelector(q)));

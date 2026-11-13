@@ -64,8 +64,23 @@ func TestNewProfileGetsCurrentTerm(t *testing.T) {
 		t.Skipf("cannot reset profile: %v", err)
 	}
 	p := e.mustOK(e.do("PUT", "/api/me/profile", map[string]any{"phone": "+1 206 555 0111", "birthday": "03-04", "subteamId": "team-events", "startTerm": "Spring 1999"}, e.officer()))
-	want := currentTerm(e.srv.now())
+	want := e.srv.clubTerm(context.Background(), e.db.Read())
 	if p.str("profile", "startTerm") != want {
 		t.Fatalf("startTerm = %s, want %s", p.str("profile", "startTerm"), want)
+	}
+}
+
+// A profile saved before V0.9 with no term gets the one the intake showed.
+func TestExistingProfileWithoutTermGetsOne(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if err := e.db.Write(ctx, func(q *store.Queries) error {
+		return q.Exec(ctx, `UPDATE officer_profiles SET start_term=NULL WHERE user_id='user-priya'`)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p := e.mustOK(e.do("PUT", "/api/me/profile", map[string]any{"phone": "+1 206 555 0111", "birthday": "03-04"}, e.officer()))
+	if p.str("profile", "startTerm") != e.srv.clubTerm(ctx, e.db.Read()) {
+		t.Fatalf("profile %s", p.Raw)
 	}
 }

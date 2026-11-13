@@ -2,6 +2,10 @@ package store
 
 import "context"
 
+// OnboardingVersion is the current intro + intake flow. Accounts below it (every existing
+// account when it shipped, and every new one) go through the flow once.
+const OnboardingVersion = 9
+
 // OnboardingProgress is where a user stands in the intro + intake flow.
 func (q *Queries) OnboardingProgress(ctx context.Context, userID string) (version, step int, err error) {
 	err = q.q.QueryRowContext(ctx, `SELECT onboarding_version,onboarding_step FROM users WHERE id=?`, userID).Scan(&version, &step)

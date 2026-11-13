@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../../lib/api/client';
 import { timezoneSnapshot } from '../../lib/timezone';
-import { SIDEBAR_RESIZE_TARGET, SIDEBAR_RESIZE_TEXT, TOUR_STEPS, type TourStep } from './steps';
+import { availableSteps, type TourStep } from './steps';
 import { TOUR_EVENT } from './startTour';
 import './tour.css';
 
@@ -41,9 +41,9 @@ export default function HomeTour({ onPreview }: { onPreview: (editing: boolean, 
   const [hasTarget, setHasTarget] = useState(true);
   const [position, setPosition] = useState({ left: 16, top: 16 });
   const [saving, setSaving] = useState(false);
-  const [resizable, setResizable] = useState(false);
+  const [steps, setSteps] = useState<TourStep[]>(() => availableSteps());
   const [first, setFirst] = useState(true);
-  const s = TOUR_STEPS[step]!;
+  const s = steps[step]!;
 
   // Open: after onboarding (once), on a forced replay, from startTour().
   useEffect(() => {
@@ -61,6 +61,7 @@ export default function HomeTour({ onPreview }: { onPreview: (editing: boolean, 
     };
   }, []);
   const begin = () => {
+    setSteps(availableSteps());
     setStep(0);
     setFirst(true);
     shown.current = null;
@@ -109,7 +110,6 @@ export default function HomeTour({ onPreview }: { onPreview: (editing: boolean, 
     };
     const measure = () => {
       const el = resolve(s);
-      setResizable(!!document.querySelector(SIDEBAR_RESIZE_TARGET));
       const cw = card.current?.offsetWidth ?? 380;
       const ch = card.current?.offsetHeight ?? 240;
       const narrow = innerWidth <= 640;
@@ -204,8 +204,7 @@ export default function HomeTour({ onPreview }: { onPreview: (editing: boolean, 
     setFirst(false);
     setStep(n);
   };
-  const last = step === TOUR_STEPS.length - 1;
-  const text = s.id === 'sidebar' && resizable ? SIDEBAR_RESIZE_TEXT : s.text;
+  const last = step === steps.length - 1;
 
   if (!active) return null;
   return (
@@ -236,15 +235,15 @@ export default function HomeTour({ onPreview }: { onPreview: (editing: boolean, 
       <div ref={card} class={`home-tour-card${first ? ' is-first' : ''}`} style={{ transform: `translate(${position.left}px, ${position.top}px)` }} data-tour-step={step + 1} data-tour-id={s.id}>
         <div class="home-tour-body" key={step}>
           <p class="home-tour-count small">
-            Home tour · {step + 1} of {TOUR_STEPS.length}
+            Home tour · {step + 1} of {steps.length}
           </p>
           <h2 ref={heading} tabIndex={-1} id="home-tour-title">
             {s.title}
           </h2>
-          <p>{text}</p>
+          <p>{s.text}</p>
         </div>
         <ol class="home-tour-dots" aria-hidden="true">
-          {TOUR_STEPS.map((t, i) => (
+          {steps.map((t, i) => (
             <li key={t.id} class={i < step ? 'is-done' : ''} aria-current={i === step ? 'step' : undefined} />
           ))}
         </ol>

@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/notify"
@@ -149,7 +148,7 @@ func TestInviteeSignInOnboardingAndProfile(t *testing.T) {
 	}
 	alex := actor{cookie: cookieNamed(setCookies(cb), e.srv.sessionCookieName())}
 	me := e.mustOK(e.get("/api/me", alex))
-	if me.str("user", "role") != "officer" || me.str("user", "name") != "Alex Chen" || me.num("onboarding", "step") != 1 || me.str("onboarding", "subteam", "id") != "team-events" || me.str("onboarding", "invitedBy", "id") != "user-director" {
+	if me.str("user", "role") != "officer" || me.str("user", "name") != "Alex Chen" || me.num("onboarding", "step") != 1 || me.str("onboarding", "subteam", "id") != "team-events" {
 		t.Fatalf("me %s", me.Raw)
 	}
 	if e.scalar(`SELECT count(*) FROM audit_log WHERE action IN ('user.created','invite.accepted') AND actor_user_id=?`, me.str("user", "id")) != int64(2) {
@@ -161,11 +160,6 @@ func TestInviteeSignInOnboardingAndProfile(t *testing.T) {
 		t.Fatalf("resume → %s", again.Header.Get("Location"))
 	}
 	expectStatus(t, "finish without profile", e.post("/api/me/onboarding/complete", nil, alex), 409)
-	// Corrections go to the inviter over Discord.
-	corr := e.mustOK(e.post("/api/me/onboarding/correction", map[string]any{"message": "I'm on Build, not Events"}, alex))
-	if corr.str("dm", "status") != "sent" || len(dm.sent) != 1 || !strings.Contains(dm.sent[0].content, "not Events") {
-		t.Fatalf("correction %s %+v", corr.Raw, dm.sent)
-	}
 	// Profile: required fields, month-day birthday, and the invite's subteam.
 	bad := e.do("PUT", "/api/me/profile", map[string]any{"phone": "12", "birthday": "2004-02-30", "linkedin": "https://evil.example/in/x", "personalEmail": "nope"}, alex)
 	expectStatus(t, "invalid profile", bad, 400)
@@ -388,18 +382,6 @@ func TestReissuedInviteLinkReplacesTheOldOneAndCorrectionsAreRateLimited(t *test
 	cb := signInAsInvitee(t, e, "invite="+fresh)
 	if cb.Header.Get("Location") != "/onboarding" {
 		t.Fatalf("new link → %s", cb.Header.Get("Location"))
-	}
-	alex := actor{cookie: cookieNamed(setCookies(cb), e.srv.sessionCookieName())}
-	e.mustOK(e.post("/api/me/onboarding/correction", map[string]any{"message": "typo in my name"}, alex))
-	expectStatus(t, "second within a minute", e.post("/api/me/onboarding/correction", map[string]any{"message": "again"}, alex), 409)
-	for i := 0; i < 4; i++ {
-		e.clock = e.clock.Add(2 * time.Minute)
-		e.mustOK(e.post("/api/me/onboarding/correction", map[string]any{"message": "more"}, alex))
-	}
-	e.clock = e.clock.Add(2 * time.Minute)
-	expectStatus(t, "sixth", e.post("/api/me/onboarding/correction", map[string]any{"message": "too many"}, alex), 409)
-	if len(dm.sent) != 5 {
-		t.Fatalf("DMs %d", len(dm.sent))
 	}
 }
 
