@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { byDesigner, designStats, designTool, laneOf, laneTarget, thisWeek } from '../src/lib/design';
+import { byDesigner, designMoveTargets, designStats, designTool, laneOf, laneTarget, thisWeek } from '../src/lib/design';
 import type { DesignRequestItem } from '../src/lib/contracts';
 import { isGradMonth, isLinkedIn } from '../src/lib/profileRules';
 import { normalizeHref } from '../src/lib/routes';
@@ -282,10 +282,13 @@ test('V0.10: Design lanes map the five stages and only offer moves the viewer ma
   // Only leadership drops into Done (as an override); everyone else waits for the requester.
   expect(laneTarget(item('in-review'), 'done', director)).toBeNull();
   expect(laneTarget(item('in-review'), 'done', leadership)).toBe('delivered');
-  // Delivered work reopens into Doing, or goes back to Review (the Done toast's Undo).
+  // The design team reopens delivered work into any earlier lane (the Done toast's Undo uses the exact stage).
   expect(laneTarget(item('delivered'), 'review', director)).toBe('in-review');
   expect(laneTarget(item('delivered'), 'doing', director)).toBe('in-progress');
-  expect(laneTarget(item('delivered'), 'todo', director)).toBeNull();
+  expect(laneTarget(item('delivered'), 'todo', director)).toBe('accepted');
+  expect(designMoveTargets(item('delivered'), director)).toEqual(['new', 'accepted', 'in-progress', 'in-review']);
+  // A requester outside the team can't reopen from the board (their approval Undo lives in the detail).
+  expect(designMoveTargets(item('delivered', 'req'), officer)).toEqual([]);
   // A requester outside the design team may only send their review back to Doing.
   expect(laneTarget(item('in-review'), 'doing', officer)).toBe('in-progress');
   expect(laneTarget(item('new'), 'doing', officer)).toBeNull();

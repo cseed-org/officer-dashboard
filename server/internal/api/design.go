@@ -200,12 +200,10 @@ func (d *designCtx) permissions(r *store.DesignRequest) DesignPermissions {
 }
 
 // designMoveTargets is where designers may move a card from a stage. Delivered is reached
-// only by the requester's approval (or a leadership override); a delivered card can be
-// reopened to In progress, or put back in review (undoing the delivery).
+// only by the requester's approval (or a leadership override). The design team may reopen a
+// delivered card into any earlier stage, which is how the board's Undo restores the stage it
+// was delivered from (In review after an approval; New or Accepted after a direct override).
 func designMoveTargets(from string) []string {
-	if from == "delivered" {
-		return []string{"in-progress", "in-review"}
-	}
 	out := []string{}
 	for _, s := range store.DesignStages {
 		if s != from && s != "delivered" {

@@ -110,8 +110,8 @@ func TestDesignRequestLifecycle(t *testing.T) {
 		t.Fatalf("undo approval %s", undone.Raw)
 	}
 	e.mustOK(e.post("/api/design-requests/"+id+"/approve", nil, priya))
-	// The design team may also put a delivered card back in review.
-	if moveTo := stringsOf(e.mustOK(e.get("/api/design-requests/"+id, riley)).list("request", "permissions", "moveTo")); !slices.Equal(moveTo, []string{"in-progress", "in-review"}) {
+	// The design team may reopen a delivered card into any earlier stage (Undo restores where it came from).
+	if moveTo := stringsOf(e.mustOK(e.get("/api/design-requests/"+id, riley)).list("request", "permissions", "moveTo")); !slices.Equal(moveTo, []string{"new", "accepted", "in-progress", "in-review"}) {
 		t.Fatalf("designer moves from delivered %v", moveTo)
 	}
 
@@ -235,4 +235,17 @@ func TestLeadershipDesignOverride(t *testing.T) {
 		t.Fatal("staff assignment changes must be audited")
 	}
 	e.mustOK(e.post(path+"/move", map[string]any{"stage": "in-progress"}, director))
+
+	// A direct delivery from To do (New or Accepted) can be undone to exactly that stage.
+	for _, from := range []string{"accepted", "new"} {
+		e.mustOK(e.post(path+"/move", map[string]any{"stage": from}, lead))
+		e.mustOK(e.post(path+"/move", map[string]any{"stage": "delivered", "confirmDeliveryOverride": true}, lead))
+		back := e.mustOK(e.post(path+"/move", map[string]any{"stage": from}, lead))
+		if back.str("request", "stage") != from {
+			t.Fatalf("undo %s -> delivered: %s", from, back.Raw)
+		}
+	}
+	// Officers outside the design team still cannot reopen delivered work.
+	e.mustOK(e.post(path+"/move", map[string]any{"stage": "delivered", "confirmDeliveryOverride": true}, lead))
+	expectStatus(t, "bystander reopens", e.post(path+"/move", map[string]any{"stage": "accepted"}, e.as("user-ava")), 403)
 }

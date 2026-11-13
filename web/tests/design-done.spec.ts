@@ -115,3 +115,67 @@ test('the requester approving in the detail gets the Done moment, and Undo retur
     await page.request.delete(`/api/design-requests/${id}`);
   }
 });
+
+// Leadership may deliver straight from To do; Undo must restore that exact stage on the server.
+for (const [from, how] of [['accepted', 'keyboard'], ['new', 'drag']] as const) {
+  test(`${from} → Done on the board (${how}) and Undo restores ${from}`, async ({ page }, info) => {
+    await devSignIn(page, { as: 'leadership' }, '/design');
+    const title = `To do Done ${from} ${Date.now()}`;
+    const id = await create(page, title);
+    try {
+      if (from === 'accepted') await moveTo(page, id, 'accepted');
+      await page.goto('/design?view=board');
+      await settle(page);
+      const card = page.locator(`[data-request="${id}"]`);
+      page.once('dialog', (d) => d.accept()); // the leadership delivery override
+      if (how === 'keyboard') {
+        await card.focus();
+        await page.keyboard.press('Space');
+        for (let i = 0; i < 4 && !/is-over/.test((await lane(page, 'done').getAttribute('class')) ?? ''); i++) await page.keyboard.press('ArrowRight');
+        await expect(lane(page, 'done')).toHaveClass(/is-over/);
+        await page.keyboard.press('Space');
+      } else if (info.project.name === 'desktop') {
+        await card.dragTo(lane(page, 'done'), { targetPosition: { x: 80, y: 60 } });
+      } else {
+        // Touch: the ⋯ menu (Done is another tab on phones).
+        await card.getByRole('button', { name: `Actions for ${title}` }).click();
+        await page.getByRole('menuitem', { name: 'Move to Delivered', exact: true }).click();
+      }
+      await expect.poll(() => stage(page, id)).toBe('delivered');
+      await expect(lane(page, 'done')).toContainText(title);
+      await expect(page.locator('[data-confetti]').first()).toBeAttached();
+      const toast = page.locator('.design-toast');
+      await expect(toast).toContainText('delivered');
+      await toast.getByRole('button', { name: 'Undo' }).click();
+      await expect.poll(() => stage(page, id)).toBe(from);
+      await expect(lane(page, 'todo')).toContainText(title);
+      await expect(lane(page, 'done').locator(`[data-request="${id}"]`)).toHaveCount(0);
+      await expect(card.locator('.approval-chip')).toHaveCount(from === 'new' ? 1 : 0);
+    } finally {
+      await page.request.delete(`/api/design-requests/${id}`);
+    }
+  });
+}
+
+test('leadership delivering a New request from the detail gets the Done moment, and Undo restores New', async ({ page }) => {
+  await devSignIn(page, { as: 'leadership' }, '/design');
+  const title = `Detail New Done ${Date.now()}`;
+  const id = await create(page, title);
+  try {
+    await page.goto(`/design?id=${id}`);
+    await settle(page);
+    const detail = page.locator('dialog[open] [data-design-detail]');
+    const actions = detail.locator('[data-designer-actions]');
+    await actions.getByLabel('Move to', { exact: true }).selectOption('delivered');
+    page.once('dialog', (d) => d.accept());
+    await actions.getByRole('button', { name: 'Update request' }).click();
+    await expect(detail).toHaveAttribute('data-stage', 'delivered');
+    const moment = detail.locator('[data-done-moment]');
+    await expect(moment.locator('[data-confetti]')).toBeAttached();
+    await moment.getByRole('button', { name: 'Undo' }).click();
+    await expect(detail).toHaveAttribute('data-stage', 'new');
+    expect(await stage(page, id)).toBe('new');
+  } finally {
+    await page.request.delete(`/api/design-requests/${id}`);
+  }
+});
