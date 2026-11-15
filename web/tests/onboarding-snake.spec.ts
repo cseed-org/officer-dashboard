@@ -39,7 +39,12 @@ for (const input of fixtures) {
   const times=[t.meltStart,t.meltEnd,...t.fruitIn,t.snakeEnter,t.spelledAt,t.sproutAt,t.morphStart,t.travelStart,t.morphEnd,t.swapAt,t.done];
   expect(times).toEqual([...times].sort((a,b)=>a-b));expect(t.done).toBeLessThanOrEqual(5200);expect(t.done-t.swapAt).toBeLessThanOrEqual(120);
   for(const ms of [0,450,700,2000,3600,4050,4400,4780,4900]) expect(sampleAt(p,ms)).toEqual(sampleAt(q,ms));
-  expect(sampleAt(p,t.ffTo)).toEqual(sampleAt(p,Infinity));expect(sampleAt(p,t.ffTo).done).toBe(true);
+  expect(t.ffTo).toBe(t.swapAt);
+  expect(sampleAt(p,t.ffTo).done).toBe(false);
+  expect(t.done-t.ffTo).toBe(120);
+  expect(sampleAt(p,t.ffTo+120)).toEqual(sampleAt(p,Infinity));
+  expect(sampleAt(p,t.ffTo).targetOpacity).toBe(0);
+  expect(sampleAt(p,t.ffTo+60).targetOpacity).toBeCloseTo(.5,6);
   const end=sampleAt(p,t.morphEnd),from=input.target.kind==='mark'?p.sprout:p.logoBox,tx=input.target.kind==='mark'?end.sprout.transform:end.transform;
   expect(from.x*tx.sx+tx.tx).toBeCloseTo(input.target.x,6);expect(from.y*tx.sy+tx.ty).toBeCloseTo(input.target.y,6);expect(from.w*tx.sx).toBeCloseTo(input.target.w,6);expect(from.h*tx.sy).toBeCloseTo(input.target.h,6);
   for(const at of [t.swapAt,t.swapAt+60,t.done]){const s=sampleAt(p,at);expect(s.target).toEqual(input.target);expect(s.transform).toEqual(end.transform);expect((input.target.kind==='mark'?s.sprout.opacity:s.wordmarkOpacity)+s.targetOpacity).toBeCloseTo(1,6);}
@@ -53,4 +58,26 @@ for (const input of fixtures) {
 }
 test('seed changes artwork only and invalid geometry fails explicitly',()=>{
  const a=buildPlan(fixtures[0]!),b=buildPlan({...fixtures[0]!,seed:456});expect(a.fruit.map(f=>f.kind)).not.toEqual(b.fruit.map(f=>f.kind));expect(a.ticks).toEqual(b.ticks);expect(()=>buildPlan({...fixtures[0]!,viewport:{w:0,h:900,dpr:1}})).toThrow(RangeError);
+});
+test('D-18: stub and engine preserve sapling and wordmark aspect throughout travel',()=>{
+ for(const input of fixtures) for(const build of [stubPlan,buildPlan]) {
+  const p=build(input),t=p.timeline;
+  expect(p.sprout.w).toBe(p.sprout.h);
+  for(const at of [t.morphStart,t.travelStart,t.travelStart+100,(t.travelStart+t.morphEnd)/2,t.morphEnd,t.swapAt+60]) {
+   const s=sampleAt(p,at);
+   expect(Math.abs(s.transform.sx-s.transform.sy)).toBeLessThan(1e-3);
+   if(input.target.kind==='mark') {
+    expect(s.transform).toEqual(s.sprout.transform);
+    expect(Math.abs(s.sprout.transform.sx-s.sprout.transform.sy)).toBeLessThan(1e-10);
+   }
+  }
+  if(input.target.kind==='wordmark') expect(Math.abs(p.morph.sx-p.morph.sy)).toBeLessThan(1e-3);
+  else {const landed=sampleAt(p,t.morphEnd).transform;for(const field of ['tx','ty','sx','sy'] as const) expect(landed[field]).toBeCloseTo(p.sproutMorph[field],10);}
+ }
+ for(const input of fixtures) for(const p of [skipPlan(input),buildPlan({...input,motion:'reduced'})]) {
+  expect(p.timeline.ffTo).toBe(p.timeline.swapAt);
+  expect(p.timeline.done-p.timeline.ffTo).toBe(120);
+  expect(sampleAt(p,p.timeline.ffTo).done).toBe(false);
+  expect(sampleAt(p,p.timeline.ffTo+120)).toEqual(sampleAt(p,Infinity));
+ }
 });

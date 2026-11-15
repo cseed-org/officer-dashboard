@@ -1,4 +1,5 @@
 /** V0.12 animation contract. All boxes are viewport CSS pixels. No DOM or clock. */
+import { SAPLING_FILL, SAPLING_VIEWBOX } from '../brand/saplingMarkup';
 export type Box = Readonly<{ x: number; y: number; w: number; h: number }>;
 export type Target = Box & Readonly<{ kind: 'wordmark' | 'mark' }>;
 export type Transform = Readonly<{ tx: number; ty: number; sx: number; sy: number }>;
@@ -52,10 +53,22 @@ function freeze<T>(value: T): T {
   }
   return value;
 }
-const shortTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 350, fruitIn: [350, 350], snakeEnter: 350, spelledAt: 350, sproutAt: 350, morphStart: 350, travelStart: 350, morphEnd: 350, swapAt: 380, done: 500, ffTo: 500 });
-const fullTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 450, fruitIn: [450, 700], snakeEnter: 700, spelledAt: 3600, sproutAt: 3600, morphStart: 3900, travelStart: 4200, morphEnd: 4780, swapAt: 4780, done: 4900, ffTo: 4900 });
+const shortTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 350, fruitIn: [350, 350], snakeEnter: 350, spelledAt: 350, sproutAt: 350, morphStart: 350, travelStart: 350, morphEnd: 350, swapAt: 380, done: 500, ffTo: 380 });
+const fullTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 450, fruitIn: [450, 700], snakeEnter: 700, spelledAt: 3600, sproutAt: 3600, morphStart: 3900, travelStart: 4200, morphEnd: 4780, swapAt: 4780, done: 4900, ffTo: 4780 });
 
-/** Re-measure at morphStart; preceding geometry/timing is preserved. Resize: sample the returned plan at ffTo. */
+/** Square SVG viewBox around the image sapling's painted x117–155, y7–35.
+ * Use the same brand bounds in the stub and real engine (D-18).
+ */
+function sproutBox(logo: Box): Box {
+  const imageScale = logo.w / 156;
+  const svgScale = 38 * imageScale / (SAPLING_FILL * SAPLING_VIEWBOX.size);
+  const size = SAPLING_VIEWBOX.size * svgScale;
+  return { x: logo.x + 136 * imageScale - size / 2, y: logo.y + 21 * imageScale - size / 2, w: size, h: size };
+}
+
+/** Re-measure at morphStart; preceding geometry/timing is preserved. Resize: sample at done.
+ * A second press seeks to ffTo, then continues sampling through the 120ms swap.
+ */
 export function retargetPlan(plan: Plan, target: Target): Plan {
   return freeze({ ...plan, input: { ...plan.input, target: { ...target } }, morph: mapBox(plan.logoBox, target), sproutMorph: mapBox(plan.sprout, target) });
 }
@@ -66,7 +79,7 @@ export function skipPlan(input: Input): Plan { return stubPlan({ ...input, motio
 export function stubPlan(input: Input): Plan {
   const cell = 12;
   const logoBox = { x: input.viewport.w / 2 - 156, y: input.viewport.h * .4, w: 312, h: 72 };
-  const sprout = { x: logoBox.x + 234, y: logoBox.y + 14, w: 76, h: 56 };
+  const sprout = sproutBox(logoBox);
   return retargetPlan(freeze({ input: { ...input, viewport: { ...input.viewport }, target: { ...input.target } }, cell, origin: { x: logoBox.x, y: logoBox.y }, segment: 10, maxLength: 0, fruit: [], ticks: [], word: { cells: [] }, wordBox: logoBox, logoBox, sprout, timeline: input.motion === 'reduced' ? shortTimeline : fullTimeline, skipTimeline: shortTimeline, morph: identity, sproutMorph: identity }), input.target);
 }
 
@@ -139,9 +152,7 @@ export function buildPlan(input: Input): Plan {
   const box = (c: GridCell, pad = 0): Box => ({ x: origin.x + c.x * cell + pad, y: origin.y + c.y * cell + pad, w: cell - 2 * pad, h: cell - 2 * pad });
   const wordBox = { x: origin.x, y: origin.y, w: 24 * cell, h: 6 * cell };
   const logoBox = { x: origin.x, y: origin.y + (6 - 36 / unit) * cell, w: 156 / unit * cell, h: 36 / unit * cell };
-  // Matches the painted sapling extents of the real 156x36 image using the 56x56 SVG.
-  const size = 38 / unit / (50.6 / 56) * cell;
-  const sprout = { x: origin.x + 136 / unit * cell - size / 2, y: origin.y + (6 - 15 / unit) * cell - size / 2, w: size, h: size };
+  const sprout = sproutBox(logoBox);
   const initialLength = joins.reduce((sum, j) => sum + j.length, 0);
   const entry: GridCell[] = [];
   for (let x = 3 - initialLength + 3; x <= 3; x++) entry.push({ x, y: -2, kind: 'entry', letter: null });
