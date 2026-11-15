@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { ACCESSIBLE_GREETING, GREETINGS, type Greeting } from './greetings';
-import { saplingSvg } from '../brand/sapling';
+import { saplingSvg } from '../brand/saplingMarkup';
 import { LogoImages } from './LogoMark';
 import { buildPlan, roundCorners, type Plan } from './snakePlan';
 import './intro.css';

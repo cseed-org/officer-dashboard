@@ -145,7 +145,7 @@ Put `hello-group.jpg` (or `.jpeg`, `.webp`, `.png`) in `web/public/media/` and r
 
 ## Brand marks (V0.11)
 
-The full logo is the `cseed-wordmark` images (ink on light, white on dark). The single-item mark is the sapling from `public/favicon.svg`, as an inline SVG: `Sapling` in `src/ui/brand/Sapling.tsx` (it renders statically from Astro too) and `saplingSvg()` in `src/ui/brand/sapling.ts` for markup built as a string. Its colours are `--sapling-leaf` / `--sapling-stem` in tokens.css, with lighter greens in dark. It is used inside `.wordmark-mark` on the sidebar rail, the sign-in and 404 cards, the onboarding logo ghost, and as the club-website chip in the Links widget. There is no "C" monogram any more.
+The full logo is the `cseed-wordmark` images (ink on light, white on dark). The single-item mark is the sapling from `public/favicon.svg`, as an inline SVG: `Sapling` in `src/ui/brand/Sapling.tsx` (it renders statically from Astro too) and `saplingSvg()` in `src/ui/brand/saplingMarkup.ts` (a different name from `Sapling.tsx`, not just a different case, so case-insensitive file systems never mix them up) for markup built as a string. Its colours are `--sapling-leaf` / `--sapling-stem` in tokens.css, with lighter greens in dark. It is used inside `.wordmark-mark` on the sidebar rail, the sign-in and 404 cards, the onboarding logo ghost, and as the club-website chip in the Links widget. There is no "C" monogram any more.
 
 ## Resizable sidebar (V0.9)
 

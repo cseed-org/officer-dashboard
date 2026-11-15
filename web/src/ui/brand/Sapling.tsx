@@ -1,7 +1,7 @@
-import { SAPLING_PATHS as P } from './sapling';
+import { SAPLING_PATHS as P } from './saplingMarkup';
 
 /**
- * The cseed sapling mark as an inline SVG (see sapling.ts). It renders from Astro pages too
+ * The cseed sapling mark as an inline SVG (see saplingMarkup.ts). It renders from Astro pages too
  * (static, no hydration). It is decorative: put the accessible name on the link or heading around it.
  */
 export function Sapling({ class: cls = 'sapling' }: { class?: string }) {

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'preact/hooks';
 import { Sapling } from '../brand/Sapling';
-import { saplingSvg } from '../brand/sapling';
+import { saplingSvg } from '../brand/saplingMarkup';
 
 /**
  * The app shell's logo: the same `cseed-wordmark` images and `.wordmark-logo` classes as
