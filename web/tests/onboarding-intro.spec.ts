@@ -1,358 +1,417 @@
 import { expect, test, type Page } from '@playwright/test';
-import { devLoginSkipTour, devSignIn } from './helpers';
-import { letterCells, WORD_PATH } from '../src/ui/onboarding/snakePlan';
+import { front, openIntro, overlay, pressAnywhere } from './intro-helpers';
+import { GREETINGS } from '../src/ui/onboarding/greetings';
 
 /**
- * V0.10/V0.11 hello screen: the multilingual greeting on the app's plain background (no colour
- * wash, no video), no start button (a click, a tap or any key starts), the group-photo slot, the
- * arcade snake whose body ends up writing "cseed" (letters only) with a sapling sprouting after
- * it, the hand-off onto the shell logo at every width, the reduced-motion and Skip paths. The planner itself is unit-tested in
- * onboarding-snake.spec.ts. Needs the Go server with DEV_AUTH=1.
- *
- * INTRO_FRAMES=<dir> also saves a frame sequence of the animation (used for the PR).
+ * V0.12 hello screen (WelcomeIntro.tsx; the motion comes from introPlan.ts, unit-tested in
+ * onboarding-snake.spec.ts). A liquid-glass greeting over the video slot (or its stand-in) in 15
+ * languages with nothing else on screen; one press anywhere starts it, even before the page's
+ * script has run; it melts onto the page's paper, fruit and the snake play from the plan, and the
+ * wordmark lands exactly on the page logo with an opacity-only swap and no double draw.
+ * Needs the Go server with DEV_AUTH=1 behind WEB_ORIGIN. INTRO_FRAMES=<dir> also saves frame strips.
  */
-const discordId = () => `9${String(Date.now()).padStart(13, '0')}${Math.floor(Math.random() * 1e4).toString().padStart(4, '0')}`;
+/** Records, on every animation frame of /onboarding, what the hand-off depends on. */
+const RECORDER = () => {
+  if (location.pathname !== '/onboarding') return;
+  type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; shellBox: number[] };
+  const w = window as unknown as { __rows: Row[]; __dt: number[] };
+  w.__rows = [];
+  w.__dt = [];
+  let prev = 0;
+  const rect = (e: Element | null | undefined) => {
+    if (!e) return [];
+    const b = e.getBoundingClientRect();
+    return [b.left, b.top, b.width, b.height];
+  };
+  const shown = (root: Element | null) => (root ? Array.from(root.querySelectorAll('img, .wordmark-mark')).find((e) => getComputedStyle(e).display !== 'none') : undefined);
+  const tick = (now: number) => {
+    if (prev) w.__dt.push(now - prev);
+    prev = now;
+    const wi = document.querySelector<HTMLElement>('.wi');
+    const sh = document.querySelector<HTMLElement>('[data-onb-logo]');
+    const lg = document.querySelector<HTMLElement>('[data-wi-logo]');
+    const mk = document.querySelector<HTMLElement>('[data-wi-word]');
+    w.__rows.push({
+      t: now,
+      state: wi?.dataset.state ?? 'gone',
+      shellVisible: !!sh && getComputedStyle(sh).visibility === 'visible',
+      logo: lg ? +getComputedStyle(lg).opacity : -1,
+      logoBox: rect(shown(lg)),
+      mark: mk ? +getComputedStyle(mk).opacity : -1,
+      markBox: rect(mk),
+      shellBox: rect(shown(sh)),
+    });
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+};
 
-/** The real app shell's logo (sidebar wordmark, the rail's sapling mark, or the phone top bar), measured on Home. */
-const shellLogo = (page: Page) =>
-  page.evaluate(() => {
-    const el = Array.from(document.querySelectorAll('.topbar .wordmark-logo, .sidebar .wordmark-logo, .sidebar .wordmark-mark')).find((e) => {
-      const b = e.getBoundingClientRect();
-      return b.width > 0 && b.right > 0 && b.left < innerWidth && getComputedStyle(e).visibility !== 'hidden';
-    })!;
-    const b = el.getBoundingClientRect();
-    return { box: [b.left, b.top, b.width, b.height], kind: el.classList.contains('wordmark-mark') ? 'mark' : 'wordmark' };
+test('only the intro shows: the glass greeting over the backdrop, no buttons, hints or photo', async ({ page }) => {
+  await openIntro(page);
+  await expect(front(page)).toHaveAttribute('data-lang', 'en');
+  // Nothing to press but the dialog itself, and none of the V0.11 extras.
+  await expect(overlay(page).locator('button, a, input, [role="button"]')).toHaveCount(0);
+  await expect(overlay(page).locator('.wi-skip, .wi-hint, .wi-photo, figure')).toHaveCount(0);
+  // Every visible thing in the overlay is one of its layers.
+  const odd = await overlay(page).evaluate((root) => {
+    const allowed = ['wi-paper', 'wi-backdrop', 'wi-standin', 'wi-poster', 'wi-video', 'wi-scrim', 'wi-greet', 'wi-slot', 'wi-text', 'wi-glass', 'wi-cs', 'wi-layer', 'wi-eyes', 'wi-mark', 'wi-sprout', 'wi-logo', 'wordmark-logo', 'wordmark-mark', 'visually-hidden'];
+    return Array.from(root.querySelectorAll<HTMLElement>('*'))
+      .filter((e) => {
+        const b = e.getBoundingClientRect();
+        const cs = getComputedStyle(e);
+        return b.width > 0 && b.height > 0 && cs.visibility !== 'hidden' && +cs.opacity > 0 && !e.closest('.sapling');
+      })
+      .filter((e) => !allowed.some((c) => e.classList.contains(c)))
+      .map((e) => `${e.tagName.toLowerCase()}.${e.className}`);
   });
+  expect(odd).toEqual([]);
+  // The only visible words are the greeting (the screen reader gets one sentence instead).
+  await expect(overlay(page)).toHaveAccessibleName(/Welcome to cseed/);
+  await expect(page.locator('.wi .visually-hidden')).toHaveText('Hello, welcome to cseed');
+  // Two phrase slots, not one layer per language; the page logo waits hidden under the overlay.
+  await expect(page.locator('.wi-slot')).toHaveCount(2);
+  await expect(page.locator('[data-onb-logo]')).toHaveCSS('visibility', 'hidden');
+  // It is a real modal: the setup behind is inert and focus sits on the dialog.
+  await expect(overlay(page)).toBeFocused();
+  expect(await page.evaluate(() => document.querySelector('.onb')?.closest('[inert]') !== null)).toBe(true);
+});
 
-async function openIntro(page: Page) {
-  const id = discordId();
-  await devLoginSkipTour(page, 'director');
-  await expect(page.locator('.app')).toBeVisible();
-  const shell = await shellLogo(page);
-  const r = await page.request.post('/api/invites', { data: { name: 'Intro Tester', discordId: id, subteamId: 'team-events', method: 'link' } });
-  expect(r.ok()).toBe(true);
+test('the overlay is server-rendered: it is the first paint, not the loading state', async ({ page }) => {
+  await openIntro(page, {
+    noWait: true,
+    before: async (p) => {
+      // Hold the island's script back: what shows now is the server's HTML alone.
+      await p.route(/OnboardingPage/, async (route) => {
+        await new Promise((f) => setTimeout(f, 1500));
+        await route.continue();
+      });
+    },
+  });
+  await expect(overlay(page)).toBeVisible();
+  expect(await page.evaluate(() => (window as { __wiReady?: boolean }).__wiReady ?? false)).toBe(false);
+  await expect(front(page)).toHaveAttribute('data-lang', 'en');
+  expect(await front(page).evaluate((e) => +getComputedStyle(e).opacity)).toBe(1);
+  // What the eye meets anywhere on the screen is the intro, not the loading state behind it.
+  const hits = await page.evaluate(() => [[0.5, 0.5], [0.1, 0.1], [0.9, 0.9]].map(([x, y]) => !!document.elementFromPoint(innerWidth * x!, innerHeight * y!)?.closest('.wi')));
+  expect(hits).toEqual([true, true, true]);
+});
+
+for (const how of ['key', 'press', 'escape'] as const) {
+  test(`a ${how} made before the page's script runs is not lost`, async ({ page }, info) => {
+    await openIntro(page, {
+      noWait: true,
+      before: async (p) =>
+        p.route(/OnboardingPage/, async (route) => {
+          await new Promise((f) => setTimeout(f, 1200));
+          await route.continue();
+        }),
+    });
+    await expect(overlay(page)).toBeVisible();
+    expect(await page.evaluate(() => (window as { __wiReady?: boolean }).__wiReady ?? false)).toBe(false);
+    if (how === 'key') await page.keyboard.press('k');
+    else if (how === 'escape') await page.keyboard.press('Escape');
+    else await pressAnywhere(page, info);
+    // Replayed once the page is interactive: it plays (or skips) and ends on the logo.
+    await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator('[data-onb-logo]')).toHaveCSS('visibility', 'visible');
+  });
+}
+
+test('one press starts it, a second fast-forwards to the swap, and Escape skips without fruit or snake', async ({ page }, info) => {
+  await openIntro(page);
+  await pressAnywhere(page, info);
+  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+  await expect(page.locator('[data-wi-fruit]').first()).toBeVisible();
+  await pressAnywhere(page, info);
+  await expect(overlay(page)).toHaveCount(0, { timeout: 1500 });
+
   await page.goto('about:blank');
-  await page.context().clearCookies();
-  await devSignIn(page, { discord: id });
-  await expect(page).toHaveURL(/\/onboarding$/);
-  await expect(page.locator('.wi')).toBeVisible(); // the intro is the first step, no switch needed
-  return shell;
+  await openIntro(page);
+  // Escape starts the short plan at once (in the same task): it never builds fruit or a snake.
+  const built = await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    return { state: document.querySelector<HTMLElement>('.wi')!.dataset.state, parts: document.querySelectorAll('[data-wi-fruit], [data-wi-snake]').length };
+  });
+  expect(built.parts).toBe(0);
+  await expect(overlay(page)).toHaveCount(0, { timeout: 1500 });
+});
+
+test('keys: letters, Enter and Space start it; F-keys, Tab and shortcuts are left to the browser', async ({ page }) => {
+  await openIntro(page);
+  const r = await page.evaluate(() =>
+    [
+      { key: 'F5' },
+      { key: 'F11' },
+      { key: 'r', ctrlKey: true },
+      { key: 'l', metaKey: true },
+      { key: 'Shift' },
+      { key: 'MediaPlayPause' },
+    ].map((k) => {
+      const e = new KeyboardEvent('keydown', { ...k, cancelable: true, bubbles: true });
+      window.dispatchEvent(e);
+      return [k.key, e.defaultPrevented];
+    }),
+  );
+  expect(r).toEqual([
+    ['F5', false],
+    ['F11', false],
+    ['r', false],
+    ['l', false],
+    ['Shift', false],
+    ['MediaPlayPause', false],
+  ]);
+  await expect(overlay(page)).toHaveAttribute('data-state', 'greeting');
+  // Tab keeps focus on the dialog (everything behind it is inert).
+  await page.keyboard.press('Tab');
+  await expect(overlay(page)).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+  // Afterwards focus lands on the step heading.
+  await page.keyboard.press('Enter');
+  await expect(overlay(page)).toHaveCount(0, { timeout: 2000 });
+  await expect(page.locator('#step-title')).toBeFocused();
+});
+
+test('a swipe starts it on a touch screen', async ({ page }, info) => {
+  test.skip(!info.project.use.hasTouch, 'touch only');
+  await openIntro(page);
+  const cdp = await page.context().newCDPSession(page);
+  const at = (x: number, y: number) => [{ x, y, id: 1 }];
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: at(120, 600) });
+  for (let y = 560; y >= 300; y -= 40) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: at(130, y) });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+});
+
+test('all 15 languages render in the glass, with no mark clipped', async ({ page }, info) => {
+  test.skip(info.project.name === 'tablet', 'phone and desktop widths cover the line breaks');
+  await openIntro(page, { before: (p) => p.clock.install() });
+  // The installed clock still runs in real time: stop it, so each language stays until the next step.
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 50);
+  // Hold the stand-in still so the two screenshots of each language differ only in the type.
+  await page.addStyleTag({ content: '.wi-standin {animation-play-state: paused !important;}' });
+  const band = page.locator('[data-wi-greeting]');
+  const seen: string[] = [];
+  for (let i = 0; i < GREETINGS.length; i++) {
+    if (i > 0) {
+      await page.clock.runFor(2100);
+      await page.waitForTimeout(700); // the slot's own fade (Web Animations run on real time)
+    }
+    const lang = (await front(page).getAttribute('data-lang'))!;
+    seen.push(lang);
+    await expect(front(page)).toHaveCSS('opacity', '1');
+    // Its script's subset font is in (the comparison needs the same glyphs in both screenshots).
+    const text = GREETINGS.find((g) => g.lang === lang)!.text.replace('{cseed}', 'cseed');
+    await expect.poll(() => page.evaluate((t) => document.fonts.check('500 40px "cseed Hello"', t), text)).toBe(true);
+    const glass = await band.screenshot();
+    const solid = await (async () => {
+      const tag = await page.addStyleTag({ content: '.wi-glass {color: #fff !important; background: none !important;}' });
+      const shot = await band.screenshot();
+      await tag.evaluate((t) => t.remove());
+      return shot;
+    })();
+    await info.attach(`${lang}.png`, { body: glass, contentType: 'image/png' });
+    if (process.env.INTRO_FRAMES) await band.screenshot({ path: `${process.env.INTRO_FRAMES}/${info.project.name}-glass-${String(i).padStart(2, '0')}-${lang}.png` });
+    // Every pixel that is ink in solid type must also be lit in the glass: a clipped mark would show the backdrop.
+    const r = await page.evaluate(
+      async ([g, s]) => {
+        const load = (b64: string) =>
+          new Promise<Uint8ClampedArray>((res, rej) => {
+            const img = new Image();
+            img.onload = () => {
+              const c = document.createElement('canvas');
+              c.width = img.width;
+              c.height = img.height;
+              const x = c.getContext('2d')!;
+              x.drawImage(img, 0, 0);
+              res(x.getImageData(0, 0, img.width, img.height).data);
+            };
+            img.onerror = rej;
+            img.src = `data:image/png;base64,${b64}`;
+          });
+        const [a, b] = await Promise.all([load(g), load(s)]);
+        const lum = (d: Uint8ClampedArray, i: number) => 0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!;
+        let ink = 0;
+        let lost = 0;
+        for (let i = 0; i < b.length; i += 4) {
+          if (lum(b, i) < 215) continue;
+          ink++;
+          if (lum(a, i) < 115) lost++;
+        }
+        return { ink, lost };
+      },
+      [glass.toString('base64'), solid.toString('base64')] as const,
+    );
+    expect(r.ink, `${lang}: ink found`).toBeGreaterThan(200);
+    expect(r.lost / r.ink, `${lang}: ${r.lost} of ${r.ink} ink pixels missing from the glass`).toBeLessThan(0.01);
+    // The band never changes size, whatever the language.
+    expect(await band.evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThan(0);
+  }
+  expect(seen).toEqual(GREETINGS.map((g) => g.lang));
+});
+
+test('video slot without a file: the stand-in plays, and no video is requested', async ({ page }) => {
+  const asked: string[] = [];
+  page.on('request', (r) => r.url().includes('/media/') && asked.push(r.url()));
+  await openIntro(page);
+  await expect(page.locator('[data-wi-standin]')).toBeVisible();
+  await expect(page.locator('[data-wi-video]')).toHaveCount(0);
+  await expect(overlay(page)).toHaveAttribute('data-video', 'off');
+  expect(asked).toEqual([]);
+});
+
+/** A one-second silent WebM made in the browser (Playwright's Chromium has no H.264, and this needs no fixture file). */
+async function makeClip(page: Page): Promise<Buffer> {
+  await page.goto('about:blank');
+  const b64 = await page.evaluate(
+    () =>
+      new Promise<string>((resolve) => {
+        const c = document.createElement('canvas');
+        c.width = 320;
+        c.height = 180;
+        const x = c.getContext('2d')!;
+        const rec = new MediaRecorder(c.captureStream(30), { mimeType: 'video/webm' });
+        const parts: Blob[] = [];
+        rec.ondataavailable = (e) => parts.push(e.data);
+        rec.onstop = async () => {
+          const buf = new Uint8Array(await new Blob(parts).arrayBuffer());
+          let s = '';
+          for (const b of buf) s += String.fromCharCode(b);
+          resolve(btoa(s));
+        };
+        let f = 0;
+        const draw = () => {
+          x.fillStyle = `hsl(${(f++ * 6) % 360} 60% 40%)`;
+          x.fillRect(0, 0, 320, 180);
+          if (rec.state === 'recording') requestAnimationFrame(draw);
+        };
+        rec.start();
+        draw();
+        setTimeout(() => rec.stop(), 1000);
+      }),
+  );
+  return Buffer.from(b64, 'base64');
 }
 
 /**
- * Starts the intro by `how` (a DOM click on the overlay or on Skip, or a key) and, in the same task,
- * freezes every animation at its start and reads what the layers really show: the computed
- * opacity of the photo, the dot grid and the background at that moment, plus a sample taken
- * part-way through each of their animations (`at` ms in).
+ * Makes /onboarding behave as if `hello-loop.mp4` had been in public/media at build time (the island's
+ * `media.video` prop is set before it hydrates), and answers the file with `body`. The page itself is not
+ * fulfilled by the test: Chromium would then treat it as public and block everything it loads locally.
  */
-const startFrozen = (page: Page, how: 'overlay' | 'skip' | 'key', at = 0) =>
-  page.evaluate(
-    ({ how, at }) => {
-      if (how === 'skip') document.querySelector<HTMLElement>('.wi-skip')!.click();
-      else if (how === 'overlay') document.querySelector<HTMLElement>('.wi')!.click();
-      else window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', bubbles: true }));
-      const anims = document.getAnimations();
-      anims.forEach((a) => {
-        a.pause();
-        a.currentTime = at;
-      });
-      const op = (s: string) => +getComputedStyle(document.querySelector(s)!).opacity;
-      const out = { photo: op('.wi-photo'), board: op('.wi-board'), bg: op('.wi-bg') };
-      anims.forEach((a) => a.play());
-      return out;
-    },
-    { how, at },
-  );
-
-const active = (page: Page) => page.locator('[data-wi-phrase][data-active="true"]');
-const overlay = (page: Page) => page.locator('.wi');
-const box = (page: Page, sel: string) => page.locator(sel).evaluate((e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; });
-
-/**
- * Where the intro's logo ends up: its layout box (it is placed by left/top/height, and its own
- * animation ends at scale(1) with no translate), next to the page logo's box. Read from layout,
- * not from a frame, so a slow machine cannot miss the moment.
- */
-const landing = (page: Page) =>
-  page.locator('[data-wi-logo]').evaluate((lg: HTMLElement) => {
-    const frames = lg.getAnimations().map((a) => (a.effect as KeyframeEffect).getKeyframes());
-    const last = frames.at(-1)?.at(-1);
-    const p = document.querySelector('[data-onb-logo]')!.getBoundingClientRect();
-    // Untransformed box: left/top/height as placed, width from the current box over the current scale.
-    const m = new DOMMatrix(getComputedStyle(lg).transform === 'none' ? undefined : getComputedStyle(lg).transform);
-    const w = lg.getBoundingClientRect().width / (m.a || 1);
-    return { intro: [parseFloat(lg.style.left), parseFloat(lg.style.top), w, parseFloat(lg.style.height)], page: [p.left, p.top, p.width, p.height], kind: lg.dataset.kind, end: last?.transform, opacity: last?.opacity };
+const withVideo = (body: Buffer | null) => async (page: Page) => {
+  await page.addInitScript(() => {
+    if (location.pathname !== '/onboarding') return;
+    new MutationObserver((_, obs) => {
+      const island = document.querySelector('astro-island[component-url*="OnboardingPage"]');
+      const props = island?.getAttribute('props');
+      if (!island || !props) return;
+      island.setAttribute('props', props.replace('"video":[0]', '"video":[0,"/media/hello-loop.mp4"]'));
+      obs.disconnect();
+    }).observe(document, { childList: true, subtree: true });
   });
+  await page.route('**/media/hello-loop.mp4', (route) => (body ? route.fulfill({ body, contentType: 'video/webm' }) : route.fulfill({ status: 404, body: '' })));
+};
 
-test('the greeting cycles through languages on a plain background, with no start button', async ({ page }) => {
-  await openIntro(page);
-  const langs = new Set<string>();
-  await expect(active(page)).toHaveCount(1);
-  for (let i = 0; i < 3; i++) {
-    langs.add((await active(page).getAttribute('data-lang')) ?? '');
-    await expect.poll(async () => (await active(page).getAttribute('data-lang')) ?? '', { timeout: 6000 }).not.toBe([...langs].pop());
-  }
-  expect(langs.size).toBeGreaterThanOrEqual(3);
-  const all = page.locator('[data-wi-phrase]');
-  expect(await all.count()).toBeGreaterThanOrEqual(12);
-  const names = await all.evaluateAll((els) => els.map((e) => e.querySelector('.wi-cs')?.textContent));
-  expect(new Set(names)).toEqual(new Set(['cseed']));
-  const arabic = page.locator('[data-wi-phrase][lang="ar"]');
-  await expect(arabic).toHaveAttribute('dir', 'rtl');
-  await expect(arabic.locator('.wi-cs')).toHaveAttribute('dir', 'ltr');
-  await expect(page.locator('.wi p.visually-hidden')).toHaveText('Hello, welcome to cseed');
-  // V0.11: solid ink type on the app's own background, the same tokens as the shell (light here).
-  const look = await page.evaluate(() => {
-    const css = getComputedStyle(document.documentElement);
-    const probe = document.createElement('i');
-    document.body.appendChild(probe);
-    const tok = (v: string) => ((probe.style.color = css.getPropertyValue(v)), getComputedStyle(probe).color);
-    const out = { bg: tok('--bg'), text: tok('--text'), wi: getComputedStyle(document.querySelector('.wi')!).backgroundColor, layer: getComputedStyle(document.querySelector('.wi-bg')!).backgroundImage, type: getComputedStyle(document.querySelector('[data-wi-phrase][data-active="true"] .wi-text')!).color };
-    probe.remove();
-    return out;
-  });
-  expect(look.wi).toBe(look.bg);
-  expect(look.layer).toBe('none');
-  expect(look.type).toBe(look.text);
-  // The only button is Skip; the overlay itself is the labelled control.
-  await expect(overlay(page).getByRole('button')).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Skip' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /continue|start|begin/i })).toHaveCount(0);
-  await expect(page.getByRole('dialog', { name: /press any key, click or tap anywhere/i })).toBeVisible();
-  // No colour wash and no video, before or after the click.
-  await expect(page.locator('.wi video, .wi-wash, .wi-washes, .wi-fallback')).toHaveCount(0);
-  await overlay(page).click({ position: { x: 200, y: 300 } });
-  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
-  await expect(page.locator('.wi video, .wi-wash, .wi-washes, .wi-fallback')).toHaveCount(0);
-  expect(await overlay(page).evaluate((e) => getComputedStyle(e).backgroundColor)).toBe(look.bg);
+test('video slot with a file: muted looping video fades in once playing, and pauses after the melt', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one width is enough');
+  const clip = await makeClip(page);
+  await openIntro(page, { before: withVideo(clip) });
+  const v = page.locator('[data-wi-video]');
+  await expect(v).toHaveCount(1);
+  const attrs = await v.evaluate((e: HTMLVideoElement) => ({ muted: e.muted, loop: e.loop, autoplay: e.autoplay, inline: e.playsInline, src: e.getAttribute('src') }));
+  expect(attrs).toEqual({ muted: true, loop: true, autoplay: true, inline: true, src: '/media/hello-loop.mp4' });
+  await expect.poll(() => v.evaluate((e: HTMLVideoElement) => !e.paused && +getComputedStyle(e).opacity)).toBe(1);
+  // object-fit: cover crops the one landscape video to any screen.
+  await expect(v).toHaveCSS('object-fit', 'cover');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => v.evaluate((e: HTMLVideoElement) => e.paused), { timeout: 3000 }).toBe(true);
 });
 
-test('the photo and the grid reveal from nothing; the exit fade does not jump them to full', async ({ page }) => {
-  await openIntro(page);
-  // Review F-1: at the start both are hidden, part-way through their reveals they are part-way.
-  const t0 = await startFrozen(page, 'overlay', 0);
-  expect(t0.photo).toBe(0);
-  expect(t0.board).toBe(0);
-  expect(t0.bg).toBe(1);
-  await page.goto('about:blank');
-  await openIntro(page);
-  const mid = await startFrozen(page, 'overlay', 40);
-  expect(mid.photo).toBeGreaterThan(0);
-  expect(mid.photo).toBeLessThan(0.9);
-  expect(mid.board).toBeGreaterThan(0);
-  expect(mid.board).toBeLessThan(0.9);
+test('video slot with a broken file: it falls back to the stand-in', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one width is enough');
+  await openIntro(page, { before: withVideo(null) });
+  await expect(overlay(page)).toHaveAttribute('data-video', 'off', { timeout: 5000 });
+  await expect(page.locator('[data-wi-video]')).toHaveCount(0);
+  await expect(page.locator('[data-wi-standin]')).toBeVisible();
 });
 
-test('a click shows the group photo and starts the snake, whose body ends up spelling "cseed", then it lands on the logo', async ({ page }) => {
-  const shell = await openIntro(page);
-  await overlay(page).click({ position: { x: 200, y: 300 } });
-  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
-  // The photo slot: the placeholder until the real photo is dropped in.
-  const photo = page.locator('[data-wi-photo]');
-  await expect(photo).toHaveAttribute('data-wi-photo', 'placeholder');
-  await expect(photo.locator('img')).toHaveAttribute('src', '/media/hello-group-placeholder.svg');
-  await expect.poll(() => photo.evaluate((e) => +getComputedStyle(e).opacity)).toBeGreaterThan(0.95);
-  await expect(page.locator('[data-wi-snake="head"]')).toHaveCount(1);
-  // Seeds only on letter cells (the snake's first 6 word cells need none): nothing is laid between letters.
-  await expect.poll(() => page.locator('[data-wi-apple]').count()).toBe(WORD_PATH.slice(6).filter((c) => c.kind === 'letter').length);
-
-  await expect(overlay(page)).toHaveAttribute('data-state', 'spelled', { timeout: 30_000 });
-  // The body is the planned word path, but only its letter cells are drawn: no stray cells between letters.
-  const segs = await page.locator('[data-wi-snake]').evaluateAll((els) =>
-    (els as HTMLElement[]).map((e) => ({ cell: e.dataset.cell!, kind: e.dataset.kind!, head: e.dataset.wiSnake === 'head', shown: e.style.opacity === '1' })),
-  );
-  expect(segs).toHaveLength(WORD_PATH.length);
-  expect(new Set(segs.map((c) => c.cell))).toEqual(new Set(WORD_PATH.map((c) => `${c.x},${c.y}`)));
-  const letters = letterCells();
-  const shown = segs.filter((c) => c.shown);
-  expect(new Set(shown.map((c) => c.cell))).toEqual(letters);
-  for (const c of segs) expect(c.kind, c.cell).toBe(letters.has(c.cell) ? 'letter' : 'lift');
-  const last = WORD_PATH[WORD_PATH.length - 1]!;
-  expect(segs.find((c) => c.head)!.cell).toBe(`${last.x},${last.y}`);
-  // The lifts are never painted, at any point (their squares stay at opacity 0).
-  expect(await page.locator('[data-wi-snake][data-kind="lift"]').evaluateAll((els) => els.every((e) => getComputedStyle(e).opacity === '0'))).toBe(true);
-  // A sapling sprouts after the d.
-  await expect.poll(() => page.locator('[data-wi-sprout]').evaluate((e) => +getComputedStyle(e).opacity)).toBeGreaterThan(0.95);
-
-  const rects = await landing(page);
-  expect(rects.end).toBe('scale(1)');
-  expect(String(rects.opacity)).toBe('1');
-  rects.intro.forEach((v, i) => expect(Math.abs(v - rects.page[i]!)).toBeLessThan(0.01));
-  rects.intro.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `shell logo ${shell.box} vs intro ${rects.intro}`).toBeLessThan(0.6));
-  await expect(overlay(page)).toHaveCount(0, { timeout: 20_000 }); // onDone → the page removes it
-  await expect(page.locator('[data-onb-logo]')).toBeVisible();
-  await expect(page.locator('#step-title')).toBeFocused();
-});
-
-test('any key starts it; Tab moves focus and Shift does nothing', async ({ page }) => {
-  await openIntro(page);
-  await page.keyboard.press('Shift');
-  await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Skip' })).toBeFocused();
-  await page.keyboard.press('Shift+Tab');
-  await expect(overlay(page)).toBeFocused();
-  await expect(overlay(page)).toHaveAttribute('data-state', 'greeting');
-  await page.keyboard.press('k');
-  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
-  await expect(page.locator('[data-wi-snake="head"]')).toHaveCount(1);
-});
-
-test('it is a real modal: Tab stays inside, the setup behind is inert, focus returns after', async ({ page }) => {
-  await openIntro(page);
-  expect(await page.evaluate(() => !!document.querySelector('.onb')?.closest('[inert]'))).toBe(true);
-  for (let i = 0; i < 8; i++) {
-    await page.keyboard.press(i % 3 === 2 ? 'Shift+Tab' : 'Tab');
-    expect(await page.evaluate(() => !!document.activeElement?.closest('.wi')), `focus escaped after press ${i + 1}`).toBe(true);
-  }
-  await expect(overlay(page)).toHaveAttribute('data-state', 'greeting');
-  await page.getByRole('button', { name: 'Skip' }).click();
-  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
-  expect(await page.evaluate(() => !!document.querySelector('[inert]'))).toBe(false);
-  await expect(page.locator('#step-title')).toBeFocused();
-});
-
-test('pressing again fast-forwards to the end; Escape skips', async ({ page }) => {
-  await openIntro(page);
-  await overlay(page).click({ position: { x: 120, y: 300 } });
-  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
-  await page.waitForTimeout(500);
-  await page.keyboard.press('Space');
-  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
-
-  // Escape, on a fresh invitee.
-  await openIntro(page);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
-  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
-});
-
-test('Skip goes straight to the logo without the snake or the photo', async ({ page }) => {
-  await openIntro(page);
-  // Review F-1: the exit fade must not flash the never-revealed photo or grid, at any point.
-  for (const at of [0, 120, 300]) {
-    if (at) {
-      await page.goto('about:blank');
-      await openIntro(page);
-    }
-    const o = await startFrozen(page, 'skip', at);
-    expect(o.photo, `photo at ${at}ms`).toBe(0);
-    expect(o.board, `grid at ${at}ms`).toBe(0);
-    await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
-  }
-  await openIntro(page);
-  await page.getByRole('button', { name: 'Skip' }).click();
-  await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
-  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
-  await expect(page.locator('[data-onb-logo]')).toBeVisible();
-});
-
-test('prefers-reduced-motion: no snake; the photo shows, then a plain fade to the logo', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  await openIntro(page);
-  await expect(active(page)).toHaveCount(1);
-  // The photo fades in from nothing (review F-1: the exit fade used to show it at once).
-  const t0 = await startFrozen(page, 'key', 0);
-  expect(t0.photo).toBe(0);
-  expect(t0.board).toBe(0);
-  await expect.poll(() => page.locator('[data-wi-photo]').evaluate((e) => +getComputedStyle(e).opacity)).toBeGreaterThan(0.95);
-  await expect(page.locator('[data-wi-snake]')).toHaveCount(0);
-  await expect(page.locator('[data-wi-apple]')).toHaveCount(0);
-  await expect(page.locator('[data-wi-sprout]')).toHaveCount(0);
-  await expect(overlay(page)).toHaveCount(0, { timeout: 5000 });
-  await expect(page.locator('[data-onb-logo]')).toBeVisible();
-});
-
-test('missing photo: the placeholder, and no other media is fetched', async ({ page }) => {
-  const media: string[] = [];
-  page.on('request', (r) => r.url().includes('/media/') && media.push(new URL(r.url()).pathname));
-  await openIntro(page);
-  await expect(overlay(page)).toHaveAttribute('data-photo', 'placeholder');
-  // Nothing asks for missing files (no 404s) and there is no video any more: only the placeholder is fetched.
-  expect(media.filter((m) => !m.endsWith('/hello-group-placeholder.svg'))).toEqual([]);
-});
-
-test('dark theme: the intro uses the dark tokens', async ({ page }) => {
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await openIntro(page);
-  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
-  const c = await page.evaluate(() => ({ wi: getComputedStyle(document.querySelector('.wi')!).backgroundColor, type: getComputedStyle(document.querySelector('[data-wi-phrase] .wi-text')!).color }));
-  expect(c.wi).toBe('rgb(24, 26, 24)');
-  expect(c.type).toBe('rgb(238, 239, 235)');
-});
-
-test('dark theme: the snake writes in the wordmark ink over the light photo, then turns to the theme ink as it shrinks', async ({ page }) => {
-  // Review F-1: light --text on the light photo card washed out. While the photo shows, the
-  // snake is the wordmark image's dark ink; a copy in --text fades in over the shrink.
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await openIntro(page);
-  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
-  await overlay(page).click({ position: { x: 200, y: 300 } });
-  await expect(overlay(page)).toHaveAttribute('data-state', 'spelled', { timeout: 30_000 });
-  const r = await page.evaluate(() => {
-    document.getAnimations().forEach((a) => a.pause());
-    const seg = document.querySelector('[data-wi-snake][data-kind="letter"]')!;
-    const themed = document.querySelector('[data-wi-word-themed]')!;
-    const lum = (c: string) => {
-      const [r, g, b] = c.match(/\d+(\.\d+)?/g)!.map(Number).map((v) => v / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-    };
-    const ink = getComputedStyle(seg).backgroundColor;
-    const out = {
-      ink,
-      inkLum: lum(ink),
-      photo: +getComputedStyle(document.querySelector('.wi-photo')!).opacity,
-      themedCells: themed.children.length,
-      themedInk: getComputedStyle(themed.firstElementChild!).backgroundColor,
-      themedOpacity: +getComputedStyle(themed).opacity,
-      kind: (document.querySelector('[data-wi-logo]') as HTMLElement).dataset.kind,
-      // The opacity the themed copy reaches when the shrink ends.
-      themedEnd: (themed.getAnimations().map((a) => (a.effect as KeyframeEffect).getKeyframes()).at(-1)?.at(-1)?.opacity),
-    };
-    document.getAnimations().forEach((a) => a.play());
-    return out;
-  });
-  expect(r.photo).toBeGreaterThan(0.95);
-  expect(r.ink).toBe('rgb(29, 29, 27)'); // the wordmark's ink, not the dark theme's light --text
-  expect(r.inkLum).toBeLessThan(0.05); // dark ink: well over 4.5:1 on the beige placeholder
-  expect(r.themedCells).toBe(70);
-  expect(r.themedInk).toBe('rgb(238, 239, 235)');
-  expect(r.themedOpacity).toBe(0);
-  // Onto the wordmark the theme-ink copy fades in; onto the rail's sapling mark the word fades out instead.
-  expect(String(r.themedEnd)).toBe(r.kind === 'mark' ? 'undefined' : '1');
-  await expect(overlay(page)).toHaveCount(0, { timeout: 20_000 });
-});
-
-// QA Q-1: the logo hand-off lines up with the real shell at the tablet edges and on phones.
-for (const [w, h] of [[820, 1180], [900, 1180], [1099, 900], [1100, 900], [390, 844]] as const) {
-  test(`${w}px: the intro logo lands exactly on the shell logo`, async ({ page }, info) => {
-    test.skip(info.project.name !== 'desktop', 'widths are set explicitly; run once');
-    await page.setViewportSize({ width: w, height: h });
-    const shell = await openIntro(page);
-    const pageLogo = await box(page, '[data-onb-logo]');
+for (const theme of ['light', 'dark'] as const) {
+  test(`${theme}: it lands exactly on the page logo, with an opacity-only swap and no double draw`, async ({ page }, info) => {
+    const shell = await openIntro(page, { theme, before: (p) => p.addInitScript(RECORDER) });
+    const pageLogo = await page.locator('[data-onb-logo]').evaluate((e) => {
+      const b = e.getBoundingClientRect();
+      return [b.left, b.top, b.width, b.height];
+    });
     pageLogo.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `page ${pageLogo} vs shell ${shell.box}`).toBeLessThan(0.6));
     await expect(page.locator('[data-onb-logo]')).toHaveAttribute('data-kind', shell.kind);
-    await page.keyboard.press('Enter');
-    await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
-    const r = await landing(page);
-    expect(r.end).toBe('scale(1)');
-    expect(r.kind).toBe(shell.kind);
-    r.intro.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `intro ${r.intro} vs shell ${shell.box}`).toBeLessThan(0.6));
+    const t0 = await page.evaluate(() => performance.now());
+    await pressAnywhere(page, info);
+    await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
+    await page.waitForTimeout(200);
+    type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; shellBox: number[] };
+    const rows = (await page.evaluate(() => (window as unknown as { __rows: Row[] }).__rows)).filter((r) => r.t >= t0);
+    const gone = rows.findIndex((r) => r.state === 'gone');
+    expect(gone).toBeGreaterThan(0);
+    // About 5 s from the press to the page (D-7).
+    expect(rows[gone]!.t - t0).toBeLessThan(5600);
+    // Never two logos: the page logo stays hidden for as long as the overlay draws one.
+    for (const r of rows) if (r.state !== 'gone') expect(r.shellVisible, `frame at ${Math.round(r.t - t0)} ms`).toBe(false);
+    for (const r of rows.slice(gone)) expect(r.shellVisible).toBe(true);
+    // The last overlay frame shows its logo fully, in the page logo's exact box; the next frame is the page's own.
+    const last = rows[gone - 1]!;
+    expect(last.logo).toBeGreaterThan(0.95);
+    last.logoBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `intro ${last.logoBox} vs shell ${shell.box}`).toBeLessThan(0.6));
+    rows[gone]!.shellBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
+    // The swap is opacity only: while the travelling wordmark and the landing logo cross-fade, both sit in the
+    // same box (the full wordmark onto a wordmark; on the rail the wordmark has faded out by then).
+    const swap = rows.filter((r) => r.logo > 0 && r.logo < 1 && r.state !== 'gone');
+    expect(swap.length).toBeGreaterThan(0);
+    expect(swap.at(-1)!.t - swap[0]!.t).toBeLessThan(160);
+    for (const r of swap) {
+      r.logoBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
+      if (shell.kind === 'wordmark' && r.mark > 0.01) r.markBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `mark ${r.markBox}`).toBeLessThan(1));
+    }
   });
 }
 
-test('frame sequence for the PR', async ({ page }, info) => {
+test('prefers-reduced-motion: the poster or stand-in stands still, languages cross-fade, and a press fades to the logo', async ({ page }, info) => {
+  const shell = await openIntro(page, { reduced: true, before: (p) => p.clock.install() });
+  await expect(page.locator('[data-wi-standin]')).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('[data-wi-video]')).toHaveCount(0);
+  await page.clock.runFor(4200);
+  // The language change is a plain cross-fade: opacity only, no movement.
+  const frames = await page.locator('.wi-slot').evaluateAll((els) => els.flatMap((e) => e.getAnimations().map((a) => (a.effect as KeyframeEffect).getKeyframes())));
+  expect(frames.length).toBeGreaterThan(0);
+  for (const kf of frames) for (const f of kf) expect(f.transform).toBeUndefined();
+  await page.clock.resume();
+  const t0 = Date.now();
+  await pressAnywhere(page, info);
+  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
+  expect(Date.now() - t0).toBeLessThan(1500);
+  await expect(page.locator('[data-wi-fruit], [data-wi-snake]')).toHaveCount(0);
+  const p = await page.locator('[data-onb-logo]').evaluate((e) => {
+    const b = e.getBoundingClientRect();
+    return [b.left, b.top, b.width, b.height];
+  });
+  p.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
+});
+
+test('frame strips for the PR', async ({ page }, info) => {
   const dir = process.env.INTRO_FRAMES;
   test.skip(!dir, 'set INTRO_FRAMES=<dir> to record frames');
-  await openIntro(page);
-  await page.waitForTimeout(1600);
-  await page.screenshot({ path: `${dir}/${info.project.name}-00-greeting.png` });
-  await page.keyboard.press('Enter');
-  const t0 = Date.now();
-  for (let i = 1; i <= 30; i++) {
-    await page.waitForTimeout(Math.max(0, i * 400 - (Date.now() - t0)));
-    await page.screenshot({ path: `${dir}/${info.project.name}-${String(i).padStart(2, '0')}.png` });
-    if ((await overlay(page).count()) === 0) break;
+  for (const theme of ['light', 'dark'] as const) {
+    await page.goto('about:blank');
+    await openIntro(page, { theme });
+    await page.waitForTimeout(1200);
+    await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-00-greeting.png` });
+    await pressAnywhere(page, info);
+    const t0 = Date.now();
+    for (let i = 1; i <= 40; i++) {
+      await page.waitForTimeout(Math.max(0, i * 160 - (Date.now() - t0)));
+      if ((await overlay(page).count()) === 0) break;
+      await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-${String(i).padStart(2, '0')}.png` });
+    }
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-99-landed.png` });
   }
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: `${dir}/${info.project.name}-99-handoff.png` });
 });

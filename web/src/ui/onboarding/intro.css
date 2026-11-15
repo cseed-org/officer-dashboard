@@ -68,8 +68,12 @@
 .wi-cs {direction:ltr;unicode-bidi:isolate;}
 
 /* The melt: the shown phrase splits into thin vertical drips that stretch down and fade, staggered. */
-.wi-drip {position:absolute;top:0;bottom:0;overflow:hidden;transform-origin:50% 0;}
+/* Each drip is its own small layer, rasterised once with its glass, then only moved and faded by the compositor. */
+.wi-drip {position:absolute;top:0;bottom:0;overflow:hidden;transform-origin:50% 0;will-change:transform, opacity;}
 .wi-drip > .wi-slot {opacity:1;right:auto;}
+/* The drips keep the glass fill but not its filter (the rim and the soft cast shadow, barely visible on the dark
+   backdrop, which starts fading to paper at the same moment): 14 filtered copies would cost frames on slow devices. */
+.wi-drip .wi-text {filter:none;}
 
 /* ── Fruit, snake, sprout, the travelling wordmark and the landing logo, all from the engine's plan. ── */
 .wi-layer {position:absolute;inset:0;pointer-events:none;transform-origin:0 0;}

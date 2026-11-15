@@ -1,8 +1,8 @@
 /**
  * "Hello, welcome to cseed" in 15 languages. `{cseed}` marks the club name, which is always
  * the lowercase Latin word whatever the sentence around it (it gets its own LTR span).
- * `dir` is only set for right-to-left scripts. "bem‑vindo" uses a non-breaking hyphen (U+2011) so it never
- * splits across lines. The glyphs come from the subset fonts in `public/fonts/hello/` (see intro.css), so
+ * `dir` is only set for right-to-left scripts. "bem-vindo" has a word joiner (U+2060) after its hyphen so it never
+ * splits across lines (the hyphen itself stays the font's own; U+2011 falls back to another font). The glyphs come from the subset fonts in `public/fonts/hello/` (see intro.css), so
  * a change here needs those subsets regenerated (docs/frontend.md).
  */
 export interface Greeting {
@@ -19,7 +19,7 @@ export const GREETINGS: Greeting[] = [
   { lang: 'hi', name: 'Hindi', text: 'नमस्ते, {cseed} में आपका स्वागत है' },
   { lang: 'ar', name: 'Arabic', text: 'مرحباً، أهلاً بك في {cseed}', dir: 'rtl' },
   { lang: 'fr', name: 'French', text: 'Bonjour, bienvenue chez {cseed}' },
-  { lang: 'pt', name: 'Portuguese', text: 'Olá, bem‑vindo ao {cseed}' },
+  { lang: 'pt', name: 'Portuguese', text: 'Olá, bem-\u2060vindo ao {cseed}' },
   { lang: 'ja', name: 'Japanese', text: 'こんにちは、{cseed}へようこそ' },
   { lang: 'ko', name: 'Korean', text: '안녕하세요, {cseed}에 오신 것을 환영합니다' },
   { lang: 'de', name: 'German', text: 'Hallo, willkommen bei {cseed}' },

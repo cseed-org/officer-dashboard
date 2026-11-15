@@ -56,6 +56,31 @@ for (const as of ['officer', 'director', 'leadership'] as const) {
   });
 }
 
+// L-17: the hello intro (fonts, data: fruit sprites, the inline early-input script, the logo images)
+// runs under the page policy too. Directors are sent past /onboarding, so this uses a fresh invitee.
+test('an invitee on /onboarding plays the hello intro to the end without violations', async ({ page }) => {
+  const violations = await watchCSP(page);
+  const errors = watchErrors(page);
+  await devSignIn(page, { as: 'director' });
+  const id = `9${String(Date.now()).padStart(13, '0')}${Math.floor(Math.random() * 1e4).toString().padStart(4, '0')}`;
+  const r = await page.request.post('/api/invites', { data: { name: 'CSP Intro', discordId: id, subteamId: 'team-events', method: 'link' } });
+  expect(r.ok()).toBe(true);
+  await page.goto('about:blank');
+  await page.context().clearCookies();
+  const res = await devSignIn(page, { discord: id });
+  await expect(page).toHaveURL(/\/onboarding$/);
+  expect(res?.headers()['content-security-policy']).toContain("script-src 'self' 'sha256-");
+  await expect(page.locator('.wi')).toBeVisible();
+  // The inline early-input script ran (its hash is in the policy).
+  expect(await page.evaluate(() => Array.isArray((window as { __wiEarly?: unknown[] }).__wiEarly))).toBe(true);
+  await page.waitForTimeout(800);
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.wi')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator('#step-title')).toBeVisible();
+  expect(violations).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test('a Discord avatar loads under img-src', async ({ page }) => {
   const violations = await watchCSP(page);
   await devSignIn(page, { as: 'officer', user: 'user-priya' }, '/settings');

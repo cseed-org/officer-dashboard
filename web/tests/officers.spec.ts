@@ -48,7 +48,9 @@ test('invite → sign in as the invitee → onboarding → home', async ({ page 
   await expect(page).toHaveURL(/\/onboarding$/);
   // The welcome intro comes first; skipping it lands on the first intake stage.
   const skipIntro = async () => {
-    await page.getByRole('button', { name: 'Skip' }).click();
+    // V0.12: no Skip button; Escape is the invisible skip.
+    await expect(page.locator('.wi')).toBeVisible();
+    await page.keyboard.press('Escape');
     await expect(page.locator('.wi')).toHaveCount(0, { timeout: 5000 });
   };
   await skipIntro();

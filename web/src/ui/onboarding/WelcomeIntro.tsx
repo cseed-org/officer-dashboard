@@ -113,6 +113,8 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   doneRef.current = onDone;
   /** The running playback: its plan, its clock origin and the pieces it draws. */
   const run = useRef<{ plan: Plan; t0: number; retargeted: boolean; raf: number; draw: (s: Sample) => void } | null>(null);
+  /** The plan and its fruit, built in idle time before the press (they depend only on the viewport). */
+  const prepared = useRef<{ key: string; plan: Plan; fruit: Map<number, HTMLElement>; pool: HTMLElement[] } | null>(null);
   const lastPointer = useRef(0);
   const cycleTimer = useRef(0);
 
@@ -173,6 +175,44 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     return { viewport: { w: el.clientWidth, h: el.clientHeight, dpr: window.devicePixelRatio || 1 }, target: measureTarget(), motion: reduced.current ? 'reduced' : 'full' };
   };
 
+  const viewportKey = () => `${root.current!.clientWidth}x${root.current!.clientHeight}@${window.devicePixelRatio || 1}`;
+  /** One element per fruit, from the plan's boxes and kinds, waiting invisible in the fruit layer. */
+  const buildFruit = (plan: Plan) => {
+    const fl = fruitLayer.current!;
+    fl.textContent = '';
+    const fruit = new Map<number, HTMLElement>();
+    for (const f of plan.fruit) {
+      const el = document.createElement('div');
+      el.className = 'wi-fruit';
+      el.dataset.kind = f.kind;
+      el.setAttribute('data-wi-fruit', '');
+      el.style.width = px(f.box.w);
+      el.style.height = px(f.box.h);
+      el.style.backgroundImage = FRUIT_ART[f.kind] ?? FRUIT_ART.apple;
+      fl.appendChild(el);
+      fruit.set(f.id, el);
+    }
+    return fruit;
+  };
+  /** The snake's blocks, created up front (hidden) so the frame the snake appears on does no DOM work. */
+  const buildPool = (n: number) => {
+    const bl = bodyLayer.current!;
+    bl.querySelectorAll('.wi-seg').forEach((el) => el.remove());
+    const pool: HTMLElement[] = [];
+    for (let i = 0; i < n; i++) {
+      const el = document.createElement('div');
+      el.className = 'wi-seg';
+      el.setAttribute('data-wi-snake', '');
+      bl.insertBefore(el, eyes.current);
+      pool.push(el);
+    }
+    return pool;
+  };
+  const prepare = () => {
+    const plan = buildPlan(input());
+    return (prepared.current = { key: viewportKey(), plan, fruit: buildFruit(plan), pool: buildPool(plan.maxLength) });
+  };
+
   const finish = () => {
     const r = run.current;
     if (r) cancelAnimationFrame(r.raf);
@@ -183,7 +223,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   };
 
   /** Builds the drawing for one plan: every element is created once, then only moved and faded. */
-  const setup = (plan: Plan, melt: boolean) => {
+  const setup = (plan: Plan, melt: boolean, ready?: Map<number, HTMLElement>, pool: HTMLElement[] = []) => {
     const write = makeWriter();
     const g = greet.current!;
     // The shown phrase splits into drips (full motion) or simply fades (reduced motion, Escape).
@@ -211,33 +251,23 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     }
     const greetH = g.clientHeight;
 
-    // Fruit, drawn from the plan's boxes and kinds.
-    const fl = fruitLayer.current!;
-    fl.textContent = '';
-    const fruit = new Map<number, HTMLElement>();
-    for (const f of plan.fruit) {
-      const el = document.createElement('div');
-      el.className = 'wi-fruit';
-      el.dataset.kind = f.kind;
-      el.setAttribute('data-wi-fruit', '');
-      el.style.width = px(f.box.w);
-      el.style.height = px(f.box.h);
-      el.style.backgroundImage = FRUIT_ART[f.kind] ?? FRUIT_ART.apple;
-      fl.appendChild(el);
-      fruit.set(f.id, el);
-    }
+    // Fruit, drawn from the plan's boxes and kinds (usually built already, in idle time).
+    const fruit = ready ?? buildFruit(plan);
 
-    // The snake: one pooled block per pose id, created when first needed.
+    // The snake: one pooled block per pose id (taken from the ready-made pool, or created if it runs out).
     const bl = bodyLayer.current!;
-    bl.querySelectorAll('.wi-seg').forEach((n) => n.remove());
+    const spare = [...pool];
     const segs = new Map<number, HTMLElement>();
     const seg = (id: number) => {
       let el = segs.get(id);
       if (!el) {
-        el = document.createElement('div');
-        el.className = 'wi-seg';
-        el.setAttribute('data-wi-snake', '');
-        bl.insertBefore(el, eyes.current);
+        el = spare.pop();
+        if (!el) {
+          el = document.createElement('div');
+          el.className = 'wi-seg';
+          el.setAttribute('data-wi-snake', '');
+          bl.insertBefore(el, eyes.current);
+        }
         segs.set(id, el);
       }
       return el;
@@ -328,11 +358,11 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   };
 
   /** Starts playback of `plan` from 0 ms. */
-  const start = (plan: Plan, melt: boolean) => {
+  const start = (plan: Plan, melt: boolean, fruit?: Map<number, HTMLElement>, pool?: HTMLElement[]) => {
     phaseRef.current = 'playing';
     setPhase('playing');
     clearTimeout(cycleTimer.current);
-    const draw = setup(plan, melt);
+    const draw = setup(plan, melt, fruit, pool);
     const r = { plan, t0: performance.now(), retargeted: false, raf: 0, draw };
     run.current = r;
     const frame = (now: number) => {
@@ -345,7 +375,9 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
       }
       const s = sampleAt(r.plan, ms);
       r.draw(s);
-      if (s.done) finish();
+      // The end state (the landing logo fully in) is painted once before the overlay goes, so the
+      // page's own logo takes over from a full-strength copy in the same box.
+      if (s.done) r.raf = requestAnimationFrame(finish);
       else r.raf = requestAnimationFrame(frame);
     };
     frame(performance.now());
@@ -364,11 +396,17 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   };
 
   const activate = () => {
-    if (phaseRef.current === 'greeting') start(buildPlan(input()), !reduced.current);
-    else fastForward();
+    if (phaseRef.current === 'greeting') {
+      const p = prepared.current?.key === viewportKey() ? prepared.current : prepare();
+      start(p.plan, !reduced.current, p.fruit, p.pool);
+    } else fastForward();
   };
   const skip = () => {
-    if (phaseRef.current === 'greeting') start(skipPlan(input()), false);
+    if (phaseRef.current === 'greeting') {
+      fruitLayer.current!.textContent = '';
+      bodyLayer.current!.querySelectorAll('.wi-seg').forEach((el) => el.remove());
+      start(skipPlan(input()), false, new Map(), []);
+    }
     else fastForward();
   };
 
@@ -420,6 +458,13 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     el?.focus({ preventScroll: true });
     // Start the fonts for every greeting now, while English shows, so no language swaps fonts mid-fade.
     document.fonts?.load?.('500 1em "cseed Hello"', GREETINGS.map((g) => g.text).join('')).catch(() => {});
+    // Build the plan and its fruit while the greeting shows, so the press itself does little work.
+    const idle = (fn: () => void) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 1200 }) : setTimeout(fn, 400));
+    idle(() => {
+      if (phaseRef.current === 'greeting' && root.current) prepare();
+    });
+    // The 640px wordmark is decoded now, not on the frame it first shows.
+    root.current?.querySelectorAll<HTMLImageElement>('[data-wi-word] img').forEach((i) => i.decode?.().catch(() => {}));
     // A rotation or resize mid-run: jump to the end state (timeline.done, not ffTo), onto the freshly measured logo (D-15).
     const onResize = () => {
       const r = run.current;
