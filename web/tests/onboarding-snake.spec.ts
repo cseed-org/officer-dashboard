@@ -1,168 +1,56 @@
 import { expect, test } from '@playwright/test';
-import { buildPlan, cellSize, GLYPHS, LOGO, letterCells, picture, roundCorners, START_LENGTH, STEP_LIFT, STEP_WORD, WORD_COLS, WORD_PATH, WORD_ROWS, type Plan } from '../src/ui/onboarding/snakePlan';
-
-/** V0.10/V0.11 hello screen: the arcade snake's planner (pure functions, no browser; run once). */
-test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'unit tests run once'));
-
-const VIEWPORTS: [number, number][] = [[1440, 900], [1100, 800], [1099, 800], [900, 1180], [820, 1180], [390, 844], [360, 640]];
-const plan = (vw: number, vh: number, kind: 'wordmark' | 'mark' = 'wordmark'): Plan =>
-  buildPlan({ vw, vh, text: { left: vw * 0.15, right: vw * 0.85, top: vh * 0.45, bottom: vh * 0.55 }, target: kind === 'mark' ? { x: 18, y: 22, w: 28, h: 28, kind } : { x: 20, y: 26.75, w: 78, h: 18, kind } });
-
-/**
- * The written word as text: `#` = a letter cell, `+` = a hidden lift between letters (never drawn),
- * with one row under the baseline. Round, 4-wide letters like the real wordmark; the d's stem rises
- * just one row above the rest; nothing but letters is ever drawn.
- */
-const CSEED = [
-  '....+++++..........++++#.',
-  '####+####.####.####+####.',
-  '#...+#...+#..#+#..#+#..#.',
-  '#...+####+####+####+#..#.',
-  '#...+...#+#...+#...+#..#.',
-  '####+####+####+####+####.',
-  '.....+++++...............',
-].join('\n');
-
-test('V0.11 glyphs: x-height letters 4×5, the d only one row taller', () => {
-  for (const ch of 'cse') expect(GLYPHS[ch], ch).toHaveLength(5);
-  expect(GLYPHS.d).toHaveLength(6);
-  for (const g of Object.values(GLYPHS)) for (const row of g) expect(row).toHaveLength(4);
-  expect(WORD_ROWS).toBe(6);
-});
-
-const key = (c: { x: number; y: number }) => `${c.x},${c.y}`;
-
-test('the word path is one self-avoiding grid route of 90° steps that covers every letter cell', () => {
-  expect(new Set(WORD_PATH.map(key)).size).toBe(WORD_PATH.length);
-  for (let i = 1; i < WORD_PATH.length; i++) {
-    const a = WORD_PATH[i - 1]!;
-    const b = WORD_PATH[i]!;
-    expect(Math.abs(a.x - b.x) + Math.abs(a.y - b.y), `step ${i}`).toBe(1);
+import { buildPlan, sampleAt, retargetPlan, skipPlan, stubPlan, type Input, type Box } from '../src/ui/onboarding/introPlan';
+test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'pure engine tests run once'));
+const key = (b: Box) => `${b.x.toFixed(5)},${b.y.toFixed(5)}`;
+const fixtures: Input[] = [
+ {viewport:{w:1440,h:900,dpr:1},target:{x:20,y:26.75,w:78,h:18,kind:'wordmark'},motion:'full',seed:123},
+ {viewport:{w:820,h:1180,dpr:2},target:{x:17.5,y:22,w:28,h:28,kind:'mark'},motion:'full',seed:123},
+ {viewport:{w:390,h:844,dpr:3},target:{x:160.34375,y:17.5,w:69.328125,h:16,kind:'wordmark'},motion:'full',seed:123},
+];
+for (const input of fixtures) {
+ test(`${input.viewport.w}: fruit, growth, visible joins and collision-free body`,()=>{
+  const p=buildPlan(input);
+  expect(p.fruit).toHaveLength(70);
+  expect(new Set(p.fruit.map(f=>f.kind)).size).toBe(3);
+  expect(p.fruit.map(f=>f.letter)).toEqual([...p.fruit.map(f=>f.letter)].sort());
+  expect(new Set(p.fruit.map(f=>key(f.box))).size).toBe(70);
+  expect(sampleAt(p,699).fruit.every(f=>f.visible&&!f.eaten&&f.opacity===1)).toBe(true);
+  const eaten:number[]=[];
+  for(let i=0;i<p.ticks.length;i++) {
+   const t=p.ticks[i]!;
+   expect(new Set(t.body.map(b=>key(b.box))).size,`tick ${i}`).toBe(t.body.length);
+   expect(t.body.every(b=>b.visible&&b.opacity===1)).toBe(true);
+   if(i) expect(t.body.length-p.ticks[i-1]!.body.length).toBe(t.ate===null?0:1);
+   if(t.ate!==null){eaten.push(t.ate);const f=p.fruit[t.ate]!;expect(t.at).toBe(f.eatAt);expect(t.body[0]!.box).toEqual(f.box);expect(sampleAt(p,t.at-.001).fruit[t.ate]!.visible).toBe(true);expect(sampleAt(p,t.at).fruit[t.ate]!.eaten).toBe(true);}
+   if(i){const a=p.ticks[i-1]!.body[0]!.box,b=t.body[0]!.box;expect(Math.abs(b.x-a.x)+Math.abs(b.y-a.y)).toBeCloseTo(p.cell,8);}
+   for(const pose of t.body) for(const n of [pose.box.x,pose.box.y,pose.box.w,pose.box.h]) expect(n*input.viewport.dpr).toBeCloseTo(Math.round(n*input.viewport.dpr),7);
   }
-  const letters = letterCells();
-  for (const c of letters) expect(WORD_PATH.some((p) => key(p) === c), c).toBe(true);
-  expect(letters.size).toBe(70);
-  // Each letter is one unbroken stroke: letter cells come in exactly five runs, c-s-e-e-d, left to right.
-  const runs: string[][] = [];
-  WORD_PATH.forEach((c, i) => {
-    if (c.kind !== 'letter') return;
-    if (i === 0 || WORD_PATH[i - 1]!.kind !== 'letter') runs.push([]);
-    runs[runs.length - 1]!.push(key(c));
-  });
-  expect(runs).toHaveLength(5);
-  runs.forEach((r, i) => r.forEach((k) => expect(Math.floor(+k.split(',')[0]! / 5), k).toBe(i)));
-  // Every other cell is a hidden lift, and none of them is a letter cell.
-  for (const c of WORD_PATH) expect(c.kind === 'letter').toBe(letters.has(key(c)));
-  // The head ends on top of the d's stem.
-  expect(key(WORD_PATH[WORD_PATH.length - 1]!)).toBe('23,0');
-});
-
-test('round corners only where a stroke turns', () => {
-  const r = roundCorners();
-  expect(r.get('0,1')).toBe('tl'); // the c's top left
-  expect(r.get('0,5')).toBe('bl');
-  expect(r.has('3,1')).toBe(false); // the c's ends stay square
-  expect(r.has('20,1')).toBe(true); // the d's bowl
-  expect(r.has('23,1')).toBe(false); // the d's stem meets its bowl: a junction, square
-});
-
-for (const [vw, vh] of VIEWPORTS) {
-  test(`${vw}×${vh}: the snake ends with its body spelling "cseed"`, () => {
-    const p = plan(vw, vh);
-    const last = p.ticks.length - 1;
-    const body = p.body(last).map((i) => p.route[i]!);
-    // Head first: the body is the word path reversed, tail on the top of the c, head on the top of the d.
-    expect(body.map((c) => [c.x - p.gx0, c.y - p.gy0])).toEqual([...WORD_PATH].reverse().map((c) => [c.x, c.y]));
-    expect(picture(body, p.gx0, p.gy0)).toBe(CSEED);
-    // ...and the word is on screen with a margin.
-    // ...and the whole wordmark (word + sprouted sapling) is on screen with a margin.
-    expect(p.logo.x).toBeGreaterThanOrEqual(8);
-    expect(p.logo.x + p.logo.w).toBeLessThanOrEqual(vw - 8);
-    expect(p.logo.y).toBeGreaterThan(0);
-    expect(p.logo.y + p.logo.h).toBeLessThan(vh);
-    expect(p.sprout.x + p.sprout.size).toBeLessThanOrEqual(vw - 8);
-    // Review F-2: on a phone the wordmark stays inside the photo card (inset 16px).
-    if (vw < 600) {
-      expect(p.logo.x).toBeGreaterThanOrEqual(16);
-      expect(p.logo.x + p.logo.w).toBeLessThanOrEqual(vw - 16);
-    }
-    // Review F-3: the word sits above the middle (on the calm top of the photo), lane kept above it.
-    expect(p.word.y + p.word.h / 2).toBeLessThan(vh / 2);
-    expect(p.gy0).toBeGreaterThanOrEqual(4);
-  });
-
-  test(`${vw}×${vh}: classic arcade movement and growth`, () => {
-    const p = plan(vw, vh);
-    // One cell per tick with 90° turns, except the single wrap from the right edge to the left.
-    for (let i = 1; i < p.route.length; i++) {
-      const a = p.route[i - 1]!;
-      const b = p.route[i]!;
-      if (i === p.wrapAt) {
-        expect(a.x).toBeGreaterThan(p.cols); // off the right edge...
-        expect(b.x).toBeLessThan(0); // ...back in from the left
-        continue;
-      }
-      expect(Math.abs(a.x - b.x) + Math.abs(a.y - b.y), `route step ${i}`).toBe(1);
-    }
-    let grew = 0;
-    for (let t = 1; t < p.ticks.length; t++) {
-      const before = p.body(t - 1);
-      const after = p.body(t);
-      expect(p.ticks[t]!.head).toBe(p.ticks[t - 1]!.head + 1);
-      if (p.ticks[t]!.ate) {
-        grew++;
-        // Eating: the tail stays put for that step and the body is one longer.
-        expect(after[after.length - 1], `tail at tick ${t}`).toBe(before[before.length - 1]);
-        expect(after.length).toBe(before.length + 1);
-      } else {
-        // Moving: the tail follows (one cell along) and the length is unchanged.
-        expect(after[after.length - 1]).toBe(before[before.length - 1]! + (t >= START_LENGTH ? 1 : 0));
-        expect(after.length).toBe(Math.min(before.length + (t < START_LENGTH ? 1 : 0), START_LENGTH + grew));
-      }
-    }
-    expect(grew).toBe(p.apples.length);
-    expect(grew).toBe(WORD_PATH.length - START_LENGTH);
-    // Every seed sits on a word cell and is eaten exactly when the head arrives.
-    for (const a of p.apples) expect(['letter', 'lift']).toContain(p.route[a]!.kind);
-    // Never doubles back on itself.
-    for (let t = 0; t < p.ticks.length; t++) {
-      const cells = p.body(t).map((i) => p.route[i]!).filter((c) => c.x >= 0 && c.x < p.cols).map((c) => `${c.x},${c.y}`);
-      expect(new Set(cells).size, `tick ${t}`).toBe(cells.length);
-    }
-  });
-
-  test(`${vw}×${vh}: thick cells, a deliberate approach, and the wordmark shrinks exactly onto the logo`, () => {
-    const p = plan(vw, vh);
-    expect(p.C).toBe(cellSize(vw));
-    expect(p.C).toBeGreaterThanOrEqual(9);
-    expect(p.word.w).toBe(WORD_COLS * p.C);
-    // V0.11: visibly slower on the way to the seeds than while writing; lifts pass in a blink.
-    expect(p.stepApproach).toBeGreaterThanOrEqual(44);
-    expect(p.stepApproach).toBeGreaterThan(STEP_WORD);
-    for (let i = 1; i < p.at.length; i++) {
-      const dt = p.at[i]! - p.at[i - 1]!;
-      const k = p.route[p.ticks[i]!.head]!.kind;
-      if (i === p.wrapAt) continue;
-      expect(dt, `tick ${i} (${k})`).toBe(i < p.wordFrom ? p.stepApproach : k === 'lift' ? STEP_LIFT : STEP_WORD);
-    }
-    // About 1s on the written word (the sapling sprouts), then the shrink; click to logo stays under 9s.
-    expect(p.morphAt - p.spelledAt).toBe(1000);
-    expect(p.duration).toBeLessThan(9000);
-    expect(p.at.every((t, i) => i === 0 || t > p.at[i - 1]!)).toBe(true);
-    // The drawn wordmark (the image's box in cells) maps exactly onto the logo box: same aspect, same box.
-    const { s, tx, ty } = p.morph;
-    expect(Math.abs(p.logo.w / p.logo.h - 156 / 36)).toBeLessThan(0.001);
-    expect(Math.abs(p.logo.x * s + tx - 20)).toBeLessThan(0.01);
-    expect(Math.abs(p.logo.y * s + ty - 26.75)).toBeLessThan(0.01);
-    expect(Math.abs(p.logo.w * s - 78)).toBeLessThan(0.01);
-    expect(Math.abs(p.logo.h * s - 18)).toBeLessThan(0.01);
-    expect(LOGO.w).toBeCloseTo(156 / (115 / WORD_COLS), 6);
-    // On the rail the sprouted sapling lands on the 28px sapling mark instead.
-    const m = plan(vw, vh, 'mark');
-    expect(Math.abs(m.sprout.x * m.morph.s + m.morph.tx - 18)).toBeLessThan(0.01);
-    expect(Math.abs(m.sprout.size * m.morph.s - 28)).toBeLessThan(0.01);
-    // The greeting strips go in order, left to right, before the wrap.
-    for (let i = 1; i < p.slices.length; i++) expect(p.slices[i]!.eatAt).toBeGreaterThanOrEqual(p.slices[i - 1]!.eatAt);
-    expect(p.slices[p.slices.length - 1]!.eatAt).toBeLessThan(p.at[p.wrapAt]!);
-  });
+  expect(eaten).toEqual(p.fruit.map(f=>f.id));
+  const before=sampleAt(p,p.timeline.spelledAt);
+  expect(before.body.some(b=>b.kind==='join'&&b.visible)).toBe(true);
+  expect(before.body.some(b=>b.kind==='entry')).toBe(false);
+  const final=sampleAt(p,p.timeline.travelStart);
+  expect(new Set(final.body.filter(b=>b.visible).map(b=>key(b.box)))).toEqual(new Set(p.word.cells.map(key)));
+  expect(final.body.filter(b=>b.visible)).toHaveLength(70);
+ });
+ test(`${input.viewport.w}: deterministic immutable five-second plan and exact landing`,()=>{
+  const p=buildPlan(input),q=buildPlan(input),t=p.timeline;
+  expect(p).toEqual(q);expect(Object.isFrozen(p.ticks[1]!.body[0]!.box)).toBe(true);
+  const times=[t.meltStart,t.meltEnd,...t.fruitIn,t.snakeEnter,t.spelledAt,t.sproutAt,t.morphStart,t.travelStart,t.morphEnd,t.swapAt,t.done];
+  expect(times).toEqual([...times].sort((a,b)=>a-b));expect(t.done).toBeLessThanOrEqual(5200);expect(t.done-t.swapAt).toBeLessThanOrEqual(120);
+  for(const ms of [0,450,700,2000,3600,4050,4400,4780,4900]) expect(sampleAt(p,ms)).toEqual(sampleAt(q,ms));
+  expect(sampleAt(p,t.ffTo)).toEqual(sampleAt(p,Infinity));expect(sampleAt(p,t.ffTo).done).toBe(true);
+  const end=sampleAt(p,t.morphEnd),from=input.target.kind==='mark'?p.sprout:p.logoBox,tx=input.target.kind==='mark'?end.sprout.transform:end.transform;
+  expect(from.x*tx.sx+tx.tx).toBeCloseTo(input.target.x,6);expect(from.y*tx.sy+tx.ty).toBeCloseTo(input.target.y,6);expect(from.w*tx.sx).toBeCloseTo(input.target.w,6);expect(from.h*tx.sy).toBeCloseTo(input.target.h,6);
+  for(const at of [t.swapAt,t.swapAt+60,t.done]){const s=sampleAt(p,at);expect(s.target).toEqual(input.target);expect(s.transform).toEqual(end.transform);expect((input.target.kind==='mark'?s.sprout.opacity:s.wordmarkOpacity)+s.targetOpacity).toBeCloseTo(1,6);}
+  const changed={x:44,y:16,w:28,h:28,kind:'mark' as const},next=retargetPlan(p,changed),dest=sampleAt(next,t.ffTo);
+  expect(next.ticks).toBe(p.ticks);expect(sampleAt(next,t.morphStart).body).toEqual(sampleAt(p,t.morphStart).body);expect(dest.target).toEqual(changed);expect(p.sprout.x*dest.sprout.transform.sx+dest.sprout.transform.tx).toBeCloseTo(changed.x,6);
+ });
+ test(`${input.viewport.w}: reduced and skip have no fruit or snake, at most 600ms`,()=>{
+  for(const p of [buildPlan({...input,motion:'reduced'}),skipPlan(input)]){expect(p.timeline.done).toBeLessThanOrEqual(600);for(const ms of [0,100,300,500]){const s=sampleAt(p,ms);expect(s.body).toEqual([]);expect(s.fruit).toEqual([]);expect(s.sprout.opacity).toBe(0);expect(s.target).toEqual(input.target);}expect(sampleAt(p,p.timeline.done).targetOpacity).toBe(1);}
+  expect(sampleAt(stubPlan(input),4900).done).toBe(true);
+ });
 }
+test('seed changes artwork only and invalid geometry fails explicitly',()=>{
+ const a=buildPlan(fixtures[0]!),b=buildPlan({...fixtures[0]!,seed:456});expect(a.fruit.map(f=>f.kind)).not.toEqual(b.fruit.map(f=>f.kind));expect(a.ticks).toEqual(b.ticks);expect(()=>buildPlan({...fixtures[0]!,viewport:{w:0,h:900,dpr:1}})).toThrow(RangeError);
+});

@@ -14,6 +14,10 @@ services:
       STATIC_DIR: /app/web/dist
     ports:
       - "127.0.0.1:8090:8090"
+      - "127.0.0.1:4340:4340"
+    networks:
+      default:
+        aliases: [dashboard]
     volumes:
       - dev_data:/data
     healthcheck:
@@ -24,18 +28,19 @@ services:
       start_period: 10s
 
   web:
+    # Astro's proxy reaches Go on loopback, retaining the existing local-dev
+    # rate-limit exemption without modifying production rate limits.
+    network_mode: service:app
     build:
       context: .
       dockerfile: docker/dev.Dockerfile
       target: web
     command: ["node", "/dev-web.mjs"]
     environment:
-      API_ORIGIN: http://app:8090
+      API_ORIGIN: http://127.0.0.1:8090
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: "150"
-      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: web
-    ports:
-      - "127.0.0.1:4340:4340"
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: dashboard
     volumes:
       - ./web/src:/host-src:ro
       - web_src:/app/web/src
@@ -59,7 +64,7 @@ services:
     working_dir: /app/web
     ipc: host
     environment:
-      WEB_ORIGIN: http://web:4340
+      WEB_ORIGIN: http://dashboard:4340
       E2E_DEV_AUTH_KEY: ${DOCKER_DEV_AUTH_KEY:-local-docker-development-only}
     volumes:
       - web_src:/app/web/src:ro
