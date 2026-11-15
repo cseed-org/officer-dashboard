@@ -4,17 +4,25 @@ import { join } from 'node:path';
 import AppLayout from '../layouts/AppLayout.astro';
 import OnboardingPage from '../ui/pages/OnboardingPage';
 import type { HelloMedia } from '../ui/onboarding/WelcomeIntro';
+import { EARLY_INPUT_SCRIPT } from '../ui/onboarding/introEarly';
 
-/* The hello screen's group photo (docs/frontend.md): drop the file into web/public/media/ and
-   rebuild. Checked at build time, so a missing file never costs the browser a 404; the intro
-   still falls back to the placeholder at runtime if it fails to load. */
+/* The hello screen's background video (docs/frontend.md): drop `hello-loop.mp4` (and its first frame
+   as `hello-poster.webp` or `.jpg`) into web/public/media/. They are looked for when the site is
+   built, so they appear after the next build or deploy, and a missing file never costs a 404.
+   Without them the stand-in gradient plays. */
 const dir = join(process.cwd(), 'public', 'media');
 const has = (f: string) => existsSync(join(dir, f));
 const media: HelloMedia = {
-  photo: ['hello-group.jpg', 'hello-group.jpeg', 'hello-group.webp', 'hello-group.png'].filter(has).map((f) => `/media/${f}`)[0],
+  video: has('hello-loop.mp4') ? '/media/hello-loop.mp4' : undefined,
+  poster: ['hello-poster.webp', 'hello-poster.jpg', 'hello-poster.jpeg', 'hello-poster.png'].filter(has).map((f) => `/media/${f}`)[0],
 };
 ---
 
 <AppLayout title="Welcome to CSEED" bare description="Set up your CSEED officer account">
+  {/* The intro is drawn from the first paint: its font and poster are fetched first, and a press made
+      before the page's script runs is kept and replayed (introEarly.ts). */}
+  <link rel="preload" href="/fonts/hello/hello-poppins.woff2" as="font" type="font/woff2" crossorigin />
+  {media.poster && <link rel="preload" href={media.poster} as="image" fetchpriority="high" />}
+  <script is:inline set:html={EARLY_INPUT_SCRIPT} />
   <OnboardingPage client:load media={media} />
 </AppLayout>

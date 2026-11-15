@@ -170,13 +170,17 @@ function OnboardingFlow({ intro, onIntroStart }: { intro: boolean; onIntroStart:
         // The intro is the first thing a person sees, not something to sit through again on resume.
         onIntroStart(s === 1 && !back);
       },
-      (e) => setLoadError(e),
+      (e) => {
+        setLoadError(e);
+        onIntroStart(false);
+      },
     );
   };
   useEffect(() => {
     // Read the URL after hydration: the static HTML is the loading state.
     if (new URLSearchParams(location.search).has('unavailable')) {
       setUnavailable(true);
+      onIntroStart(false);
       return;
     }
     load();
@@ -235,7 +239,13 @@ function OnboardingFlow({ intro, onIntroStart }: { intro: boolean; onIntroStart:
   if (loadError) return <LoadError error={loadError} onRetry={load} />;
   if (!data || !profile || !picked)
     return (
-      <div class="onb" aria-busy="true">
+      <div class={`onb${intro ? ' onb--intro' : ''}`} aria-busy="true">
+        {/* The logo is here from the start, so the intro (server-rendered over this) can measure where it lands. */}
+        <header class="onb-top">
+          <span class="onb-logo-slot">
+            <ShellLogo />
+          </span>
+        </header>
         <div class="onb-main onb-main--single">
           <section class="onb-step">
             <p class="brand-eyebrow">one moment</p>
@@ -482,13 +492,20 @@ function OnboardingFlow({ intro, onIntroStart }: { intro: boolean; onIntroStart:
   );
 }
 
-/** The welcome intro is the first step of the flow; it hands over to the intake without a cut. */
+/**
+ * The welcome intro is the first step of the flow; it hands over to the intake without a cut. It is
+ * server-rendered (`pending`), so it shows from the very first paint instead of after the loading
+ * state (B-8). Once the account is loaded the flow confirms it (`on`) or, for a resumed setup, lets
+ * it fade away (`leaving`).
+ */
+type IntroState = 'pending' | 'on' | 'leaving' | 'off';
 export default function OnboardingPage({ media }: { media?: HelloMedia }) {
-  const [intro, setIntro] = useState(false);
+  const [intro, setIntro] = useState<IntroState>('pending');
+  const decide = (on: boolean) => setIntro((cur) => (cur === 'off' ? 'off' : on ? 'on' : 'leaving'));
   return (
     <>
-      <OnboardingFlow intro={intro} onIntroStart={setIntro} />
-      {intro && <WelcomeIntro onDone={() => setIntro(false)} media={media} />}
+      <OnboardingFlow intro={intro !== 'off'} onIntroStart={decide} />
+      {intro !== 'off' && <WelcomeIntro onDone={() => setIntro('off')} leaving={intro === 'leaving'} media={media} />}
     </>
   );
 }
