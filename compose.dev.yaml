@@ -1,0 +1,80 @@
+name: officer-dashboard-dev
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+      target: app
+    environment:
+      ADDR: :8090
+      APP_URL: http://localhost:8090
+      DEV_AUTH: "1"
+      DEV_AUTH_KEY: ${DOCKER_DEV_AUTH_KEY:-local-docker-development-only}
+      DB_PATH: /data/dev.db
+      STATIC_DIR: /app/web/dist
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - dev_data:/data
+    healthcheck:
+      test: ["CMD", "/app/dashboard", "healthcheck"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+      target: web
+    command: ["node", "/dev-web.mjs"]
+    environment:
+      API_ORIGIN: http://app:8090
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "150"
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: web
+    ports:
+      - "127.0.0.1:4340:4340"
+    volumes:
+      - ./web/src:/host-src:ro
+      - web_src:/app/web/src
+      - ./docker/dev-web.mjs:/dev-web.mjs:ro
+      - ./web/public:/app/web/public
+      - web_modules:/app/web/node_modules
+      - web_astro:/app/web/.astro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4340/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.65.0-noble
+    profiles: ["test"]
+    working_dir: /app/web
+    ipc: host
+    environment:
+      WEB_ORIGIN: http://web:4340
+      E2E_DEV_AUTH_KEY: ${DOCKER_DEV_AUTH_KEY:-local-docker-development-only}
+    volumes:
+      - web_src:/app/web/src:ro
+      - ./web/tests:/app/web/tests:ro
+      - ./web/playwright.config.ts:/app/web/playwright.config.ts:ro
+      - web_modules:/app/web/node_modules
+      - ./test-results/docker:/app/web/test-results
+      - ./.pane/prompts/frames-codex:/artifacts/frames-codex
+    depends_on:
+      web:
+        condition: service_healthy
+    command: ["npx", "playwright", "test"]
+
+volumes:
+  dev_data:
+  web_modules:
+  web_astro:
+  web_src:

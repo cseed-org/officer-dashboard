@@ -12,6 +12,36 @@ cd server && make dev                 # seeds ./data/dev.db, serves with the dev
 See [deployment guide](deployment.md) for configuration, secrets and deployment, and
 [front-end guide](frontend.md) for the front-end dev server.
 
+## Run it in Docker
+
+With Docker Desktop running Linux containers, from the repository root:
+
+```sh
+docker compose -f compose.dev.yaml up -d --build --wait
+docker compose -f compose.dev.yaml run --rm e2e npx playwright test tests/onboarding-intro.spec.ts tests/onboarding-snake.spec.ts
+```
+
+The seeded Go dev build serves <http://localhost:8090/login>; Astro with hot reload
+serves <http://localhost:4340/login>. For developer sign-in, append
+`?key=local-docker-development-only` to `/login`. Override `DOCKER_DEV_AUTH_KEY`
+in your environment to change this local-only key; the test runner uses the same value.
+Both ports bind to host loopback. Every app-container start runs `seed -reset`,
+replacing the development database in the `dev_data` volume.
+
+Source is bind-mounted and mirrored every 500 ms into a case-sensitive Linux
+volume: Windows otherwise confuses `Sapling.tsx` with `sapling.ts` during Vite
+resolution. Dependencies and Astro's cache also use named volumes; polling supports
+hot reload on Windows. After dependency changes, run
+`docker compose -f compose.dev.yaml run --rm --no-deps web npm ci`, then rebuild
+the stack. The Go server's static build updates on rebuild; Astro updates live.
+Playwright 1.65.0 and its matching browser image write traces and failure artifacts
+to `test-results/docker/`. To capture intro frames, add
+`-e INTRO_FRAMES=/artifacts/frames-codex` before `e2e` in the test command;
+frames appear in `.pane/prompts/frames-codex/`.
+
+Stop with `docker compose -f compose.dev.yaml down`; add `-v` to also remove
+the development database, dependencies and cache.
+
 ## Checks
 
 | Check | Command |

@@ -1,0 +1,10 @@
+.git
+.pane
+**/node_modules
+**/dist
+**/.astro
+**/test-results
+**/playwright-report
+server/bin
+server/data
+tmp
