@@ -195,12 +195,13 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     return fruit;
   };
   /** The snake's blocks, created up front (hidden) so the frame the snake appears on does no DOM work. */
-  const buildPool = (n: number) => {
+  const buildPool = (n: number, size: number) => {
     const bl = bodyLayer.current!;
     bl.querySelectorAll('.wi-seg').forEach((el) => el.remove());
     const pool: HTMLElement[] = [];
-    for (let i = 0; i < n; i++) {
-      const el = document.createElement('div');
+    for (const el of [...Array.from({ length: n }, () => document.createElement('div')), eyes.current!]) {
+      el.style.width = el.style.height = px(size);
+      if (el === eyes.current) continue;
       el.className = 'wi-seg';
       el.setAttribute('data-wi-snake', '');
       bl.insertBefore(el, eyes.current);
@@ -210,7 +211,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   };
   const prepare = () => {
     const plan = buildPlan(input());
-    return (prepared.current = { key: viewportKey(), plan, fruit: buildFruit(plan), pool: buildPool(plan.maxLength) });
+    return (prepared.current = { key: viewportKey(), plan, fruit: buildFruit(plan), pool: buildPool(plan.maxLength, Math.max(plan.segment, 1)) });
   };
 
   const finish = () => {
@@ -255,7 +256,15 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     const fruit = ready ?? buildFruit(plan);
 
     // The snake: one pooled block per pose id (taken from the ready-made pool, or created if it runs out).
+    // Every block (and the eyes) has one fixed size, the plan's segment; when a pose's box grows (the gaps
+    // closing as the word becomes the wordmark) that is a scale in its transform, never a width/height change.
     const bl = bodyLayer.current!;
+    const base = Math.max(plan.segment, 1);
+    const sized = (el: HTMLElement) => {
+      write(el, 'width', px(base));
+      write(el, 'height', px(base));
+      return el;
+    };
     const spare = [...pool];
     const segs = new Map<number, HTMLElement>();
     const seg = (id: number) => {
@@ -263,7 +272,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
       if (!el) {
         el = spare.pop();
         if (!el) {
-          el = document.createElement('div');
+          el = sized(document.createElement('div'));
           el.className = 'wi-seg';
           el.setAttribute('data-wi-snake', '');
           bl.insertBefore(el, eyes.current);
@@ -321,18 +330,16 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
       for (const pose of s.body) {
         const el = seg(pose.id);
         used.add(pose.id);
-        write(el, 'width', px(pose.box.w));
-        write(el, 'height', px(pose.box.h));
-        write(el, 'transform', `translate(${px(pose.box.x)}, ${px(pose.box.y)})`);
+        write(el, 'transform', `translate(${px(pose.box.x)}, ${px(pose.box.y)}) scale(${num(pose.box.w / base)}, ${num(pose.box.h / base)})`);
         write(el, 'opacity', num(pose.visible ? pose.opacity : 0));
       }
       for (const [id, el] of segs) if (!used.has(id)) write(el, 'opacity', '0');
       const head = s.body[0];
       const ey = eyes.current!;
+      if (!pool.length) sized(ey); // not prepared ahead (Escape, a viewport change): size it now
       if (head) {
-        write(ey, 'width', px(head.box.w));
-        write(ey, 'height', px(head.box.h));
-        write(ey, 'transform', `translate(${px(head.box.x)}, ${px(head.box.y)}) rotate(${ROT[head.dir]}deg)`);
+        // Placed and scaled like the head block, then turned about its own centre.
+        write(ey, 'transform', `translate(${px(head.box.x)}, ${px(head.box.y)}) scale(${num(head.box.w / base)}, ${num(head.box.h / base)}) translate(${px(base / 2)}, ${px(base / 2)}) rotate(${ROT[head.dir]}deg) translate(${px(-base / 2)}, ${px(-base / 2)})`);
         write(ey, 'opacity', num(head.visible ? head.opacity : 0));
       } else write(ey, 'opacity', '0');
 

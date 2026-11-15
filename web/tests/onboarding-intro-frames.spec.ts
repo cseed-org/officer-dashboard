@@ -63,3 +63,36 @@ for (const throttle of [1, 4] as const) {
   });
 }
 
+
+test('while it plays, only transform, opacity and visibility change (no layout per frame)', async ({ page }, info) => {
+  await openIntro(page);
+  await expect(front(page)).not.toHaveAttribute('data-lang', 'en', { timeout: 5000 });
+  // Watch every inline style change inside the overlay from the press to the end.
+  await page.evaluate(() => {
+    const w = window as unknown as { __changes: string[]; __t0: number };
+    w.__changes = [];
+    w.__t0 = performance.now();
+    const props = (s: string | null) => {
+      const d = document.createElement('div');
+      d.setAttribute('style', s ?? '');
+      return Object.fromEntries(Array.from(d.style).map((p) => [p, d.style.getPropertyValue(p)]));
+    };
+    new MutationObserver((list) => {
+      for (const m of list) {
+        if (m.type !== 'attributes') continue;
+        const before = props(m.oldValue);
+        const after = props((m.target as Element).getAttribute('style'));
+        for (const p of new Set([...Object.keys(before), ...Object.keys(after)])) {
+          if (before[p] === after[p] || ['transform', 'opacity', 'visibility'].includes(p)) continue;
+          w.__changes.push(`${Math.round(performance.now() - w.__t0)}ms ${(m.target as Element).className} ${p}: ${before[p] ?? '-'} → ${after[p] ?? '-'}`);
+        }
+      }
+    }).observe(document.querySelector('.wi')!, { subtree: true, attributes: true, attributeFilter: ['style'], attributeOldValue: true });
+  });
+  await pressAnywhere(page, info);
+  await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
+  const changes = await page.evaluate(() => (window as unknown as { __changes: string[] }).__changes);
+  // The first frames place things once (drips, the sprout, the landing box); after that, nothing but motion.
+  const late = changes.filter((c) => parseInt(c, 10) > 120);
+  expect(late, late.slice(0, 8).join('\n')).toEqual([]);
+});

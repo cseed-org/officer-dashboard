@@ -396,11 +396,11 @@ test('prefers-reduced-motion: the poster or stand-in stands still, languages cro
   p.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
 });
 
-test('frame strips for the PR', async ({ page }, info) => {
-  const dir = process.env.INTRO_FRAMES;
-  test.skip(!dir, 'set INTRO_FRAMES=<dir> to record frames');
-  for (const theme of ['light', 'dark'] as const) {
-    await page.goto('about:blank');
+// One test per theme: each gets a fresh browser context, so the saved theme preference applies.
+for (const theme of ['light', 'dark'] as const) {
+  test(`frame strips for the PR (${theme})`, async ({ page }, info) => {
+    const dir = process.env.INTRO_FRAMES;
+    test.skip(!dir, 'set INTRO_FRAMES=<dir> to record frames');
     await openIntro(page, { theme });
     await page.waitForTimeout(1200);
     await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-00-greeting.png` });
@@ -413,5 +413,5 @@ test('frame strips for the PR', async ({ page }, info) => {
     }
     await page.waitForTimeout(400);
     await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-99-landed.png` });
-  }
-});
+  });
+}

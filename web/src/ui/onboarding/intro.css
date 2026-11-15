@@ -79,9 +79,9 @@
 .wi-layer {position:absolute;inset:0;pointer-events:none;transform-origin:0 0;}
 .wi-fruit {position:absolute;left:0;top:0;background-size:100% 100%;background-repeat:no-repeat;image-rendering:pixelated;
   transform-origin:50% 50%;opacity:0;}
-.wi-seg {position:absolute;left:0;top:0;background:var(--wi-ink);opacity:0;}
+.wi-seg {position:absolute;left:0;top:0;background:var(--wi-ink);opacity:0;transform-origin:0 0;}
 /* The head's two eyes, drawn over the head cell and turned with it (it faces right at 0°). */
-.wi-eyes {position:absolute;left:0;top:0;transform-origin:50% 50%;opacity:0;}
+.wi-eyes {position:absolute;left:0;top:0;transform-origin:0 0;opacity:0;}
 .wi-eyes::before, .wi-eyes::after {content:'';position:absolute;right:16%;width:22%;height:22%;background:var(--paper, #fff);}
 .wi-eyes::before {top:16%;}
 .wi-eyes::after {bottom:16%;}
