@@ -126,59 +126,16 @@ export function sampleAt(plan: Plan, time: number): Sample {
 }
 type GridCell = { x: number; y: number; kind: Pose['kind']; letter: number | null };
 type Point = readonly [number, number];
-// Two-pixel strokes allow a continuous path to enter AND leave each glyph at
-// its bottom, without closing the c or drawing columns between letters (D-17).
-// Each coarse pixel expands to a 2x2 cycle. Splicing those cycles along a
-// spanning tree gives one self-avoiding contour through every painted cell.
-const glyphs = [
-  ['111','100','100','100','111'],
-  ['111','100','111','001','111'],
-  ['111','101','111','100','111'],
-  ['111','101','111','100','111'],
-  ['001','001','111','101','111'],
-] as const;
-const GLYPH_W = 6, GLYPH_H = 10, PITCH = 9, WORD_W = PITCH * 4 + GLYPH_W;
-function traceGlyph(rows: readonly string[], offset: number): Point[] {
-  const edges = new Map<string, Set<string>>();
-  const key = (x: number, y: number) => `${x},${y}`;
-  const link = (a: string, b: string) => { if (!edges.has(a)) edges.set(a, new Set()); if (!edges.has(b)) edges.set(b, new Set()); edges.get(a)!.add(b); edges.get(b)!.add(a); };
-  const cut = (a: string, b: string) => { edges.get(a)!.delete(b); edges.get(b)!.delete(a); };
-  const cells: Point[] = [];
-  rows.forEach((row, y) => [...row].forEach((v, x) => {
-    if (v !== '1') return;
-    cells.push([x, y]);
-    const a = key(x*2,y*2), b = key(x*2+1,y*2), c = key(x*2+1,y*2+1), d = key(x*2,y*2+1);
-    link(a,b); link(b,c); link(c,d); link(d,a);
-  }));
-  const visited = new Set<string>();
-  const visit = (x: number, y: number) => {
-    visited.add(key(x,y));
-    for (const [dx,dy] of [[1,0],[0,1],[-1,0],[0,-1]] as const) {
-      const nx = x+dx, ny = y+dy;
-      if (rows[ny]?.[nx] !== '1' || visited.has(key(nx,ny))) continue;
-      const left = Math.min(x,nx)*2, top = Math.min(y,ny)*2;
-      const [a,b,c,d] = dx !== 0
-        ? [key(left+1,top),key(left+1,top+1),key(left+2,top),key(left+2,top+1)]
-        : [key(left,top+1),key(left+1,top+1),key(left,top+2),key(left+1,top+2)];
-      cut(a!,b!); cut(c!,d!); link(a!,c!); link(b!,d!);
-      visit(nx,ny);
-    }
-  };
-  visit(...cells[0]!);
-  // Open the contour at the middle of the baseline; entry is left of exit.
-  const start = key(2,GLYPH_H-1), end = key(3,GLYPH_H-1);
-  cut(start,end);
-  const result: Point[] = [];
-  let at: string | undefined = start, previous: string | undefined;
-  while (at) {
-    const [x,y] = at.split(',').map(Number);
-    result.push([x!+offset,y!]);
-    const next: string | undefined = [...edges.get(at)!].find(n => n !== previous);
-    previous = at; at = next;
-  }
-  return result;
-}
-const strokes = glyphs.map((g,i) => traceGlyph(g,i*PITCH));
+// Coarse two-cell strokes keep bottom entry/exit without closing the c.
+// These are self-avoiding paths through the glyphs (111 painted cells total),
+// rather than a doubled fine grid whose ticks would outrun a 60 Hz frame (D-21).
+const GLYPH_WIDTHS = [3,4,4,4,3] as const;
+const GLYPH_H = 8, PITCH = 7, WORD_W = PITCH * 4 + 3;
+const c: readonly Point[] = [[1,7],[0,7],[0,6],[0,5],[0,4],[0,3],[0,2],[0,1],[0,0],[1,0],[2,0],[2,1],[1,1],[1,2],[1,3],[1,4],[1,5],[1,6],[2,6],[2,7]];
+const s: readonly Point[] = [[0,7],[0,6],[1,6],[1,7],[2,7],[2,6],[2,5],[2,4],[1,4],[0,4],[0,3],[0,2],[0,1],[0,0],[1,0],[2,0],[3,0],[3,1],[2,1],[1,1],[1,2],[1,3],[2,3],[3,3],[3,4],[3,5],[3,6],[3,7]];
+const e: readonly Point[] = [[0,7],[0,6],[0,5],[0,4],[0,3],[0,2],[0,1],[1,1],[2,1],[3,1],[3,2],[3,3],[3,4],[2,4],[1,4],[1,5],[1,6],[1,7],[2,7],[2,6],[3,6],[3,7]];
+const d: readonly Point[] = [[0,7],[0,6],[0,5],[0,4],[0,3],[0,2],[1,2],[1,1],[1,0],[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[2,6],[1,6],[1,7],[2,7]];
+const strokes = [c,s,e,e,d].map((stroke,i) => stroke.map(([x,y]): Point => [x+i*PITCH,y]));
 const joins = strokes.slice(0,-1).map((stroke,i) => {
   const from = stroke[stroke.length-1]![0], to = strokes[i+1]![0]![0];
   return Array.from({length:to-from+1},(_,n): Point => [from+n,GLYPH_H]);
@@ -195,20 +152,20 @@ export function buildPlan(input: Input): Plan {
   const dpr = input.viewport.dpr;
   const snap = (n: number) => Math.round(n * dpr) / dpr;
   const unit = 115 / WORD_W;
-  const cell = Math.max(1 / dpr, Math.floor(Math.min((input.viewport.w - 32) / (156 / unit), input.viewport.h / 24, 18) * dpr) / dpr);
+  const cell = Math.max(1 / dpr, Math.floor(Math.min((input.viewport.w - 32) / (156 / unit), input.viewport.h / 18, 26) * dpr) / dpr);
   // Snap both block edges: an even number of physical pixels in the gap.
   const inset = Math.max(0, Math.round(cell * .07 * dpr)) / dpr;
   const segment = cell - 2 * inset;
-  const origin = { x: snap((input.viewport.w - 156 / unit * cell) / 2), y: snap(input.viewport.h * .43 - cell * 5) };
+  const origin = { x: snap((input.viewport.w - 156 / unit * cell) / 2), y: snap(input.viewport.h * .43 - cell * 4) };
   const box = (c: GridCell, pad = 0): Box => ({ x: origin.x + c.x * cell + pad, y: origin.y + c.y * cell + pad, w: cell - 2 * pad, h: cell - 2 * pad });
   const wordBox = { x: origin.x, y: origin.y, w: WORD_W * cell, h: GLYPH_H * cell };
   const logoBox = { x: origin.x, y: origin.y + (GLYPH_H - 36 / unit) * cell, w: 156 / unit * cell, h: 36 / unit * cell };
   const sprout = sproutBox(logoBox);
-  const sproutStart = { ...sprout, x: origin.x + (4*PITCH+5)*cell - sprout.w/2, y: origin.y - sprout.h*.86 };
+  const sproutStart = { ...sprout, x: origin.x + (4*PITCH+2)*cell - sprout.w/2, y: origin.y - sprout.h*.86 };
   const initialLength = joins.reduce((sum, j) => sum + j.length, 0);
   const entry: GridCell[] = [];
   const firstHead = Math.floor(-origin.x/cell)-2;
-  for (let x = firstHead-initialLength+1; x <= 2; x++) entry.push({ x, y: GLYPH_H, kind: 'entry', letter: null });
+  for (let x = firstHead-initialLength+1; x <= 1; x++) entry.push({ x, y: GLYPH_H, kind: 'entry', letter: null });
   const route = [...entry, ...wordRoute];
   const poses: Pose[] = route.map((p,id) => ({
     id, box: box(p,inset), dir: direction(route[id-1] ?? {...p,x:p.x-1},p),
@@ -254,7 +211,7 @@ export function buildPlan(input: Input): Plan {
     if (p.letter === null) return p;
     const b = ink[p.letter]!, c = route[p.id]!;
     const dest = {x:logoBox.x+b.x/640*logoBox.w,y:logoBox.y+b.y/147*logoBox.h,w:b.w/640*logoBox.w,h:b.h/147*logoBox.h};
-    return {...p,box:{x:dest.x+(c.x-p.letter*PITCH)/GLYPH_W*dest.w,y:dest.y+c.y/GLYPH_H*dest.h,w:dest.w/GLYPH_W,h:dest.h/GLYPH_H}};
+    return {...p,box:{x:dest.x+(c.x-p.letter*PITCH)/GLYPH_WIDTHS[p.letter]!*dest.w,y:dest.y+c.y/GLYPH_H*dest.h,w:dest.w/GLYPH_WIDTHS[p.letter]!,h:dest.h/GLYPH_H}};
   });
   return retargetPlan(freeze({ input: { ...input, viewport:{...input.viewport},target:{...input.target} }, cell, origin, segment, maxLength: length, fruit, ticks, settled, sproutStart,
     word: { cells: wordRoute.filter(c=>c.kind==='letter').map(c=>box(c)) }, wordBox, logoBox, sprout,

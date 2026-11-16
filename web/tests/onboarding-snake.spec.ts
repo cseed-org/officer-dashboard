@@ -8,12 +8,20 @@ const fixtures: Input[] = [
  {viewport:{w:390,h:844,dpr:3},target:{x:160.34375,y:17.5,w:69.328125,h:16,kind:'wordmark'},motion:'full',seed:123},
 ];
 for (const input of fixtures) {
+ test(`${input.viewport.w}: D-21 every tick lasts at least 20ms, including entry`,()=>{
+  const p=buildPlan(input);
+  const intervals=p.ticks.slice(1).map((tick,i)=>tick.at-p.ticks[i]!.at);
+  expect(Math.min(...intervals)).toBeGreaterThanOrEqual(20);
+  expect(p.ticks.filter(t=>t.body[0]!.kind!=='entry').length).toBe(132);
+  expect(p.timeline.morphStart-p.timeline.spelledAt).toBeGreaterThanOrEqual(300);
+  expect(p.timeline.done).toBeLessThanOrEqual(5200);
+ });
  test(`${input.viewport.w}: fruit, growth, visible joins and collision-free body`,()=>{
   const p=buildPlan(input);
-  expect(p.fruit).toHaveLength(216);
+  expect(p.fruit).toHaveLength(111);
   expect(new Set(p.fruit.map(f=>f.kind)).size).toBe(3);
   expect(p.fruit.map(f=>f.letter)).toEqual([...p.fruit.map(f=>f.letter)].sort());
-  expect(new Set(p.fruit.map(f=>key(f.box))).size).toBe(216);
+  expect(new Set(p.fruit.map(f=>key(f.box))).size).toBe(111);
   expect(sampleAt(p,699).fruit.every(f=>f.visible&&!f.eaten&&f.opacity===1)).toBe(true);
   const eaten:number[]=[];
   for(let i=0;i<p.ticks.length;i++) {
@@ -32,7 +40,7 @@ for (const input of fixtures) {
   const inset=(p.cell-p.segment)/2;
   expect(new Set(before.body.filter(b=>b.kind==='letter').map(b=>key({...b.box,x:b.box.x-inset,y:b.box.y-inset})))).toEqual(new Set(p.word.cells.map(key)));
   const final=sampleAt(p,p.timeline.travelStart);
-  expect(final.body.filter(b=>b.visible)).toHaveLength(216);
+  expect(final.body.filter(b=>b.visible)).toHaveLength(111);
  });
  test(`${input.viewport.w}: deterministic immutable five-second plan and exact landing`,()=>{
   const p=buildPlan(input),q=buildPlan(input),t=p.timeline;
@@ -64,9 +72,11 @@ test('seed changes artwork only and invalid geometry fails explicitly',()=>{
 // Independent glyph expectation: a route that conserves fruit but closes the c
 // or fuses two letters must fail even if its own plan.word agrees with it.
 const glyphRows = [
- ['111','100','100','100','111'], ['111','100','111','001','111'],
- ['111','101','111','100','111'], ['111','101','111','100','111'],
- ['001','001','111','101','111'],
+ ['111','111','110','110','110','110','111','111'],
+ ['1111','1111','1100','1111','1111','0011','1111','1111'],
+ ['0000','1111','1001','1001','1111','1100','1111','1111'],
+ ['0000','1111','1001','1001','1111','1100','1111','1111'],
+ ['011','011','111','101','101','101','111','111'],
 ];
 for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseline joins, stable ids and visible entry`,()=>{
  const p=buildPlan(input),t=p.timeline,spelled=sampleAt(p,t.spelledAt);
@@ -75,14 +85,17 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
  for(let letter=0;letter<5;letter++) {
   const expected:string[]=[];
   glyphRows[letter]!.forEach((row,y)=>[...row].forEach((v,x)=>{
-   if(v==='1') for(let dy=0;dy<2;dy++) for(let dx=0;dx<2;dx++) expected.push(`${letter*9+x*2+dx},${y*2+dy}`);
+   if(v==='1') expected.push(`${letter*7+x},${y}`);
   }));
   expect(new Set(spelled.body.filter(b=>b.letter===letter&&b.visible).map(b=>grid(b.box).join(',')))).toEqual(new Set(expected));
+  const eaten=p.fruit.filter(f=>f.letter===letter);
+  expect(grid(eaten[0]!.box)[1]).toBe(7);
+  expect(grid(eaten[eaten.length-1]!.box)[1]).toBe(7);
  }
  const letters=spelled.body.filter(b=>b.kind==='letter');
  for(const join of spelled.body.filter(b=>b.kind==='join')) {
   const [x,y]=grid(join.box);
-  expect(y).toBe(10);
+  expect(y).toBe(8);
   expect(join.opacity).toBeLessThan(.5);
   const touching=new Set(letters.filter(l=>{const [lx,ly]=grid(l.box);return Math.abs(lx!-x!)+Math.abs(ly!-y!)===1;}).map(l=>l.letter));
   expect(touching.size).toBeLessThanOrEqual(1);
@@ -102,7 +115,7 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
  expect(sampleAt(p,t.spelledAt+299).body).toBe(spelled.body);
  // The grown stem sits on the d before moving to the logo's separate sapling.
  const sprout=sampleAt(p,t.morphStart).sprout;
- expect(sprout.box.x+sprout.box.w/2).toBeCloseTo(p.origin.x+41*p.cell,6);
+ expect(sprout.box.x+sprout.box.w/2).toBeCloseTo(p.origin.x+30*p.cell,6);
  const settled=sampleAt(p,t.morphStart+(t.travelStart-t.morphStart)*.6);
  expect(settled.wordOpacity).toBe(1);
  expect(settled.wordmarkOpacity).toBe(0);
