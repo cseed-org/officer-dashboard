@@ -198,6 +198,10 @@ test('Escape during the glide freezes the word and takes a short fade', async ({
 
 test('without a destination the intro fades away without drawing a fake logo', async ({ page }) => {
   await openIntro(page);
+  // The overlay is server-rendered; wait for hydration and account loading
+  // before removing a destination that Preact would otherwise recreate.
+  await expect(page.locator('.onb[data-step]')).toHaveAttribute('data-step', '1');
+  await page.waitForFunction(() => window.__wiReady === true);
   await page.locator('[data-onb-logo]').evaluate(el => el.remove());
   await page.keyboard.press('Enter');
   await expect(page.locator('[data-wi-logo]')).toHaveCSS('opacity', '0');
