@@ -46,6 +46,8 @@ services:
       - ./web/src:/app/web/src
       - ./src:/app/src:ro
       - ./web/astro.config.mjs:/app/web/astro.config.mjs:ro
+      - ./web/package.json:/app/web/package.json:ro
+      - ./web/package-lock.json:/app/web/package-lock.json:ro
       - ./web/public:/app/web/public
       - web_modules:/app/web/node_modules
       - web_astro:/app/web/.astro
@@ -71,6 +73,7 @@ services:
       - ./web/src:/app/web/src:ro
       - ./web/tests:/app/web/tests:ro
       - ./web/playwright.config.ts:/app/web/playwright.config.ts:ro
+      - ./web/package.json:/app/web/package.json:ro
       - web_modules:/app/web/node_modules
       - ./test-results/docker:/app/web/test-results
       - ./test-results/docker/frames:/artifacts/frames

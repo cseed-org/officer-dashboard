@@ -18,7 +18,7 @@ With Docker Desktop running Linux containers, from the repository root:
 
 ```sh
 docker compose -f compose.dev.yaml up -d --build --wait
-docker compose -f compose.dev.yaml run --rm e2e npx playwright test tests/onboarding-intro.spec.ts tests/onboarding-snake.spec.ts
+docker compose -f compose.dev.yaml run --rm --no-deps e2e npx playwright test tests/onboarding-intro.spec.ts tests/onboarding-plan.spec.ts --output=test-results/intro
 ```
 
 The seeded Go dev build serves <http://localhost:8090/login>; Astro with hot reload
@@ -36,7 +36,8 @@ hot reload on Windows. After dependency changes, run
 the stack. The Go server's static build updates on rebuild; Astro updates live.
 Playwright 1.65.0 and its matching browser image write traces and failure artifacts
 to `test-results/docker/`. Every Playwright run clears its output directory.
-Concurrent runs must choose distinct paths, e.g. append
+Use `run --rm --no-deps e2e` against the running stack so testing does not restart
+or reseed the services. Concurrent runs must choose distinct paths, e.g. append
 `--output=test-results/engine` or `--output=test-results/screen` after the test arguments.
 To capture intro frames, add `-e INTRO_FRAMES=/artifacts/frames/intro` before `e2e`;
 frames appear in `test-results/docker/frames/intro/`. Keep the Playwright output
@@ -49,7 +50,7 @@ no Content-Security-Policy. CSP tests require the Go server's **rebuilt static s
 
 ```sh
 docker compose -f compose.dev.yaml up -d --build --wait app web
-docker compose -f compose.dev.yaml run --rm -e WEB_ORIGIN=http://dashboard:8090 e2e npx playwright test tests/csp.spec.ts --project=desktop --output=test-results/csp
+docker compose -f compose.dev.yaml run --rm --no-deps -e WEB_ORIGIN=http://dashboard:8090 e2e npx playwright test tests/csp.spec.ts --project=desktop --output=test-results/csp
 ```
 
 Rebuilding restarts and reseeds the development app; coordinate this with anyone
