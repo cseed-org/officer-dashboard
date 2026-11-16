@@ -1,21 +1,10 @@
 ---
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import AppLayout from '../layouts/AppLayout.astro';
 import OnboardingPage from '../ui/pages/OnboardingPage';
-import type { HelloMedia } from '../ui/onboarding/WelcomeIntro';
+import { helloMedia } from '../ui/onboarding/helloMedia';
 import { EARLY_INPUT_SCRIPT } from '../ui/onboarding/introEarly';
 
-/* The hello screen's background video (docs/frontend.md): drop `hello-loop.mp4` (and its first frame
-   as `hello-poster.webp` or `.jpg`) into web/public/media/. They are looked for when the site is
-   built, so they appear after the next build or deploy, and a missing file never costs a 404.
-   Without them the stand-in gradient plays. */
-const dir = join(process.cwd(), 'public', 'media');
-const has = (f: string) => existsSync(join(dir, f));
-const media: HelloMedia = {
-  video: has('hello-loop.mp4') ? '/media/hello-loop.mp4' : undefined,
-  poster: ['hello-poster.webp', 'hello-poster.jpg', 'hello-poster.jpeg', 'hello-poster.png'].filter(has).map((f) => `/media/${f}`)[0],
-};
+const media = helloMedia();
 ---
 
 <AppLayout title="Welcome to CSEED" bare description="Set up your CSEED officer account">

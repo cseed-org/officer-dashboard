@@ -1,6 +1,7 @@
 import { markGreetingSignedOut } from './home/browserGreeting';
 import { ClubLinksPanel } from './ClubLinksPanel';
 import { TimezonePanel } from './TimezonePanel';
+import { h } from 'preact';
 import { useState } from 'preact/hooks';
 import type { CurrentUser } from '../../lib/contracts';
 import { type Density, getDensity, getTheme, setDensity, setTheme, type ThemePref } from '../../lib/prefs';
@@ -15,6 +16,9 @@ import { ProfileForm } from './ProfileForm';
 import { CalendarPanel } from './CalendarPanel';
 import { safeImageUrl } from '../../lib/url';
 import { startTour } from '../tour/startTour';
+import type { HelloMedia } from '../onboarding/WelcomeIntro';
+
+type Replay = typeof import('../onboarding/ReplayIntro').ReplayIntro;
 
 const THEMES: { key: ThemePref; label: string; sub: string }[] = [
   { key: 'light', label: 'Light', sub: 'the default' },
@@ -26,7 +30,18 @@ const DENSITIES: { key: Density; label: string; sub: string }[] = [
   { key: 'compact', label: 'Compact', sub: 'more rows on screen' },
 ];
 
-export default function SettingsView({ me }: { me: CurrentUser }) {
+export default function SettingsView({ me, helloMedia }: { me: CurrentUser; helloMedia?: HelloMedia }) {
+  // Advanced › Replay welcome intro (D-22): the intro's code loads only when asked for.
+  const [replay, setReplay] = useState<Replay | null>(null);
+  const [replayError, setReplayError] = useState(false);
+  const openReplay = () => {
+    if (replay) return;
+    setReplayError(false);
+    import('../onboarding/ReplayIntro').then(
+      (m) => setReplay(() => m.ReplayIntro),
+      () => setReplayError(true),
+    );
+  };
   const [theme, setThemeState] = useState<ThemePref>(getTheme);
   const [density, setDensityState] = useState<Density>(getDensity);
   const profile = useApi('profileGet');
@@ -146,6 +161,18 @@ export default function SettingsView({ me }: { me: CurrentUser }) {
 
       <Section title="dashboard" id="dashboard">
         <div><a class="btn" href="/?tutorial=1" data-replay-tour onClick={(e) => { e.preventDefault(); startTour(); }}>Replay dashboard tour</a></div>
+      </Section>
+
+      <p class="settings-group">Advanced</p>
+      <Section title="welcome intro" id="advanced">
+        <p class="field-hint">Watch the hello screen from your first sign-in again. It only plays: your account and setup stay as they are.</p>
+        <div>
+          <button type="button" class="btn" data-replay-intro onClick={openReplay}>
+            Replay welcome intro
+          </button>
+        </div>
+        {replayError && <p class="field-error" role="alert">The intro couldn’t load. Check your connection and try again.</p>}
+        {replay && h(replay, { media: helloMedia, onClose: () => setReplay(null) })}
       </Section>
 
       <Section title="session" id="session">
