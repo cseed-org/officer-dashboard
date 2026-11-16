@@ -12,16 +12,20 @@ for (const input of fixtures) {
   const p=buildPlan(input);
   const intervals=p.ticks.slice(1).map((tick,i)=>tick.at-p.ticks[i]!.at);
   expect(Math.min(...intervals)).toBeGreaterThanOrEqual(20);
-  expect(p.ticks.filter(t=>t.body[0]!.kind!=='entry').length).toBe(132);
+  expect(p.ticks.filter(t=>t.body[0]!.kind!=='entry').length).toBe(108);
+  const writing=p.ticks.filter(t=>t.body[0]!.kind!=='entry');
+  const writingIntervals=writing.slice(1).map((tick,i)=>tick.at-writing[i]!.at);
+  expect(Math.min(...writingIntervals)).toBeGreaterThanOrEqual(25);
+  expect(Math.max(...writingIntervals)).toBeLessThanOrEqual(35);
   expect(p.timeline.morphStart-p.timeline.spelledAt).toBeGreaterThanOrEqual(300);
   expect(p.timeline.done).toBeLessThanOrEqual(5200);
  });
  test(`${input.viewport.w}: fruit, growth, visible joins and collision-free body`,()=>{
   const p=buildPlan(input);
-  expect(p.fruit).toHaveLength(111);
+  expect(p.fruit).toHaveLength(70);
   expect(new Set(p.fruit.map(f=>f.kind)).size).toBe(3);
   expect(p.fruit.map(f=>f.letter)).toEqual([...p.fruit.map(f=>f.letter)].sort());
-  expect(new Set(p.fruit.map(f=>key(f.box))).size).toBe(111);
+  expect(new Set(p.fruit.map(f=>key(f.box))).size).toBe(70);
   expect(sampleAt(p,699).fruit.every(f=>f.visible&&!f.eaten&&f.opacity===1)).toBe(true);
   const eaten:number[]=[];
   for(let i=0;i<p.ticks.length;i++) {
@@ -40,7 +44,7 @@ for (const input of fixtures) {
   const inset=(p.cell-p.segment)/2;
   expect(new Set(before.body.filter(b=>b.kind==='letter').map(b=>key({...b.box,x:b.box.x-inset,y:b.box.y-inset})))).toEqual(new Set(p.word.cells.map(key)));
   const final=sampleAt(p,p.timeline.travelStart);
-  expect(final.body.filter(b=>b.visible)).toHaveLength(111);
+  expect(final.body.filter(b=>b.visible)).toHaveLength(70);
  });
  test(`${input.viewport.w}: deterministic immutable five-second plan and exact landing`,()=>{
   const p=buildPlan(input),q=buildPlan(input),t=p.timeline;
@@ -62,7 +66,7 @@ for (const input of fixtures) {
  });
  test(`${input.viewport.w}: reduced and skip have no fruit or snake, at most 600ms`,()=>{
   for(const p of [buildPlan({...input,motion:'reduced'}),skipPlan(input)]){expect(p.timeline.done).toBeLessThanOrEqual(600);for(const ms of [0,100,300,500]){const s=sampleAt(p,ms);expect(s.body).toEqual([]);expect(s.fruit).toEqual([]);expect(s.sprout.opacity).toBe(0);expect(s.target).toEqual(input.target);}expect(sampleAt(p,p.timeline.done).targetOpacity).toBe(1);}
-  expect(sampleAt(stubPlan(input),4900).done).toBe(true);
+  expect(sampleAt(stubPlan(input),stubPlan(input).timeline.done).done).toBe(true);
  });
 }
 test('seed changes artwork only and invalid geometry fails explicitly',()=>{
@@ -72,11 +76,11 @@ test('seed changes artwork only and invalid geometry fails explicitly',()=>{
 // Independent glyph expectation: a route that conserves fruit but closes the c
 // or fuses two letters must fail even if its own plan.word agrees with it.
 const glyphRows = [
- ['111','111','110','110','110','110','111','111'],
- ['1111','1111','1100','1111','1111','0011','1111','1111'],
- ['0000','1111','1001','1001','1111','1100','1111','1111'],
- ['0000','1111','1001','1001','1111','1100','1111','1111'],
- ['011','011','111','101','101','101','111','111'],
+ ['0000','1111','1000','1000','1000','1111'],
+ ['0000','1111','1000','1111','0001','1111'],
+ ['0000','1111','1001','1111','1000','1111'],
+ ['0000','1111','1001','1111','1000','1111'],
+ ['0001','1111','1001','1001','1001','1111'],
 ];
 for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseline joins, stable ids and visible entry`,()=>{
  const p=buildPlan(input),t=p.timeline,spelled=sampleAt(p,t.spelledAt);
@@ -88,17 +92,40 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
    if(v==='1') expected.push(`${letter*7+x},${y}`);
   }));
   expect(new Set(spelled.body.filter(b=>b.letter===letter&&b.visible).map(b=>grid(b.box).join(',')))).toEqual(new Set(expected));
-  const eaten=p.fruit.filter(f=>f.letter===letter);
-  expect(grid(eaten[0]!.box)[1]).toBe(7);
-  expect(grid(eaten[eaten.length-1]!.box)[1]).toBe(7);
+  const occupied=new Set(expected);
+  for(const cell of occupied) {
+   const [x,y]=cell.split(',').map(Number);
+   expect(occupied.has(`${x!+1},${y}`)&&occupied.has(`${x},${y!+1}`)&&occupied.has(`${x!+1},${y!+1}`),`letter ${letter}: doubled stroke at ${cell}`).toBe(false);
+  }
+
  }
  const letters=spelled.body.filter(b=>b.kind==='letter');
  for(const join of spelled.body.filter(b=>b.kind==='join')) {
   const [x,y]=grid(join.box);
-  expect(y).toBe(8);
+  // Vertical approach legs stay in the gutter. The only cross-letter
+  // horizontal runs are on row 6, below the common baseline (D-23).
+  expect(y).toBeLessThanOrEqual(6);
+  const inGutter=x!%7>=4;
+  expect(inGutter || (y===0 && x!>=28 && x!<=30)).toBe(true);
   expect(join.opacity).toBeLessThan(.5);
-  const touching=new Set(letters.filter(l=>{const [lx,ly]=grid(l.box);return Math.abs(lx!-x!)+Math.abs(ly!-y!)===1;}).map(l=>l.letter));
+  const touching=new Set(letters.filter(l=>{const [lx,ly]=grid(l.box);return Math.max(Math.abs(lx!-x!),Math.abs(ly!-y!))<=1;}).map(l=>l.letter));
   expect(touching.size).toBeLessThanOrEqual(1);
+ }
+ const c=letters.filter(l=>l.letter===0).map(l=>grid(l.box));
+ expect(c.filter(([,y])=>y===1).map(([x])=>x).sort()).toEqual([0,1,2,3]);
+ expect(c.filter(([,y])=>y===5).map(([x])=>x).sort()).toEqual([0,1,2,3]);
+ for(const y of [2,3,4]) expect(c.filter(([,cy])=>cy===y)).toEqual([[0,y]]);
+ for(let boundary=0;boundary<4;boundary++) {
+  const from=p.fruit.filter(f=>f.letter===boundary).at(-1)!.eatAt;
+  const to=p.fruit.find(f=>f.letter===boundary+1)!.eatAt;
+  const join=p.ticks.filter(k=>k.at>from&&k.at<to).map(k=>grid(k.body[0]!.box));
+  expect(join.some(([,y])=>y===6)).toBe(true);
+  for(let i=1;i<join.length;i++) {
+   const [x,y]=join[i]!,[px,py]=join[i-1]!;
+   if(y!>py!) expect(x).toBe(boundary*7+5);
+   if(y!<py!) expect(x).toBe(boundary*7+6);
+   if(px===boundary*7+5&&x===boundary*7+6) expect(y).toBe(6);
+  }
  }
  for(let i=1;i<p.ticks.length;i++) {
   const a=p.ticks[i-1]!.body,b=p.ticks[i]!.body,previous=new Map(a.map(pose=>[pose.id,pose]));
@@ -115,7 +142,7 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
  expect(sampleAt(p,t.spelledAt+299).body).toBe(spelled.body);
  // The grown stem sits on the d before moving to the logo's separate sapling.
  const sprout=sampleAt(p,t.morphStart).sprout;
- expect(sprout.box.x+sprout.box.w/2).toBeCloseTo(p.origin.x+30*p.cell,6);
+ expect(sprout.box.x+sprout.box.w/2).toBeCloseTo(p.origin.x+31.5*p.cell,6);
  const settled=sampleAt(p,t.morphStart+(t.travelStart-t.morphStart)*.6);
  expect(settled.wordOpacity).toBe(1);
  expect(settled.wordmarkOpacity).toBe(0);

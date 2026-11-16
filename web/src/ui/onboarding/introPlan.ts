@@ -56,7 +56,7 @@ function freeze<T>(value: T): T {
   return value;
 }
 const shortTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 350, fruitIn: [350, 350], snakeEnter: 350, spelledAt: 350, sproutAt: 350, morphStart: 350, travelStart: 350, morphEnd: 350, swapAt: 380, done: 500, ffTo: 380 });
-const fullTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 450, fruitIn: [300, 650], snakeEnter: 300, spelledAt: 3350, sproutAt: 3350, morphStart: 3650, travelStart: 4200, morphEnd: 4780, swapAt: 4780, done: 4900, ffTo: 4780 });
+const fullTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 450, fruitIn: [300, 650], snakeEnter: 300, spelledAt: 3375, sproutAt: 3375, morphStart: 3675, travelStart: 4225, morphEnd: 4805, swapAt: 4805, done: 4925, ffTo: 4805 });
 
 /** Square SVG viewBox around the image sapling's painted x117–155, y7–35.
  * Use the same brand bounds in the stub and real engine (D-18).
@@ -126,20 +126,24 @@ export function sampleAt(plan: Plan, time: number): Sample {
 }
 type GridCell = { x: number; y: number; kind: Pose['kind']; letter: number | null };
 type Point = readonly [number, number];
-// Coarse two-cell strokes keep bottom entry/exit without closing the c.
-// These are self-avoiding paths through the glyphs (111 painted cells total),
-// rather than a doubled fine grid whose ticks would outrun a 60 Hz frame (D-21).
-const GLYPH_WIDTHS = [3,4,4,4,3] as const;
-const GLYPH_H = 8, PITCH = 7, WORD_W = PITCH * 4 + 3;
-const c: readonly Point[] = [[1,7],[0,7],[0,6],[0,5],[0,4],[0,3],[0,2],[0,1],[0,0],[1,0],[2,0],[2,1],[1,1],[1,2],[1,3],[1,4],[1,5],[1,6],[2,6],[2,7]];
-const s: readonly Point[] = [[0,7],[0,6],[1,6],[1,7],[2,7],[2,6],[2,5],[2,4],[1,4],[0,4],[0,3],[0,2],[0,1],[0,0],[1,0],[2,0],[3,0],[3,1],[2,1],[1,1],[1,2],[1,3],[2,3],[3,3],[3,4],[3,5],[3,6],[3,7]];
-const e: readonly Point[] = [[0,7],[0,6],[0,5],[0,4],[0,3],[0,2],[0,1],[1,1],[2,1],[3,1],[3,2],[3,3],[3,4],[2,4],[1,4],[1,5],[1,6],[1,7],[2,7],[2,6],[3,6],[3,7]];
-const d: readonly Point[] = [[0,7],[0,6],[0,5],[0,4],[0,3],[0,2],[1,2],[1,1],[1,0],[2,0],[2,1],[2,2],[2,3],[2,4],[2,5],[2,6],[1,6],[1,7],[2,7]];
+// D-23: the V0.11 single-cell glyphs, with a common 4x5 x-height and
+// one extra row for d's ascender. The c's arms have equal length/weight.
+// Three empty columns separate glyphs. Routes descend in each middle gutter
+// column, cross the row below the baseline, then rise into the next stroke.
+const GLYPH_W = 4, GLYPH_H = 6, PITCH = 7, WORD_W = PITCH * 4 + GLYPH_W;
+const c: readonly Point[] = [[3,1],[2,1],[1,1],[0,1],[0,2],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5]];
+// Reverse the s so it can be entered from the baseline on its left.
+const s: readonly Point[] = [[0,5],[1,5],[2,5],[3,5],[3,4],[3,3],[2,3],[1,3],[0,3],[0,2],[0,1],[1,1],[2,1],[3,1]];
+const e: readonly Point[] = [[0,2],[0,1],[1,1],[2,1],[3,1],[3,2],[3,3],[2,3],[1,3],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5]];
+const d: readonly Point[] = [[2,1],[1,1],[0,1],[0,2],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5],[3,4],[3,3],[3,2],[3,1],[3,0]];
 const strokes = [c,s,e,e,d].map((stroke,i) => stroke.map(([x,y]): Point => [x+i*PITCH,y]));
-const joins = strokes.slice(0,-1).map((stroke,i) => {
-  const from = stroke[stroke.length-1]![0], to = strokes[i+1]![0]![0];
-  return Array.from({length:to-from+1},(_,n): Point => [from+n,GLYPH_H]);
-});
+const joins: readonly (readonly Point[])[] = [
+  [[4,5],[5,5],[5,6],[6,6],[6,5]],
+  [[11,1],[12,1],[12,2],[12,3],[12,4],[12,5],[12,6],[13,6],[13,5],[13,4],[13,3],[13,2]],
+  [[18,5],[19,5],[19,6],[20,6],[20,5],[20,4],[20,3],[20,2]],
+  // Enter d's bowl from above, leaving its ascender as the final head cell.
+  [[25,5],[26,5],[26,6],[27,6],[27,5],[27,4],[27,3],[27,2],[27,1],[27,0],[28,0],[29,0],[30,0]],
+];
 const wordRoute: readonly GridCell[] = freeze(strokes.flatMap((stroke, letter) => [
   ...stroke.map(([x,y]) => ({ x, y, kind: 'letter' as const, letter })),
   ...(joins[letter] ?? []).map(([x,y]) => ({ x, y, kind: 'join' as const, letter: null })),
@@ -156,16 +160,16 @@ export function buildPlan(input: Input): Plan {
   // Snap both block edges: an even number of physical pixels in the gap.
   const inset = Math.max(0, Math.round(cell * .07 * dpr)) / dpr;
   const segment = cell - 2 * inset;
-  const origin = { x: snap((input.viewport.w - 156 / unit * cell) / 2), y: snap(input.viewport.h * .43 - cell * 4) };
+  const origin = { x: snap((input.viewport.w - 156 / unit * cell) / 2), y: snap(input.viewport.h * .43 - cell * 3) };
   const box = (c: GridCell, pad = 0): Box => ({ x: origin.x + c.x * cell + pad, y: origin.y + c.y * cell + pad, w: cell - 2 * pad, h: cell - 2 * pad });
   const wordBox = { x: origin.x, y: origin.y, w: WORD_W * cell, h: GLYPH_H * cell };
   const logoBox = { x: origin.x, y: origin.y + (GLYPH_H - 36 / unit) * cell, w: 156 / unit * cell, h: 36 / unit * cell };
   const sprout = sproutBox(logoBox);
-  const sproutStart = { ...sprout, x: origin.x + (4*PITCH+2)*cell - sprout.w/2, y: origin.y - sprout.h*.86 };
+  const sproutStart = { ...sprout, x: origin.x + (4*PITCH+3.5)*cell - sprout.w/2, y: origin.y - sprout.h*.86 };
   const initialLength = joins.reduce((sum, j) => sum + j.length, 0);
   const entry: GridCell[] = [];
   const firstHead = Math.floor(-origin.x/cell)-2;
-  for (let x = firstHead-initialLength+1; x <= 1; x++) entry.push({ x, y: GLYPH_H, kind: 'entry', letter: null });
+  for (let x = firstHead-initialLength+1; x <= 3; x++) entry.push({ x, y: 0, kind: 'entry', letter: null });
   const route = [...entry, ...wordRoute];
   const poses: Pose[] = route.map((p,id) => ({
     id, box: box(p,inset), dir: direction(route[id-1] ?? {...p,x:p.x-1},p),
@@ -210,8 +214,9 @@ export function buildPlan(input: Input): Plan {
   const settled = ticks[ticks.length-1]!.body.map(p => {
     if (p.letter === null) return p;
     const b = ink[p.letter]!, c = route[p.id]!;
+    const glyphTop = p.letter === 4 ? 0 : 1, glyphHeight = GLYPH_H-glyphTop;
     const dest = {x:logoBox.x+b.x/640*logoBox.w,y:logoBox.y+b.y/147*logoBox.h,w:b.w/640*logoBox.w,h:b.h/147*logoBox.h};
-    return {...p,box:{x:dest.x+(c.x-p.letter*PITCH)/GLYPH_WIDTHS[p.letter]!*dest.w,y:dest.y+c.y/GLYPH_H*dest.h,w:dest.w/GLYPH_WIDTHS[p.letter]!,h:dest.h/GLYPH_H}};
+    return {...p,box:{x:dest.x+(c.x-p.letter*PITCH)/GLYPH_W*dest.w,y:dest.y+(c.y-glyphTop)/glyphHeight*dest.h,w:dest.w/GLYPH_W,h:dest.h/glyphHeight}};
   });
   return retargetPlan(freeze({ input: { ...input, viewport:{...input.viewport},target:{...input.target} }, cell, origin, segment, maxLength: length, fruit, ticks, settled, sproutStart,
     word: { cells: wordRoute.filter(c=>c.kind==='letter').map(c=>box(c)) }, wordBox, logoBox, sprout,
