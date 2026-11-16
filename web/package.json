@@ -14,8 +14,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@astrojs/preact": "6.1.2",
-    "astro": "7.4.7",
+    "@astrojs/preact": "6.1.5",
+    "astro": "7.4.11",
     "preact": "11.2.0",
     "zod": "4.6.7"
   },
