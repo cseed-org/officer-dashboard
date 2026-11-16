@@ -28,6 +28,7 @@ export type Plan = Readonly<{
   input: Input; cell: number; origin: Readonly<{ x: number; y: number }>;
   segment: number; maxLength: number; fruit: readonly Fruit[]; ticks: readonly Tick[];
   word: Readonly<{ cells: readonly Box[] }>; wordBox: Box; logoBox: Box; sprout: Box;
+  sproutStart: Box; settled: readonly Pose[];
   timeline: Timeline; skipTimeline: Timeline;
   morph: Transform; sproutMorph: Transform;
 }>;
@@ -46,6 +47,7 @@ const progress = (ms: number, start: number, end: number) => end === start ? +(m
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
 const interpolate = (to: Transform, t: number): Transform => ({ tx: to.tx * t, ty: to.ty * t, sx: mix(1, to.sx, t), sy: mix(1, to.sy, t) });
 const mapBox = (from: Box, to: Box): Transform => ({ sx: to.w / from.w, sy: to.h / from.h, tx: to.x - from.x * to.w / from.w, ty: to.y - from.y * to.h / from.h });
+const blendBox = (from: Box, to: Box, t: number): Box => ({ x: mix(from.x, to.x, t), y: mix(from.y, to.y, t), w: mix(from.w, to.w, t), h: mix(from.h, to.h, t) });
 function freeze<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     for (const child of Object.values(value)) freeze(child);
@@ -54,7 +56,7 @@ function freeze<T>(value: T): T {
   return value;
 }
 const shortTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 350, fruitIn: [350, 350], snakeEnter: 350, spelledAt: 350, sproutAt: 350, morphStart: 350, travelStart: 350, morphEnd: 350, swapAt: 380, done: 500, ffTo: 380 });
-const fullTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 450, fruitIn: [450, 700], snakeEnter: 700, spelledAt: 3600, sproutAt: 3600, morphStart: 3900, travelStart: 4200, morphEnd: 4780, swapAt: 4780, done: 4900, ffTo: 4780 });
+const fullTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 450, fruitIn: [300, 650], snakeEnter: 300, spelledAt: 3350, sproutAt: 3350, morphStart: 3650, travelStart: 4200, morphEnd: 4780, swapAt: 4780, done: 4900, ffTo: 4780 });
 
 /** Square SVG viewBox around the image sapling's painted x117–155, y7–35.
  * Use the same brand bounds in the stub and real engine (D-18).
@@ -80,14 +82,15 @@ export function stubPlan(input: Input): Plan {
   const cell = 12;
   const logoBox = { x: input.viewport.w / 2 - 156, y: input.viewport.h * .4, w: 312, h: 72 };
   const sprout = sproutBox(logoBox);
-  return retargetPlan(freeze({ input: { ...input, viewport: { ...input.viewport }, target: { ...input.target } }, cell, origin: { x: logoBox.x, y: logoBox.y }, segment: 10, maxLength: 0, fruit: [], ticks: [], word: { cells: [] }, wordBox: logoBox, logoBox, sprout, timeline: input.motion === 'reduced' ? shortTimeline : fullTimeline, skipTimeline: shortTimeline, morph: identity, sproutMorph: identity }), input.target);
+  return retargetPlan(freeze({ input: { ...input, viewport: { ...input.viewport }, target: { ...input.target } }, cell, origin: { x: logoBox.x, y: logoBox.y }, segment: 10, maxLength: 0, fruit: [], ticks: [], settled: [], word: { cells: [] }, wordBox: logoBox, logoBox, sprout, sproutStart: sprout, timeline: input.motion === 'reduced' ? shortTimeline : fullTimeline, skipTimeline: shortTimeline, morph: identity, sproutMorph: identity }), input.target);
 }
 
 /** The screen applies transforms with origin 0 0, translate then scale.
- * Draw full wordmark asset in logoBox at wordmarkOpacity, body at wordOpacity;
- * draw a separate sapling in sprout.box (only for the rail during travel).
+ * Draw the wordmark's LETTERS ONLY in logoBox at wordmarkOpacity, body at wordOpacity;
+ * draw one separate sapling in sprout.box throughout growth, settling and travel.
  * overlayOpacity fades background/page-cover layers, NOT the root containing
- * the logo: the artwork has its own complementary opacity at the final swap.
+ * the logo: the outgoing artwork stays opaque UNDER the destination during the
+ * final swap. Complementary alpha on two source-over layers would dim the ink 25%.
  * targetOpacity is the fixed destination logo, with NO scale. Hide the page's
  * duplicate target until overlay removal. All opacity factors are supplied.
  */
@@ -95,43 +98,91 @@ export function sampleAt(plan: Plan, time: number): Sample {
   const t = plan.timeline;
   const ms = Number.isNaN(time) ? 0 : Math.max(0, Math.min(t.done, time));
   const reduced = plan.input.motion === 'reduced';
-  const morph = progress(ms, t.morphStart, t.travelStart);
+  const settle = progress(ms, t.morphStart, t.morphStart + (t.travelStart - t.morphStart) * .6);
+  const morph = progress(ms, t.morphStart + (t.travelStart - t.morphStart) * .6, t.travelStart);
   const travel = progress(ms, t.travelStart, t.morphEnd);
   const ease = travel * travel * (3 - 2 * travel);
   const swap = progress(ms, t.swapAt, t.done);
-  const tick = plan.ticks.findLast(k => k.at <= ms);
-  const body = reduced ? [] : (tick?.body ?? []).map(p => {
-    const inset = (plan.cell - plan.segment) / 2;
-    return { ...p, box: p.kind === 'letter' ? { x: p.box.x - inset * morph, y: p.box.y - inset * morph, w: mix(plan.segment, plan.cell, morph), h: mix(plan.segment, plan.cell, morph) } : p.box,
-      visible: p.visible && !(p.kind === 'join' && morph === 1), opacity: p.opacity * (p.kind === 'join' ? 1 - morph : 1) };
+  // Binary search works on older Safari too. Before the morph, reuse the frozen
+  // tick and pose objects; sampling must not recursively freeze hundreds of copies.
+  let lo = 0, hi = plan.ticks.length;
+  while (lo < hi) { const mid = (lo + hi) >>> 1; if (plan.ticks[mid]!.at <= ms) lo = mid + 1; else hi = mid; }
+  const tick = plan.ticks[lo - 1];
+  const body = reduced ? [] : !settle ? tick?.body ?? [] : (tick?.body ?? []).map((p, i) => {
+    const dest = plan.settled[i]!;
+    return p.kind === 'letter' ? { ...p, box: blendBox(p.box, dest.box, settle) }
+      : { ...p, visible: p.visible && settle < 1, opacity: p.opacity * (1 - settle) };
   });
   const stage = ms >= t.done ? 'done' : reduced ? 'melt' : ms >= t.swapAt ? 'swap' : ms >= t.travelStart ? 'landing' : ms >= t.morphStart ? 'morph' : ms >= t.spelledAt ? 'spelled' : ms >= t.snakeEnter ? 'snake' : ms >= t.fruitIn[0] ? 'fruit' : 'melt';
   const rail = plan.input.target.kind === 'mark';
-  return freeze({ ms, stage, body,
+  return { ms, stage, body,
     fruit: reduced ? [] : plan.fruit.map(f => ({ ...f, eaten: ms >= f.eatAt, visible: ms >= f.popAt && ms < f.eatAt, opacity: ms >= f.eatAt ? 0 : progress(ms, f.popAt, f.popAt + 120), scale: .6 + .4 * progress(ms, f.popAt, f.popAt + 120) })),
     greetingOpacity: 1 - progress(ms, t.meltStart, t.meltEnd), backdropOpacity: 1 - progress(ms, t.meltStart, t.meltEnd),
     overlayOpacity: reduced ? 1 - progress(ms, 0, t.done) : 1 - swap,
-    sprout: { box: plan.sprout, opacity: reduced ? 0 : progress(ms, t.sproutAt, t.morphStart) * (1 - morph + (rail ? morph * travel : 0)) * (1 - swap), scale: reduced ? 1 : progress(ms, t.sproutAt, t.morphStart), transform: rail ? interpolate(plan.sproutMorph, ease) : interpolate(plan.morph, ease) },
+    sprout: { box: blendBox(plan.sproutStart, plan.sprout, settle), opacity: reduced ? 0 : progress(ms, t.sproutAt, t.morphStart), scale: reduced ? 1 : progress(ms, t.sproutAt, t.morphStart), transform: rail ? interpolate(plan.sproutMorph, ease) : interpolate(plan.morph, ease) },
     transform: interpolate(rail ? plan.sproutMorph : plan.morph, ease), wordOpacity: reduced ? 0 : 1 - morph,
-    wordmarkOpacity: reduced ? 0 : morph * (rail ? 1 - travel : 1) * (1 - swap), logoBox: plan.logoBox,
-    target: plan.input.target, targetOpacity: reduced ? progress(ms, 0, t.done) : swap, done: ms >= t.done });
+    wordmarkOpacity: reduced ? 0 : morph * (rail ? 1 - travel : 1), logoBox: plan.logoBox,
+    target: plan.input.target, targetOpacity: reduced ? progress(ms, 0, t.done) : swap, done: ms >= t.done };
 }
 type GridCell = { x: number; y: number; kind: Pose['kind']; letter: number | null };
-// Each letter is a single self-avoiding stroke. Joins start on the baseline;
-// ascent in the gutter brings the head to the next stroke's entry point.
-const strokes: readonly (readonly [number, number][])[] = [
-  [[3,1],[2,1],[1,1],[0,1],[0,2],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5]],
-  [[8,1],[7,1],[6,1],[5,1],[5,2],[5,3],[6,3],[7,3],[8,3],[8,4],[8,5],[7,5],[6,5],[5,5]],
-  [[10,2],[10,1],[11,1],[12,1],[13,1],[13,2],[13,3],[12,3],[11,3],[10,3],[10,4],[10,5],[11,5],[12,5],[13,5]],
-  [[15,2],[15,1],[16,1],[17,1],[18,1],[18,2],[18,3],[17,3],[16,3],[15,3],[15,4],[15,5],[16,5],[17,5],[18,5]],
-  [[22,1],[21,1],[20,1],[20,2],[20,3],[20,4],[20,5],[21,5],[22,5],[23,5],[23,4],[23,3],[23,2],[23,1],[23,0]],
-];
-const joins: readonly (readonly [number, number][])[] = [
-  [[4,5],[4,4],[4,3],[4,2],[4,1],[4,0],[5,0],[6,0],[7,0],[8,0]],
-  [[5,6],[6,6],[7,6],[8,6],[9,6],[9,5],[9,4],[9,3],[9,2]],
-  [[14,5],[14,4],[14,3],[14,2]],
-  [[19,5],[19,4],[19,3],[19,2],[19,1],[19,0],[20,0],[21,0],[22,0]],
-];
+type Point = readonly [number, number];
+// Two-pixel strokes allow a continuous path to enter AND leave each glyph at
+// its bottom, without closing the c or drawing columns between letters (D-17).
+// Each coarse pixel expands to a 2x2 cycle. Splicing those cycles along a
+// spanning tree gives one self-avoiding contour through every painted cell.
+const glyphs = [
+  ['111','100','100','100','111'],
+  ['111','100','111','001','111'],
+  ['111','101','111','100','111'],
+  ['111','101','111','100','111'],
+  ['001','001','111','101','111'],
+] as const;
+const GLYPH_W = 6, GLYPH_H = 10, PITCH = 9, WORD_W = PITCH * 4 + GLYPH_W;
+function traceGlyph(rows: readonly string[], offset: number): Point[] {
+  const edges = new Map<string, Set<string>>();
+  const key = (x: number, y: number) => `${x},${y}`;
+  const link = (a: string, b: string) => { if (!edges.has(a)) edges.set(a, new Set()); if (!edges.has(b)) edges.set(b, new Set()); edges.get(a)!.add(b); edges.get(b)!.add(a); };
+  const cut = (a: string, b: string) => { edges.get(a)!.delete(b); edges.get(b)!.delete(a); };
+  const cells: Point[] = [];
+  rows.forEach((row, y) => [...row].forEach((v, x) => {
+    if (v !== '1') return;
+    cells.push([x, y]);
+    const a = key(x*2,y*2), b = key(x*2+1,y*2), c = key(x*2+1,y*2+1), d = key(x*2,y*2+1);
+    link(a,b); link(b,c); link(c,d); link(d,a);
+  }));
+  const visited = new Set<string>();
+  const visit = (x: number, y: number) => {
+    visited.add(key(x,y));
+    for (const [dx,dy] of [[1,0],[0,1],[-1,0],[0,-1]] as const) {
+      const nx = x+dx, ny = y+dy;
+      if (rows[ny]?.[nx] !== '1' || visited.has(key(nx,ny))) continue;
+      const left = Math.min(x,nx)*2, top = Math.min(y,ny)*2;
+      const [a,b,c,d] = dx !== 0
+        ? [key(left+1,top),key(left+1,top+1),key(left+2,top),key(left+2,top+1)]
+        : [key(left,top+1),key(left+1,top+1),key(left,top+2),key(left+1,top+2)];
+      cut(a!,b!); cut(c!,d!); link(a!,c!); link(b!,d!);
+      visit(nx,ny);
+    }
+  };
+  visit(...cells[0]!);
+  // Open the contour at the middle of the baseline; entry is left of exit.
+  const start = key(2,GLYPH_H-1), end = key(3,GLYPH_H-1);
+  cut(start,end);
+  const result: Point[] = [];
+  let at: string | undefined = start, previous: string | undefined;
+  while (at) {
+    const [x,y] = at.split(',').map(Number);
+    result.push([x!+offset,y!]);
+    const next: string | undefined = [...edges.get(at)!].find(n => n !== previous);
+    previous = at; at = next;
+  }
+  return result;
+}
+const strokes = glyphs.map((g,i) => traceGlyph(g,i*PITCH));
+const joins = strokes.slice(0,-1).map((stroke,i) => {
+  const from = stroke[stroke.length-1]![0], to = strokes[i+1]![0]![0];
+  return Array.from({length:to-from+1},(_,n): Point => [from+n,GLYPH_H]);
+});
 const wordRoute: readonly GridCell[] = freeze(strokes.flatMap((stroke, letter) => [
   ...stroke.map(([x,y]) => ({ x, y, kind: 'letter' as const, letter })),
   ...(joins[letter] ?? []).map(([x,y]) => ({ x, y, kind: 'join' as const, letter: null })),
@@ -143,45 +194,69 @@ export function buildPlan(input: Input): Plan {
   if (input.motion === 'reduced') return stubPlan(input);
   const dpr = input.viewport.dpr;
   const snap = (n: number) => Math.round(n * dpr) / dpr;
-  const unit = 115 / 24;
-  const cell = Math.max(1 / dpr, Math.floor(Math.min((input.viewport.w - 32) / (156 / unit), input.viewport.h / 16, 30) * dpr) / dpr);
+  const unit = 115 / WORD_W;
+  const cell = Math.max(1 / dpr, Math.floor(Math.min((input.viewport.w - 32) / (156 / unit), input.viewport.h / 24, 18) * dpr) / dpr);
   // Snap both block edges: an even number of physical pixels in the gap.
   const inset = Math.max(0, Math.round(cell * .07 * dpr)) / dpr;
   const segment = cell - 2 * inset;
-  const origin = { x: snap((input.viewport.w - 156 / unit * cell) / 2), y: snap(input.viewport.h * .43 - cell * 3) };
+  const origin = { x: snap((input.viewport.w - 156 / unit * cell) / 2), y: snap(input.viewport.h * .43 - cell * 5) };
   const box = (c: GridCell, pad = 0): Box => ({ x: origin.x + c.x * cell + pad, y: origin.y + c.y * cell + pad, w: cell - 2 * pad, h: cell - 2 * pad });
-  const wordBox = { x: origin.x, y: origin.y, w: 24 * cell, h: 6 * cell };
-  const logoBox = { x: origin.x, y: origin.y + (6 - 36 / unit) * cell, w: 156 / unit * cell, h: 36 / unit * cell };
+  const wordBox = { x: origin.x, y: origin.y, w: WORD_W * cell, h: GLYPH_H * cell };
+  const logoBox = { x: origin.x, y: origin.y + (GLYPH_H - 36 / unit) * cell, w: 156 / unit * cell, h: 36 / unit * cell };
   const sprout = sproutBox(logoBox);
+  const sproutStart = { ...sprout, x: origin.x + (4*PITCH+5)*cell - sprout.w/2, y: origin.y - sprout.h*.86 };
   const initialLength = joins.reduce((sum, j) => sum + j.length, 0);
   const entry: GridCell[] = [];
-  for (let x = 3 - initialLength + 3; x <= 3; x++) entry.push({ x, y: -2, kind: 'entry', letter: null });
-  entry.push({ x:3,y:-1,kind:'entry',letter:null }, { x:3,y:0,kind:'entry',letter:null });
+  const firstHead = Math.floor(-origin.x/cell)-2;
+  for (let x = firstHead-initialLength+1; x <= 2; x++) entry.push({ x, y: GLYPH_H, kind: 'entry', letter: null });
   const route = [...entry, ...wordRoute];
+  const poses: Pose[] = route.map((p,id) => ({
+    id, box: box(p,inset), dir: direction(route[id-1] ?? {...p,x:p.x-1},p),
+    visible: true, opacity: p.kind === 'join' ? .4 : 1, kind: p.kind, letter: p.letter,
+  }));
+  const fruitCount = strokes.reduce((n,s)=>n+s.length,0);
   const fruit: Fruit[] = [];
   const ticks: Tick[] = [];
   let length = initialLength;
   let random = (input.seed ?? 1) >>> 0;
   const kinds: FruitKind[] = ['apple','cherry','orange'];
-  for (let head = entry.length - 1; head < route.length; head++) {
-    const step = head - entry.length + 1;
-    const at = fullTimeline.snakeEnter + step / wordRoute.length * (fullTimeline.spelledAt - fullTimeline.snakeEnter);
+  const firstFruitAt = 700;
+  for (let head = initialLength - 1; head < route.length; head++) {
+    const at = head < entry.length
+      ? mix(fullTimeline.snakeEnter, firstFruitAt, (head-initialLength+1)/(entry.length-initialLength+1))
+      : mix(firstFruitAt, fullTimeline.spelledAt, (head-entry.length)/(wordRoute.length-1));
     const c = route[head]!;
     let ate: number | null = null;
     if (c.kind === 'letter') {
       ate = fruit.length;
       random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
-      fruit.push({ id: ate, kind: kinds[random % kinds.length]!, letter: c.letter!, box: box(c, inset), popAt: fullTimeline.fruitIn[0] + ate / 70 * 120, eatAt: at });
+      let kind = kinds[random % kinds.length]!;
+      if (fruit.length >= 2 && fruit[fruit.length-1]!.kind === kind && fruit[fruit.length-2]!.kind === kind) kind = kinds[(random % kinds.length+1)%kinds.length]!;
+      fruit.push({ id: ate, kind, letter: c.letter!, box: poses[head]!.box, popAt: fullTimeline.fruitIn[0] + ate / fruitCount * 180, eatAt: at });
       length++;
     }
     const body: Pose[] = [];
     for (let i = head; i > head - length; i--) {
-      const p = route[i]!;
-      body.push({ id: head - i, box: box(p, inset), dir: direction(route[i-1] ?? { ...p, x: p.x-1 }, p), visible: true, opacity: 1, kind: p.kind, letter: p.letter });
+      // The route index belongs to the cell, not the distance from the head.
+      // Renderers can recycle retired ids: surviving blocks never move per tick.
+      body.push(poses[i]!);
     }
     ticks.push({ at, body, ate });
   }
-  return retargetPlan(freeze({ input: { ...input, viewport:{...input.viewport},target:{...input.target} }, cell, origin, segment, maxLength: length, fruit, ticks,
+  // Painted letter bounds in the 640x147 artwork (sapling is separate). Settle
+  // each glyph into its own bounds before revealing that artwork, not a single
+  // whole-word dissolve from the unrelated grid spacing.
+  const ink: readonly Box[] = [
+    {x:0,y:44,w:101,h:103},{x:101,y:44,w:69,h:103},
+    {x:171,y:44,w:101,h:103},{x:273,y:44,w:100,h:103},{x:371,y:0,w:100,h:147},
+  ];
+  const settled = ticks[ticks.length-1]!.body.map(p => {
+    if (p.letter === null) return p;
+    const b = ink[p.letter]!, c = route[p.id]!;
+    const dest = {x:logoBox.x+b.x/640*logoBox.w,y:logoBox.y+b.y/147*logoBox.h,w:b.w/640*logoBox.w,h:b.h/147*logoBox.h};
+    return {...p,box:{x:dest.x+(c.x-p.letter*PITCH)/GLYPH_W*dest.w,y:dest.y+c.y/GLYPH_H*dest.h,w:dest.w/GLYPH_W,h:dest.h/GLYPH_H}};
+  });
+  return retargetPlan(freeze({ input: { ...input, viewport:{...input.viewport},target:{...input.target} }, cell, origin, segment, maxLength: length, fruit, ticks, settled, sproutStart,
     word: { cells: wordRoute.filter(c=>c.kind==='letter').map(c=>box(c)) }, wordBox, logoBox, sprout,
     timeline: fullTimeline, skipTimeline:shortTimeline, morph:identity, sproutMorph:identity }), input.target);
 }
