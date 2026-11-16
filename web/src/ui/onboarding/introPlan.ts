@@ -108,12 +108,9 @@ export function sampleAt(plan: Plan, time: number): Sample {
   let lo = 0, hi = plan.ticks.length;
   while (lo < hi) { const mid = (lo + hi) >>> 1; if (plan.ticks[mid]!.at <= ms) lo = mid + 1; else hi = mid; }
   const tick = plan.ticks[lo - 1];
-  // A pose that has passed the tail is absent from the tick and stops drawing.
-  // Retained joins dissolve during the final 120ms of writing, so the entire
-  // 300ms reading hold contains only letters (D-24), before any morph begins.
-  const joinFade = progress(ms, t.spelledAt - 120, t.spelledAt);
-  const writing = ms >= t.spelledAt ? plan.written : !joinFade ? tick?.body ?? []
-    : (tick?.body ?? []).map(p => p.kind === 'join' ? { ...p, opacity: p.opacity * (1-joinFade) } : p);
+  // D-26: links are ordinary opaque snake blocks throughout writing and the
+  // reading hold. Only the in-place settle dissolves them into the wordmark.
+  const writing = ms >= t.spelledAt ? plan.written : tick?.body ?? [];
   const body = reduced ? [] : !settle ? writing : writing.map((p, i) => {
     const dest = plan.settled[i]!;
     return p.kind === 'letter' ? { ...p, box: blendBox(p.box, dest.box, settle) }
@@ -134,8 +131,8 @@ type GridCell = { x: number; y: number; kind: Pose['kind']; letter: number | nul
 type Point = readonly [number, number];
 // D-23: the V0.11 single-cell glyphs, with a common 4x5 x-height and
 // one extra row for d's ascender. The c's arms have equal length/weight.
-// Three empty columns separate glyphs. Baseline exits drop immediately below
-// the letters; elevated exits descend in the middle gutter column (D-24).
+// Three empty columns separate glyphs. All horizontal links use row 6, directly
+// below the baseline. Elevated endpoints use single-column access legs.
 const GLYPH_W = 4, GLYPH_H = 6, PITCH = 7, WORD_W = PITCH * 4 + GLYPH_W;
 const c: readonly Point[] = [[3,1],[2,1],[1,1],[0,1],[0,2],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5]];
 // Reverse the s so it can be entered from the baseline on its left.
@@ -146,8 +143,8 @@ const e: readonly Point[] = [[0,2],[0,1],[1,1],[2,1],[3,1],[3,2],[3,3],[2,3],[1,
 const d: readonly Point[] = [[3,2],[3,3],[3,4],[3,5],[2,5],[1,5],[0,5],[0,4],[0,3],[0,2],[0,1],[1,1],[2,1],[3,1],[3,0]];
 const strokes = [c,s,e,e,d].map((stroke,i) => stroke.map(([x,y]): Point => [x+i*PITCH,y]));
 const joins: readonly (readonly Point[])[] = [
-  [[3,6],[4,6],[5,6],[6,6],[6,5]],
-  [[11,1],[12,1],[12,2],[12,3],[12,4],[12,5],[12,6],[13,6],[13,5],[13,4],[13,3],[13,2]],
+  [[3,6],[4,6],[5,6],[6,6],[7,6]],
+  [[11,1],[11,2],[11,3],[11,4],[11,5],[11,6],[12,6],[13,6],[13,5],[13,4],[13,3],[13,2]],
   [[17,6],[18,6],[19,6],[20,6],[20,5],[20,4],[20,3],[20,2]],
   [[24,6],[25,6],[26,6],[27,6],[28,6],[29,6],[30,6],[31,6],[32,6],[32,5],[32,4],[32,3],[32,2]],
 ];
@@ -187,7 +184,7 @@ export function buildPlan(input: Input): Plan {
   const route = [...entry, ...wordRoute];
   const poses: Pose[] = route.map((p,id) => ({
     id, box: box(p,inset), dir: direction(route[id-1] ?? {...p,x:p.x-1},p),
-    visible: true, opacity: p.kind === 'join' ? .4 : 1, kind: p.kind, letter: p.letter,
+    visible: true, opacity: 1, kind: p.kind, letter: p.letter,
   }));
   const fruitCount = strokes.reduce((n,s)=>n+s.length,0);
   const fruit: Fruit[] = [];
@@ -225,7 +222,7 @@ export function buildPlan(input: Input): Plan {
     {x:0,y:44,w:101,h:103},{x:101,y:44,w:69,h:103},
     {x:171,y:44,w:101,h:103},{x:273,y:44,w:100,h:103},{x:371,y:0,w:100,h:147},
   ];
-  const written = ticks[ticks.length-1]!.body.map(p => p.kind === 'join' ? { ...p, opacity: 0, visible: false } : p);
+  const written = ticks[ticks.length-1]!.body;
   const settled = written.map(p => {
     if (p.letter === null) return p;
     const b = ink[p.letter]!, c = route[p.id]!;
