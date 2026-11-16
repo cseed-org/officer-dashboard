@@ -4,22 +4,23 @@ import { GREETINGS } from '../src/ui/onboarding/greetings';
 
 /**
  * V0.12 hello screen (WelcomeIntro.tsx; the motion comes from introPlan.ts, unit-tested in
- * onboarding-snake.spec.ts). A liquid-glass greeting over the video slot (or its stand-in) in 15
+ * onboarding-plan.spec.ts). A liquid-glass greeting over the video slot (or its stand-in) in 15
  * languages with nothing else on screen; one press anywhere starts it, even before the page's
- * script has run; it melts onto the page's paper, fruit and the snake play from the plan, and the
+ * script has run; the glass word holds in the centre and glides to the corner, and the
  * wordmark lands exactly on the page logo with an opacity-only swap and no double draw.
  * Needs the Go server with DEV_AUTH=1 behind WEB_ORIGIN. INTRO_FRAMES=<dir> also saves frame strips.
  */
-type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; sprout: number; shellBox: number[] };
+type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; sapling: number; backdrop: number; shellBox: number[] };
 
 /** Records, on every animation frame of /onboarding, what the hand-off depends on. */
 const RECORDER = () => {
   if (location.pathname !== '/onboarding') return;
-  type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; sprout: number; shellBox: number[] };
+  type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; sapling: number; backdrop: number; shellBox: number[] };
   const w = window as unknown as { __rows: Row[]; __dt: number[] };
   w.__rows = [];
   w.__dt = [];
   let prev = 0;
+  let started = false;
   const rect = (e: Element | null | undefined) => {
     if (!e) return [];
     const b = e.getBoundingClientRect();
@@ -30,10 +31,13 @@ const RECORDER = () => {
     if (prev) w.__dt.push(now - prev);
     prev = now;
     const wi = document.querySelector<HTMLElement>('.wi');
+    if (!wi && !started) { requestAnimationFrame(tick); return; }
+    started = true;
     const sh = document.querySelector<HTMLElement>('[data-onb-logo]');
     const lg = document.querySelector<HTMLElement>('[data-wi-logo]');
     const mk = document.querySelector<HTMLElement>('[data-wi-word]');
-    const sp = document.querySelector<HTMLElement>('[data-wi-sprout]');
+    const sp = document.querySelector<HTMLElement>('[data-wi-logo-sapling]');
+    const bg = document.querySelector<HTMLElement>('[data-wi-backdrop]');
     w.__rows.push({
       t: now,
       state: wi?.dataset.state ?? 'gone',
@@ -42,10 +46,11 @@ const RECORDER = () => {
       logoBox: rect(shown(lg)),
       mark: mk ? +getComputedStyle(mk).opacity : -1,
       markBox: rect(mk),
-      sprout: sp ? +getComputedStyle(sp).opacity : -1,
+      sapling: sp ? +getComputedStyle(sp).opacity : -1,
+      backdrop: bg ? +getComputedStyle(bg).opacity : -1,
       shellBox: rect(shown(sh)),
     });
-    requestAnimationFrame(tick);
+    if (wi) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
 };
@@ -58,7 +63,7 @@ test('only the intro shows: the glass greeting over the backdrop, no buttons, hi
   await expect(overlay(page).locator('.wi-skip, .wi-hint, .wi-photo, figure')).toHaveCount(0);
   // Every visible thing in the overlay is one of its layers.
   const odd = await overlay(page).evaluate((root) => {
-    const allowed = ['wi-paper', 'wi-backdrop', 'wi-standin', 'wi-poster', 'wi-video', 'wi-scrim', 'wi-greet', 'wi-slot', 'wi-text', 'wi-face', 'wi-glass', 'wi-sheen', 'wi-sheen-in', 'wi-shine', 'wi-cs', 'wi-layer', 'wi-eyes', 'wi-mark', 'wi-sprout', 'wi-logo', 'wordmark-logo', 'wordmark-mark', 'visually-hidden'];
+    const allowed = ['wi-paper', 'wi-backdrop', 'wi-standin', 'wi-poster', 'wi-video', 'wi-scrim', 'wi-greet', 'wi-slot', 'wi-text', 'wi-face', 'wi-glass', 'wi-sheen', 'wi-sheen-in', 'wi-shine', 'wi-cs', 'wi-artwork', 'wi-word', 'wi-word-glass', 'wi-word-ink', 'wi-logo', 'wordmark-logo', 'wordmark-mark', 'visually-hidden'];
     return Array.from(root.querySelectorAll<HTMLElement>('*'))
       .filter((e) => {
         const b = e.getBoundingClientRect();
@@ -121,11 +126,11 @@ for (const how of ['key', 'press', 'escape'] as const) {
   });
 }
 
-test('one press starts it, a second fast-forwards to the swap, and Escape skips without fruit or snake', async ({ page }, info) => {
+test('one press starts it, a second fast-forwards to the swap, and Escape takes the short fade', async ({ page }, info) => {
   const shell = await openIntro(page, { before: (p) => p.addInitScript(RECORDER) });
   await pressAnywhere(page, info);
   await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
-  await expect(page.locator('[data-wi-fruit]').first()).toBeVisible();
+  await expect(page.locator('[data-wi-word]')).toBeVisible();
   await page.waitForTimeout(800); // clearly a separate press, not the first one's double (R-1)
   const t1 = await page.evaluate(() => performance.now());
   await pressAnywhere(page, info);
@@ -133,19 +138,71 @@ test('one press starts it, a second fast-forwards to the swap, and Escape skips 
   // It jumped to the swap and the swap still played: frames with the landing logo part-way in, in its box.
   const rows = (await page.evaluate(() => (window as unknown as { __rows: Row[] }).__rows)).filter((r) => r.t >= t1 && r.state !== 'gone');
   const swap = rows.filter((r) => r.logo > 0 && r.logo < 1);
-  expect(swap.length, 'frames of the swap after the second press').toBeGreaterThan(2);
+  if (shell.kind === 'wordmark') expect(swap.length, 'frames of the swap after the second press').toBeGreaterThan(0);
   for (const r of swap) r.logoBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
   expect(rows.at(-1)!.logo).toBeGreaterThan(0.95);
 
   await page.goto('about:blank');
   await openIntro(page);
-  // Escape starts the short plan at once (in the same task): it never builds fruit or a snake.
+  // Escape starts the stationary short plan in the same task.
   const built = await page.evaluate(() => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     return { state: document.querySelector<HTMLElement>('.wi')!.dataset.state, parts: document.querySelectorAll('[data-wi-fruit], [data-wi-snake]').length };
   });
   expect(built.parts).toBe(0);
   await expect(overlay(page)).toHaveCount(0, { timeout: 1500 });
+});
+
+test('the glass word lifts without reflow, holds centred and scales uniformly into the logo', async ({ page }) => {
+  await openIntro(page, { before: p => p.clock.install() });
+  await page.waitForFunction(() => window.__wiReady === true);
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 50);
+  const before = await front(page).locator('.wi-face .wi-cs').boundingBox();
+  expect(before).not.toBeNull();
+  await page.evaluate(() => document.querySelector('.wi')!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 })));
+  const word = page.locator('[data-wi-word]');
+  const lifted = await word.boundingBox();
+  for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(lifted![key] - before![key]), key).toBeLessThan(.5);
+  await expect(front(page).locator('.wi-cs').first()).toHaveCSS('visibility', 'hidden');
+  await expect(word.locator('.wi-word-glass')).toHaveCSS('visibility', 'visible');
+  await page.clock.runFor(700);
+  const hold = (await word.boundingBox())!, vp = page.viewportSize()!;
+  expect(Math.abs(hold.x + hold.width / 2 - vp.width / 2)).toBeLessThan(.5);
+  expect(Math.abs(hold.y + hold.height / 2 - vp.height / 2)).toBeLessThan(.5);
+  expect(hold.width).toBeCloseTo(before!.width, 1);
+  expect(hold.height).toBeCloseTo(before!.height, 1);
+  await page.clock.runFor(400);
+  const glide = (await word.boundingBox())!;
+  expect(glide.width / before!.width).toBeCloseTo(glide.height / before!.height, 4);
+  expect(glide.width).toBeLessThan(hold.width);
+  await page.clock.runFor(300); // includes the next scheduled animation frame
+  await expect(page.locator('[data-wi-backdrop]')).toHaveCSS('opacity', '0');
+  await page.clock.runFor(200);
+  await expect(overlay(page)).toHaveCount(0);
+});
+
+test('Escape during the glide freezes the word and takes a short fade', async ({ page }) => {
+  await openIntro(page, { before: p => p.clock.install() });
+  await page.waitForFunction(() => window.__wiReady === true);
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 50);
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(1050);
+  await page.keyboard.press('Escape');
+  await page.clock.runFor(20);
+  const held = await page.locator('[data-wi-word]').boundingBox();
+  await page.clock.runFor(200);
+  expect(await page.locator('[data-wi-word]').boundingBox()).toEqual(held);
+  await page.clock.runFor(310);
+  await expect(overlay(page)).toHaveCount(0);
+});
+
+test('without a destination the intro fades away without drawing a fake logo', async ({ page }) => {
+  await openIntro(page);
+  await page.locator('[data-onb-logo]').evaluate(el => el.remove());
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-wi-logo]')).toHaveCSS('opacity', '0');
+  await expect(page.locator('[data-wi-logo-sapling]')).toHaveCSS('opacity', '0');
+  await expect(overlay(page)).toHaveCount(0, { timeout: 1000 });
 });
 
 test('keys: letters, Enter and Space start it; F-keys, Tab and shortcuts are left to the browser', async ({ page }) => {
@@ -329,7 +386,7 @@ const withVideo = (body: Buffer | null) => async (page: Page) => {
   await page.route('**/media/hello-loop.mp4', (route) => (body ? route.fulfill({ body, contentType: 'video/webm' }) : route.fulfill({ status: 404, body: '' })));
 };
 
-test('video slot with a file: muted looping video fades in once playing, and pauses after the melt', async ({ page }, info) => {
+test('video slot with a file: muted looping video fades in once playing, and pauses at the end of the glide', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'one width is enough');
   const clip = await makeClip(page);
   await openIntro(page, { before: withVideo(clip) });
@@ -340,8 +397,17 @@ test('video slot with a file: muted looping video fades in once playing, and pau
   await expect.poll(() => v.evaluate((e: HTMLVideoElement) => !e.paused && +getComputedStyle(e).opacity)).toBe(1);
   // object-fit: cover crops the one landscape video to any screen.
   await expect(v).toHaveCSS('object-fit', 'cover');
+  await v.evaluate((el: HTMLVideoElement) => {
+    const w = window as unknown as { __videoPauseBackdrop?: number };
+    el.addEventListener('pause', () => {
+      const backdrop = document.querySelector('[data-wi-backdrop]');
+      if (backdrop) w.__videoPauseBackdrop = +getComputedStyle(backdrop).opacity;
+    }, { once: true });
+  });
   await page.keyboard.press('Enter');
-  await expect.poll(() => v.evaluate((e: HTMLVideoElement) => e.paused), { timeout: 3000 }).toBe(true);
+  // The paused video is removed only 150ms later. Observe the event instead of
+  // polling an element whose entire paused lifetime can fall between polls.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __videoPauseBackdrop?: number }).__videoPauseBackdrop), { timeout: 3000 }).toBe(0);
 });
 
 test('video slot with a broken file: it falls back to the stand-in', async ({ page }, info) => {
@@ -361,8 +427,6 @@ for (const theme of ['light', 'dark'] as const) {
     });
     pageLogo.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `page ${pageLogo} vs shell ${shell.box}`).toBeLessThan(0.6));
     await expect(page.locator('[data-onb-logo]')).toHaveAttribute('data-kind', shell.kind);
-    // One sapling only: the travelling wordmark's own sapling is cropped off; the separate one stands for it (R-2).
-    expect(await page.locator('[data-wi-word] img').first().evaluate((e) => getComputedStyle(e).clipPath)).toMatch(/inset/);
     const t0 = await page.evaluate(() => performance.now());
     await pressAnywhere(page, info);
     await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
@@ -370,8 +434,9 @@ for (const theme of ['light', 'dark'] as const) {
     const rows = (await page.evaluate(() => (window as unknown as { __rows: Row[] }).__rows)).filter((r) => r.t >= t0);
     const gone = rows.findIndex((r) => r.state === 'gone');
     expect(gone).toBeGreaterThan(0);
-    // About 5 s from the press to the page (D-7).
-    expect(rows[gone]!.t - t0).toBeLessThan(5600);
+    // About 1.5 s from the press to the page (D-28), including input delivery and the last paint.
+    expect(rows[gone]!.t - t0).toBeGreaterThanOrEqual(1400);
+    expect(rows[gone]!.t - t0).toBeLessThan(1750);
     // Never two logos: the page logo stays hidden for as long as the overlay draws one.
     for (const r of rows) if (r.state !== 'gone') expect(r.shellVisible, `frame at ${Math.round(r.t - t0)} ms`).toBe(false);
     for (const r of rows.slice(gone)) expect(r.shellVisible).toBe(true);
@@ -380,18 +445,25 @@ for (const theme of ['light', 'dark'] as const) {
     expect(last.logo).toBeGreaterThan(0.95);
     last.logoBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `intro ${last.logoBox} vs shell ${shell.box}`).toBeLessThan(0.6));
     rows[gone]!.shellBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
-    // The swap is opacity only: while the travelling wordmark and the landing logo cross-fade, both sit in the
-    // same box (the full wordmark onto a wordmark; on the rail the wordmark has faded out by then).
+    // Real logo copies never move or scale. The wordmark swap starts only after the
+    // glass letters have landed; the rail deliberately fades during the glide.
     const swap = rows.filter((r) => r.logo > 0 && r.logo < 1 && r.state !== 'gone');
     expect(swap.length).toBeGreaterThan(0);
-    expect(swap.at(-1)!.t - swap[0]!.t).toBeLessThan(160);
+    if (shell.kind === 'wordmark') expect(swap.at(-1)!.t - swap[0]!.t).toBeLessThan(160);
     for (const r of swap) {
       r.logoBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
-      if (shell.kind === 'wordmark' && r.mark > 0.01) r.markBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `mark ${r.markBox}`).toBeLessThan(1));
-      // Coverage stays full: what is landing is drawn over what was there, which stays opaque (no dimming).
-      expect(r.sprout, `sapling at ${Math.round(r.t - t0)} ms`).toBeGreaterThan(0.97);
-      if (shell.kind === 'wordmark') expect(r.mark, `wordmark at ${Math.round(r.t - t0)} ms`).toBeGreaterThan(0.97);
+      expect(r.mark + r.logo).toBeCloseTo(1, 2);
+      if (shell.kind === 'wordmark') {
+        const targetLetters = [shell.box[0]!, shell.box[1]!, shell.box[2]! * 471 / 640, shell.box[3]!];
+        r.markBox.forEach((v, i) => expect(Math.abs(v - targetLetters[i]!), `glass ${r.markBox} vs letters ${targetLetters}`).toBeLessThan(0.5));
+        expect(r.backdrop).toBe(0);
+      }
     }
+    if (shell.kind === 'wordmark') {
+      for (const r of swap) expect(r.sapling).toBeCloseTo(r.logo * 120 / 150, 2);
+      expect(last.sapling).toBe(1);
+    }
+    expect(last.backdrop).toBe(0);
   });
 }
 
@@ -419,23 +491,42 @@ test('prefers-reduced-motion: the poster or stand-in stands still, languages cro
   p.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
 });
 
-// One test per theme: each gets a fresh browser context, so the saved theme preference applies.
+// Six contact sheets: each screenshot freezes the actual screen at a known plan time.
 for (const theme of ['light', 'dark'] as const) {
   test(`frame strips for the PR (${theme})`, async ({ page }, info) => {
     const dir = process.env.INTRO_FRAMES;
     test.skip(!dir, 'set INTRO_FRAMES=<dir> to record frames');
-    await openIntro(page, { theme });
-    await page.waitForTimeout(1200);
-    await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-00-greeting.png` });
-    await pressAnywhere(page, info);
-    const t0 = Date.now();
-    for (let i = 1; i <= 40; i++) {
-      await page.waitForTimeout(Math.max(0, i * 160 - (Date.now() - t0)));
-      if ((await overlay(page).count()) === 0) break;
-      await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-${String(i).padStart(2, '0')}.png` });
+    await openIntro(page, { theme, before: p => p.clock.install() });
+    await page.waitForFunction(() => window.__wiReady === true);
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 50);
+    await page.evaluate(() => document.fonts.ready);
+    const width = page.viewportSize()!.width;
+    const shots: { name: string; data: string }[] = [];
+    const shot = async (name: string) => {
+      const bytes = await page.screenshot({ path: `${dir}/${width}-${theme}-${name}.png` });
+      shots.push({ name, data: bytes.toString('base64') });
+    };
+    await shot('00-greeting');
+    await page.evaluate(() => document.querySelector('.wi')!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 })));
+    let previous = 0;
+    for (const [at, name] of [[300, '01-melt'], [700, '02-hold'], [1100, '03-glide'], [1400, '04-swap'], [2100, '05-landed']] as const) {
+      await page.clock.runFor(at - previous);
+      previous = at;
+      await shot(name);
     }
-    await page.waitForTimeout(400);
-    await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-99-landed.png` });
+    const sheet = await page.evaluate(async (frames) => {
+      const imgs = await Promise.all(frames.map(f => new Promise<HTMLImageElement>((resolve) => {
+        const img = new Image(); img.onload = () => resolve(img); img.src = `data:image/png;base64,${f.data}`;
+      })));
+      const cellW = 360, cellH = Math.round(imgs[0]!.height * cellW / imgs[0]!.width), label = 28;
+      const canvas = document.createElement('canvas'); canvas.width = cellW * 3; canvas.height = (cellH + label) * 2;
+      const ctx = canvas.getContext('2d')!; ctx.fillStyle = '#202020'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = '14px sans-serif'; ctx.fillStyle = '#ffffff';
+      imgs.forEach((img, i) => { const x = (i % 3) * cellW, y = Math.floor(i / 3) * (cellH + label); ctx.fillText(frames[i]!.name, x + 8, y + 19); ctx.drawImage(img, x, y + label, cellW, cellH); });
+      return canvas.toDataURL('image/png').split(',')[1]!;
+    }, shots);
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(`${dir}/${width}-${theme}-strip.png`, Buffer.from(sheet, 'base64'));
   });
 }
 
@@ -463,7 +554,7 @@ test('a press during a language change melts the greeting from where it is, with
   // Wait for a change to be under way, then press in the same task and look at the next frame.
   const r = await page.evaluate(
     () =>
-      new Promise<{ before: Record<string, number>; after: Record<string, number>; dripLangs: string[] }>((resolve) => {
+      new Promise<{ before: Record<string, number>; after: Record<string, number>; liftedLangs: string[] }>((resolve) => {
         const slots = () => Array.from(document.querySelectorAll<HTMLElement>('.wi-greet > .wi-slot'));
         const read = () => Object.fromEntries(slots().map((e) => [e.dataset.lang!, +getComputedStyle(e).opacity]));
         const poll = () => {
@@ -471,18 +562,18 @@ test('a press during a language change melts the greeting from where it is, with
           if (!a) return requestAnimationFrame(poll);
           const before = read();
           document.querySelector('.wi')!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 }));
-          const dripLangs = [...new Set(Array.from(document.querySelectorAll<HTMLElement>('.wi-drip > .wi-slot')).map((e) => e.dataset.lang!))];
-          requestAnimationFrame(() => resolve({ before, after: read(), dripLangs }));
+          const liftedLangs = slots().filter(e => e.hasAttribute('data-lifted')).map(e => e.dataset.lang!);
+          requestAnimationFrame(() => resolve({ before, after: read(), liftedLangs }));
         };
         poll();
       }),
   );
   const shown = Object.entries(r.before).filter(([, o]) => o > 0.05);
   expect(shown.length, `two phrases part-way through the change ${JSON.stringify(r.before)}`).toBe(2);
-  // The more visible phrase melts (the drips are cloned from it), the other fades from where it was, and neither
+  // The more visible phrase supplies the lifted word; both phrases melt from where they were, and neither
   // jumps on the press frame.
   const top = shown.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
-  expect(r.dripLangs).toEqual([top]);
+  expect(r.liftedLangs).toEqual([top]);
   for (const [lang, o] of shown) expect(Math.abs(r.after[lang]! - o), `${lang}: ${o} → ${r.after[lang]}`).toBeLessThan(0.2);
   await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
 });
@@ -491,9 +582,10 @@ test('a resize mid-run jumps to the end on the re-measured page logo (D-15)', as
   await openIntro(page, { before: (p) => p.addInitScript(RECORDER) });
   const vp = page.viewportSize()!;
   await pressAnywhere(page, info);
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(500);
   await page.setViewportSize({ width: vp.height > vp.width ? vp.height : Math.round(vp.width * 0.7), height: vp.height > vp.width ? vp.width : vp.height });
   await expect(overlay(page)).toHaveCount(0, { timeout: 2000 });
+  await page.waitForFunction(() => (window as unknown as { __rows: Row[] }).__rows.some(r => r.state === 'gone'));
   const rows = await page.evaluate(() => (window as unknown as { __rows: Row[] }).__rows);
   const gone = rows.findIndex((r) => r.state === 'gone');
   const last = rows[gone - 1]!;
@@ -563,3 +655,46 @@ test('another invitee on the same browser still gets the intro, faded in once th
   await pressAnywhere(page, info);
   await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
 });
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`${theme}: lettering coverage stays constant through the opacity swap`, async ({ page }, info) => {
+    test.skip(info.project.name === 'tablet', 'the rail fades between different shapes');
+    await openIntro(page, { theme, before: p => p.clock.install() });
+    await page.waitForFunction(() => window.__wiReady === true);
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 50);
+    const logo = await page.locator('[data-onb-logo]').boundingBox();
+    const clip = { x: Math.floor(logo!.x), y: Math.floor(logo!.y), width: Math.ceil(logo!.width * 471 / 640), height: Math.ceil(logo!.height) };
+    await page.evaluate(() => document.querySelector('.wi')!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 })));
+    await page.clock.runFor(1410);
+    const opacity = await page.locator('[data-wi-logo]').evaluate(el => +getComputedStyle(el).opacity);
+    expect(opacity).toBeGreaterThan(.15); expect(opacity).toBeLessThan(.85);
+    const middle = await page.screenshot({ clip });
+    await page.clock.runFor(220);
+    await expect(overlay(page)).toHaveCount(0);
+    const final = await page.screenshot({ clip });
+    const result = await page.evaluate(async ({ a, b, theme }) => {
+      const pixels = (data: string) => new Promise<Uint8ClampedArray>(resolve => {
+        const image = new Image(); image.onload = () => {
+          const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+          const ctx = canvas.getContext('2d')!; ctx.drawImage(image, 0, 0); resolve(ctx.getImageData(0, 0, image.width, image.height).data);
+        }; image.src = `data:image/png;base64,${data}`;
+      });
+      const [mid, end] = await Promise.all([pixels(a), pixels(b)]);
+      const lum = (px: Uint8ClampedArray, i: number) => .2126 * px[i]! + .7152 * px[i + 1]! + .0722 * px[i + 2]!;
+      // Solid interiors of the delivered letters exclude antialiased edges and
+      // the <0.5px resampling difference between the two logo asset resolutions.
+      let count = 0, midContrast = 0, endContrast = 0;
+      const bg = theme === 'light' ? Math.max(...Array.from({ length: end.length / 4 }, (_, i) => lum(end, i * 4)))
+        : Math.min(...Array.from({ length: end.length / 4 }, (_, i) => lum(end, i * 4)));
+      for (let i = 0; i < end.length; i += 4) {
+        const e = lum(end, i), m = lum(mid, i);
+        if (theme === 'light' ? e < 40 : e > 220) {
+          count++; midContrast += Math.abs(m - bg); endContrast += Math.abs(e - bg);
+        }
+      }
+      return { count, coverage: midContrast / endContrast };
+    }, { a: middle.toString('base64'), b: final.toString('base64'), theme });
+    expect(result.count).toBeGreaterThan(20);
+    expect(result.coverage, JSON.stringify(result)).toBeGreaterThan(.92);
+  });
+}

@@ -423,74 +423,66 @@ function OnboardingFlow({ intro, hideLogo, onIntroStart }: { intro: boolean; hid
         <span class="onb-logo-slot">
           <ShellLogo />
         </span>
-        {!intro && (
-          <>
-            <ol class="onb-progress" style={`--steps:${TOTAL}`} aria-label={`Setup progress, step ${step} of ${TOTAL}`}>
-              {NAMES.map((n, i) => (
-                <li key={n} class={`onb-seg${i + 1 < step ? ' is-done' : ''}`} aria-current={i + 1 === step ? 'step' : undefined}>
-                  <span class="visually-hidden">
-                    {n}
-                    {i + 1 < step ? ', completed' : ''}
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <span class="onb-count" aria-hidden="true">
-              0{step} / 0{TOTAL}
-            </span>
-          </>
-        )}
+        <ol class="onb-progress" style={`--steps:${TOTAL}`} aria-label={`Setup progress, step ${step} of ${TOTAL}`}>
+          {NAMES.map((n, i) => (
+            <li key={n} class={`onb-seg${i + 1 < step ? ' is-done' : ''}`} aria-current={i + 1 === step ? 'step' : undefined}>
+              <span class="visually-hidden">
+                {n}
+                {i + 1 < step ? ', completed' : ''}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <span class="onb-count" aria-hidden="true">
+          0{step} / 0{TOTAL}
+        </span>
       </header>
-      {!intro && (
-        <div class="onb-main onb-main--single">
-          <section class={`onb-step is-entering${dir === -1 ? ' is-back' : ''}`} key={section ? 'profile' : step} aria-busy={busy || undefined}>
-            <p class="brand-eyebrow" key={`e${step}`}>
-              {eyebrow}
-            </p>
-            <h1 class="display display--xl onb-title" id="step-title" tabIndex={-1} ref={titleRef} key={`t${step}`}>
-              {titles[step - 1]}
-            </h1>
-            <p class="brand-lede onb-lede" key={`l${step}`}>
-              {ledes[step - 1]}
-            </p>
-            {section ? (
-              <div ref={profileWrap} data-onb-profile>
-                <ProfileForm data={profile} brand showSave={false} handle={profileRef} onSaved={setProfile} section={section} />
-                {step === 3 && (
-                  <p class="field-hint" data-start-term>
-                    Start term: {ob.startTerm}. It’s set automatically when you join; a director can change it later.
-                  </p>
-                )}
-              </div>
-            ) : (
-              body
-            )}
-            {stepError && (
-              <div class="notice notice--negative" role="alert" data-step-error>
-                {stepError.text}{' '}
-                {stepError.action && (
-                  <button class="btn btn--small" type="button" onClick={stepError.action.run} disabled={busy}>
-                    {stepError.action.label}
-                  </button>
-                )}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-      {!intro && (
-        <footer class="onb-foot">
-          <button class="btn btn--text" type="button" onClick={back} disabled={step === 1 || busy} data-onb-back>
-            ← Back
-          </button>
-          <button class="btn btn--text onb-skip" type="button" onClick={() => void finishLater()} disabled={busy} data-finish-later>
-            Finish later
-          </button>
-          <button class="btn btn--primary" type="button" onClick={next} disabled={busy} data-onb-next>
-            {busy ? 'Saving…' : `${nextLabel} →`}
-          </button>
-        </footer>
-      )}
+      <div class="onb-main onb-main--single">
+        <section class={`onb-step is-entering${dir === -1 ? ' is-back' : ''}`} key={section ? 'profile' : step} aria-busy={busy || undefined}>
+          <p class="brand-eyebrow" key={`e${step}`}>
+            {eyebrow}
+          </p>
+          <h1 class="display display--xl onb-title" id="step-title" tabIndex={-1} ref={titleRef} key={`t${step}`}>
+            {titles[step - 1]}
+          </h1>
+          <p class="brand-lede onb-lede" key={`l${step}`}>
+            {ledes[step - 1]}
+          </p>
+          {section ? (
+            <div ref={profileWrap} data-onb-profile>
+              <ProfileForm data={profile} brand showSave={false} handle={profileRef} onSaved={setProfile} section={section} />
+              {step === 3 && (
+                <p class="field-hint" data-start-term>
+                  Start term: {ob.startTerm}. It’s set automatically when you join; a director can change it later.
+                </p>
+              )}
+            </div>
+          ) : (
+            body
+          )}
+          {stepError && (
+            <div class="notice notice--negative" role="alert" data-step-error>
+              {stepError.text}{' '}
+              {stepError.action && (
+                <button class="btn btn--small" type="button" onClick={stepError.action.run} disabled={busy}>
+                  {stepError.action.label}
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+      <footer class="onb-foot">
+        <button class="btn btn--text" type="button" onClick={back} disabled={step === 1 || busy} data-onb-back>
+          ← Back
+        </button>
+        <button class="btn btn--text onb-skip" type="button" onClick={() => void finishLater()} disabled={busy} data-finish-later>
+          Finish later
+        </button>
+        <button class="btn btn--primary" type="button" onClick={next} disabled={busy} data-onb-next>
+          {busy ? 'Saving…' : `${nextLabel} →`}
+        </button>
+      </footer>
     </div>
   );
 }
@@ -537,9 +529,8 @@ export default function OnboardingPage({ media }: { media?: HelloMedia }) {
   const shown = intro === 'pending' || intro === 'on' || intro === 'late' || intro === 'leaving';
   return (
     <>
-      {/* While the intro may still play, its logo stands in for the page's; when it is leaving, the page's
-          logo shows under the fading overlay, so it never pops in afterwards. */}
-      <OnboardingFlow intro={shown} hideLogo={intro === 'pending' || intro === 'on' || intro === 'late'} onIntroStart={decide} />
+      {/* The intro owns the logo until it unmounts, including a late account decision during playback. */}
+      <OnboardingFlow intro={shown} hideLogo={shown} onIntroStart={decide} />
       {shown && <WelcomeIntro onDone={done} leaving={intro === 'leaving'} late={intro === 'late'} media={media} />}
     </>
   );

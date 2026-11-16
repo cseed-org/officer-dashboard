@@ -25,7 +25,10 @@ The seeded Go dev build serves <http://localhost:8090/login>; Astro with hot rel
 serves <http://localhost:4340/login>. For developer sign-in, append
 `?key=local-docker-development-only` to `/login`. Override `DOCKER_DEV_AUTH_KEY`
 in your environment to change this local-only key; the test runner uses the same value.
-Both ports bind to host loopback. Every app-container start runs `seed -reset`,
+Both ports bind to IPv4 (`127.0.0.1`) and IPv6 (`::1`) host loopback, so
+`localhost` also works in browsers that try IPv6 first. They are not exposed on
+LAN interfaces. Apply changed port bindings on the next coordinated stack
+recreation. Every app-container start runs `seed -reset`,
 replacing the development database in the `dev_data` volume.
 
 Source is bind-mounted directly (writable for Astro's endpoint generator); the former `Sapling.tsx` / `sapling.ts` case
@@ -34,6 +37,9 @@ Dependencies and Astro's cache use named volumes; polling supports
 hot reload on Windows. After dependency changes, run
 `docker compose -f compose.dev.yaml run --rm --no-deps web npm ci`, then rebuild
 the stack. The Go server's static build updates on rebuild; Astro updates live.
+The web service also mounts the current tests and TypeScript configuration. To
+check them without restarting the running stack, use
+`docker compose -f compose.dev.yaml run --rm --no-deps web npm run check`.
 Playwright 1.65.0 and its matching browser image write traces and failure artifacts
 to `test-results/docker/`. Every Playwright run clears its output directory.
 Use `run --rm --no-deps e2e` against the running stack so testing does not restart

@@ -14,7 +14,9 @@ services:
       STATIC_DIR: /app/web/dist
     ports:
       - "127.0.0.1:8090:8090"
+      - "[::1]:8090:8090"
       - "127.0.0.1:4340:4340"
+      - "[::1]:4340:4340"
     networks:
       default:
         aliases: [dashboard]
@@ -46,6 +48,8 @@ services:
       - ./web/src:/app/web/src
       - ./src:/app/src:ro
       - ./web/astro.config.mjs:/app/web/astro.config.mjs:ro
+      - ./web/tsconfig.json:/app/web/tsconfig.json:ro
+      - ./web/tests:/app/web/tests:ro
       - ./web/package.json:/app/web/package.json:ro
       - ./web/package-lock.json:/app/web/package-lock.json:ro
       - ./web/public:/app/web/public

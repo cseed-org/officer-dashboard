@@ -16,56 +16,71 @@ for (const throttle of [1, 4] as const) {
       before: (p) =>
         p.addInitScript(() => {
           if (location.pathname !== '/onboarding') return;
-          const w = window as unknown as { __dt: number[]; __at: number[] };
+          const w = window as unknown as { __dt: number[]; __at: number[]; __t0: number };
           w.__dt = [];
           w.__at = [];
           // The rAF timestamp is vsync-aligned and hides frames up to about 30 ms (R-6): measure the wall clock
           // at the start of each callback instead, which sees how late a frame really was.
           let prev = 0;
+          let measuring = false;
+          let ended = false;
+          const begin = () => {
+            if (measuring || ended || !document.querySelector('.wi')) return;
+            measuring = true;
+            prev = w.__t0 = performance.now();
+          };
+          // Capture the actual first press, before the screen handles it. This
+          // includes setup cost without counting Playwright's input dispatch delay.
+          window.addEventListener('pointerup', begin, true);
+          window.addEventListener('keydown', begin, true);
           const tick = () => {
             const now = performance.now();
-            if (document.querySelector('.wi')) {
+            if (measuring) {
               if (prev) {
                 w.__dt.push(now - prev);
                 w.__at.push(now);
               }
               prev = now;
+              if (!document.querySelector('.wi')) { measuring = false; ended = true; }
             }
-            requestAnimationFrame(tick);
+            if (!ended) requestAnimationFrame(tick);
           };
           requestAnimationFrame(tick);
         }),
     });
     const cdp = await page.context().newCDPSession(page);
     if (throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
-    // A visitor reads the first greeting before pressing (by then the plan is built in idle time).
+    // A visitor reads the first greeting before pressing (the fonts and logo are decoded by then).
     await expect(front(page)).not.toHaveAttribute('data-lang', 'en', { timeout: 5000 });
-    const t0 = await page.evaluate(() => {
-      const w = window as unknown as { __dt: number[]; __at: number[] };
-      w.__dt.length = 0;
-      w.__at.length = 0;
-      return performance.now();
-    });
+    await page.waitForTimeout(700); // finish the language transition before measuring the exit
+    await cdp.send('Performance.enable');
+    const metricsBefore = await cdp.send('Performance.getMetrics');
     await pressAnywhere(page, info);
     await expect(overlay(page)).toHaveCount(0, { timeout: 20_000 });
-    const { dt, at } = await page.evaluate(() => {
-      const w = window as unknown as { __dt: number[]; __at: number[] };
-      return { dt: w.__dt, at: w.__at };
+    const { dt, at, t0 } = await page.evaluate(() => {
+      const w = window as unknown as { __dt: number[]; __at: number[]; __t0: number };
+      return { dt: w.__dt, at: w.__at, t0: w.__t0 };
     });
-    const long = dt.flatMap((d, i) => (d > 20.5 ? [`${Math.round(at[i]! - t0)}ms:${Math.round(d)}`] : []));
+    const metricsAfter = await cdp.send('Performance.getMetrics');
+    const mainThread = Object.fromEntries(metricsAfter.metrics
+      .filter(m => /Duration$|LayoutCount|RecalcStyleCount/.test(m.name))
+      .map(m => [m.name, m.value - (metricsBefore.metrics.find(b => b.name === m.name)?.value ?? 0)]));
+    const long = dt.flatMap((d, i) => (d > 20 ? [`${Math.round(at[i]! - t0)}ms:${Math.round(d)}`] : []));
     if (throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
     const sorted = [...dt].sort((a, b) => a - b);
-    const over = dt.filter((d) => d > 20.5).length;
+    const over = dt.filter((d) => d > 20).length;
     const p95 = sorted[Math.floor(sorted.length * 0.95)]!;
     info.annotations.push({ type: 'frames', description: `${dt.length} frames, ${over} over 20 ms (${long.join(', ')}), p95 ${p95.toFixed(1)} ms, max ${sorted.at(-1)!.toFixed(1)} ms` });
-    expect(dt.length).toBeGreaterThan(200);
-    // About 60 fps: 95% of frames within ~20 ms, at most one in twenty-five over it, and no long stall. These are
-    // wall-clock gaps in headless Chromium with software compositing (no GPU), which shows a few 20–45 ms frames
-    // around the press and the fruit even with the V0.12 screen as first committed (a50b705) on the current
-    // engine: the budget leaves room for that noise, not for real stalls (a 200 ms one fails it).
-    expect(over / dt.length, `${over} of ${dt.length} frames over 20 ms at ${long.join(', ')}`).toBeLessThan(0.04);
-    expect(p95).toBeLessThan(20.5);
-    expect(sorted.at(-1)!, `longest frame; long ones at ${long.join(', ')}`).toBeLessThan(throttle > 1 ? 70 : 50);
+    // D-29 acceptance: measure wall-clock callback gaps, including the press,
+    // under the same 20ms budget with normal and 4x CPU. Keep the raw intervals
+    // in evidence so host scheduling stalls cannot be hidden by a percentile.
+    const evidence = JSON.stringify({ throttle, dt, at, over, p95, long, mainThread });
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(info.outputPath('frame-times.json'), evidence);
+    await info.attach('frame-times.json', { body: evidence, contentType: 'application/json' });
+    expect(dt.length).toBeGreaterThan(60);
+    expect(sorted.at(-1)!, `longest frame; long ones at ${long.join(', ')}`).toBeLessThanOrEqual(20);
+
   });
 }
 
@@ -98,7 +113,9 @@ test('while it plays, only transform, opacity and visibility change (no layout p
   await pressAnywhere(page, info);
   await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
   const changes = await page.evaluate(() => (window as unknown as { __changes: string[] }).__changes);
-  // The first frames place things once (drips, the sprout, the landing box); after that, nothing but motion.
-  const late = changes.filter((c) => parseInt(c, 10) > 120);
+  // The press places the word and landing boxes once; after that, only composited properties change.
+  // D-15 explicitly re-measures the destination at glide start; only its fixed
+  // logo boxes may be placed then. Every other late mutation must be composited.
+  const late = changes.filter((c) => parseInt(c, 10) > 120 && !/^8\d\dms wi-logo (left|top|width|height):/.test(c));
   expect(late, late.slice(0, 8).join('\n')).toEqual([]);
 });

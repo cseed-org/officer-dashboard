@@ -24,17 +24,6 @@ const FADE_OUT = 380;
 const REDUCED_CYCLE_MS = 4200;
 const REDUCED_FADE = 900;
 const EASE = 'cubic-bezier(.2, .8, .2, 1)';
-/**
- * The melt: the sentence (all but cseed) splits into a few wide drips, each sagging and stretching a
- * little later than its neighbours, so it reads as a liquid curtain rather than broken strips.
- * `DRIP_AT` is when each starts (a share of the melt), `DRIP_DROP` how far it falls (a share of the band).
- */
-const DRIP_AT = [0.12, 0.02, 0.2, 0.06, 0.24];
-const DRIP_DROP = [0.44, 0.52, 0.38, 0.5, 0.42];
-const DRIPS = DRIP_AT.length;
-const DRIP_SPREAD = 0.3;
-/** The share of the melt over which the glass (with its depth) hands over to the drips. */
-const DRIP_HANDOVER = 0.22;
 /** A click that follows a handled pointerup within this many ms is the same press. */
 const SAME_PRESS_MS = 700;
 /**
@@ -120,8 +109,8 @@ const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
  * (`introPlan.ts`) takes over. The screen draws only what `sampleAt(plan, ms)` returns, so playback, a
  * second press (fast-forward), Escape and a resize all go through the same sampler.
  *
- * Interim (D-29): the snake is gone and the glass word "cseed" is not drawn yet. The sentence melts,
- * the backdrop fades and the real logo fades in at its box. Lifting and gliding the word is Codex's to wire.
+ * The glass word uses the logo's lettering mask from the greeting onward, so its measured
+ * box can land on the real lettering with uniform scale and an opacity-only handoff.
  */
 export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media = NO_MEDIA, leaving = false, late = false, target: findTarget }: Props) {
   const root = useRef<HTMLDivElement>(null);
@@ -130,6 +119,8 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   const paper = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const logo = useRef<HTMLDivElement>(null);
+  const sapling = useRef<HTMLDivElement>(null);
+  const word = useRef<HTMLDivElement>(null);
 
   const [slots, setSlots] = useState<Slots>({ a: 0, b: 1, front: 0, n: 0 });
   const [phase, setPhase] = useState<Phase>('greeting');
@@ -216,8 +207,8 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     doneRef.current();
   };
 
-  /** Builds the drawing for one press: the greeting is split into drips, then everything is only moved and faded. */
-  const setup = (landing: boolean) => {
+  /** Builds the drawing for one press: the word lifts out, then the sentence and word only move and fade. */
+  const setup = (landing: boolean, short: boolean) => {
     const write = makeWriter();
     const g = greet.current!;
     const gr = g.getBoundingClientRect();
@@ -234,43 +225,49 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
       a.cancel();
     }
     const phrases = Array.from(g.querySelectorAll<HTMLElement>(':scope > .wi-slot'))
-      .map((el) => ({ el, base: +getComputedStyle(el).opacity }))
+      .map((el) => {
+        const style = getComputedStyle(el);
+        return { el, base: +style.opacity, transform: style.transform === 'none' ? '' : style.transform };
+      })
       .filter((x) => x.base > 0.01);
     // The phrase the word comes from is the more visible one; the other (mid-change) just fades from where it is.
     const main = phrases.reduce<(typeof phrases)[number] | null>((a, b) => (!a || b.base > a.base ? b : a), null);
-    // The plan's word box: the glass "cseed" span of the phrase at the click (interim: its line box).
-    const cs = main?.el.querySelector<HTMLElement>('.wi-face .wi-cs')?.getBoundingClientRect();
+    // The masked span is the letters' box, independent of language or font metrics.
+    const source = main?.el.querySelector<HTMLElement>('.wi-face .wi-cs');
+    const cs = source?.getBoundingClientRect();
     const box: Box = cs && cs.width > 0 ? { x: cs.left, y: cs.top, w: cs.width, h: cs.height } : { x: gr.left + gr.width / 2 - 1, y: gr.top + gr.height / 2 - 1, w: 2, h: 2 };
 
-    const drips: { el: HTMLElement; at: number; drop: number }[] = [];
-    if (!reduced.current && main) {
-      const w = g.clientWidth;
-      const step = w / DRIPS;
-      for (let i = 0; i < DRIPS; i++) {
-        const d = document.createElement('div');
-        d.className = 'wi-drip';
-        d.style.left = `${(i * step).toFixed(2)}px`;
-        d.style.width = `${(step + 0.5).toFixed(2)}px`;
-        d.style.opacity = '0';
-        const clone = main.el.cloneNode(true) as HTMLElement;
-        clone.removeAttribute('data-wi-phrase');
-        clone.removeAttribute('data-front');
-        clone.style.left = `${(-i * step).toFixed(2)}px`;
-        clone.style.width = `${w}px`;
-        d.appendChild(clone);
-        g.appendChild(d);
-        drips.push({ el: d, at: DRIP_AT[i]! * (DRIP_SPREAD / 0.24), drop: DRIP_DROP[i]! });
-      }
+    const wd = word.current!;
+    wd.style.left = px(box.x);
+    wd.style.top = px(box.y);
+    wd.style.width = px(box.w);
+    wd.style.height = px(box.h);
+    wd.replaceChildren();
+    const glass = source?.cloneNode(true) as HTMLElement | undefined;
+    const ink = source?.cloneNode(true) as HTMLElement | undefined;
+    if (glass && ink) {
+      glass.classList.add('wi-word-glass');
+      ink.classList.add('wi-word-ink');
+      wd.append(ink, glass);
     }
-    const greetH = g.clientHeight;
+    // Hide only the selected copy. A second phrase caught mid-change retains its
+    // own word while it fades; removing both would cause a jump on that frame.
+    main?.el.setAttribute('data-lifted', '');
+
+    // Reuse the already-painted phrases instead of rasterising five full-band
+    // clones on the press frame. Their word is hidden, so the sentence can soften
+    // and sag around the independently lifted letters without reflow.
+    backdrop.current!.setAttribute('data-still', '');
 
     // The landing logo: the page logo's own images in its exact box, faded in, never scaled.
     const place = (t: Target) => {
-      const lg = logo.current!;
-      lg.style.left = px(t.x);
-      lg.style.top = px(t.y);
-      lg.style.height = px(t.h);
-      lg.dataset.kind = t.kind;
+      for (const lg of [logo.current!, sapling.current!]) {
+        lg.style.left = px(t.x);
+        lg.style.top = px(t.y);
+        lg.style.width = px(t.w);
+        lg.style.height = px(t.h);
+        lg.dataset.kind = t.kind;
+      }
     };
     let videoPaused = false;
 
@@ -286,20 +283,22 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
       // The paper gives way to the page as the logo lands (the page around it shows in the same frames).
       write(paper.current!, 'opacity', num(1 - clamp01(s.logoOpacity)));
 
-      // The sentence: the glass hands over to the drips, which sag, stretch and fade, each a little later.
       const p = 1 - s.sentenceOpacity;
-      if (drips.length) {
-        const f = Math.min(1, p / DRIP_HANDOVER);
-        for (const { el, base: o } of phrases) write(el, 'opacity', num(o * (1 - (el === main!.el ? f : Math.min(1, p / (DRIP_HANDOVER * 1.5))))));
-        for (const d of drips) {
-          const k = clamp01((p - d.at) / (1 - DRIP_SPREAD));
-          const e = k * k;
-          write(d.el, 'transform', `translateY(${px(e * d.drop * greetH)}) scaleY(${num(1 + 0.55 * e)})`);
-          write(d.el, 'opacity', num(f * (1 - Math.min(1, k * 1.15))));
+      for (const { el, base, transform } of phrases) {
+        write(el, 'opacity', num(base * s.sentenceOpacity));
+        if (!short && run.current?.plan.input.motion !== 'reduced') {
+          write(el, 'transform', `${transform} translateY(${px(24 * p * p)}) scaleY(${num(1 + .15 * p * p)})`);
         }
-      } else for (const { el, base: o } of phrases) write(el, 'opacity', num(o * s.sentenceOpacity));
+      }
 
+      write(wd, 'transform', `translate(${px(s.word.tx)}, ${px(s.word.ty)}) scale(${s.word.s})`);
+      write(wd, 'opacity', num(s.word.opacity * ((main?.base ?? 1) + (1 - (main?.base ?? 1)) * p)));
+      // Ink covers the glass instead of fading both paints simultaneously:
+      // their shared lettering mask keeps full coverage over the fading backdrop.
+      if (glass) write(glass, 'opacity', '1');
+      if (ink) write(ink, 'opacity', num(1 - s.backdropOpacity));
       write(logo.current!, 'opacity', landing ? num(s.logoOpacity) : '0');
+      write(sapling.current!, 'opacity', landing ? num(s.saplingOpacity) : '0');
     };
     return { box, draw, place };
   };
@@ -312,7 +311,7 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     startedAt.current = performance.now();
     const target = measureTarget();
     const landing = !!target;
-    const { box, draw, place } = setup(landing);
+    const { box, draw, place } = setup(landing, short || !target);
     const inp = input(box, target ?? NOWHERE);
     const plan = short || !target ? skipPlan(inp) : buildPlan(inp);
     place(plan.input.target);
@@ -356,7 +355,27 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   };
   const skip = () => {
     if (phaseRef.current === 'greeting') start(true);
-    else fastForward();
+    else {
+      const r = run.current;
+      if (!r || phaseRef.current !== 'playing') return;
+      if (r.plan.input.motion === 'reduced') { fastForward(); return; }
+      // Escape during travel freezes the current pose and takes the same short
+      // fade. Seeking to ffTo here would visibly teleport the word to the corner.
+      const now = performance.now();
+      const held = sampleAt(r.plan, now - r.t0);
+      const draw = r.draw;
+      r.plan = skipPlan(r.plan.input);
+      r.t0 = now;
+      r.retargeted = true;
+      r.draw = (s) => draw({
+        ...s,
+        sentenceOpacity: held.sentenceOpacity * s.sentenceOpacity,
+        backdropOpacity: held.backdropOpacity * s.backdropOpacity,
+        word: { ...held.word, opacity: held.word.opacity * s.word.opacity },
+        logoOpacity: held.logoOpacity + (1 - held.logoOpacity) * s.logoOpacity,
+        saplingOpacity: held.saplingOpacity + (1 - held.saplingOpacity) * s.saplingOpacity,
+      });
+    }
   };
 
   /* ── Input. Listeners go on before the first interactive paint, and a press made before hydration
@@ -418,7 +437,9 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     const onResize = () => {
       const r = run.current;
       if (!r || phaseRef.current !== 'playing') return;
-      retarget(r);
+      // The shell's resize listener may run after ours. Measure on the next
+      // animation frame, after all resize handlers have placed the shell logo.
+      r.retargeted = false;
       r.t0 = Math.min(r.t0, performance.now() - r.plan.done);
     };
     window.addEventListener('resize', onResize);
@@ -500,8 +521,15 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
         <Phrase key={`a${slots.a}`} g={GREETINGS[slots.a]!} front={front === 0} />
         <Phrase key={`b${slots.b}`} g={GREETINGS[slots.b]!} front={front === 1} />
       </div>
-      <div class="wi-logo" ref={logo} data-wi-logo aria-hidden="true">
-        <LogoImages />
+      {/* Isolate the additive word/logo swap from the backdrop and page. */}
+      <div class="wi-artwork" aria-hidden="true">
+        <div class="wi-word" ref={word} data-wi-word />
+        <div class="wi-logo" ref={logo} data-wi-logo data-part="letters">
+          <LogoImages />
+        </div>
+        <div class="wi-logo" ref={sapling} data-wi-logo-sapling data-part="sapling">
+          <LogoImages />
+        </div>
       </div>
     </div>
   );
