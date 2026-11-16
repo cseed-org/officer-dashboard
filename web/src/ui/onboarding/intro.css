@@ -144,6 +144,13 @@
 @keyframes wi-sheen-win {0%, 21% {transform:translateX(-100%);visibility:hidden;} 22% {transform:translateX(-100%);visibility:visible;} 78%, 100% {transform:translateX(250%);visibility:visible;}}
 @keyframes wi-sheen-words {0%, 22% {transform:translateX(40%);} 78%, 100% {transform:translateX(-100%);}}
 
+/* ── T-1: the word and the landing logo add up during the swap instead of layering. Their opacities are
+   complementary, and over a transparent isolated group "plus-lighter" makes them sum, so the letters'
+   coverage stays at 1 through the swap (one layer over another would cover only 75% at the midpoint).
+   The paper and backdrop stay outside the group. ── */
+.wi-artwork {position:absolute;inset:0;isolation:isolate;pointer-events:none;}
+.wi-artwork > .wi-word, .wi-artwork > .wi-logo {mix-blend-mode:plus-lighter;}
+
 /* ── The landing logo: the page logo's own images in its exact box, faded in by the timeline, never scaled. ── */
 .wi-logo {position:absolute;display:flex;width:max-content;opacity:0;will-change:opacity;}
 /* Its letters and its sapling are two complementary crops of the one image (each in the full image box),
