@@ -19,7 +19,7 @@ export interface Open {
   theme?: Theme;
   reduced?: boolean;
   /** Runs after sign-in, before the invitee's first visit to /onboarding (routes, init scripts, the clock). */
-  before?: (page: Page) => Promise<void>;
+  before?: (page: Page) => Promise<unknown>;
   /** Don't wait for the overlay (for presses made the instant it appears). */
   noWait?: boolean;
 }

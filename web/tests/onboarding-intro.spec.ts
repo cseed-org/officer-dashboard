@@ -10,10 +10,12 @@ import { GREETINGS } from '../src/ui/onboarding/greetings';
  * wordmark lands exactly on the page logo with an opacity-only swap and no double draw.
  * Needs the Go server with DEV_AUTH=1 behind WEB_ORIGIN. INTRO_FRAMES=<dir> also saves frame strips.
  */
+type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; sprout: number; shellBox: number[] };
+
 /** Records, on every animation frame of /onboarding, what the hand-off depends on. */
 const RECORDER = () => {
   if (location.pathname !== '/onboarding') return;
-  type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; shellBox: number[] };
+  type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; sprout: number; shellBox: number[] };
   const w = window as unknown as { __rows: Row[]; __dt: number[] };
   w.__rows = [];
   w.__dt = [];
@@ -31,6 +33,7 @@ const RECORDER = () => {
     const sh = document.querySelector<HTMLElement>('[data-onb-logo]');
     const lg = document.querySelector<HTMLElement>('[data-wi-logo]');
     const mk = document.querySelector<HTMLElement>('[data-wi-word]');
+    const sp = document.querySelector<HTMLElement>('[data-wi-sprout]');
     w.__rows.push({
       t: now,
       state: wi?.dataset.state ?? 'gone',
@@ -39,6 +42,7 @@ const RECORDER = () => {
       logoBox: rect(shown(lg)),
       mark: mk ? +getComputedStyle(mk).opacity : -1,
       markBox: rect(mk),
+      sprout: sp ? +getComputedStyle(sp).opacity : -1,
       shellBox: rect(shown(sh)),
     });
     requestAnimationFrame(tick);
@@ -54,7 +58,7 @@ test('only the intro shows: the glass greeting over the backdrop, no buttons, hi
   await expect(overlay(page).locator('.wi-skip, .wi-hint, .wi-photo, figure')).toHaveCount(0);
   // Every visible thing in the overlay is one of its layers.
   const odd = await overlay(page).evaluate((root) => {
-    const allowed = ['wi-paper', 'wi-backdrop', 'wi-standin', 'wi-poster', 'wi-video', 'wi-scrim', 'wi-greet', 'wi-slot', 'wi-text', 'wi-glass', 'wi-cs', 'wi-layer', 'wi-eyes', 'wi-mark', 'wi-sprout', 'wi-logo', 'wordmark-logo', 'wordmark-mark', 'visually-hidden'];
+    const allowed = ['wi-paper', 'wi-backdrop', 'wi-standin', 'wi-poster', 'wi-video', 'wi-scrim', 'wi-greet', 'wi-slot', 'wi-text', 'wi-face', 'wi-glass', 'wi-sheen', 'wi-sheen-in', 'wi-shine', 'wi-cs', 'wi-layer', 'wi-eyes', 'wi-mark', 'wi-sprout', 'wi-logo', 'wordmark-logo', 'wordmark-mark', 'visually-hidden'];
     return Array.from(root.querySelectorAll<HTMLElement>('*'))
       .filter((e) => {
         const b = e.getBoundingClientRect();
@@ -118,12 +122,20 @@ for (const how of ['key', 'press', 'escape'] as const) {
 }
 
 test('one press starts it, a second fast-forwards to the swap, and Escape skips without fruit or snake', async ({ page }, info) => {
-  await openIntro(page);
+  const shell = await openIntro(page, { before: (p) => p.addInitScript(RECORDER) });
   await pressAnywhere(page, info);
   await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
   await expect(page.locator('[data-wi-fruit]').first()).toBeVisible();
+  await page.waitForTimeout(800); // clearly a separate press, not the first one's double (R-1)
+  const t1 = await page.evaluate(() => performance.now());
   await pressAnywhere(page, info);
   await expect(overlay(page)).toHaveCount(0, { timeout: 1500 });
+  // It jumped to the swap and the swap still played: frames with the landing logo part-way in, in its box.
+  const rows = (await page.evaluate(() => (window as unknown as { __rows: Row[] }).__rows)).filter((r) => r.t >= t1 && r.state !== 'gone');
+  const swap = rows.filter((r) => r.logo > 0 && r.logo < 1);
+  expect(swap.length, 'frames of the swap after the second press').toBeGreaterThan(2);
+  for (const r of swap) r.logoBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
+  expect(rows.at(-1)!.logo).toBeGreaterThan(0.95);
 
   await page.goto('about:blank');
   await openIntro(page);
@@ -167,6 +179,7 @@ test('keys: letters, Enter and Space start it; F-keys, Tab and shortcuts are lef
   await page.keyboard.press('Space');
   await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
   // Afterwards focus lands on the step heading.
+  await page.waitForTimeout(800);
   await page.keyboard.press('Enter');
   await expect(overlay(page)).toHaveCount(0, { timeout: 2000 });
   await expect(page.locator('#step-title')).toBeFocused();
@@ -186,12 +199,16 @@ test('a swipe starts it on a touch screen', async ({ page }, info) => {
 test('all 15 languages render in the glass, with no mark clipped', async ({ page }, info) => {
   test.skip(info.project.name === 'tablet', 'phone and desktop widths cover the line breaks');
   await openIntro(page, { before: (p) => p.clock.install() });
+  // The cycle's timer starts once the island is interactive.
+  await page.waitForFunction(() => (window as { __wiReady?: boolean }).__wiReady === true);
   // The installed clock still runs in real time: stop it, so each language stays until the next step.
   await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 50);
   // Hold the stand-in still so the two screenshots of each language differ only in the type.
   await page.addStyleTag({ content: '.wi-standin {animation-play-state: paused !important;}' });
   const band = page.locator('[data-wi-greeting]');
   const seen: string[] = [];
+  const bandH = await band.evaluate((e) => e.getBoundingClientRect().height);
+  expect(bandH).toBeGreaterThan(0);
   for (let i = 0; i < GREETINGS.length; i++) {
     if (i > 0) {
       await page.clock.runFor(2100);
@@ -207,7 +224,7 @@ test('all 15 languages render in the glass, with no mark clipped', async ({ page
     const solid = await (async () => {
       const tag = await page.addStyleTag({ content: '.wi-glass {color: #fff !important; background: none !important;}' });
       const shot = await band.screenshot();
-      await tag.evaluate((t) => t.remove());
+      await tag.evaluate((t) => (t as HTMLElement).remove());
       return shot;
     })();
     await info.attach(`${lang}.png`, { body: glass, contentType: 'image/png' });
@@ -245,7 +262,7 @@ test('all 15 languages render in the glass, with no mark clipped', async ({ page
     expect(r.ink, `${lang}: ink found`).toBeGreaterThan(200);
     expect(r.lost / r.ink, `${lang}: ${r.lost} of ${r.ink} ink pixels missing from the glass`).toBeLessThan(0.01);
     // The band never changes size, whatever the language.
-    expect(await band.evaluate((e) => e.getBoundingClientRect().height)).toBeGreaterThan(0);
+    expect(Math.abs((await band.evaluate((e) => e.getBoundingClientRect().height)) - bandH), `${lang}: band height`).toBeLessThan(0.5);
   }
   expect(seen).toEqual(GREETINGS.map((g) => g.lang));
 });
@@ -344,11 +361,12 @@ for (const theme of ['light', 'dark'] as const) {
     });
     pageLogo.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `page ${pageLogo} vs shell ${shell.box}`).toBeLessThan(0.6));
     await expect(page.locator('[data-onb-logo]')).toHaveAttribute('data-kind', shell.kind);
+    // One sapling only: the travelling wordmark's own sapling is cropped off; the separate one stands for it (R-2).
+    expect(await page.locator('[data-wi-word] img').first().evaluate((e) => getComputedStyle(e).clipPath)).toMatch(/inset/);
     const t0 = await page.evaluate(() => performance.now());
     await pressAnywhere(page, info);
     await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
     await page.waitForTimeout(200);
-    type Row = { t: number; state: string; shellVisible: boolean; logo: number; logoBox: number[]; mark: number; markBox: number[]; shellBox: number[] };
     const rows = (await page.evaluate(() => (window as unknown as { __rows: Row[] }).__rows)).filter((r) => r.t >= t0);
     const gone = rows.findIndex((r) => r.state === 'gone');
     expect(gone).toBeGreaterThan(0);
@@ -370,6 +388,9 @@ for (const theme of ['light', 'dark'] as const) {
     for (const r of swap) {
       r.logoBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!)).toBeLessThan(0.6));
       if (shell.kind === 'wordmark' && r.mark > 0.01) r.markBox.forEach((v, i) => expect(Math.abs(v - shell.box[i]!), `mark ${r.markBox}`).toBeLessThan(1));
+      // Coverage stays full: what is landing is drawn over what was there, which stays opaque (no dimming).
+      expect(r.sprout, `sapling at ${Math.round(r.t - t0)} ms`).toBeGreaterThan(0.97);
+      if (shell.kind === 'wordmark') expect(r.mark, `wordmark at ${Math.round(r.t - t0)} ms`).toBeGreaterThan(0.97);
     }
   });
 }
@@ -378,6 +399,8 @@ test('prefers-reduced-motion: the poster or stand-in stands still, languages cro
   const shell = await openIntro(page, { reduced: true, before: (p) => p.clock.install() });
   await expect(page.locator('[data-wi-standin]')).toHaveCSS('animation-name', 'none');
   await expect(page.locator('[data-wi-video]')).toHaveCount(0);
+  // The cycle's timer starts once the island is interactive.
+  await page.waitForFunction(() => (window as { __wiReady?: boolean }).__wiReady === true);
   await page.clock.runFor(4200);
   // The language change is a plain cross-fade: opacity only, no movement.
   const frames = await page.locator('.wi-slot').evaluateAll((els) => els.flatMap((e) => e.getAnimations().map((a) => (a.effect as KeyframeEffect).getKeyframes())));
@@ -415,3 +438,128 @@ for (const theme of ['light', 'dark'] as const) {
     await page.screenshot({ path: `${dir}/${info.project.name}-${theme}-99-landed.png` });
   });
 }
+
+test('a double-click or a held key is one press: it does not skip the intro (R-1)', async ({ page }, info) => {
+  test.skip(!!info.project.use.hasTouch, 'mouse and keyboard');
+  await openIntro(page);
+  await page.mouse.dblclick(400, 500);
+  await page.waitForTimeout(1200);
+  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+
+  await page.goto('about:blank');
+  await openIntro(page);
+  // Holding Enter: the browser sends repeats (repeat: true) after a moment.
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(500);
+  await page.keyboard.down('Enter');
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(700);
+  await page.keyboard.up('Enter');
+  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+});
+
+test('a press during a language change melts the greeting from where it is, with no jump (R-3)', async ({ page }, info) => {
+  await openIntro(page);
+  // Wait for a change to be under way, then press in the same task and look at the next frame.
+  const r = await page.evaluate(
+    () =>
+      new Promise<{ before: Record<string, number>; after: Record<string, number>; dripLangs: string[] }>((resolve) => {
+        const slots = () => Array.from(document.querySelectorAll<HTMLElement>('.wi-greet > .wi-slot'));
+        const read = () => Object.fromEntries(slots().map((e) => [e.dataset.lang!, +getComputedStyle(e).opacity]));
+        const poll = () => {
+          const a = slots().flatMap((e) => e.getAnimations()).find((x) => (x.currentTime as number) > 60 && (x.currentTime as number) < 200);
+          if (!a) return requestAnimationFrame(poll);
+          const before = read();
+          document.querySelector('.wi')!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0 }));
+          const dripLangs = [...new Set(Array.from(document.querySelectorAll<HTMLElement>('.wi-drip > .wi-slot')).map((e) => e.dataset.lang!))];
+          requestAnimationFrame(() => resolve({ before, after: read(), dripLangs }));
+        };
+        poll();
+      }),
+  );
+  const shown = Object.entries(r.before).filter(([, o]) => o > 0.05);
+  expect(shown.length, `two phrases part-way through the change ${JSON.stringify(r.before)}`).toBe(2);
+  // The more visible phrase melts (the drips are cloned from it), the other fades from where it was, and neither
+  // jumps on the press frame.
+  const top = shown.reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+  expect(r.dripLangs).toEqual([top]);
+  for (const [lang, o] of shown) expect(Math.abs(r.after[lang]! - o), `${lang}: ${o} → ${r.after[lang]}`).toBeLessThan(0.2);
+  await expect(overlay(page)).toHaveAttribute('data-state', 'playing');
+});
+
+test('a resize mid-run jumps to the end on the re-measured page logo (D-15)', async ({ page }, info) => {
+  await openIntro(page, { before: (p) => p.addInitScript(RECORDER) });
+  const vp = page.viewportSize()!;
+  await pressAnywhere(page, info);
+  await page.waitForTimeout(1500);
+  await page.setViewportSize({ width: vp.height > vp.width ? vp.height : Math.round(vp.width * 0.7), height: vp.height > vp.width ? vp.width : vp.height });
+  await expect(overlay(page)).toHaveCount(0, { timeout: 2000 });
+  const rows = await page.evaluate(() => (window as unknown as { __rows: Row[] }).__rows);
+  const gone = rows.findIndex((r) => r.state === 'gone');
+  const last = rows[gone - 1]!;
+  const box = await page.locator('[data-onb-logo]').evaluate((e) => {
+    const shownLogo = Array.from(e.querySelectorAll('img, .wordmark-mark')).find((x) => getComputedStyle(x).display !== 'none')!;
+    const b = shownLogo.getBoundingClientRect();
+    return [b.left, b.top, b.width, b.height];
+  });
+  expect(last.logo).toBeGreaterThan(0.95);
+  last.logoBox.forEach((v, i) => expect(Math.abs(v - box[i]!), `intro ${last.logoBox} vs page ${box}`).toBeLessThan(0.6));
+});
+
+test('the melt ends on the page\'s own colour: the paper matches the page behind (B-14)', async ({ page }, info) => {
+  for (const theme of ['light', 'dark'] as const) {
+    if (theme === 'dark') await page.goto('about:blank');
+    await openIntro(page, { theme });
+    const c = await page.evaluate(() => {
+      const paper = getComputedStyle(document.querySelector('.wi-paper')!).backgroundColor;
+      let el: Element | null = document.querySelector('.onb');
+      let bg = 'rgba(0, 0, 0, 0)';
+      while (el && (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent')) {
+        bg = getComputedStyle(el).backgroundColor;
+        el = el.parentElement;
+      }
+      return { paper, bg };
+    });
+    expect(c.paper, theme).toBe(c.bg);
+    await pressAnywhere(page, info);
+    await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
+  }
+});
+
+test('no hello screen flash for a Google return or an account that has seen it (R-4)', async ({ page }) => {
+  // Record whether the overlay was ever drawable: its display when it enters the document, before any paint.
+  const watch = () =>
+    page.addInitScript(() => {
+      if (location.pathname !== '/onboarding') return;
+      const w = window as unknown as { __wiShown: boolean[] };
+      w.__wiShown = [];
+      new MutationObserver(() => {
+        const wi = document.querySelector('.wi');
+        if (wi && w.__wiShown.length === 0) w.__wiShown.push(getComputedStyle(wi).display !== 'none');
+      }).observe(document, { childList: true, subtree: true });
+    });
+  await openIntro(page);
+  await page.keyboard.press('Escape');
+  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
+  await watch();
+  // The same person comes back to /onboarding (a reload, or a return from Google's consent screen).
+  for (const url of ['/onboarding', '/onboarding?google=denied']) {
+    await page.goto(url);
+    await expect(page.locator('#step-title')).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __wiShown: boolean[] }).__wiShown), url).toEqual([false]);
+    await expect(overlay(page)).toHaveCount(0);
+    await expect(page.locator('[data-onb-logo]')).toHaveCSS('visibility', 'visible');
+  }
+});
+
+test('another invitee on the same browser still gets the intro, faded in once their account loads', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one width is enough');
+  await openIntro(page);
+  await page.keyboard.press('Escape');
+  await expect(overlay(page)).toHaveCount(0, { timeout: 3000 });
+  await page.goto('about:blank');
+  await openIntro(page);
+  await expect(overlay(page)).toHaveAttribute('data-state', 'greeting');
+  await pressAnywhere(page, info);
+  await expect(overlay(page)).toHaveCount(0, { timeout: 15_000 });
+});

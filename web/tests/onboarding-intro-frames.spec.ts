@@ -19,8 +19,11 @@ for (const throttle of [1, 4] as const) {
           const w = window as unknown as { __dt: number[]; __at: number[] };
           w.__dt = [];
           w.__at = [];
+          // The rAF timestamp is vsync-aligned and hides frames up to about 30 ms (R-6): measure the wall clock
+          // at the start of each callback instead, which sees how late a frame really was.
           let prev = 0;
-          const tick = (now: number) => {
+          const tick = () => {
+            const now = performance.now();
             if (document.querySelector('.wi')) {
               if (prev) {
                 w.__dt.push(now - prev);
@@ -56,10 +59,13 @@ for (const throttle of [1, 4] as const) {
     const p95 = sorted[Math.floor(sorted.length * 0.95)]!;
     info.annotations.push({ type: 'frames', description: `${dt.length} frames, ${over} over 20 ms (${long.join(', ')}), p95 ${p95.toFixed(1)} ms, max ${sorted.at(-1)!.toFixed(1)} ms` });
     expect(dt.length).toBeGreaterThan(200);
-    // About 60 fps: at most one frame in fifty over ~20 ms, and no long stall.
-    expect(over / dt.length, `${over} of ${dt.length} frames over 20 ms at ${long.join(', ')}`).toBeLessThan(0.02);
+    // About 60 fps: 95% of frames within ~20 ms, at most one in twenty-five over it, and no long stall. These are
+    // wall-clock gaps in headless Chromium with software compositing (no GPU), which shows a few 20–45 ms frames
+    // around the press and the fruit even with the V0.12 screen as first committed (a50b705) on the current
+    // engine: the budget leaves room for that noise, not for real stalls (a 200 ms one fails it).
+    expect(over / dt.length, `${over} of ${dt.length} frames over 20 ms at ${long.join(', ')}`).toBeLessThan(0.04);
     expect(p95).toBeLessThan(20.5);
-    expect(sorted.at(-1)!).toBeLessThan(throttle > 1 ? 70 : 40);
+    expect(sorted.at(-1)!, `longest frame; long ones at ${long.join(', ')}`).toBeLessThan(throttle > 1 ? 70 : 50);
   });
 }
 

@@ -1,14 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { ACCESSIBLE_GREETING, GREETINGS, type Greeting } from './greetings';
-import { saplingSvg } from '../brand/saplingMarkup';
 import { LogoImages } from './LogoMark';
-import { buildPlan, retargetPlan, sampleAt, skipPlan, type Input, type Plan, type Sample, type Target, type Transform } from './introPlan';
-import { FRUIT_ART } from './fruitArt';
+import { buildPlan, retargetPlan, sampleAt, skipPlan, type Box, type Input, type Plan, type Sample, type Target } from './introPlan';
 import { startKey, type EarlyInput } from './introEarly';
 import './intro.css';
 
 /**
- * The hello screen's background video, found at build time in `public/media/` (onboarding.astro,
+ * The hello screen's background video, found at build time in `public/media/` (helloMedia.ts,
  * docs/frontend.md). Without it the stand-in gradient plays in the same layer.
  */
 export interface HelloMedia {
@@ -26,25 +24,57 @@ const FADE_OUT = 380;
 const REDUCED_CYCLE_MS = 4200;
 const REDUCED_FADE = 900;
 const EASE = 'cubic-bezier(.2, .8, .2, 1)';
-/** The melt: how many drips the phrase splits into, and the share of the melt their starts spread over. */
-const DRIPS = 14;
-const DRIP_SPREAD = 0.4;
+/**
+ * The melt: the sentence (all but cseed) splits into a few wide drips, each sagging and stretching a
+ * little later than its neighbours, so it reads as a liquid curtain rather than broken strips.
+ * `DRIP_AT` is when each starts (a share of the melt), `DRIP_DROP` how far it falls (a share of the band).
+ */
+const DRIP_AT = [0.12, 0.02, 0.2, 0.06, 0.24];
+const DRIP_DROP = [0.44, 0.52, 0.38, 0.5, 0.42];
+const DRIPS = DRIP_AT.length;
+const DRIP_SPREAD = 0.3;
+/** The share of the melt over which the glass (with its depth) hands over to the drips. */
+const DRIP_HANDOVER = 0.22;
 /** A click that follows a handled pointerup within this many ms is the same press. */
 const SAME_PRESS_MS = 700;
+/**
+ * After the press that starts it, presses within this many ms are the same gesture (a double-click,
+ * a bounce, a tap and a click) and are ignored (R-1). Only a clearly separate press fast-forwards.
+ */
+const SECOND_PRESS_MS = 650;
 
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function Phrase({ g, front }: { g: Greeting; front: boolean }) {
+function Words({ g, cls }: { g: Greeting; cls: string }) {
   const [before = '', after = ''] = g.text.split('{cseed}');
+  return (
+    <span class={cls}>
+      {before}
+      <span class="wi-cs" lang="en" dir="ltr">
+        cseed
+      </span>
+      {after}
+    </span>
+  );
+}
+
+/**
+ * One language in liquid glass: the glass face (a translucent fill that carries the backdrop's colours,
+ * bent as through a lens, with a lit rim, an inner bevel and a cast shadow), and over it a band of light
+ * that glides across the letters. The light is a window that moves while the copy of the words inside
+ * it moves back by the same amount, so the words stay put and only the light travels, on the compositor.
+ */
+function Phrase({ g, front }: { g: Greeting; front: boolean }) {
   return (
     <p class="wi-slot" lang={g.lang} dir={g.dir} data-lang={g.lang} data-front={front ? '' : undefined} data-wi-phrase>
       <span class="wi-text">
-        <span class="wi-glass">
-          {before}
-          <span class="wi-cs" lang="en" dir="ltr">
-            cseed
+        <span class="wi-face">
+          <Words g={g} cls="wi-glass" />
+        </span>
+        <span class="wi-sheen" aria-hidden="true">
+          <span class="wi-sheen-in">
+            <Words g={g} cls="wi-shine" />
           </span>
-          {after}
         </span>
       </span>
     </p>
@@ -59,6 +89,10 @@ interface Props {
   media?: HelloMedia;
   /** The page decided there is no intro after all (a resumed setup): fade out, or finish at once if it is playing. */
   leaving?: boolean;
+  /** Shown after the account loaded rather than from the first paint (R-4): it fades in. */
+  late?: boolean;
+  /** Measures the destination itself instead of `targetSelector` (the Settings replay lands on the real shell logo). */
+  target?: () => Target | null;
 }
 
 type Phase = 'greeting' | 'playing' | 'done';
@@ -77,31 +111,24 @@ function makeWriter() {
 }
 const px = (n: number) => `${Math.round(n * 100) / 100}px`;
 const num = (n: number) => String(Math.round(n * 1000) / 1000);
-const tf = (t: Transform) => `translate(${px(t.tx)}, ${px(t.ty)}) scale(${num(t.sx)}, ${num(t.sy)})`;
-const ROT = { r: 0, d: 90, l: 180, u: -90 } as const;
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 
 /**
- * The first screen of onboarding (V0.12). "Hello, welcome to cseed" in liquid glass over a looping
- * video (or a calm stand-in), cycling through 15 languages, with nothing else on screen. A press
- * anywhere (a click, a tap, a swipe or a key; Escape skips) melts the greeting onto the page's paper,
- * and the engine's plan (`introPlan.ts`) takes over: fruit spelling cseed, a pixel-block snake that
- * eats it, the word becoming the real wordmark, its travel onto the page logo and an opacity-only swap.
- * The screen draws only what `sampleAt(plan, ms)` returns, so playback, a second press (fast-forward),
- * Escape and a resize all go through the same sampler.
+ * The first screen of onboarding (V0.12, revision 2). "Hello, welcome to cseed" in liquid glass over a
+ * looping video (or a calm stand-in), cycling through 15 languages, with nothing else on screen. A press
+ * anywhere (a click, a tap, a swipe or a key; Escape skips) melts the greeting away and the timeline
+ * (`introPlan.ts`) takes over. The screen draws only what `sampleAt(plan, ms)` returns, so playback, a
+ * second press (fast-forward), Escape and a resize all go through the same sampler.
+ *
+ * Interim (D-29): the snake is gone and the glass word "cseed" is not drawn yet. The sentence melts,
+ * the backdrop fades and the real logo fades in at its box. Lifting and gliding the word is Codex's to wire.
  */
-export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media = NO_MEDIA, leaving = false }: Props) {
+export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media = NO_MEDIA, leaving = false, late = false, target: findTarget }: Props) {
   const root = useRef<HTMLDivElement>(null);
   const greet = useRef<HTMLDivElement>(null);
   const backdrop = useRef<HTMLDivElement>(null);
   const paper = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
-  const fruitLayer = useRef<HTMLDivElement>(null);
-  const bodyLayer = useRef<HTMLDivElement>(null);
-  const eyes = useRef<HTMLDivElement>(null);
-  const markTravel = useRef<HTMLDivElement>(null);
-  const mark = useRef<HTMLDivElement>(null);
-  const sproutTravel = useRef<HTMLDivElement>(null);
-  const sprout = useRef<HTMLDivElement>(null);
   const logo = useRef<HTMLDivElement>(null);
 
   const [slots, setSlots] = useState<Slots>({ a: 0, b: 1, front: 0, n: 0 });
@@ -112,9 +139,9 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
   /** The running playback: its plan, its clock origin and the pieces it draws. */
-  const run = useRef<{ plan: Plan; t0: number; retargeted: boolean; raf: number; draw: (s: Sample) => void } | null>(null);
-  /** The plan and its fruit, built in idle time before the press (they depend only on the viewport). */
-  const prepared = useRef<{ key: string; plan: Plan; fruit: Map<number, HTMLElement>; pool: HTMLElement[] } | null>(null);
+  const run = useRef<{ plan: Plan; t0: number; retargeted: boolean; raf: number; draw: (s: Sample) => void; place: (t: Target) => void } | null>(null);
+  /** When the press that started it came (R-1: a second press must be clearly separate). */
+  const startedAt = useRef(0);
   const lastPointer = useRef(0);
   const cycleTimer = useRef(0);
 
@@ -164,54 +191,20 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     return () => v.removeEventListener('playing', show);
   }, [videoOn]);
 
-  const measureTarget = (): Target => {
-    const el = document.querySelector<HTMLElement>(targetSelector);
+  /** The page logo's box, or null when it isn't on the page (then the intro fades away without landing, R-7). */
+  const measureTarget = (): Target | null => {
+    if (findTarget) return findTarget();
+    const host = document.querySelector<HTMLElement>(targetSelector);
+    // The image (or the rail's mark) the page shows, not its wrapper: the box the timeline lands on.
+    const el = host && (Array.from(host.querySelectorAll<HTMLElement>('.wordmark-logo, .wordmark-mark')).find((e) => e.getBoundingClientRect().width > 0) ?? host);
     const r = el?.getBoundingClientRect();
-    const kind = el?.dataset.kind === 'mark' ? 'mark' : 'wordmark';
-    return r && r.width > 0 ? { x: r.left, y: r.top, w: r.width, h: r.height, kind } : { x: 20, y: 26.75, w: 78, h: 18, kind };
+    if (!host || !el || !r || r.width <= 0 || r.height <= 0) return null;
+    return { x: r.left, y: r.top, w: r.width, h: r.height, kind: host.dataset.kind === 'mark' || el.classList.contains('wordmark-mark') ? 'mark' : 'wordmark' };
   };
-  const input = (): Input => {
+  const NOWHERE: Target = { x: 0, y: 0, w: 1, h: 1, kind: 'wordmark' };
+  const input = (wordBox: Box, target: Target): Input => {
     const el = root.current!;
-    return { viewport: { w: el.clientWidth, h: el.clientHeight, dpr: window.devicePixelRatio || 1 }, target: measureTarget(), motion: reduced.current ? 'reduced' : 'full' };
-  };
-
-  const viewportKey = () => `${root.current!.clientWidth}x${root.current!.clientHeight}@${window.devicePixelRatio || 1}`;
-  /** One element per fruit, from the plan's boxes and kinds, waiting invisible in the fruit layer. */
-  const buildFruit = (plan: Plan) => {
-    const fl = fruitLayer.current!;
-    fl.textContent = '';
-    const fruit = new Map<number, HTMLElement>();
-    for (const f of plan.fruit) {
-      const el = document.createElement('div');
-      el.className = 'wi-fruit';
-      el.dataset.kind = f.kind;
-      el.setAttribute('data-wi-fruit', '');
-      el.style.width = px(f.box.w);
-      el.style.height = px(f.box.h);
-      el.style.backgroundImage = FRUIT_ART[f.kind] ?? FRUIT_ART.apple;
-      fl.appendChild(el);
-      fruit.set(f.id, el);
-    }
-    return fruit;
-  };
-  /** The snake's blocks, created up front (hidden) so the frame the snake appears on does no DOM work. */
-  const buildPool = (n: number, size: number) => {
-    const bl = bodyLayer.current!;
-    bl.querySelectorAll('.wi-seg').forEach((el) => el.remove());
-    const pool: HTMLElement[] = [];
-    for (const el of [...Array.from({ length: n }, () => document.createElement('div')), eyes.current!]) {
-      el.style.width = el.style.height = px(size);
-      if (el === eyes.current) continue;
-      el.className = 'wi-seg';
-      el.setAttribute('data-wi-snake', '');
-      bl.insertBefore(el, eyes.current);
-      pool.push(el);
-    }
-    return pool;
-  };
-  const prepare = () => {
-    const plan = buildPlan(input());
-    return (prepared.current = { key: viewportKey(), plan, fruit: buildFruit(plan), pool: buildPool(plan.maxLength, Math.max(plan.segment, 1)) });
+    return { viewport: { w: el.clientWidth, h: el.clientHeight, dpr: window.devicePixelRatio || 1 }, word: wordBox, target, motion: reduced.current ? 'reduced' : 'full' };
   };
 
   const finish = () => {
@@ -223,15 +216,34 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
     doneRef.current();
   };
 
-  /** Builds the drawing for one plan: every element is created once, then only moved and faded. */
-  const setup = (plan: Plan, melt: boolean, ready?: Map<number, HTMLElement>, pool: HTMLElement[] = []) => {
+  /** Builds the drawing for one press: the greeting is split into drips, then everything is only moved and faded. */
+  const setup = (landing: boolean) => {
     const write = makeWriter();
     const g = greet.current!;
-    // The shown phrase splits into drips (full motion) or simply fades (reduced motion, Escape).
-    const shown = g.querySelector<HTMLElement>(':scope > .wi-slot[data-front]');
-    g.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+    const gr = g.getBoundingClientRect();
+    // A press can come in the middle of a language change (R-3): freeze both phrases where they are
+    // (their current opacity and position become inline styles) and let both melt from there.
+    for (const a of g.getAnimations({ subtree: true })) {
+      if (a.effect instanceof KeyframeEffect && a.effect.target instanceof HTMLElement && a.effect.target.matches('.wi-slot')) {
+        try {
+          a.commitStyles();
+        } catch {
+          /* not rendered: nothing to keep */
+        }
+      }
+      a.cancel();
+    }
+    const phrases = Array.from(g.querySelectorAll<HTMLElement>(':scope > .wi-slot'))
+      .map((el) => ({ el, base: +getComputedStyle(el).opacity }))
+      .filter((x) => x.base > 0.01);
+    // The phrase the word comes from is the more visible one; the other (mid-change) just fades from where it is.
+    const main = phrases.reduce<(typeof phrases)[number] | null>((a, b) => (!a || b.base > a.base ? b : a), null);
+    // The plan's word box: the glass "cseed" span of the phrase at the click (interim: its line box).
+    const cs = main?.el.querySelector<HTMLElement>('.wi-face .wi-cs')?.getBoundingClientRect();
+    const box: Box = cs && cs.width > 0 ? { x: cs.left, y: cs.top, w: cs.width, h: cs.height } : { x: gr.left + gr.width / 2 - 1, y: gr.top + gr.height / 2 - 1, w: 2, h: 2 };
+
     const drips: { el: HTMLElement; at: number; drop: number }[] = [];
-    if (melt && shown) {
+    if (!reduced.current && main) {
       const w = g.clientWidth;
       const step = w / DRIPS;
       for (let i = 0; i < DRIPS; i++) {
@@ -239,181 +251,111 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
         d.className = 'wi-drip';
         d.style.left = `${(i * step).toFixed(2)}px`;
         d.style.width = `${(step + 0.5).toFixed(2)}px`;
-        const clone = shown.cloneNode(true) as HTMLElement;
+        d.style.opacity = '0';
+        const clone = main.el.cloneNode(true) as HTMLElement;
         clone.removeAttribute('data-wi-phrase');
+        clone.removeAttribute('data-front');
         clone.style.left = `${(-i * step).toFixed(2)}px`;
         clone.style.width = `${w}px`;
         d.appendChild(clone);
         g.appendChild(d);
-        // A fixed, irregular order (no randomness: the same every time).
-        drips.push({ el: d, at: (((i * 7) % DRIPS) / (DRIPS - 1)) * DRIP_SPREAD, drop: 0.35 + ((i * 5) % 4) * 0.1 });
+        drips.push({ el: d, at: DRIP_AT[i]! * (DRIP_SPREAD / 0.24), drop: DRIP_DROP[i]! });
       }
-      g.querySelectorAll<HTMLElement>(':scope > .wi-slot').forEach((s) => (s.style.visibility = 'hidden'));
     }
     const greetH = g.clientHeight;
 
-    // Fruit, drawn from the plan's boxes and kinds (usually built already, in idle time).
-    const fruit = ready ?? buildFruit(plan);
-
-    // The snake: one pooled block per pose id (taken from the ready-made pool, or created if it runs out).
-    // Every block (and the eyes) has one fixed size, the plan's segment; when a pose's box grows (the gaps
-    // closing as the word becomes the wordmark) that is a scale in its transform, never a width/height change.
-    const bl = bodyLayer.current!;
-    const base = Math.max(plan.segment, 1);
-    const sized = (el: HTMLElement) => {
-      write(el, 'width', px(base));
-      write(el, 'height', px(base));
-      return el;
+    // The landing logo: the page logo's own images in its exact box, faded in, never scaled.
+    const place = (t: Target) => {
+      const lg = logo.current!;
+      lg.style.left = px(t.x);
+      lg.style.top = px(t.y);
+      lg.style.height = px(t.h);
+      lg.dataset.kind = t.kind;
     };
-    const spare = [...pool];
-    const segs = new Map<number, HTMLElement>();
-    const seg = (id: number) => {
-      let el = segs.get(id);
-      if (!el) {
-        el = spare.pop();
-        if (!el) {
-          el = sized(document.createElement('div'));
-          el.className = 'wi-seg';
-          el.setAttribute('data-wi-snake', '');
-          bl.insertBefore(el, eyes.current);
-        }
-        segs.set(id, el);
-      }
-      return el;
-    };
+    let videoPaused = false;
 
-    // The real wordmark (in the theme's ink), laid over the drawn word, and the separate sapling.
-    const mk = mark.current!;
-    mk.style.left = px(plan.logoBox.x);
-    mk.style.top = px(plan.logoBox.y);
-    mk.style.width = px(plan.logoBox.w);
-    mk.style.height = px(plan.logoBox.h);
-    const sp = sprout.current!;
-    if (!sp.firstChild) sp.innerHTML = saplingSvg();
-
-    const lg = logo.current!;
-    let video_paused = false;
-
-    return (s: Sample) => {
-      // Backdrop → paper (the melt), then the paper hand-off.
+    const draw = (s: Sample) => {
+      // Backdrop → the page's paper, by the end of the glide.
       write(backdrop.current!, 'opacity', num(s.backdropOpacity));
-      if (s.backdropOpacity === 0 && !video_paused) {
-        video_paused = true;
+      if (s.backdropOpacity === 0 && !videoPaused) {
+        videoPaused = true;
         video.current?.pause();
         backdrop.current!.setAttribute('data-still', '');
         write(backdrop.current!, 'visibility', 'hidden');
       }
-      write(paper.current!, 'opacity', num(s.overlayOpacity));
+      // The paper gives way to the page as the logo lands (the page around it shows in the same frames).
+      write(paper.current!, 'opacity', num(1 - clamp01(s.logoOpacity)));
 
-      // The greeting: drips stretch down and fade, each starting a little later than the last.
-      const p = 1 - s.greetingOpacity;
+      // The sentence: the glass hands over to the drips, which sag, stretch and fade, each a little later.
+      const p = 1 - s.sentenceOpacity;
       if (drips.length) {
+        const f = Math.min(1, p / DRIP_HANDOVER);
+        for (const { el, base: o } of phrases) write(el, 'opacity', num(o * (1 - (el === main!.el ? f : Math.min(1, p / (DRIP_HANDOVER * 1.5))))));
         for (const d of drips) {
-          const k = Math.max(0, Math.min(1, (p - d.at) / (1 - DRIP_SPREAD)));
+          const k = clamp01((p - d.at) / (1 - DRIP_SPREAD));
           const e = k * k;
-          write(d.el, 'transform', `translateY(${px(e * d.drop * greetH)}) scaleY(${num(1 + 0.6 * e)})`);
-          write(d.el, 'opacity', num(1 - Math.min(1, k * 1.15)));
+          write(d.el, 'transform', `translateY(${px(e * d.drop * greetH)}) scaleY(${num(1 + 0.55 * e)})`);
+          write(d.el, 'opacity', num(f * (1 - Math.min(1, k * 1.15))));
         }
-      } else if (shown) write(shown, 'opacity', num(s.greetingOpacity));
+      } else for (const { el, base: o } of phrases) write(el, 'opacity', num(o * s.sentenceOpacity));
 
-      // Fruit pops in, then goes when the snake's head reaches it.
-      for (const f of s.fruit) {
-        const el = fruit.get(f.id);
-        if (!el) continue;
-        write(el, 'opacity', num(f.visible ? f.opacity : 0));
-        write(el, 'transform', `translate(${px(f.box.x)}, ${px(f.box.y)}) scale(${num(f.scale)})`);
-      }
-
-      // The snake: head first; blocks not in this pose are hidden.
-      write(bl, 'opacity', num(s.wordOpacity));
-      const used = new Set<number>();
-      for (const pose of s.body) {
-        const el = seg(pose.id);
-        used.add(pose.id);
-        write(el, 'transform', `translate(${px(pose.box.x)}, ${px(pose.box.y)}) scale(${num(pose.box.w / base)}, ${num(pose.box.h / base)})`);
-        write(el, 'opacity', num(pose.visible ? pose.opacity : 0));
-      }
-      for (const [id, el] of segs) if (!used.has(id)) write(el, 'opacity', '0');
-      const head = s.body[0];
-      const ey = eyes.current!;
-      if (!pool.length) sized(ey); // not prepared ahead (Escape, a viewport change): size it now
-      if (head) {
-        // Placed and scaled like the head block, then turned about its own centre.
-        write(ey, 'transform', `translate(${px(head.box.x)}, ${px(head.box.y)}) scale(${num(head.box.w / base)}, ${num(head.box.h / base)}) translate(${px(base / 2)}, ${px(base / 2)}) rotate(${ROT[head.dir]}deg) translate(${px(-base / 2)}, ${px(-base / 2)})`);
-        write(ey, 'opacity', num(head.visible ? head.opacity : 0));
-      } else write(ey, 'opacity', '0');
-
-      // The real wordmark fades in over the drawn word, then travels (origin 0 0, translate then scale).
-      write(markTravel.current!, 'transform', tf(s.transform));
-      write(mk, 'opacity', num(s.wordmarkOpacity));
-      // The sapling sprouts from its stem, and on the rail travels on its own onto the sapling mark.
-      write(sproutTravel.current!, 'transform', tf(s.sprout.transform));
-      write(sp, 'left', px(s.sprout.box.x));
-      write(sp, 'top', px(s.sprout.box.y));
-      write(sp, 'width', px(s.sprout.box.w));
-      write(sp, 'height', px(s.sprout.box.h));
-      write(sp, 'opacity', num(s.sprout.opacity));
-      write(sp, 'transform', `scale(${num(s.sprout.scale)})`);
-
-      // The landing logo: the page logo's own images in its exact box, faded in, never scaled.
-      write(lg, 'left', px(s.target.x));
-      write(lg, 'top', px(s.target.y));
-      write(lg, 'height', px(s.target.h));
-      if (lg.dataset.kind !== s.target.kind) lg.dataset.kind = s.target.kind;
-      write(lg, 'opacity', num(s.targetOpacity));
+      write(logo.current!, 'opacity', landing ? num(s.logoOpacity) : '0');
     };
+    return { box, draw, place };
   };
 
-  /** Starts playback of `plan` from 0 ms. */
-  const start = (plan: Plan, melt: boolean, fruit?: Map<number, HTMLElement>, pool?: HTMLElement[]) => {
+  /** Starts playback from 0 ms: the full timeline, or the short one (Escape, reduced motion, no logo). */
+  const start = (short: boolean) => {
     phaseRef.current = 'playing';
     setPhase('playing');
     clearTimeout(cycleTimer.current);
-    const draw = setup(plan, melt, fruit, pool);
-    const r = { plan, t0: performance.now(), retargeted: false, raf: 0, draw };
+    startedAt.current = performance.now();
+    const target = measureTarget();
+    const landing = !!target;
+    const { box, draw, place } = setup(landing);
+    const inp = input(box, target ?? NOWHERE);
+    const plan = short || !target ? skipPlan(inp) : buildPlan(inp);
+    place(plan.input.target);
+    const r = { plan, t0: performance.now(), retargeted: !landing, raf: 0, draw, place };
     run.current = r;
     const frame = (now: number) => {
       if (run.current !== r) return;
       const ms = now - r.t0;
-      // The page logo is measured again when the word starts to travel (D-15).
-      if (!r.retargeted && ms >= r.plan.timeline.morphStart) {
-        r.retargeted = true;
-        r.plan = retargetPlan(r.plan, measureTarget());
-      }
+      // The page logo is measured again when the word starts to glide (D-15).
+      if (!r.retargeted && ms >= r.plan.timeline.glideStart) retarget(r);
       const s = sampleAt(r.plan, ms);
       r.draw(s);
       // The end state (the landing logo fully in) is painted once before the overlay goes, so the
       // page's own logo takes over from a full-strength copy in the same box.
-      if (s.done) r.raf = requestAnimationFrame(finish);
+      if (s.stage === 'done') r.raf = requestAnimationFrame(finish);
       else r.raf = requestAnimationFrame(frame);
     };
     frame(performance.now());
   };
+  /** Re-measures the page logo, keeping the last box if it has gone. */
+  const retarget = (r: NonNullable<typeof run.current>) => {
+    r.retargeted = true;
+    const t = measureTarget();
+    if (!t) return;
+    r.plan = retargetPlan(r.plan, t);
+    r.place(t);
+  };
 
-  /** A second press: jump to the plan's fast-forward point (the swap still plays). */
+  /** A second press: jump to the start of the swap (the swap still plays). */
   const fastForward = () => {
     const r = run.current;
     if (!r || phaseRef.current !== 'playing') return;
-    if (!r.retargeted) {
-      r.retargeted = true;
-      r.plan = retargetPlan(r.plan, measureTarget());
-    }
-    const ff = r.plan.timeline.ffTo;
+    if (!r.retargeted) retarget(r);
+    const ff = r.plan.ffTo;
     if (performance.now() - r.t0 < ff) r.t0 = performance.now() - ff;
   };
 
   const activate = () => {
-    if (phaseRef.current === 'greeting') {
-      const p = prepared.current?.key === viewportKey() ? prepared.current : prepare();
-      start(p.plan, !reduced.current, p.fruit, p.pool);
-    } else fastForward();
+    if (phaseRef.current === 'greeting') start(reduced.current);
+    else if (performance.now() - startedAt.current >= SECOND_PRESS_MS) fastForward();
   };
   const skip = () => {
-    if (phaseRef.current === 'greeting') {
-      fruitLayer.current!.textContent = '';
-      bodyLayer.current!.querySelectorAll('.wi-seg').forEach((el) => el.remove());
-      start(skipPlan(input()), false, new Map(), []);
-    }
+    if (phaseRef.current === 'greeting') start(true);
     else fastForward();
   };
 
@@ -428,14 +370,15 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
         root.current?.focus({ preventScroll: true });
         return;
       }
+      // A held key repeats: only its first keydown is a press (R-1).
       if (e.key === 'Escape') {
         e.preventDefault();
-        skip();
+        if (!e.repeat) skip();
         return;
       }
       if (!startKey(e)) return; // F-keys, modifiers, media keys and shortcuts stay the browser's
       e.preventDefault();
-      activate();
+      if (!e.repeat) activate();
     };
     window.addEventListener('keydown', onKey);
     window.__wiReady = true;
@@ -463,22 +406,20 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
       }
     }
     el?.focus({ preventScroll: true });
+    // Shown only once the account had loaded (someone else saw it in this browser, R-4): fade it in.
+    if (late) el?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, easing: 'ease-out' });
+    // With a poster, the glass bends the poster's colours (the video's first frame) instead of the stand-in's.
+    if (media.poster) el?.style.setProperty('--wi-refract', `url("${media.poster}")`);
     // Start the fonts for every greeting now, while English shows, so no language swaps fonts mid-fade.
     document.fonts?.load?.('500 1em "cseed Hello"', GREETINGS.map((g) => g.text).join('')).catch(() => {});
-    // Build the plan and its fruit while the greeting shows, so the press itself does little work.
-    const idle = (fn: () => void) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 1200 }) : setTimeout(fn, 400));
-    idle(() => {
-      if (phaseRef.current === 'greeting' && root.current) prepare();
-    });
-    // The 640px wordmark is decoded now, not on the frame it first shows.
-    root.current?.querySelectorAll<HTMLImageElement>('[data-wi-word] img').forEach((i) => i.decode?.().catch(() => {}));
-    // A rotation or resize mid-run: jump to the end state (timeline.done, not ffTo), onto the freshly measured logo (D-15).
+    // The landing logo's images are decoded now, not on the frame they first show.
+    el?.querySelectorAll<HTMLImageElement>('[data-wi-logo] img').forEach((i) => i.decode?.().catch(() => {}));
+    // A rotation or resize mid-run: jump to the end state (done, not ffTo), onto the freshly measured logo (D-15).
     const onResize = () => {
       const r = run.current;
       if (!r || phaseRef.current !== 'playing') return;
-      r.retargeted = true;
-      r.plan = retargetPlan(r.plan, measureTarget());
-      r.t0 = Math.min(r.t0, performance.now() - r.plan.timeline.done);
+      retarget(r);
+      r.t0 = Math.min(r.t0, performance.now() - r.plan.done);
     };
     window.addEventListener('resize', onResize);
     return () => {
@@ -522,9 +463,10 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
         lastPointer.current = performance.now();
         activate();
       }}
-      onClick={() => {
-        // Assistive tech can click without pointer events; a real press has already been handled.
-        if (performance.now() - lastPointer.current < SAME_PRESS_MS) return;
+      onClick={(e) => {
+        // Assistive tech can click without pointer events; a real press has already been handled,
+        // and the second click of a double-click is never a new press.
+        if (e.detail > 1 || performance.now() - lastPointer.current < SAME_PRESS_MS) return;
         activate();
       }}
     >
@@ -557,20 +499,6 @@ export function WelcomeIntro({ onDone, targetSelector = '[data-onb-logo]', media
       <div class="wi-greet" ref={greet} aria-hidden="true" data-wi-greeting>
         <Phrase key={`a${slots.a}`} g={GREETINGS[slots.a]!} front={front === 0} />
         <Phrase key={`b${slots.b}`} g={GREETINGS[slots.b]!} front={front === 1} />
-      </div>
-      <div class="wi-layer" ref={fruitLayer} aria-hidden="true" />
-      <div class="wi-layer" ref={bodyLayer} aria-hidden="true">
-        <div class="wi-eyes" ref={eyes} />
-      </div>
-      <div class="wi-layer" ref={markTravel} aria-hidden="true">
-        <div class="wi-mark" ref={mark} data-wi-word>
-          {/* The same artwork as the page's 156px wordmark at 640px, so it stays sharp while it is large. */}
-          <img class="wordmark-logo wordmark-logo--ink" src="/images/cseed-logo.png" alt="" width="640" height="147" decoding="async" />
-          <img class="wordmark-logo wordmark-logo--white" src="/images/cseed-logo-white.png" alt="" width="640" height="147" decoding="async" />
-        </div>
-      </div>
-      <div class="wi-layer" ref={sproutTravel} aria-hidden="true">
-        <div class="wi-sprout" ref={sprout} data-wi-sprout />
       </div>
       <div class="wi-logo" ref={logo} data-wi-logo aria-hidden="true">
         <LogoImages />
