@@ -69,22 +69,58 @@
    filter stalled raster for 200–400 ms at each language change, and a 26px shadow blur under the moving
    light band cost 20–45 ms frames); two crisp drop-shadows, painted once per phrase. ── */
 .wi-face {display:block;
-  filter:drop-shadow(0 -1px 0 rgb(255 255 255 / .55)) drop-shadow(0 2.5px 1px rgb(4 18 14 / .45));}
+  filter:drop-shadow(0 -1px 0 rgb(255 255 255 / .7)) drop-shadow(0 2.5px 1px rgb(4 18 14 / .55));}
 .wi-glass {color:transparent;padding:.3em .04em;
   background-image:
-    linear-gradient(180deg, rgb(255 255 255 / 0) 25%, rgb(255 255 255 / .95) 30%, rgb(255 255 255 / .25) 38%, rgb(255 255 255 / 0) 48%,
-      rgb(255 255 255 / 0) 62%, rgb(255 255 255 / .45) 70%, rgb(255 255 255 / 0) 76%),
+    linear-gradient(180deg, rgb(255 255 255 / 0) 25%, rgb(255 255 255 / 1) 29.5%, rgb(255 255 255 / .3) 36%, rgb(255 255 255 / 0) 46%,
+      rgb(255 255 255 / 0) 62%, rgb(255 255 255 / .55) 70%, rgb(255 255 255 / 0) 76%),
+    linear-gradient(112deg, rgb(255 255 255 / 0) 38%, rgb(255 255 255 / .5) 44%, rgb(255 255 255 / 0) 47%, rgb(255 255 255 / 0) 52%, rgb(255 255 255 / .28) 55%, rgb(255 255 255 / 0) 58%),
     var(--wi-refract, linear-gradient(transparent, transparent)),
-    radial-gradient(42% 70% at 72% 64%, rgb(80 214 160 / .62), rgb(80 214 160 / 0) 72%),
-    radial-gradient(46% 66% at 28% 40%, rgb(104 150 255 / .58), rgb(104 150 255 / 0) 72%),
-    radial-gradient(34% 60% at 40% 74%, rgb(176 132 255 / .5), rgb(176 132 255 / 0) 72%),
-    radial-gradient(40% 64% at 80% 30%, rgb(120 220 110 / .42), rgb(120 220 110 / 0) 72%),
-    linear-gradient(180deg, rgb(255 255 255 / .72) 24%, rgb(255 255 255 / .44) 44%, rgb(255 255 255 / .4) 58%, rgb(255 255 255 / .6) 76%);
-  background-size:100% 100%, 260% auto, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
-  background-position:0 0, 62% 38%, 0 0, 0 0, 0 0, 0 0, 0 0;
+    radial-gradient(42% 70% at 72% 64%, rgb(80 220 165 / .72), rgb(80 220 165 / 0) 72%),
+    radial-gradient(46% 66% at 28% 40%, rgb(104 150 255 / .7), rgb(104 150 255 / 0) 72%),
+    radial-gradient(34% 60% at 40% 74%, rgb(180 132 255 / .6), rgb(180 132 255 / 0) 72%),
+    radial-gradient(40% 64% at 80% 30%, rgb(124 224 112 / .5), rgb(124 224 112 / 0) 72%),
+    linear-gradient(180deg, rgb(255 255 255 / .66) 24%, rgb(255 255 255 / .36) 44%, rgb(255 255 255 / .3) 58%, rgb(255 255 255 / .56) 76%);
+  background-size:100% 100%, 100% 100%, 260% auto, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+  background-position:0 0, 0 0, 62% 38%, 0 0, 0 0, 0 0, 0 0, 0 0;
   background-repeat:no-repeat;
   -webkit-background-clip:text;background-clip:text;-webkit-box-decoration-break:clone;box-decoration-break:clone;}
-.wi-cs {direction:ltr;unicode-bidi:isolate;}
+/* ── The word cseed (rev2): in every language it is drawn in the wordmark's own letter shapes, as glass.
+   It is a box with the lettering's proportions (x 0–471 of the 640×147 cseed-logo artwork, the same
+   span the timeline lands on), filled with the glass paint and masked by the artwork's letters, so the
+   word that glides into the corner is exactly the shape of the logo it becomes. Its text stays in the
+   DOM at size 0 (out of the sentence's glass clip), and its border box is the letters' box: the
+   timeline measures it. Its bottom sits on the baseline (overflow:hidden), its top at the ascender. ── */
+.wi-cs {--wi-cs-h:calc(var(--wi-fs, 64px) * .75);direction:ltr;unicode-bidi:isolate;display:inline-block;overflow:hidden;vertical-align:baseline;
+  height:var(--wi-cs-h);width:calc(var(--wi-cs-h) * 471 / 147);margin:0 calc(var(--wi-fs, 64px) * .03);font-size:0;line-height:0;letter-spacing:0;
+  color:transparent;-webkit-background-clip:border-box;background-clip:border-box;
+  -webkit-mask:url('/images/cseed-logo.png') 0 0 / 135.881% 100% no-repeat;mask:url('/images/cseed-logo.png') 0 0 / 135.881% 100% no-repeat alpha;}
+/* The glass, as in the sentence (the lens colours fall across the word's own box). */
+.wi-face .wi-cs, .wi-word-glass {
+  background-image:
+    linear-gradient(180deg, rgb(255 255 255 / 0) 20%, rgb(255 255 255 / 1) 25%, rgb(255 255 255 / .3) 34%, rgb(255 255 255 / 0) 45%,
+      rgb(255 255 255 / 0) 64%, rgb(255 255 255 / .55) 76%, rgb(255 255 255 / 0) 84%),
+    linear-gradient(112deg, rgb(255 255 255 / 0) 30%, rgb(255 255 255 / .55) 38%, rgb(255 255 255 / 0) 42%, rgb(255 255 255 / 0) 60%, rgb(255 255 255 / .3) 64%, rgb(255 255 255 / 0) 68%),
+    var(--wi-refract, linear-gradient(transparent, transparent)),
+    radial-gradient(42% 70% at 72% 64%, rgb(80 220 165 / .72), rgb(80 220 165 / 0) 72%),
+    radial-gradient(46% 66% at 28% 40%, rgb(104 150 255 / .7), rgb(104 150 255 / 0) 72%),
+    radial-gradient(34% 60% at 40% 74%, rgb(180 132 255 / .6), rgb(180 132 255 / 0) 72%),
+    radial-gradient(40% 64% at 80% 30%, rgb(124 224 112 / .5), rgb(124 224 112 / 0) 72%),
+    linear-gradient(180deg, rgb(255 255 255 / .66) 18%, rgb(255 255 255 / .36) 42%, rgb(255 255 255 / .3) 60%, rgb(255 255 255 / .58) 86%);
+  background-size:100% 100%, 100% 100%, 260% auto, 100% 100%, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+  background-position:0 0, 0 0, 62% 38%, 0 0, 0 0, 0 0, 0 0, 0 0;background-repeat:no-repeat;}
+.wi-shine .wi-cs {background-image:linear-gradient(180deg, rgb(255 255 255 / 1) 20%, rgb(255 255 255 / .75) 50%, rgb(255 255 255 / .95) 80%);}
+/* Lifted into its own layer at the press: the sentence (and drips cloned from it) no longer draws it. */
+.wi-slot[data-lifted] .wi-cs {visibility:hidden;}
+
+/* ── The lifted word: a fixed, isolated layer in the letters' measured box, moved only by the timeline's
+   transform (origin 0 0, uniform scale) and opacity. Two copies of the masked word fill it: the glass
+   (with the face's rim and shadow) and the same letters in the wordmark's ink, which the glass condenses
+   into as the backdrop fades to the paper (white glass alone would vanish on light paper). ── */
+.wi-word {position:absolute;left:0;top:0;transform-origin:0 0;pointer-events:none;isolation:isolate;will-change:transform, opacity;}
+.wi-word > .wi-cs {position:absolute;inset:0;width:100%;height:100%;margin:0;}
+.wi-word-glass {filter:drop-shadow(0 -1px 0 rgb(255 255 255 / .7)) drop-shadow(0 2px 1px rgb(4 18 14 / .55));}
+.wi-word-ink {background:var(--wi-ink);}
 
 /* The moving highlight: a soft slanted band of light that glides across the letters once per language.
    The window (.wi-sheen) moves right while the words inside it (.wi-sheen-in) move left by the same
@@ -112,7 +148,7 @@
 .wi-drip .wi-sheen {display:none;}
 /* The drips' glass is a lighter paint (the same light and body, the lens colours as two soft bands): seven fresh
    layers on the press frame must rasterise fast. The full glass cross-fades into them over the first fifth. */
-.wi-drip .wi-glass {background-image:
+.wi-drip .wi-glass, .wi-drip .wi-face .wi-cs {background-image:
     linear-gradient(180deg, rgb(255 255 255 / 0) 25%, rgb(255 255 255 / .95) 30%, rgb(255 255 255 / .25) 38%, rgb(255 255 255 / 0) 48%,
       rgb(255 255 255 / 0) 62%, rgb(255 255 255 / .45) 70%, rgb(255 255 255 / 0) 76%),
     linear-gradient(90deg, rgb(104 150 255 / .45), rgb(80 214 160 / .45)),
@@ -121,10 +157,17 @@
 
 /* ── The landing logo: the page logo's own images in its exact box, faded in by the timeline, never scaled. ── */
 .wi-logo {position:absolute;display:flex;width:max-content;opacity:0;}
+/* Its letters and its sapling are two complementary crops of the one image (each in the full image box),
+   so the sapling can fade in on its own and together they are exactly the page's logo. The cut is the one
+   clear column between the d and the sapling (115 of the 156 px image; 471–479 of the 640 px artwork). */
+.wi-logo[data-kind="wordmark"][data-part="letters"] {clip-path:inset(0 25.96% 0 0);}
+.wi-logo[data-kind="wordmark"][data-part="sapling"] {clip-path:inset(0 0 0 74.04%);}
+.wi-logo[data-kind="mark"][data-part="sapling"] {display:none;}
 
 /* ── No glass where it would hurt: high contrast, reduced transparency and forced colours get solid type. ── */
 @media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
   .wi-glass {color:#fff;background:none;-webkit-background-clip:border-box;background-clip:border-box;}
+  .wi-face .wi-cs, .wi-word-glass {background:#fff;}
   .wi-face {filter:drop-shadow(0 2px 3px rgb(0 0 0 / .8));}
   .wi-sheen {display:none;}
   .wi-scrim {background:rgb(0 0 0 / .55);}
@@ -133,6 +176,7 @@
   .wi-backdrop {display:none;}
   .wi-paper {background:Canvas;}
   .wi-glass {color:CanvasText;background:none;-webkit-background-clip:border-box;background-clip:border-box;}
+  .wi-cs, .wi-word-glass, .wi-word-ink {forced-color-adjust:none;background:CanvasText;}
   .wi-face {filter:none;}
   .wi-sheen {display:none;}
 }
