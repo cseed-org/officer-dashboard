@@ -85,7 +85,7 @@ const glyphRows = [
 for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseline joins, stable ids and visible entry`,()=>{
  const p=buildPlan(input),t=p.timeline,spelled=sampleAt(p,t.spelledAt);
  const inset=(p.cell-p.segment)/2;
- const grid=(b:Box)=>[Math.round((b.x-p.origin.x-inset)/p.cell),Math.round((b.y-p.origin.y-inset)/p.cell)];
+ const grid=(b:Box)=>[Math.round((b.x-p.origin.x-inset)/p.cell)+0,Math.round((b.y-p.origin.y-inset)/p.cell)+0];
  for(let letter=0;letter<5;letter++) {
   const expected:string[]=[];
   glyphRows[letter]!.forEach((row,y)=>[...row].forEach((v,x)=>{
@@ -143,9 +143,9 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
  expect(t.fruitIn[0]).toBeLessThan(t.meltEnd);
  expect(t.morphStart-t.spelledAt).toBeGreaterThanOrEqual(300);
  expect(sampleAt(p,t.spelledAt+299).body).toBe(spelled.body);
- // The grown stem sits on the d before moving to the logo's separate sapling.
+ // D-25: the sapling grows to the right of the centred lettering.
  const sprout=sampleAt(p,t.morphStart).sprout;
- expect(sprout.box.x+sprout.box.w/2).toBeCloseTo(p.origin.x+31.5*p.cell,6);
+ expect(sprout.box.x).toBeGreaterThanOrEqual(p.wordBox.x+p.wordBox.w);
  const settled=sampleAt(p,t.morphStart+(t.travelStart-t.morphStart)*.6);
  expect(settled.wordOpacity).toBe(1);
  expect(settled.wordmarkOpacity).toBe(0);
@@ -159,9 +159,33 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
  expect(Object.isFrozen(sampleAt(p,1000))).toBe(false);
 });
 
+for(const input of fixtures) test(`${input.viewport.w}: D-25 lettering stays centred before travel and sapling fits`,()=>{
+ const p=buildPlan(input),t=p.timeline;
+ const centred=(boxes:readonly Box[])=>{
+  const left=Math.min(...boxes.map(b=>b.x)),right=Math.max(...boxes.map(b=>b.x+b.w));
+  const top=Math.min(...boxes.map(b=>b.y)),bottom=Math.max(...boxes.map(b=>b.y+b.h));
+  expect(Math.abs((left+right)/2-input.viewport.w/2)).toBeLessThanOrEqual(p.cell/2);
+  expect(Math.abs((top+bottom)/2-input.viewport.h/2)).toBeLessThanOrEqual(p.cell/2);
+ };
+ // Full fruit layout, all writing coordinates, and the complete readable hold.
+ centred(p.fruit.map(f=>f.box));
+ centred(p.word.cells);
+ for(const at of [t.spelledAt,t.spelledAt+150,t.morphStart,t.morphStart+100,t.morphStart+330,t.travelStart]) {
+  const s=sampleAt(p,at);
+  centred(s.body.filter(b=>b.kind==='letter').map(b=>b.box));
+  expect(s.transform).toEqual({tx:0,ty:0,sx:1,sy:1});
+  expect(s.sprout.box.x).toBeGreaterThanOrEqual(0);
+  expect(s.sprout.box.x+s.sprout.box.w).toBeLessThanOrEqual(input.viewport.w);
+  expect(s.sprout.box.y).toBeGreaterThanOrEqual(0);
+  expect(s.sprout.box.y+s.sprout.box.h).toBeLessThanOrEqual(input.viewport.h);
+ }
+ // Measure only the lettering in the image, never the cseed-plus-sapling box.
+ centred([{x:p.logoBox.x,y:p.logoBox.y,w:p.logoBox.w*471/640,h:p.logoBox.h}]);
+});
+
 for(const input of fixtures) test(`${input.viewport.w}: D-24 joins fade before the hold and d is entered through its bowl`,()=>{
  const p=buildPlan(input),t=p.timeline,inset=(p.cell-p.segment)/2;
- const grid=(b:Box)=>[Math.round((b.x-p.origin.x-inset)/p.cell),Math.round((b.y-p.origin.y-inset)/p.cell)];
+ const grid=(b:Box)=>[Math.round((b.x-p.origin.x-inset)/p.cell)+0,Math.round((b.y-p.origin.y-inset)/p.cell)+0];
  for(const at of [t.spelledAt,t.spelledAt+150,t.morphStart]) {
   const sample=sampleAt(p,at);
   expect(sample.body.filter(b=>b.kind==='join').every(b=>b.opacity===0&&!b.visible)).toBe(true);

@@ -45,7 +45,7 @@ const identity: Transform = Object.freeze({ tx: 0, ty: 0, sx: 1, sy: 1 });
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const progress = (ms: number, start: number, end: number) => end === start ? +(ms >= end) : clamp((ms - start) / (end - start));
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
-const interpolate = (to: Transform, t: number): Transform => ({ tx: to.tx * t, ty: to.ty * t, sx: mix(1, to.sx, t), sy: mix(1, to.sy, t) });
+const interpolate = (to: Transform, t: number): Transform => t === 0 ? identity : ({ tx: to.tx * t, ty: to.ty * t, sx: mix(1, to.sx, t), sy: mix(1, to.sy, t) });
 const mapBox = (from: Box, to: Box): Transform => ({ sx: to.w / from.w, sy: to.h / from.h, tx: to.x - from.x * to.w / from.w, ty: to.y - from.y * to.h / from.h });
 const blendBox = (from: Box, to: Box, t: number): Box => ({ x: mix(from.x, to.x, t), y: mix(from.y, to.y, t), w: mix(from.w, to.w, t), h: mix(from.h, to.h, t) });
 function freeze<T>(value: T): T {
@@ -56,7 +56,7 @@ function freeze<T>(value: T): T {
   return value;
 }
 const shortTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 350, fruitIn: [350, 350], snakeEnter: 350, spelledAt: 350, sproutAt: 350, morphStart: 350, travelStart: 350, morphEnd: 350, swapAt: 380, done: 500, ffTo: 380 });
-const fullTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 450, fruitIn: [300, 650], snakeEnter: 300, spelledAt: 3375, sproutAt: 3375, morphStart: 3675, travelStart: 4225, morphEnd: 4805, swapAt: 4805, done: 4925, ffTo: 4805 });
+const fullTimeline: Timeline = freeze({ meltStart: 0, meltEnd: 450, fruitIn: [300, 650], snakeEnter: 240, spelledAt: 3375, sproutAt: 3375, morphStart: 3675, travelStart: 4225, morphEnd: 4805, swapAt: 4805, done: 4925, ffTo: 4805 });
 
 /** Square SVG viewBox around the image sapling's painted x117–155, y7–35.
  * Use the same brand bounds in the stub and real engine (D-18).
@@ -162,17 +162,24 @@ export function buildPlan(input: Input): Plan {
   if (input.motion === 'reduced') return stubPlan(input);
   const dpr = input.viewport.dpr;
   const snap = (n: number) => Math.round(n * dpr) / dpr;
-  const unit = 115 / WORD_W;
-  const cell = Math.max(1 / dpr, Math.floor(Math.min((input.viewport.w - 32) / (156 / unit), input.viewport.h / 18, 26) * dpr) / dpr);
+  // D-25: centre the lettering, whose painted span is x0..471 in the
+  // 640px artwork. Reserve space on its right for the entire square sapling
+  // viewBox (not just its painted leaves), including 16px viewport padding.
+  const letteringShare = 471 / 640;
+  const sproutRight = (136 + 19 / SAPLING_FILL) / 156;
+  const rightOfCentre = WORD_W * (sproutRight / letteringShare - .5);
+  const cell = Math.max(1 / dpr, Math.floor(Math.min((input.viewport.w / 2 - 16) / rightOfCentre, input.viewport.h / 18, 26) * dpr) / dpr);
   // Snap both block edges: an even number of physical pixels in the gap.
   const inset = Math.max(0, Math.round(cell * .07 * dpr)) / dpr;
   const segment = cell - 2 * inset;
-  const origin = { x: snap((input.viewport.w - 156 / unit * cell) / 2), y: snap(input.viewport.h * .43 - cell * 3) };
+  const origin = { x: snap((input.viewport.w - WORD_W * cell) / 2), y: snap((input.viewport.h - GLYPH_H * cell) / 2) };
   const box = (c: GridCell, pad = 0): Box => ({ x: origin.x + c.x * cell + pad, y: origin.y + c.y * cell + pad, w: cell - 2 * pad, h: cell - 2 * pad });
   const wordBox = { x: origin.x, y: origin.y, w: WORD_W * cell, h: GLYPH_H * cell };
-  const logoBox = { x: origin.x, y: origin.y + (GLYPH_H - 36 / unit) * cell, w: 156 / unit * cell, h: 36 / unit * cell };
+  const logoWidth = wordBox.w / letteringShare;
+  const logoHeight = logoWidth * 36 / 156;
+  const logoBox = { x: origin.x, y: input.viewport.h / 2 - logoHeight / 2, w: logoWidth, h: logoHeight };
   const sprout = sproutBox(logoBox);
-  const sproutStart = { ...sprout, x: origin.x + (4*PITCH+3.5)*cell - sprout.w/2, y: origin.y - sprout.h*.86 };
+  const sproutStart = sprout;
   const initialLength = joins.reduce((sum, j) => sum + j.length, 0);
   const entry: GridCell[] = [];
   const firstHead = Math.floor(-origin.x/cell)-2;
