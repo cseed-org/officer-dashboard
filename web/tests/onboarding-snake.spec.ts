@@ -39,7 +39,7 @@ for (const input of fixtures) {
   }
   expect(eaten).toEqual(p.fruit.map(f=>f.id));
   const before=sampleAt(p,p.timeline.spelledAt);
-  expect(before.body.some(b=>b.kind==='join'&&b.visible)).toBe(true);
+  expect(before.body.some(b=>b.kind==='join'&&b.visible)).toBe(false);
   expect(before.body.some(b=>b.kind==='entry')).toBe(false);
   const inset=(p.cell-p.segment)/2;
   expect(new Set(before.body.filter(b=>b.kind==='letter').map(b=>key({...b.box,x:b.box.x-inset,y:b.box.y-inset})))).toEqual(new Set(p.word.cells.map(key)));
@@ -104,10 +104,11 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
   const [x,y]=grid(join.box);
   // Vertical approach legs stay in the gutter. The only cross-letter
   // horizontal runs are on row 6, below the common baseline (D-23).
+  expect(y).toBeGreaterThanOrEqual(1);
   expect(y).toBeLessThanOrEqual(6);
   const inGutter=x!%7>=4;
-  expect(inGutter || (y===0 && x!>=28 && x!<=30)).toBe(true);
-  expect(join.opacity).toBeLessThan(.5);
+  expect(inGutter || y===6 || x===32).toBe(true);
+  expect(join.opacity).toBe(0);
   const touching=new Set(letters.filter(l=>{const [lx,ly]=grid(l.box);return Math.max(Math.abs(lx!-x!),Math.abs(ly!-y!))<=1;}).map(l=>l.letter));
   expect(touching.size).toBeLessThanOrEqual(1);
  }
@@ -120,10 +121,12 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
   const to=p.fruit.find(f=>f.letter===boundary+1)!.eatAt;
   const join=p.ticks.filter(k=>k.at>from&&k.at<to).map(k=>grid(k.body[0]!.box));
   expect(join.some(([,y])=>y===6)).toBe(true);
+  const exit=grid(p.fruit.filter(f=>f.letter===boundary).at(-1)!.box);
+  if(exit[1]===5) expect(join[0]).toEqual([exit[0],6]);
   for(let i=1;i<join.length;i++) {
    const [x,y]=join[i]!,[px,py]=join[i-1]!;
    if(y!>py!) expect(x).toBe(boundary*7+5);
-   if(y!<py!) expect(x).toBe(boundary*7+6);
+   if(y!<py!) expect(x).toBe(boundary===3?32:boundary*7+6);
    if(px===boundary*7+5&&x===boundary*7+6) expect(y).toBe(6);
   }
  }
@@ -154,6 +157,26 @@ for (const input of fixtures) test(`${input.viewport.w}: readable glyphs, baseli
  // samples themselves are inexpensive values, not recursively frozen copies.
  expect(sampleAt(p,1000).body).toBe(sampleAt(p,1000).body);
  expect(Object.isFrozen(sampleAt(p,1000))).toBe(false);
+});
+
+for(const input of fixtures) test(`${input.viewport.w}: D-24 joins fade before the hold and d is entered through its bowl`,()=>{
+ const p=buildPlan(input),t=p.timeline,inset=(p.cell-p.segment)/2;
+ const grid=(b:Box)=>[Math.round((b.x-p.origin.x-inset)/p.cell),Math.round((b.y-p.origin.y-inset)/p.cell)];
+ for(const at of [t.spelledAt,t.spelledAt+150,t.morphStart]) {
+  const sample=sampleAt(p,at);
+  expect(sample.body.filter(b=>b.kind==='join').every(b=>b.opacity===0&&!b.visible)).toBe(true);
+  expect(sample.body.filter(b=>b.visible).map(b=>b.kind)).toEqual(Array(70).fill('letter'));
+  expect(sample.wordOpacity).toBe(1);
+ }
+ expect(sampleAt(p,t.spelledAt-120).body.filter(b=>b.kind==='join').every(b=>b.opacity===.4)).toBe(true);
+ expect(sampleAt(p,t.spelledAt-60).body.filter(b=>b.kind==='join').every(b=>b.opacity===.2)).toBe(true);
+ const d=p.fruit.filter(f=>f.letter===4);
+ expect(grid(d[0]!.box)).toEqual([31,2]);
+ expect(grid(d.at(-1)!.box)).toEqual([31,0]);
+ const approach=p.ticks.filter(k=>k.at>p.fruit.filter(f=>f.letter===3).at(-1)!.eatAt&&k.at<d[0]!.eatAt);
+ expect(approach.map(k=>grid(k.body[0]!.box))).toContainEqual([32,6]);
+ expect(approach.every(k=>grid(k.body[0]!.box)[1]!>=2)).toBe(true);
+ for(const k of p.ticks) for(const b of k.body.filter(b=>b.kind==='join')) expect(grid(b.box)[1]).toBeGreaterThanOrEqual(1);
 });
 test('D-18: stub and engine preserve sapling and wordmark aspect throughout travel',()=>{
  for(const input of fixtures) for(const build of [stubPlan,buildPlan]) {

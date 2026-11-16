@@ -28,7 +28,7 @@ export type Plan = Readonly<{
   input: Input; cell: number; origin: Readonly<{ x: number; y: number }>;
   segment: number; maxLength: number; fruit: readonly Fruit[]; ticks: readonly Tick[];
   word: Readonly<{ cells: readonly Box[] }>; wordBox: Box; logoBox: Box; sprout: Box;
-  sproutStart: Box; settled: readonly Pose[];
+  sproutStart: Box; settled: readonly Pose[]; written: readonly Pose[];
   timeline: Timeline; skipTimeline: Timeline;
   morph: Transform; sproutMorph: Transform;
 }>;
@@ -82,7 +82,7 @@ export function stubPlan(input: Input): Plan {
   const cell = 12;
   const logoBox = { x: input.viewport.w / 2 - 156, y: input.viewport.h * .4, w: 312, h: 72 };
   const sprout = sproutBox(logoBox);
-  return retargetPlan(freeze({ input: { ...input, viewport: { ...input.viewport }, target: { ...input.target } }, cell, origin: { x: logoBox.x, y: logoBox.y }, segment: 10, maxLength: 0, fruit: [], ticks: [], settled: [], word: { cells: [] }, wordBox: logoBox, logoBox, sprout, sproutStart: sprout, timeline: input.motion === 'reduced' ? shortTimeline : fullTimeline, skipTimeline: shortTimeline, morph: identity, sproutMorph: identity }), input.target);
+  return retargetPlan(freeze({ input: { ...input, viewport: { ...input.viewport }, target: { ...input.target } }, cell, origin: { x: logoBox.x, y: logoBox.y }, segment: 10, maxLength: 0, fruit: [], ticks: [], settled: [], written: [], word: { cells: [] }, wordBox: logoBox, logoBox, sprout, sproutStart: sprout, timeline: input.motion === 'reduced' ? shortTimeline : fullTimeline, skipTimeline: shortTimeline, morph: identity, sproutMorph: identity }), input.target);
 }
 
 /** The screen applies transforms with origin 0 0, translate then scale.
@@ -108,7 +108,13 @@ export function sampleAt(plan: Plan, time: number): Sample {
   let lo = 0, hi = plan.ticks.length;
   while (lo < hi) { const mid = (lo + hi) >>> 1; if (plan.ticks[mid]!.at <= ms) lo = mid + 1; else hi = mid; }
   const tick = plan.ticks[lo - 1];
-  const body = reduced ? [] : !settle ? tick?.body ?? [] : (tick?.body ?? []).map((p, i) => {
+  // A pose that has passed the tail is absent from the tick and stops drawing.
+  // Retained joins dissolve during the final 120ms of writing, so the entire
+  // 300ms reading hold contains only letters (D-24), before any morph begins.
+  const joinFade = progress(ms, t.spelledAt - 120, t.spelledAt);
+  const writing = ms >= t.spelledAt ? plan.written : !joinFade ? tick?.body ?? []
+    : (tick?.body ?? []).map(p => p.kind === 'join' ? { ...p, opacity: p.opacity * (1-joinFade) } : p);
+  const body = reduced ? [] : !settle ? writing : writing.map((p, i) => {
     const dest = plan.settled[i]!;
     return p.kind === 'letter' ? { ...p, box: blendBox(p.box, dest.box, settle) }
       : { ...p, visible: p.visible && settle < 1, opacity: p.opacity * (1 - settle) };
@@ -128,21 +134,22 @@ type GridCell = { x: number; y: number; kind: Pose['kind']; letter: number | nul
 type Point = readonly [number, number];
 // D-23: the V0.11 single-cell glyphs, with a common 4x5 x-height and
 // one extra row for d's ascender. The c's arms have equal length/weight.
-// Three empty columns separate glyphs. Routes descend in each middle gutter
-// column, cross the row below the baseline, then rise into the next stroke.
+// Three empty columns separate glyphs. Baseline exits drop immediately below
+// the letters; elevated exits descend in the middle gutter column (D-24).
 const GLYPH_W = 4, GLYPH_H = 6, PITCH = 7, WORD_W = PITCH * 4 + GLYPH_W;
 const c: readonly Point[] = [[3,1],[2,1],[1,1],[0,1],[0,2],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5]];
 // Reverse the s so it can be entered from the baseline on its left.
 const s: readonly Point[] = [[0,5],[1,5],[2,5],[3,5],[3,4],[3,3],[2,3],[1,3],[0,3],[0,2],[0,1],[1,1],[2,1],[3,1]];
 const e: readonly Point[] = [[0,2],[0,1],[1,1],[2,1],[3,1],[3,2],[3,3],[2,3],[1,3],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5]];
-const d: readonly Point[] = [[2,1],[1,1],[0,1],[0,2],[0,3],[0,4],[0,5],[1,5],[2,5],[3,5],[3,4],[3,3],[3,2],[3,1],[3,0]];
+// Enter the bowl on its right from the baseline, go round it, finish on the
+// ascender. No approach is needed above the x-height or across the stem.
+const d: readonly Point[] = [[3,2],[3,3],[3,4],[3,5],[2,5],[1,5],[0,5],[0,4],[0,3],[0,2],[0,1],[1,1],[2,1],[3,1],[3,0]];
 const strokes = [c,s,e,e,d].map((stroke,i) => stroke.map(([x,y]): Point => [x+i*PITCH,y]));
 const joins: readonly (readonly Point[])[] = [
-  [[4,5],[5,5],[5,6],[6,6],[6,5]],
+  [[3,6],[4,6],[5,6],[6,6],[6,5]],
   [[11,1],[12,1],[12,2],[12,3],[12,4],[12,5],[12,6],[13,6],[13,5],[13,4],[13,3],[13,2]],
-  [[18,5],[19,5],[19,6],[20,6],[20,5],[20,4],[20,3],[20,2]],
-  // Enter d's bowl from above, leaving its ascender as the final head cell.
-  [[25,5],[26,5],[26,6],[27,6],[27,5],[27,4],[27,3],[27,2],[27,1],[27,0],[28,0],[29,0],[30,0]],
+  [[17,6],[18,6],[19,6],[20,6],[20,5],[20,4],[20,3],[20,2]],
+  [[24,6],[25,6],[26,6],[27,6],[28,6],[29,6],[30,6],[31,6],[32,6],[32,5],[32,4],[32,3],[32,2]],
 ];
 const wordRoute: readonly GridCell[] = freeze(strokes.flatMap((stroke, letter) => [
   ...stroke.map(([x,y]) => ({ x, y, kind: 'letter' as const, letter })),
@@ -211,14 +218,15 @@ export function buildPlan(input: Input): Plan {
     {x:0,y:44,w:101,h:103},{x:101,y:44,w:69,h:103},
     {x:171,y:44,w:101,h:103},{x:273,y:44,w:100,h:103},{x:371,y:0,w:100,h:147},
   ];
-  const settled = ticks[ticks.length-1]!.body.map(p => {
+  const written = ticks[ticks.length-1]!.body.map(p => p.kind === 'join' ? { ...p, opacity: 0, visible: false } : p);
+  const settled = written.map(p => {
     if (p.letter === null) return p;
     const b = ink[p.letter]!, c = route[p.id]!;
     const glyphTop = p.letter === 4 ? 0 : 1, glyphHeight = GLYPH_H-glyphTop;
     const dest = {x:logoBox.x+b.x/640*logoBox.w,y:logoBox.y+b.y/147*logoBox.h,w:b.w/640*logoBox.w,h:b.h/147*logoBox.h};
     return {...p,box:{x:dest.x+(c.x-p.letter*PITCH)/GLYPH_W*dest.w,y:dest.y+(c.y-glyphTop)/glyphHeight*dest.h,w:dest.w/GLYPH_W,h:dest.h/glyphHeight}};
   });
-  return retargetPlan(freeze({ input: { ...input, viewport:{...input.viewport},target:{...input.target} }, cell, origin, segment, maxLength: length, fruit, ticks, settled, sproutStart,
+  return retargetPlan(freeze({ input: { ...input, viewport:{...input.viewport},target:{...input.target} }, cell, origin, segment, maxLength: length, fruit, ticks, settled, written, sproutStart,
     word: { cells: wordRoute.filter(c=>c.kind==='letter').map(c=>box(c)) }, wordBox, logoBox, sprout,
     timeline: fullTimeline, skipTimeline:shortTimeline, morph:identity, sproutMorph:identity }), input.target);
 }
