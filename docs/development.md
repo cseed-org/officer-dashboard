@@ -28,16 +28,36 @@ in your environment to change this local-only key; the test runner uses the same
 Both ports bind to host loopback. Every app-container start runs `seed -reset`,
 replacing the development database in the `dev_data` volume.
 
-Source is bind-mounted and mirrored every 500 ms into a case-sensitive Linux
-volume: Windows otherwise confuses `Sapling.tsx` with `sapling.ts` during Vite
-resolution. Dependencies and Astro's cache also use named volumes; polling supports
+Source is bind-mounted directly (writable for Astro's endpoint generator); the former `Sapling.tsx` / `sapling.ts` case
+clash was removed by renaming the markup module to `saplingMarkup.ts`.
+Dependencies and Astro's cache use named volumes; polling supports
 hot reload on Windows. After dependency changes, run
 `docker compose -f compose.dev.yaml run --rm --no-deps web npm ci`, then rebuild
 the stack. The Go server's static build updates on rebuild; Astro updates live.
 Playwright 1.65.0 and its matching browser image write traces and failure artifacts
-to `test-results/docker/`. To capture intro frames, add
-`-e INTRO_FRAMES=/artifacts/frames-codex` before `e2e` in the test command;
-frames appear in `.pane/prompts/frames-codex/`.
+to `test-results/docker/`. Every Playwright run clears its output directory.
+Concurrent runs must choose distinct paths, e.g. append
+`--output=test-results/engine` or `--output=test-results/screen` after the test arguments.
+To capture intro frames, add `-e INTRO_FRAMES=/artifacts/frames/intro` before `e2e`;
+frames appear in `test-results/docker/frames/intro/`. Keep the Playwright output
+in its own subdirectory (`--output=test-results/intro`) so cleanup does not remove
+the frame directory. In Git Bash, prefix commands that pass container paths with
+`MSYS_NO_PATHCONV=1` to prevent conversion of `/artifacts/...` to a Windows path.
+
+The Compose default `WEB_ORIGIN=http://dashboard:4340` targets Astro, which sends
+no Content-Security-Policy. CSP tests require the Go server's **rebuilt static site**:
+
+```sh
+docker compose -f compose.dev.yaml up -d --build --wait app web
+docker compose -f compose.dev.yaml run --rm -e WEB_ORIGIN=http://dashboard:8090 e2e npx playwright test tests/csp.spec.ts --project=desktop --output=test-results/csp
+```
+
+Rebuilding restarts and reseeds the development app; coordinate this with anyone
+running tests. Recreate `web` alongside `app` because they share a network namespace.
+Direct e2e traffic to `:8090` is not loopback and can hit the 30-per-minute sign-in
+limit in long batches. The Astro proxy uses loopback and the existing development
+exemption; production rate limits are unchanged. `DEV_ALLOWED_HOSTS` configures
+Vite's public `server.allowedHosts` option for the internal `dashboard` hostname.
 
 Stop with `docker compose -f compose.dev.yaml down`; add `-v` to also remove
 the development database, dependencies and cache.

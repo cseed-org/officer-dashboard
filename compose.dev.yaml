@@ -35,16 +35,17 @@ services:
       context: .
       dockerfile: docker/dev.Dockerfile
       target: web
-    command: ["node", "/dev-web.mjs"]
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
     environment:
       API_ORIGIN: http://127.0.0.1:8090
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: "150"
-      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: dashboard
+      DEV_ALLOWED_HOSTS: dashboard
     volumes:
-      - ./web/src:/host-src:ro
-      - web_src:/app/web/src
-      - ./docker/dev-web.mjs:/dev-web.mjs:ro
+      # Astro regenerates src/lib/endpoints.generated.ts at startup.
+      - ./web/src:/app/web/src
+      - ./src:/app/src:ro
+      - ./web/astro.config.mjs:/app/web/astro.config.mjs:ro
       - ./web/public:/app/web/public
       - web_modules:/app/web/node_modules
       - web_astro:/app/web/.astro
@@ -67,12 +68,12 @@ services:
       WEB_ORIGIN: http://dashboard:4340
       E2E_DEV_AUTH_KEY: ${DOCKER_DEV_AUTH_KEY:-local-docker-development-only}
     volumes:
-      - web_src:/app/web/src:ro
+      - ./web/src:/app/web/src:ro
       - ./web/tests:/app/web/tests:ro
       - ./web/playwright.config.ts:/app/web/playwright.config.ts:ro
       - web_modules:/app/web/node_modules
       - ./test-results/docker:/app/web/test-results
-      - ./.pane/prompts/frames-codex:/artifacts/frames-codex
+      - ./test-results/docker/frames:/artifacts/frames
     depends_on:
       web:
         condition: service_healthy
@@ -82,4 +83,3 @@ volumes:
   dev_data:
   web_modules:
   web_astro:
-  web_src:

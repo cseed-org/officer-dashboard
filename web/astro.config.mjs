@@ -42,6 +42,7 @@ export default defineConfig({
     tsconfig: './tsconfig.json',
     server: {
       strictPort: true,
+      allowedHosts: (process.env.DEV_ALLOWED_HOSTS ?? '').split(',').map(s => s.trim()).filter(Boolean),
       proxy: { '/api': proxy, '/auth': proxy },
     },
   },
