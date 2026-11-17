@@ -137,6 +137,9 @@ Cursor alike. Check a deployment from outside with:
 dashboard mcp-check https://<dashboard>   # -register also checks client registration
 ```
 
+With `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` set, it also checks that the service
+callers (`/api/ingest/*`, `/api/agent/*`) pass Access with their service token.
+
 The same Access, bypass and bot settings apply behind another proxy: agents must reach those
 paths without a browser challenge.
 

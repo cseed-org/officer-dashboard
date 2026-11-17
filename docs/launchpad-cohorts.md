@@ -37,8 +37,17 @@ One person can hold an officer session and a portal session in the same browser.
 
 ### Invite → bind → session
 
+> **Behind Cloudflare Access, add the email to the Launchpad group before you send the invite.**
+> The join page, the portal and the Discord sign-in all sit behind Access, which emails a
+> one-time PIN only to addresses in the **Officers** or **Launchpad** group. An officer adds the
+> builder's or mentor's email to **Launchpad** first: Zero Trust → **Access controls** →
+> **Policies** → **Rule groups** → `Launchpad` → add it to **Emails** → **Save**. Then they send
+> the invite from the cohort's Invites tab (or the mentor roster). Otherwise the invite link stops
+> at the Access sign-in and no PIN arrives. See
+> [Cloudflare Tunnel + Access, step 2](deployment.md#2-one-time-pin-and-the-two-groups).
+
 1. An officer invites `ada@uw.edu` to a cohort. The server stores the account (`status=invited`) with `sha256(token)` and an expiry 14 days out. It emails `${APP_URL}/launchpad/join?token=<token>` in the background through the existing SMTP mailer (`cfg.Mailer`, the same relay as .ics invites). Delivery outcome is stored on the account (`invite_sent_at` / `invite_error`). When SMTP is not configured, or `method` is `link`/`both`, the response returns the link once for copying. Tokens are never stored or shown again; **Resend** issues a new one. Through an officer's MCP agent ([mcp.md](mcp.md)) invites go by email only and the link is never returned. The hash stays on the account after acceptance so the join page can say "already used"; binding requires `status=invited`, so it cannot be replayed.
-2. `/launchpad/join` calls `GET /api/portal/invite?token=…` (public, rate-limited with the auth limiter). It shows the cohort name, role (builder/mentor), the masked email, and whether the link is still valid.
+2. Behind Access, the recipient first enters the one-time PIN sent to their email (once a month per browser). `/launchpad/join` then calls `GET /api/portal/invite?token=…` (public, rate-limited with the auth limiter). It shows the cohort name, role (builder/mentor), the masked email, and whether the link is still valid.
 3. **Continue with Discord** goes to `/auth/login?launchpad=<token>`. This stores `sha256(token)` in a 10-minute host-prefixed cookie, just like officer invites.
 4. The OAuth callback handles a `launchpad` cookie **before** the officer path. It finds the invited account by token hash and checks it is unexpired with `status=invited`. It then binds the Discord ID, sets `status=active` and `accepted_at`, creates a portal session and redirects to `/launchpad`. Failures redirect to `/launchpad/join?error=<reason>`: `invalid` (unknown token), `expired`, `used` (already accepted by another Discord account; the same account just signs in again), `disabled` (account disabled or cohort archived), `discord_taken`, or `failed` (server error).
    - Discord ID already bound to another account:

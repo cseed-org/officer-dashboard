@@ -48,7 +48,7 @@ Contracts live in both contract files; the contract checker exercises every rout
 ## Discord bot handoff
 
 1. Register builders and save each Discord **user ID**, not the display name.
-2. A director creates an expiring service token in Officers → Tokens with `ingest:buildspace`, then stores it in the bot's secret environment as `BUILDSPACE_INGEST_TOKEN`. Set `DASHBOARD_URL` to the dashboard's HTTPS origin. The existing token revocation screen can disable ingestion immediately.
+2. A director creates an expiring service token in Officers → Tokens with `ingest:buildspace`, then stores it in the bot's secret environment as `BUILDSPACE_INGEST_TOKEN`. Set `DASHBOARD_URL` to the dashboard's HTTPS origin. The existing token revocation screen can disable ingestion immediately. Behind Cloudflare Access, also store the Access service token as `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` ([deployment, step 5](deployment.md#5-a-service-token-for-the-bot-the-luma-ingest-and-the-purchasing-agent)). The adapter then sends them as `CF-Access-Client-Id` / `CF-Access-Client-Secret`. Without them, Access stops the check-in, and the adapter throws "Check-in stopped at Cloudflare Access".
 3. Wire the adapter stub at `scripts/buildspace-discord-stub.mjs` into the bot's weekly slash command or dedicated-channel handler. The bot itself is not implemented or deployed by this draft. Take author identity and message ID from Discord's trusted event, not from user-supplied text. Compute the check-in date in the club time zone (Settings); the response's `week` says which check-in week it counted for.
 4. Submit this payload, keeping the original message ID and identical body/date/status for retries:
 

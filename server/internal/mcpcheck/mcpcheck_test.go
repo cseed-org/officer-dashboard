@@ -39,7 +39,13 @@ func dashboard(t *testing.T, appURL string, wrap func(http.Handler) http.Handler
 
 func check(t *testing.T, url string, register bool) ([]Result, string, bool) {
 	t.Helper()
-	res, err := Run(context.Background(), Options{URL: url, Register: register})
+	return checkWith(t, Options{URL: url, Register: register})
+}
+
+func checkWith(t *testing.T, o Options) ([]Result, string, bool) {
+	t.Helper()
+	url := o.URL
+	res, err := Run(context.Background(), o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +146,105 @@ func TestAccessWithoutTheBypassFails(t *testing.T) {
 		r := find(res, name)
 		if r.Status != Fail || !strings.Contains(r.Detail, "Cloudflare Access redirected") || !strings.Contains(r.Hint, "Bypass application") {
 			t.Errorf("%s: %+v", name, r)
+		}
+	}
+}
+
+const (
+	testClientID     = "6f1c2a0b9e.access"
+	testClientSecret = "c0ffee5ecret0123456789abcdef0123456789abcdef0123456789abcdef0123"
+)
+
+// serviceAccess imitates the setup in docs/deployment.md: the agent paths bypass Access,
+// api/ingest and api/agent have a Service Auth policy for one service token, and everything
+// else meets the sign-in. strict401 is the "401 Response for Service Auth policies" setting;
+// echo puts the presented secret in Access's page, to prove the report never repeats it.
+func serviceAccess(strict401, echo bool) func(http.Handler) http.Handler {
+	signIn := access(agentPath)
+	return func(next http.Handler) http.Handler {
+		redirect := signIn(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(r.URL.Path, "/api/ingest/") && !strings.HasPrefix(r.URL.Path, "/api/agent/") {
+				redirect.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Set("Cf-Ray", "8f00000000000009-SEA")
+			if r.Header.Get("CF-Access-Client-Id") == testClientID && r.Header.Get("CF-Access-Client-Secret") == testClientSecret {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if !strict401 {
+				redirect.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(http.StatusUnauthorized)
+			body := "<title>Unauthorized</title>"
+			if echo {
+				body += " presented " + r.Header.Get("CF-Access-Client-Secret")
+			}
+			_, _ = io.WriteString(w, body)
+		})
+	}
+}
+
+func TestServiceTokenPassesAccess(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		ts := dashboard(t, "", serviceAccess(strict, false))
+		res, out, ok := checkWith(t, Options{URL: ts.URL, AccessClientID: testClientID, AccessClientSecret: testClientSecret})
+		if r := find(res, "POST /api/ingest/luma"); !ok || r.Status != Pass || !strings.Contains(r.Detail, "Access let the service token through") {
+			t.Fatalf("strict=%v: the service token should pass:\n%s", strict, out)
+		}
+		if strings.Contains(out, testClientSecret) {
+			t.Fatalf("the report prints the secret:\n%s", out)
+		}
+	}
+}
+
+func TestWrongServiceTokenFails(t *testing.T) {
+	// Access refuses the token, as a 401 that echoes it (strict) or as its sign-in redirect.
+	for _, strict := range []bool{false, true} {
+		ts := dashboard(t, "", serviceAccess(strict, true))
+		res, out, ok := checkWith(t, Options{URL: ts.URL, AccessClientID: testClientID, AccessClientSecret: "wrong-" + testClientSecret})
+		r := find(res, "POST /api/ingest/luma")
+		if ok || r.Status != Fail || !strings.Contains(r.Detail, "Access refused the service token") || !strings.Contains(r.Hint, "step 5") {
+			t.Fatalf("strict=%v: a refused service token must fail:\n%s", strict, out)
+		}
+		if strings.Contains(out, testClientSecret) {
+			t.Fatalf("the report prints the secret:\n%s", out)
+		}
+	}
+}
+
+func TestServicePathBehindAccessWithoutTokenIsInfo(t *testing.T) {
+	for _, strict := range []bool{false, true} {
+		ts := dashboard(t, "", serviceAccess(strict, false))
+		res, out, ok := check(t, ts.URL, false)
+		r := find(res, "POST /api/ingest/luma")
+		if !ok || r.Status != Info || !strings.Contains(r.Detail, "Cloudflare Access") || !strings.Contains(r.Hint, "CF_ACCESS_CLIENT_ID") {
+			t.Fatalf("strict=%v: Access in front of the service path without a token is expected:\n%s", strict, out)
+		}
+	}
+}
+
+func TestServiceTokenWithoutAccessReachesTheDashboard(t *testing.T) {
+	// Straight to the dashboard (no Cloudflare): the token headers do no harm.
+	ts := dashboard(t, "", nil)
+	res, out, ok := checkWith(t, Options{URL: ts.URL, AccessClientID: testClientID, AccessClientSecret: testClientSecret})
+	if r := find(res, "POST /api/ingest/luma"); !ok || r.Status != Pass {
+		t.Fatalf("direct, with a token:\n%s", out)
+	}
+	res, out, _ = check(t, ts.URL, false)
+	if r := find(res, "POST /api/ingest/luma"); r.Status != Info || !strings.Contains(r.Detail, "no Cloudflare in front") {
+		t.Fatalf("direct, without a token:\n%s", out)
+	}
+}
+
+func TestServiceTokenNeedsBothHalves(t *testing.T) {
+	for _, o := range []Options{{URL: "https://officers.example", AccessClientID: testClientID}, {URL: "https://officers.example", AccessClientSecret: testClientSecret}} {
+		_, err := Run(context.Background(), o)
+		if err == nil || !strings.Contains(err.Error(), "set both") || strings.Contains(err.Error(), testClientSecret) {
+			t.Errorf("%+v → %v", o, err)
 		}
 	}
 }
@@ -307,8 +412,11 @@ func TestCloudflareWithoutAccessWarns(t *testing.T) {
 	if !ok {
 		t.Fatalf("no Access is a warning, not a failure:\n%s", out)
 	}
-	if r := find(res, "GET /oauth/authorize"); r.Status != Warn || !strings.Contains(r.Hint, "step 2") {
+	if r := find(res, "GET /oauth/authorize"); r.Status != Warn || !strings.Contains(r.Hint, "step 3") {
 		t.Errorf("authorize through Cloudflare without Access: %+v", r)
+	}
+	if r := find(res, "POST /api/ingest/luma"); r.Status != Warn || !strings.Contains(r.Hint, "step 5") {
+		t.Errorf("service path through Cloudflare without Access: %+v", r)
 	}
 }
 

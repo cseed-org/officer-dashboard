@@ -1,10 +1,11 @@
 // Package mcpcheck checks, from outside, that a deployed dashboard's MCP endpoint is
 // reachable the way agents reach it (docs/deployment.md, "Cloudflare Tunnel + Access"):
 // both OAuth discovery documents, the 401 challenge on /mcp, the CORS preflight, the token
-// endpoint and the consent page. It names Cloudflare interference specifically: an Access
-// sign-in redirect, a bot or WAF challenge, a WAF block, an edge-cached answer, a tunnel
-// that is down. Nothing it does by default changes the dashboard; Register opts in to
-// registering one OAuth client (unused clients are removed after a week).
+// endpoint and the consent page, and that service callers (POST /api/ingest/luma) pass
+// Access with an Access service token. It names Cloudflare interference specifically: an
+// Access sign-in redirect, a bot or WAF challenge, a WAF block, an edge-cached answer, a
+// tunnel that is down. Nothing it does by default changes the dashboard; Register opts in
+// to registering one OAuth client (unused clients are removed after a week).
 package mcpcheck
 
 import (
@@ -51,6 +52,11 @@ type Options struct {
 	Register bool
 	// Client makes the requests; nil uses one with a 15 s timeout. Redirects are never followed.
 	Client *http.Client
+	// AccessClientID and AccessClientSecret are a Cloudflare Access service token (the
+	// CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET a service caller sends). When set, the
+	// check expects POST /api/ingest/luma to reach the dashboard through Access. Both or
+	// neither; the secret never appears in a result.
+	AccessClientID, AccessClientSecret string
 }
 
 // Base normalises the URL an officer would paste (https://host, https://host/mcp) to the
@@ -82,6 +88,9 @@ func Run(ctx context.Context, o Options) ([]Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if (o.AccessClientID == "") != (o.AccessClientSecret == "") {
+		return nil, errors.New("set both CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET (an Access service token), or neither")
+	}
 	hc := o.Client
 	if hc == nil {
 		hc = &http.Client{Timeout: 15 * time.Second}
@@ -101,11 +110,19 @@ func Run(ctx context.Context, o Options) ([]Result, error) {
 		clientID = c.register()
 	}
 	c.authorize(clientID)
+	c.serviceCall(o.AccessClientID, o.AccessClientSecret)
 	switch {
 	case c.sawCloudflare:
 		c.add(Info, "Cloudflare", "responses came through Cloudflare (cf-ray "+c.ray+")", "")
 	default:
 		c.add(Info, "Cloudflare", "no Cloudflare headers seen: this URL does not go through Cloudflare", "")
+	}
+	if o.AccessClientSecret != "" {
+		// Nothing echoes the secret today; make sure no future detail ever does.
+		for i := range c.results {
+			c.results[i].Detail = strings.ReplaceAll(c.results[i].Detail, o.AccessClientSecret, "[CF_ACCESS_CLIENT_SECRET]")
+			c.results[i].Hint = strings.ReplaceAll(c.results[i].Hint, o.AccessClientSecret, "[CF_ACCESS_CLIENT_SECRET]")
+		}
 	}
 	return c.results, nil
 }
@@ -197,10 +214,10 @@ const (
 )
 
 var hints = map[string]string{
-	kindAccess:    "add the agent paths to the Cloudflare Access Bypass application (docs/deployment.md, Cloudflare Tunnel + Access, step 3)",
-	kindChallenge: "turn off Bot Fight Mode (Free plan: it cannot be skipped), or skip Super Bot Fight Mode and Browser Integrity Check for the agent paths (step 4)",
-	kindBlock:     "a WAF rule blocks this request: find it under Security → Events and skip it for the agent paths (step 4)",
-	kindCache:     "add the cache rule that bypasses the cache for the agent paths (step 5)",
+	kindAccess:    "add the agent paths to the Cloudflare Access Bypass application (docs/deployment.md, Cloudflare Tunnel + Access, step 4)",
+	kindChallenge: "turn off Bot Fight Mode (Free plan: it cannot be skipped), or skip Super Bot Fight Mode and Browser Integrity Check for the agent paths (step 6)",
+	kindBlock:     "a WAF rule blocks this request: find it under Security → Events and skip it for the agent paths (step 6)",
+	kindCache:     "add the cache rule that bypasses the cache for the agent paths (step 7)",
 	kindTunnel:    "the tunnel is not connected: check `docker compose logs cloudflared` and TUNNEL_TOKEN (step 1)",
 	kindEdge:      "Cloudflare answered instead of the dashboard: check the tunnel's published route points at http://dashboard:8090 (step 1)",
 }
@@ -314,7 +331,7 @@ func snippet(r *response) string {
 // cacheNote is the warning for an agent-endpoint answer a shared cache could keep.
 func (c *checker) cacheNote(name string, r *response) {
 	if !strings.Contains(strings.ToLower(r.Header.Get("Cache-Control")), "no-store") {
-		c.add(Warn, name, "the answer has no Cache-Control: no-store (a dashboard older than V0.14?)", "upgrade the dashboard, and keep the cache rule (step 5)")
+		c.add(Warn, name, "the answer has no Cache-Control: no-store (a dashboard older than V0.14?)", "upgrade the dashboard, and keep the cache rule (step 7)")
 	}
 }
 
@@ -473,7 +490,7 @@ func (c *checker) authorize(clientID string) {
 		case kindAccess:
 			c.add(Pass, name, "Cloudflare Access sign-in ("+accessTeam(r)+"): officers sign in to Access, then to the dashboard", "")
 		case kindChallenge:
-			c.add(Warn, name, i.what, "a browser can usually pass a challenge, but turning it off for /oauth/authorize avoids a step (step 4)")
+			c.add(Warn, name, i.what, "a browser can usually pass a challenge, but turning it off for /oauth/authorize avoids a step (step 6)")
 		default:
 			c.fail(name, r, nil, "")
 		}
@@ -494,12 +511,68 @@ func (c *checker) authorize(clientID string) {
 		return
 	}
 	if r.Header.Get("Cf-Ray") != "" {
-		// Through Cloudflare the human pages should meet Access (step 2). Only a quick-tunnel
+		// Through Cloudflare the human pages should meet Access (step 3). Only a quick-tunnel
 		// rehearsal has none on purpose, so this is a warning rather than a failure.
-		c.add(Warn, name, detail, "this page came through Cloudflare without Access: add the Access application for the whole host (step 2); expected only on a quick-tunnel rehearsal")
+		c.add(Warn, name, detail, "this page came through Cloudflare without Access: add the Access application for the whole host (step 3); expected only on a quick-tunnel rehearsal")
 		return
 	}
 	c.add(Pass, name, detail, "")
+}
+
+// serviceCall checks the path service callers use (the Luma ingest; the Discord bot and the
+// fulfillment agent sit behind the same Access application). It sends no dashboard token,
+// so the dashboard's own 401 proves the request got through Access to the dashboard. With
+// an Access service token, Access must let it through; without one, Access stopping it is
+// what a correct setup does.
+func (c *checker) serviceCall(id, secret string) {
+	const path = "/api/ingest/luma"
+	name := "POST " + path + " (service call)"
+	header := map[string]string{"Content-Type": "application/json", "Accept": "application/json"}
+	withToken := id != ""
+	if withToken {
+		header["CF-Access-Client-Id"] = id
+		header["CF-Access-Client-Secret"] = secret
+	}
+	const hint = "the service-token application (step 5) must cover api/ingest and api/agent with a Service Auth policy that includes this token; check the token has not expired and that CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET belong to it"
+	r, err := c.send("POST", path, strings.NewReader("{}"), header)
+	if err != nil {
+		c.fail(name, r, err, "")
+		return
+	}
+	i := cloudflare(r)
+	if i == nil && r.Header.Get("Cf-Ray") != "" && (r.StatusCode == http.StatusUnauthorized || r.StatusCode == http.StatusForbidden) && !dashboardError(r, "") {
+		// Access with "401 Response for Service Auth policies" answers a bare 401 (or 403)
+		// instead of redirecting to its sign-in.
+		i = &interference{kindAccess, fmt.Sprintf("Cloudflare Access answered %d %s", r.StatusCode, snippet(r))}
+	}
+	switch {
+	case i != nil && i.kind == kindAccess && withToken:
+		c.add(Fail, name, "Access refused the service token: "+i.what, hint)
+	case i != nil && i.kind == kindAccess:
+		c.add(Info, name, i.what+": service callers need the Access service token", "set CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET to check that Access lets it through")
+	case i != nil:
+		c.add(Fail, name, i.what, strings.ReplaceAll(hints[i.kind], "agent paths", "agent and service paths"))
+	case r.StatusCode == http.StatusTooManyRequests && dashboardError(r, "rate_limited"):
+		c.add(Warn, name, "429 from the dashboard: this IP used up its upload budget", "wait a minute and run mcp-check again")
+	case r.StatusCode != http.StatusUnauthorized || !dashboardError(r, "unauthenticated"):
+		c.fail(name, r, nil, "the dashboard's 401 (no dashboard token was sent)")
+	case withToken:
+		c.add(Pass, name, "Access let the service token through: the dashboard's own 401 (no dashboard token was sent)", "")
+	case r.Header.Get("Cf-Ray") != "":
+		c.add(Warn, name, "reached the dashboard through Cloudflare with no Access service token", "put api/ingest and api/agent behind the service-token application (step 5); expected only on a quick-tunnel rehearsal")
+	default:
+		c.add(Info, name, "the dashboard's 401, no Cloudflare in front", "")
+	}
+}
+
+// dashboardError reports whether r is the dashboard's JSON error, with this code ("" for any).
+func dashboardError(r *response, code string) bool {
+	e, _ := r.json()["error"].(map[string]any)
+	if e == nil {
+		return false
+	}
+	got, _ := e["code"].(string)
+	return got != "" && (code == "" || got == code)
 }
 
 // accessTeam is the Access team domain an Access answer points at.

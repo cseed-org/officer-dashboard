@@ -7,7 +7,9 @@
 #   cp dashboard.env.example dashboard.env  # Discord, Drive, Litestream… (the app's settings)
 #   (cd ../../web && npm ci && npm run build)   # the image embeds web/dist
 #   docker compose -f compose.cloudflare.yml up -d --build
-#   docker compose -f compose.cloudflare.yml run --rm --no-deps --entrypoint /app/dashboard dashboard mcp-check https://<APP_URL host>
+#   docker compose -f compose.cloudflare.yml run --rm --no-deps -e CF_ACCESS_CLIENT_ID -e CF_ACCESS_CLIENT_SECRET \
+#     --entrypoint /app/dashboard dashboard mcp-check https://<APP_URL host>
+#   (the two Access variables are optional, from your shell: they also check the service-token path)
 #
 # The dashboard publishes no port: the only way in is the tunnel. cloudflared reaches it as
 # http://dashboard:8090 on the private `tunnel` network. Containers on it get addresses from
