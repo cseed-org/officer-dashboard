@@ -37,6 +37,15 @@ for a director to resolve manually. Only the current claiming token may complete
 prevents future use; deactivating a user ends sessions but does not revoke independently
 issued service tokens (revoke those separately).
 
+**Behind Cloudflare Access.** `/api/ingest/*` and `/api/agent/*` sit behind an Access application
+with a Service Auth policy ([deployment, step 5](deployment.md#5-a-service-token-for-the-bot-the-luma-ingest-and-the-purchasing-agent)).
+Every caller sends the Access service token as `CF-Access-Client-Id` and `CF-Access-Client-Secret`,
+plus its dashboard service token as `Authorization: Bearer …`. The Discord check-in bot's
+adapter (`scripts/buildspace-discord-stub.mjs`) adds them from `CF_ACCESS_CLIENT_ID` /
+`CF_ACCESS_CLIENT_SECRET`. The Luma ingest and the purchasing agent live outside this repo and
+must add the two headers themselves. A 401 or redirect from Cloudflare (no JSON `error` body)
+means Access refused the service token. The dashboard itself never sees or needs the token.
+
 **Agent settlement tolerance.** The purchasing agent's `POST /api/agent/jobs/:id/complete`
 may post an `actualTotalCents` of up to the larger of the estimate + 10% and the
 estimate + $25 (set by `AGENT_SETTLEMENT_TOLERANCE_PERCENT` / `_CENTS`). Above that it

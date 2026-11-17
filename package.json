@@ -9,7 +9,8 @@
   },
   "scripts": {
     "contract-check": "node scripts/contract-check.mjs",
-    "mcp-tools": "node scripts/gen-mcp-tools.mjs"
+    "mcp-tools": "node scripts/gen-mcp-tools.mjs",
+    "test:scripts": "node --test \"scripts/*.test.mjs\""
   },
   "dependencies": {
     "zod": "^4.6.7"

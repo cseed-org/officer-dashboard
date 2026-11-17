@@ -81,6 +81,8 @@ These are consumed by deployment scripts, rather than Go settings:
 
 `compose.cloudflare.yml` reads its own settings from `server/deploy/.env` ([`.env.example`](../server/deploy/.env.example)): `APP_URL`, `TUNNEL_TOKEN` (the remotely managed tunnel's token), `TUNNEL_NET` (the network's first three octets, default `10.250.89`: subnet `.0/28`, containers and `TRUSTED_PROXIES` `.8/29`, gateway `.1`), `CLOUDFLARED_VERSION` and `DASHBOARD_IMAGE` (the tag of the image compose builds; to run a prebuilt one, set it and start without `--build`). The app's settings go in `server/deploy/dashboard.env`. See [Cloudflare Tunnel + Access](deployment.md#cloudflare-tunnel--access).
 
+`CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` are a Cloudflare Access service token for the callers *of* the dashboard: the Discord bot adapter, and `dashboard mcp-check` (which then also checks that service calls pass Access). Set both or neither. The dashboard server never reads them, so they do not belong in `dashboard.env`. See [deployment, step 5](deployment.md#5-a-service-token-for-the-bot-the-luma-ingest-and-the-purchasing-agent).
+
 The container sets `DB_PATH=/data/dashboard.db` and `ADDR=:8090`; systemd sets `DB_PATH=/var/lib/officer-dashboard/dashboard.db` and `ADDR=127.0.0.1:8090`. See [deployment](deployment.md).
 
 ## Development and diagnostics

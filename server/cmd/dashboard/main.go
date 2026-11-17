@@ -6,7 +6,8 @@
 //	dashboard migrate      apply pending migrations and exit
 //	dashboard healthcheck  exit 0 if the local server answers /api/health (container HEALTHCHECK)
 //	dashboard mcp-check [-register] <public url>
-//	                       check from outside that agents can reach /mcp (Cloudflare Tunnel + Access)
+//	                       check from outside that agents can reach /mcp (Cloudflare Tunnel + Access);
+//	                       with CF_ACCESS_CLIENT_ID/_SECRET set, also that service calls pass Access
 //	dashboard version
 package main
 
@@ -66,7 +67,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	case "healthcheck":
 		err = healthcheck(args, getenv)
 	case "mcp-check":
-		return mcpCheckCmd(args, stdout, stderr)
+		return mcpCheckCmd(args, getenv, stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 	default:
@@ -425,8 +426,10 @@ func healthcheck(args []string, getenv func(string) string) error {
 }
 
 // mcpCheckCmd checks a deployed dashboard's MCP endpoint from outside (docs/deployment.md):
-// exit 0 when every check passes, 1 when one fails, 2 for bad usage.
-func mcpCheckCmd(args []string, stdout, stderr io.Writer) int {
+// exit 0 when every check passes, 1 when one fails, 2 for bad usage. CF_ACCESS_CLIENT_ID and
+// CF_ACCESS_CLIENT_SECRET (an Access service token) come from the environment, never a flag,
+// so the secret stays out of the process list and shell history.
+func mcpCheckCmd(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("mcp-check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	register := fs.Bool("register", false, "also check POST /oauth/register (creates one unused OAuth client in the dashboard)")
@@ -434,6 +437,7 @@ func mcpCheckCmd(args []string, stdout, stderr io.Writer) int {
 	fs.Usage = func() {
 		fmt.Fprintln(stderr, "usage: dashboard mcp-check [-register] [-timeout 15s] https://<dashboard host>[/mcp]")
 		fs.PrintDefaults()
+		fmt.Fprintln(stderr, "environment: CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET (an Access service token) also check that service calls pass Access")
 	}
 	// Flags may come before or after the URL.
 	var target []string
@@ -450,7 +454,11 @@ func mcpCheckCmd(args []string, stdout, stderr io.Writer) int {
 		fs.Usage()
 		return 2
 	}
-	results, err := mcpcheck.Run(context.Background(), mcpcheck.Options{URL: target[0], Register: *register, Client: &http.Client{Timeout: *timeout}})
+	results, err := mcpcheck.Run(context.Background(), mcpcheck.Options{
+		URL: target[0], Register: *register, Client: &http.Client{Timeout: *timeout},
+		AccessClientID:     strings.TrimSpace(getenv("CF_ACCESS_CLIENT_ID")),
+		AccessClientSecret: strings.TrimSpace(getenv("CF_ACCESS_CLIENT_SECRET")),
+	})
 	if err != nil {
 		fmt.Fprintln(stderr, "mcp-check:", err)
 		return 2

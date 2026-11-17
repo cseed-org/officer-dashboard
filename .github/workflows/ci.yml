@@ -64,4 +64,6 @@ jobs:
       - run: npm ci
       - name: MCP tool list matches the contract
         run: node scripts/gen-mcp-tools.mjs --check
+      - name: Script tests (Discord bot adapter)
+        run: npm run test:scripts
       - run: node scripts/contract-check.mjs
