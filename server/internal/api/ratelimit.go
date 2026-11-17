@@ -142,10 +142,7 @@ func retryAfter(wait time.Duration) int { return int(wait/time.Second) + 1 }
 // never reached. IPv6 clients are keyed by their /64. A direct loopback request without the
 // header (local tools, tests) is reported as local and not limited.
 func clientIP(r *http.Request, trusted []*net.IPNet) (key string, local bool) {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
+	host := peerHost(r)
 	peer := net.ParseIP(host)
 	if peer == nil {
 		return host, false
@@ -235,6 +232,13 @@ func (s *Server) withRateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if ok, wait := s.allowRoute(limitedRoute(r), r); !ok {
 			w.Header().Set("Retry-After", strconv.Itoa(retryAfter(wait)))
+			if p := cleanPath(r.URL.Path); p == "/oauth/token" || p == "/oauth/register" {
+				// The agent endpoints' 429 is no-store and readable by browser-based clients,
+				// like every other answer there.
+				allowCORS(w)
+			} else if strings.HasPrefix(p, "/oauth/") {
+				w.Header().Set("Cache-Control", "no-store")
+			}
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				writeError(w, fail(http.StatusTooManyRequests, "rate_limited", "Too many requests; try again in a minute"))
 				return
@@ -246,4 +250,13 @@ func (s *Server) withRateLimit(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// peerHost is the address of the request's peer, without its port.
+func peerHost(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

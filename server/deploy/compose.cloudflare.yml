@@ -5,13 +5,16 @@
 #   cd server/deploy
 #   cp .env.example .env                    # TUNNEL_TOKEN, APP_URL (compose settings)
 #   cp dashboard.env.example dashboard.env  # Discord, Drive, Litestream… (the app's settings)
+#   (cd ../../web && npm ci && npm run build)   # the image embeds web/dist
 #   docker compose -f compose.cloudflare.yml up -d --build
 #   docker compose -f compose.cloudflare.yml run --rm --no-deps --entrypoint /app/dashboard dashboard mcp-check https://<APP_URL host>
 #
 # The dashboard publishes no port: the only way in is the tunnel. cloudflared reaches it as
-# http://dashboard:8090 on the private `tunnel` network, whose fixed subnet is exactly
-# TRUSTED_PROXIES, so the dashboard believes X-Forwarded-For only from cloudflared and the
-# per-IP limits see each real client instead of cloudflared's address.
+# http://dashboard:8090 on the private `tunnel` network. Containers on it get addresses from
+# ${TUNNEL_NET}.8/29 only, and that range is exactly TRUSTED_PROXIES: the dashboard believes
+# X-Forwarded-For only from cloudflared (and the network's other containers), never from the
+# Docker gateway ${TUNNEL_NET}.1, through which anything the host forwards would arrive. So
+# the per-IP limits see each real client instead of cloudflared's address.
 name: officer-dashboard
 
 services:
@@ -19,6 +22,8 @@ services:
     build:
       context: ../..
       dockerfile: server/Dockerfile
+    # The tag of the image built here. To run a prebuilt image instead, set DASHBOARD_IMAGE
+    # to it and start without --build (with --build, compose rebuilds and overwrites that tag).
     image: ${DASHBOARD_IMAGE:-officer-dashboard:latest}
     restart: unless-stopped
     # The app's settings (Discord, Drive, SMTP, LITESTREAM_*…): copy dashboard.env.example.
@@ -27,11 +32,12 @@ services:
       # These win over dashboard.env.
       APP_URL: ${APP_URL:?set APP_URL in server/deploy/.env to the public https origin, e.g. https://officers.example.org}
       ADDR: ":8090"
-      TRUSTED_PROXIES: ${TUNNEL_SUBNET:-10.250.89.0/28}
+      TRUSTED_PROXIES: ${TUNNEL_NET:-10.250.89}.8/29
     networks:
       - tunnel
     # No `ports:`. To reach the dashboard from this machine for maintenance, publish it on
-    # loopback only, e.g. - "127.0.0.1:8090:8090".
+    # loopback only, e.g. - "127.0.0.1:8090:8090". Those requests arrive from the gateway,
+    # which is not a trusted proxy, so their X-Forwarded-For is ignored.
     volumes:
       # The SQLite file. With LITESTREAM_BUCKET set (dashboard.env) it is also replicated and
       # restored on boot by the image's entrypoint, exactly as without compose.
@@ -70,9 +76,12 @@ networks:
     driver: bridge
     ipam:
       config:
-        # Keep it equal to TRUSTED_PROXIES above (both read TUNNEL_SUBNET). Pick another
-        # private range if this one is used on your LAN or by another Docker network.
-        - subnet: ${TUNNEL_SUBNET:-10.250.89.0/28}
+        # All three read TUNNEL_NET (the first three octets), like TRUSTED_PROXIES above. Set
+        # it to another private /24 prefix if this one is used on your LAN or by another
+        # Docker network. The gateway sits outside ip_range, so it is never trusted.
+        - subnet: ${TUNNEL_NET:-10.250.89}.0/28
+          ip_range: ${TUNNEL_NET:-10.250.89}.8/29
+          gateway: ${TUNNEL_NET:-10.250.89}.1
 
 volumes:
   dashboard-data:

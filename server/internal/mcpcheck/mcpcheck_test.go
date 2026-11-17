@@ -265,11 +265,14 @@ func TestNotTheDashboardFails(t *testing.T) {
 
 func TestBase(t *testing.T) {
 	for in, want := range map[string]string{
-		"https://officers.example":      "https://officers.example",
-		"https://officers.example/":     "https://officers.example",
-		"https://officers.example/mcp":  "https://officers.example",
-		"https://officers.example/mcp/": "https://officers.example",
-		" http://localhost:8090/mcp ":   "http://localhost:8090",
+		"https://officers.example":         "https://officers.example",
+		"https://officers.example/":        "https://officers.example",
+		"https://officers.example/mcp":     "https://officers.example",
+		"https://officers.example/mcp/":    "https://officers.example",
+		" http://localhost:8090/mcp ":      "http://localhost:8090",
+		"https://Officers.Example:443/mcp": "https://officers.example",
+		"http://[::1]:80/":                 "http://[::1]",
+		"https://user:pw@officers.example": "https://officers.example",
 	} {
 		if got, err := Base(in); err != nil || got != want {
 			t.Errorf("Base(%q) = %q, %v", in, got, err)
@@ -287,5 +290,70 @@ func TestPlainHTTPIsAWarning(t *testing.T) {
 	res, _, ok := check(t, ts.URL, false)
 	if !ok || find(res, "URL scheme").Status != Warn {
 		t.Errorf("plain http: ok=%v %+v", ok, find(res, "URL scheme"))
+	}
+}
+
+func TestCloudflareWithoutAccessWarns(t *testing.T) {
+	// Through Cloudflare (a quick tunnel, or a forgotten step 2) the consent page reaches the
+	// dashboard with no Access in front: not a failure, but never a silent pass.
+	ts := dashboard(t, "", func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cf-Ray", "8f00000000000006-SEA")
+			w.Header().Set("Cf-Cache-Status", "DYNAMIC")
+			next.ServeHTTP(w, r)
+		})
+	})
+	res, out, ok := check(t, ts.URL, false)
+	if !ok {
+		t.Fatalf("no Access is a warning, not a failure:\n%s", out)
+	}
+	if r := find(res, "GET /oauth/authorize"); r.Status != Warn || !strings.Contains(r.Hint, "step 2") {
+		t.Errorf("authorize through Cloudflare without Access: %+v", r)
+	}
+}
+
+func TestEdgeCacheableFails(t *testing.T) {
+	// A MISS means a cache rule made the answer cacheable: the next agent gets this copy.
+	// BYPASS and DYNAMIC (what Cloudflare sends for no-store and for JSON) are fine.
+	for status, wantFail := range map[string]bool{"MISS": true, "EXPIRED": true, "STALE": true, "BYPASS": false, "DYNAMIC": false} {
+		ts := dashboard(t, "", func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasPrefix(r.URL.Path, "/.well-known/") {
+					w.Header().Set("Cf-Cache-Status", status)
+				}
+				next.ServeHTTP(w, r)
+			})
+		})
+		res, out, _ := check(t, ts.URL, false)
+		r := find(res, "GET /.well-known/oauth-authorization-server")
+		if failed := r.Status == Fail && strings.Contains(r.Detail, "cf-cache-status: "+status) && strings.Contains(r.Hint, "cache rule"); failed != wantFail {
+			t.Errorf("cf-cache-status %s: fail=%v, want %v\n%s", status, failed, wantFail, out)
+		}
+	}
+}
+
+func TestCloudflareClassification(t *testing.T) {
+	resp := func(status int, header http.Header, body string) *response {
+		if header == nil {
+			header = http.Header{}
+		}
+		header.Set("Cf-Ray", "8f00000000000007-SEA")
+		return &response{Response: &http.Response{StatusCode: status, Header: header}, body: []byte(body)}
+	}
+	// Cloudflare's JavaScript Detections script on an ordinary page is not a challenge.
+	jsd := `<html><body>not registered<script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script></body></html>`
+	if i := cloudflare(resp(400, nil, jsd)); i != nil {
+		t.Errorf("JS detections on a 400 page: %+v", i)
+	}
+	if i := cloudflare(resp(403, nil, `<script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1"></script>`)); i == nil || i.kind != kindChallenge {
+		t.Errorf("challenge page without a title: %+v", i)
+	}
+	// The tunnel-down page in HTML (what a browser-like Accept gets), and a bare 530.
+	html := `<title>Cloudflare Tunnel error | officers.example | Cloudflare</title><span class="inline-block">Error</span> <span class="cf-error-code">1033</span>`
+	if i := cloudflare(resp(530, http.Header{"Content-Type": {"text/html"}}, html)); i == nil || i.kind != kindTunnel || !strings.Contains(i.what, "1033") {
+		t.Errorf("HTML 1033: %+v", i)
+	}
+	if i := cloudflare(resp(530, nil, "")); i == nil || i.kind != kindTunnel {
+		t.Errorf("bare 530: %+v", i)
 	}
 }

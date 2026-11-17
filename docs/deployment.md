@@ -118,9 +118,12 @@ name is still common, it is given in brackets.
    docker compose -f compose.cloudflare.yml logs cloudflared | grep "Registered tunnel connection"
    ```
    The tunnel shows **Healthy** in the dashboard. Compose sets `APP_URL`, `ADDR` and
-   `TRUSTED_PROXIES` itself. `TRUSTED_PROXIES` is exactly the `tunnel` network's fixed subnet
-   (`TUNNEL_SUBNET`, default `10.250.89.0/28`), so per-IP limits see each real client through
-   `X-Forwarded-For`, never `cloudflared`'s address. Litestream works as in the plain container: set
+   `TRUSTED_PROXIES` itself. The `tunnel` network has a fixed subnet (`TUNNEL_NET`, default
+   `10.250.89`, so `10.250.89.0/28`), and its containers get addresses only from `.8/29`.
+   `TRUSTED_PROXIES` is exactly that range, so per-IP limits see each real client through
+   `X-Forwarded-For`, never `cloudflared`'s address. The Docker gateway (`.1`), through which a
+   port you publish on the host would arrive, is outside it and never trusted. If compose says the
+   address pool overlaps, set another `TUNNEL_NET` in `.env`. Litestream works as in the plain container: set
    `LITESTREAM_*` in `dashboard.env`.
 
    If `APP_URL` and the published hostname disagree, the dashboard logs once: "a request forwarded
@@ -165,18 +168,21 @@ for that one path.
   - `oauth/register`
   - `oauth/token`
   - `.well-known/oauth-protected-resource`
+  - `.well-known/oauth-protected-resource/mcp` (the document agents fetch first)
   - `.well-known/oauth-authorization-server`
 - **Add a policy**: Action **Bypass**, Include **Everyone**.
 
 **How Access chooses** ([docs](https://developers.cloudflare.com/cloudflare-one/policies/access/app-paths/)):
 "When multiple rules are set for a common root path, the more specific rule takes precedence."
 The step 2 application has no path, so it covers every path. These path applications are more
-specific, so they win for their paths and for anything under them: `mcp` also covers `/mcp/`, and
-`.well-known/oauth-protected-resource` also covers `…/mcp`. `oauth/authorize` is not listed, so it
-stays behind the step 2 application.
+specific, so they win for their paths. Each path the agents use is listed exactly, rather than
+relying on how far an entry reaches below itself. `oauth/authorize` is not listed, so it stays
+behind the step 2 application. `mcp-check` (step 7) fetches every listed path and fails on any
+that still meets the Access sign-in.
 
 **Do not** enter `oauth` or `oauth/*`: that would also bypass the consent page. A Bypass turns
-Access off for those requests, and Cloudflare does not log them. Cloudflare evaluates Bypass first.
+Access off for those requests, and Cloudflare does not log them. Within an application, Bypass
+(and Service Auth) policies are evaluated before Allow and Block.
 
 ### 4. Bot Fight Mode, Browser Integrity Check and WAF
 
@@ -253,7 +259,7 @@ docker compose -f compose.cloudflare.yml run --rm --no-deps --entrypoint /app/da
 (Or, on any machine with the binary, `dashboard mcp-check https://officers.example.org`.) It
 checks both discovery documents, the 401 challenge on `/mcp`, the CORS preflight, the token
 endpoint and the consent page. It names each kind of Cloudflare interference: an Access sign-in,
-a challenge, a WAF block, an edge-cached answer, or a tunnel that is down. It also says which fix
+a challenge, a WAF block, an answer the edge cached or would cache, or a tunnel that is down. It also says which fix
 above applies. It exits non-zero if anything fails. A correct setup ends like this:
 
 ```
@@ -278,7 +284,8 @@ account, and the dashboard is the seeded dev build with developer sign-in locked
 `DEV_AUTH_KEY`. Its header has the commands. A quick tunnel has **no Access and none of the zone
 settings**, so it proves the containers, `TRUSTED_PROXIES`, `APP_URL`, OAuth and MCP through
 Cloudflare's edge. It cannot prove steps 2 to 6. Quick tunnels allow 200 requests in flight and no
-SSE, which the stateless `/mcp` does not use. Run `down -v` when you are done.
+SSE, which the stateless `/mcp` does not use. There `mcp-check` reports `GET /oauth/authorize` as a
+warning (the page came through Cloudflare without Access), as expected. Run `down -v` when you are done.
 
 ## HTTPS and restore
 

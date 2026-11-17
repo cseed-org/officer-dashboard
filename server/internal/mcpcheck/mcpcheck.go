@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -64,7 +65,15 @@ func Base(raw string) (string, error) {
 	default:
 		return "", fmt.Errorf("%q: give the dashboard's origin or its /mcp URL, not %s", raw, u.Path)
 	}
-	return u.Scheme + "://" + u.Host, nil
+	// Hosts compare case-insensitively and the default port is implied: normalise both, so
+	// the checks compare like with APP_URL's origin.
+	host := strings.ToLower(u.Hostname())
+	if p := u.Port(); p != "" && !(u.Scheme == "https" && p == "443") && !(u.Scheme == "http" && p == "80") {
+		host = net.JoinHostPort(host, p)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return u.Scheme + "://" + host, nil
 }
 
 // Run performs every check against the dashboard at o.URL.
@@ -197,7 +206,9 @@ var hints = map[string]string{
 }
 
 var (
-	cfErrorCode = regexp.MustCompile(`(?i)error(?: code:)?\s*(1\d{3}|5\d{2})\b`)
+	// The plain-text error ("error code: 1033") or the HTML page's code span
+	// (<span class="cf-error-code">1033</span>).
+	cfErrorCode = regexp.MustCompile(`(?i)error(?: code:)?\s*(1\d{3}|5\d{2})\b|cf-error-code[^>]*>\s*(1\d{3}|5\d{2})\b`)
 	accessHost  = regexp.MustCompile(`(?i)[a-z0-9-]+\.cloudflareaccess\.com`)
 )
 
@@ -223,22 +234,34 @@ func cloudflare(r *response) *interference {
 	if strings.EqualFold(h.Get("Cf-Mitigated"), "challenge") {
 		return &interference{kindChallenge, "Cloudflare challenged the request (cf-mitigated: challenge): Bot Fight Mode, Browser Integrity Check, Security Level or a WAF rule"}
 	}
-	if bytes.Contains(r.body, []byte("<title>Just a moment...</title>")) || bytes.Contains(r.body, []byte("/cdn-cgi/challenge-platform/")) {
+	// The challenge platform's path alone is not enough: Cloudflare injects its JavaScript
+	// Detections script (/cdn-cgi/challenge-platform/scripts/jsd/…) into ordinary pages too.
+	// A challenge page is a 403 or 503.
+	challengeStatus := r.StatusCode == http.StatusForbidden || r.StatusCode == http.StatusServiceUnavailable
+	if bytes.Contains(r.body, []byte("<title>Just a moment...</title>")) || (challengeStatus && bytes.Contains(r.body, []byte("/cdn-cgi/challenge-platform/h/"))) {
 		return &interference{kindChallenge, `Cloudflare answered with a "Just a moment..." challenge page`}
 	}
 	fromCloudflare := strings.EqualFold(h.Get("Server"), "cloudflare") || h.Get("Cf-Ray") != ""
 	if fromCloudflare && (bytes.Contains(r.body, []byte("Sorry, you have been blocked")) || bytes.Contains(r.body, []byte("Attention Required! | Cloudflare"))) {
 		return &interference{kindBlock, "Cloudflare's WAF blocked the request"}
 	}
-	if strings.EqualFold(h.Get("Cf-Cache-Status"), "HIT") {
-		return &interference{kindCache, "the answer came from Cloudflare's edge cache (cf-cache-status: HIT), not the dashboard"}
+	switch st := strings.ToUpper(h.Get("Cf-Cache-Status")); st {
+	case "HIT", "STALE", "REVALIDATED", "UPDATING":
+		return &interference{kindCache, "the answer came from Cloudflare's edge cache (cf-cache-status: " + st + "), not the dashboard"}
+	case "MISS", "EXPIRED":
+		// Cloudflare answers BYPASS for what it will not cache; MISS means a cache rule made
+		// this answer cacheable despite no-store, and the next caller may get this copy.
+		return &interference{kindCache, "Cloudflare stores this answer in its edge cache (cf-cache-status: " + st + "): the next caller may get this copy"}
 	}
 	if fromCloudflare && r.StatusCode >= 500 && !isDashboardJSON(r) {
+		code := ""
 		if m := cfErrorCode.FindSubmatch(r.body); m != nil {
-			code := string(m[1])
-			if code == "1033" || code == "530" {
-				return &interference{kindTunnel, "Cloudflare error " + code + ": the tunnel has no connected cloudflared"}
-			}
+			code = string(m[1]) + string(m[2])
+		}
+		if code == "1033" || code == "530" || (code == "" && r.StatusCode == 530) {
+			return &interference{kindTunnel, fmt.Sprintf("Cloudflare error %s (HTTP %d): the tunnel has no connected cloudflared", or(code, "530"), r.StatusCode)}
+		}
+		if code != "" {
 			return &interference{kindEdge, fmt.Sprintf("Cloudflare error %s (HTTP %d)", code, r.StatusCode)}
 		}
 		if r.StatusCode == http.StatusBadGateway {
@@ -261,12 +284,20 @@ func (c *checker) fail(name string, r *response, err error, expected string) {
 			hint = "the request timed out: is the tunnel connected and the dashboard healthy?"
 		}
 		c.add(Fail, name, err.Error(), hint)
-	case cloudflare(r) != nil:
-		i := cloudflare(r)
-		c.add(Fail, name, i.what, hints[i.kind])
 	default:
+		if i := cloudflare(r); i != nil {
+			c.add(Fail, name, i.what, hints[i.kind])
+			return
+		}
 		c.add(Fail, name, fmt.Sprintf("HTTP %d %s; expected %s", r.StatusCode, snippet(r), expected), "")
 	}
+}
+
+func or(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }
 
 func snippet(r *response) string {
@@ -450,16 +481,25 @@ func (c *checker) authorize(clientID string) {
 	}
 	loc := r.Header.Get("Location")
 	html := string(r.body)
+	var detail string
 	switch {
 	case r.StatusCode == http.StatusFound && strings.HasPrefix(loc, "/login?next="):
-		c.add(Pass, name, "the dashboard's sign-in (302 → /login), no Cloudflare Access in front", "")
+		detail = "the dashboard's sign-in (302 → /login), no Cloudflare Access in front"
 	case r.StatusCode == http.StatusOK && strings.Contains(html, "CSEED Officer Dashboard"):
-		c.add(Pass, name, "the dashboard's consent page, no Cloudflare Access in front", "")
+		detail = "the dashboard's consent page, no Cloudflare Access in front"
 	case !registered && r.StatusCode == http.StatusBadRequest && strings.Contains(html, "CSEED Officer Dashboard") && strings.Contains(html, "not registered"):
-		c.add(Pass, name, "the dashboard's own page (it refuses the check's unregistered client), no Cloudflare Access in front", "")
+		detail = "the dashboard's own page (it refuses the check's unregistered client), no Cloudflare Access in front"
 	default:
 		c.fail(name, r, nil, "the dashboard's sign-in or a Cloudflare Access sign-in")
+		return
 	}
+	if r.Header.Get("Cf-Ray") != "" {
+		// Through Cloudflare the human pages should meet Access (step 2). Only a quick-tunnel
+		// rehearsal has none on purpose, so this is a warning rather than a failure.
+		c.add(Warn, name, detail, "this page came through Cloudflare without Access: add the Access application for the whole host (step 2); expected only on a quick-tunnel rehearsal")
+		return
+	}
+	c.add(Pass, name, detail, "")
 }
 
 // accessTeam is the Access team domain an Access answer points at.

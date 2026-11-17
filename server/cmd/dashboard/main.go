@@ -455,7 +455,9 @@ func mcpCheckCmd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "mcp-check:", err)
 		return 2
 	}
-	if !mcpcheck.Report(stdout, target[0], results) {
+	// Report the normalised origin, never the raw argument (it may carry userinfo or a query).
+	base, _ := mcpcheck.Base(target[0])
+	if !mcpcheck.Report(stdout, base, results) {
 		return 1
 	}
 	return 0

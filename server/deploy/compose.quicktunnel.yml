@@ -12,6 +12,10 @@
 #   APP_URL=$url $qt up -d dashboard              # restart it with the public URL
 #   APP_URL=$url $qt run --rm --no-deps --entrypoint /app/dashboard dashboard mcp-check "$url"
 #   $qt down -v
+# Its own project even without -p: it can never replace the production containers
+# or touch their data volume, and `down -v` removes only the rehearsal.
+name: od-quicktunnel
+
 services:
   dashboard:
     build:

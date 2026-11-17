@@ -135,3 +135,41 @@ func TestForwardedHostMismatchWarnsOnce(t *testing.T) {
 		t.Fatalf("warning does not name the host and APP_URL:\n%s", logs.String())
 	}
 }
+
+// The rate limiter answers before the handlers, so its 429 on the agent endpoints carries
+// the same no-store and CORS headers they do (a browser-based client can read the 429).
+func TestAgentEndpointRateLimitIsNoStore(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.AuthRateLimit = 1 })
+	peer := actor{remote: "203.0.113.9:40000"}
+	for _, p := range []string{"/oauth/token", "/oauth/register"} {
+		e.do("POST", p, url.Values{"grant_type": {"authorization_code"}}, peer)
+	}
+	for _, p := range []string{"/oauth/token", "/oauth/register", "/oauth/authorize"} {
+		r := e.do("POST", p, url.Values{"grant_type": {"authorization_code"}}, peer)
+		expectStatus(t, p, r, 429)
+		if got := r.Header.Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s 429: Cache-Control %q, want no-store", p, got)
+		}
+		cors := r.Header.Get("Access-Control-Allow-Origin")
+		if want := map[bool]string{true: "*", false: ""}[p != "/oauth/authorize"]; cors != want {
+			t.Errorf("%s 429: Access-Control-Allow-Origin %q, want %q", p, cors, want)
+		}
+	}
+}
+
+func TestSameHost(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{
+		{"officers.example.org", "officers.example.org", true},
+		{"Officers.Example.org:443", "officers.example.org", true},
+		{"officers.example.org:8443", "officers.example.org", false},
+		{"localhost:8090", "localhost:8090", true},
+		{"other.example.org", "officers.example.org", false},
+	} {
+		if got := sameHost(c.a, c.b); got != c.want {
+			t.Errorf("sameHost(%q, %q) = %v", c.a, c.b, got)
+		}
+	}
+}

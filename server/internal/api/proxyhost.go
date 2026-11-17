@@ -16,7 +16,7 @@ import (
 func (s *Server) withForwardedHostCheck(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.host != "" && !s.hostWarned.Load() && len(r.Header.Values("X-Forwarded-For")) > 0 &&
-			!strings.EqualFold(r.Host, s.host) && s.fromTrustedProxy(r) && s.hostWarned.CompareAndSwap(false, true) {
+			!sameHost(r.Host, s.host) && s.fromTrustedProxy(r) && s.hostWarned.CompareAndSwap(false, true) {
 			s.log.Warn("a request forwarded by a trusted proxy names a different host than APP_URL: "+
 				"check the tunnel's public hostname (or the proxy's Host header) and APP_URL; "+
 				"OAuth metadata, cookies and redirects use APP_URL. Logged once.",
@@ -28,10 +28,22 @@ func (s *Server) withForwardedHostCheck(next http.Handler) http.Handler {
 
 // fromTrustedProxy reports whether the request's peer is one of TRUSTED_PROXIES.
 func (s *Server) fromTrustedProxy(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	ip := net.ParseIP(host)
+	ip := net.ParseIP(peerHost(r))
 	return ip != nil && inNets(ip, s.trustedProxies)
+}
+
+// sameHost compares two Host values case-insensitively, ignoring an explicit default port
+// (a proxy may forward "officers.example.org:443").
+func sameHost(a, b string) bool {
+	trim := func(h string) string {
+		h = strings.ToLower(h)
+		if host, port, err := net.SplitHostPort(h); err == nil && (port == "443" || port == "80") {
+			if strings.Contains(host, ":") {
+				return "[" + host + "]"
+			}
+			return host
+		}
+		return h
+	}
+	return trim(a) == trim(b)
 }
