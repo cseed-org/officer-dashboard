@@ -56,8 +56,12 @@ func (c *Ctx) baseURL() string {
 
 // allowCORS lets browser-based MCP clients (MCP Inspector, web agents) call the bearer-token
 // endpoints. Nothing here uses cookies, so a wildcard origin grants no ambient authority.
+// Every answer on these endpoints is also no-store: discovery, registration, tokens and
+// /mcp replies are per request, and a shared cache (Cloudflare's edge, a proxy) must never
+// keep one and hand it to someone else.
 func allowCORS(w http.ResponseWriter) {
 	h := w.Header()
+	h.Set("Cache-Control", "no-store")
 	h.Set("Access-Control-Allow-Origin", "*")
 	h.Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 	h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Mcp-Protocol-Version, Mcp-Session-Id, Last-Event-ID")

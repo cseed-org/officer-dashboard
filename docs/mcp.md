@@ -122,9 +122,23 @@ tool points at a route that does not exist.
 
 ## Deployment
 
-Behind Cloudflare Tunnel / Access or another proxy, let `/mcp`, `/oauth/*` and
-`/.well-known/oauth-*` through without a browser challenge, and set `APP_URL` to the public
-origin (the metadata URLs are built from it).
+MCP lives on the dashboard's own host, at `${APP_URL}/mcp`. Set `APP_URL` to the public
+origin: the discovery documents and the `WWW-Authenticate` challenge are built from it, whatever
+Host a proxy forwards. Every answer on the agent paths is `Cache-Control: no-store`.
+
+Behind Cloudflare, follow [Cloudflare Tunnel + Access](deployment.md#cloudflare-tunnel--access):
+`cloudflared` runs in its own container, and Access protects the dashboard. Only `/mcp`,
+`/oauth/register`, `/oauth/token` and the `/.well-known/oauth-*` documents bypass it, with no
+challenge and no cache. `/oauth/authorize`, which the officer's browser opens, stays behind
+Access. The agents send no custom headers, so this works for Claude Code, Claude.ai, ChatGPT and
+Cursor alike. Check a deployment from outside with:
+
+```sh
+dashboard mcp-check https://<dashboard>   # -register also checks client registration
+```
+
+The same Access, bypass and bot settings apply behind another proxy: agents must reach those
+paths without a browser challenge.
 
 ## Trying it locally
 

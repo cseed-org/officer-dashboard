@@ -4,8 +4,11 @@
 //
 //   npm i --no-save @modelcontextprotocol/sdk   # once, at the repository root
 //   BASE=http://localhost:8090 node scripts/mcp-sdk-e2e.mjs [officer|director]
+//   BASE=https://<x>.trycloudflare.com DEV_AUTH_KEY=<key> node scripts/mcp-sdk-e2e.mjs officer
 //
-// Needs a dev server with DEV_AUTH=1 (cd server && make dev).
+// Needs a dev server with DEV_AUTH=1 (cd server && make dev), or the quick-tunnel rehearsal
+// (server/deploy/compose.quicktunnel.yml; DEV_AUTH_KEY is then required). It ends by using
+// up the agent's per-minute budget once to see the 429 (set E2E_RATE_LIMIT=0 to skip).
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
@@ -13,6 +16,7 @@ import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
 const BASE = process.env.BASE ?? 'http://localhost:8090';
 const AS = process.argv[2] ?? 'officer';
 const REDIRECT = 'http://127.0.0.1:53682/callback';
+const DEV_KEY = process.env.DEV_AUTH_KEY ?? '';
 
 /** Decodes the HTML entities html/template emits, in one pass (no double unescaping). */
 function decodeEntities(s) {
@@ -23,8 +27,11 @@ function decodeEntities(s) {
 
 // ── the officer's browser ──
 async function browserSession() {
-  const r = await fetch(`${BASE}/auth/dev`, { method: 'POST', redirect: 'manual', body: new URLSearchParams({ as: AS, next: '/' }) });
-  const ck = r.headers.getSetCookie().find((c) => c.startsWith('cseed_session='));
+  const form = new URLSearchParams({ as: AS, next: '/' });
+  if (DEV_KEY) form.set('key', DEV_KEY);
+  const r = await fetch(`${BASE}/auth/dev`, { method: 'POST', redirect: 'manual', body: form });
+  // Over https the cookie carries the __Host- prefix.
+  const ck = r.headers.getSetCookie().find((c) => /^(__Host-)?cseed_session=/.test(c));
   if (!ck) throw new Error(`dev sign-in failed: ${r.status}`);
   return ck.split(';')[0];
 }
@@ -124,6 +131,30 @@ if (AS === 'officer') {
 
 const search = JSON.parse(text(await client.callTool({ name: 'search', arguments: { q: 'Agent' } })));
 log('search("Agent") →', (search.results ?? search.items ?? []).map((r) => `${r.kind}:${r.title ?? r.name}`).join(', '));
+
+// Rate limit: each agent connection may make a fixed number of calls a minute. Batches of
+// 20 pings use it up, and the next request gets 429 with Retry-After and a JSON-RPC error
+// straight from the dashboard (not swallowed or rewritten by a proxy or tunnel).
+if (process.env.E2E_RATE_LIMIT !== '0') {
+  const batch = Array.from({ length: 20 }, (_, i) => ({ jsonrpc: '2.0', id: 1000 + i, method: 'ping' }));
+  let limited = null;
+  let sent = 0;
+  for (let i = 0; i < 12 && !limited; i++) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${state.tokens.access_token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-protocol-version': transport.protocolVersion ?? '2025-06-18' },
+      body: JSON.stringify(batch),
+    });
+    const body = await res.json().catch(() => null);
+    if (res.status === 429) limited = { res, body };
+    else if (res.status !== 200) throw new Error(`batch ${i}: HTTP ${res.status}`);
+    else sent += batch.length;
+  }
+  if (!limited) throw new Error('no 429 after 240 calls');
+  const err = Array.isArray(limited.body) ? limited.body[0]?.error : limited.body?.error;
+  log(`rate limit → 429 after ${sent} more calls, Retry-After ${limited.res.headers.get('retry-after')} s, JSON-RPC ${err?.code}: ${err?.message}`);
+  if (!limited.res.headers.get('retry-after') || err?.code !== -32000) throw new Error('429 without Retry-After or the JSON-RPC error');
+}
 
 await client.close();
 console.log('\nE2E OK');

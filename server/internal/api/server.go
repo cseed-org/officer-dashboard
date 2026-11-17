@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"officerdashboard/internal/auth"
@@ -71,6 +72,8 @@ type Server struct {
 	log    *slog.Logger
 	secure bool
 	host   string // APP_URL host, for the Origin check
+	// hostWarned is set once a proxied request named another host (withForwardedHostCheck).
+	hostWarned atomic.Bool
 
 	// inner is the routed handler behind withAuth; MCP tool calls run through it in-process.
 	inner http.Handler
@@ -193,6 +196,7 @@ func (s *Server) Handler() http.Handler {
 	s.inner = h
 	h = s.withRateLimit(h)
 	h = s.withAPIHygiene(h)
+	h = s.withForwardedHostCheck(h)
 	h = s.withRecover(h)
 	return h
 }
