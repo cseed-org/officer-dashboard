@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	defaultAuthRateLimit   = 30 // /auth/* requests per minute per client IP
-	defaultUploadRateLimit = 30 // upload and import requests per minute per client IP
+	defaultAuthRateLimit   = 30  // /auth/* requests per minute per client IP
+	defaultUploadRateLimit = 30  // upload and import requests per minute per client IP
+	defaultMCPRateLimit    = 120 // /mcp JSON-RPC calls per minute per agent connection (OAuth grant)
 	// maxLimiterKeys bounds each limiter's memory: past it, an arbitrary bucket is dropped
 	// for each new client (at worst that client starts over with a full bucket).
 	maxLimiterKeys = 10_000
@@ -88,10 +89,15 @@ func newRateLimiter(perMinute int, now func() time.Time) *rateLimiter {
 }
 
 // allow takes one token for key; when none is left it reports how long until one is.
-func (l *rateLimiter) allow(key string) (bool, time.Duration) {
+func (l *rateLimiter) allow(key string) (bool, time.Duration) { return l.allowN(key, 1) }
+
+// allowN takes n tokens for key, all or none; when too few are left it reports how long
+// until there are. n is capped at the bucket size so a large request can always go eventually.
+func (l *rateLimiter) allowN(key string, n int) (bool, time.Duration) {
 	if l.perMinute < 0 {
 		return true, 0
 	}
+	need := min(max(float64(n), 1), l.perMinute)
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -118,13 +124,16 @@ func (l *rateLimiter) allow(key string) (bool, time.Duration) {
 		b.tokens = min(l.perMinute, b.tokens+el.Minutes()*l.perMinute)
 		b.at = now
 	}
-	if b.tokens >= 1 {
-		b.tokens--
+	if b.tokens >= need {
+		b.tokens -= need
 		return true, 0
 	}
-	wait := time.Duration((1 - b.tokens) / l.perMinute * float64(time.Minute))
+	wait := time.Duration((need - b.tokens) / l.perMinute * float64(time.Minute))
 	return false, wait
 }
+
+// retryAfter is the Retry-After value for a wait: whole seconds, rounded up, at least 1.
+func retryAfter(wait time.Duration) int { return int(wait/time.Second) + 1 }
 
 // clientIP is the address a request is limited by. The peer, unless it is a trusted proxy
 // (TRUSTED_PROXIES, loopback by default): then X-Forwarded-For is read from the right,
@@ -184,7 +193,7 @@ func ipKey(ip net.IP) string {
 // routes (expensive, and the ones a script would hammer). Everything else is unlimited.
 func limitedRoute(r *http.Request) string {
 	p := cleanPath(r.URL.Path)
-	if strings.HasPrefix(p, "/auth/") || p == "/api/portal/invite" {
+	if strings.HasPrefix(p, "/auth/") || p == "/api/portal/invite" || (strings.HasPrefix(p, "/oauth/") && r.Method == http.MethodPost) {
 		return "auth"
 	}
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
@@ -204,25 +213,28 @@ func limitedRoute(r *http.Request) string {
 	return ""
 }
 
+// allowRoute takes one request from the per-IP budget of a limitedRoute kind ("" is
+// unlimited); client is the request whose peer and X-Forwarded-For name the client. Both the
+// HTTP middleware and MCP tool calls (whose routed request is in-process) use it.
+func (s *Server) allowRoute(kind string, client *http.Request) (bool, time.Duration) {
+	if kind == "" {
+		return true, 0
+	}
+	ip, local := clientIP(client, s.trustedProxies)
+	if local {
+		return true, 0
+	}
+	l := s.authLimit
+	if kind == "upload" {
+		l = s.uploadLimit
+	}
+	return l.allow(ip)
+}
+
 func (s *Server) withRateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		kind := limitedRoute(r)
-		if kind == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		ip, local := clientIP(r, s.trustedProxies)
-		if local {
-			next.ServeHTTP(w, r)
-			return
-		}
-		l := s.authLimit
-		if kind == "upload" {
-			l = s.uploadLimit
-		}
-		if ok, wait := l.allow(ip); !ok {
-			secs := int(wait/time.Second) + 1
-			w.Header().Set("Retry-After", strconv.Itoa(secs))
+		if ok, wait := s.allowRoute(limitedRoute(r), r); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter(wait)))
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				writeError(w, fail(http.StatusTooManyRequests, "rate_limited", "Too many requests; try again in a minute"))
 				return

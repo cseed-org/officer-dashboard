@@ -36,6 +36,7 @@ V0.3 uses Discord sign-in with leadership, director, and officer roles, plus exp
 | External Contacts | Maintain contacts, track who has spoken for CSEED, and log outreach. |
 | Design | See which upcoming events still need design, and track requests on a Kanban board (filters, My work) with assignments, comments, files, and approval. |
 | Officers / Settings | Manage access, tokens, audit history, preferences, automatic/manual time zones, club location defaults, and calendar connections. |
+| AI agents | Connect your own agent (Claude Code, Claude, Cursor, ChatGPT) to `/mcp`; it signs in as you and works through 67 tools with your permissions. See [MCP agents](docs/mcp.md). |
 
 > [!NOTE]
 > Notion event links are placeholders; see the [integration status](docs/notion-integration.md).

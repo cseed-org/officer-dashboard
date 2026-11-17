@@ -52,6 +52,9 @@ type Config struct {
 	// AuthRateLimit and UploadRateLimit are the requests per minute one client IP may make
 	// to /auth/* and to the upload/import routes. 0 uses the defaults; negative disables.
 	AuthRateLimit, UploadRateLimit int
+	// MCPRateLimit is the JSON-RPC calls per minute one agent connection (OAuth grant) may
+	// make to /mcp. 0 uses the default (120); negative disables.
+	MCPRateLimit int
 	// TrustedProxies are the peers whose X-Forwarded-For names the client (TRUSTED_PROXIES).
 	// nil means loopback only.
 	TrustedProxies []*net.IPNet
@@ -69,7 +72,11 @@ type Server struct {
 	secure bool
 	host   string // APP_URL host, for the Origin check
 
+	// inner is the routed handler behind withAuth; MCP tool calls run through it in-process.
+	inner http.Handler
+
 	authLimit, uploadLimit *rateLimiter
+	mcpLimit               *rateLimiter // keyed by OAuth grant id
 	trustedProxies         []*net.IPNet
 
 	sealer     *calendar.Sealer
@@ -109,6 +116,7 @@ func New(cfg Config) *Server {
 	}
 	s.authLimit = newRateLimiter(orDefault(cfg.AuthRateLimit, defaultAuthRateLimit), cfg.Now)
 	s.uploadLimit = newRateLimiter(orDefault(cfg.UploadRateLimit, defaultUploadRateLimit), cfg.Now)
+	s.mcpLimit = newRateLimiter(orDefault(cfg.MCPRateLimit, defaultMCPRateLimit), cfg.Now)
 	if cfg.Google != nil {
 		s.sealer = calendar.NewSealer(cfg.Google.ClientSecret)
 	}
@@ -148,6 +156,8 @@ type Ctx struct {
 	Token *store.ServiceToken
 	// SessionID is the sha256 of the session cookie, used by logout.
 	SessionID string
+	// Agent is the MCP agent grant id when an agent is acting as User; "" otherwise.
+	Agent string
 }
 
 func (c *Ctx) Context() context.Context { return c.R.Context() }
@@ -180,6 +190,7 @@ func (s *Server) Handler() http.Handler {
 	s.routes(mux)
 	var h http.Handler = mux
 	h = s.withAuth(h)
+	s.inner = h
 	h = s.withRateLimit(h)
 	h = s.withAPIHygiene(h)
 	h = s.withRecover(h)
@@ -190,7 +201,7 @@ func (s *Server) wrap(fn handlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c := &Ctx{S: s, W: w, R: r}
 		if v, ok := r.Context().Value(principalKey{}).(principal); ok {
-			c.User, c.SessionID = v.user, v.sessionID
+			c.User, c.SessionID, c.Agent = v.user, v.sessionID, v.agentID
 		}
 		if err := fn(c); err != nil {
 			writeError(w, toAPIError(err, s.log))

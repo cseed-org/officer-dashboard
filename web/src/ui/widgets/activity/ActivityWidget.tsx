@@ -21,9 +21,12 @@ export function auditHref(e: Pick<AuditLogEntry, 'entityType' | 'entityId'>): st
   return null;
 }
 export function auditSummary(e: AuditLogEntry) {
-  const who = e.actor?.name ?? (e.actorTokenName ? `token “${e.actorTokenName}”` : 'system');
+  const base = e.actor?.name ?? (e.actorTokenName ? `token “${e.actorTokenName}”` : 'system');
+  // An officer's MCP agent acts as them; say which agent did it.
+  const who = e.actorAgentName ? `${base} via ${e.actorAgentName}` : base;
   const verb = words(e.action.split('.').pop() ?? e.action);
-  return { who, what: `${verb} ${words(e.entityType)}` };
+  // `actor` is the person (or token) alone: filters group an officer with their agents.
+  return { who, actor: base, what: `${verb} ${words(e.entityType)}` };
 }
 
 /** "2h", "3d", "now". */

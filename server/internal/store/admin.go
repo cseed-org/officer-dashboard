@@ -109,18 +109,20 @@ type AuditEntry struct {
 	ID          string
 	ActorUserID *string
 	ActorToken  *string
-	Action      string
-	EntityType  string
-	EntityID    *string
-	BeforeJSON  *string
-	AfterJSON   *string
-	CreatedAt   Ms
+	// ActorAgent is the MCP agent grant the user acted through, if any.
+	ActorAgent *string
+	Action     string
+	EntityType string
+	EntityID   *string
+	BeforeJSON *string
+	AfterJSON  *string
+	CreatedAt  Ms
 }
 
 // InsertAudit appends to the audit log.
 func (q *Queries) InsertAudit(ctx context.Context, a AuditEntry) error {
-	_, err := q.q.ExecContext(ctx, `INSERT INTO audit_log (id, actor_user_id, actor_token_id, action, entity_type, entity_id, before_json, after_json, created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-		a.ID, a.ActorUserID, a.ActorToken, a.Action, a.EntityType, a.EntityID, a.BeforeJSON, a.AfterJSON, int64(a.CreatedAt))
+	_, err := q.q.ExecContext(ctx, `INSERT INTO audit_log (id, actor_user_id, actor_token_id, actor_agent_id, action, entity_type, entity_id, before_json, after_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		a.ID, a.ActorUserID, a.ActorToken, a.ActorAgent, a.Action, a.EntityType, a.EntityID, a.BeforeJSON, a.AfterJSON, int64(a.CreatedAt))
 	return err
 }
 
@@ -151,7 +153,7 @@ func (q *Queries) Audit(ctx context.Context, f AuditFilter) ([]AuditEntry, error
 		conds = append(conds, "(created_at < ? OR (created_at = ? AND id < ?))")
 		args = append(args, f.CursorCreatedAt, f.CursorCreatedAt, f.CursorID)
 	}
-	query := `SELECT id, actor_user_id, actor_token_id, action, entity_type, entity_id, before_json, after_json, created_at FROM audit_log`
+	query := `SELECT id, actor_user_id, actor_token_id, actor_agent_id, action, entity_type, entity_id, before_json, after_json, created_at FROM audit_log`
 	if len(conds) > 0 {
 		query += " WHERE " + strings.Join(conds, " AND ")
 	}
@@ -167,7 +169,7 @@ func (q *Queries) Audit(ctx context.Context, f AuditFilter) ([]AuditEntry, error
 	var out []AuditEntry
 	for rows.Next() {
 		var a AuditEntry
-		if err := rows.Scan(&a.ID, &a.ActorUserID, &a.ActorToken, &a.Action, &a.EntityType, &a.EntityID, &a.BeforeJSON, &a.AfterJSON, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.ActorUserID, &a.ActorToken, &a.ActorAgent, &a.Action, &a.EntityType, &a.EntityID, &a.BeforeJSON, &a.AfterJSON, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -178,7 +180,7 @@ func (q *Queries) Audit(ctx context.Context, f AuditFilter) ([]AuditEntry, error
 // AuditAfter lists audit rows created after a cutoff (ms), newest first. Reports use it to
 // reconstruct request statuses as of a past date from the immutable before-images.
 func (q *Queries) AuditAfter(ctx context.Context, cutoff int64) ([]AuditEntry, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id, actor_user_id, actor_token_id, action, entity_type, entity_id, before_json, after_json, created_at FROM audit_log WHERE created_at > ? ORDER BY created_at DESC, rowid DESC`, cutoff)
+	rows, err := q.q.QueryContext(ctx, `SELECT id, actor_user_id, actor_token_id, actor_agent_id, action, entity_type, entity_id, before_json, after_json, created_at FROM audit_log WHERE created_at > ? ORDER BY created_at DESC, rowid DESC`, cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +188,7 @@ func (q *Queries) AuditAfter(ctx context.Context, cutoff int64) ([]AuditEntry, e
 	var out []AuditEntry
 	for rows.Next() {
 		var a AuditEntry
-		if err := rows.Scan(&a.ID, &a.ActorUserID, &a.ActorToken, &a.Action, &a.EntityType, &a.EntityID, &a.BeforeJSON, &a.AfterJSON, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.ActorUserID, &a.ActorToken, &a.ActorAgent, &a.Action, &a.EntityType, &a.EntityID, &a.BeforeJSON, &a.AfterJSON, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

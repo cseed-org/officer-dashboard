@@ -67,6 +67,8 @@ Officers → Access applies on the person's very next request.
   shows "Your permissions changed". A refused action says so in the same words. With unsaved
   edits, the page re-renders instead of remounting and offers a reload, so no draft is lost.
 - Losing director access still revokes the person's service tokens.
+- MCP agents (docs/mcp.md) act as the officer who connected them, so these rules apply to them
+  unchanged; deactivation also disconnects every agent the person connected.
 
 ## Launchpad portal accounts (builders and mentors)
 

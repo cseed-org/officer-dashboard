@@ -55,11 +55,12 @@ func leadershipCmd(args []string, getenv func(string) string, stdout io.Writer) 
 				return err
 			}
 		}
-		if err := q.DeleteUserSessions(ctx, user.ID); err != nil {
+		agents, err := q.DeleteUserSessions(ctx, user.ID, time.Now().UnixMilli())
+		if err != nil {
 			return err
 		}
 		before, _ := json.Marshal(map[string]any{"role": user.Role, "isOwner": user.IsOwner, "active": user.Active})
-		afterRaw, _ := json.Marshal(map[string]any{"role": "leadership", "isOwner": owner || user.IsOwner, "source": "operator CLI"})
+		afterRaw, _ := json.Marshal(map[string]any{"role": "leadership", "isOwner": owner || user.IsOwner, "source": "operator CLI", "agentsDisconnected": agents})
 		after := string(afterRaw)
 		prior := string(before)
 		return q.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), Action: "user.provision_leadership", EntityType: "user", EntityID: &user.ID, BeforeJSON: &prior, AfterJSON: &after, CreatedAt: store.Ms(time.Now().UnixMilli())})

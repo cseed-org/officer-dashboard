@@ -137,6 +137,8 @@ const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   adminTokenCreate: { method: 'POST', path: '/api/admin/tokens' },
   adminTokenRevoke: { method: 'DELETE', path: '/api/admin/tokens/:id' },
   adminAudit: { method: 'GET', path: '/api/admin/audit' },
+  agentsList: { method: 'GET', path: '/api/me/agents' },
+  agentDisconnect: { method: 'DELETE', path: '/api/me/agents/:id' },
   search: { method: 'GET', path: '/api/search' },
   agentJobs: { method: 'GET', path: '/api/agent/jobs' },
   agentJobClaim: { method: 'POST', path: '/api/agent/jobs/:id/claim' },

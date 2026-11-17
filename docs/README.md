@@ -13,6 +13,7 @@
 | [Accounting](accounting.md) | Ledger, restrictions, purchase lifecycle, Form 990 limits. |
 | [Integrations](integrations.md) | Discord, Cloudflare, Luma CSV, Google Drive and Calendar, Notion status. |
 | [API](api.md) | HTTP endpoints and payloads, including External Contacts and speaking history. |
+| [MCP agents](mcp.md) | Connect your own AI agent to `/mcp`: OAuth sign-in as the officer, tools, audit and revocation. |
 | [Notion integration](notion-integration.md) | Placeholder behavior and future implementation boundary. |
 | [V0.6 Home speed](home-speed-v06.md) | Home LCP 2.0s → 1.08s: early API reads, the zod contract off the first paint, module preloads, display-size logos; before/after per page. |
 | [V0.5 motion/performance](motion-performance-v05.md) | Before/after client and API measurements, motion behavior, screenshots, and remaining budgets. |

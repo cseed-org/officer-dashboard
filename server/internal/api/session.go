@@ -34,7 +34,13 @@ type principalKey struct{}
 type principal struct {
 	user      *store.User
 	sessionID string
+	// agentID is the MCP agent grant the user is acting through (mcp.go); "" for a browser.
+	agentID string
 }
+
+// agentPrincipalKey carries the principal of an MCP tool call into the in-process API
+// request it makes. Only this package can set it, so no client can forge one.
+type agentPrincipalKey struct{}
 
 // sessionCookieName: `__Host-` pins the cookie to this origin over HTTPS; the plain name
 // is used on http://localhost.
@@ -93,7 +99,12 @@ func (s *Server) createSession(ctx context.Context, w http.ResponseWriter, userI
 func (s *Server) withAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p principal
-		if ck, err := r.Cookie(s.sessionCookieName()); err == nil && ck.Value != "" {
+		agent, isAgent := r.Context().Value(agentPrincipalKey{}).(principal)
+		if isAgent {
+			// An MCP tool call: mcp.go already authenticated the bearer token and loaded the
+			// user fresh from the database. Cookies are ignored.
+			p = agent
+		} else if ck, err := r.Cookie(s.sessionCookieName()); err == nil && ck.Value != "" {
 			id := auth.SHA256Hex(ck.Value)
 			sess, err := s.db.Read().SessionByHash(r.Context(), id, s.nowMs())
 			hardStop := time.UnixMilli(0)
@@ -159,7 +170,7 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 				}
 			}
 		}
-		if p.user != nil && !s.originOK(r) {
+		if p.user != nil && !isAgent && !s.originOK(r) {
 			writeError(w, forbidden("Cross-origin request blocked"))
 			return
 		}

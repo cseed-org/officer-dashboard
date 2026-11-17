@@ -62,4 +62,6 @@ jobs:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
       - run: npm ci
+      - name: MCP tool list matches the contract
+        run: node scripts/gen-mcp-tools.mjs --check
       - run: node scripts/contract-check.mjs

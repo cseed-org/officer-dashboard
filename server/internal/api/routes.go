@@ -166,6 +166,24 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("POST /api/agent/jobs/{id}/claim", (*Ctx).agentJobClaim)
 	h("POST /api/agent/jobs/{id}/complete", (*Ctx).agentJobComplete)
 
+	// MCP agents (docs/mcp.md): OAuth 2.1 for officers' own agents, then /mcp tools.
+	h("GET /.well-known/oauth-protected-resource", (*Ctx).oauthProtectedResource)
+	h("GET /.well-known/oauth-protected-resource/mcp", (*Ctx).oauthProtectedResource)
+	h("GET /.well-known/oauth-authorization-server", (*Ctx).oauthServerMetadata)
+	h("POST /oauth/register", (*Ctx).oauthRegister)
+	h("GET /oauth/authorize", (*Ctx).oauthAuthorizeGet)
+	h("POST /oauth/authorize", (*Ctx).oauthAuthorizePost)
+	h("POST /oauth/token", (*Ctx).oauthToken)
+	h("POST /mcp", (*Ctx).mcpPost)
+	h("POST /mcp/{$}", (*Ctx).mcpPost) // a pasted URL often ends in "/"
+	h("GET /mcp", (*Ctx).mcpNoStream)
+	h("DELETE /mcp", (*Ctx).mcpNoStream)
+	for _, p := range []string{"/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-authorization-server", "/oauth/register", "/oauth/token", "/mcp", "/mcp/{$}"} {
+		h("OPTIONS "+p, (*Ctx).corsPreflight)
+	}
+	h("GET /api/me/agents", (*Ctx).agentsList)
+	h("DELETE /api/me/agents/{id}", (*Ctx).agentDisconnect)
+
 	h("GET /auth/login", (*Ctx).authLogin)
 	h("GET /auth/callback", (*Ctx).authCallback)
 	h("POST /auth/logout", (*Ctx).authLogout)

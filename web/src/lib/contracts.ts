@@ -918,6 +918,8 @@ export const AuditLogEntry = z.object({
   id: Id,
   actor: UserSummary.nullable(),
   actorTokenName: z.string().nullable(),
+  /** The MCP agent the actor worked through (docs/mcp.md), e.g. "Claude Code". */
+  actorAgentName: z.string().nullable(),
   action: z.string(),
   entityType: z.string(),
   entityId: z.string().nullable(),
@@ -928,6 +930,17 @@ export const AuditLogEntry = z.object({
 export type AuditLogEntry = z.infer<typeof AuditLogEntry>;
 export const AuditLogResponse = page(AuditLogEntry);
 export type AuditLogResponse = z.infer<typeof AuditLogResponse>;
+
+/** GET /api/me/agents: MCP agents this officer connected with OAuth (docs/mcp.md). */
+export const ConnectedAgent = z.object({
+  id: Id,
+  clientName: z.string(),
+  connectedAt: IsoDateTime,
+  lastUsedAt: IsoDateTime.nullable(),
+});
+export type ConnectedAgent = z.infer<typeof ConnectedAgent>;
+export const ConnectedAgentsResponse = z.object({ agents: z.array(ConnectedAgent) });
+export type ConnectedAgentsResponse = z.infer<typeof ConnectedAgentsResponse>;
 
 // ───────────────────────────── Agent (service token `agent:jobs`) ─────────────────────────────
 
@@ -1646,6 +1659,8 @@ export const ENDPOINTS = {
   adminTokenCreate: { method: 'POST', path: '/api/admin/tokens', auth: 'director', body: ServiceTokenCreateRequest, response: ServiceTokenCreateResponse },
   adminTokenRevoke: { method: 'DELETE', path: '/api/admin/tokens/:id', auth: 'director', response: OkResponse },
   adminAudit: { method: 'GET', path: '/api/admin/audit', auth: 'director', query: AuditLogQuery, response: AuditLogResponse },
+  agentsList: { method: 'GET', path: '/api/me/agents', auth: 'officer', response: ConnectedAgentsResponse },
+  agentDisconnect: { method: 'DELETE', path: '/api/me/agents/:id', auth: 'officer', response: OkResponse },
 
   search: { method: 'GET', path: '/api/search', auth: 'officer', query: SearchQuery, response: SearchResponse },
 

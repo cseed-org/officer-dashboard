@@ -92,6 +92,9 @@ func (c *Ctx) audit(ctx context.Context, q *store.Queries, action, entityType, e
 	if c.Token != nil {
 		a.ActorToken = &c.Token.ID
 	}
+	if c.Agent != "" {
+		a.ActorAgent = &c.Agent
+	}
 	return q.InsertAudit(ctx, a)
 }
 

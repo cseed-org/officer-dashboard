@@ -136,6 +136,8 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/api/admin/tokens` | director | — | `ServiceTokenCreateRequest` | `ServiceTokenCreateResponse` |
 | DELETE | `/api/admin/tokens/:id` | director | — | — | `OkResponse` |
 | GET | `/api/admin/audit` | director | `AuditLogQuery` | — | `AuditLogResponse` |
+| GET | `/api/me/agents` | officer | — | — | `ConnectedAgentsResponse` |
+| DELETE | `/api/me/agents/:id` | officer | — | — | `OkResponse` |
 | GET | `/api/agent/jobs` | token:agent:jobs | `AgentJobsQuery` | — | `AgentJobsResponse` |
 | POST | `/api/agent/jobs/:id/claim` | token:agent:jobs | — | — | `AgentJobResponse` |
 | POST | `/api/agent/jobs/:id/complete` | token:agent:jobs | — | `AgentJobCompleteRequest` | `AgentJobResponse` |
@@ -261,7 +263,8 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   SHA-256 hash is stored. Revoking keeps the row for the audit log. A token acts with its
   creator's authority: it answers 401 once the creator is inactive or below director, and
   deactivating or demoting the creator below director revokes their tokens
-  (`token.revoked_with_user` in the audit log).
+  (`token.revoked_with_user` in the audit log). Deactivation also disconnects the person's MCP
+  agents (`agent.revoked_with_user`, see [mcp.md](mcp.md)).
 - **Member paging.** Any officer may list members; reading past the first page
   (`offset > 0`) writes a `members.paged` audit row (offset, limit, rows returned, filters).
 - **Health.** `GET /api/health` returns `version` only to signed-in callers.
@@ -272,6 +275,8 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   default) the client is the right-most `X-Forwarded-For` hop that is not itself a trusted proxy;
   IPv6 clients share a budget per /64; each limiter tracks at most 10,000 clients. Direct loopback
   requests without the header (local tools, tests) are not limited.
+  `/mcp` is limited per agent connection (OAuth grant), not per IP: 120 JSON-RPC calls a minute,
+  then 429 with `Retry-After` and a JSON-RPC error body (see [mcp.md](mcp.md)).
 - **Audit.** Every state-changing call writes an `audit_log` row (append-only).
 
 ## Pages

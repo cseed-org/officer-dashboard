@@ -1,0 +1,5018 @@
+{
+  "generatedFrom": "src/core/contracts.ts ENDPOINTS via scripts/gen-mcp-tools.mjs; do not edit",
+  "tools": [
+    {
+      "name": "whoami",
+      "title": "Who am I",
+      "description": "The signed-in officer this agent acts as: id, name, role (officer < director < leadership), owner flag, subteam and time zone. Call first: role decides which other tools will succeed.",
+      "endpoint": "me",
+      "method": "GET",
+      "path": "/api/me",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Who am I",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "my_stats",
+      "title": "My hosting stats",
+      "description": "The officer's own hosting stats: events hosted, attendees, last event.",
+      "endpoint": "meStats",
+      "method": "GET",
+      "path": "/api/me/stats",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "My hosting stats",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search",
+      "title": "Search the dashboard",
+      "description": "Full-text search across events, purchase requests, officers/users, accounts and external contacts. Use it to turn a name into an id before calling other tools.",
+      "endpoint": "search",
+      "method": "GET",
+      "path": "/api/search",
+      "minRole": "officer",
+      "queryKeys": [
+        "q",
+        "limit"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Search the dashboard",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "limit": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "dashboard_overview",
+      "title": "Dashboard overview",
+      "description": "Home-page overview: upcoming events, counts and items needing attention.",
+      "endpoint": "overview",
+      "method": "GET",
+      "path": "/api/overview",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Dashboard overview",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "lookups",
+      "title": "Lookup lists",
+      "description": "Reference lists the other tools take ids from: subteams, chart-of-accounts options, funds and similar. Call before creating purchase requests or events if you need an account, fund or subteam id.",
+      "endpoint": "lookups",
+      "method": "GET",
+      "path": "/api/lookups",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Lookup lists",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "calendar_feed",
+      "title": "Calendar feed",
+      "description": "Everything on the club calendar between two dates (events, purchase deadlines, Buildspace dates). start and end are YYYY-MM-DD.",
+      "endpoint": "calendarFeed",
+      "method": "GET",
+      "path": "/api/calendar/feed",
+      "minRole": "officer",
+      "queryKeys": [
+        "start",
+        "end",
+        "sources"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Calendar feed",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "club_settings",
+      "title": "Club settings",
+      "description": "Club-wide settings: default time zone, location and club links.",
+      "endpoint": "clubSettingsGet",
+      "method": "GET",
+      "path": "/api/club/settings",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Club settings",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_events",
+      "title": "List events",
+      "description": "List club events, newest first, with filters (status, search text, date range). Paginate with cursor/nextCursor.",
+      "endpoint": "eventsList",
+      "method": "GET",
+      "path": "/api/events",
+      "minRole": "officer",
+      "queryKeys": [
+        "cursor",
+        "limit",
+        "when",
+        "q",
+        "from",
+        "to"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "List events",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "when": {
+            "default": "all",
+            "type": "string",
+            "enum": [
+              "upcoming",
+              "past",
+              "all"
+            ]
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_event",
+      "title": "Get event",
+      "description": "Full details of one event: schedule, venue, hosts, Luma link, design need, counts.",
+      "endpoint": "eventDetail",
+      "method": "GET",
+      "path": "/api/events/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Get event",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_event",
+      "title": "Create event",
+      "description": "Plan a new club event. Times are ISO 8601 with offset; use whoami/club_settings for the time zone.",
+      "endpoint": "eventCreate",
+      "method": "POST",
+      "path": "/api/events",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Create event",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "startsAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "endsAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lumaId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hostUserId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "published",
+                  "completed",
+                  "cancelled"
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capacity": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hostSubteamId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lumaUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "designNeed": {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "needed",
+                  "not_needed"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "startsAt"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_event",
+      "title": "Update event",
+      "description": "Change fields of an event (partial update: send only what changes).",
+      "endpoint": "eventUpdate",
+      "method": "PATCH",
+      "path": "/api/events/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update event",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "startsAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "endsAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lumaId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hostUserId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "published",
+                  "completed",
+                  "cancelled"
+                ]
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capacity": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hostSubteamId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "lumaUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "designNeed": {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "needed",
+                  "not_needed"
+                ]
+              }
+            },
+            "description": "The fields to change (only these are updated)."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_event",
+      "title": "Delete event",
+      "description": "Permanently delete an event. Ask the officer to confirm first.",
+      "endpoint": "eventDelete",
+      "method": "DELETE",
+      "path": "/api/events/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Delete event",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_event_metrics",
+      "title": "Event metrics",
+      "description": "Registration, check-in and reflection metrics for one event.",
+      "endpoint": "eventMetrics",
+      "method": "GET",
+      "path": "/api/events/:id/metrics",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Event metrics",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "import_event_csv",
+      "title": "Import Luma CSV",
+      "description": "Import a Luma guest export or survey CSV into an event (registrations/check-ins or reflections). Pass the CSV text in `content`. Use dryRun \"true\" first to preview.",
+      "endpoint": "eventsImport",
+      "method": "POST",
+      "path": "/api/events/import",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [
+        "kind",
+        "eventId",
+        "lumaEventId",
+        "eventName",
+        "eventStartsAt",
+        "dryRun"
+      ],
+      "multipart": "csv",
+      "response": "json",
+      "annotations": {
+        "title": "Import Luma CSV",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "luma_guests",
+              "reflections"
+            ]
+          },
+          "eventId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "lumaEventId": {
+            "type": "string"
+          },
+          "eventName": {
+            "type": "string"
+          },
+          "eventStartsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dryRun": {
+            "default": "false",
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name, e.g. receipt.pdf."
+          },
+          "content": {
+            "type": "string",
+            "description": "The CSV text."
+          }
+        },
+        "required": [
+          "kind",
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_event_design_need",
+      "title": "Set event design need",
+      "description": "Say whether an event needs design work (posters, slides…). Only director+ or the host may mark \"not needed\".",
+      "endpoint": "eventDesignNeed",
+      "method": "PUT",
+      "path": "/api/events/:id/design-need",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Set event design need",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "designNeed": {
+                "type": "string",
+                "enum": [
+                  "unknown",
+                  "needed",
+                  "not_needed"
+                ]
+              }
+            },
+            "required": [
+              "designNeed"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "draft_design_request_for_event",
+      "title": "Draft design request from event",
+      "description": "A design request prefilled from an event (title, due date, brief). Review it, then create it with create_design_request_for_event.",
+      "endpoint": "designRequestDraftFromEvent",
+      "method": "GET",
+      "path": "/api/events/:id/design-request-draft",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Draft design request from event",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_design_request_for_event",
+      "title": "Create design request for event",
+      "description": "Create a design request linked to an event.",
+      "endpoint": "designRequestCreateFromEvent",
+      "method": "POST",
+      "path": "/api/events/:id/design-requests",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Create design request for event",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "poster",
+                  "social",
+                  "slides",
+                  "merch",
+                  "video",
+                  "other"
+                ]
+              },
+              "formats": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "dueDate": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "urgency": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "high"
+                ]
+              },
+              "brief": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "references": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "program": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_purchase_requests",
+      "title": "List purchase requests",
+      "description": "List purchase/reimbursement requests. scope \"mine\" (default) or \"all\"; filter by status. Paginate with cursor.",
+      "endpoint": "requestsList",
+      "method": "GET",
+      "path": "/api/requests",
+      "minRole": "officer",
+      "queryKeys": [
+        "cursor",
+        "limit",
+        "scope",
+        "status",
+        "eventId",
+        "q",
+        "sort"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "List purchase requests",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "scope": {
+            "default": "mine",
+            "type": "string",
+            "enum": [
+              "mine",
+              "all"
+            ]
+          },
+          "status": {
+            "description": "`pending` = submitted (awaiting a director)",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "submitted",
+                  "approved",
+                  "denied",
+                  "fulfilling",
+                  "fulfilled",
+                  "reimbursed",
+                  "closed",
+                  "cancelled"
+                ]
+              },
+              {
+                "type": "string",
+                "const": "pending"
+              }
+            ]
+          },
+          "eventId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "sort": {
+            "default": "newest",
+            "type": "string",
+            "enum": [
+              "newest",
+              "deadline"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_purchase_request",
+      "title": "Get purchase request",
+      "description": "One purchase request with line details, approvals, attachments and history.",
+      "endpoint": "requestDetail",
+      "method": "GET",
+      "path": "/api/requests/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Get purchase request",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_purchase_request",
+      "title": "Create purchase request",
+      "description": "Draft a purchase or reimbursement request (amounts in integer cents). It stays a draft until submit_purchase_request.",
+      "endpoint": "requestCreate",
+      "method": "POST",
+      "path": "/api/requests",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Create purchase request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reimbursement",
+                  "club_purchase"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "vendor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "itemUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              },
+              "unitCostCents": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "taxShipCents": {
+                "default": 0,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "expenseAccountId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "fundId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "eventId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "functionalClass": {
+                "default": "program",
+                "type": "string",
+                "enum": [
+                  "program",
+                  "mgmt_general",
+                  "fundraising"
+                ]
+              },
+              "justification": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "neededBy": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "submit": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "title",
+              "vendor",
+              "quantity",
+              "unitCostCents",
+              "expenseAccountId",
+              "fundId",
+              "justification"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_purchase_request",
+      "title": "Update purchase request",
+      "description": "Edit a draft (or returned) purchase request.",
+      "endpoint": "requestUpdate",
+      "method": "PATCH",
+      "path": "/api/requests/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update purchase request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "reimbursement",
+                  "club_purchase"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "vendor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "itemUrl": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              },
+              "unitCostCents": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "taxShipCents": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "expenseAccountId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "fundId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "eventId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "functionalClass": {
+                "type": "string",
+                "enum": [
+                  "program",
+                  "mgmt_general",
+                  "fundraising"
+                ]
+              },
+              "justification": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "neededBy": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "description": "The fields to change (only these are updated)."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "submit_purchase_request",
+      "title": "Submit purchase request",
+      "description": "Submit a draft purchase request for director approval.",
+      "endpoint": "requestSubmit",
+      "method": "POST",
+      "path": "/api/requests/:id/submit",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Submit purchase request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "attach_receipt",
+      "title": "Attach receipt",
+      "description": "Attach a receipt or quote (PDF or image, max 10 MB) to a purchase request. Pass the file as base64 in `contentBase64` with its `mimeType` and `filename`.",
+      "endpoint": "requestAttach",
+      "method": "POST",
+      "path": "/api/requests/:id/attachments",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [
+        "kind"
+      ],
+      "multipart": "file",
+      "response": "json",
+      "annotations": {
+        "title": "Attach receipt",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "kind": {
+            "default": "receipt",
+            "type": "string",
+            "enum": [
+              "receipt",
+              "invoice",
+              "quote",
+              "other"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name, e.g. receipt.pdf."
+          },
+          "contentBase64": {
+            "type": "string",
+            "description": "The file bytes, base64-encoded."
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "The file MIME type, e.g. application/pdf or image/png."
+          }
+        },
+        "required": [
+          "id",
+          "contentBase64",
+          "mimeType",
+          "filename"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "approve_purchase_request",
+      "title": "Approve purchase request",
+      "description": "Approve a submitted purchase request (director+, never your own). Confirm with the officer before approving money. Requires the director role.",
+      "endpoint": "requestApprove",
+      "method": "POST",
+      "path": "/api/requests/:id/approve",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Approve purchase request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "comment": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "deny_purchase_request",
+      "title": "Deny purchase request",
+      "description": "Deny a submitted purchase request with a reason (director+). Requires the director role.",
+      "endpoint": "requestDeny",
+      "method": "POST",
+      "path": "/api/requests/:id/deny",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Deny purchase request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "comment": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "comment"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "transition_purchase_request",
+      "title": "Advance purchase request",
+      "description": "Move an approved purchase request through fulfilment: ordered, settled (with actual amount), closed, cancelled (director+). Confirm with the officer before settling money. Requires the director role.",
+      "endpoint": "requestTransition",
+      "method": "POST",
+      "path": "/api/requests/:id/transition",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Advance purchase request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "const": "approved"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "to"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "const": "fulfilling"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "to"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "actualTotalCents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "attachmentIds": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  },
+                  "orderReference": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "to": {
+                    "type": "string",
+                    "const": "fulfilled"
+                  }
+                },
+                "required": [
+                  "actualTotalCents",
+                  "to"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "actualTotalCents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "attachmentIds": {
+                    "default": [],
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  },
+                  "orderReference": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "to": {
+                    "type": "string",
+                    "const": "reimbursed"
+                  }
+                },
+                "required": [
+                  "actualTotalCents",
+                  "to"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "const": "closed"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "to"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string",
+                    "const": "cancelled"
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "to"
+                ]
+              }
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_purchase_request",
+      "title": "Delete purchase request",
+      "description": "Delete a draft purchase request. Ask the officer to confirm first.",
+      "endpoint": "requestDelete",
+      "method": "DELETE",
+      "path": "/api/requests/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Delete purchase request",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "finance_summary",
+      "title": "Finance summary",
+      "description": "Club finance summary for a fiscal year: balances, spending by budget, pending requests.",
+      "endpoint": "financeSummary",
+      "method": "GET",
+      "path": "/api/finance/summary",
+      "minRole": "officer",
+      "queryKeys": [
+        "fiscalYear",
+        "asOf",
+        "fundId"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Finance summary",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fiscalYear": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date"
+          },
+          "fundId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "finance_report",
+      "title": "Finance report",
+      "description": "A financial report by name. Officers may read budget-vs-actual and fund-balances; the others need the director role.",
+      "endpoint": "financeReport",
+      "method": "GET",
+      "path": "/api/finance/reports/:report",
+      "minRole": "officer",
+      "queryKeys": [
+        "fiscalYear",
+        "asOf",
+        "fundId",
+        "format"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Finance report",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "report": {
+            "type": "string",
+            "enum": [
+              "trial-balance",
+              "statement-of-activities",
+              "statement-of-financial-position",
+              "statement-of-functional-expenses",
+              "budget-vs-actual",
+              "fund-balances",
+              "form-990"
+            ],
+            "description": "The report name."
+          },
+          "fiscalYear": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date"
+          },
+          "fundId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "format": {
+            "default": "json",
+            "type": "string",
+            "enum": [
+              "json",
+              "csv"
+            ]
+          }
+        },
+        "required": [
+          "report"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_budgets",
+      "title": "Get budgets",
+      "description": "Budget lines for a fiscal year.",
+      "endpoint": "budgetsGet",
+      "method": "GET",
+      "path": "/api/finance/budgets",
+      "minRole": "officer",
+      "queryKeys": [
+        "fiscalYear",
+        "asOf",
+        "fundId"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Get budgets",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fiscalYear": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date"
+          },
+          "fundId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_budgets",
+      "title": "Set budgets",
+      "description": "Replace budget lines for a fiscal year (director+). Confirm with the officer first. Requires the director role.",
+      "endpoint": "budgetsPut",
+      "method": "PUT",
+      "path": "/api/finance/budgets",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Set budgets",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "fiscalYear": {
+                "type": "integer",
+                "minimum": 2000,
+                "maximum": 2100
+              },
+              "lines": {
+                "maxItems": 500,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "accountId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "fundId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "amountCents": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "notes": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accountId",
+                    "fundId",
+                    "amountCents"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "fiscalYear",
+              "lines"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_fiscal_periods",
+      "title": "List fiscal periods",
+      "description": "Fiscal periods and whether each is closed (director+). Requires the director role.",
+      "endpoint": "periods",
+      "method": "GET",
+      "path": "/api/finance/periods",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "List fiscal periods",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_fiscal_periods",
+      "title": "Create fiscal periods",
+      "description": "Create a fiscal year's periods (director+). Requires the director role.",
+      "endpoint": "periodsCreate",
+      "method": "POST",
+      "path": "/api/finance/periods",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Create fiscal periods",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "fiscalYear": {
+                "type": "integer",
+                "minimum": 2000,
+                "maximum": 2100
+              }
+            },
+            "required": [
+              "fiscalYear"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "close_fiscal_period",
+      "title": "Close fiscal period",
+      "description": "Close a fiscal period so no more entries post to it (director+). Cannot be undone here; confirm first. Requires the director role.",
+      "endpoint": "periodClose",
+      "method": "POST",
+      "path": "/api/finance/periods/:id/close",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Close fiscal period",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "string",
+                "enum": [
+                  "closed",
+                  "locked"
+                ]
+              }
+            },
+            "required": [
+              "to"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_accounts",
+      "title": "Chart of accounts",
+      "description": "The chart of accounts (director+). Requires the director role.",
+      "endpoint": "accounts",
+      "method": "GET",
+      "path": "/api/finance/accounts",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Chart of accounts",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_design_requests",
+      "title": "List design requests",
+      "description": "All design requests on the Kanban board with stage, assignee and due date, plus upcoming events that still need design.",
+      "endpoint": "designRequestsList",
+      "method": "GET",
+      "path": "/api/design-requests",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "List design requests",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_design_request",
+      "title": "Get design request",
+      "description": "One design request with brief, comments, files and what you may do with it.",
+      "endpoint": "designRequestDetail",
+      "method": "GET",
+      "path": "/api/design-requests/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Get design request",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_design_request",
+      "title": "Create design request",
+      "description": "Ask the Design team for a design (poster, social post, slides…).",
+      "endpoint": "designRequestCreate",
+      "method": "POST",
+      "path": "/api/design-requests",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Create design request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "poster",
+                  "social",
+                  "slides",
+                  "merch",
+                  "video",
+                  "other"
+                ]
+              },
+              "formats": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "dueDate": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "urgency": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "high"
+                ]
+              },
+              "brief": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "references": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "eventId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "program": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "title",
+              "type",
+              "brief"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_design_request",
+      "title": "Update design request",
+      "description": "Edit a design request (partial update).",
+      "endpoint": "designRequestUpdate",
+      "method": "PATCH",
+      "path": "/api/design-requests/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update design request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "poster",
+                  "social",
+                  "slides",
+                  "merch",
+                  "video",
+                  "other"
+                ]
+              },
+              "formats": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "dueDate": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "urgency": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "high"
+                ]
+              },
+              "brief": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "references": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "eventId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "program": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "description": "The fields to change (only these are updated)."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "assign_design_request",
+      "title": "Assign design request",
+      "description": "Assign or unassign the designer (Design subteam or director+).",
+      "endpoint": "designRequestAssign",
+      "method": "POST",
+      "path": "/api/design-requests/:id/assign",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Assign design request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "assigneeId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "assigneeId"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "move_design_request",
+      "title": "Move design request",
+      "description": "Move a design request to another board stage (Design subteam or director+).",
+      "endpoint": "designRequestMove",
+      "method": "POST",
+      "path": "/api/design-requests/:id/move",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Move design request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "new",
+                  "accepted",
+                  "in-progress",
+                  "in-review",
+                  "delivered"
+                ]
+              },
+              "confirmDeliveryOverride": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "stage"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "approve_design_request",
+      "title": "Approve design",
+      "description": "Approve the version in review (requester only).",
+      "endpoint": "designRequestApprove",
+      "method": "POST",
+      "path": "/api/design-requests/:id/approve",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Approve design",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "comment_on_design_request",
+      "title": "Comment on design request",
+      "description": "Add a comment to a design request.",
+      "endpoint": "designRequestComment",
+      "method": "POST",
+      "path": "/api/design-requests/:id/comments",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Comment on design request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "body"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "upload_design_file",
+      "title": "Upload design file",
+      "description": "Attach a reference or deliverable file to a design request. Pass base64 in `contentBase64` with `mimeType` and `filename`.",
+      "endpoint": "designRequestUpload",
+      "method": "POST",
+      "path": "/api/design-requests/:id/files",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [
+        "kind"
+      ],
+      "multipart": "file",
+      "response": "json",
+      "annotations": {
+        "title": "Upload design file",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "kind": {
+            "default": "reference",
+            "type": "string",
+            "enum": [
+              "reference",
+              "review",
+              "delivered"
+            ]
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name, e.g. receipt.pdf."
+          },
+          "contentBase64": {
+            "type": "string",
+            "description": "The file bytes, base64-encoded."
+          },
+          "mimeType": {
+            "type": "string",
+            "description": "The file MIME type, e.g. application/pdf or image/png."
+          }
+        },
+        "required": [
+          "id",
+          "contentBase64",
+          "mimeType",
+          "filename"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_design_request",
+      "title": "Delete design request",
+      "description": "Delete a design request. Ask the officer to confirm first.",
+      "endpoint": "designRequestDelete",
+      "method": "DELETE",
+      "path": "/api/design-requests/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Delete design request",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_contacts",
+      "title": "List external contacts",
+      "description": "External contacts (speakers, sponsors, partners) with filters.",
+      "endpoint": "contactsList",
+      "method": "GET",
+      "path": "/api/contacts",
+      "minRole": "officer",
+      "queryKeys": [
+        "hasSpokenForUs",
+        "clubSupport",
+        "q",
+        "type",
+        "topic"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "List external contacts",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "hasSpokenForUs": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "clubSupport": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "speaker",
+              "mentor",
+              "both"
+            ]
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_contact",
+      "title": "Get contact",
+      "description": "One external contact with speaking history and outreach log.",
+      "endpoint": "contactDetail",
+      "method": "GET",
+      "path": "/api/contacts/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Get contact",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_contact",
+      "title": "Create contact",
+      "description": "Add an external contact.",
+      "endpoint": "contactCreate",
+      "method": "POST",
+      "path": "/api/contacts",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Create contact",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "hasSpokenForUs": {
+                "type": "boolean"
+              },
+              "clubSupport": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "org": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "role": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "speaker",
+                  "mentor",
+                  "both"
+                ]
+              },
+              "topics": {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string",
+                    "const": ""
+                  }
+                ]
+              },
+              "linkedin": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string",
+                    "const": ""
+                  }
+                ]
+              },
+              "notes": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "eventIds": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              }
+            },
+            "required": [
+              "name",
+              "type"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_contact",
+      "title": "Update contact",
+      "description": "Edit an external contact (partial update).",
+      "endpoint": "contactUpdate",
+      "method": "PATCH",
+      "path": "/api/contacts/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update contact",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "hasSpokenForUs": {
+                "type": "boolean"
+              },
+              "clubSupport": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "org": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "role": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "speaker",
+                  "mentor",
+                  "both"
+                ]
+              },
+              "topics": {
+                "maxItems": 30,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "email": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string",
+                    "const": ""
+                  }
+                ]
+              },
+              "linkedin": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string",
+                    "const": ""
+                  }
+                ]
+              },
+              "notes": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "eventIds": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              }
+            },
+            "description": "The fields to change (only these are updated)."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "log_outreach",
+      "title": "Log outreach",
+      "description": "Record outreach to a contact (channel, outcome, notes).",
+      "endpoint": "contactOutreachCreate",
+      "method": "POST",
+      "path": "/api/contacts/:id/outreach",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Log outreach",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "date": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "channel": {
+                "type": "string",
+                "enum": [
+                  "email",
+                  "linkedin",
+                  "discord",
+                  "phone",
+                  "in_person"
+                ]
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "awaiting_reply",
+                  "interested",
+                  "confirmed",
+                  "declined",
+                  "follow_up"
+                ]
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 10000
+              }
+            },
+            "required": [
+              "date",
+              "channel",
+              "outcome"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_contact",
+      "title": "Delete contact",
+      "description": "Delete an external contact. Ask the officer to confirm first.",
+      "endpoint": "contactDelete",
+      "method": "DELETE",
+      "path": "/api/contacts/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Delete contact",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_members",
+      "title": "List members",
+      "description": "Search club members (the D1 mirror).",
+      "endpoint": "membersList",
+      "method": "GET",
+      "path": "/api/members",
+      "minRole": "officer",
+      "queryKeys": [
+        "q",
+        "campus",
+        "gradYear",
+        "officer",
+        "limit",
+        "offset"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "List members",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "campus": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "gradYear": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "officer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_member",
+      "title": "Get member",
+      "description": "One member record.",
+      "endpoint": "memberDetail",
+      "method": "GET",
+      "path": "/api/members/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Get member",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_member",
+      "title": "Update member",
+      "description": "Edit a member record (director+). Requires the director role.",
+      "endpoint": "memberUpdate",
+      "method": "PATCH",
+      "path": "/api/members/:id",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update member",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 254
+              },
+              "last_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 254
+              },
+              "preferred_name": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "uw_email": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cs_email": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "personal_email": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "major": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "grad_year": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "campus": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pronouns": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "auditNote": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "auditNote"
+            ],
+            "additionalProperties": false,
+            "description": "The fields to change (only these are updated)."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "export_members_csv",
+      "title": "Export members CSV",
+      "description": "Members as CSV text, with the same filters as list_members (director+). Requires the director role.",
+      "endpoint": "membersExport",
+      "method": "GET",
+      "path": "/api/members/export",
+      "minRole": "director",
+      "queryKeys": [
+        "q",
+        "campus",
+        "gradYear",
+        "officer",
+        "limit",
+        "offset"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "text",
+      "annotations": {
+        "title": "Export members CSV",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "campus": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "gradYear": {
+            "type": "string",
+            "maxLength": 20
+          },
+          "officer": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ]
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "offset": {
+            "default": 0,
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_officers",
+      "title": "List officers",
+      "description": "The officer directory: names, roles, titles, subteams, contact details.",
+      "endpoint": "officersList",
+      "method": "GET",
+      "path": "/api/officers",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "List officers",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_officer",
+      "title": "Get officer",
+      "description": "One officer profile.",
+      "endpoint": "officerDetail",
+      "method": "GET",
+      "path": "/api/officers/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Get officer",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_officer_activity",
+      "title": "Officer activity",
+      "description": "An officer's recent activity across the dashboard.",
+      "endpoint": "officerActivity",
+      "method": "GET",
+      "path": "/api/officers/:id/activity",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Officer activity",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_officer",
+      "title": "Update officer",
+      "description": "Change an officer's title, subteam or start term (director+). Requires the director role.",
+      "endpoint": "officerUpdate",
+      "method": "PATCH",
+      "path": "/api/officers/:id",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update officer",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "subteamId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "startTerm": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "description": "The fields to change (only these are updated)."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "buildspace_overview",
+      "title": "Buildspace overview",
+      "description": "Buildspace Launchpad: cohorts, projects, people, mentors (with availability and load), builder/mentor accounts, activity and weekly schedule. Filter by `cohort` id; `archived` \"1\" includes archived projects and people.",
+      "endpoint": "buildspaceList",
+      "method": "GET",
+      "path": "/api/buildspace-launchpad",
+      "minRole": "officer",
+      "queryKeys": [
+        "cohort",
+        "archived"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Buildspace overview",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cohort": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "archived": {
+            "type": "string",
+            "enum": [
+              "0",
+              "1"
+            ]
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "save_buildspace_project",
+      "title": "Save Buildspace project",
+      "description": "Create or update a Buildspace project by id.",
+      "endpoint": "buildspaceProjectSave",
+      "method": "PUT",
+      "path": "/api/buildspace-launchpad/projects/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Save Buildspace project",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "track": {
+                "type": "string",
+                "enum": [
+                  "Software",
+                  "Hardware",
+                  "Creative",
+                  "Extended Virtual Reality (XR)"
+                ]
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "Ideating",
+                  "Building",
+                  "Demo-ready",
+                  "Shipped",
+                  "At risk"
+                ]
+              },
+              "links": {
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uri"
+                }
+              },
+              "mentorIds": {
+                "maxItems": 2,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                }
+              },
+              "cohortId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "name",
+              "description",
+              "track",
+              "stage",
+              "links",
+              "mentorIds"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "save_buildspace_person",
+      "title": "Save Buildspace person",
+      "description": "Create or update a Buildspace participant by id.",
+      "endpoint": "buildspacePersonSave",
+      "method": "PUT",
+      "path": "/api/buildspace-launchpad/people/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Save Buildspace person",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "memberId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "discordId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^\\d{17,20}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "joinedOn": {
+                "type": "string",
+                "format": "date"
+              },
+              "designation": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "pronouns": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "bio": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "email": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "projectId",
+              "joinedOn"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "log_buildspace_activity",
+      "title": "Log Buildspace activity",
+      "description": "Log a Buildspace weekly check-in, mentor note, request, purchase or absence. `visibility` (\"team\", \"mentors\" or \"officers\", the default) decides who sees it in the builder and mentor portals. Returns the week's summary, not the new entry's id; read buildspace_overview for ids.",
+      "endpoint": "buildspaceActivityCreate",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/activity",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Log Buildspace activity",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "projectId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "personId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "mentorId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "weekly",
+                  "mentor",
+                  "request",
+                  "purchase",
+                  "absence"
+                ]
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "body": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 10000
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "resolved",
+                  "on-track",
+                  "needs-help"
+                ]
+              },
+              "purchaseId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "visibility": {
+                "type": "string",
+                "enum": [
+                  "team",
+                  "mentors",
+                  "officers"
+                ]
+              }
+            },
+            "required": [
+              "projectId",
+              "kind",
+              "date",
+              "body",
+              "status"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "resolve_buildspace_activity",
+      "title": "Resolve Buildspace request",
+      "description": "Mark an open Buildspace request (activity kind \"request\") resolved. Find ids in buildspace_overview.",
+      "endpoint": "buildspaceActivityResolve",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/activity/:id/resolve",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Resolve Buildspace request",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_buildspace_schedule",
+      "title": "Set Buildspace schedule",
+      "description": "Replace the Buildspace weekly schedule (leadership). Requires the leadership role.",
+      "endpoint": "buildspaceSchedulePut",
+      "method": "PUT",
+      "path": "/api/buildspace-launchpad/schedule",
+      "minRole": "leadership",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Set Buildspace schedule",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "dueWeekday": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 6
+              },
+              "dueTime": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "dueWeekday"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_launchpad_cohort",
+      "title": "Create Launchpad cohort",
+      "description": "Start a new Launchpad cohort (name, start date, optional end date). Requires the director role.",
+      "endpoint": "launchpadCohortCreate",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/cohorts",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Create Launchpad cohort",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "startsOn": {
+                "type": "string",
+                "format": "date"
+              },
+              "endsOn": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "startsOn"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_launchpad_cohort",
+      "title": "Update Launchpad cohort",
+      "description": "Rename a cohort, change its dates, or archive/reactivate it (status \"archived\" or \"active\"). Partial update. Requires the director role.",
+      "endpoint": "launchpadCohortUpdate",
+      "method": "PATCH",
+      "path": "/api/buildspace-launchpad/cohorts/:id",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update Launchpad cohort",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "startsOn": {
+                "type": "string",
+                "format": "date"
+              },
+              "endsOn": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "archived"
+                ]
+              }
+            },
+            "description": "The fields to change (only these are updated)."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_launchpad_cohort",
+      "title": "Delete Launchpad cohort",
+      "description": "Permanently delete a cohort. Ask the officer to confirm first; archiving (update_launchpad_cohort) is usually what they want. Requires the director role.",
+      "endpoint": "launchpadCohortDelete",
+      "method": "DELETE",
+      "path": "/api/buildspace-launchpad/cohorts/:id",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Delete Launchpad cohort",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "invite_launchpad_builders",
+      "title": "Invite builders to a cohort",
+      "description": "Email builder invites for a cohort (up to 200 addresses). Through an agent invites go by email only (method \"email\"): an invite link is a sign-up credential, so links are never returned here. Already-active or duplicate addresses come back in `skipped`.",
+      "endpoint": "launchpadInvite",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/cohorts/:id/invites",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Invite builders to a cohort",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "invites": {
+                "minItems": 1,
+                "maxItems": 200,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "email": {
+                      "type": "string",
+                      "maxLength": 254,
+                      "format": "email"
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "email"
+                  ]
+                }
+              },
+              "method": {
+                "default": "email",
+                "type": "string",
+                "enum": [
+                  "email",
+                  "link",
+                  "both"
+                ]
+              }
+            },
+            "required": [
+              "invites"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "resend_launchpad_invite",
+      "title": "Resend Launchpad invite",
+      "description": "Email a fresh invite to a pending builder or mentor account (the old link stops working). The link itself is not returned to an agent.",
+      "endpoint": "launchpadAccountResend",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/accounts/:id/resend",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Resend Launchpad invite",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "disable_launchpad_account",
+      "title": "Disable Launchpad account",
+      "description": "Disable a builder or mentor portal account and sign it out everywhere. Requires the director role.",
+      "endpoint": "launchpadAccountDisable",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/accounts/:id/disable",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Disable Launchpad account",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "enable_launchpad_account",
+      "title": "Enable Launchpad account",
+      "description": "Re-enable a disabled builder or mentor portal account. Requires the director role.",
+      "endpoint": "launchpadAccountEnable",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/accounts/:id/enable",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Enable Launchpad account",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "revoke_launchpad_invite",
+      "title": "Revoke Launchpad invite",
+      "description": "Revoke a pending builder or mentor invite (the account is removed). Ask the officer to confirm first.",
+      "endpoint": "launchpadAccountRevoke",
+      "method": "DELETE",
+      "path": "/api/buildspace-launchpad/accounts/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Revoke Launchpad invite",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "invite_launchpad_mentor",
+      "title": "Invite mentor to the portal",
+      "description": "Email a mentor contact an invite to the mentor portal (uses the contact's email unless `email` is given). Through an agent, email only; the link is never returned. Requires the director role.",
+      "endpoint": "launchpadMentorInvite",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/mentors/:contactId/invite",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Invite mentor to the portal",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "description": "The contactId id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "maxLength": 254,
+                "format": "email"
+              },
+              "method": {
+                "default": "email",
+                "type": "string",
+                "enum": [
+                  "email",
+                  "link",
+                  "both"
+                ]
+              }
+            },
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "contactId",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_launchpad_mentor_settings",
+      "title": "Set mentor availability",
+      "description": "Set whether a mentor contact is available for auto-assign and the most projects they take (null for no cap).",
+      "endpoint": "launchpadMentorSettings",
+      "method": "PUT",
+      "path": "/api/buildspace-launchpad/mentors/:contactId/settings",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Set mentor availability",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "contactId": {
+            "type": "string",
+            "description": "The contactId id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean"
+              },
+              "maxProjects": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "available",
+              "maxProjects"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "contactId",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "preview_launchpad_mentor_assignment",
+      "title": "Preview mentor auto-assign",
+      "description": "Propose mentor assignments for a cohort's projects without saving anything. Review them with the officer, then apply with apply_launchpad_mentor_assignment.",
+      "endpoint": "launchpadAutoAssignPreview",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/cohorts/:id/auto-assign/preview",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Preview mentor auto-assign",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "apply_launchpad_mentor_assignment",
+      "title": "Apply mentor assignments",
+      "description": "Save mentor assignments for projects in a cohort (usually the preview, possibly edited).",
+      "endpoint": "launchpadAutoAssign",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/cohorts/:id/auto-assign",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Apply mentor assignments",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "assignments": {
+                "minItems": 1,
+                "maxItems": 500,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "projectId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "mentorId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    }
+                  },
+                  "required": [
+                    "projectId",
+                    "mentorId"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "assignments"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "archive_launchpad_project",
+      "title": "Archive Launchpad project",
+      "description": "Archive a Launchpad project (hidden from the board; restore_launchpad_project brings it back).",
+      "endpoint": "launchpadProjectArchive",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/projects/:id/archive",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Archive Launchpad project",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "restore_launchpad_project",
+      "title": "Restore Launchpad project",
+      "description": "Restore an archived Launchpad project.",
+      "endpoint": "launchpadProjectRestore",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/projects/:id/restore",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Restore Launchpad project",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_launchpad_project",
+      "title": "Delete Launchpad project",
+      "description": "Permanently delete a Launchpad project. Ask the officer to confirm first; archiving is usually what they want. Requires the director role.",
+      "endpoint": "launchpadProjectDelete",
+      "method": "DELETE",
+      "path": "/api/buildspace-launchpad/projects/:id",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Delete Launchpad project",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "archive_launchpad_person",
+      "title": "Archive Launchpad person",
+      "description": "Archive a Launchpad participant (restore_launchpad_person brings them back).",
+      "endpoint": "launchpadPersonArchive",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/people/:id/archive",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Archive Launchpad person",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "restore_launchpad_person",
+      "title": "Restore Launchpad person",
+      "description": "Restore an archived Launchpad participant.",
+      "endpoint": "launchpadPersonRestore",
+      "method": "POST",
+      "path": "/api/buildspace-launchpad/people/:id/restore",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Restore Launchpad person",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_launchpad_person",
+      "title": "Delete Launchpad person",
+      "description": "Permanently delete a Launchpad participant. Ask the officer to confirm first; archiving is usually what they want. Requires the director role.",
+      "endpoint": "launchpadPersonDelete",
+      "method": "DELETE",
+      "path": "/api/buildspace-launchpad/people/:id",
+      "minRole": "director",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Delete Launchpad person",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_my_profile",
+      "title": "Get my profile",
+      "description": "The officer's own profile.",
+      "endpoint": "profileGet",
+      "method": "GET",
+      "path": "/api/me/profile",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Get my profile",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_my_profile",
+      "title": "Update my profile",
+      "description": "Save the officer's own profile (send the full profile).",
+      "endpoint": "profilePut",
+      "method": "PUT",
+      "path": "/api/me/profile",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update my profile",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "phone": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              },
+              "birthday": {
+                "type": "string",
+                "pattern": "^(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$"
+              },
+              "subteamId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "preferredName": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pronouns": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "personalEmail": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "schoolEmail": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 254
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "gradDate": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "team": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "linkedin": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 300
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "calendarDeliveryMode": {
+                "type": "string",
+                "enum": [
+                  "ics",
+                  "google"
+                ]
+              }
+            },
+            "required": [
+              "phone",
+              "birthday"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

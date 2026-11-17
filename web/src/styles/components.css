@@ -735,3 +735,6 @@ html[data-people='closed'] .nav-folder:not([data-current]):not([data-state]) .na
   html:not([data-sidebar]) .nav-link--sub {padding-left:0;width:36px;height:36px;}
   html:not([data-sidebar]) .nav-folder[data-current] > .nav-folder-toggle {box-shadow:inset 2px 0 0 var(--brand);}
 }
+
+/* Settings → Connected agents: keep the disconnect button its own height beside a wrapped name. */
+.agents-list .list-side {align-self:center;}

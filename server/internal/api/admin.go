@@ -168,8 +168,14 @@ func (c *Ctx) adminUserUpdate() error {
 		// read on every request, so it applies at once, and the open tab updates in place
 		// (X-Perm-Version, see session.go) instead of bouncing to sign-in.
 		if active.Set && !active.V {
-			if err := w.DeleteUserSessions(ctx, before.ID); err != nil {
+			agents, err := w.DeleteUserSessions(ctx, before.ID, c.S.nowMs())
+			if err != nil {
 				return err
+			}
+			if agents > 0 {
+				if err := c.audit(ctx, w, "agent.revoked_with_user", "user", before.ID, nil, map[string]any{"count": agents}); err != nil {
+					return err
+				}
 			}
 		}
 		// Service tokens carry their creator's director authority; losing it revokes them.
@@ -360,10 +366,21 @@ func (c *Ctx) adminAudit() error {
 	for _, t := range toks {
 		tokenNames[t.ID] = t.Name
 	}
+	var agentIDs []string // only the agents on this page
+	for i, a := range rows {
+		if i < limit && a.ActorAgent != nil {
+			agentIDs = append(agentIDs, *a.ActorAgent)
+		}
+	}
+	agentNames, err := q.AgentNames(ctx, agentIDs)
+	if err != nil {
+		return err
+	}
 	type entry struct {
 		ID             string       `json:"id"`
 		Actor          *UserSummary `json:"actor"`
 		ActorTokenName *string      `json:"actorTokenName"`
+		ActorAgentName *string      `json:"actorAgentName"`
 		Action         string       `json:"action"`
 		EntityType     string       `json:"entityType"`
 		EntityID       *string      `json:"entityId"`
@@ -388,6 +405,11 @@ func (c *Ctx) adminAudit() error {
 		if a.ActorToken != nil {
 			if n, ok := tokenNames[*a.ActorToken]; ok {
 				e.ActorTokenName = &n
+			}
+		}
+		if a.ActorAgent != nil {
+			if n, ok := agentNames[*a.ActorAgent]; ok {
+				e.ActorAgentName = &n
 			}
 		}
 		out.Items = append(out.Items, e)

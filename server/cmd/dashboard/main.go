@@ -306,7 +306,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	return nil
 }
 
-// sessionJanitor deletes expired sessions hourly.
+// sessionJanitor deletes expired sessions, OAuth codes and unused MCP clients hourly.
 func sessionJanitor(ctx context.Context, db *store.DB, log *slog.Logger) {
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
@@ -324,6 +324,18 @@ func sessionJanitor(ctx context.Context, db *store.DB, log *slog.Logger) {
 			})
 			if err != nil {
 				log.Error("session purge failed", "error", err)
+			}
+			// Expired OAuth codes and abandoned MCP client registrations (docs/mcp.md), in
+			// their own transaction so a failure here never undoes the session purge.
+			err = db.Write(ctx, func(w *store.Queries) error {
+				n, err := w.PurgeOAuth(ctx, time.Now().UnixMilli())
+				if err == nil && n > 0 {
+					log.Info("purged unused MCP clients", "count", n)
+				}
+				return err
+			})
+			if err != nil {
+				log.Error("MCP OAuth purge failed", "error", err)
 			}
 		}
 	}

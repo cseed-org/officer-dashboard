@@ -422,6 +422,33 @@ await call('calendarEmailUpdate', { who: directorA, params: { id: savedEmail.jso
 for (let i=0;i<4;i++) await call('calendarEmailCreate', { who: officer, body: { email: `calendar${i}@example.org` } });
 await call('calendarEmailCreate', { who: officer, body: { email: 'six@example.org' }, expect: 409 });
 await call('calendarEmailDelete', { who: officer, params: { id: savedEmail.json.email.id } });
+
+// MCP agents (docs/mcp.md): OAuth 2.1 + PKCE as the officer, one tool call, then the
+// Connected agents endpoints and the audit attribution.
+{
+  const reg = await fetch(`${base}/oauth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: 'Contract agent', redirect_uris: ['http://127.0.0.1:9/callback'] }) });
+  const client = await reg.json();
+  must(reg.status === 201 && client.client_id, 'MCP client registers');
+  const verifier = randomBytes(32).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const form = new URLSearchParams({ client_id: client.client_id, redirect_uri: 'http://127.0.0.1:9/callback', response_type: 'code', code_challenge: challenge, code_challenge_method: 'S256', state: 'xyz', decision: 'allow' });
+  const authz = await fetch(`${base}/oauth/authorize`, { method: 'POST', redirect: 'manual', headers: { cookie: officer.cookie, 'content-type': 'application/x-www-form-urlencoded', origin: base }, body: form });
+  const back = new URL(authz.headers.get('location') ?? 'http://x/');
+  must(authz.status === 302 && back.searchParams.get('state') === 'xyz' && back.searchParams.get('code'), 'officer authorizes the agent');
+  const tok = await (await fetch(`${base}/oauth/token`, { method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', code: back.searchParams.get('code'), code_verifier: verifier, client_id: client.client_id, redirect_uri: 'http://127.0.0.1:9/callback' }) })).json();
+  must(typeof tok.access_token === 'string' && typeof tok.refresh_token === 'string', 'code exchanges for tokens');
+  const rpc = (body, bearer = tok.access_token) => fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify(body) });
+  const created = await (await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_contact', arguments: { body: { name: 'Agent Contact', type: 'speaker' } } } })).json();
+  must(created.result && created.result.isError === false, 'MCP tool call creates a contact as the officer', created);
+  const agents = await call('agentsList', { who: officer });
+  const agent = agents.json.agents.find((a) => a.clientName === 'Contract agent');
+  must(agent, 'connected agent is listed');
+  const trail = await call('adminAudit', { who: directorA, query: { limit: '20' } });
+  must(trail.json.items.some((e) => e.actorAgentName === 'Contract agent' && e.actor?.id === 'user-priya'), 'audit shows the officer via the agent');
+  await call('agentDisconnect', { who: directorA, params: { id: agent.id }, expect: 404 });
+  await call('agentDisconnect', { who: officer, params: { id: agent.id } });
+  must((await rpc({ jsonrpc: '2.0', id: 2, method: 'ping' })).status === 401, 'disconnected agent is refused');
+}
 await call('inviteCreate', { who: officer, body: {}, expect: 403 });
 const invited = await call('inviteCreate', { who: directorA, body: { name:'New officer',discordId:'100000000000000088',subteamId:'team-events',method:'link' } });
 // V0.3 officers: invites, directory, profile, onboarding and calendar delivery (no bot, SMTP or Google configured).

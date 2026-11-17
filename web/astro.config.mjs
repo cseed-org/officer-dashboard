@@ -43,7 +43,7 @@ export default defineConfig({
     server: {
       strictPort: true,
       allowedHosts: (process.env.DEV_ALLOWED_HOSTS ?? '').split(',').map(s => s.trim()).filter(Boolean),
-      proxy: { '/api': proxy, '/auth': proxy },
+      proxy: { '/api': proxy, '/auth': proxy, '/oauth': proxy, '/mcp': proxy, '/.well-known/oauth-protected-resource': proxy, '/.well-known/oauth-authorization-server': proxy },
     },
   },
 });

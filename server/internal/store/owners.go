@@ -62,6 +62,7 @@ func (d *DB) BootstrapOwner(ctx context.Context, discordID, name string, now int
 		}
 		user, err := q.UserByDiscordID(ctx, discordID)
 		var before *string
+		var agents int64
 		switch {
 		case errors.Is(err, ErrNotFound):
 			if name == "" {
@@ -83,11 +84,11 @@ func (d *DB) BootstrapOwner(ctx context.Context, discordID, name string, now int
 			if err := q.Exec(ctx, `UPDATE users SET role='leadership',active=1,is_owner=1,name=?,updated_at=? WHERE id=?`, name, now, user.ID); err != nil {
 				return err
 			}
-			if err := q.DeleteUserSessions(ctx, user.ID); err != nil {
+			if agents, err = q.DeleteUserSessions(ctx, user.ID, now); err != nil {
 				return err
 			}
 		}
-		afterRaw, _ := json.Marshal(map[string]any{"role": "leadership", "active": true, "isOwner": true, "name": name})
+		afterRaw, _ := json.Marshal(map[string]any{"role": "leadership", "active": true, "isOwner": true, "name": name, "agentsDisconnected": agents})
 		after := string(afterRaw)
 		return q.InsertAudit(ctx, AuditEntry{ID: auth.UUID(), Action: "owner.bootstrap", EntityType: "user", EntityID: &user.ID, BeforeJSON: before, AfterJSON: &after, CreatedAt: Ms(now)})
 	})

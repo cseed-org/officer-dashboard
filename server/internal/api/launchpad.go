@@ -197,6 +197,21 @@ func (c *Ctx) launchpadJoinURL(token string) string {
 	return c.S.link("/launchpad/join?token="+token, c.R)
 }
 
+// agentInvite refuses what an MCP agent may not do with an invite: an invite link is a
+// sign-up credential, so through an agent invites go by email only and links never come back.
+func (c *Ctx) agentInvite(method string) error {
+	if c.Agent == "" {
+		return nil
+	}
+	if method != "email" {
+		return badRequest("Through an agent, invites go by email only (method \"email\"): an invite link is a sign-up credential. Copy links from the dashboard instead.")
+	}
+	if c.S.cfg.Mailer == nil {
+		return conflict("Invite email is not configured on this dashboard; send the invite from the dashboard instead")
+	}
+	return nil
+}
+
 // deliver emails each invite in the background (when the mailer is configured and the method
 // asks for email) and returns copyable links (when the method asks for them, or there is no
 // mailer). Delivery outcomes land on the account, only if its token is still the one sent.
@@ -205,7 +220,7 @@ func (c *Ctx) deliver(list []issued, method string) []launchpadLink {
 	mailer := c.S.cfg.Mailer
 	var mails []issued
 	for _, it := range list {
-		if method != "email" || mailer == nil {
+		if (method != "email" || mailer == nil) && c.Agent == "" { // never hand a link to an agent
 			links = append(links, launchpadLink{AccountID: it.account.ID, Email: it.account.Email, URL: c.launchpadJoinURL(it.token)})
 		}
 		if method != "link" && mailer != nil {
@@ -292,6 +307,9 @@ func (c *Ctx) launchpadInvite() error {
 	}
 	if len(rows) == 0 {
 		return badRequest("Add at least one email")
+	}
+	if err := c.agentInvite(method); err != nil {
+		return err
 	}
 	type skip struct {
 		Email  string `json:"email"`
@@ -398,6 +416,9 @@ func cohortForInvite(ctx context.Context, q *store.Queries, a *store.LaunchpadAc
 }
 
 func (c *Ctx) launchpadAccountResend() error {
+	if err := c.agentInvite("email"); err != nil {
+		return err
+	}
 	var it issued
 	err := c.accountAction(false, func(q *store.Queries, a *store.LaunchpadAccount) error {
 		if a.Status != "invited" {
@@ -420,7 +441,10 @@ func (c *Ctx) launchpadAccountResend() error {
 	}
 	// A resend always hands back the link as well, so it can be shared another way.
 	c.deliver([]issued{it}, "email")
-	link := launchpadLink{AccountID: it.account.ID, Email: it.account.Email, URL: c.launchpadJoinURL(it.token)}
+	var link any
+	if c.Agent == "" {
+		link = launchpadLink{AccountID: it.account.ID, Email: it.account.Email, URL: c.launchpadJoinURL(it.token)}
+	}
 	writeJSON(c.W, 200, map[string]any{"account": it.account, "link": link})
 	return nil
 }
@@ -500,6 +524,9 @@ func (c *Ctx) launchpadMentorInvite() error {
 		}
 		method = r.Str("method", validate.S{Enum: []string{"email", "link", "both"}, HasDef: true, Default: "email"}).V
 	}); err != nil {
+		return err
+	}
+	if err := c.agentInvite(method); err != nil {
 		return err
 	}
 	contactID := c.R.PathValue("contactId")

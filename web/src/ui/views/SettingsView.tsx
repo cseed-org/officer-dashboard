@@ -14,6 +14,7 @@ import { useApi } from '../../lib/api/useApi';
 import { ErrorState, Loading } from '../components/states';
 import { ProfileForm } from './ProfileForm';
 import { CalendarPanel } from './CalendarPanel';
+import { AgentsPanel } from './AgentsPanel';
 import { safeImageUrl } from '../../lib/url';
 import { startTour } from '../tour/startTour';
 import type { HelloMedia } from '../onboarding/WelcomeIntro';
@@ -158,6 +159,9 @@ export default function SettingsView({ me, helloMedia }: { me: CurrentUser; hell
       <Section title="calendar" id="calendar">
         <CalendarPanel next="/settings" removable />
       </Section>
+
+      <p class="settings-group">AI agents</p>
+      <AgentsPanel />
 
       <Section title="dashboard" id="dashboard">
         <div><a class="btn" href="/?tutorial=1" data-replay-tour onClick={(e) => { e.preventDefault(); startTour(); }}>Replay dashboard tour</a></div>

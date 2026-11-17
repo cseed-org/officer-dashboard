@@ -15,6 +15,7 @@ const ENTITY_TYPES: [string, string][] = [
   ['service_token', 'tokens'],
   ['budget', 'budgets'],
   ['fiscal_period', 'fiscal periods'],
+  ['agent', 'AI agents'],
 ];
 
 /**
@@ -33,7 +34,7 @@ export default function AuditLog() {
   const [error, setError] = useState<string | null>(null);
   const extra = more?.key === entityType ? more : null;
   const loaded = useMemo(() => (first.status === 'ready' ? [...first.data.items, ...(extra?.items ?? [])] : []), [first, extra]);
-  const actorOf = (e: AuditLogEntry) => auditSummary(e).who;
+  const actorOf = (e: AuditLogEntry) => auditSummary(e).actor; // an officer's agents count as them
   const actors = useMemo(() => [...new Set(loaded.map(actorOf))].sort(), [loaded]);
   const actions = useMemo(() => [...new Set(loaded.map((e) => e.action))].sort(), [loaded]);
   const filtered = loaded.filter((e) => (!actor || actorOf(e) === actor) && (!action || e.action === action) && (!since || pacificDate(e.createdAt) >= since));
