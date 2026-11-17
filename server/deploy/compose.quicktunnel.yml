@@ -1,0 +1,40 @@
+# Rehearsal only, layered on compose.cloudflare.yml: the same two containers and private
+# network, but cloudflared opens a temporary trycloudflare.com quick tunnel (no Cloudflare
+# account, no Access, no WAF settings) and the dashboard is the seeded dev build with
+# developer sign-in, locked by DEV_AUTH_KEY. Sample data only; stop it when done.
+# docs/deployment.md, "Rehearse on a quick tunnel".
+#
+#   cd server/deploy
+#   export DEV_AUTH_KEY=$(openssl rand -hex 24) TUNNEL_TOKEN=unused
+#   qt="docker compose -p od-quicktunnel -f compose.cloudflare.yml -f compose.quicktunnel.yml"
+#   APP_URL=https://pending.invalid $qt up -d --build
+#   url=$($qt logs cloudflared | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1)
+#   APP_URL=$url $qt up -d dashboard              # restart it with the public URL
+#   APP_URL=$url $qt run --rm --no-deps --entrypoint /app/dashboard dashboard mcp-check "$url"
+#   $qt down -v
+# Its own project even without -p: it can never replace the production containers
+# or touch their data volume, and `down -v` removes only the rehearsal.
+name: od-quicktunnel
+
+services:
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: docker/dev.Dockerfile
+      target: app
+    image: od-quicktunnel-dashboard:dev
+    restart: "no"
+    env_file: !reset []
+    environment:
+      DEV_AUTH: "1"
+      DEV_AUTH_KEY: ${DEV_AUTH_KEY:?export DEV_AUTH_KEY (openssl rand -hex 24), the quick tunnel is public}
+      DB_PATH: /data/dev.db
+      STATIC_DIR: /app/web/dist
+    # A fresh seeded database on every start (the dev image runs `seed -reset`).
+    volumes: !reset []
+
+  cloudflared:
+    restart: "no"
+    command: ["tunnel", "--no-autoupdate", "--url", "http://dashboard:8090"]
+    environment:
+      TUNNEL_TOKEN: ""

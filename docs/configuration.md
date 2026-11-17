@@ -17,7 +17,7 @@ Environment variables (flags override where shown):
 | `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID` | – | receipts in a Google shared drive |
 | `RECEIPTS_DIR` | – | receipts on local disk (single box, no Drive). With neither set, uploads answer 503 |
 | `AGENT_SETTLEMENT_TOLERANCE_PERCENT`, `_CENTS` | `10`, `2500` | agent hold ceiling: max(estimate × 1.10, estimate + $25) |
-| `TRUSTED_PROXIES` | loopback (`127.0.0.0/8`, `::1`) | comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` names the client, for the per-IP rate limits. Read right to left, skipping trusted hops; a client cannot spoof it. Set it when the proxy is not on loopback (Docker network: e.g. `172.16.0.0/12`); a malformed entry stops startup |
+| `TRUSTED_PROXIES` | loopback (`127.0.0.0/8`, `::1`) | comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` names the client, for the per-IP rate limits. Read right to left, skipping trusted hops; a client cannot spoof it. Set it when the proxy is not on loopback (Docker network: e.g. `172.16.0.0/12`); a malformed entry stops startup. `compose.cloudflare.yml` sets it to the address range its tunnel network gives containers (`${TUNNEL_NET}.8/29`), which leaves out the Docker gateway. A request a trusted proxy forwards with a Host other than `APP_URL`'s is logged once as a warning (usually a misrouted tunnel hostname) |
 | `DEV_AUTH` | – | `1` enables `/auth/dev` in a `-tags dev` build only |
 | `DEV_AUTH_KEY` | – | `-tags dev` builds only (ignored otherwise). When set, every dev sign-in (`POST /auth/dev`), the confirmation page and the login page's Developer mode panel need `key=<DEV_AUTH_KEY>`; nothing remembers it. A wrong or missing key gets the site's 404. Shareable link (opens a confirmation page): `https://<host>/auth/dev?as=leadership\|director\|officer&key=<KEY>[&next=/events]`. **Required, at least 16 characters, whenever `APP_URL` is not loopback**: the server refuses to start otherwise. **Test deployments only**: the key signs anyone in as any role. Use `openssl rand -hex 24`; see [development](development.md#developer-mode-on-a-test-deployment) |
 
@@ -78,6 +78,8 @@ These are consumed by deployment scripts, rather than Go settings:
 | `BACKUP_DIR` | `./backups` | Local backup output. |
 | `KEEP` | `30` | Number of backups retained. |
 | `BACKUP_REMOTE` | unset | Off-box copy command; `{}` is replaced by the backup path. |
+
+`compose.cloudflare.yml` reads its own settings from `server/deploy/.env` ([`.env.example`](../server/deploy/.env.example)): `APP_URL`, `TUNNEL_TOKEN` (the remotely managed tunnel's token), `TUNNEL_NET` (the network's first three octets, default `10.250.89`: subnet `.0/28`, containers and `TRUSTED_PROXIES` `.8/29`, gateway `.1`), `CLOUDFLARED_VERSION` and `DASHBOARD_IMAGE` (the tag of the image compose builds; to run a prebuilt one, set it and start without `--build`). The app's settings go in `server/deploy/dashboard.env`. See [Cloudflare Tunnel + Access](deployment.md#cloudflare-tunnel--access).
 
 The container sets `DB_PATH=/data/dashboard.db` and `ADDR=:8090`; systemd sets `DB_PATH=/var/lib/officer-dashboard/dashboard.db` and `ADDR=127.0.0.1:8090`. See [deployment](deployment.md).
 

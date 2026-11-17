@@ -1,0 +1,20 @@
+# Build context of server/Dockerfile (the repository root). BuildKit reads this file in place
+# of a root .dockerignore. Secrets never enter the context: server/deploy/.env holds the
+# tunnel token and dashboard.env the app's secrets.
+.git
+.pane
+worktrees
+tmp
+**/node_modules
+**/.astro
+**/test-results
+**/playwright-report
+docs/evidence
+web/design
+server/bin
+server/data
+**/.env
+**/.env.*
+!**/.env.example
+**/*.env
+!**/*.env.example

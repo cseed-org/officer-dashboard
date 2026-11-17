@@ -5,6 +5,8 @@
 //	dashboard seed [-reset] load the sample data (FY2027), optionally into a fresh database
 //	dashboard migrate      apply pending migrations and exit
 //	dashboard healthcheck  exit 0 if the local server answers /api/health (container HEALTHCHECK)
+//	dashboard mcp-check [-register] <public url>
+//	                       check from outside that agents can reach /mcp (Cloudflare Tunnel + Access)
 //	dashboard version
 package main
 
@@ -32,6 +34,7 @@ import (
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
 	"officerdashboard/internal/files"
+	"officerdashboard/internal/mcpcheck"
 	"officerdashboard/internal/notify"
 	"officerdashboard/internal/purchases"
 	"officerdashboard/internal/seed"
@@ -62,10 +65,12 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		err = leadershipCmd(args, getenv, stdout)
 	case "healthcheck":
 		err = healthcheck(args, getenv)
+	case "mcp-check":
+		return mcpCheckCmd(args, stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, version)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|version]\n", cmd)
+		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|healthcheck|mcp-check|version]\n", cmd)
 		return 2
 	}
 	if err != nil {
@@ -417,6 +422,45 @@ func healthcheck(args []string, getenv func(string) string) error {
 		return fmt.Errorf("unhealthy: %d %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return nil
+}
+
+// mcpCheckCmd checks a deployed dashboard's MCP endpoint from outside (docs/deployment.md):
+// exit 0 when every check passes, 1 when one fails, 2 for bad usage.
+func mcpCheckCmd(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("mcp-check", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	register := fs.Bool("register", false, "also check POST /oauth/register (creates one unused OAuth client in the dashboard)")
+	timeout := fs.Duration("timeout", 15*time.Second, "timeout of each request")
+	fs.Usage = func() {
+		fmt.Fprintln(stderr, "usage: dashboard mcp-check [-register] [-timeout 15s] https://<dashboard host>[/mcp]")
+		fs.PrintDefaults()
+	}
+	// Flags may come before or after the URL.
+	var target []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return 2
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		target, args = append(target, fs.Arg(0)), fs.Args()[1:]
+	}
+	if len(target) != 1 {
+		fs.Usage()
+		return 2
+	}
+	results, err := mcpcheck.Run(context.Background(), mcpcheck.Options{URL: target[0], Register: *register, Client: &http.Client{Timeout: *timeout}})
+	if err != nil {
+		fmt.Fprintln(stderr, "mcp-check:", err)
+		return 2
+	}
+	// Report the normalised origin, never the raw argument (it may carry userinfo or a query).
+	base, _ := mcpcheck.Base(target[0])
+	if !mcpcheck.Report(stdout, base, results) {
+		return 1
+	}
+	return 0
 }
 
 // validateAppURL refuses to serve unless APP_URL is https (localhost excepted). The Secure

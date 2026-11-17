@@ -16,6 +16,8 @@ pnpm-debug.log*
 # environment variables
 .env
 .env.production
+# compose deployment secrets (server/deploy/compose.cloudflare.yml)
+server/deploy/dashboard.env
 
 # macOS-specific files
 .DS_Store
