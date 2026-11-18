@@ -193,7 +193,38 @@ func TestDraftsArePrivateToRequesterAndDirectors(t *testing.T) {
 			t.Errorf("%s does not find the draft in search", name)
 		}
 	}
-	if !onCalendar(e.officer()) {
-		t.Error("requester does not see their own draft on the calendar")
+	// The calendar feed and its MCP tool (calendar_feed) follow the same rule (R-06).
+	onMCPCalendar := func(userID string) bool {
+		_, tok := connectAgent(t, e, userID, "Claude Code")
+		text, isErr := toolCall(e, tok.str("access_token"), "calendar_feed", map[string]any{"start": "2026-11-09", "end": "2026-11-16", "sources": "purchase-deadlines"})
+		if isErr {
+			t.Fatalf("calendar_feed as %s: %s", userID, text)
+		}
+		return strings.Contains(text, id)
 	}
+	for name, c := range map[string]struct {
+		who    actor
+		userID string
+		want   bool
+	}{"requester": {e.officer(), "user-priya", true}, "director": {director, "user-director", true}, "another officer": {other, "user-ava", false}} {
+		if got := onCalendar(c.who); got != c.want {
+			t.Errorf("%s sees the draft on the calendar feed: %v, want %v", name, got, c.want)
+		}
+		if got := onMCPCalendar(c.userID); got != c.want {
+			t.Errorf("%s sees the draft through MCP calendar_feed: %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// R-06: a director sees an officer's dated draft on their calendar (D-22).
+func TestReviewDirectorSeesDraftOnCalendar(t *testing.T) {
+	e := newEnv(t)
+	id := e.mustOK(e.post("/api/requests", with(purchase, "neededBy", "2026-11-12"), e.officer())).str("request", "id")
+	r := e.mustOK(e.get("/api/calendar/feed?start=2026-11-09&end=2026-11-16&sources=purchase-deadlines", e.director()))
+	for _, it := range r.list("items") {
+		if it.(map[string]any)["id"] == id {
+			return
+		}
+	}
+	t.Fatalf("director cannot see officer draft %s on calendar: %s", id, r.Raw)
 }
