@@ -46,3 +46,25 @@ test("fixture contact data uses reserved domains and placeholder LinkedIn profil
   }
   assert.deepEqual(real, [], "fixture contacts that could belong to real people");
 });
+
+test("design Python builders name the file encoding (Windows defaults to cp1252)", () => {
+  const implicit = [];
+  for (const file of files(design, (n) => n.endsWith(".py"))) {
+    read(file).split("\n").forEach((line, i) => {
+      if (/\.(read|write)_text\(|\bopen\(/.test(line) && !/encoding=/.test(line)) implicit.push(`${rel(file)}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(implicit, [], "read_text/write_text/open without encoding=");
+});
+
+test("design browser scripts resolve paths portably and honour CHROMIUM_PATH", () => {
+  const bad = [];
+  for (const file of files(design, (n) => n.endsWith(".mjs"))) {
+    read(file).split("\n").forEach((line, i) => {
+      // URL.pathname keeps the leading /C: on Windows; fileURLToPath does not.
+      if (/import\.meta\.url\)\.pathname/.test(line)) bad.push(`${rel(file)}:${i + 1} uses URL.pathname`);
+      if (/chromium\.launch\(/.test(line) && !/CHROMIUM_PATH/.test(line)) bad.push(`${rel(file)}:${i + 1} ignores CHROMIUM_PATH`);
+    });
+  }
+  assert.deepEqual(bad, [], "non-portable design scripts");
+});
