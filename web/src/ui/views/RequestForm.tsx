@@ -8,7 +8,7 @@ import {
   type FunctionalClass,
   type PurchaseType,
 } from '../../core/constants';
-import { api, fieldErrors as apiFieldErrors, isStorageUnavailable } from '../../lib/api/client';
+import { api, fieldErrors as apiFieldErrors, isStorageUnavailable, loadContracts } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import { describe, Field } from '../components/kit';
 import { Async, errorMessage, Loading, Notice } from '../components/states';
@@ -124,6 +124,7 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const saving = useRef(false);
   const summaryRef = useRef<HTMLDivElement>(null);
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }));
 
@@ -162,24 +163,26 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
   };
 
   const save = async (submit: boolean) => {
+    if (saving.current) return;
+    saving.current = true;
     setFailure(null);
-    // Validation is needed only on submit; api() has normally prefetched both modules by then.
-    const { PurchaseRequestCreateRequest } = await import('../../lib/contracts');
-    const { flattenError } = await import('zod');
-    const parsed = PurchaseRequestCreateRequest.safeParse(toBody(f, submit));
-    // Date-only: compare with today on the selected time zone (the server checks the same).
-    const pastDeadline = !!f.neededBy && f.neededBy < pacificToday();
-    if (!parsed.success || pastDeadline) {
-      const flat = parsed.success ? {} : (flattenError(parsed.error).fieldErrors as Record<string, string[] | undefined>);
-      const e: Record<string, string> = {};
-      for (const k of Object.keys(flat)) if (flat[k]?.length) e[k] = FRIENDLY[k] ?? flat[k]![0]!;
-      if (pastDeadline) e.neededBy = FRIENDLY.neededBy!;
-      if (errors.files) e.files = errors.files;
-      return showErrors(e);
-    }
-    setErrors({});
     setBusy(submit ? 'submitting…' : 'saving…');
     try {
+      // Validation is needed only on submit; api() has normally prefetched both modules by then.
+      const { PurchaseRequestCreateRequest } = await loadContracts();
+      const { flattenError } = await import('zod');
+      const parsed = PurchaseRequestCreateRequest.safeParse(toBody(f, submit));
+      // Date-only: compare with today on the selected time zone (the server checks the same).
+      const pastDeadline = !!f.neededBy && f.neededBy < pacificToday();
+      if (!parsed.success || pastDeadline) {
+        const flat = parsed.success ? {} : (flattenError(parsed.error).fieldErrors as Record<string, string[] | undefined>);
+        const e: Record<string, string> = {};
+        for (const k of Object.keys(flat)) if (flat[k]?.length) e[k] = FRIENDLY[k] ?? flat[k]![0]!;
+        if (pastDeadline) e.neededBy = FRIENDLY.neededBy!;
+        if (errors.files) e.files = errors.files;
+        return showErrors(e);
+      }
+      setErrors({});
       const { request } = await api('requestCreate', { body: parsed.data });
       let failed = 0;
       let storageOff = false;
@@ -199,14 +202,15 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
           }
         }
       }
-      setBusy(null);
       onCreated(request.id, { created: submit ? 'submitted' : 'draft', uploadFailed: failed, storageOff });
     } catch (err) {
-      setBusy(null);
       const fe = apiFieldErrors(err);
       const friendly = Object.fromEntries(Object.keys(fe).map((k) => [k, FRIENDLY[k] ?? fe[k]!]));
       setFailure(errorMessage(err));
       showErrors(friendly);
+    } finally {
+      saving.current = false;
+      setBusy(null);
     }
   };
 
