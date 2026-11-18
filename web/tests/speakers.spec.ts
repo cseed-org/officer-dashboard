@@ -39,6 +39,38 @@ async function addContact(page: Page, c: { name: string; org?: string; type?: st
   await expect(openDialog(page).getByRole('heading', { level: 2, name: c.name })).toBeVisible();
 }
 
+test('M-141: contacts loads the event picker only when an editor opens', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'request-count regression runs once');
+  await devLogin(page, 'officer');
+  let eventReads = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/events') eventReads++;
+  });
+  await page.goto('/contacts');
+  await settle(page);
+  expect(eventReads, 'directory visit').toBe(0);
+  const addRead = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/events');
+  await addButton(page).click();
+  expect((await addRead).ok()).toBe(true);
+  expect(eventReads).toBe(1);
+  await page.keyboard.press('Escape');
+
+  const made = await page.request.post('/api/contacts', { data: { name: `Read only ${Date.now()}`, type: 'speaker' } });
+  const { contact } = await made.json();
+  try {
+    eventReads = 0;
+    await page.goto(`/contacts?person=${contact.id}`);
+    await settle(page);
+    expect(eventReads, 'read-only deep link').toBe(0);
+    const manageRead = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/events');
+    await tab(page, 'Manage');
+    expect((await manageRead).ok()).toBe(true);
+    expect(eventReads).toBe(1);
+  } finally {
+    await page.request.delete(`/api/contacts/${contact.id}`);
+  }
+});
+
 test('contacts: field-named validation error, error styling, add draft kept on close, detail heading focused after create', async ({ page }) => {
   const errors = watchErrors(page);
   const name = `Draft ${Date.now().toString(36)}`;
