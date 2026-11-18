@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"regexp"
@@ -40,7 +41,7 @@ func TestMigratedDatabaseWorksWithoutAppFunctions(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Populate events before closing the application's connection.
-	_, err = db.W.Exec(`INSERT INTO events(id,name,starts_at) VALUES('existing','Existing event','2026-11-18T12:00:00Z')`)
+	err = On(db.W).InsertEvent(context.Background(), Event{ID: "existing", Name: "Existing event", StartsAt: "2026-11-18T12:00:00Z"})
 	db.Close()
 	if err != nil {
 		t.Fatal(err)

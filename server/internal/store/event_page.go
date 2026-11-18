@@ -21,19 +21,24 @@ type EventFilter struct {
 }
 
 func (q *Queries) EventPage(ctx context.Context, f EventFilter) ([]Event, error) {
-	conds := []string{"instant_ms(e.starts_at) IS NOT NULL"}
+	conds := []string{"e.starts_at_ms IS NOT NULL"}
 	var args []any
 	add := func(cond string, arg any) { conds = append(conds, cond); args = append(args, arg) }
 	addTime := func(op string, t time.Time) {
-		// The millisecond comparison matches page ordering; the tuple keeps sub-millisecond
-		// comparisons exact, without UnixNano's 1678–2262 range limit.
+		// The ordinary-column index handles millisecond-aligned bounds by itself.
+		if t.Nanosecond()%1_000_000 == 0 {
+			add("e.starts_at_ms "+op+" ?", t.UnixMilli())
+			return
+		}
+		// Only rows in the boundary millisecond need the exact tuple comparison,
+		// without UnixNano's 1678–2262 range limit.
 		coarse := op
 		if op == "<" {
 			coarse = "<="
 		}
-		add("instant_ms(e.starts_at) "+coarse+" ?", t.UnixMilli())
-		conds = append(conds, "(instant_seconds(e.starts_at),instant_fraction(e.starts_at)) "+op+" (?,?)")
-		args = append(args, t.Unix(), t.Nanosecond())
+		add("e.starts_at_ms "+coarse+" ?", t.UnixMilli())
+		conds = append(conds, "(e.starts_at_ms != ? OR (instant_seconds(e.starts_at),instant_fraction(e.starts_at)) "+op+" (?,?))")
+		args = append(args, t.UnixMilli(), t.Unix(), t.Nanosecond())
 	}
 	switch f.When {
 	case "past":
@@ -52,13 +57,13 @@ func (q *Queries) EventPage(ctx context.Context, f EventFilter) ([]Event, error)
 		args = append(args, Fold(f.Search), Fold(f.Search))
 	}
 	if f.HasCursor {
-		conds = append(conds, "(instant_ms(e.starts_at),e.id) < (?,?)")
+		conds = append(conds, "(e.starts_at_ms,e.id) < (?,?)")
 		args = append(args, f.CursorMs, f.CursorID)
 	}
 	if f.CursorRaw != "" {
-		add("(strftime('%Y-%m-%dT%H:%M:%fZ',instant_ms(e.starts_at)/1000.0,'unixepoch') || '|' || e.id) < ?", f.CursorRaw)
+		add("(strftime('%Y-%m-%dT%H:%M:%fZ',e.starts_at_ms/1000.0,'unixepoch') || '|' || e.id) < ?", f.CursorRaw)
 	}
-	query := eventSelect + " WHERE " + strings.Join(conds, " AND ") + " ORDER BY instant_ms(e.starts_at) DESC,e.id DESC"
+	query := eventSelect + " WHERE " + strings.Join(conds, " AND ") + " ORDER BY e.starts_at_ms DESC,e.id DESC"
 	if f.Limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", f.Limit)
 	}
@@ -90,8 +95,8 @@ type EventTotals struct {
 func (q *Queries) EventSummary(ctx context.Context, now, monthStart, monthEnd Ms) (EventTotals, error) {
 	var out EventTotals
 	err := q.q.QueryRowContext(ctx, `SELECT
-		coalesce(sum(status NOT IN ('draft','cancelled') AND instant_ms(starts_at) >= ?),0),
-		coalesce(sum(status NOT IN ('draft','cancelled') AND instant_ms(starts_at) >= ? AND instant_ms(starts_at) < ?),0),
+		coalesce(sum(status NOT IN ('draft','cancelled') AND starts_at_ms >= ?),0),
+		coalesce(sum(status NOT IN ('draft','cancelled') AND starts_at_ms >= ? AND starts_at_ms < ?),0),
 		(SELECT count(*) FROM event_guests WHERE checked_in_at IS NOT NULL),
 		coalesce(sum(status = 'draft'),0)
 		FROM events`, now, monthStart, monthEnd).Scan(&out.Upcoming, &out.ThisMonth, &out.Attendees, &out.Drafts)

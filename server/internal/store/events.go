@@ -88,6 +88,16 @@ func (q *Queries) EventByLumaURL(ctx context.Context, lumaURL string) (*Event, e
 	return e, notFound(err)
 }
 
+// Invalid legacy timestamps retain a NULL sort key, matching the list's parse-and-skip behavior.
+func eventStartMillis(raw string) *int64 {
+	t, err := luma.ParseInstant(raw)
+	if err != nil {
+		return nil
+	}
+	ms := t.UnixMilli()
+	return &ms
+}
+
 // InsertEvent adds an event. An empty Status stores "published" (imports come from Luma).
 func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	if e.Status == "" {
@@ -96,9 +106,9 @@ func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	if e.DesignNeed == "" {
 		e.DesignNeed = "unknown"
 	}
-	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`, starts_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		e.ID, e.LumaID, e.Name, e.StartsAt, e.EndsAt, e.Location, e.URL, e.HostUserID, e.Status, e.Description, e.Capacity, e.HostSubteamID,
-		e.LumaURL, e.NotionURL, e.DesignNeed, int64(e.CreatedAt), int64(e.UpdatedAt))
+		e.LumaURL, e.NotionURL, e.DesignNeed, int64(e.CreatedAt), int64(e.UpdatedAt), eventStartMillis(e.StartsAt))
 	return err
 }
 
@@ -133,6 +143,9 @@ func (q *Queries) UpdateEvent(ctx context.Context, id string, p EventPatch, now 
 	str := func(col string, o Opt[string]) { add(col, o.Set, o.val()) }
 	str("name", p.Name)
 	str("starts_at", p.StartsAt)
+	if p.StartsAt.Set {
+		add("starts_at_ms", true, eventStartMillis(p.StartsAt.V))
+	}
 	str("ends_at", p.EndsAt)
 	str("location", p.Location)
 	str("url", p.URL)

@@ -130,8 +130,8 @@ func apply(ctx context.Context, w *store.Queries) error {
 		}
 	}
 	for ei, e := range Events {
-		if err := insert(ctx, w, "events", "id, luma_id, name, starts_at, ends_at, location, url, host_user_id, created_at, updated_at",
-			e.ID, e.LumaID, e.Name, e.StartsAt, e.EndsAt, e.Location, "https://lu.ma/"+e.LumaID, e.Host, now, now); err != nil {
+		if err := insert(ctx, w, "events", "id, luma_id, name, starts_at, ends_at, location, url, host_user_id, created_at, updated_at, starts_at_ms",
+			e.ID, e.LumaID, e.Name, e.StartsAt, e.EndsAt, e.Location, "https://lu.ma/"+e.LumaID, e.Host, now, now, ms(e.StartsAt)); err != nil {
 			return err
 		}
 		rand := mulberry32(uint32(ei + 1))
