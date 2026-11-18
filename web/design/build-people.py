@@ -10,7 +10,7 @@ from pathlib import Path
 
 here = Path(__file__).resolve().parent
 ns = {'__file__': str(here / 'build-mockups.py')}
-exec((here / 'build-mockups.py').read_text().split('eventrows=')[0], ns)
+exec((here / 'build-mockups.py').read_text(encoding='utf-8').split('eventrows=')[0], ns)
 ns['nav'] = [
     ('home', 'Home', 'home'), ('events', 'Events', 'calendar'),
     ('officers-v03', 'Officers', 'user'), ('members-v03', 'Members', 'ledger'),
@@ -73,16 +73,16 @@ viewers = {
     'Officer': 'jamie', 'Director': 'samira', 'Leadership': 'noor', 'Owner': 'alex',
 }
 officers = [
-    dict(id='alex', name='Alex Chen', pref='Alex', pronouns='he/him', team='Operations', role='leadership', status='Active', handle='alexchen', discord='512903385174016001', phone='+1 206 555 0102', birthday='March 3', title='President', personal='alex.chen@example.com', school='alexc@uw.edu', grad='June 2027', linkedin='linkedin.com/in/alexchen-cseed', since='Fall 2024'),
-    dict(id='noor', name='Noor Hassan', pref='Noor', pronouns='she/her', team='Operations', role='leadership', status='Active', handle='noorh', discord='688120455907131392', phone='+1 425 555 0177', birthday='July 22', title='Vice president', personal='noor.hassan@example.com', school='nhassan@uw.edu', grad='June 2027', linkedin='linkedin.com/in/noor-hassan', since='Fall 2024'),
-    dict(id='samira', name='Samira Ahmed', pref='Samira', pronouns='she/her', team='Operations', role='director', status='Active', handle='samira.a', discord='701442918263390208', phone='+1 206 555 0131', birthday='November 9', title='Operations director', personal='samira.ahmed@example.com', school='samira@uw.edu', grad='June 2028', linkedin='linkedin.com/in/samira-ahmed', since='Spring 2025'),
-    dict(id='maya', name='Maya Patel', pref='Maya', pronouns='she/her', team='Community', role='director', status='Active', handle='mayap', discord='742800619335114752', phone='+1 206 555 0148', birthday='April 18', title='Community director', personal='maya.patel@example.com', school='mpatel@uw.edu', grad='June 2028', linkedin='linkedin.com/in/maya-patel-cseed', since='Fall 2025'),
-    dict(id='jamie', name='Jamie Wong', pref='Jamie', pronouns='they/them', team='Community', role='officer', status='Active', handle='jamiew', discord='790011246518550528', phone='+1 253 555 0119', birthday='January 30', title='Events coordinator', personal='jamie.wong@example.com', school='jwong@uw.edu', grad='June 2029', linkedin='', since='Fall 2026'),
-    dict(id='chris', name='Chris Okafor', pref='Chris', pronouns='he/him', team='Community', role='officer', status='Deactivated', handle='chriso', discord='655390114283765760', phone='+1 206 555 0163', birthday='August 14', title='Outreach coordinator', personal='chris.okafor@example.com', school='cokafor@uw.edu', grad='June 2026', linkedin='linkedin.com/in/chris-okafor', since='Fall 2024'),
-    dict(id='lena', name='Lena Fischer', pref='Lena', pronouns='she/her', team='Entrepreneurship', role='director', status='Active', handle='lenaf', discord='722615309911605248', phone='+1 206 555 0185', birthday='May 6', title='Entrepreneurship director', personal='lena.fischer@example.com', school='lfisch@uw.edu', grad='June 2028', linkedin='linkedin.com/in/lena-fischer', since='Spring 2025'),
-    dict(id='diego', name='Diego Morales', pref='Diego', pronouns='he/him', team='Entrepreneurship', role='officer', status='Active', handle='diegom', discord='815204771960897536', phone='+1 425 555 0124', birthday='October 2', title='Founder relations', personal='diego.morales@example.com', school='dmorales@uw.edu', grad='June 2029', linkedin='', since='Fall 2026'),
-    dict(id='jordan', name='Jordan Lee', pref='Jordan', pronouns='he/him', team='Design', role='officer', status='Active', handle='jordanl', discord='760018233467617280', phone='+1 206 555 0156', birthday='February 11', title='Visual designer', personal='jordan.lee@example.com', school='jlee24@uw.edu', grad='June 2028', linkedin='linkedin.com/in/jordanlee-design', since='Spring 2025'),
-    dict(id='riley', name='Riley Park', pref='Riley', pronouns='she/her', team='Design', role='officer', status='Active', handle='rileypark', discord='798432005512937472', phone='+1 206 555 0190', birthday='December 1', title='UX designer', personal='riley.park@example.com', school='rpark@uw.edu', grad='June 2029', linkedin='', since='Fall 2026'),
+    dict(id='alex', name='Alex Chen', pref='Alex', pronouns='he/him', team='Operations', role='leadership', status='Active', handle='alexchen', discord='512903385174016001', phone='+1 206 555 0102', birthday='March 3', title='President', personal='alex.chen@example.com', school='alexc@uw.example', grad='June 2027', linkedin='linkedin.com/in/example-alexchen-cseed', since='Fall 2024'),
+    dict(id='noor', name='Noor Hassan', pref='Noor', pronouns='she/her', team='Operations', role='leadership', status='Active', handle='noorh', discord='688120455907131392', phone='+1 425 555 0177', birthday='July 22', title='Vice president', personal='noor.hassan@example.com', school='nhassan@uw.example', grad='June 2027', linkedin='linkedin.com/in/example-noor-hassan', since='Fall 2024'),
+    dict(id='samira', name='Samira Ahmed', pref='Samira', pronouns='she/her', team='Operations', role='director', status='Active', handle='samira.a', discord='701442918263390208', phone='+1 206 555 0131', birthday='November 9', title='Operations director', personal='samira.ahmed@example.com', school='samira@uw.example', grad='June 2028', linkedin='linkedin.com/in/example-samira-ahmed', since='Spring 2025'),
+    dict(id='maya', name='Maya Patel', pref='Maya', pronouns='she/her', team='Community', role='director', status='Active', handle='mayap', discord='742800619335114752', phone='+1 206 555 0148', birthday='April 18', title='Community director', personal='maya.patel@example.com', school='mpatel@uw.example', grad='June 2028', linkedin='linkedin.com/in/example-maya-patel-cseed', since='Fall 2025'),
+    dict(id='jamie', name='Jamie Wong', pref='Jamie', pronouns='they/them', team='Community', role='officer', status='Active', handle='jamiew', discord='790011246518550528', phone='+1 253 555 0119', birthday='January 30', title='Events coordinator', personal='jamie.wong@example.com', school='jwong@uw.example', grad='June 2029', linkedin='', since='Fall 2026'),
+    dict(id='chris', name='Chris Okafor', pref='Chris', pronouns='he/him', team='Community', role='officer', status='Deactivated', handle='chriso', discord='655390114283765760', phone='+1 206 555 0163', birthday='August 14', title='Outreach coordinator', personal='chris.okafor@example.com', school='cokafor@uw.example', grad='June 2026', linkedin='linkedin.com/in/example-chris-okafor', since='Fall 2024'),
+    dict(id='lena', name='Lena Fischer', pref='Lena', pronouns='she/her', team='Entrepreneurship', role='director', status='Active', handle='lenaf', discord='722615309911605248', phone='+1 206 555 0185', birthday='May 6', title='Entrepreneurship director', personal='lena.fischer@example.com', school='lfisch@uw.example', grad='June 2028', linkedin='linkedin.com/in/example-lena-fischer', since='Spring 2025'),
+    dict(id='diego', name='Diego Morales', pref='Diego', pronouns='he/him', team='Entrepreneurship', role='officer', status='Active', handle='diegom', discord='815204771960897536', phone='+1 425 555 0124', birthday='October 2', title='Founder relations', personal='diego.morales@example.com', school='dmorales@uw.example', grad='June 2029', linkedin='', since='Fall 2026'),
+    dict(id='jordan', name='Jordan Lee', pref='Jordan', pronouns='he/him', team='Design', role='officer', status='Active', handle='jordanl', discord='760018233467617280', phone='+1 206 555 0156', birthday='February 11', title='Visual designer', personal='jordan.lee@example.com', school='jlee24@uw.example', grad='June 2028', linkedin='linkedin.com/in/example-jordanlee-design', since='Spring 2025'),
+    dict(id='riley', name='Riley Park', pref='Riley', pronouns='she/her', team='Design', role='officer', status='Active', handle='rileypark', discord='798432005512937472', phone='+1 206 555 0190', birthday='December 1', title='UX designer', personal='riley.park@example.com', school='rpark@uw.example', grad='June 2029', linkedin='', since='Fall 2026'),
 ]
 officer_data = {'officers': officers, 'owners': ['alex'], 'viewers': viewers,
                 'teams': ['Operations', 'Community', 'Entrepreneurship', 'Design']}
@@ -180,14 +180,14 @@ officers_dialogs = (
 
 # ---------------------------------------------------------------- Members
 members = [
-    dict(id='person_1086', name='Avery Nguyen', pref='Avery', uw='averyn@uw.edu', cs='', major='Computer Science', grad='2028', campus='Seattle', joined='2026-10-31', officer='No'),
-    dict(id='person_1085', name='Sophia Kim', pref='Sophie', uw='sophiak@uw.edu', cs='sophiak@cs.washington.edu', major='Business Administration', grad='2027', campus='Seattle', joined='2026-10-30', officer='Yes'),
-    dict(id='person_1084', name='Daniel Garcia', pref='Danny', uw='dgarcia@uw.edu', cs='', major='Informatics', grad='2029', campus='Bothell', joined='2026-10-29', officer='No'),
-    dict(id='person_1083', name='Priya Shah', pref='Priya', uw='pshah@uw.edu', cs='', major='Human Centered Design & Engineering', grad='2028', campus='Tacoma', joined='2026-10-28', officer='No'),
-    dict(id='person_1082', name='Marcus Johnson', pref='Marcus', uw='marcusj@uw.edu', cs='marcusj@cs.washington.edu', major='Computer Engineering', grad='2027', campus='Seattle', joined='2026-10-27', officer='No'),
-    dict(id='person_1081', name='Hannah Lee', pref='Hannah', uw='hlee22@uw.edu', cs='', major='Economics', grad='2029', campus='Bothell', joined='2026-10-25', officer='No'),
-    dict(id='person_1080', name='Omar Ali', pref='Omar', uw='omarali@uw.edu', cs='', major='Mechanical Engineering', grad='2028', campus='Seattle', joined='2026-10-24', officer='Yes'),
-    dict(id='person_1079', name='Grace Liu', pref='Gracie', uw='gliu@uw.edu', cs='', major='Marketing', grad='2027', campus='Tacoma', joined='2026-10-22', officer='No'),
+    dict(id='person_1086', name='Avery Nguyen', pref='Avery', uw='averyn@uw.example', cs='', major='Computer Science', grad='2028', campus='Seattle', joined='2026-10-31', officer='No'),
+    dict(id='person_1085', name='Sophia Kim', pref='Sophie', uw='sophiak@uw.example', cs='sophiak@cs.uw.example', major='Business Administration', grad='2027', campus='Seattle', joined='2026-10-30', officer='Yes'),
+    dict(id='person_1084', name='Daniel Garcia', pref='Danny', uw='dgarcia@uw.example', cs='', major='Informatics', grad='2029', campus='Bothell', joined='2026-10-29', officer='No'),
+    dict(id='person_1083', name='Priya Shah', pref='Priya', uw='pshah@uw.example', cs='', major='Human Centered Design & Engineering', grad='2028', campus='Tacoma', joined='2026-10-28', officer='No'),
+    dict(id='person_1082', name='Marcus Johnson', pref='Marcus', uw='marcusj@uw.example', cs='marcusj@cs.uw.example', major='Computer Engineering', grad='2027', campus='Seattle', joined='2026-10-27', officer='No'),
+    dict(id='person_1081', name='Hannah Lee', pref='Hannah', uw='hlee22@uw.example', cs='', major='Economics', grad='2029', campus='Bothell', joined='2026-10-25', officer='No'),
+    dict(id='person_1080', name='Omar Ali', pref='Omar', uw='omarali@uw.example', cs='', major='Mechanical Engineering', grad='2028', campus='Seattle', joined='2026-10-24', officer='Yes'),
+    dict(id='person_1079', name='Grace Liu', pref='Gracie', uw='gliu@uw.example', cs='', major='Marketing', grad='2027', campus='Tacoma', joined='2026-10-22', officer='No'),
 ]
 member_data = {'members': members, 'total': 1086, 'pageSize': 25,
                'viewers': {'Officer': 'Jamie Wong', 'Director': 'Samira Ahmed', 'Leadership': 'Noor Hassan', 'Owner': 'Alex Chen'}}
@@ -261,5 +261,5 @@ for key, heading, sub, body, dialogs in pages:
     html = (ns['shell'](key, heading, sub, body, dialogs)
             .replace('</head>', '<link rel="stylesheet" href="../v03.css"></head>')
             .replace('</body>', '<script src="../people-preview.js"></script></body>'))
-    (here / 'mockups' / f'{key}.html').write_text(html)
+    (here / 'mockups' / f'{key}.html').write_text(html, encoding='utf-8', newline='\n')
 print('Built Officers and Members design fixtures')

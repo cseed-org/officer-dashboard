@@ -40,7 +40,7 @@ await p.locator('#phone').fill('+1 206 555 0104');await p.locator('#birthday').f
 assert(await p.locator('#step-select').inputValue()==='4','Valid profile advances to Calendar');await p.locator('#back').click();
 assert(await p.locator('#phone').inputValue()==='+1 206 555 0104','Back retains entered profile values');
 await p.locator('#next').click();
-await p.locator('#saved-email').selectOption('add');await p.locator('#new-email').fill('maya@uw.edu');await p.getByRole('button',{name:'Save email',exact:true}).click();assert(await p.locator('#email-error').innerText().then(t=>t.includes('already saved')),'Duplicate calendar email gets a specific error');
+await p.locator('#saved-email').selectOption('add');await p.locator('#new-email').fill('maya@uw.example');await p.getByRole('button',{name:'Save email',exact:true}).click();assert(await p.locator('#email-error').innerText().then(t=>t.includes('already saved')),'Duplicate calendar email gets a specific error');
 for(let i=2;i<=5;i++){await p.locator('#saved-email').selectOption('add');await p.locator('#new-email').fill(`maya${i}@example.org`);await p.getByRole('button',{name:'Save email',exact:true}).click()}
 assert(await p.locator('#saved-email').evaluate(e=>e===document.activeElement)&&await p.locator('#email-count').innerText().then(t=>t.startsWith('Saved. 5 of 5')),'Saving an email keeps focus on the picker and announces the count');
 assert(await p.locator('#saved-email option[value=add]').isDisabled(),'Sixth calendar email is disabled at five saved');

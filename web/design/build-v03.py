@@ -26,8 +26,9 @@ g['paths'].update({
     'grid': 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
     'arrow-right': 'M5 12h14M13 6l6 6-6 6',
 })
-g['nav'] = [('home', 'Home', 'home'), ('events', 'Events', 'calendar'), ('officers', 'Officers', 'users'),
-            ('members', 'Members', 'user'), ('speakers', 'Speakers', 'mic'), ('design', 'Design', 'palette'),
+# Keys are mockup filenames: the V0.3 people, speakers and design previews are versioned.
+g['nav'] = [('home', 'Home', 'home'), ('events', 'Events', 'calendar'), ('officers-v03', 'Officers', 'users'),
+            ('members-v03', 'Members', 'user'), ('speakers-v03', 'Speakers', 'mic'), ('design-requests-v03', 'Design', 'palette'),
             ('finance', 'Requests & Finance', 'wallet'), ('admin', 'Admin', 'shield')]
 
 GRIP = '<svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' + ''.join(
@@ -185,7 +186,7 @@ def kcol(stage, name, cards):
 
 board = ('<div class="toolbar"><div class="chips" role="group" aria-label="Filter"><button class="chip" aria-pressed="true">All <span class="chip-count">6</span></button><button class="chip" aria-pressed="false">Mine</button><button class="chip" aria-pressed="false">Unassigned <span class="chip-count">2</span></button></div>'
          + button(icon('plus') + ' New design request', True) + '</div><div class="kanban" role="region" aria-label="Design requests board" tabindex="0">' + ''.join(kcol(*c) for c in cols) + '</div>')
-brand_empty = ('<div class="state state--brand"><div class="state-photos" aria-hidden="true"><figure class="polaroid" style="--tilt:-6deg"><img src="../img/community-tall.webp" alt=""></figure><figure class="polaroid" style="--tilt:5deg"><img src="../img/buildher-tall.webp" alt=""></figure></div>'
+brand_empty = ('<div class="state state--brand"><div class="state-photos" aria-hidden="true"><figure class="polaroid" style="--tilt:-6deg"><img src="../../public/images/brand/community-tall.webp" alt=""></figure><figure class="polaroid" style="--tilt:5deg"><img src="../../public/images/brand/buildher-tall.webp" alt=""></figure></div>'
                '<p class="state-title">No design requests yet.</p><p class="state-body">Need a cover, a poster or a post? Ask the design team; they pick it up from here.</p><div class="state-action">' + button('New design request') + '</div></div>')
 
 HUES = {'Community': 'blue', 'Entrepreneurship': 'amber', 'Saturdays': 'teal', 'Design': 'violet', 'Flagship': 'coral'}
@@ -238,8 +239,8 @@ hello = (f'<div class="onb onb--framed" role="region" aria-label="Onboarding, st
          '<p class="brand-eyebrow">hello from cseed</p><h2 class="display display--xl onb-title" tabindex="-1">hey alex, <span class="mark">welcome in.</span></h2>'
          '<p class="brand-lede onb-lede">Jordan added you to the officer team. Six short steps: check your details, tell us how to reach you, and pick what shows up on your home.</p>'
          '<ul class="onb-checks"><li>' + icon('check') + ' About three minutes</li><li>' + icon('check') + ' You can change everything later in Settings</li></ul></div>'
-         '<div class="onb-art" aria-hidden="true"><figure class="polaroid" style="--tilt:-4deg;left:4%;top:6%;width:52%;height:62%"><img src="../img/buildher-tall.webp" alt=""><figcaption>buildher, fall ’26</figcaption></figure>'
-         '<figure class="polaroid" style="--tilt:3deg;right:2%;top:22%;width:46%;height:52%"><img src="../img/community-tall.webp" alt=""><figcaption>saturdays</figcaption></figure></div></div>'
+         '<div class="onb-art" aria-hidden="true"><figure class="polaroid" style="--tilt:-4deg;left:4%;top:6%;width:52%;height:62%"><img src="../../public/images/brand/buildher-tall.webp" alt=""><figcaption>buildher, fall ’26</figcaption></figure>'
+         '<figure class="polaroid" style="--tilt:3deg;right:2%;top:22%;width:46%;height:52%"><img src="../../public/images/brand/community-tall.webp" alt=""><figcaption>saturdays</figcaption></figure></div></div>'
          '<footer class="onb-foot"><a class="onb-skip" href="#onboarding">Finish later</a>' + button('Let’s go ' + icon('arrow-right'), True) + '</footer></div>')
 confirm = (f'<div class="onb onb--framed" role="region" aria-label="Onboarding, step 2">{onb_top(2)}<div class="onb-main onb-main--single"><div class="onb-step">'
            '<p class="brand-eyebrow">02 · is this you?</p><h2 class="display display--l onb-title" tabindex="-1">check what <span class="mark">leadership</span> filled in.</h2>'
@@ -260,7 +261,7 @@ onb = section('onboarding', '5 · Onboarding shell', 'Full screen on paper · si
               demo('Step 1 · hello (collage hides below 1100px)', hello) + demo('Step 2 · confirm what leadership pre-filled', confirm) + demo('Motion rules', motion))
 
 # ───────────── 6. Calendar-email picker ─────────────
-EMAILS = [('alex.chen@gmail.com', 'personal'), ('achen@student.ubc.ca', 'school'), ('alex@cseed.co', 'club'), ('alex.chen.work@outlook.com', ''), ('a.chen@sauder.ubc.ca', '')]
+EMAILS = [('alex.chen@example.com', 'personal'), ('achen@student.ubc.example', 'school'), ('alex@cseed.co', 'club'), ('alex.chen.work@example.net', ''), ('a.chen@sauder.ubc.example', '')]
 
 
 def picker(n, open_=True, adding=False, selected=0):
@@ -330,5 +331,5 @@ dialogs = f'<dialog class="gallery" id="gallery" aria-labelledby="gallery-title-
 html = shell('components-v03', 'V0.3 components', 'CSEED design system · V0.3 additions', body, dialogs)
 html = html.replace('</head>', '<link rel="stylesheet" href="../v03.css">' + DEMO_CSS + '</head>', 1)
 html = html.replace('<h1>V0.3 components</h1>', '<h1 class="display">V0.3 components</h1>', 1)
-(root / 'mockups' / 'components-v03.html').write_text(html)
+(root / 'mockups' / 'components-v03.html').write_text(html, encoding='utf-8', newline='\n')
 print('Generated components-v03.html')

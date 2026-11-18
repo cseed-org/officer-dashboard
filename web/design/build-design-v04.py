@@ -10,7 +10,7 @@ from html import escape
 from pathlib import Path
 
 DIR = Path(__file__).resolve().parent
-src = (DIR / 'mockups' / 'design-requests-v03.html').read_text()
+src = (DIR / 'mockups' / 'design-requests-v03.html').read_text(encoding='utf-8')
 
 head_end = src.index('<main')
 shell_head = src[:head_end]
@@ -19,7 +19,8 @@ shell_script = src[script_start:src.index('</script>', script_start) + len('</sc
 
 shell_head = shell_head.replace('<title>Design requests · CSEED design</title>', '<title>Design · CSEED design v0.4</title>')
 shell_head = shell_head.replace('<link rel="stylesheet" href="../v03.css">',
-                                '<link rel="stylesheet" href="../../src/styles/v03.css"><link rel="stylesheet" href="../../src/styles/design-requests.css">')
+                                '<link rel="stylesheet" href="../../src/styles/v03.css"><link rel="stylesheet" href="../../src/styles/design-requests.css">'
+                                '<link rel="stylesheet" href="../mockup-fonts.css">')  # production font URLs are root-relative
 
 E = escape
 
@@ -145,13 +146,16 @@ function apply(){const t=document.getElementById('type-filter').value;document.q
 document.querySelectorAll('[data-filter]').forEach(b=>b.onclick=()=>{filter=b.dataset.filter;document.querySelectorAll('[data-filter]').forEach(x=>x.setAttribute('aria-pressed',x===b));apply()});
 document.getElementById('type-filter').onchange=apply;
 document.querySelectorAll('[data-filter-jump]').forEach(b=>b.onclick=()=>{document.querySelector('[data-view=board]').click();document.querySelector('[data-filter=unassigned]').click()});
-document.querySelectorAll('[data-request]').forEach(b=>b.onclick=()=>{res.textContent=b.dataset.request?'Opens New design request, prefilled from the event (title, due a week before, brief, link).':'Opens New design request.'});
-function setNeed(id,need){const li=document.querySelector(`[data-event="${id}"]`);li.dataset.need=need;const n=li.querySelector('.design-need');n.dataset.need=need;n.textContent=need==='needs'?'Needs design':'Not needed';li.querySelector('.rail-actions').innerHTML=need==='needs'?`<button class="btn" data-request="${id}">Request design</button><button class="linkish" data-not-needed="${id}">Mark not needed</button>`:`<button class="linkish" data-needed="${id}">Needs design after all</button>`;wire();res.textContent=li.querySelector('.rail-title').textContent+(need==='needs'?' needs design again.':' marked as not needing design.')}
-function wire(){document.querySelectorAll('[data-not-needed]').forEach(b=>b.onclick=()=>setNeed(b.dataset.notNeeded,'not-needed'));document.querySelectorAll('[data-needed]').forEach(b=>b.onclick=()=>setNeed(b.dataset.needed,'needs'))}
-wire();
-document.getElementById('viewer').onchange=e=>{const officer=e.target.selectedIndex===1;document.querySelectorAll('[data-not-needed]').forEach(b=>b.hidden=officer);res.textContent=officer?'Officer view: "Mark not needed" shows only on events you host.':''};
+const viewer=document.getElementById('viewer');
+function applyViewer(){const officer=viewer.selectedIndex===1;document.querySelectorAll('[data-not-needed]').forEach(b=>b.hidden=officer);return officer}
+function setNeed(id,need){const li=document.querySelector(`[data-event="${id}"]`);li.dataset.need=need;const n=li.querySelector('.design-need');n.dataset.need=need;n.textContent=need==='needs'?'Needs design':'Not needed';li.querySelector('.rail-actions').innerHTML=need==='needs'?`<button class="btn" data-request="${id}">Request design</button><button class="linkish" data-not-needed="${id}">Mark not needed</button>`:`<button class="linkish" data-needed="${id}">Needs design after all</button>`;applyViewer();res.textContent=li.querySelector('.rail-title').textContent+(need==='needs'?' needs design again.':' marked as not needing design.')}
+// One delegated handler, so actions rebuilt by setNeed keep working.
+document.addEventListener('click',e=>{const b=e.target.closest('[data-request],[data-not-needed],[data-needed]');if(!b)return;
+ if(b.matches('[data-request]'))res.textContent=b.dataset.request?'Opens New design request, prefilled from the event (title, due a week before, brief, link).':'Opens New design request.';
+ else if(b.matches('[data-not-needed]'))setNeed(b.dataset.notNeeded,'not-needed');else setNeed(b.dataset.needed,'needs')});
+viewer.onchange=()=>{res.textContent=applyViewer()?'Officer view: "Mark not needed" shows only on events you host.':''};
 </script>'''
 
 out = shell_head.replace('</head>', '</head>', 1) + main + shell_script + script + '</body></html>\n'
-(DIR / 'mockups' / 'design-v04.html').write_text(out)
+(DIR / 'mockups' / 'design-v04.html').write_text(out, encoding='utf-8', newline='\n')
 print('wrote mockups/design-v04.html')

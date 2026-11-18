@@ -3,10 +3,10 @@
 // control value/placeholder) in each captured state is compared with its
 // composited background. Disabled controls are exempt (WCAG 1.4.3 incidental).
 import {chromium} from '../node_modules/@playwright/test/index.mjs';
-import {pathToFileURL} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import path from 'node:path';
 import {writeFile} from 'node:fs/promises';
-const dir=path.dirname(new URL(import.meta.url).pathname);
+const dir=path.dirname(fileURLToPath(import.meta.url));
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
 const contrast=[], failures=[], behaviour=[];
 

@@ -1,12 +1,14 @@
 # CSEED officer dashboard · visual specification
 
+> **Status.** The base sections (Principles through Alternatives and iteration) describe the V0.2 design. Later sections override earlier ones: V0.3 additions, then the V0.4 Home block grid and Design page. This file stops at V0.4. For later designs, see [mockups/home-v07-notes.md](mockups/home-v07-notes.md) (V0.7 widget cards), [onboarding-notes.md](onboarding-notes.md) (V0.9 onboarding), `shots/v09/settings-after-desktop.png` (V0.9 Settings) and [mockups/v10/design-kanban/README.md](mockups/v10/design-kanban/README.md) (V0.10 Design Kanban). Launchpad and Buildspace have no design section; their behaviour is in [docs/launchpad-cohorts.md](../../docs/launchpad-cohorts.md) and [docs/buildspace.md](../../docs/buildspace.md). Paragraphs marked *Superseded* are kept for history.
+
 ## Principles
 
 A calm working ledger. White is the canvas; structure comes from spacing, typography and one-pixel rules. Square inspires the number density and predictable tables; Notion informs the quiet sidebar, blocks and inline properties. Precision means aligned columns, explicit states, legible metadata and generous separation between tasks—not decoration.
 
 Use a single ink primary action for the current task. Other actions are hairline buttons or underlined text. Status is a five-pixel dot plus a written label; never a coloured capsule. Yellow (#f5d140) appears only in the tiny wordmark underline, active-navigation edge and a secondary focus accent. No gradients, emoji, glow or ornamental illustrations.
 
-Use system sans-serif throughout, including headings. This is an intentional choice over the v1 serif: the same letterforms connect a page title to a financial line item, and load immediately without font downloads. System monospace is reserved for identifiers and literal secrets. Numeric columns use the main font with tabular figures. Retain the CSEED wordmark; use the existing brand artwork when integrating, with accessible text and a dark variant as needed.
+*Superseded by [Brand typography decision](#brand-typography-decision) (V0.3): work text stays system sans, and three self-hosted brand faces return on a few surfaces.* Use system sans-serif throughout, including headings. This is an intentional choice over the v1 serif: the same letterforms connect a page title to a financial line item, and load immediately without font downloads. System monospace is reserved for identifiers and literal secrets. Numeric columns use the main font with tabular figures. Retain the CSEED wordmark; use the existing brand artwork when integrating, with accessible text and a dark variant as needed.
 
 Light is the default. Dark is a separately specified neutral palette, not an inversion. Compact density reduces gaps and row padding without shrinking text. Make state explicit in words, including missing metrics, empty lists, closed periods and failed imports. Never imply that zero and unavailable data are equivalent.
 
@@ -49,13 +51,13 @@ Use the existing builder markup. These are exact classes, not illustrative names
 
 ## Page composition
 
-Home: title, reporting-period subtitle, five KPIs; recent events full width; requests needing action and budget/actual in adjacent blocks; chronological activity below. Avoid a second primary CTA where no creation task is present.
+*Superseded by the [V0.4 Home block grid](#v04-home-block-grid) and the V0.7 widget cards ([mockups/home-v07-notes.md](mockups/home-v07-notes.md)).* Home: title, reporting-period subtitle, five KPIs; recent events full width; requests needing action and budget/actual in adjacent blocks; chronological activity below. Avoid a second primary CTA where no creation task is present.
 
 Events: search and time filter, one Import CSV button, event table. Detail drawer carries date/location properties, attendance metrics, understated trend chart and guests; import dialog uses the file/preview/error pattern.
 
 Requests & Finance: Requests, Budgets, Reports, Periods tabs. Requests default to actionable entries; one New request action opens a drawer. Detail places amount and status above properties, receipts and history; approve/deny/settle controls follow permission and state. Budgets show allocated/spent/committed/available columns. Reports are statement tables with restrained CSV export. Periods expose close state in text and place destructive close/reopen behind a confirmation.
 
-Officers: Directory (default), Invites, Access, Service tokens, Audit log tabs. All officers see the directory; director+ see the management tabs. Access reuses searchable officer controls; ownership actions live in the row menu. Directors manage officer active status; leadership changes roles and manages director/leadership active status, with owner guards enforced on the server. Tokens reveal their secret once in `.secret` with copy action. Audit retains actor, timestamp and target. Settings: separate Theme, Density, Profile sections with native radio groups and inline properties; save preferences immediately and announce the change.
+Officers: Directory (default), Invites, Access, Service tokens, Audit log tabs. All officers see the directory; director+ see the management tabs. Access reuses searchable officer controls; ownership actions live in the row menu. Directors manage officer active status; leadership changes roles and manages director/leadership active status, with owner guards enforced on the server. Tokens reveal their secret once in `.secret` with copy action. Audit retains actor, timestamp and target. *Superseded (V0.9): Settings now has a stats row, then Account, Preferences (appearance, time zone, club location), Club, Calendar & Dashboard and Session sections; see `shots/v09/settings-after-desktop.png`.* Settings: separate Theme, Density, Profile sections with native radio groups and inline properties; save preferences immediately and announce the change.
 
 ## Responsive layouts
 
@@ -95,7 +97,7 @@ Status: proposal from design Pane D0, for the page design Panes D1–D5 and the 
 - **One brand line on a work page:** the Home greeting may set `h1.display`.
 - **Calm:** the Members table, Officers directory, Kanban, calendar, finance and admin use no brand faces, no paper and no polaroids.
 
-**Loading.** The fonts are self-hosted latin-subset woff2 files (OFL), 93 KB for all five. They are now in `web/design/fonts/`, and the build Pane copies them to `web/public/fonts/` with `font-display: swap`. Browsers fetch a face only when text uses it, so work pages download nothing. Preload Playfair and Poppins on `/onboarding` only. The old rule against remote fonts still holds, because these files are served from our origin.
+**Loading.** The fonts are self-hosted latin-subset woff2 files (OFL), 93 KB for all five. They live in `web/public/fonts/` (the mockups load the same files from there) with `font-display: swap`. Browsers fetch a face only when text uses it, so work pages download nothing. Preload Playfair and Poppins on `/onboarding` only. The old rule against remote fonts still holds, because these files are served from our origin.
 
 **Highlighter.** `.mark` draws a solid `--seed` stroke behind one or two display words, rotated −1.2°. Ink on yellow measures 10.64:1. It is static and never animates. Use at most one per screen.
 
@@ -140,7 +142,7 @@ Yellow's role widens slightly. It stays decorative everywhere except where ink t
 
 - Reuse v2 classes first. Add a class only when a page truly needs one, and add it to `v03.css` and this table in the same PR.
 - Brand register: onboarding (D2) is the most brand-forward surface. The gallery and empty states (D1, D5) come next. Officers, Members, Events, Speakers and the Kanban (D3–D5) stay on the work register.
-- Photos come from cseed.co (`web/design/img/` holds three for mockups). The build uses real club photos with `alt=""` when they are decorative. Never use stock imagery.
+- Photos come from cseed.co (`web/public/images/brand/` holds three, which the mockups use too). The build uses real club photos with `alt=""` when they are decorative. Never use stock imagery.
 - Both themes, 1440 and 390, with no page-level horizontal scroll: `node web/design/capture.mjs <page>` captures just your page and fails on overflow.
 - Phone principal controls stay at least 44px. The widget handle and remove button grow to 40 and 36px on phone, and the size buttons sit in the same 44px row.
 
@@ -172,7 +174,7 @@ Contacts show dated outreach independently from general notes and linked past ev
 
 Review: `node web/design/capture.mjs speakers-v03 design-requests-v03` captures both themes at 1440/390 and checks 820 as well. Use each page's preview controls and buttons to inspect the remaining states. Open design questions: none; the build should confirm membership in the design team and current requester from authenticated data.
 
-`node web/design/verify-speakers-design.mjs` exercises the role and data-state selectors, contact/add/outreach drawers, request form, requester-only approval and phone list in both themes at 1440/390 (92 checks). It also captures each flow in `shots/`. All label controls include explicit accessible names, including selects whose option text would otherwise obscure the label in automation.
+`node web/design/verify-speakers-design.mjs` exercises the role and data-state selectors, contact/add/outreach drawers, request form, requester-only approval and phone list in both themes at 1440/390 (92 checks). It also captures each flow in `shots/` (git-ignored; regenerate them locally). All label controls include explicit accessible names, including selects whose option text would otherwise obscure the label in automation.
 
 **Build notes (Design Requests, Pane F).** The page loads `src/styles/design-requests.css`, which carries the Kanban and `.state--brand` rules from `v03.css` plus the few tokens they need, so no shared stylesheet changes. Page-local additions: `.kanban-card-sub` (formats line), `.kanban-col.is-over` (drop target while dragging), and the drawer helpers `.design-prose` (pre-wrapped brief, references and comments), `.design-actions`, `.design-worker` (Designer actions panel) and `.design-upload`. Phones open on the List view; the board stays one tap away. The mockup's "Acting as" selector is replaced by real permissions from the API (`DesignRequestDetail.permissions`).
 

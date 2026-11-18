@@ -3,7 +3,7 @@ import { chromium } from '../node_modules/@playwright/test/index.mjs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import path from 'node:path';
 const dir=path.dirname(fileURLToPath(import.meta.url));
-const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
 let checks=0;
 try {
 for(const width of [1440,390]) for(const theme of ['light','dark']){
