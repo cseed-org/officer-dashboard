@@ -197,13 +197,15 @@ func (q *Queries) SettlementDates(ctx context.Context) (map[string]string, error
 }
 
 // AvailableRestricted is the donor-restricted money still available in a fund: revenue
-// (except program-service revenue) plus restricted net assets, credit minus debit.
-func (q *Queries) AvailableRestricted(ctx context.Context, fundID string) (int64, error) {
+// (except program-service revenue) plus restricted net assets, credit minus debit, counting
+// only entries dated on or before asOf (YYYY-MM-DD): a gift posted with next month's date
+// is not money a purchase settled today can spend.
+func (q *Queries) AvailableRestricted(ctx context.Context, fundID, asOf string) (int64, error) {
 	var n int64
 	err := q.q.QueryRowContext(ctx, `SELECT coalesce(sum(l.credit_cents - l.debit_cents), 0) FROM journal_lines l
 		JOIN journal_entries e ON e.id = l.entry_id JOIN accounts a ON a.id = l.account_id
-		WHERE e.status = 'posted' AND l.fund_id = ?
+		WHERE e.status = 'posted' AND l.fund_id = ? AND e.entry_date <= ?
 		AND ((a.type = 'revenue' AND NOT (coalesce(a.form990_part, '') = 'VIII' AND coalesce(a.form990_line, '') LIKE '2%'))
-		  OR (a.type = 'net_asset' AND a.restriction = 'with_donor'))`, fundID).Scan(&n)
+		  OR (a.type = 'net_asset' AND a.restriction = 'with_donor'))`, fundID, asOf).Scan(&n)
 	return n, err
 }

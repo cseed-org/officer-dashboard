@@ -693,7 +693,7 @@ func (c *Ctx) settleWrites(ctx context.Context, w *store.Queries, r *store.Reque
 		return err
 	}
 	if fund.Restriction == "with_donor" {
-		available, err := w.AvailableRestricted(ctx, r.FundID)
+		available, err := w.AvailableRestricted(ctx, r.FundID, today)
 		if err != nil {
 			return err
 		}
