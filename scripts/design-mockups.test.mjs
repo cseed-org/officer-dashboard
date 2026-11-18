@@ -2,6 +2,7 @@
 // Static checks on the design fixtures in web/design: they are not built or served by CI, so these
 // guard the problems a browser run would only show on someone's machine.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
@@ -67,4 +68,37 @@ test("design browser scripts resolve paths portably and honour CHROMIUM_PATH", (
     });
   }
   assert.deepEqual(bad, [], "non-portable design scripts");
+});
+
+/** Expand shell-style braces: "a-{1,2}.png" → ["a-1.png", "a-2.png"]. */
+function expandBraces(s) {
+  const m = s.match(/\{([^{}]*)\}/);
+  if (!m) return [s];
+  return m[1].split(",").flatMap((alt) => expandBraces(s.slice(0, m.index) + alt + s.slice(m.index + m[0].length)));
+}
+
+test("tracked design shots are exactly the ones the repo references (M-108)", () => {
+  const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean);
+  const shotsDir = "web/design/shots/";
+  const tracked = new Set(git("ls-files", "--", shotsDir));
+  // Literal paths containing shots/ (relative to the file that names them, or from the repo root) in
+  // docs, mockups and scripts. Template literals such as `shots/${name}.png` are write targets for
+  // regenerated captures, not references, and do not match because `$` stops the path.
+  const sources = git("ls-files", "--", "*.md", "*.html", "*.js", "*.mjs", "*.cjs", "*.ts", "*.css", "*.py", "*.json", "*.yml", "*.yaml")
+    .filter((f) => !f.startsWith(shotsDir) && existsSync(path.join(root, f)));
+  const referenced = new Map();
+  for (const f of sources) {
+    for (const [token] of read(path.join(root, f)).matchAll(/[\w./-]*shots\/[\w./{},-]*\.(?:png|json)\b/g)) {
+      for (const p of expandBraces(token)) {
+        const candidates = [path.posix.normalize(path.posix.join(path.posix.dirname(f), p)), path.posix.normalize(p)];
+        const hit = candidates.find((c) => c.startsWith(shotsDir));
+        if (hit && !referenced.has(hit)) referenced.set(hit, f);
+      }
+    }
+  }
+  const missing = [...referenced].filter(([p]) => !tracked.has(p)).map(([p, by]) => `${p} (named in ${by})`);
+  // The validation*.json summaries are small check reports that M-108 keeps alongside the captures.
+  const unreferenced = [...tracked].filter((p) => !referenced.has(p) && !/\/validation[\w-]*\.json$/.test(p));
+  assert.deepEqual(missing, [], "shots that docs or scripts name but git does not track");
+  assert.deepEqual(unreferenced, [], "tracked shots nothing references (regenerate locally; they are git-ignored)");
 });
