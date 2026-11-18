@@ -687,7 +687,9 @@ func Rollup990(d *ReportData, q Query) Form990Rollup {
 		}
 	}
 	for _, l := range d.Lines {
-		if l.EntryDate < from || l.EntryDate > q.AsOf || l.Source == "opening_balance" || (q.FundID != "" && l.FundID != q.FundID) {
+		// Opening balances and their reversals are opening adjustments, as in the other
+		// period-activity reports (calc.isOpening), not current-year revenue or expense.
+		if l.EntryDate < from || l.EntryDate > q.AsOf || l.Source == "opening_balance" || l.ReversesSource == "opening_balance" || (q.FundID != "" && l.FundID != q.FundID) {
 			continue
 		}
 		a := acct[l.AccountID]

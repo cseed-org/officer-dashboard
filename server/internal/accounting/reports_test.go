@@ -249,3 +249,52 @@ func TestReportCSVNeutralisesFormulasAndKeepsOrder(t *testing.T) {
 		t.Errorf("expected the cash row, got %s", out)
 	}
 }
+
+// M-043: an opening balance that carries revenue/expense, reversed during the year, is an
+// opening adjustment in Form 990 as in the activities and functional-expense statements;
+// an ordinary current-year reversal still reduces the year's totals.
+func TestForm990TreatsOpeningReversalsAsOpening(t *testing.T) {
+	d := baseData()
+	add := func(date, account string, dr, cr int64, source, reverses string) {
+		fc := ""
+		if account == "exp" {
+			fc = "program"
+		}
+		d.Lines = append(d.Lines, ReportLine{EntryDate: date, Source: source, ReversesSource: reverses, AccountID: account, FundID: "g", DebitCents: dr, CreditCents: cr, FunctionalClass: fc})
+	}
+	// Imported opening balances with revenue and expense accounts, then reversed in-year.
+	add("2026-07-01", "cash", 900, 0, "opening_balance", "")
+	add("2026-07-01", "rev", 0, 900, "opening_balance", "")
+	add("2026-07-01", "exp", 400, 0, "opening_balance", "")
+	add("2026-07-01", "cash", 0, 400, "opening_balance", "")
+	add("2026-08-03", "cash", 0, 900, "reversal", "opening_balance")
+	add("2026-08-03", "rev", 900, 0, "reversal", "opening_balance")
+	add("2026-08-03", "exp", 0, 400, "reversal", "opening_balance")
+	add("2026-08-03", "cash", 400, 0, "reversal", "opening_balance")
+	// Real current-year activity and a normal reversal of part of it.
+	add("2026-08-10", "cash", 1000, 0, "contribution", "")
+	add("2026-08-10", "rev", 0, 1000, "contribution", "")
+	add("2026-08-11", "cash", 0, 100, "reversal", "contribution")
+	add("2026-08-11", "rev", 100, 0, "reversal", "contribution")
+	add("2026-08-12", "exp", 250, 0, "manual", "")
+	add("2026-08-12", "cash", 0, 250, "manual", "")
+	add("2026-08-13", "exp", 0, 50, "reversal", "manual")
+	add("2026-08-13", "cash", 50, 0, "reversal", "manual")
+
+	f := mustReport[*Form990](t, "form-990", d, q)
+	a := mustReport[*Activities](t, "statement-of-activities", d, q)
+	fe := mustReport[*FunctionalExpenses](t, "statement-of-functional-expenses", d, q)
+	var actRevenue, actExpense int64
+	for _, r := range a.Revenue {
+		actRevenue += r.TotalCents
+	}
+	for _, r := range a.Expenses {
+		actExpense += r.TotalCents
+	}
+	if f.Totals.PartVIIILine12Cents != 900 || actRevenue != 900 {
+		t.Errorf("revenue: form 990 %d, activities %d, want 900", f.Totals.PartVIIILine12Cents, actRevenue)
+	}
+	if f.Totals.PartIXLine25.TotalCents != 200 || actExpense != 200 || fe.Totals.TotalCents != 200 {
+		t.Errorf("expenses: form 990 %d, activities %d, functional %d, want 200", f.Totals.PartIXLine25.TotalCents, actExpense, fe.Totals.TotalCents)
+	}
+}
