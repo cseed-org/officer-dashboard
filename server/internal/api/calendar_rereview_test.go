@@ -498,7 +498,9 @@ func TestRereviewLegacyGrantWithoutEmailReconnects(t *testing.T) {
 }
 
 // An upgraded grant with an email: reconnecting that account (same email, now with its
-// sub) moves its deliveries as they are, so nothing is resent.
+// sub) moves its deliveries onto the sub, and the next delivery updates each stored
+// Google event (an email does not prove it is the same account): no event is created,
+// and every one keeps its id.
 func TestRereviewLegacyGrantWithEmailReconnectsIdempotently(t *testing.T) {
 	g := newFakeGoogle(t)
 	e := newEnv(t, func(c *Config) { g.config(c) })
@@ -507,13 +509,23 @@ func TestRereviewLegacyGrantWithEmailReconnectsIdempotently(t *testing.T) {
 	// Bring the other upcoming events onto account A under the legacy grant, as before.
 	e.backfill("user-priya")
 	e.srv.WaitBackground()
-	_, before := g.snapshot()
+	calsBefore, before := g.snapshot()
 	if got := oauthConnect(t, e, g, "a", `{"sub":"sub-a","email":"A@gmail.test"}`); got != "/settings?google=connected" {
 		t.Fatalf("callback → %s", got)
 	}
 	cals, calls := g.snapshot()
-	if len(calls) != len(before) || len(cals["at-a"]) != upcomingEvents(t, e) {
-		t.Fatalf("reconnecting the same account resent: new calls %v", calls[len(before):])
+	for _, c := range calls[len(before):] {
+		if !strings.HasPrefix(c, "PATCH at-a ") || strings.HasSuffix(c, " cancelled") {
+			t.Fatalf("reconnecting the same account did more than update: new calls %v", calls[len(before):])
+		}
+	}
+	if len(cals["at-a"]) != upcomingEvents(t, e) || len(cals["at-a"]) != len(calsBefore["at-a"]) {
+		t.Fatalf("reconnecting the same account duplicated: %d events, had %d (new calls %v)", len(cals["at-a"]), len(calsBefore["at-a"]), calls[len(before):])
+	}
+	for gid := range calsBefore["at-a"] {
+		if cals["at-a"][gid] != "confirmed" {
+			t.Fatalf("event %s changed: %v", gid, cals["at-a"])
+		}
 	}
 	rows, _ := e.db.Read().DeliveriesForEvent(context.Background(), id, "user-priya")
 	if len(rows) != 1 || rows[0].Destination != "google:sub:sub-a" || *rows[0].GoogleEventID != gid {

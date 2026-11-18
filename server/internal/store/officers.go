@@ -283,28 +283,30 @@ func (t GoogleToken) Destination() string {
 
 // AdoptLegacyGoogleDeliveries moves an officer's deliveries from destinations keyed the
 // pre-V0.14.1 way onto the account of grant t (which has a sub), so reconnecting the same
-// account updates the events it already has instead of adding copies:
-//   - rows keyed by t's email are that same account: they move as they are, so unchanged
-//     events are not resent;
-//   - rows keyed "google:" belonged to a grant whose account was never known: they move
-//     with their fingerprint cleared, so the next delivery updates each stored Google
-//     event id, and where that account is not the same one (Google answers 404) it
-//     creates the event on t's calendar.
-//
-// Rows keyed by another email are another account and stay where they are. A row whose
-// event already has a row for t's destination is left alone.
+// account updates the events it already has instead of adding copies. The legacy key
+// does not prove which account those events are on: rows keyed "google:" never knew it,
+// and an email is not a stable account id (Google may give it to another account, whose
+// sub then differs). So both kinds move with their fingerprint cleared: the next
+// delivery updates each stored Google event id, which on the same account changes
+// nothing visible, and where t's account is a different one (Google answers 404 or 410)
+// it creates the event on t's calendar. Rows keyed by another email are another account
+// and stay where they are. A row whose event already has a row for t's destination is
+// left alone.
 func (q *Queries) AdoptLegacyGoogleDeliveries(ctx context.Context, t GoogleToken) error {
 	dest := t.Destination()
 	if !strings.HasPrefix(dest, "google:sub:") {
 		return nil
 	}
+	legacy := []any{"google:"}
 	if t.AccountEmail != nil && *t.AccountEmail != "" {
-		if err := q.Exec(ctx, `UPDATE OR IGNORE calendar_deliveries SET destination=? WHERE user_id=? AND destination=?`,
-			dest, t.UserID, "google:"+strings.ToLower(*t.AccountEmail)); err != nil {
+		legacy = append(legacy, "google:"+strings.ToLower(*t.AccountEmail))
+	}
+	for _, from := range legacy {
+		if err := q.Exec(ctx, `UPDATE OR IGNORE calendar_deliveries SET destination=?, content_hash=NULL WHERE user_id=? AND destination=?`, dest, t.UserID, from); err != nil {
 			return err
 		}
 	}
-	return q.Exec(ctx, `UPDATE OR IGNORE calendar_deliveries SET destination=?, content_hash=NULL WHERE user_id=? AND destination='google:'`, dest, t.UserID)
+	return nil
 }
 
 func (q *Queries) GoogleTokenFor(ctx context.Context, userID string) (*GoogleToken, error) {

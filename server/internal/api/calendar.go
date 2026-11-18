@@ -463,9 +463,11 @@ func (s *Server) calendarEvent(e *store.Event, seq int, cancelled bool) (calenda
 // with "already exists" and the dashboard then updates instead of creating a second event.
 //
 // A missing transport is a failure, not a skip, for a destination that has deliveries
-// (SMTP or Google left out of a restart's config): its work stays queued until the
-// transport is back. Destinations that never had a working transport, and Google
-// accounts the officer has disconnected, are skipped.
+// (SMTP or Google left out of a restart's config, both of them included): its work stays
+// queued until the transport is back. Destinations that never had a working transport,
+// and Google accounts the officer has disconnected, are skipped. So jobs are written and
+// the worker runs whatever is configured: on a dashboard that never had SMTP or Google
+// every job finds nothing to send and is removed, and the outbox stays empty.
 
 const (
 	calendarRetryMin = time.Minute
@@ -485,14 +487,11 @@ func calendarBackoff(attempts int) time.Duration {
 	return min(d, calendarRetryMax)
 }
 
-func (s *Server) calendarsConfigured() bool { return s.cfg.Mailer != nil || s.cfg.Google != nil }
-
 // enqueueCalendar adds a job in the caller's write transaction. Call kickCalendar after
-// the transaction commits.
+// the transaction commits. It writes the job even when no transport is configured on
+// this run: a destination that already has deliveries still needs the change once its
+// transport is back, and the worker removes jobs that have nowhere to go.
 func (s *Server) enqueueCalendar(ctx context.Context, w *store.Queries, j store.CalendarJob) error {
-	if !s.calendarsConfigured() {
-		return nil
-	}
 	return w.EnqueueCalendar(ctx, j, s.nowMs())
 }
 
@@ -519,9 +518,6 @@ func (s *Server) kickCalendar() { s.startCalendar(false) }
 func (s *Server) ResumeCalendar() { s.startCalendar(true) }
 
 func (s *Server) startCalendar(all bool) {
-	if !s.calendarsConfigured() {
-		return
-	}
 	s.calMu.Lock()
 	s.calKicked = true
 	s.calAll = s.calAll || all
