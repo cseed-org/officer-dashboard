@@ -122,6 +122,7 @@ func (c *Ctx) adminUserUpdate() error {
 	if _, err := c.director(); err != nil {
 		return err
 	}
+	directorWriteHook()
 	var name, role validate.Field[string]
 	var active validate.Field[bool]
 	var title, email validate.Field[string]
@@ -137,6 +138,9 @@ func (c *Ctx) adminUserUpdate() error {
 	ctx := c.Context()
 	var out AdminUser
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		if _, err := c.directorIn(w); err != nil {
+			return err
+		}
 		before, err := w.UserByID(ctx, c.R.PathValue("id"))
 		if err != nil {
 			return notFoundErr("Record not found")
@@ -245,10 +249,10 @@ func (c *Ctx) adminTokens() error {
 }
 
 func (c *Ctx) adminTokenCreate() error {
-	u, err := c.director()
-	if err != nil {
+	if _, err := c.director(); err != nil {
 		return err
 	}
+	directorWriteHook()
 	var name string
 	var scopes []string
 	var days validate.Field[int64]
@@ -271,8 +275,12 @@ func (c *Ctx) adminTokenCreate() error {
 	id := auth.UUID()
 	ctx := c.Context()
 	var out ServiceTokenDTO
-	err = c.S.db.Write(ctx, func(w *store.Queries) error {
-		t := store.ServiceToken{ID: id, Name: name, TokenHash: auth.SHA256Hex(plaintext), Prefix: plaintext[:12], Scopes: uniq, CreatedBy: u.ID, CreatedAt: store.Ms(c.S.nowMs())}
+	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		caller, err := c.directorIn(w)
+		if err != nil {
+			return err
+		}
+		t := store.ServiceToken{ID: id, Name: name, TokenHash: auth.SHA256Hex(plaintext), Prefix: plaintext[:12], Scopes: uniq, CreatedBy: caller.ID, CreatedAt: store.Ms(c.S.nowMs())}
 		if !days.Null {
 			exp := time.UnixMilli(c.S.nowMs()).Add(time.Duration(days.V) * 24 * time.Hour).UnixMilli()
 			t.ExpiresAt = &exp
@@ -305,8 +313,12 @@ func (c *Ctx) adminTokenRevoke() error {
 	if _, err := c.director(); err != nil {
 		return err
 	}
+	directorWriteHook()
 	ctx := c.Context()
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		if _, err := c.directorIn(w); err != nil {
+			return err
+		}
 		t, err := w.TokenByID(ctx, c.R.PathValue("id"))
 		if err != nil {
 			return notFoundErr("Record not found")

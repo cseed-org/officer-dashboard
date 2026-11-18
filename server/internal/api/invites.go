@@ -354,8 +354,12 @@ func (c *Ctx) inviteRevoke() error {
 	if _, err := c.director(); err != nil {
 		return err
 	}
+	directorWriteHook()
 	ctx := c.Context()
 	err := c.S.db.Write(ctx, func(q *store.Queries) error {
+		if _, err := c.directorIn(q); err != nil {
+			return err
+		}
 		before, err := q.InviteByID(ctx, c.R.PathValue("id"))
 		if err != nil {
 			return notFoundErr("Invite not found")

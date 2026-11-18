@@ -116,6 +116,24 @@ func (c *Ctx) portal(kind string) (*portalSession, error) {
 	return &portalSession{id: id, account: a}, nil
 }
 
+// portalIn revalidates the session in a mutation's write transaction. Authentication may
+// have happened before a slow body arrived; a logout, disable or expiry since then must win.
+// Replacing the account also makes all person/contact linkage and scope current.
+func (c *Ctx) portalIn(ctx context.Context, q *store.Queries, s *portalSession, kind string) error {
+	sess, err := q.LaunchpadSessionByHash(ctx, s.id, c.S.nowMs())
+	if errors.Is(err, store.ErrNotFound) {
+		return fail(401, "unauthenticated", "Sign in to Launchpad first")
+	}
+	if err != nil {
+		return err
+	}
+	if kind != "" && sess.Account.Kind != kind {
+		return forbidden("This page is for " + kind + "s")
+	}
+	s.account = sess.Account
+	return nil
+}
+
 // portalAudit records a portal write. The actor is the account (in the after JSON), never an
 // officer, even when the same browser also holds an officer session.
 func (c *Ctx) portalAudit(ctx context.Context, q *store.Queries, accountID, action, entityType, entityID string, before, after any) error {
@@ -503,6 +521,9 @@ func (bc *builderContext) writable() error {
 	if bc.person == nil || bc.project == nil {
 		return conflict("Finish onboarding first")
 	}
+	if bc.person.ArchivedAt != nil {
+		return fail(403, "archived", "Your Launchpad access is paused. Contact an officer.")
+	}
 	if bc.project.ArchivedAt != nil {
 		return conflict("Your project is archived")
 	}
@@ -633,10 +654,10 @@ func (c *Ctx) portalBuilderOnboarding() error {
 	}
 	ctx := c.Context()
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
-		acc, err := q.LaunchpadAccount(ctx, s.account.ID)
-		if err != nil {
+		if err := c.portalIn(ctx, q, s, "builder"); err != nil {
 			return err
 		}
+		acc := s.account
 		if acc.OnboardedAt != nil || acc.PersonID != nil {
 			return conflict("You've already finished onboarding")
 		}
@@ -741,6 +762,9 @@ func (c *Ctx) portalBuilderProfile() error {
 	var out portalPerson
 	ctx := c.Context()
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
+		if err := c.portalIn(ctx, q, s, "builder"); err != nil {
+			return err
+		}
 		bc, err := loadBuilder(ctx, q, s)
 		if err != nil {
 			return err
@@ -754,15 +778,9 @@ func (c *Ctx) portalBuilderProfile() error {
 		if err := q.SaveBuildspacePerson(ctx, p); err != nil {
 			return err
 		}
-		// Re-read inside the transaction: SaveLaunchpadAccount replaces the whole row, so the
-		// session's snapshot would undo a disable (or any other change) made since portal() ran.
-		acc, err := q.LaunchpadAccount(ctx, s.account.ID)
-		if err != nil {
-			return err
-		}
-		if acc.Status != "active" {
-			return fail(401, "unauthenticated", "Sign in to Launchpad first")
-		}
+		// portalIn replaced the session's snapshot: SaveLaunchpadAccount writes the fresh row,
+		// so it cannot undo a disable or relinking committed while the body was arriving.
+		acc := s.account
 		acc.Name, acc.UpdatedAt = name, c.S.nowMs()
 		if err := q.SaveLaunchpadAccount(ctx, acc); err != nil {
 			return err
@@ -793,6 +811,9 @@ func (c *Ctx) portalBuilderProject() error {
 	var out portalProject
 	ctx := c.Context()
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
+		if err := c.portalIn(ctx, q, s, "builder"); err != nil {
+			return err
+		}
 		bc, err := loadBuilder(ctx, q, s)
 		if err != nil {
 			return err
@@ -830,7 +851,7 @@ func (c *Ctx) portalBuilderActivity() error {
 	}); err != nil {
 		return err
 	}
-	return c.portalInsertActivity(a, func(q *store.Queries, b *store.Buildspace, a *store.BuildspaceActivity) error {
+	return c.portalInsertActivity(s, "builder", a, func(q *store.Queries, b *store.Buildspace, a *store.BuildspaceActivity) error {
 		bc, err := loadBuilder(c.Context(), q, s)
 		if err != nil {
 			return err
@@ -843,11 +864,15 @@ func (c *Ctx) portalBuilderActivity() error {
 	})
 }
 
-// portalInsertActivity scopes, inserts and audits a portal entry, answering with its week.
-func (c *Ctx) portalInsertActivity(a store.BuildspaceActivity, scope func(q *store.Queries, b *store.Buildspace, a *store.BuildspaceActivity) error) error {
+// portalInsertActivity revalidates, scopes, inserts and audits a portal entry, answering
+// with its week.
+func (c *Ctx) portalInsertActivity(s *portalSession, kind string, a store.BuildspaceActivity, scope func(q *store.Queries, b *store.Buildspace, a *store.BuildspaceActivity) error) error {
 	var week store.BuildspaceWeek
 	ctx := c.Context()
 	err := c.S.db.Write(ctx, func(q *store.Queries) error {
+		if err := c.portalIn(ctx, q, s, kind); err != nil {
+			return err
+		}
 		b, err := q.Buildspace(ctx)
 		if err != nil {
 			return err
@@ -966,8 +991,7 @@ func (c *Ctx) portalMentorActivity() error {
 	if err != nil {
 		return err
 	}
-	contactID := *s.account.ContactID
-	a := store.BuildspaceActivity{ID: auth.UUID(), CreatedAt: c.S.nowMs(), Source: "manual", Kind: "mentor", MentorID: &contactID, AuthorAccountID: &s.account.ID}
+	a := store.BuildspaceActivity{ID: auth.UUID(), CreatedAt: c.S.nowMs(), Source: "manual", Kind: "mentor", AuthorAccountID: &s.account.ID}
 	if err := c.jsonBody(func(r *validate.Reader) {
 		a.ProjectID = r.Str("projectId", validate.S{Req: true, Min: 1, Max: 64}).V
 		if v := r.Str("personId", validate.S{Max: 64, Null: true}).V; v != "" {
@@ -980,7 +1004,9 @@ func (c *Ctx) portalMentorActivity() error {
 	}); err != nil {
 		return err
 	}
-	return c.portalInsertActivity(a, func(q *store.Queries, b *store.Buildspace, a *store.BuildspaceActivity) error {
+	return c.portalInsertActivity(s, "mentor", a, func(q *store.Queries, b *store.Buildspace, a *store.BuildspaceActivity) error {
+		contactID := *s.account.ContactID
+		a.MentorID = &contactID
 		assigned := false
 		for _, p := range mentorProjects(b, contactID) {
 			assigned = assigned || p.ID == a.ProjectID

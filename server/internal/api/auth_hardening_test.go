@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -108,6 +109,36 @@ func TestRT_PathTricks(t *testing.T) {
 }
 
 // F3: the session gate itself classifies non-canonical paths as director-only.
+func TestRT_NonCanonicalAPIPathsNeverReachHandlers(t *testing.T) {
+	e := newEnv(t)
+	for _, p := range []string{"//api/admin/users", "/./api/admin/users"} {
+		for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch} {
+			r := e.do(method, p, nil, e.officer())
+			if (r.Status < 300 || r.Status >= 400) && r.Status != http.StatusUnauthorized && r.Status != http.StatusForbidden {
+				t.Fatalf("%s %q reached a handler: %d %s", method, p, r.Status, r.Raw)
+			}
+		}
+	}
+}
+
+func TestWithAuthRejectsNonCanonicalAPIPathsBeforeRouting(t *testing.T) {
+	e := newEnv(t)
+	h := e.srv.withAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	for _, p := range []string{"//api/admin/users", "/./api/admin/users"} {
+		for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch} {
+			req := httptest.NewRequest(method, "http://localhost:8090"+p, nil)
+			req.AddCookie(e.officer().cookie)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code == http.StatusOK {
+				t.Fatalf("%s %q bypassed the director path check", method, p)
+			}
+		}
+	}
+}
+
 func TestCleanPathCanonicalizes(t *testing.T) {
 	for in, want := range map[string]string{
 		"/api//admin/users":     "/api/admin/users",

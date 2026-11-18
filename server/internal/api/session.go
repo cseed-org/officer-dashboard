@@ -142,11 +142,9 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 				s.log.Error("session lookup failed", "error", err)
 			}
 		}
-		// Decide the role on the canonical path so "//" and dot segments cannot dodge a prefix.
-		path := r.URL.Path
-		if strings.HasPrefix(path, "/api") {
-			path = cleanPath(path)
-		}
+		// Decide the role on the canonical path so "//" and dot segments cannot dodge a
+		// prefix, even if the router behind this middleware later changes.
+		path := cleanPath(r.URL.Path)
 		if strings.HasPrefix(path, "/api/") {
 			if required := auth.RequiredRoleForPath(path); required != "" {
 				if p.user == nil {
@@ -172,6 +170,12 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 		}
 		if p.user != nil && !isAgent && !s.originOK(r) {
 			writeError(w, forbidden("Cross-origin request blocked"))
+			return
+		}
+		if path != r.URL.Path && strings.HasPrefix(path, "/api/") {
+			u := *r.URL
+			u.Path, u.RawPath = path, ""
+			http.Redirect(w, r, u.RequestURI(), http.StatusMovedPermanently)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))

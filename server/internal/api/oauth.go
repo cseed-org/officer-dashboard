@@ -10,6 +10,7 @@ package api
 // MCP call then acts as that officer, with exactly the officer's permissions.
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -519,6 +520,10 @@ func (c *Ctx) writeTokens(t tokenPair) error {
 
 var errGrant = errors.New("invalid grant")
 
+// oauthCodeConsumedHook runs inside the redemption transaction, after code consumption
+// and before grant creation. The concurrent-replay regression uses it to inspect that boundary.
+var oauthCodeConsumedHook = func() {}
+
 // oauthToken redeems an authorization code or rotates a refresh token.
 func (c *Ctx) oauthToken() error {
 	c.R.Body = http.MaxBytesReader(c.W, c.R.Body, 16<<10)
@@ -535,63 +540,71 @@ func (c *Ctx) oauthToken() error {
 	}
 	switch f.Get("grant_type") {
 	case "authorization_code":
-		// Take the code in its own transaction, so a failed attempt still burns it: a code
-		// is good for exactly one try (RFC 6749 §4.1.2).
-		var code, replayed *store.OAuthCode
+		// Consume, validate and redeem in one transaction. Validation failures return a
+		// successful transaction outcome so the consumed code stays burned (RFC 6749 §4.1.2).
+		var code *store.OAuthCode
+		invalid := false
 		err := c.S.db.Write(ctx, func(w *store.Queries) error {
 			var err error
 			code, err = w.TakeOAuthCode(ctx, auth.SHA256Hex(f.Get("code")), now)
 			if errors.Is(err, store.ErrCodeReused) {
-				replayed = code
-				return errGrant
+				invalid = true
+				if code.GrantID != nil {
+					// Whoever holds a redeemed code may also hold the tokens it bought. Revoke
+					// and audit atomically with the replay lookup (RFC 6749 §4.1.2).
+					return c.revokeReplayedIn(ctx, w, *code.GrantID, "agent.revoked_code_reuse", now)
+				}
+				return nil
 			}
 			if errors.Is(err, store.ErrNotFound) {
-				return errGrant
+				invalid = true
+				return nil
 			}
-			return err
+			if err != nil {
+				return err
+			}
+			oauthCodeConsumedHook()
+			// redirect_uri must repeat the one authorized when it was sent (RFC 6749 §4.1.3).
+			ru := f.Get("redirect_uri")
+			if code.ExpiresAt <= now || code.ClientID != f.Get("client_id") || !pkceOK(f.Get("code_verifier"), code.CodeChallenge) || (ru != "" && ru != code.RedirectURI) {
+				invalid = true
+				return nil
+			}
+			u, err := w.UserByID(ctx, code.UserID)
+			if errors.Is(err, store.ErrNotFound) {
+				invalid = true
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if !u.Active {
+				invalid = true
+				return nil
+			}
+			// Reconnecting the same client replaces its old grant instead of piling up rows.
+			if err := w.RevokeClientGrants(ctx, u.ID, code.ClientID, now); err != nil {
+				return err
+			}
+			g := store.OAuthGrant{ID: auth.UUID(), ClientID: code.ClientID, UserID: u.ID, AccessHash: accessHash, AccessExpiresAt: accessExp, RefreshHash: refreshHash, RefreshExpiresAt: refreshExp, CreatedAt: now}
+			if err := w.InsertOAuthGrant(ctx, g); err != nil {
+				return err
+			}
+			if err := w.SetCodeGrant(ctx, code.CodeHash, g.ID); err != nil {
+				return err
+			}
+			cl, err := w.OAuthClientByID(ctx, code.ClientID)
+			if err != nil {
+				return err
+			}
+			return w.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), ActorUserID: &u.ID, ActorAgent: &g.ID, Action: "agent.connected", EntityType: "agent", EntityID: &g.ID,
+				AfterJSON: snapshot(map[string]any{"client": cl.Name}), CreatedAt: store.Ms(now)})
 		})
-		if replayed != nil && replayed.GrantID != nil {
-			// A redeemed code presented again: whoever holds it may also hold the tokens it
-			// bought, so revoke them (RFC 6749 §4.1.2).
-			c.revokeReplayed(*replayed.GrantID, "agent.revoked_code_reuse", now)
-		}
-		if err == nil && (code.ExpiresAt <= now || code.ClientID != f.Get("client_id") || !pkceOK(f.Get("code_verifier"), code.CodeChallenge)) {
-			err = errGrant
-		}
-		// redirect_uri must repeat the one authorized when it was sent (RFC 6749 §4.1.3).
-		if ru := f.Get("redirect_uri"); err == nil && ru != "" && ru != code.RedirectURI {
-			err = errGrant
-		}
-		if err == nil {
-			err = c.S.db.Write(ctx, func(w *store.Queries) error {
-				u, err := w.UserByID(ctx, code.UserID)
-				if err != nil || !u.Active {
-					return errGrant
-				}
-				// Reconnecting the same client replaces its old grant instead of piling up rows.
-				if err := w.RevokeClientGrants(ctx, u.ID, code.ClientID, now); err != nil {
-					return err
-				}
-				g := store.OAuthGrant{ID: auth.UUID(), ClientID: code.ClientID, UserID: u.ID, AccessHash: accessHash, AccessExpiresAt: accessExp, RefreshHash: refreshHash, RefreshExpiresAt: refreshExp, CreatedAt: now}
-				if err := w.InsertOAuthGrant(ctx, g); err != nil {
-					return err
-				}
-				if err := w.SetCodeGrant(ctx, code.CodeHash, g.ID); err != nil {
-					return err
-				}
-				cl, err := w.OAuthClientByID(ctx, code.ClientID)
-				if err != nil {
-					return err
-				}
-				return w.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), ActorUserID: &u.ID, ActorAgent: &g.ID, Action: "agent.connected", EntityType: "agent", EntityID: &g.ID,
-					AfterJSON: snapshot(map[string]any{"client": cl.Name}), CreatedAt: store.Ms(now)})
-			})
-		}
-		if errors.Is(err, errGrant) {
-			return c.oauthError(400, "invalid_grant", "The code is invalid, expired, already used, or the code_verifier does not match")
-		}
 		if err != nil {
 			return err
+		}
+		if invalid {
+			return c.oauthError(400, "invalid_grant", "The code is invalid, expired, already used, or the code_verifier does not match")
 		}
 		return c.writeTokens(tokens)
 	case "refresh_token":
@@ -604,7 +617,7 @@ func (c *Ctx) oauthToken() error {
 				// else holds a copy. Disconnect the agent (RFC 9700 §4.14.2), unless it was
 				// rotated moments ago: that is the same client refreshing twice at once
 				// (two windows sharing one sign-in), which only loses the race.
-				if old, err := w.GrantByPrevRefreshHash(ctx, hash); err == nil && old.RevokedAt == nil &&
+				if old, err := w.GrantByRotatedRefreshHash(ctx, hash); err == nil && old.RevokedAt == nil &&
 					(old.RotatedAt == nil || now-*old.RotatedAt >= oauthRefreshRaceGrace.Milliseconds()) {
 					reused = old
 				}
@@ -638,20 +651,31 @@ func (c *Ctx) oauthToken() error {
 	}
 }
 
-// revokeReplayed disconnects a grant whose code or refresh token was presented again, in its
-// own transaction (the token request's rolled back), and audits it once.
+// revokeReplayedIn disconnects and audits a live grant in the caller's transaction.
+func (c *Ctx) revokeReplayedIn(ctx context.Context, w *store.Queries, grantID, action string, now int64) error {
+	g, err := w.GrantByID(ctx, grantID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if g.RevokedAt != nil {
+		return nil
+	}
+	if err := w.RevokeGrant(ctx, g.ID, now); err != nil {
+		return err
+	}
+	return w.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), ActorUserID: &g.UserID, ActorAgent: &g.ID, Action: action, EntityType: "agent", EntityID: &g.ID,
+		AfterJSON: snapshot(map[string]any{"client": g.ClientName, "revoked": true}), CreatedAt: store.Ms(now)})
+}
+
+// revokeReplayed disconnects a refresh-token grant in its own transaction (the token
+// request's rolled back), and audits it once.
 func (c *Ctx) revokeReplayed(grantID, action string, now int64) {
 	ctx := c.Context()
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
-		g, err := w.GrantByID(ctx, grantID)
-		if err != nil || g.RevokedAt != nil {
-			return err
-		}
-		if err := w.RevokeGrant(ctx, g.ID, now); err != nil {
-			return err
-		}
-		return w.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), ActorUserID: &g.UserID, ActorAgent: &g.ID, Action: action, EntityType: "agent", EntityID: &g.ID,
-			AfterJSON: snapshot(map[string]any{"client": g.ClientName, "revoked": true}), CreatedAt: store.Ms(now)})
+		return c.revokeReplayedIn(ctx, w, grantID, action, now)
 	})
 	if err != nil {
 		c.S.log.Error("revoke replayed grant", "grant", grantID, "error", err)

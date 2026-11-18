@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -152,6 +154,53 @@ func TestOAuthRegisterValidatesRedirects(t *testing.T) {
 	expectStatus(t, "confidential client", e.do("POST", "/oauth/register", map[string]any{"redirect_uris": []string{testRedirect}, "token_endpoint_auth_method": "client_secret_basic"}, loopback(anon)), 400)
 	for _, good := range []string{"https://claude.ai/api/mcp/auth_callback", "http://localhost:6274/oauth/callback", "cursor://anysphere.cursor-retrieval/oauth/callback"} {
 		registerClient(t, e, "ok", good)
+	}
+}
+
+func TestOAuthRegistrationStorageIsGloballyBounded(t *testing.T) {
+	e := newEnv(t)
+	authorized, _ := connectAgent(t, e, "user-priya", "Authorized client")
+	uris := make([]string, 7)
+	for i := range uris {
+		uris[i] = "https://example.com/" + strings.Repeat("x", 2000)
+	}
+	register := func(name string, n int) string {
+		t.Helper()
+		a := anon
+		a.remote = fmt.Sprintf("203.0.113.%d:40000", n%250+1)
+		r := e.do("POST", "/oauth/register", map[string]any{"client_name": name, "redirect_uris": uris}, a)
+		if r.Status != 201 {
+			t.Fatalf("register %s from %s: %d %s", name, a.remote, r.Status, r.Raw)
+		}
+		return r.str("client_id")
+	}
+	oldest := register("oldest unused", 0)
+	newest := ""
+	for i := 0; i < 400; i++ {
+		newest = register(fmt.Sprintf("unused-%03d", i), i+1)
+	}
+
+	var count, bytes int
+	err := e.db.R.QueryRow(`SELECT count(*), COALESCE(sum(length(id)+length(name)+length(redirect_uris)),0) FROM oauth_clients c
+		WHERE NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id=c.id)
+		AND NOT EXISTS (SELECT 1 FROM oauth_codes code WHERE code.client_id=c.id)`).Scan(&count, &bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count > 1024 || bytes > 4<<20 {
+		t.Fatalf("unused client storage unbounded: %d rows, %d bytes", count, bytes)
+	}
+	if _, err := e.db.Read().OAuthClientByID(context.Background(), oldest); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("oldest unused registration was not reclaimed: %v", err)
+	}
+	if _, err := e.db.Read().OAuthClientByID(context.Background(), newest); err != nil {
+		t.Fatalf("newest unused registration missing: %v", err)
+	}
+	if _, err := e.db.Read().OAuthClientByID(context.Background(), authorized); err != nil {
+		t.Fatalf("authorized client was evicted: %v", err)
+	}
+	if n := e.scalar(`SELECT count(*) FROM oauth_grants WHERE client_id = ?`, authorized).(int64); n != 1 {
+		t.Fatalf("authorized client's grant count = %d, want 1", n)
 	}
 }
 
@@ -685,6 +734,30 @@ func TestOAuthRefreshReuseRevokes(t *testing.T) {
 	}
 }
 
+func TestOAuthRefreshReuseAfterMultipleRotationsRevokes(t *testing.T) {
+	e := newEnv(t)
+	cid, tok := connectAgent(t, e, "user-priya", "Claude Code")
+	refresh := func(rt string) reply {
+		return e.do("POST", "/oauth/token", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {cid}}, loopback(anon))
+	}
+	r0 := tok.str("refresh_token")
+	r1 := e.mustOK(refresh(r0))
+	r2 := e.mustOK(refresh(r1.str("refresh_token")))
+	e.clock = e.clock.Add(oauthRefreshRaceGrace)
+	defer func() { e.clock = testNow }()
+
+	expectStatus(t, "replayed original refresh", refresh(r0), 400)
+	expectStatus(t, "current refresh after original replay", refresh(r2.str("refresh_token")), 400)
+	expectStatus(t, "latest access after original replay", e.do("POST", "/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "ping"}, bearer(r2.str("access_token"))), 401)
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'agent.revoked_token_reuse'`).(int64); n != 1 {
+		t.Fatalf("reuse audit rows = %d, want 1", n)
+	}
+	expectStatus(t, "repeated original replay", refresh(r0), 400)
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'agent.revoked_token_reuse'`).(int64); n != 1 {
+		t.Fatalf("repeated replay added audit rows: %d", n)
+	}
+}
+
 // Each agent connection (OAuth grant) gets 120 /mcp calls a minute; one agent hitting it
 // leaves the officer's other agents and other officers' agents alone.
 func TestMCPRateLimitPerAgent(t *testing.T) {
@@ -863,6 +936,52 @@ func TestMCPLaunchpadInviteNeedsMailer(t *testing.T) {
 	}
 	if e.scalar(`SELECT count(*) FROM buildspace_launchpad_accounts WHERE email='x.y@uw.edu'`).(int64) != 0 {
 		t.Fatal("an account was created anyway")
+	}
+}
+
+func TestOAuthConcurrentCodeReuseRevokesGrant(t *testing.T) {
+	e := newEnv(t)
+	clientID := registerClient(t, e, "Claude Code")
+	verifier, challenge := pkcePair()
+	allow := e.do("POST", "/oauth/authorize", authorizeForm(clientID, challenge, "allow"), loopback(e.officer()))
+	loc, _ := url.Parse(allow.Header.Get("Location"))
+	code := loc.Query().Get("code")
+	exchange := func() reply {
+		return e.do("POST", "/oauth/token", url.Values{"grant_type": {"authorization_code"}, "code": {code}, "code_verifier": {verifier}, "client_id": {clientID}}, loopback(anon))
+	}
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	released := false
+	unblock := func() {
+		if !released {
+			close(release)
+			released = true
+		}
+	}
+	defer unblock()
+	oldHook := oauthCodeConsumedHook
+	oauthCodeConsumedHook = func() { close(entered); <-release }
+	t.Cleanup(func() { oauthCodeConsumedHook = oldHook })
+	first := make(chan reply, 1)
+	go func() { first <- exchange() }()
+	<-entered // Code consumption is paused before grant association.
+	if n := e.scalar(`SELECT count(*) FROM oauth_codes WHERE code_hash = ? AND used_at IS NOT NULL AND grant_id IS NULL`, auth.SHA256Hex(code)).(int64); n != 0 {
+		t.Error("consumed code is visible without its grant before redemption commits")
+	}
+	replay := make(chan reply, 1)
+	go func() { replay <- exchange() }()
+	unblock()
+	tok, replayed := <-first, <-replay
+	if tok.Status != 200 {
+		t.Fatalf("first redemption: %d %s", tok.Status, tok.Raw)
+	}
+	if replayed.Status != 400 || replayed.str("error") != "invalid_grant" {
+		t.Fatalf("concurrent replay: %d %s", replayed.Status, replayed.Raw)
+	}
+	expectStatus(t, "access after concurrent replay", e.do("POST", "/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "ping"}, bearer(tok.str("access_token"))), 401)
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'agent.revoked_code_reuse'`).(int64); n != 1 {
+		t.Fatalf("concurrent reuse audit rows = %d, want 1", n)
 	}
 }
 
