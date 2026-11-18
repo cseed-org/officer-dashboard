@@ -9,8 +9,8 @@
 # on the build machine for both targets: the C compiler for go-sqlite3 is cross-installed,
 # so there is no emulation and no 15-minute QEMU compile.
 
-ARG GO_VERSION=1.24
-ARG LITESTREAM_VERSION=0.3.13
+ARG GO_VERSION=1.27.4
+ARG LITESTREAM_VERSION=0.3.14
 
 FROM litestream/litestream:${LITESTREAM_VERSION} AS litestream
 

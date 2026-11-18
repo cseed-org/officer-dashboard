@@ -50,6 +50,13 @@ dies hard, and a replaced container comes back with the data. `deploy/litestream
 WAL and a snapshot every 6 h. Receipts must use Google Drive in a container (`RECEIPTS_DIR` would
 be wiped). Run **one** instance: SQLite plus Litestream is single-writer.
 
+The image pins [Litestream 0.3.14](https://github.com/benbjohnson/litestream/releases/tag/v0.3.14),
+the latest patch of the existing 0.3 replica-format line. The Security workflow builds the
+release image and scans its shipped Litestream binary with `govulncheck -mode=binary`;
+findings fail the job. A 0.5 upgrade needs a separate migration: restore and verify the old
+replica, take a fresh snapshot with the new binary under a new bucket prefix, verify that
+restore, then switch `LITESTREAM_PATH`. Do not point a 0.5 binary at the existing 0.3 prefix.
+
 > [!NOTE]
 > The original Go-port branch did not build the image because `web/dist` did not yet exist. During this documentation update, the multi-platform command reached runtime setup but failed with `exec format error` on the amd64 stage of this ARM host. Configure a multi-platform builder before using that command. Live Litestream restore/replication still needs deployment credentials and verification.
 
