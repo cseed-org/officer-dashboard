@@ -77,3 +77,23 @@ func (q *Queries) EventPage(ctx context.Context, f EventFilter) ([]Event, error)
 	}
 	return out, rows.Err()
 }
+
+// EventTotals is the four UI-wide counters, independent of list pagination.
+type EventTotals struct {
+	Upcoming, ThisMonth, Attendees, Drafts int
+}
+
+// EventSummary supplies the SQL aggregate for the Events summary. The UI's
+// pagination/counter change (M-014) can consume this separately from EventPage.
+// Month bounds are exclusive at the end and resolved in the viewer's zone by
+// the caller. Millisecond instants match JavaScript Date comparisons.
+func (q *Queries) EventSummary(ctx context.Context, now, monthStart, monthEnd Ms) (EventTotals, error) {
+	var out EventTotals
+	err := q.q.QueryRowContext(ctx, `SELECT
+		coalesce(sum(status NOT IN ('draft','cancelled') AND instant_ms(starts_at) >= ?),0),
+		coalesce(sum(status NOT IN ('draft','cancelled') AND instant_ms(starts_at) >= ? AND instant_ms(starts_at) < ?),0),
+		(SELECT count(*) FROM event_guests WHERE checked_in_at IS NOT NULL),
+		coalesce(sum(status = 'draft'),0)
+		FROM events`, now, monthStart, monthEnd).Scan(&out.Upcoming, &out.ThisMonth, &out.Attendees, &out.Drafts)
+	return out, err
+}
