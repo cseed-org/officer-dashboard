@@ -129,5 +129,5 @@ export function weekSlot(startsAt: string, endsAt: string | null | undefined, fi
   const a = Math.max(s.minutes, lo);
   const b = Math.min(endMin, hi);
   if (b <= a) return null;
-  return { start: Math.floor((a - lo) / 30), len: Math.max(1, Math.ceil((b - a) / 30)) };
+  return { start: Math.floor((a - lo) / 30), len: Math.ceil((b - lo) / 30) - Math.floor((a - lo) / 30) };
 }

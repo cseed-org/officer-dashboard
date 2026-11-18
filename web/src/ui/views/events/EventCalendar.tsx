@@ -26,7 +26,7 @@ type Open = (e: EventListItem) => void;
 
 function byDay(events: EventListItem[]): Map<string, EventListItem[]> {
   const m = new Map<string, EventListItem[]>();
-  for (const e of [...events].sort((a, b) => a.startsAt.localeCompare(b.startsAt))) {
+  for (const e of [...events].sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))) {
     const d = pacificParts(e.startsAt).date;
     m.set(d, [...(m.get(d) ?? []), e]);
   }
