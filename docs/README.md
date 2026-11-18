@@ -7,6 +7,8 @@
 | [Deployment](deployment.md) | Raspberry Pi/systemd, HTTPS proxy, containers, replication, backups. |
 | [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
 | [Buildspace + Launchpad](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
+| [Launchpad cohorts](launchpad-cohorts.md) | Cohorts, email invites, builder/mentor portals, identity and security model, auto-assign. |
+| [Home calendar](calendar-widget.md) | Calendar widget views, feed API, adding a source. |
 | [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
 | [Roles and permissions](roles-and-permissions.md) | Officers management tabs, role matrix, owner provisioning, transfer and recovery. |
 | [Purchase deadlines](purchase-deadlines.md) | Optional “needed by” dates on purchase requests, due hints, deadline sort and the Home calendar source. |

@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/github/go-mod/go-version/cseed-org/officer-dashboard?filename=server%2Fgo.mod)](server/go.mod)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.23.4-339933?logo=node.js)](package.json)
-[![Astro](https://img.shields.io/badge/Astro-7.4.4-BC52EE?logo=astro)](web/package.json)
+[![Astro](https://img.shields.io/badge/Astro-7.4.11-BC52EE?logo=astro)](web/package.json)
 [![Last commit](https://img.shields.io/github/last-commit/cseed-org/officer-dashboard)](https://github.com/cseed-org/officer-dashboard/commits/main)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
@@ -24,19 +24,20 @@
 
 ## Features
 
-V0.3 uses Discord sign-in with leadership, director, and officer roles, plus explicit owner access.
+Discord sign-in with leadership, director, and officer roles, plus explicit owner access; Launchpad builders and mentors sign in to a separate portal.
 
 | Page | What you can do |
 | --- | --- |
-| Home | A grid of blocks: drag, resize (1×1 up to 4×2) and add widgets; see club activity and Cloudflare analytics connection states. |
+| Home | A grid of blocks: drag, resize (1×1 up to 4×2) and add widgets; see the Calendar widget, club activity and Cloudflare analytics connection states. |
 | Officers / onboarding | Invite via Discord DM, complete profiles, manage subteams, choose calendar delivery. |
 | Members | Search the local D1 mirror, edit member records, export CSV, and sync. |
 | Events | Plan events, generate a Luma handoff kit, import registrations/check-ins and reflections, track metrics. |
 | Finance | Submit and review purchase requests, attach receipts, track budgets, and view double-entry financial reports. |
 | External Contacts | Maintain contacts, track who has spoken for CSEED, and log outreach. |
 | Design | See which upcoming events still need design, and track requests on a Kanban board (filters, My work) with assignments, comments, files, and approval. |
+| Buildspace + Launchpad | Cohorts, builder register, mentor roster and auto-assign; builders and mentors get their own portal at `/launchpad`. |
 | Officers / Settings | Manage access, tokens, audit history, preferences, automatic/manual time zones, club location defaults, and calendar connections. |
-| AI agents | Connect your own agent (Claude Code, Claude, Cursor, ChatGPT) to `/mcp`; it signs in as you and works through 67 tools with your permissions. See [MCP agents](docs/mcp.md). |
+| AI agents | Connect your own agent (Claude Code, Claude, Cursor, ChatGPT) to `/mcp`; it signs in as you and works through one tool per API endpoint with your permissions. See [MCP agents](docs/mcp.md). |
 
 > [!NOTE]
 > Notion event links are placeholders; see the [integration status](docs/notion-integration.md).

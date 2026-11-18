@@ -26,6 +26,10 @@ Report vulnerabilities in the dashboard and its supported deployment paths, incl
 
 - Discord OAuth, redirects, session cookies, session expiry and revocation.
 - Authorization for leadership, director and officer roles, plus owner privileges.
+- MCP agent access: OAuth registration, consent, tokens and refresh rotation, `/mcp` tool authorization ([docs/mcp.md](docs/mcp.md)).
+- Launchpad builder/mentor portal: invite binding, portal sessions and data scoping.
+- Service tokens and the ingest/agent APIs.
+- Cloudflare Access bypass configuration for agent and service callers, as documented in [deployment](docs/deployment.md#cloudflare-tunnel--access).
 - Cloudflare D1 member write-back, credentials and data boundaries.
 - Invites, invite acceptance and onboarding.
 - CSV import validation and handling of untrusted data.
