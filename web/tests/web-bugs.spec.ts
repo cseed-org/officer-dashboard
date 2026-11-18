@@ -143,6 +143,69 @@ test('M-017: request pagination appends 101 rows and labels partial money as sho
   await page.getByRole('button', { name: 'Show more', exact: true }).click(); await expect(page.getByText('Purchase 100', { exact: true })).toBeVisible(); await expect(page.getByText(/101 requests.*total/)).toBeVisible();
 });
 
+test('R-01: a failed cursor from the previous Finance search cannot show an old error', async ({ page }) => {
+  const hold = gate(); let cursorStarted = false;
+  const sample = data['/api/requests'].items[0];
+  await page.route('**/api/requests?*', async (r) => {
+    const query = new URL(r.request().url()).searchParams;
+    if (query.has('cursor')) {
+      cursorStarted = true; await hold.promise;
+      return json(r, { error: { code: 'internal', message: 'Old page failed' } }, 500);
+    }
+    return json(r, { items: [{ ...sample, title: query.has('q') ? 'New search result' : 'Original result' }], nextCursor: query.has('q') ? null : 'old-page', counts: { submitted: 1 } });
+  });
+  await mount(page, 'Finance', { me });
+  await page.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect.poll(() => cursorStarted).toBe(true);
+  await page.getByLabel('Search requests', { exact: true }).fill('New search');
+  await expect(page.getByText('New search result', { exact: true })).toBeVisible();
+  const failed = page.waitForResponse((r) => new URL(r.url()).searchParams.get('cursor') === 'old-page');
+  hold.resolve(); await (await failed).finished();
+  // Let the fetch continuation and Preact's render finish before checking absence.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByText('Old page failed', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('New search result', { exact: true })).toBeVisible();
+});
+
+test('R-01: Finance query changes clear pagination errors and release only their own busy state', async ({ page }) => {
+  const oldPage = gate(), newPage = gate(); let oldCalls = 0, newStarted = false;
+  const sample = data['/api/requests'].items[0];
+  await page.route('**/api/requests?*', async (r) => {
+    const query = new URL(r.request().url()).searchParams;
+    if (query.get('cursor') === 'old-page') {
+      if (++oldCalls === 1) return json(r, { error: { code: 'internal', message: 'First page failed' } }, 500);
+      await oldPage.promise;
+      return json(r, { items: [{ ...sample, id: 'stale-row', title: 'Stale cursor row' }], nextCursor: null, counts: { submitted: 2 } });
+    }
+    if (query.get('cursor') === 'new-page') {
+      newStarted = true; await newPage.promise;
+      return json(r, { items: [{ ...sample, id: 'new-row', title: 'Current cursor row' }], nextCursor: null, counts: { submitted: 2 } });
+    }
+    return json(r, { items: [{ ...sample, title: query.has('q') ? 'New search result' : 'Original result' }], nextCursor: query.has('q') ? 'new-page' : 'old-page', counts: { submitted: 2 } });
+  });
+  await mount(page, 'Finance', { me });
+  await page.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect(page.getByText('First page failed', { exact: true })).toBeVisible();
+  await page.getByLabel('Search requests', { exact: true }).fill('New search');
+  await expect(page.getByText('New search result', { exact: true })).toBeVisible();
+  await expect(page.getByText('First page failed', { exact: true })).toHaveCount(0);
+  // Return to the original query, retry its cursor, then switch while it is held.
+  await page.getByLabel('Search requests', { exact: true }).fill('');
+  await expect(page.getByText('Original result', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect.poll(() => oldCalls).toBe(2);
+  await page.getByLabel('Search requests', { exact: true }).fill('New search');
+  await expect(page.getByText('New search result', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect.poll(() => newStarted).toBe(true);
+  const completed = page.waitForResponse((r) => new URL(r.url()).searchParams.get('cursor') === 'old-page');
+  oldPage.resolve(); await (await completed).finished();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByText('Stale cursor row', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Loading…', exact: true })).toBeDisabled();
+  newPage.resolve(); await expect(page.getByText('Current cursor row', { exact: true })).toBeVisible();
+});
+
 test('M-063 M-080 M-114: budget overlap validation, canonical saved drafts and refreshed summary', async ({ page }) => {
   const budget = clone(data['/api/finance/budgets']); budget.lines = budget.lines.slice(0, 1);
   let summaryReads = 0, writes = 0; let saved = false;

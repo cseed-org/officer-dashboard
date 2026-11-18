@@ -224,17 +224,27 @@ function RequestsPanel({ director, tick, fy, fyFailed, onRetryFy }: { director: 
   }, [q]);
 
   const state = useApi('requestsList', { query: { scope, status: status === 'any' ? undefined : status, q: debounced || undefined, sort, limit: 100 } }, { scope, status, debounced, sort, tick });
-  const [moreBusy, setMoreBusy] = useState(false);
-  const [moreError, setMoreError] = useState<unknown>(null);
-  const pageLock = useRef(false);
+  const pageIdentity = JSON.stringify([scope, status, debounced, sort, tick]);
+  const currentPage = useRef({ identity: pageIdentity });
+  // A new generation also distinguishes A -> B -> A from an old A cursor.
+  if (currentPage.current.identity !== pageIdentity) currentPage.current = { identity: pageIdentity };
+  const generation = currentPage.current;
+  const [pagination, setPagination] = useState({ generation, busy: false, error: null as unknown });
+  const moreBusy = pagination.generation === generation && pagination.busy;
+  const moreError = pagination.generation === generation ? pagination.error : null;
+  const pageLock = useRef<typeof generation | null>(null);
   const more = async () => {
-    if (state.status !== 'ready' || !state.data.nextCursor || pageLock.current) return;
-    pageLock.current = true; setMoreBusy(true); setMoreError(null);
+    if (state.status !== 'ready' || !state.data.nextCursor || pageLock.current === generation) return;
+    const active = () => currentPage.current === generation;
+    pageLock.current = generation; setPagination({ generation, busy: true, error: null });
     try {
       const next = await api('requestsList', { query: { scope, status: status === 'any' ? undefined : status, q: debounced || undefined, sort, limit: 100, cursor: state.data.nextCursor } });
+      if (!active()) return;
       state.set((current) => ({ ...next, items: [...current.items, ...next.items.filter((r) => !current.items.some((old) => old.id === r.id))] }));
-    } catch (error) { setMoreError(error); }
-    finally { pageLock.current = false; setMoreBusy(false); }
+    } catch (error) { if (active()) setPagination({ generation, busy: false, error }); }
+    finally {
+      if (active()) { pageLock.current = null; setPagination((p) => ({ ...p, busy: false })); }
+    }
   };
   const counts = state.status === 'ready' ? state.data.counts : {};
   const countFor = (f: (typeof FILTERS)[number]) =>
