@@ -18,7 +18,7 @@ export function pct(rate: number | null | undefined, digits = 0): string {
 
 /** Whole dollars for tiles and axes: 123456 → "$1,235". */
 const usd0 = new Intl.NumberFormat(LOCALE, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-export const dollars = (cents: number) => usd0.format(Math.round(cents / 100));
+export const dollars = (cents: number) => usd0.format(Math.round(Math.abs(cents) / 100) * Math.sign(cents) || 0);
 
 
 

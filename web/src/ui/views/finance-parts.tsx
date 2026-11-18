@@ -15,8 +15,8 @@ export const ORDER: FinanceReport[] = ['budget-vs-actual', 'fund-balances', 'sta
 
 export type Q = { fiscalYear: number; fundId?: string };
 
-export function BudgetSummary({ query, onOpen }: { query: Q; onOpen: (report: FinanceReport) => void }) {
-  const state = useApi('financeSummary', { query });
+export function BudgetSummary({ query, onOpen, refresh = 0 }: { query: Q; onOpen: (report: FinanceReport) => void; refresh?: number }) {
+  const state = useApi('financeSummary', { query }, refresh);
   return (
     <Async state={state} loading={<Loading tiles={4} rows={6} label="Loading the budget" />}>
       {(d: FinanceSummaryResponse) => {
@@ -509,9 +509,9 @@ function ReportBody({ r }: { r: FinanceReportResponse }) {
             <tr>
               <td class="dt-primary">total</td>
               <td class="num" data-label="program">{money(r.totals.programCents)}</td>
-              <td class="num" data-label="mgmt & general">{formatCents(r.totals.mgmtGeneralCents)}</td>
-              <td class="num" data-label="fundraising">{formatCents(r.totals.fundraisingCents)}</td>
-              <td class="num" data-label="total">{formatCents(r.totals.totalCents)}</td>
+              <td class="num" data-label="mgmt & general">{money(r.totals.mgmtGeneralCents)}</td>
+              <td class="num" data-label="fundraising">{money(r.totals.fundraisingCents)}</td>
+              <td class="num" data-label="total">{money(r.totals.totalCents)}</td>
             </tr>
           }
         />
