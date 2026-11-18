@@ -180,8 +180,9 @@ only, labels hidden, tooltips via `title`) and 320px. Dragging below 120px snaps
 The width is the `sidebarWidth` pref (`PUT /api/me/prefs`, 0 = never resized, else 64 to 320), so
 it follows the user across devices. `lib/sidebar.ts` mirrors it into localStorage
 (`cseed-sidebar`) and the inline PREPAINT script in `AppLayout` sets `<html data-sidebar>` and
-`--sidebar` before first paint; the server value wins once `/api/me/prefs` loads
-(`applyTimezone` calls `syncSidebarFromServer`). Phones keep the menu sheet and have no handle.
+`--sidebar` before first paint. A cached local width stays on the current page; a later server
+value applies on the next navigation (`__cseedSidebarLate`). A new or cleared device waits for
+`/api/me/prefs`, capped at 300 ms. Phones keep the menu sheet and have no handle.
 
 **Directory (V0.9).** Board Members (`/officers`) has three sub-sections under one search: *Officers* (active accounts), *Club Support Contacts* (external contacts with `clubSupport`, managed from `/contacts`; migration `0021_contact_club_support.sql`) and *Ex-Officers* (deactivated accounts; only directors receive those from `/api/officers`). Members (`/members`) also lists current officers with an Officer badge: `GET /api/members` returns `officers` (active users, with `memberId` when a member row shares one of their emails), and the page shows only the unmatched ones as extra first-page rows and badges the matched member rows. Display only: no member record is written.
 
