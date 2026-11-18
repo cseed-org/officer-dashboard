@@ -10,15 +10,20 @@ in a Cloudflare Container.
 
 ```
 server/
-  cmd/dashboard        main: serve | seed | migrate | healthcheck | version
+  cmd/dashboard        main: serve | seed | migrate | provision-leadership | healthcheck | mcp-check | version
   internal/api         HTTP handlers, middleware, sessions, routes
-  internal/store       every SQL statement; embedded migrations 0000–0010
+  internal/store       every SQL statement; embedded migrations 0000 onward
   internal/accounting  posting engine, journal validation, financial reports, CSV export
   internal/purchases   request lifecycle, agent settlement tolerance
   internal/luma        Luma/survey CSV parsing, Pacific-time handling
   internal/auth        roles, allowlist decision, safe redirects, Discord OAuth2 + PKCE
+  internal/calendar    ICS invitations over SMTP, Google Calendar OAuth and sync
+  internal/cfsync      membership D1 mirror and synchronization jobs
+  internal/cloudflare  Cloudflare D1 and GraphQL analytics client
+  internal/mcpcheck    the mcp-check deployment reachability checks
   internal/files       receipts: Google Drive (shared drive) and local disk
-  internal/notify      Discord webhook, console fallback
+  internal/notify      Discord webhook, invitation bot DMs, console fallback
+  internal/notion      placeholder Notion event-link sync
   internal/fiscal      fiscal years, monthly periods, Pacific dates
   internal/money       integer-cent parsing/formatting
   internal/validate    request validation with zod-shaped error details
@@ -39,14 +44,14 @@ The module has **one** third-party dependency:
 Everything else is the standard library: `net/http` method+path routing (Go 1.22), `database/sql`,
 `crypto/*` (sessions, tokens, RS256 for Google service accounts, PKCE), `encoding/json`,
 `log/slog`, `embed`, `time/tzdata` (Pacific time works without OS zoneinfo). Discord OAuth2 is
-about 100 lines (`internal/auth/discord.go`) rather than an OAuth library.
+a small standard-library implementation (`internal/auth/discord.go`) rather than an OAuth library.
 
 ### Database
 
 One file, opened twice: a **single writer connection** (all writes are transactions on it, so
 they serialise without `SQLITE_BUSY` storms) and a **read pool** of read-only connections.
 `journal_mode=WAL`, `foreign_keys=ON`, `busy_timeout=5000`, `synchronous=NORMAL`. Statements use
-placeholders throughout. The v1 schema and triggers are unchanged, plus later migrations through 0010 (officers and onboarding), including 0004 (a per-year request counter) (`internal/store/migrations`,
+placeholders throughout. The original schema and triggers are preserved, with later migrations from 0000 onward covering officers, onboarding, calendar, Launchpad and MCP (`internal/store/migrations`,
 applied by an embedded runner into `schema_migrations`), so the same integrity rules hold:
 posted journal entries immutable, balanced posting, closed periods, append-only audit log,
 last-director guard, one approval and one settlement per request.
@@ -61,6 +66,6 @@ that package. It is not built and not needed for 15–40 users on one box.
 
 ### Search
 
-`GET /api/search` uses a plain case-insensitive `LIKE '%q%'` over events, requests and (directors) users and
-accounts. FTS5 was considered and rejected: the tables hold hundreds of rows, a query costs
+`GET /api/search` uses a plain case-insensitive `LIKE '%q%'` over events, requests, contacts
+(all officers) and (directors) users and accounts. FTS5 was considered and rejected: the tables hold hundreds of rows, a query costs
 0.27 ms p50, and FTS5 would need a build tag, sync triggers and a rebuild path to save microseconds.
