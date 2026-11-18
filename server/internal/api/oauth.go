@@ -604,7 +604,7 @@ func (c *Ctx) oauthToken() error {
 				// else holds a copy. Disconnect the agent (RFC 9700 §4.14.2), unless it was
 				// rotated moments ago: that is the same client refreshing twice at once
 				// (two windows sharing one sign-in), which only loses the race.
-				if old, err := w.GrantByPrevRefreshHash(ctx, hash); err == nil && old.RevokedAt == nil &&
+				if old, err := w.GrantByRotatedRefreshHash(ctx, hash); err == nil && old.RevokedAt == nil &&
 					(old.RotatedAt == nil || now-*old.RotatedAt >= oauthRefreshRaceGrace.Milliseconds()) {
 					reused = old
 				}

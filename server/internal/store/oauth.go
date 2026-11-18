@@ -157,11 +157,25 @@ func (q *Queries) GrantByRefreshHash(ctx context.Context, hash string) (*OAuthGr
 	return g, notFound(err)
 }
 
-// GrantByPrevRefreshHash finds the grant whose previous (already rotated) refresh token
-// this is. ErrNotFound when none.
-func (q *Queries) GrantByPrevRefreshHash(ctx context.Context, hash string) (*OAuthGrant, error) {
-	g, err := scanGrant(q.q.QueryRowContext(ctx, `SELECT `+grantCols+grantFrom+` WHERE g.prev_refresh_hash = ?`, hash))
-	return g, notFound(err)
+// GrantByRotatedRefreshHash finds any rotated refresh token and returns its grant with
+// RotatedAt set to that token's own rotation time. The prev_refresh_hash fallback keeps
+// tokens rotated before the history migration recognisable.
+func (q *Queries) GrantByRotatedRefreshHash(ctx context.Context, hash string) (*OAuthGrant, error) {
+	var grantID string
+	var rotatedAt int64
+	err := q.q.QueryRowContext(ctx, `SELECT grant_id, rotated_at FROM oauth_refresh_history WHERE refresh_hash = ?`, hash).Scan(&grantID, &rotatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = q.q.QueryRowContext(ctx, `SELECT id, COALESCE(rotated_at, created_at) FROM oauth_grants WHERE prev_refresh_hash = ?`, hash).Scan(&grantID, &rotatedAt)
+	}
+	if err != nil {
+		return nil, notFound(err)
+	}
+	g, err := q.GrantByID(ctx, grantID)
+	if err != nil {
+		return nil, err
+	}
+	g.RotatedAt = &rotatedAt
+	return g, nil
 }
 
 // GrantByID returns ErrNotFound for an unknown grant.
@@ -188,8 +202,12 @@ func (q *Queries) UserGrants(ctx context.Context, userID string, now int64) ([]O
 	return out, rows.Err()
 }
 
-// RotateGrant replaces both tokens of a grant (refresh-token rotation).
+// RotateGrant replaces both tokens of a grant (refresh-token rotation), retaining the
+// replaced refresh hash and its own rotation time for replay detection.
 func (q *Queries) RotateGrant(ctx context.Context, id, accessHash string, accessExp int64, refreshHash string, refreshExp, now int64) error {
+	if _, err := q.q.ExecContext(ctx, `INSERT INTO oauth_refresh_history (grant_id, refresh_hash, rotated_at) SELECT id, refresh_hash, ? FROM oauth_grants WHERE id = ?`, now, id); err != nil {
+		return err
+	}
 	_, err := q.q.ExecContext(ctx, `UPDATE oauth_grants SET prev_refresh_hash = refresh_hash, access_hash = ?, access_expires_at = ?, refresh_hash = ?, refresh_expires_at = ?, rotated_at = ? WHERE id = ?`,
 		accessHash, accessExp, refreshHash, refreshExp, now, id)
 	return err
@@ -225,6 +243,9 @@ func (q *Queries) RevokeClientGrants(ctx context.Context, userID, clientID strin
 // PurgeOAuth drops expired authorization codes and registered clients that never got a
 // grant within a week (abandoned or spam registrations). Grants stay for the audit trail.
 func (q *Queries) PurgeOAuth(ctx context.Context, now int64) (int64, error) {
+	if _, err := q.q.ExecContext(ctx, `DELETE FROM oauth_refresh_history WHERE grant_id IN (SELECT id FROM oauth_grants WHERE refresh_expires_at <= ?)`, now); err != nil {
+		return 0, err
+	}
 	if _, err := q.q.ExecContext(ctx, `DELETE FROM oauth_codes WHERE expires_at <= ?`, now-usedCodeKeepMs); err != nil {
 		return 0, err
 	}

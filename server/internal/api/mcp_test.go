@@ -685,6 +685,30 @@ func TestOAuthRefreshReuseRevokes(t *testing.T) {
 	}
 }
 
+func TestOAuthRefreshReuseAfterMultipleRotationsRevokes(t *testing.T) {
+	e := newEnv(t)
+	cid, tok := connectAgent(t, e, "user-priya", "Claude Code")
+	refresh := func(rt string) reply {
+		return e.do("POST", "/oauth/token", url.Values{"grant_type": {"refresh_token"}, "refresh_token": {rt}, "client_id": {cid}}, loopback(anon))
+	}
+	r0 := tok.str("refresh_token")
+	r1 := e.mustOK(refresh(r0))
+	r2 := e.mustOK(refresh(r1.str("refresh_token")))
+	e.clock = e.clock.Add(oauthRefreshRaceGrace)
+	defer func() { e.clock = testNow }()
+
+	expectStatus(t, "replayed original refresh", refresh(r0), 400)
+	expectStatus(t, "current refresh after original replay", refresh(r2.str("refresh_token")), 400)
+	expectStatus(t, "latest access after original replay", e.do("POST", "/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "ping"}, bearer(r2.str("access_token"))), 401)
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'agent.revoked_token_reuse'`).(int64); n != 1 {
+		t.Fatalf("reuse audit rows = %d, want 1", n)
+	}
+	expectStatus(t, "repeated original replay", refresh(r0), 400)
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'agent.revoked_token_reuse'`).(int64); n != 1 {
+		t.Fatalf("repeated replay added audit rows: %d", n)
+	}
+}
+
 // Each agent connection (OAuth grant) gets 120 /mcp calls a minute; one agent hitting it
 // leaves the officer's other agents and other officers' agents alone.
 func TestMCPRateLimitPerAgent(t *testing.T) {
