@@ -52,10 +52,16 @@ be wiped). Run **one** instance: SQLite plus Litestream is single-writer.
 
 The image builds [Litestream 0.3.14](https://github.com/benbjohnson/litestream/releases/tag/v0.3.14)
 from source with the same pinned Go 1.27.4 toolchain as the dashboard, using upstream's static
-linking and build tags. It retains the existing 0.3 replica format and upstream module versions.
+linking and build tags. It retains the existing 0.3 replica format.
+Vulnerable dependencies are raised to exact minimum fixed versions in `server/Dockerfile`,
+including higher versions required by those dependencies. Before cross-compiling, the build
+runs Litestream's core and CLI tests and compiles its S3 package (which has no test files);
+no Litestream source code is patched.
 The Security workflow checks its version and local snapshot replication in the release image,
-then scans the shipped binary with `govulncheck -mode=binary`; findings fail the job. A 0.5
-upgrade needs a separate migration: restore and verify the old
+then scans the shipped binary with `govulncheck -mode=binary`. That scan is report-only for
+GO-2022-0635 and GO-2022-0646: AWS SDK v1 has no fixed release, and migrating to SDK v2 requires
+Litestream code changes. Findings remain visible; build, test and smoke failures block CI.
+A 0.5 upgrade needs a separate migration: restore and verify the old
 replica, take a fresh snapshot with the new binary under a new bucket prefix, verify that
 restore, then switch `LITESTREAM_PATH`. Do not point a 0.5 binary at the existing 0.3 prefix.
 

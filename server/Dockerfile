@@ -20,11 +20,27 @@ RUN apt-get update \
 # Keep the existing replica format, but rebuild its runtime with the same Go as dashboard.
 # Match v0.3.14's upstream Dockerfile tags and static-link flags.
 FROM toolchain AS litestream
-ARG TARGETARCH
 ARG LITESTREAM_VERSION
 WORKDIR /src/litestream
 RUN go mod download github.com/benbjohnson/litestream@v${LITESTREAM_VERSION} \
  && cp -a /go/pkg/mod/github.com/benbjohnson/litestream@v${LITESTREAM_VERSION}/. ./
+# Minimum fixed versions; x/text and x/oauth2 are raised to the minimum required by
+# the fixed x/crypto, x/net and grpc versions. Protobuf's fix is selected transitively.
+# The OTEL SDK pin fixes GO-2026-6505 in grpc's updated dependency graph.
+# AWS SDK v1.44.318 has no fixed v1 release for GO-2022-0635 / GO-2022-0646;
+# moving to SDK v2 would require changes to Litestream's own code.
+RUN go get golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2 \
+      golang.org/x/net@v0.62.0 \
+      golang.org/x/text@v0.43.0 \
+      golang.org/x/oauth2@v0.36.0 \
+      google.golang.org/grpc@v1.83.2 \
+      filippo.io/age@v1.2.1 \
+      go.opentelemetry.io/otel/sdk@v1.45.0 \
+ && go mod tidy
+# Run the upstream SQLite, S3 and CLI tests on the builder's native architecture.
+# TARGETARCH is introduced afterwards so this layer is shared by both release targets.
+RUN CGO_ENABLED=1 go test -p 2 -tags osusergo,netgo,sqlite_omit_load_extension ./ ./s3/... ./cmd/litestream/...
+ARG TARGETARCH
 RUN case "$TARGETARCH" in \
       arm64) export CC=aarch64-linux-gnu-gcc ;; \
       amd64) export CC=x86_64-linux-gnu-gcc ;; \
