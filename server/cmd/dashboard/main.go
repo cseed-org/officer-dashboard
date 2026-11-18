@@ -377,11 +377,17 @@ func sessionJanitor(ctx context.Context, db *store.DB, log *slog.Logger) {
 func seedCmd(args []string, getenv func(string) string, stdout io.Writer, log *slog.Logger) error {
 	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
 	reset := fs.Bool("reset", false, "delete the database first")
+	force := fs.Bool("force", false, "seed a database that holds real data, or -reset one outside a dev build")
 	s, err := loadSettings(fs, args, getenv)
 	if err != nil {
 		return err
 	}
 	if *reset {
+		// The release image's DB_PATH is the production file; deleting it needs a dev build or
+		// an explicit -force. A path with no file yet (a fresh check database) is fine.
+		if _, err := os.Stat(s.DBPath); err == nil && !api.DevBuild && !*force {
+			return fmt.Errorf("seed -reset would delete %s, and this is a release build; pass -force if that is really what you want", s.DBPath)
+		}
 		for _, suffix := range []string{"", "-wal", "-shm"} {
 			if err := os.Remove(s.DBPath + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
@@ -393,6 +399,15 @@ func seedCmd(args []string, getenv func(string) string, stdout io.Writer, log *s
 		return err
 	}
 	defer db.Close()
+	if !*force {
+		real, err := seed.HasRealData(context.Background(), db)
+		if err != nil {
+			return err
+		}
+		if real {
+			return fmt.Errorf("%s already holds users or journal entries the seed did not create; seeding it would post immutable sample entries and close July-September for good. Pass -force to seed it anyway", s.DBPath)
+		}
+	}
 	if err := seed.Apply(context.Background(), db); err != nil {
 		return err
 	}

@@ -263,3 +263,31 @@ func b2i(b bool) int {
 	}
 	return 0
 }
+
+// HasRealData reports whether the database holds rows the seed did not create: a user or a
+// journal entry whose id isn't one of the fixtures. Seeding such a database (a live one)
+// would post immutable sample entries and close real fiscal months for good.
+func HasRealData(ctx context.Context, db *store.DB) (bool, error) {
+	check := func(table string, ids []string) (bool, error) {
+		args := make([]any, len(ids))
+		marks := make([]string, len(ids))
+		for i, id := range ids {
+			args[i], marks[i] = id, "?"
+		}
+		var n int
+		err := db.R.QueryRowContext(ctx, `SELECT count(*) FROM `+table+` WHERE id NOT IN (`+strings.Join(marks, ",")+`)`, args...).Scan(&n)
+		return n > 0, err
+	}
+	users := make([]string, len(Users))
+	for i, u := range Users {
+		users[i] = u.ID
+	}
+	if real, err := check("users", users); err != nil || real {
+		return real, err
+	}
+	entries := make([]string, len(Journal))
+	for i, e := range Journal {
+		entries[i] = e.ID
+	}
+	return check("journal_entries", entries)
+}
