@@ -79,6 +79,30 @@ func TestBuildspaceDueMomentDST(t *testing.T) {
 	if got := BuildspaceDueMoment("2027-03-14", &gap, la).UTC(); !got.Equal(time.Date(2027, 3, 14, 10, 30, 0, 0, time.UTC)) {
 		t.Fatalf("spring-forward gap: %s", got)
 	}
+	// M-122: 02:30 on the fall-back night in Berlin (Oct 25 2026) happens twice; the deadline
+	// is the first one, 02:30 CEST = 00:30 UTC, and is past due by 00:45 UTC.
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("no tzdata:", err)
+	}
+	if got := BuildspaceDueMoment("2026-10-25", &gap, berlin).UTC(); !got.Equal(time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC)) {
+		t.Fatalf("fall-back repeated 02:30: %s", got)
+	}
+	rules := []BuildspaceWeekRule{{EffectiveFrom: "0001-01-01", DueWeekday: 0, DueTime: &gap}}
+	now := time.Date(2026, 10, 25, 0, 45, 0, 0, time.UTC)
+	if s := BuildspaceScheduleAt(rules, BuildspaceClock{Loc: berlin, Now: now, Today: now.In(berlin).Format(isoDate)}); !s.PastDue || s.Week.Due != "2026-10-25" {
+		t.Fatalf("past due at 00:45Z: %+v", s)
+	}
+	// A wall time outside the repeated hour is unaffected (01:30 CEST = 23:30 UTC the day before).
+	early := "01:30"
+	if got := BuildspaceDueMoment("2026-10-25", &early, berlin).UTC(); !got.Equal(time.Date(2026, 10, 24, 23, 30, 0, 0, time.UTC)) {
+		t.Fatalf("01:30 before fall-back: %s", got)
+	}
+	// 03:30 after fall-back is CET: 02:30 UTC.
+	late := "03:30"
+	if got := BuildspaceDueMoment("2026-10-25", &late, berlin).UTC(); !got.Equal(time.Date(2026, 10, 25, 2, 30, 0, 0, time.UTC)) {
+		t.Fatalf("03:30 after fall-back: %s", got)
+	}
 }
 
 func TestBuildspaceScheduleClockAndPastDue(t *testing.T) {
