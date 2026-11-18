@@ -1,6 +1,6 @@
 import { hasUnsavedEdits, watchUnsavedEdits } from './unsaved';
 /** One effective wall clock for every island. Date-only values remain calendar dates. */
-import { api } from './api/client';
+import { api, ApiCallError } from './api/client';
 import type { ClubSettings, WidgetPrefs } from './contracts';
 import { syncSidebarFromServer } from './sidebar';
 
@@ -9,11 +9,13 @@ let zone = DEFAULT_TIMEZONE;
 let prefs: WidgetPrefs | null = null;
 let club: ClubSettings | null = null;
 let refreshing: Promise<void> | null = null;
+const rejectedZones = new Set<string>();
 export const effectiveTimezone = () => zone;
 let pending: WidgetPrefs | null = null;
 export const pendingTimezone = () => pending?.effectiveTimezone;
 export function applyTimezone(p: WidgetPrefs) {
   prefs = p;
+  window.dispatchEvent(new Event('cseed-timezone-snapshot'));
   pending = null;
   syncSidebarFromServer(p.sidebarWidth);
   if (zone === p.effectiveTimezone) { window.dispatchEvent(new Event('cseed-timezone-pending')); return; }
@@ -35,8 +37,9 @@ export async function refreshTimezone() {
     const [p, c] = await Promise.all([api('prefsGet'), api('clubSettingsGet')]);
     club = c;
     const detected = browserTimezone();
-    if (p.timezoneMode === 'auto' && detected && detected !== p.timezone) {
-      applyTimezone(await api('prefsPut', { body: { timezoneMode: 'auto', timezone: detected } }));
+    if (p.timezoneMode === 'auto' && detected && detected !== p.timezone && !rejectedZones.has(detected)) {
+      try { applyTimezone(await api('prefsPut', { body: { timezoneMode: 'auto', timezone: detected } })); }
+      catch (error) { if (error instanceof ApiCallError && error.status === 400) rejectedZones.add(detected); applyTimezone(p); }
     } else applyTimezone(p);
   })().finally(() => { refreshing = null; });
   return refreshing;

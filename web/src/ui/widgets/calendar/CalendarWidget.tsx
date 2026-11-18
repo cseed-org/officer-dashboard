@@ -12,8 +12,8 @@ import { WeekView } from './WeekView';
 type Feed = { items: CalendarFeedItem[]; timezone: string; sources: CalendarFeedSource[] };
 const cache = new Map<string, { at: number; data: Feed }>();
 /** One read per month range and time zone, shared by remounts for a minute. Sources: the server's role defaults. */
-async function loadFeed(start: string, end: string, zone: string, fresh = false): Promise<Feed> {
-  const key = JSON.stringify([start, end, zone]);
+async function loadFeed(start: string, end: string, zone: string, role: string, fresh = false): Promise<Feed> {
+  const key = JSON.stringify([start, end, zone, role]);
   const hit = cache.get(key);
   if (!fresh && hit && Date.now() - hit.at < 60_000) return hit.data;
   const data = await api('calendarFeed', { query: { start, end } });
@@ -71,11 +71,12 @@ export default function CalendarWidget({ me, size }: WidgetProps) {
   const [error, setError] = useState(false);
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const update = () => { setZone(effectiveTimezone()); setToday(pacificToday()); };
+    const update = () => { if (document.visibilityState === 'hidden') return; setZone(effectiveTimezone()); setToday(pacificToday()); setTick((t) => t + 1); };
     window.addEventListener('cseed-timezone', update);
     window.addEventListener('focus', update);
+    document.addEventListener('visibilitychange', update);
     const timer = setInterval(update, 60_000);
-    return () => { clearInterval(timer); window.removeEventListener('cseed-timezone', update); window.removeEventListener('focus', update); };
+    return () => { clearInterval(timer); window.removeEventListener('cseed-timezone', update); window.removeEventListener('focus', update); document.removeEventListener('visibilitychange', update); };
   }, []);
   const month = monthOf(today);
   const dates = sixWeeks(month);
@@ -85,9 +86,9 @@ export default function CalendarWidget({ me, size }: WidgetProps) {
     let alive = true;
     setError(false);
     // Keep showing the current feed while a new range or zone loads.
-    loadFeed(start, end, zone, tick > 0).then((d) => alive && setFeed(d), () => alive && setError(true));
+    loadFeed(start, end, zone, me.role).then((d) => alive && setFeed(d), () => alive && setError(true));
     return () => { alive = false; };
-  }, [start, end, zone, tick]);
+  }, [start, end, zone, me.role, tick]);
 
   const sources = useMemo(() => new Map((feed?.sources ?? fallbackSources).map((source) => [source.id, source])), [feed?.sources]);
   const items = useMemo(() => (feed?.items ?? []).filter((item) => item.type !== 'cancelled'), [feed?.items]);
@@ -104,7 +105,7 @@ export default function CalendarWidget({ me, size }: WidgetProps) {
   const noun = inRange.every((item) => item.source === 'events') ? (inRange.length === 1 ? 'event' : 'events') : inRange.length === 1 ? 'item' : 'items';
   // A one-line summary when the calendar is sparse (a few items) or empty.
   const summary = error
-    ? <>Couldn’t load the calendar. <button type="button" class="btn btn--small" onClick={() => setTick((t) => t + 1)}>Retry</button></>
+    ? <>Couldn’t load the calendar. <button type="button" class="btn btn--small" onClick={() => { cache.delete(JSON.stringify([start, end, zone, me.role])); setTick((t) => t + 1); }}>Retry</button></>
     : !feed ? null
       : !inRange.length ? `Nothing scheduled ${period}`
         : inRange.length <= (monthView ? 6 : 4) ? `${inRange.length} ${noun} ${period}${next ? ` · next: ${next.title}, ${weekdayShort(next.date)} ${shortTime(next.startsAt)}` : ''}` : null;

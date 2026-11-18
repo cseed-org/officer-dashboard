@@ -15,9 +15,17 @@ export default function LinksWidget({ me, size }: WidgetProps) {
   const cached = timezoneSnapshot().club;
   const [state, setState] = useState<Loadable<ClubSettings>>(cached ? { status: 'ready', data: cached } : { status: 'loading' });
   useEffect(() => {
+    const changed = () => { const data = timezoneSnapshot().club; if (data) setState({ status: 'ready', data }); };
+    window.addEventListener('cseed-timezone-snapshot', changed);
+    return () => window.removeEventListener('cseed-timezone-snapshot', changed);
+  }, []);
+  useEffect(() => {
     if (cached) return;
     let live = true;
-    api('clubSettingsGet').then((data) => live && setState({ status: 'ready', data }), (error) => live && setState({ status: 'error', error }));
+    api('clubSettingsGet').then(
+      (data) => live && setState({ status: 'ready', data: timezoneSnapshot().club ?? data }),
+      (error) => { const data = timezoneSnapshot().club; if (live) setState(data ? { status: 'ready', data } : { status: 'error', error }); },
+    );
     return () => { live = false; };
   }, []);
   const leadership = me.role === 'leadership' || me.isOwner;

@@ -5,7 +5,8 @@ import { href } from '../../../lib/routes';
 export const words = (s: string) => s.replace(/[._]/g, ' ').trim();
 export function auditHref(e: Pick<AuditLogEntry, 'entityType' | 'entityId'>): string | null {
   if (!e.entityId) return null;
-  if (/request/.test(e.entityType)) return href.request(e.entityId);
+  if (e.entityType === 'purchase_request') return href.request(e.entityId);
+  if (e.entityType === 'design_request') return href.designRequest(e.entityId);
   if (/event/.test(e.entityType)) return href.event(e.entityId);
   if (/user/.test(e.entityType)) return href.admin('users');
   if (/token/.test(e.entityType)) return href.admin('tokens');
