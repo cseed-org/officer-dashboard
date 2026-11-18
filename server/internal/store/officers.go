@@ -136,57 +136,71 @@ func (q *Queries) ActiveCalendarEmail(ctx context.Context, userID string) (*stri
 	return e, nil
 }
 
+// Delivery is what one destination (an .ics address, or one Google account) last received
+// for an event. Status "sent" means the destination has the invite; Cancelled means it has
+// since been withdrawn there. Error is the latest attempt's failure, kept beside the last
+// success so a failed update never hides where the invite already is.
 type Delivery struct {
-	EventID       string
-	UserID        string
-	Mode          string
-	Recipient     *string
-	GoogleEventID *string
-	Sequence      int
-	Status        string
-	Error         *string
-	ContentHash   *string
-	UpdatedAt     int64
+	EventID       string  `json:"eventId"`
+	UserID        string  `json:"userId"`
+	Destination   string  `json:"destination"`
+	Mode          string  `json:"mode"`
+	Recipient     *string `json:"recipient,omitempty"`
+	GoogleEventID *string `json:"googleEventId,omitempty"`
+	Sequence      int     `json:"sequence"`
+	Status        string  `json:"status"`
+	Cancelled     bool    `json:"cancelled"`
+	Error         *string `json:"error,omitempty"`
+	ContentHash   *string `json:"contentHash,omitempty"`
+	UpdatedAt     int64   `json:"updatedAt"`
 }
 
-func (q *Queries) DeliveryFor(ctx context.Context, eventID, userID string) (*Delivery, error) {
+// Live reports whether the destination still shows the event as scheduled.
+func (d Delivery) Live() bool { return d.Status == "sent" && !d.Cancelled }
+
+const deliveryCols = `event_id,user_id,destination,mode,recipient,google_event_id,sequence,status,cancelled,error,content_hash,updated_at`
+
+func scanDelivery(r interface{ Scan(...any) error }) (Delivery, error) {
 	var d Delivery
 	var at Ms
-	err := q.q.QueryRowContext(ctx, `SELECT event_id,user_id,mode,recipient,google_event_id,sequence,status,error,content_hash,updated_at FROM calendar_deliveries WHERE event_id=? AND user_id=?`, eventID, userID).
-		Scan(&d.EventID, &d.UserID, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.Error, &d.ContentHash, &at)
+	err := r.Scan(&d.EventID, &d.UserID, &d.Destination, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.Cancelled, &d.Error, &d.ContentHash, &at)
+	d.UpdatedAt = int64(at)
+	return d, err
+}
+
+// DeliveryFor is the delivery of an event to one destination of an officer.
+func (q *Queries) DeliveryFor(ctx context.Context, eventID, userID, destination string) (*Delivery, error) {
+	d, err := scanDelivery(q.q.QueryRowContext(ctx, `SELECT `+deliveryCols+` FROM calendar_deliveries WHERE event_id=? AND user_id=? AND destination=?`, eventID, userID, destination))
 	if err != nil {
 		return nil, notFound(err)
 	}
-	d.UpdatedAt = int64(at)
 	return &d, nil
 }
 
-// DeliveriesForEvent snapshots what each officer received for an event (before deleting it:
-// the rows cascade with the event).
-func (q *Queries) DeliveriesForEvent(ctx context.Context, eventID string) (map[string]Delivery, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT event_id,user_id,mode,recipient,google_event_id,sequence,status,error,content_hash,updated_at FROM calendar_deliveries WHERE event_id=?`, eventID)
+// DeliveriesForEvent lists every destination an event was delivered to, for one officer or
+// (userID "") all of them. Read it before deleting the event: the rows cascade with it.
+func (q *Queries) DeliveriesForEvent(ctx context.Context, eventID, userID string) ([]Delivery, error) {
+	rows, err := q.q.QueryContext(ctx, `SELECT `+deliveryCols+` FROM calendar_deliveries WHERE event_id=? AND (?='' OR user_id=?) ORDER BY user_id, destination`, eventID, userID, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]Delivery{}
+	out := []Delivery{}
 	for rows.Next() {
-		var d Delivery
-		var at Ms
-		if err := rows.Scan(&d.EventID, &d.UserID, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.Error, &d.ContentHash, &at); err != nil {
+		d, err := scanDelivery(rows)
+		if err != nil {
 			return nil, err
 		}
-		d.UpdatedAt = int64(at)
-		out[d.UserID] = d
+		out = append(out, d)
 	}
 	return out, rows.Err()
 }
 
 func (q *Queries) SaveDelivery(ctx context.Context, d Delivery) error {
-	return q.Exec(ctx, `INSERT INTO calendar_deliveries(event_id,user_id,mode,recipient,google_event_id,sequence,status,error,content_hash,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(event_id,user_id) DO UPDATE SET mode=excluded.mode,recipient=excluded.recipient,google_event_id=excluded.google_event_id,
-		sequence=excluded.sequence,status=excluded.status,error=excluded.error,content_hash=excluded.content_hash,updated_at=excluded.updated_at`,
-		d.EventID, d.UserID, d.Mode, d.Recipient, d.GoogleEventID, d.Sequence, d.Status, d.Error, d.ContentHash, d.UpdatedAt)
+	return q.Exec(ctx, `INSERT INTO calendar_deliveries(`+deliveryCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(event_id,user_id,destination) DO UPDATE SET mode=excluded.mode,recipient=excluded.recipient,google_event_id=excluded.google_event_id,
+		sequence=excluded.sequence,status=excluded.status,cancelled=excluded.cancelled,error=excluded.error,content_hash=excluded.content_hash,updated_at=excluded.updated_at`,
+		d.EventID, d.UserID, d.Destination, d.Mode, d.Recipient, d.GoogleEventID, d.Sequence, d.Status, d.Cancelled, d.Error, d.ContentHash, d.UpdatedAt)
 }
 
 // ─── Google tokens ───

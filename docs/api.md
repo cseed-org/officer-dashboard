@@ -502,14 +502,21 @@ GET `/api/officers/:id/activity` (V0.10 person drawer) returns `stats` (`eventsH
 - Without configuration, `ics.configured`/`google.configured` are false and the UI shows
   "not configured"; choosing google then is 409.
 - Event create/update (including CSV import and Luma ingest) sends to every active officer
-  with a profile, on one background worker in FIFO order; each job re-reads the event, so
-  the newest content wins. Each recipient has its own 45s timeout. Upcoming events are
-  backfilled when an officer saves their first profile, finishes onboarding, changes
-  their active calendar email or delivery mode, or connects Google. `calendar_deliveries`
-  records what each officer last received (a content fingerprint), so unchanged events
-  are never resent and updates replace rather than duplicate (the Google event id is kept
-  across mode switches). Shutdown waits up to 20s for queued deliveries. Event deletion
-  sends cancellations: `eventDelete` snapshots `calendar_deliveries` (they cascade) and calls `Server.CancelEventOnCalendars`, which sends a CANCEL to the address the invite last went to, or cancels the Google event.
+  with a profile. Each change writes a job to `calendar_outbox` in the same transaction;
+  one background worker drains it in FIFO order and each job re-reads the event, so the
+  newest content wins. Jobs left by a stop or crash run at the next start (delivery is
+  at least once, with the same UID and SEQUENCE). Each recipient has its own 45s timeout.
+  Upcoming events (not cancelled ones) are backfilled when an officer saves their first
+  profile, finishes onboarding, changes their active calendar email or delivery mode
+  (including Disconnect Google), or connects Google. `calendar_deliveries` has one row per
+  destination (an .ics address, or one Google account) recording what it last received
+  (a content fingerprint), so unchanged events are never resent, updates replace rather
+  than duplicate, a failed attempt keeps the last success, and a newly connected Google
+  account gets its own copies. Setting an event's status to cancelled withdraws it from
+  every destination that has it; restoring it sends a normal update. Event deletion
+  queues a cancellation for every destination still showing the event (the rows cascade,
+  so `eventDelete` stores them in the job); failed cancellations are retried hourly.
+  Shutdown takes at most 15s in all.
 - POST `/api/me/calendar/test` sends a sample invite synchronously and reports the result.
 
 ## Events (V0.3)

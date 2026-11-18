@@ -153,6 +153,8 @@ func (g *Google) UpsertEvent(ctx context.Context, accessToken, eventID string, e
 	if e.URL == "" {
 		delete(body, "source")
 	}
+	// An explicit status lets a PATCH restore an event that was cancelled earlier.
+	body["status"] = "confirmed"
 	if e.Cancelled {
 		body["status"] = "cancelled"
 	}
@@ -172,6 +174,9 @@ func (g *Google) UpsertEvent(ctx context.Context, accessToken, eventID string, e
 		return "", fmt.Errorf("google calendar: %w", err)
 	}
 	defer res.Body.Close()
+	if eventID != "" && (res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusGone) && e.Cancelled {
+		return eventID, nil // already gone from that calendar: nothing left to cancel
+	}
 	if eventID != "" && (res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusGone) && !e.Cancelled {
 		return g.UpsertEvent(ctx, accessToken, "", e)
 	}
