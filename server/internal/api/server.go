@@ -185,6 +185,26 @@ func (c *Ctx) director() (*store.User, error) {
 	return u, nil
 }
 
+// directorWriteHook lets race tests pause after request-time authorization but before the
+// write transaction reloads the caller's authority.
+var directorWriteHook = func() {}
+
+// directorIn reloads the caller inside a privileged write transaction so a demotion or
+// deactivation committed after request authentication takes effect before any target write.
+func (c *Ctx) directorIn(q *store.Queries) (*store.User, error) {
+	if _, err := c.director(); err != nil {
+		return nil, err
+	}
+	u, err := q.UserByID(c.Context(), c.User.ID)
+	if err != nil {
+		return nil, err
+	}
+	if !u.Active || !auth.HasRole(u.Role, auth.RoleDirector) {
+		return nil, forbidden("Requires director role")
+	}
+	return u, nil
+}
+
 type handlerFunc func(c *Ctx) error
 
 // Handler returns the full http.Handler.
