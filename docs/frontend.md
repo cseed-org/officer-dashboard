@@ -4,16 +4,18 @@ A static Astro site with Preact islands. There is no server code here: every pag
 plain HTML from `npm run build` (`web/dist`), and all data comes from `/api/*` at
 runtime, same origin, with the session cookie. The Go backend serves `web/dist`.
 
-- Contract: `src/lib/contracts.ts` is a copy of v1's `src/core/contracts.ts` (plus
-  `src/lib/domain.ts`). Every response is validated with its zod schema
-  (`src/lib/api/client.ts`); drift shows as a "did not match the API contract" error, not a
-  blank page. `SearchResponse` is now also defined in the canonical root contract.
-  Since V0.6 the zod contract is not in a page's first JavaScript: `api()` sends requests from
-  `src/lib/endpoints.generated.ts` (method and path only, rewritten from `ENDPOINTS` by every
-  `npm run build`/`npm run dev`; commit it with contract changes), and the schemas load in the
-  background. Reads that arrive before then render at once and are validated when the schemas
-  load (a mismatch replaces the page with the same error); writes and later reads are
-  validated before they return. See [V0.6 Home speed](home-speed-v06.md).
+- Contract: `src/lib/contracts.ts` is a hand-synced copy of the canonical
+  `../src/core/contracts.ts` (plus `src/lib/domain.ts`). Every response is validated with its
+  zod schema (`src/lib/api/client.ts`); drift shows as a "did not match the API contract" error,
+  not a blank page. `api()` sends requests from `src/lib/endpoints.generated.ts` (method and path
+  only, rewritten from `ENDPOINTS` by every `npm run build`/`npm run dev`; commit it with contract
+  changes). On Home, Members, Contacts, Settings, Onboarding and the Launchpad join/login pages,
+  the zod contract is not in the first JavaScript and the schemas load in the background. Events,
+  Finance, Design, Officers, the Buildspace + Launchpad register and the `/launchpad/` portal still
+  import it statically at V0.14.1. Reads that arrive before the
+  schemas load render at once and are validated when they load (a mismatch replaces the page with
+  the same error); writes and later reads are validated before they return. See
+  [V0.6 Home speed](home-speed-v06.md).
 - Early reads: signed-in pages start `/api/me`, `/api/me/prefs` and `/api/club/settings` (Home
   also `/api/overview` and `/api/cloudflare/widgets`) from an inline head script
   (`src/lib/early.ts`); `api()` uses each response once. The build adds low-priority
@@ -24,7 +26,8 @@ runtime, same origin, with the session cookie. The Go backend serves `web/dist`.
 - Styles: `src/styles/{tokens,base,components}.css` and `design/` belong to the designer.
   Markup uses the class contract in `design/spec.md`.
 
-Paths in this guide are relative to `web/` unless stated otherwise. The contract copy originated in v1; current schemas include V0.3 endpoints.
+Paths in this guide are relative to `web/` unless stated otherwise. Keep the local contract
+copy synchronized with the canonical root schemas and preserve web-specific additions.
 
 ## Develop
 
@@ -48,12 +51,10 @@ API_ORIGIN=http://127.0.0.1:8090 npm run dev
 ```
 
 The proxy rewrites `Origin` to the backend (its CSRF check), strips any cookie `Domain`
-and keeps redirects on :4340, so dev sign-in works: open `/login` and use the
-"dev: director / officer" links (`/auth/dev?as=…`, only shown in dev builds).
+and keeps redirects on :4340, so dev sign-in works: open `/login` and use the **Developer
+mode** panel (see [development](development.md#developer-mode-on-a-test-deployment)).
 
 ## Routes (for the Go server)
-
-The app also serves `/officers`, `/members`, `/contacts`, `/design`, and `/onboarding` from their corresponding `<route>/index.html` files.
 
 **Design board (V0.10).** `/design` shows four lanes over the five stages: To do (`new` + `accepted`;
 `new` cards carry a "Needs approval" chip), Doing (`in-progress`), Review (`in-review`), Done
@@ -72,7 +73,7 @@ for anything else (status 404).
 
 | URL | File in `dist/` | Notes |
 | --- | --- | --- |
-| `/` | `index.html` | Home: KPIs, recent events, my action queue, budget vs actual, activity |
+| `/` | `index.html` | Home: KPIs, calendar, recent events, my action queue, budget vs actual, activity |
 | `/events` | `events/index.html` | `?when=upcoming\|past`, `?q=` filters |
 | `/events?id=<eventId>` | `events/index.html` | event detail slide-over |
 | `/events?import=1` | `events/index.html` | CSV import dialog |
@@ -80,21 +81,31 @@ for anything else (status 404).
 | `/finance?id=<requestId>` | `finance/index.html` | request detail slide-over (works with any tab) |
 | `/finance?new=1[&eventId=]` | `finance/index.html` | new request drawer |
 | `/finance?tab=budgets\|reports\|periods` | `finance/index.html` | `&fy=`, `&fund=`, `&report=<FINANCE_REPORTS key>` |
+| `/members` | `members/index.html` | Members directory; `?person=<personId\|userId>` opens the person drawer |
 | `/officers` | `officers/index.html` | Board Members: `?tab=invites\|access\|tokens\|audit` (directors); directory for everyone (Officers, Club Support Contacts, Ex-Officers) |
-| `/officers?person=<userId\|contactId>` · `/members?person=<personId\|userId>` · `/contacts?person=<contactId>` | (same pages) | V0.10 person drawer; the old `?id=` detail links on Members and Contacts are rewritten to `?person=` |
+| `/officers?person=<userId\|contactId>` · `/contacts?person=<contactId>` | (same pages) | person drawer; old `?id=` detail links on Members and Contacts are rewritten to `?person=` |
+| `/contacts` | `contacts/index.html` | External Contacts, speaking history and outreach |
+| `/design` | `design/index.html` | Design board; query parameters select views, filters, requests and the new-request form |
+| `/onboarding` | `onboarding/index.html` | Officer welcome and setup flow |
+| `/buildspace-launchpad` | `buildspace-launchpad/index.html` | Builder register, projects, mentors, cohorts and accounts |
+| `/launchpad/` | `launchpad/index.html` | Launchpad builder/mentor portal; portal session |
+| `/launchpad/join` | `launchpad/join/index.html` | Public invite acceptance; `?token=` |
+| `/launchpad/login` | `launchpad/login/index.html` | Public Launchpad portal sign-in |
 | `/admin` | `admin/index.html` | Redirects to Officers Access; query/hash tabs and legacy subpaths are mapped |
-| `/settings` | `settings/index.html` | theme, density, profile, sign out |
-| `/login` | `login/index.html` | `?next=`, `?error=not_allowlisted\|inactive\|state\|discord` |
+| `/settings` | `settings/index.html` | theme, density, profile, time zone, calendar delivery, connected agents, Replay intro, sign out |
+| `/login` | `login/index.html` | `?next=`, `?error=not_allowlisted\|inactive\|state\|discord\|invite_unavailable` |
+| `/speakers` | Go redirect | 308 to `/contacts`, preserving the query string |
+| `/buildspace` | Go redirect | 301 to `/buildspace-launchpad`, preserving the query string |
 | anything else | `404.html` | |
 
 `/api/*` and `/auth/*` are the backend's. Sign-out is a form `POST /auth/logout`.
 
-**Search hrefs.** `GET /api/search` results should use the v2 URLs above
-(`/finance?id=…`, `/events?id=…`, `/officers?tab=access`, `/finance?tab=budgets`). The palette also maps
-v1-style paths (`/requests/:id`, `/events/:id`, `/requests/new`, `/events/import`,
-`/admin/users|tokens`) through `normalizeHref` in `src/lib/routes.ts`, so either works.
-For compatibility with the historical v1 backend, when `/api/search` answers 404, the palette falls back to
-`GET /api/requests?scope=all&q=` and `GET /api/events?q=`.
+**Search hrefs.** `GET /api/search` results use the current URLs above (`/finance?id=…`,
+`/events?id=…`, `/officers?tab=access`, `/finance?tab=budgets`). The palette also maps legacy
+paths (`/requests/:id`, `/events/:id`, `/requests/new`, `/events/import`, `/admin/users|tokens`)
+through `normalizeHref` in `src/lib/routes.ts`. For compatibility with older backends, when
+`/api/search` answers 404, the palette falls back to `GET /api/requests?scope=all&q=` and
+`GET /api/events?q=`.
 
 ## Preferences
 
