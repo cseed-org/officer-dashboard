@@ -10,7 +10,8 @@ import { savingForm } from '../unsaved';
  * so it loads in the background after the page's first data (`loadContracts`). Until then a
  * GET response is used as it arrives and validated as soon as the contract has loaded; a
  * mismatch raises the same ContractError, which the page Gate shows as its error state.
- * Writes, and every read once the contract is loaded, are validated before they return.
+ * Successful writes remain successful if validation fails; response drift is reported separately.
+ * Reads are validated before returning once the contract is loaded.
  */
 import type { z } from 'zod';
 import type { ApiError, ENDPOINTS as Contract, EndpointName } from '../contracts';
@@ -132,8 +133,15 @@ function check<N extends EndpointName>(c: Contracts, name: N, data: unknown): Re
 }
 
 async function validate<N extends EndpointName>(name: N, method: string, data: unknown): Promise<ResponseOf<N>> {
+  if (method !== 'GET') {
+    try { return check(contracts ?? await loadContracts(), name, data); }
+    catch (err) {
+      if (err instanceof ContractError) setTimeout(() => window.dispatchEvent(new CustomEvent(CONTRACT_ERROR_EVENT, { detail: err })), 0);
+      else void contractsLoaded.then((c) => { try { check(c, name, data); } catch (error) { window.dispatchEvent(new CustomEvent(CONTRACT_ERROR_EVENT, { detail: error })); } });
+      return data as ResponseOf<N>;
+    }
+  }
   if (contracts) return check(contracts, name, data);
-  if (method !== 'GET') return check(await loadContracts(), name, data);
   // A read before the contract has loaded: render it now, check it once the contract is here.
   loadContractsSoon();
   void contractsLoaded.then(
