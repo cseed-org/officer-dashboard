@@ -134,16 +134,23 @@ test.describe('resizable sidebar', () => {
     expect(await gap()).toBeLessThanOrEqual(1);
   });
 
-  test('M-140: a cached sidebar paints within 200 ms while prefs are stalled', async ({ page }) => {
+  test('M-140: a cached sidebar paints before stalled prefs are released', async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('cseed-sidebar', '240'));
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
     await page.route('**/api/me/prefs', async (route) => {
       if (route.request().method() !== 'GET') return route.continue();
-      await new Promise((r) => setTimeout(r, 1000));
+      await held;
       await route.continue();
     });
-    await page.goto('/events', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.app')).toBeVisible({ timeout: 200 });
-    expect(await width(page)).toBe(240);
+    try {
+      await page.goto('/events', { waitUntil: 'domcontentloaded' });
+      expect(await page.locator('html').getAttribute('data-sidebar-wait')).toBeNull();
+      await expect(page.locator('.app')).toBeVisible();
+      expect(await width(page)).toBe(240);
+    } finally {
+      release();
+    }
   });
 
   for (const cache of ['none', 'stale', 'matching'] as const) {
