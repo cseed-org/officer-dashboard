@@ -50,10 +50,12 @@ dies hard, and a replaced container comes back with the data. `deploy/litestream
 WAL and a snapshot every 6 h. Receipts must use Google Drive in a container (`RECEIPTS_DIR` would
 be wiped). Run **one** instance: SQLite plus Litestream is single-writer.
 
-The image pins [Litestream 0.3.14](https://github.com/benbjohnson/litestream/releases/tag/v0.3.14),
-the latest patch of the existing 0.3 replica-format line. The Security workflow builds the
-release image and scans its shipped Litestream binary with `govulncheck -mode=binary`;
-findings fail the job. A 0.5 upgrade needs a separate migration: restore and verify the old
+The image builds [Litestream 0.3.14](https://github.com/benbjohnson/litestream/releases/tag/v0.3.14)
+from source with the same pinned Go 1.27.4 toolchain as the dashboard, using upstream's static
+linking and build tags. It retains the existing 0.3 replica format and upstream module versions.
+The Security workflow checks its version and local snapshot replication in the release image,
+then scans the shipped binary with `govulncheck -mode=binary`; findings fail the job. A 0.5
+upgrade needs a separate migration: restore and verify the old
 replica, take a fresh snapshot with the new binary under a new bucket prefix, verify that
 restore, then switch `LITESTREAM_PATH`. Do not point a 0.5 binary at the existing 0.3 prefix.
 
