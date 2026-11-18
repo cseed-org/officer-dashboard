@@ -141,3 +141,56 @@ func TestAuditCursorParityAndFinanceHistory(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestCursorParityAndPlan(t *testing.T) {
+	x := newTDB(t)
+	ctx := context.Background()
+	q := On(x.db)
+	for i := 0; i < 150; i++ {
+		id := fmt.Sprintf("cursor-%03d", i)
+		x.must(`INSERT INTO purchase_requests(id,number,requester_id,type,title,vendor,quantity,unit_cost_cents,total_cents,expense_account_id,fund_id,justification,created_at,updated_at) VALUES(?,?,'u1','club_purchase','Purchase','Store',1,10,10,'cash','gen','Test',?,1)`, id, id, 10+i/40)
+	}
+	f := RequestFilter{Limit: 50}
+	var got []string
+	for i := 0; i < 3; i++ {
+		rows, err := q.Requests(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 50 {
+			t.Fatal(len(rows))
+		}
+		for _, r := range rows {
+			got = append(got, r.ID)
+		}
+		last := rows[len(rows)-1]
+		f.HasCursor, f.CursorCreatedAt, f.CursorID = true, int64(last.CreatedAt), last.ID
+	}
+	rows, err := x.db.Query(`SELECT id FROM purchase_requests WHERE created_at<? OR (created_at=? AND id<?) ORDER BY created_at DESC,id DESC`, 100, 100, "z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if got[n] != id {
+			t.Fatal(n, got[n], id)
+		}
+		n++
+	}
+	if n != 150 {
+		t.Fatal(n)
+	}
+	rec := &recordingQ{Q: x.db}
+	if _, err := On(rec).Requests(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	plan := explain(t, x.db, rec.statements[0], f.CursorCreatedAt, f.CursorID)
+	if strings.Contains(plan, "TEMP B-TREE") || strings.Contains(plan, "MULTI-INDEX OR") {
+		t.Fatal(plan)
+	}
+}
