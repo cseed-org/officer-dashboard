@@ -183,9 +183,10 @@ function MentorInviteForm({ m, done }: { m: LaunchpadMentor; done: (message: str
     return (
       <div class="stack" data-mentor-invite-result>
         <Notice tone="positive">Invite ready. Share this link with {m.name}; it works once, for 14 days.</Notice>
+        {error && <Notice tone="negative">{error}</Notice>}
         <code class="lp-link">{link}</code>
         <div class="action-row">
-          <button type="button" class="btn btn--primary" onClick={() => void copyText(link).then(() => done(`Portal invite link for ${m.name} copied.`))}>
+          <button type="button" class="btn btn--primary" onClick={() => void copyText(link).then((ok) => ok ? done(`Portal invite link for ${m.name} copied.`) : setError("Couldn’t copy the link. Select and copy it below."))}>
             Copy link and close
           </button>
         </div>

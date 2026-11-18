@@ -1,3 +1,4 @@
+import { safeUrl } from "../../lib/url";
 /**
  * The builder portal: a three-step onboarding (You → Project → Confirm) until the builder has
  * a record, then their own dashboard: this week's check-in, their project, team, mentors,
@@ -312,8 +313,8 @@ function Dashboard({ d, reload }: { d: PortalBuilderResponse; reload: () => void
       {notice && <Notice tone="positive">{notice}</Notice>}
       <div class="portal-grid">
         <div class="portal-col">
-          <Card id="week-h" data="week" title="This week" actions={<WeekChip status={d.thisWeek} schedule={d.schedule} />}>
-            {d.thisWeek === "done" ? (
+          <Card id="week-h" data="week" title="This week" actions={!d.readOnly && <WeekChip status={d.thisWeek} schedule={d.schedule} />}>
+            {d.readOnly ? <p class="flush">Check-ins have ended for this archived cohort.</p> : d.thisWeek === "done" ? (
               <p class="flush">Your check-in is in. Nice. You can add another update any time.</p>
             ) : d.thisWeek === "not-joined" ? (
               <p class="flush">Your first check-in week hasn’t started yet.</p>
@@ -341,9 +342,9 @@ function Dashboard({ d, reload }: { d: PortalBuilderResponse; reload: () => void
               <p class="flush portal-pre">{p.description || <span class="muted">No description yet.</span>}</p>
               {p.links.length > 0 && (
                 <ul class="portal-links" role="list">
-                  {p.links.map((l) => (
+                  {p.links.filter((l) => safeUrl(l)).map((l) => (
                     <li key={l}>
-                      <a href={l} target="_blank" rel="noreferrer noopener">
+                      <a href={safeUrl(l)!} target="_blank" rel="noreferrer noopener">
                         {l.replace(/^https?:\/\//, "")}
                       </a>
                     </li>

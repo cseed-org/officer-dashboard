@@ -70,18 +70,19 @@ function toBody(f: FormState) {
   };
 }
 
-const readDraft = (): FormState | null => {
+const readDraft = (userId: string): FormState | null => {
   try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
+    sessionStorage.removeItem(DRAFT_KEY);
+    const raw = sessionStorage.getItem(`${DRAFT_KEY}:${userId}`);
     return raw ? { ...empty, ...(JSON.parse(raw) as Partial<FormState>) } : null;
   } catch {
     return null;
   }
 };
-const writeDraft = (f: FormState | null) => {
+const writeDraft = (userId: string, f: FormState | null) => {
   try {
-    if (f) sessionStorage.setItem(DRAFT_KEY, JSON.stringify(f));
-    else sessionStorage.removeItem(DRAFT_KEY);
+    if (f) sessionStorage.setItem(`${DRAFT_KEY}:${userId}`, JSON.stringify(f));
+    else sessionStorage.removeItem(`${DRAFT_KEY}:${userId}`);
   } catch {
     /* storage blocked: the form state still lives in memory */
   }
@@ -96,24 +97,26 @@ export interface Created {
 /** New request (optionally prefilled from an event) or edit of an existing one. */
 export default function DesignRequestForm({
   eventId,
+  userId,
   editing,
   onDone,
   onCancel,
 }: {
+  userId: string;
   eventId?: string | undefined;
   editing?: DesignRequestDetail;
   onDone: (r: Created) => void;
   onCancel: () => void;
 }) {
   if (eventId && !editing) return <FromEvent key={eventId} eventId={eventId} onDone={onDone} onCancel={onCancel} />;
-  return <Plain editing={editing} onDone={onDone} onCancel={onCancel} />;
+  return <Plain key={userId} userId={userId} editing={editing} onDone={onDone} onCancel={onCancel} />;
 }
 
-function Plain({ editing, onDone, onCancel }: { editing?: DesignRequestDetail | undefined; onDone: (r: Created) => void; onCancel: () => void }) {
+function Plain({ userId, editing, onDone, onCancel }: { userId: string; editing?: DesignRequestDetail | undefined; onDone: (r: Created) => void; onCancel: () => void }) {
   const lookups = useApi('lookups');
   return (
     <Async state={lookups} loading={<Loading rows={8} label="Loading the form" />}>
-      {(l) => <Form lookups={l} editing={editing} persist={!editing} initial={editing ? fromRequest(editing) : readDraft() ?? empty} onDone={onDone} onCancel={onCancel} />}
+      {(l) => <Form userId={userId} lookups={l} editing={editing} persist={!editing} initial={editing ? fromRequest(editing) : readDraft(userId) ?? empty} onDone={onDone} onCancel={onCancel} />}
     </Async>
   );
 }
@@ -134,7 +137,7 @@ function FromEvent({ eventId, onDone, onCancel }: { eventId: string; onDone: (r:
   return <Form lookups={lookups.data} initial={fromDraft(draft.data.draft)} onDone={onDone} onCancel={onCancel} />;
 }
 
-function Form({ lookups, editing, initial, persist = false, onDone, onCancel }: { lookups: LookupsResponse; editing?: DesignRequestDetail | undefined; initial: FormState; persist?: boolean; onDone: (r: Created) => void; onCancel: () => void }) {
+function Form({ userId = '', lookups, editing, initial, persist = false, onDone, onCancel }: { userId?: string; lookups: LookupsResponse; editing?: DesignRequestDetail | undefined; initial: FormState; persist?: boolean; onDone: (r: Created) => void; onCancel: () => void }) {
   const [f, setF] = useState<FormState>(initial);
   const [files, setFiles] = useState<File[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -145,7 +148,7 @@ function Form({ lookups, editing, initial, persist = false, onDone, onCancel }: 
 
   // Keep an unsent new request across reloads and network failures (cleared on success).
   useEffect(() => {
-    if (persist) writeDraft(f);
+    if (persist) writeDraft(userId, f);
   }, [f, persist]);
 
   const events = lookups.events.slice().sort((a, b) => b.startsAt.localeCompare(a.startsAt));
@@ -192,7 +195,7 @@ function Form({ lookups, editing, initial, persist = false, onDone, onCancel }: 
     setBusy(editing ? 'Saving…' : 'Submitting…');
     try {
       let { request } = editing ? await api('designRequestUpdate', { params: { id: editing.id }, body: parsed.data }) : await api('designRequestCreate', { body: parsed.data });
-      if (persist) writeDraft(null);
+      if (persist) writeDraft(userId, null);
       let failed = 0;
       let storageOff = false;
       for (const [i, file] of files.entries()) {
@@ -323,7 +326,7 @@ function Form({ lookups, editing, initial, persist = false, onDone, onCancel }: 
           type="button"
           class="linkish"
           onClick={() => {
-            if (persist) writeDraft(null);
+            if (persist) writeDraft(userId, null);
             onCancel();
           }}
         >

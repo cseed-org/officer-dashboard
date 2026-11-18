@@ -32,10 +32,15 @@ export function parseInvites(text: string, accounts: LaunchpadAccount[] = []): P
     const raw = rawLine.trim();
     if (!raw) return;
     if (/^"?name"?\s*[,;\t]\s*"?e-?mail"?$/i.test(raw) || /^"?e-?mail"?\s*[,;\t]\s*"?name"?$/i.test(raw)) return;
-    const cells = raw.split(/[,;\t]/).map((c) => c.trim().replace(/^"|"$/g, "").trim()).filter(Boolean);
+    const cells = (raw.match(/(?:[^,;\t"]|"[^"]*")+/g) ?? []).map((c) => c.trim().replace(/^"|"$/g, "").trim()).filter(Boolean);
     let rows: { email: string; name?: string }[];
     const emails = cells.filter((c) => c.includes("@"));
-    if (cells.length === 2 && emails.length === 1) {
+    if (cells.some((c) => c.includes("<"))) {
+      rows = cells.map((c) => {
+        const m = c.match(/^(.*?)<([^<>\s]+@[^<>\s]+)>$/);
+        return m ? { email: m[2]!, name: m[1]!.replace(/"/g, "").trim() || undefined } : { email: c };
+      });
+    } else if (cells.length === 2 && emails.length === 1) {
       const email = emails[0]!;
       rows = [{ email, name: cells.find((c) => c !== email) }];
     } else if (cells.length >= 1 && emails.length === cells.length) {

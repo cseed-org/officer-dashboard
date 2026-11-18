@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, isStorageUnavailable, STORAGE_UNAVAILABLE_MESSAGE } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import {
@@ -96,6 +96,9 @@ function Body({ data, me, onUpdate, onDeleted, onRefresh }: { data: DesignReques
   const r = data.request;
   const p = r.permissions;
   const [busy, setBusy] = useState<string | null>(null);
+  const locked = useRef(false);
+  const begin = (label: string) => { if (locked.current) return false; locked.current = true; setBusy(label); return true; };
+  const end = () => { locked.current = false; setBusy(null); };
   const [message, setMessage] = useState<{ tone: 'positive' | 'negative'; text: string } | null>(null);
   const [editing, setEditing] = useState(false);
   /** The Done moment: the stage a request came from when it just landed in Done here (for Undo). */
@@ -103,7 +106,7 @@ function Body({ data, me, onUpdate, onDeleted, onRefresh }: { data: DesignReques
 
   const run = async (label: string, fn: () => Promise<DesignRequestResponse>, done: string) => {
     const from = r.stage;
-    setBusy(label);
+    if (!begin(label)) return;
     setMessage(null);
     setLanded(null);
     try {
@@ -114,11 +117,11 @@ function Body({ data, me, onUpdate, onDeleted, onRefresh }: { data: DesignReques
     } catch (err) {
       setMessage({ tone: 'negative', text: errorMessage(err) });
     } finally {
-      setBusy(null);
+      end();
     }
   };
   const undoDelivery = async (to: DesignStage) => {
-    setBusy('Undoing…');
+    if (!begin('Undoing…')) return;
     setLanded(null);
     try {
       onUpdate(await api('designRequestMove', { params: { id: r.id }, body: { stage: to } }));
@@ -128,13 +131,14 @@ function Body({ data, me, onUpdate, onDeleted, onRefresh }: { data: DesignReques
       setMessage({ tone: 'negative', text: `Couldn't undo the delivery: ${errorMessage(err)}` });
       onRefresh();
     } finally {
-      setBusy(null);
+      end();
     }
   };
 
   if (editing) {
     return (
       <DesignRequestForm
+        userId={me.id}
         editing={r}
         onCancel={() => setEditing(false)}
         onDone={({ request, uploadFailed, storageOff }: Created) => {
@@ -233,12 +237,12 @@ function Body({ data, me, onUpdate, onDeleted, onRefresh }: { data: DesignReques
               disabled={!!busy}
               onClick={async () => {
                 if (!confirm(r.stage === 'new' && requesterIsMe ? `Withdraw “${r.title}”?` : `Delete “${r.title}” and its files and comments?`)) return;
-                setBusy('Deleting…');
+                if (!begin('Deleting…')) return;
                 try {
                   await api('designRequestDelete', { params: { id: r.id } });
                   onDeleted(r.title);
                 } catch (err) {
-                  setBusy(null);
+                  end();
                   setMessage({ tone: 'negative', text: errorMessage(err) });
                 }
               }}
@@ -299,9 +303,9 @@ function Body({ data, me, onUpdate, onDeleted, onRefresh }: { data: DesignReques
       {(p.canAssign || p.canAssignSelf || (p.moveTo.length > 0 && !p.canRequestChanges && !approverUndoOnly)) && <DesignerActions r={r} designers={data.designers} me={me} busy={!!busy} run={run} onStep={onUpdate} />}
 
       {!p.canAssign && !p.canAssignSelf && p.moveTo.length === 0 && <p class="small muted">Stage: {STAGE_LABEL[r.stage]}. Only designers and directors can move requests. The requester can approve or request changes during review.</p>}
-      {p.uploadKinds.length > 0 && <Upload r={r} kinds={p.uploadKinds} onUpdate={onUpdate} />}
+      {p.uploadKinds.length > 0 && <Upload r={r} kinds={p.uploadKinds} onUpdate={onUpdate} mutation={{ busy: !!busy, begin, end }} />}
 
-      <Comments r={r} me={me} onUpdate={onUpdate} />
+      <Comments r={r} me={me} onUpdate={onUpdate} mutation={{ busy: !!busy, begin, end }} />
     </div>
   );
 }
@@ -405,14 +409,16 @@ function DesignerActions({ r, designers, me, busy, run, onStep }: { r: Detail; d
   );
 }
 
-function Upload({ r, kinds, onUpdate }: { r: Detail; kinds: DesignFileKind[]; onUpdate: (d: DesignRequestResponse) => void }) {
+type Mutation = { busy: boolean; begin: (label: string) => boolean; end: () => void };
+
+function Upload({ r, kinds, onUpdate, mutation }: { mutation: Mutation; r: Detail; kinds: DesignFileKind[]; onUpdate: (d: DesignRequestResponse) => void }) {
   const [chosen, setKind] = useState<DesignFileKind>(kinds.includes('review') && (r.stage === 'in-review' || r.stage === 'in-progress') ? 'review' : kinds[0]!);
   // Allowed kinds shrink on delivery; never send one that is no longer offered.
   const kind = kinds.includes(chosen) ? chosen : kinds[0]!;
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const upload = async (list: FileList | null) => {
-    if (!list?.length) return;
+    if (!list?.length || !mutation.begin('Uploading…')) return;
     setBusy(true);
     setMsg(null);
     let ok = 0;
@@ -433,6 +439,7 @@ function Upload({ r, kinds, onUpdate }: { r: Detail; kinds: DesignFileKind[]; on
       }
     }
     setBusy(false);
+    mutation.end();
     if (ok) setMsg((m) => m ?? { ok: true, text: `${ok === 1 ? 'File' : `${ok} files`} added.` });
   };
   return (
@@ -457,7 +464,7 @@ function Upload({ r, kinds, onUpdate }: { r: Detail; kinds: DesignFileKind[]; on
             multiple
             accept={ATTACHMENT_MIME_TYPES.join(',')}
             {...describe('dr-upload-file', undefined, true)}
-            disabled={busy}
+            disabled={mutation.busy}
             onChange={(e) => {
               void upload(e.currentTarget.files);
               e.currentTarget.value = '';
@@ -471,7 +478,7 @@ function Upload({ r, kinds, onUpdate }: { r: Detail; kinds: DesignFileKind[]; on
   );
 }
 
-function Comments({ r, me, onUpdate }: { r: Detail; me: CurrentUser; onUpdate: (d: DesignRequestResponse) => void }) {
+function Comments({ r, me, onUpdate, mutation }: { mutation: Mutation; r: Detail; me: CurrentUser; onUpdate: (d: DesignRequestResponse) => void }) {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -504,6 +511,7 @@ function Comments({ r, me, onUpdate }: { r: Detail; me: CurrentUser; onUpdate: (
             document.getElementById('dr-comment')?.focus();
             return;
           }
+          if (!mutation.begin('Posting…')) return;
           setBusy(true);
           setError(undefined);
           try {
@@ -513,6 +521,7 @@ function Comments({ r, me, onUpdate }: { r: Detail; me: CurrentUser; onUpdate: (
             setError(errorMessage(err)); // the text stays in the box
           } finally {
             setBusy(false);
+            mutation.end();
           }
         }}
       >
@@ -520,7 +529,7 @@ function Comments({ r, me, onUpdate }: { r: Detail; me: CurrentUser; onUpdate: (
           <textarea class="textarea" rows={3} {...describe('dr-comment', error)} value={body} maxLength={4000} onInput={(e) => setBody(e.currentTarget.value)} />
         </Field>
         <div class="form-actions">
-          <button type="submit" class="btn" disabled={busy}>
+          <button type="submit" class="btn" disabled={mutation.busy}>
             {busy ? 'Posting…' : 'Post comment'}
           </button>
         </div>
