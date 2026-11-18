@@ -1,9 +1,15 @@
 import type { ComponentChildren } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 import type { CurrentUser, WidgetPrefs, ClubSettings } from '../../lib/contracts';
 import { api, fieldErrors } from '../../lib/api/client';
 import { applyTimezone, browserTimezone, dateTimeFormatter, effectiveTimezone, refreshTimezone, timezoneOptions, timezoneSnapshot } from '../../lib/timezone';
 import { Section, Field, describe } from '../components/kit';
+
+function TimezoneClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 30_000); return () => clearInterval(timer); }, []);
+  return <time data-timezone-preview>{dateTimeFormatter({ dateStyle: 'medium', timeStyle: 'short' }).format(now)} · {effectiveTimezone()}</time>;
+}
 
 export function TimezonePanel({ me, between }: { me: CurrentUser; between?: ComponentChildren }) {
   const snapshot = timezoneSnapshot();
@@ -16,8 +22,7 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ at: 'personal' | 'club'; text: string; ok: boolean } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [now, setNow] = useState(new Date());
-  const zones = timezoneOptions();
+  const zones = useMemo(timezoneOptions, []);
   useEffect(() => {
     const changed = () => {
       const next = timezoneSnapshot();
@@ -26,7 +31,6 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
     window.addEventListener('cseed-timezone', changed);
     return () => window.removeEventListener('cseed-timezone', changed);
   }, []);
-  useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 30_000); return () => clearInterval(timer); }, []);
   async function savePersonal() {
     setBusy(true); setErrors({}); setNote(null);
     try {
@@ -67,7 +71,7 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
         {mode === 'manual' && <Field id="manual-timezone" label="Manual time zone" error={errors.timezone} hint="Search by region or city, for example Asia/Tokyo.">
           <input {...describe('manual-timezone', errors.timezone, true)} class="input" list="iana-timezones" value={manual} onInput={(e) => setManual(e.currentTarget.value)} required disabled={busy} />
         </Field>}
-        <p class="muted small">Current time: <time data-timezone-preview>{dateTimeFormatter({ dateStyle: 'medium', timeStyle: 'short' }).format(now)} · {effectiveTimezone()}</time></p>
+        <p class="muted small">Current time: <TimezoneClock /></p>
         {status('personal')}
         <div><button class="btn btn--primary" type="submit" disabled={busy}>Save time zone</button></div>
       </form>
