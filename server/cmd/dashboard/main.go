@@ -289,6 +289,10 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go sessionJanitor(ctx, db, log)
+	// Deliver calendar jobs a previous run left in the outbox, and retry failed
+	// cancellations hourly.
+	srv.ResumeCalendar()
+	go calendarRetry(ctx, srv)
 	go srv.CloudflareDaily(ctx)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
@@ -300,16 +304,39 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		}
 	case <-ctx.Done():
 		log.Info("shutting down")
-		shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		// One deadline for the whole stop, so it fits inside the service manager's timeout.
+		deadline := time.Now().Add(ShutdownBudget)
+		shutdown, cancel := context.WithDeadline(context.Background(), deadline)
 		defer cancel()
 		err := httpSrv.Shutdown(shutdown)
-		// Let queued calendar deliveries finish (and record themselves), within reason.
-		if !srv.WaitBackgroundFor(20 * time.Second) {
-			log.Warn("calendar deliveries still running at shutdown; the next event change resends them")
+		// Let the calendar worker finish (and record) what it is sending, within the budget.
+		if !srv.WaitBackgroundFor(time.Until(deadline)) {
+			log.Warn("calendar deliveries still running at shutdown; the outbox resumes them at the next start")
 		}
 		return err
 	}
 	return nil
+}
+
+// ShutdownBudget is the most serve spends stopping after SIGTERM: draining HTTP requests,
+// then waiting for the calendar worker. The service manager must allow more, with room
+// for db.Close and Litestream's final flush: deploy/dashboard.service TimeoutStopSec and
+// deploy/compose.cloudflare.yml stop_grace_period (checked by TestStopTimeoutsExceedShutdownBudget).
+const ShutdownBudget = 15 * time.Second
+
+// calendarRetry restarts the calendar outbox worker hourly, so a cancellation that failed
+// (SMTP relay or Google down) is retried without waiting for the next event change.
+func calendarRetry(ctx context.Context, srv *api.Server) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			srv.ResumeCalendar()
+		}
+	}
 }
 
 // sessionJanitor deletes expired sessions, OAuth codes and unused MCP clients hourly.

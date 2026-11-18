@@ -268,3 +268,33 @@ func TestTrustedProxiesSetting(t *testing.T) {
 		t.Errorf("malformed list → %v", err)
 	}
 }
+
+// M-021: the service manager's stop timeout must exceed the server's own shutdown budget,
+// with room for db.Close (systemd) and Litestream's final flush (compose).
+func TestStopTimeoutsExceedShutdownBudget(t *testing.T) {
+	read := func(path, key string) time.Duration {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if v, ok := strings.CutPrefix(line, key); ok {
+				d, err := time.ParseDuration(strings.TrimSpace(strings.TrimLeft(v, "=:")))
+				if err != nil {
+					t.Fatalf("%s %s: %v", path, key, err)
+				}
+				return d
+			}
+		}
+		t.Fatalf("%s has no %s", path, key)
+		return 0
+	}
+	if d := read("../../deploy/dashboard.service", "TimeoutStopSec"); d < ShutdownBudget+10*time.Second {
+		t.Errorf("TimeoutStopSec %s leaves under 10 s past the %s shutdown budget", d, ShutdownBudget)
+	}
+	if d := read("../../deploy/compose.cloudflare.yml", "stop_grace_period"); d < ShutdownBudget+20*time.Second {
+		t.Errorf("stop_grace_period %s leaves under 20 s past the %s shutdown budget for Litestream", d, ShutdownBudget)
+	}
+}
