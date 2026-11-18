@@ -107,6 +107,9 @@ func (c *Ctx) calendarPut() error {
 			if err := c.audit(ctx, q, "calendar.mode", "officer_profile", u.ID, map[string]any{"mode": before.DeliveryMode}, map[string]any{"mode": mode}); err != nil {
 				return err
 			}
+			if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
+				return err
+			}
 		}
 		out, err = c.calendarSettings(ctx, q, u.ID)
 		return err
@@ -115,7 +118,7 @@ func (c *Ctx) calendarPut() error {
 		return err
 	}
 	if changed {
-		c.S.backfillCalendar(u.ID)
+		c.S.kickCalendar()
 	}
 	writeJSON(c.W, 200, out)
 	return nil
@@ -207,6 +210,10 @@ func (c *Ctx) googleCallback() error {
 		if err := w.SaveGoogleToken(ctx, t); err != nil {
 			return err
 		}
+		// The (possibly different) account needs the upcoming events.
+		if err := c.S.queueBackfill(ctx, w, c.User.ID); err != nil {
+			return err
+		}
 		if _, err := w.ProfileByUser(ctx, c.User.ID); err == nil {
 			if err := w.SetDeliveryMode(ctx, c.User.ID, "google"); err != nil {
 				return err
@@ -218,7 +225,7 @@ func (c *Ctx) googleCallback() error {
 		c.S.log.Error("save google token failed", "error", err)
 		return back("failed")
 	}
-	c.S.backfillCalendar(c.User.ID)
+	c.S.kickCalendar()
 	return back("connected")
 }
 
@@ -251,6 +258,10 @@ func (c *Ctx) googleDisconnect() error {
 			if err := q.SetDeliveryMode(ctx, u.ID, "ics"); err != nil {
 				return err
 			}
+			// Falling back to .ics email: send the upcoming events there.
+			if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
+				return err
+			}
 		}
 		if err := c.audit(ctx, q, "calendar.google_disconnected", "user", u.ID, map[string]any{"accountEmail": t.AccountEmail}, nil); err != nil {
 			return err
@@ -261,9 +272,8 @@ func (c *Ctx) googleDisconnect() error {
 	if err != nil {
 		return err
 	}
-	// Falling back to .ics email: send the upcoming events there.
 	if switched {
-		c.S.backfillCalendar(u.ID)
+		c.S.kickCalendar()
 	}
 	if refresh != "" && c.S.cfg.Google != nil {
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -906,18 +916,4 @@ func (s *Server) cancelDeleted(ctx context.Context, j *store.CalendarJob) ([]sto
 		}
 	}
 	return left, errors.Join(errs...)
-}
-
-// backfillCalendar queues a backfill for one officer in its own transaction and starts
-// the worker.
-func (s *Server) backfillCalendar(userID string) {
-	if !s.calendarsConfigured() {
-		return
-	}
-	ctx := context.Background()
-	if err := s.db.Write(ctx, func(w *store.Queries) error { return s.queueBackfill(ctx, w, userID) }); err != nil {
-		s.log.Error("calendar backfill: queue", "user", userID, "error", err)
-		return
-	}
-	s.kickCalendar()
 }

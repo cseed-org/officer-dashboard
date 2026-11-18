@@ -824,3 +824,41 @@ func TestMigrationLegacyGoogleIDIsCancelledOnDelete(t *testing.T) {
 		t.Fatalf("delete after upgrade: .ics %+v", got)
 	}
 }
+
+// Backfills are queued in the transaction that changes where an officer's invites go: if
+// the outbox write fails, the change is not saved either, so a restart can never leave a
+// changed destination without its backfill.
+func TestBackfillIsQueuedWithTheDestinationChange(t *testing.T) {
+	g := newFakeGoogle(t)
+	e := newEnv(t, func(c *Config) { c.Mailer = &fakeMailer{}; g.config(c) })
+	connectGoogle(t, e, "user-priya", "a")
+	e.exec(`CREATE TRIGGER outbox_down BEFORE INSERT ON calendar_outbox WHEN NEW.kind = 'backfill' BEGIN SELECT RAISE(ABORT, 'outbox unavailable'); END`)
+	mode := func() any {
+		return e.scalar(`SELECT calendar_delivery_mode FROM officer_profiles WHERE user_id = 'user-priya'`)
+	}
+	emails := e.scalar(`SELECT count(*) FROM calendar_emails WHERE user_id = 'user-priya'`)
+	if r := e.post("/api/me/calendar-emails", map[string]any{"email": "priya.cal@example.org"}, e.officer()); r.Status == 200 {
+		t.Error("calendar email saved without its backfill")
+	}
+	if n := e.scalar(`SELECT count(*) FROM calendar_emails WHERE user_id = 'user-priya'`); n != emails {
+		t.Errorf("calendar emails %v -> %v", emails, n)
+	}
+	if r := e.do("PUT", "/api/me/calendar", map[string]any{"mode": "ics"}, e.officer()); r.Status == 200 {
+		t.Error("delivery mode changed without its backfill")
+	}
+	if got := mode(); got != "google" {
+		t.Errorf("mode %v after a refused change", got)
+	}
+	if r := e.do("DELETE", "/api/me/calendar/google", nil, e.officer()); r.Status == 200 {
+		t.Error("Google disconnected (falling back to .ics) without its backfill")
+	}
+	if got := mode(); got != "google" || e.scalar(`SELECT count(*) FROM google_calendar_tokens WHERE user_id = 'user-priya'`) != int64(1) {
+		t.Errorf("disconnect half-applied: mode %v", got)
+	}
+	if r := e.do("PUT", "/api/me/profile", map[string]any{"phone": "+1 206 555 0100", "birthday": "01-15", "calendarDeliveryMode": "ics"}, e.officer()); r.Status == 200 {
+		t.Error("profile switched delivery mode without its backfill")
+	}
+	if got := mode(); got != "google" {
+		t.Errorf("mode %v after a refused profile save", got)
+	}
+}

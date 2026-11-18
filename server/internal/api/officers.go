@@ -505,16 +505,21 @@ func (c *Ctx) profilePut() error {
 		if err := c.audit(ctx, q, "profile.updated", "officer_profile", u.ID, redactProfile(before), redactProfile(&p)); err != nil {
 			return err
 		}
+		// A new recipient, or one whose delivery mode just changed, needs the upcoming events
+		// sent to the destination they now use.
+		if created || modeChanged {
+			if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
+				return err
+			}
+		}
 		resp, err = c.profileResponse(ctx, q, u.ID)
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	// A new recipient, or one whose delivery mode just changed, needs the upcoming events
-	// sent to the destination they now use.
 	if created || modeChanged {
-		c.S.backfillCalendar(u.ID)
+		c.S.kickCalendar()
 	}
 	writeJSON(c.W, 200, resp)
 	return nil
@@ -667,6 +672,11 @@ func (c *Ctx) onboardingComplete() error {
 		if err != nil {
 			return err
 		}
+		// A finished officer receives the upcoming events (queued with the change, so a
+		// restart can't lose it; rolled back with it when finishing is refused).
+		if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
+			return err
+		}
 		inv, invErr := q.InviteForUser(ctx, u.ID)
 		invPending := invErr == nil && inv.OnboardedAt == nil
 		if version >= OnboardingVersion && !invPending {
@@ -689,7 +699,7 @@ func (c *Ctx) onboardingComplete() error {
 	if err != nil {
 		return err
 	}
-	c.S.backfillCalendar(u.ID)
+	c.S.kickCalendar()
 	writeJSON(c.W, 200, map[string]any{"user": currentUser(u), "onboarding": nil})
 	return nil
 }
