@@ -77,7 +77,7 @@ func TestCachePolicy(t *testing.T) {
 
 func TestUnknownPathsGetTheFallbackAndNeverLeakDotfilesOrEscapeTheRoot(t *testing.T) {
 	h := Handler(site(), Options{})
-	for _, p := range []string{"/nope", "/events/abc", "/.env", "/_astro/.env", "/../etc/passwd", "/%2e%2e/etc/passwd"} {
+	for _, p := range []string{"/nope", "/people/abc", "/.env", "/_astro/.env", "/../etc/passwd", "/%2e%2e/etc/passwd"} {
 		rec := get(h, "GET", p)
 		if rec.Code != 404 || !strings.Contains(rec.Body.String(), "nope") || strings.Contains(rec.Body.String(), "SECRET") {
 			t.Errorf("%s → %d %q", p, rec.Code, rec.Body.String())
@@ -88,7 +88,7 @@ func TestUnknownPathsGetTheFallbackAndNeverLeakDotfilesOrEscapeTheRoot(t *testin
 	}
 	// An SPA shell as the fallback answers 200 so client-side routes work.
 	spa := Handler(fstest.MapFS{"index.html": {Data: []byte("shell")}, "200.html": {Data: []byte("shell")}}, Options{Fallback: "200.html", FallbackStatus: 200})
-	if rec := get(spa, "GET", "/events/abc"); rec.Code != 200 || rec.Body.String() != "shell" {
+	if rec := get(spa, "GET", "/people/abc"); rec.Code != 200 || rec.Body.String() != "shell" {
 		t.Errorf("spa fallback → %d %q", rec.Code, rec.Body.String())
 	}
 	// With no fallback page at all, a plain 404.
