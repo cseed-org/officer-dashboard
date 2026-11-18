@@ -179,7 +179,7 @@ The recorded BEFORE release reused the original baseline's Linux-built web asset
 
 ### Server validation
 
-Full Go suite, dev API suite, both vet configurations, cgo release build, contract check (299 responses, 139/146 endpoints, zero schema errors), generated MCP tools check and root script tests passed. Final web build and Astro check passed (zero errors, zero warnings, nine existing hints). Native full-suite execution encountered Windows Smart App Control blocks; the required Linux checks ran in Docker without changing that protection. All six focused desktop/phone history and fixed-event CSV tests passed; [light/dark screenshots](evidence/v0141-performance/server/screenshots/) are linked in the PR. The standalone event-summary aggregate also passed the full store suite and both vet configurations. The full browser suite is delegated to CI because local free memory is below 3 GB.
+Full Go suite, dev API suite, both vet configurations, cgo release build, contract check (299 responses, 139/146 endpoints, zero schema errors), generated MCP tools check and root script tests passed. Final web build and Astro check passed (zero errors, zero warnings, nine existing hints). Native full-suite execution encountered Windows Smart App Control blocks; the required Linux checks ran in Docker without changing that protection. All six focused desktop/phone history and fixed-event CSV tests passed; [light/dark screenshots](evidence/v0141-performance/server/screenshots/) are linked in the PR. The standalone event-summary aggregate also passed the full store suite and both vet configurations. The full browser suite was skipped locally because free memory was below 3 GB. CI runs its configured unit and compose integration checks.
 
 ## How to reproduce
 
