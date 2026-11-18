@@ -238,10 +238,6 @@ func requestItem(r *store.Request, cat *catalog) (RequestListItem, error) {
 
 // requestCore builds the viewer-independent request detail.
 func requestCore(ctx context.Context, q *store.Queries, cat *catalog, r *store.Request) (RequestCore, error) {
-	item, err := requestItem(r, cat)
-	if err != nil {
-		return RequestCore{}, err
-	}
 	approvals, err := q.Approvals(ctx, r.ID)
 	if err != nil {
 		return RequestCore{}, err
@@ -257,6 +253,17 @@ func requestCore(ctx context.Context, q *store.Queries, cat *catalog, r *store.R
 	held, err := q.HeldJob(ctx, r.ID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return RequestCore{}, err
+	}
+	return makeRequestCore(cat, r, approvals, attachments, entries, held)
+}
+
+func makeRequestCore(cat *catalog, r *store.Request, approvals []store.Approval, attachments []store.Attachment, entries []string, held *store.Job) (RequestCore, error) {
+	item, err := requestItem(r, cat)
+	if err != nil {
+		return RequestCore{}, err
+	}
+	if entries == nil {
+		entries = []string{}
 	}
 	core := RequestCore{
 		RequestListItem: item, ItemURL: r.ItemURL, Quantity: r.Quantity, UnitCostCents: r.UnitCostCents, TaxShipCents: r.TaxShipCents,

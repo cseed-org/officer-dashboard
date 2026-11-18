@@ -80,7 +80,7 @@ func (c *Ctx) agentJobs() error {
 	}
 	ctx := c.Context()
 	q := c.S.db.Read()
-	jobs, err := q.JobsByStatus(ctx, status)
+	jobs, err := q.JobsByStatus(ctx, status, tok.CreatedBy)
 	if err != nil {
 		return err
 	}
@@ -88,20 +88,39 @@ func (c *Ctx) agentJobs() error {
 	if err != nil {
 		return err
 	}
-	out := []FulfillmentJob{}
-	for i := range jobs {
-		v, err := c.jobView(cat, q, &jobs[i])
-		if err != nil {
-			return err
-		}
-		// Jobs for the token creator's own requests are not this token's to buy (claim refuses).
-		if v.Request.Requester.ID == tok.CreatedBy {
-			continue
-		}
-		out = append(out, v)
+	out, err := c.jobViews(cat, q, jobs, tok.CreatedBy)
+	if err != nil {
+		return err
 	}
 	writeJSON(c.W, 200, map[string]any{"jobs": out})
 	return nil
+}
+
+func (c *Ctx) jobViews(cat *catalog, q *store.Queries, jobs []store.Job, excludeRequester string) ([]FulfillmentJob, error) {
+	ids := make([]string, 0, len(jobs))
+	for _, j := range jobs {
+		ids = append(ids, j.RequestID)
+	}
+	details, err := q.RequestDetails(c.Context(), ids)
+	if err != nil {
+		return nil, err
+	}
+	out := []FulfillmentJob{}
+	for _, j := range jobs {
+		r := details.Requests[j.RequestID]
+		if r == nil {
+			return nil, notFoundErr("Record not found")
+		}
+		if r.RequesterID == excludeRequester {
+			continue
+		}
+		core, err := makeRequestCore(cat, r, details.Approvals[r.ID], details.Attachments[r.ID], details.Entries[r.ID], details.Held[r.ID])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, FulfillmentJob{ID: j.ID, Status: j.Status, Attempts: j.Attempts, Request: core, CreatedAt: isoMs(int64(j.CreatedAt)), ClaimedAt: isoPtr(j.ClaimedAt)})
+	}
+	return out, nil
 }
 
 type completeInput struct {
