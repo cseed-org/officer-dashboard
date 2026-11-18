@@ -20,6 +20,22 @@ import (
 var financeReports = []string{"trial-balance", "statement-of-activities", "statement-of-financial-position", "statement-of-functional-expenses", "budget-vs-actual", "fund-balances", "form-990"}
 var officerReports = map[string]bool{"budget-vs-actual": true, "fund-balances": true}
 
+// reportData loads every report input inside one read transaction on the reader pool, so
+// the ledger and the requests come from the same snapshot: a settlement committing halfway
+// through can neither drop a commitment before its expense appears nor count both.
+func (s *Server) reportData(ctx context.Context, asOf string) (*accounting.ReportData, error) {
+	var data *accounting.ReportData
+	err := s.db.ReadTx(ctx, func(q *store.Queries) error {
+		var err error
+		data, err = s.loadReportData(ctx, q, asOf)
+		return err
+	})
+	return data, err
+}
+
+// afterReportLines, when set by a test, runs between the ledger and request reads.
+var afterReportLines func()
+
 // loadReportData gathers books, budgets and commitments. A past asOf reconstructs which
 // requests were committed then by undoing later changes with the audit log's before-images.
 func (s *Server) loadReportData(ctx context.Context, q *store.Queries, asOf string) (*accounting.ReportData, error) {
@@ -34,6 +50,9 @@ func (s *Server) loadReportData(ctx context.Context, q *store.Queries, asOf stri
 	lines, err := q.ReportLines(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if afterReportLines != nil {
+		afterReportLines()
 	}
 	budgetRows, err := q.Budgets(ctx, 0)
 	if err != nil {
@@ -79,7 +98,7 @@ func (s *Server) loadReportData(ctx context.Context, q *store.Queries, asOf stri
 
 func (s *Server) committedAt(r *store.Request, history []store.AuditEntry, settlementDate, asOf string, cutoff time.Time) bool {
 	status := r.Status
-	known := true
+	known, replayed := true, false
 	// Undo later mutations using their immutable before-images (history is newest first).
 	for _, a := range history {
 		var before struct {
@@ -90,6 +109,7 @@ func (s *Server) committedAt(r *store.Request, history []store.AuditEntry, settl
 			_ = json.Unmarshal([]byte(*a.BeforeJSON), &before)
 		}
 		if a.EntityType == "purchase_request" && a.EntityID != nil && *a.EntityID == r.ID {
+			replayed = true
 			if before.Status != nil {
 				status, known = *before.Status, true
 			} else {
@@ -102,7 +122,7 @@ func (s *Server) committedAt(r *store.Request, history []store.AuditEntry, settl
 			} else {
 				status = "fulfilling"
 			}
-			known = true
+			known, replayed = true, true
 		}
 	}
 	at := int64(r.CreatedAt)
@@ -112,7 +132,10 @@ func (s *Server) committedAt(r *store.Request, history []store.AuditEntry, settl
 	if at > cutoff.UnixMilli() {
 		return false
 	}
-	if r.DecidedAt != nil && *r.DecidedAt > cutoff.UnixMilli() {
+	// A later decision date means "not yet approved at asOf" only when the audit replay
+	// had nothing to undo for this request; otherwise the replayed status is authoritative
+	// (a request sent back from buying keeps an older decision but has newer history).
+	if !replayed && r.DecidedAt != nil && *r.DecidedAt > cutoff.UnixMilli() {
 		return false
 	}
 	if settlementDate != "" && settlementDate > asOf && known && (status == "fulfilled" || status == "reimbursed" || status == "closed") {
@@ -144,14 +167,13 @@ func (s *Server) resolveFinance(fiscalYear *int, asOf, fundID string) (financePa
 		}
 	}
 	start, end := fiscal.YearRange(fy, fiscal.DefaultStartMonth)
-	out := asOf
-	if out == "" {
-		out = a
-		if a < start {
-			out = start
-		} else if a > end {
-			out = end
-		}
+	// An asOf outside the fiscal year (implicit today, or an explicit one from an agent) is
+	// clamped into it, so a report never mixes two years under one FY label.
+	out := a
+	if a < start {
+		out = start
+	} else if a > end {
+		out = end
 	}
 	return financeParams{FiscalYear: fy, AsOf: out, FundID: fundID}, nil
 }
@@ -260,7 +282,7 @@ func (c *Ctx) financeSummary() error {
 	if err != nil {
 		return err
 	}
-	data, err := c.S.loadReportData(c.Context(), c.S.db.Read(), p.AsOf)
+	data, err := c.S.reportData(c.Context(), p.AsOf)
 	if err != nil {
 		return err
 	}
@@ -297,7 +319,7 @@ func (c *Ctx) financeReport() error {
 	if !auth.HasRole(user.Role, auth.RoleDirector) && !officerReports[name] {
 		return forbidden("This report requires director role")
 	}
-	data, err := c.S.loadReportData(c.Context(), c.S.db.Read(), p.AsOf)
+	data, err := c.S.reportData(c.Context(), p.AsOf)
 	if err != nil {
 		return err
 	}
@@ -698,7 +720,7 @@ func (c *Ctx) overview() error {
 		return err
 	}
 	q := c.S.db.Read()
-	data, err := c.S.loadReportData(ctx, q, p.AsOf)
+	data, err := c.S.reportData(ctx, p.AsOf)
 	if err != nil {
 		return err
 	}

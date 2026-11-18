@@ -928,7 +928,9 @@ func (c *Ctx) lifecycle(action string) error {
 		if in.To == "submitted" {
 			change.SubmittedAt = &now
 		}
-		if in.To == "approved" || in.To == "denied" {
+		// Only the decision itself (approve or deny a submitted request) dates it; sending a
+		// request back from buying to approved keeps the original approval time.
+		if (in.To == "approved" || in.To == "denied") && r.Status == "submitted" {
 			change.DecidedAt = &now
 		}
 		if in.Settle != nil {

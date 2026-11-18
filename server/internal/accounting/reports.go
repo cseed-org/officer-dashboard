@@ -534,11 +534,14 @@ func (c *calc) fundBalances() *FundBalances {
 	return r
 }
 
+// committed sums the requests still open (approved, not yet settled) at asOf. The caller
+// has already reconstructed which requests were open then; one submitted in an earlier
+// fiscal year still counts, because its actual will post in this one when it settles.
 func (c *calc) committed(accountID string, fundID string, queryFund string) int64 {
 	var n int64
 	for _, cm := range c.d.Commitments {
 		if cm.ExpenseAccountID == accountID && (fundID == "" || cm.FundID == fundID) &&
-			(queryFund == "" || cm.FundID == queryFund) && cm.SubmittedDate >= c.from && cm.SubmittedDate <= c.q.AsOf {
+			(queryFund == "" || cm.FundID == queryFund) && cm.SubmittedDate <= c.q.AsOf {
 			n += cm.TotalCents
 		}
 	}

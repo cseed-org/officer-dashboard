@@ -205,6 +205,17 @@ type Queries struct{ q Q }
 // Read returns queries bound to the reader pool.
 func (d *DB) Read() *Queries { return &Queries{q: d.R} }
 
+// ReadTx runs fn in one read transaction on the reader pool: in WAL mode every query fn
+// makes sees the same snapshot, without taking the single writer connection.
+func (d *DB) ReadTx(ctx context.Context, fn func(r *Queries) error) error {
+	tx, err := d.R.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	return fn(&Queries{q: tx})
+}
+
 // Write runs fn in one IMMEDIATE transaction on the single writer connection and returns
 // fn's error after rolling back; a nil error commits.
 func (d *DB) Write(ctx context.Context, fn func(w *Queries) error) error {
