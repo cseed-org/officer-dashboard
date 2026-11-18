@@ -571,6 +571,8 @@ function Board({
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<DesignLane | null>(null);
   const [allDone, setAllDone] = useState(false);
+  const deliveredCount = all.filter((i) => i.stage === 'delivered').length;
+  useEffect(() => { if (deliveredCount > DONE_SHOWN) setAllDone(true); }, [deliveredCount]);
   const [announcement, setAnnouncement] = useState('');
   const dragged = useRef<DesignRequestItem | null>(null);
   const root = useRef<HTMLDivElement>(null);

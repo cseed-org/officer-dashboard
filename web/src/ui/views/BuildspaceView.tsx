@@ -54,6 +54,12 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
   const cohort = data?.cohorts.find((c) => c.id === data.cohortId) ?? null;
   const readOnly = cohort?.status === "archived";
   const canAdd = !!data && !!data.cohortId && !readOnly;
+  const loadOlder = async (signal: AbortSignal) => {
+    if (state.status !== "ready" || !state.data.activityNextCursor) return;
+    const previous = state.data;
+    const more = await api("buildspaceList", {query: {...query, activityCursor: previous.activityNextCursor!}, signal});
+    state.set({...more, activity: mergeActivity(previous.activity, more.activity)});
+  };
   // The intro (the page's LCP text) and its actions need no register data, so they
   // paint as soon as sign-in resolves instead of waiting for /api/buildspace.
   return (
@@ -105,6 +111,7 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
               key={b.cohortId}
               b={b}
               reload={state.reload}
+              loadOlder={loadOlder}
               notice={notice}
               setNotice={setNotice}
               canDirector={canDirector}
@@ -115,17 +122,14 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
           )
         )}
       </Async>
-      {state.status === "ready" && state.data.activityNextCursor && <LoadHistory key={`${state.data.cohortId}|${state.data.activityNextCursor}`} load={async (signal) => {
-        const previous = state.data;
-        const more = await api("buildspaceList", {query: {...query, activityCursor: previous.activityNextCursor!}, signal});
-        state.set({...more, activity: mergeActivity(previous.activity, more.activity)});
-      }} /> }
+      {state.status === "ready" && state.data.activityNextCursor && <LoadHistory key={`${state.data.cohortId}|${state.data.activityNextCursor}`} load={loadOlder} />}
     </div>
   );
 }
 function BuildspaceContent({
   b,
   reload,
+  loadOlder,
   notice,
   setNotice,
   canDirector,
@@ -135,6 +139,7 @@ function BuildspaceContent({
 }: {
   b: BuildspaceData;
   reload: () => void;
+  loadOlder: (signal: AbortSignal) => Promise<void>;
   notice: string;
   setNotice: (s: string) => void;
   canDirector: boolean;
@@ -789,6 +794,7 @@ function BuildspaceContent({
               person={detailPerson}
               project={project(detailPerson.projectId)}
               reload={reload}
+              loadOlder={loadOlder}
               onPerson={personDrawer.open}
               section={section}
               readOnly={readOnly}
@@ -828,6 +834,7 @@ function BuildspaceContent({
             b={b}
             project={detailProject}
             reload={reload}
+            loadOlder={loadOlder}
             onPerson={personDrawer.open}
             readOnly={readOnly}
             lifecycle={lifecycleActions({ kind: "project", record: detailProject }, b, lifecycleOpts)}

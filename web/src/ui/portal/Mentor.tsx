@@ -17,16 +17,19 @@ import { Card, firstName, PortalTimeline, TrackChip, WeekChip } from "./shared";
 
 export function MentorHome({ me }: { me: PortalMe }) {
   const state = useApi("portalMentor");
+  const loadOlder = async (signal: AbortSignal) => {
+    if (state.status !== "ready" || !state.data.activityNextCursor) return;
+    const d = state.data;
+    const more = await api("portalMentor", {query:{activityCursor:d.activityNextCursor!},signal});
+    state.set({...more,projects:more.projects.map((p) => ({...p,activity:mergeActivity(d.projects.find((old) => old.id===p.id)?.activity ?? [],p.activity)}))});
+  };
   return <Async state={state}>{(d) => <>
-    <MentorDashboard d={d} me={me} reload={state.reload} />
-    {d.activityNextCursor && <LoadHistory key={d.activityNextCursor} load={async (signal) => {
-      const more = await api("portalMentor", {query:{activityCursor:d.activityNextCursor!},signal});
-      state.set({...more,projects:more.projects.map((p) => ({...p,activity:mergeActivity(d.projects.find((old) => old.id===p.id)?.activity ?? [],p.activity)}))});
-    }} />}
+    <MentorDashboard d={d} me={me} reload={state.reload} loadOlder={loadOlder} />
+    {d.activityNextCursor && <LoadHistory key={d.activityNextCursor} load={loadOlder} />}
   </>}</Async>;
 }
 
-function MentorDashboard({ d, me, reload }: { d: PortalMentorResponse; me: PortalMe; reload: () => void }) {
+function MentorDashboard({ d, me, reload, loadOlder }: { d: PortalMentorResponse; me: PortalMe; reload: () => void; loadOlder: (signal: AbortSignal) => Promise<void> }) {
   const qs = useSearch();
   const [notice, setNotice] = useState("");
   const open = d.projects.find((p) => p.id === qs.get("project"));
@@ -63,6 +66,7 @@ function MentorDashboard({ d, me, reload }: { d: PortalMentorResponse; me: Porta
             }}
           />
         )}
+        {open && d.activityNextCursor && <LoadHistory key={d.activityNextCursor} load={loadOlder} />}
       </Drawer>
     </div>
   );
