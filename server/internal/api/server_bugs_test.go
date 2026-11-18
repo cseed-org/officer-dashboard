@@ -39,3 +39,22 @@ func TestRestrictedAvailabilityIgnoresFutureDatedGifts(t *testing.T) {
 	expectStatus(t, "settle against a future gift", e.post("/api/requests/"+id+"/transition", map[string]any{"to": "reimbursed", "actualTotalCents": over}, e.director()), 409)
 	e.mustOK(e.post("/api/requests/"+id+"/transition", map[string]any{"to": "reimbursed", "actualTotalCents": 8000}, e.director()))
 }
+
+// M-020: the first profile save during setup keeps the title a director gave the account.
+func TestFirstProfileSaveKeepsDirectorTitle(t *testing.T) {
+	e := newEnv(t)
+	created := e.mustOK(e.post("/api/admin/users", map[string]any{"discordId": "100000000000000098", "name": "Tess Reyes", "subteamId": "team-events", "title": "Treasurer"}, e.director()))
+	id := created.str("user", "id")
+	if id == "" {
+		t.Fatalf("created %s", created.Raw)
+	}
+	e.mustOK(e.do("PUT", "/api/me/profile", map[string]any{"phone": "+1 206 555 0199", "birthday": "03-04"}, e.as(id)))
+	if got := e.mustOK(e.get("/api/officers/"+id, e.director())).str("officer", "title"); got != "Treasurer" {
+		t.Fatalf("title after first profile save = %q, want Treasurer", got)
+	}
+	// Choosing a title later still replaces it.
+	e.mustOK(e.do("PUT", "/api/me/profile", map[string]any{"phone": "+1 206 555 0199", "birthday": "03-04", "title": "Finance lead"}, e.as(id)))
+	if got := e.mustOK(e.get("/api/officers/"+id, e.director())).str("officer", "title"); got != "Finance lead" {
+		t.Fatalf("title after choosing one = %q", got)
+	}
+}

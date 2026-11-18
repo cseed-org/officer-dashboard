@@ -417,13 +417,25 @@ func (c *Ctx) profilePut() error {
 	p.UserID = u.ID
 	ctx := c.Context()
 	var resp map[string]any
-	created := false
+	created, modeChanged := false, false
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
 		before, err := q.ProfileByUser(ctx, u.ID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 		created = before == nil
+		// A director may have titled the account (Officers → Access) before the person ever
+		// saved a profile. Setup's first stage doesn't show the title field, so a new profile
+		// without one keeps that title instead of erasing it.
+		if before == nil && p.Title == nil {
+			cur, err := q.UserByID(ctx, u.ID)
+			if err != nil {
+				return err
+			}
+			if cur.Title != nil && strings.TrimSpace(*cur.Title) != "" {
+				p.Title = cur.Title
+			}
+		}
 		inv, invErr := q.InviteForUser(ctx, u.ID)
 		onboarding := invErr == nil && inv.OnboardedAt == nil
 		switch {
@@ -482,6 +494,7 @@ func (c *Ctx) profilePut() error {
 			t := c.S.clubTerm(ctx, q)
 			p.StartTerm = &t
 		}
+		modeChanged = before != nil && before.DeliveryMode != p.DeliveryMode
 		if err := q.SaveProfile(ctx, p); err != nil {
 			return err
 		}
@@ -498,8 +511,10 @@ func (c *Ctx) profilePut() error {
 	if err != nil {
 		return err
 	}
-	if created {
-		c.S.backfillCalendar(u.ID) // they just became a calendar recipient
+	// A new recipient, or one whose delivery mode just changed, needs the upcoming events
+	// sent to the destination they now use.
+	if created || modeChanged {
+		c.S.backfillCalendar(u.ID)
 	}
 	writeJSON(c.W, 200, resp)
 	return nil
