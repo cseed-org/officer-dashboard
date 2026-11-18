@@ -43,8 +43,14 @@ type DB struct {
 	Path string
 }
 
+// uriPath escapes the characters SQLite's URI parser treats specially ('%' starts an escape,
+// '?' the query, '#' a fragment), so a literal filesystem path such as "go#1.db" opens that
+// file and keeps the query parameters (mode=ro on the reader pool). Every other character,
+// including Windows drive letters and separators, passes through unchanged.
+var uriPath = strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23")
+
 func dsn(path string, params url.Values) string {
-	return "file:" + path + "?" + params.Encode()
+	return "file:" + uriPath.Replace(path) + "?" + params.Encode()
 }
 
 // Open opens (creating if needed) the database in WAL mode, applies pending migrations and
@@ -211,6 +217,15 @@ func (d *DB) Write(ctx context.Context, fn func(w *Queries) error) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// IsConstraint reports whether err is SQLite refusing a write: a UNIQUE/CHECK/NOT NULL/FK
+// constraint or a trigger's RAISE(ABORT), which SQLite also reports as SQLITE_CONSTRAINT.
+// It matches the driver's error type, not its text, so a network or "database is closed"
+// error that happens to contain one of those words is not mistaken for a conflict.
+func IsConstraint(err error) bool {
+	var se sqlite3.Error
+	return errors.As(err, &se) && se.Code == sqlite3.ErrConstraint
 }
 
 // ErrNotFound is returned for a missing row.
