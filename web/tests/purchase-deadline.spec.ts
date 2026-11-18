@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { devLogin, devSignIn, overflow, settle, THEMES, useTheme, watchErrors } from './helpers';
-import { defaultWidgetLayout } from '../src/ui/widgets/registry';
+import { defaultWidgetLayout } from '../src/ui/widgets/catalog';
 
 /**
  * V0.6 purchase "needed by" deadlines: the form, the Finance list (due hints and deadline

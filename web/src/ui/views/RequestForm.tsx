@@ -1,13 +1,13 @@
 import type { ComponentChildren } from 'preact';
-import { flattenError } from 'zod';
 import { useMemo, useRef, useState } from 'preact/hooks';
+import type { LookupsResponse } from '../../lib/contracts';
 import {
   ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MIME_TYPES,
-  PurchaseRequestCreateRequest,
-  type LookupsResponse,
-} from '../../lib/contracts';
-import { FUNCTIONAL_CLASSES, type FunctionalClass, type PurchaseType } from '../../lib/domain';
+  FUNCTIONAL_CLASSES,
+  type FunctionalClass,
+  type PurchaseType,
+} from '../../core/constants';
 import { api, fieldErrors as apiFieldErrors, isStorageUnavailable } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import { describe, Field } from '../components/kit';
@@ -163,6 +163,9 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
 
   const save = async (submit: boolean) => {
     setFailure(null);
+    // Validation is needed only on submit; api() has normally prefetched both modules by then.
+    const { PurchaseRequestCreateRequest } = await import('../../lib/contracts');
+    const { flattenError } = await import('zod');
     const parsed = PurchaseRequestCreateRequest.safeParse(toBody(f, submit));
     // Date-only: compare with today on the selected time zone (the server checks the same).
     const pastDeadline = !!f.neededBy && f.neededBy < pacificToday();

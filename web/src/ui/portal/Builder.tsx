@@ -4,7 +4,8 @@
  * requests/absences and the team timeline (docs/launchpad-cohorts.md).
  */
 import { useState } from "preact/hooks";
-import { BUILDSPACE_STAGES, BUILDSPACE_TRACKS, type PortalBuilderResponse, type PortalMe } from "../../lib/contracts";
+import { BUILDSPACE_STAGES, BUILDSPACE_TRACKS } from "../../core/constants";
+import type { PortalBuilderResponse, PortalMe } from "../../lib/contracts";
 import { api, fieldErrors } from "../../lib/api/client";
 import { useApi } from "../../lib/api/useApi";
 import { fmtDate } from "../../lib/format";

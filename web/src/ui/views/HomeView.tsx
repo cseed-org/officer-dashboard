@@ -1,4 +1,4 @@
-// Widget stylesheets load here, not from the widget modules: tests import registry.ts in Node.
+// Widget stylesheets load only with Home; metadata consumers use the component-free catalog.
 import '../widgets/shell/widget.css';
 import '../widgets/calendar/calendar.css';
 import '../widgets/links/links.css';
@@ -13,7 +13,6 @@ import { Loading } from '../components/states';
 import WidgetGrid from '../widgets/grid/WidgetGrid';
 import { widgetDef } from '../widgets/registry';
 import { useEntrance } from '../widgets/shell/entrance';
-export { auditHref, auditSummary } from '../widgets/activity/ActivityWidget';
 
 export default function HomeView({ me }: { me: CurrentUser }) {
   useEffect(() => {

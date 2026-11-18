@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import type { BudgetLine, BudgetsResponse, CurrentUser, LookupsResponse, PurchaseRequestsListQuery } from '../../lib/contracts';
-import { FINANCE_REPORTS, OFFICER_FINANCE_REPORTS, type FinanceReport, type PurchaseStatus } from '../../lib/domain';
+import { FINANCE_REPORTS, OFFICER_FINANCE_REPORTS, type FinanceReport, type PurchaseStatus } from '../../core/constants';
 import { api } from '../../lib/api/client';
 import { useUnsavedEdits } from '../../lib/unsaved';
 import { useApi } from '../../lib/api/useApi';

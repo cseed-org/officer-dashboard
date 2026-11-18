@@ -5,7 +5,7 @@ import { useApi } from '../../lib/api/useApi';
 import { fmtDateTime, pacificDate, relative } from '../../lib/format';
 import { Avatar } from '../components/people';
 import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
-import { auditHref, auditSummary } from './HomeView';
+import { auditHref, auditSummary } from '../widgets/activity/audit';
 
 const ENTITY_TYPES: [string, string][] = [
   ['', 'everything'],

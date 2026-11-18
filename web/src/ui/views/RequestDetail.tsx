@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME_TYPES, type PurchaseRequestDetail } from '../../lib/contracts';
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME_TYPES } from '../../core/constants';
+import type { PurchaseRequestDetail } from '../../lib/contracts';
 import type { PurchaseStatus } from '../../lib/domain';
 import { api, isStorageUnavailable, STORAGE_UNAVAILABLE_MESSAGE } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
