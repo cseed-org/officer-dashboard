@@ -120,15 +120,17 @@ https://<host>/auth/dev?as=officer&key=<KEY>&next=/events       # confirm, then 
 https://<host>/login?key=<KEY>                                  # show the Developer mode panel
 ```
 
-`as` is `leadership`, `director` or `officer`; `next` must be a path on the same site (anything
-else lands on `/`). Every sign-in carries the key (the confirmation page and the panel post it
-with the form); nothing remembers it, so a signed-out visitor needs a keyed link again. A form
-posted from another site is refused (403), and `discord=<id>` sign-ins cannot target leadership
-or owner accounts. Dev login never signs in as a dashboard owner: `as=leadership` picks the oldest
+`as` is `leadership`, `director` or `officer` for the dashboard, or `builder` or `mentor` for
+the Launchpad portal; `next` must be a path on the same site (anything else lands on `/`). Every
+sign-in carries the key (the confirmation page and the panel post it with the form); nothing
+remembers it, so a signed-out visitor needs a keyed link again. A form posted from another site
+is refused (403), and `discord=<id>` sign-ins cannot target leadership or owner accounts. On a
+keyed deployment, dev login never signs in as a dashboard owner: `as=leadership` picks the oldest
 non-owner leadership account (creating a "Dev leadership" placeholder if there is none), and
-`user=<owner id>` is refused (403). The key is never logged (request logs record the path only).
+`user=<owner id>` is refused (403). `as=owner` works only without `DEV_AUTH_KEY`, i.e. on a
+loopback-only local server. The key is never logged (request logs record the path only).
 
-**Test deployments only.** Anyone holding the key can sign in as any role, including the owner.
+**Test deployments only.** Anyone holding the key can sign in as any non-owner role, leadership included.
 Never point a dev build at real data, and never deploy one to production.
 
 **The dev login cannot exist in production.** `/auth/dev` is compiled in only with `-tags dev`
@@ -156,7 +158,8 @@ database and validates exercised request bodies, queries and responses against `
 all GET endpoints plus a purchase lifecycle (create → attach → submit → approve by a second
 director → fulfil → close), a restricted-grant reimbursement, the purchasing-agent flow including an
 over-tolerance hold, Luma ingest, CSV import, and the director writes. It fails on any schema error,
-unexpected status, or non-exempt endpoint left unexercised. Six auth/Google redirect endpoints are explicitly exempt and covered by Go tests. The documentation check validated 190 responses across 94 of 100 endpoint definitions.
+unexpected status, or non-exempt endpoint left unexercised. Seven endpoints are exempt
+(auth/Google redirects and the dev-build-only `/auth/dev` routes) and are covered by Go tests.
 
 The seeded FY2027 statements foot (printed by the check and asserted in `TestSeededFY2027StatementsFoot`):
 
