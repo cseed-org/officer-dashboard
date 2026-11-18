@@ -49,6 +49,7 @@ services:
       - ./src:/app/src:ro
       - ./web/astro.config.mjs:/app/web/astro.config.mjs:ro
       - ./web/tsconfig.json:/app/web/tsconfig.json:ro
+      - ./web/integrations:/app/web/integrations:ro
       - ./web/tests:/app/web/tests:ro
       - ./web/package.json:/app/web/package.json:ro
       - ./web/package-lock.json:/app/web/package-lock.json:ro
@@ -75,8 +76,13 @@ services:
       E2E_DEV_AUTH_KEY: ${DOCKER_DEV_AUTH_KEY:-local-docker-development-only}
     volumes:
       - ./web/src:/app/web/src:ro
+      # unit.spec imports the canonical contract outside web/; use the same zod install.
+      - ./src:/app/src:ro
+      - web_modules:/app/node_modules:ro
       - ./web/tests:/app/web/tests:ro
       - ./web/playwright.config.ts:/app/web/playwright.config.ts:ro
+      - ./web/tsconfig.json:/app/web/tsconfig.json:ro
+      - ./web/integrations:/app/web/integrations:ro
       - ./web/package.json:/app/web/package.json:ro
       - web_modules:/app/web/node_modules
       - ./test-results/docker:/app/web/test-results
