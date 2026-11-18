@@ -1,4 +1,6 @@
 import { PersonDrawer, usePersonParam } from "../components/PersonDrawer";
+import { api } from "../../lib/api/client";
+import { LoadHistory, mergeActivity } from "../components/LoadHistory";
 import { useMemo, useRef, useState } from "preact/hooks";
 import { BUILDSPACE_STAGES, BUILDSPACE_TRACKS } from "../../core/constants";
 import type { BuildspaceData, BuildspaceProject } from "../../lib/contracts";
@@ -113,6 +115,11 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
           )
         )}
       </Async>
+      {state.status === "ready" && state.data.activityNextCursor && <LoadHistory key={`${state.data.cohortId}|${state.data.activityNextCursor}`} load={async (signal) => {
+        const previous = state.data;
+        const more = await api("buildspaceList", {query: {...query, activityCursor: previous.activityNextCursor!}, signal});
+        state.set({...more, activity: mergeActivity(previous.activity, more.activity)});
+      }} /> }
     </div>
   );
 }

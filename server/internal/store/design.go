@@ -1,6 +1,9 @@
 package store
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 // DesignStages is the board order.
 var DesignStages = []string{"new", "accepted", "in-progress", "in-review", "delivered"}
@@ -82,13 +85,23 @@ func (q *Queries) DeleteDesignRequest(ctx context.Context, id string) error {
 }
 
 // DesignCounts returns comment and file counts per request.
-func (q *Queries) DesignCounts(ctx context.Context) (comments, files map[string]int, err error) {
+func (q *Queries) DesignCounts(ctx context.Context, selected ...[]string) (comments, files map[string]int, err error) {
 	comments, files = map[string]int{}, map[string]int{}
+	where := ""
+	var args []any
+	if len(selected) > 0 {
+		if len(selected[0]) == 0 {
+			return comments, files, nil
+		}
+		raw, _ := json.Marshal(selected[0])
+		where = ` WHERE request_id IN (SELECT value FROM json_each(?))`
+		args = []any{string(raw)}
+	}
 	for _, t := range []struct {
 		table string
 		into  map[string]int
 	}{{"design_request_comments", comments}, {"design_request_files", files}} {
-		rows, err := q.q.QueryContext(ctx, `SELECT request_id, count(*) FROM `+t.table+` GROUP BY request_id`)
+		rows, err := q.q.QueryContext(ctx, `SELECT request_id, count(*) FROM `+t.table+where+` GROUP BY request_id`, args...)
 		if err != nil {
 			return nil, nil, err
 		}

@@ -86,17 +86,19 @@ type BuildspaceActivity struct {
 	AuthorName      *string `json:"authorName"`
 }
 type Buildspace struct {
-	Projects  []BuildspaceProject  `json:"projects"`
-	People    []BuildspacePerson   `json:"people"`
-	Mentors   []BuildspaceMentor   `json:"mentors"`
-	Activity  []BuildspaceActivity `json:"activity"`
-	WeekStart string               `json:"weekStart"`
-	WeekDue   string               `json:"weekDue"`
-	Today     string               `json:"today"`
-	Schedule  BuildspaceSchedule   `json:"schedule"`
-	Cohorts   []LaunchpadCohort    `json:"cohorts"`
-	CohortID  *string              `json:"cohortId"`
-	Accounts  []LaunchpadAccount   `json:"accounts"`
+	WeeklyDone         map[string]bool      `json:"-"`
+	ActivityNextCursor *string              `json:"activityNextCursor,omitempty"`
+	Projects           []BuildspaceProject  `json:"projects"`
+	People             []BuildspacePerson   `json:"people"`
+	Mentors            []BuildspaceMentor   `json:"mentors"`
+	Activity           []BuildspaceActivity `json:"activity"`
+	WeekStart          string               `json:"weekStart"`
+	WeekDue            string               `json:"weekDue"`
+	Today              string               `json:"today"`
+	Schedule           BuildspaceSchedule   `json:"schedule"`
+	Cohorts            []LaunchpadCohort    `json:"cohorts"`
+	CohortID           *string              `json:"cohortId"`
+	Accounts           []LaunchpadAccount   `json:"accounts"`
 }
 
 // Project finds a project by ID.
@@ -186,6 +188,25 @@ func (r rowIter) each(fn func(*sql.Rows) error) error {
 // Buildspace reads the whole register: every cohort, project, builder, mentor, account and
 // activity entry. The cohort is small; the API filters by cohort and archive state.
 func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
+	return q.buildspace(ctx, nil, nil)
+}
+
+// BuildspaceForCohort reads activity only for the selected cohort. An empty ID selects
+// the default cohort; all cohort metadata remains available for navigation and mentor loads.
+func (q *Queries) BuildspaceForCohort(ctx context.Context, cohortID string) (Buildspace, error) {
+	return q.buildspace(ctx, &cohortID, nil)
+}
+
+func (q *Queries) LaunchpadPersonArchived(ctx context.Context, id string) (bool, error) {
+	var archived bool
+	err := q.q.QueryRowContext(ctx, `SELECT archived_at IS NOT NULL FROM buildspace_launchpad_people WHERE id=?`, id).Scan(&archived)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return archived, err
+}
+
+func (q *Queries) buildspace(ctx context.Context, cohortID *string, page *BuildspaceActivityPage) (Buildspace, error) {
 	b := Buildspace{Projects: []BuildspaceProject{}, People: []BuildspacePerson{}, Mentors: []BuildspaceMentor{}, Activity: []BuildspaceActivity{}, Cohorts: []LaunchpadCohort{}, Accounts: []LaunchpadAccount{}}
 	var err error
 	if b.Cohorts, err = q.LaunchpadCohorts(ctx); err != nil {
@@ -268,10 +289,37 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 			}
 		}
 	}
+	activityWhere := " WHERE 1=1"
+	if page != nil && page.SkipActivity {
+		return b, nil
+	}
+	var activityArgs []any
+	if cohortID != nil {
+		id := *cohortID
+		if id == "" {
+			if cohort := b.DefaultCohort(); cohort != nil {
+				id = cohort.ID
+			}
+		}
+		activityWhere = ` WHERE a.project_id IN (SELECT id FROM buildspace_launchpad_projects WHERE cohort_id=?)`
+		activityArgs = append(activityArgs, id)
+	}
+	if page != nil {
+		if len(page.Visibility) > 0 {
+			b.WeeklyDone, err = q.weeklyDone(ctx, activityWhere, activityArgs, *page)
+			if err != nil {
+				return b, err
+			}
+		}
+		activityWhere, activityArgs, b.ActivityNextCursor, err = q.activityPageWhere(ctx, activityWhere, activityArgs, *page)
+		if err != nil {
+			return b, err
+		}
+	}
 	err = iter(q.q.QueryContext(ctx, `SELECT a.id,a.project_id,a.person_id,a.mentor_id,a.kind,a.date,a.body,a.status,a.purchase_id,a.source,a.external_id,a.created_at,p.title,p.status,p.needed_by,a.visibility,a.author_account_id,
  CASE WHEN acc.id IS NULL THEN NULL ELSE COALESCE((SELECT name FROM buildspace_launchpad_people WHERE id=acc.person_id),(SELECT name FROM contacts WHERE id=acc.contact_id),acc.name) END
  FROM buildspace_launchpad_activity a LEFT JOIN purchase_requests p ON p.id=a.purchase_id LEFT JOIN buildspace_launchpad_accounts acc ON acc.id=a.author_account_id
- ORDER BY a.date DESC,a.created_at DESC,a.id`)).each(func(rows *sql.Rows) error {
+`+activityWhere+` ORDER BY a.date DESC,a.created_at DESC,a.id`, activityArgs...)).each(func(rows *sql.Rows) error {
 		var a BuildspaceActivity
 		if err := rows.Scan(&a.ID, &a.ProjectID, &a.PersonID, &a.MentorID, &a.Kind, &a.Date, &a.Body, &a.Status, &a.PurchaseID, &a.Source, &a.ExternalID, &a.CreatedAt, &a.PurchaseTitle, &a.PurchaseStatus, &a.PurchaseNeededBy, &a.Visibility, &a.AuthorAccountID, &a.AuthorName); err != nil {
 			return err

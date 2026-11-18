@@ -94,11 +94,11 @@ func (c *Ctx) portal(kind string) (*portalSession, error) {
 		return nil, forbidden("This page is for " + kind + "s")
 	}
 	if a.Kind == "builder" && a.PersonID != nil {
-		b, err := c.S.db.Read().Buildspace(ctx)
+		archived, err := c.S.db.Read().LaunchpadPersonArchived(ctx, *a.PersonID)
 		if err != nil {
 			return nil, err
 		}
-		if p := b.Person(*a.PersonID); p != nil && p.ArchivedAt != nil {
+		if archived {
 			return nil, fail(403, "archived", "Your Launchpad access is paused. Contact an officer.")
 		}
 	}
@@ -272,11 +272,11 @@ func (s *Server) portalAccountFor(ctx context.Context, discordID string) (string
 		return "", "disabled", nil
 	}
 	if a.PersonID != nil {
-		b, err := q.Buildspace(ctx)
+		archived, err := q.LaunchpadPersonArchived(ctx, *a.PersonID)
 		if err != nil {
 			return "", "", err
 		}
-		if p := b.Person(*a.PersonID); p != nil && p.ArchivedAt != nil {
+		if archived {
 			return "", "archived", nil
 		}
 	}
@@ -474,6 +474,9 @@ func weekStatus(b *store.Buildspace, sched store.BuildspaceSchedule, p *store.Bu
 	if p.JoinedOn > sched.Today {
 		return "not-joined"
 	}
+	if b.WeeklyDone[p.ID] {
+		return "done"
+	}
 	for _, a := range b.Activity {
 		// Only entries dated through today count, like the officers' check-in signal; a
 		// future-dated entry does not finish this week early.
@@ -496,10 +499,16 @@ type builderContext struct {
 	project *store.BuildspaceProject
 }
 
-func loadBuilder(ctx context.Context, q *store.Queries, s *portalSession) (*builderContext, error) {
-	b, err := q.Buildspace(ctx)
-	if err != nil {
-		return nil, err
+func loadBuilder(ctx context.Context, q *store.Queries, s *portalSession, preloaded ...*store.Buildspace) (*builderContext, error) {
+	var b store.Buildspace
+	if len(preloaded) > 0 {
+		b = *preloaded[0]
+	} else {
+		var err error
+		b, err = q.BuildspaceRoster(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	bc := &builderContext{s: s, b: b}
 	if s.account.CohortID == nil || bc.b.Cohort(*s.account.CohortID) == nil {
@@ -538,11 +547,23 @@ func (c *Ctx) portalBuilder() error {
 		return err
 	}
 	q := c.S.db.Read()
-	bc, err := loadBuilder(c.Context(), q, s)
+	sched, err := c.buildspaceSchedule(q)
 	if err != nil {
 		return err
 	}
-	sched, err := c.buildspaceSchedule(q)
+	activityCursor, err := c.activityCursor()
+	if err != nil {
+		return err
+	}
+	person := deref(s.account.PersonID)
+	if person == "" {
+		person = "no-person"
+	}
+	register, err := q.BuildspaceCohortPage(c.Context(), deref(s.account.CohortID), store.BuildspaceActivityPage{WeekStart: sched.Week.Start, WeekDue: sched.Week.Due, Cursor: activityCursor, PersonID: person, Visibility: []string{"team"}})
+	if err != nil {
+		return err
+	}
+	bc, err := loadBuilder(c.Context(), q, s, &register)
 	if err != nil {
 		return err
 	}
@@ -551,7 +572,7 @@ func (c *Ctx) portalBuilder() error {
 		"cohort":    map[string]any{"id": co.ID, "name": co.Name, "status": co.Status, "startsOn": co.StartsOn, "endsOn": co.EndsOn},
 		"onboarded": bc.person != nil, "readOnly": co.Status != "active", "email": s.account.Email,
 		"me": nil, "project": nil, "teammates": []portalPerson{}, "mentors": []portalMentorCard{}, "activity": []portalActivity{},
-		"schedule": sched, "thisWeek": "not-joined", "joinable": []any{},
+		"schedule": sched, "thisWeek": "not-joined", "joinable": []any{}, "activityNextCursor": b.ActivityNextCursor,
 	}
 	if bc.person == nil {
 		type joinable struct {
@@ -867,7 +888,7 @@ func (c *Ctx) portalBuilderActivity() error {
 		return err
 	}
 	return c.portalInsertActivity(s, "builder", a, func(q *store.Queries, b *store.Buildspace, a *store.BuildspaceActivity) error {
-		bc, err := loadBuilder(c.Context(), q, s)
+		bc, err := loadBuilder(c.Context(), q, s, b)
 		if err != nil {
 			return err
 		}
@@ -888,7 +909,7 @@ func (c *Ctx) portalInsertActivity(s *portalSession, kind string, a store.Builds
 		if err := c.portalIn(ctx, q, s, kind); err != nil {
 			return err
 		}
-		b, err := q.Buildspace(ctx)
+		b, err := q.BuildspaceRoster(ctx)
 		if err != nil {
 			return err
 		}
@@ -935,11 +956,15 @@ func (c *Ctx) portalMentor() error {
 		return err
 	}
 	q := c.S.db.Read()
-	b, err := q.Buildspace(c.Context())
+	sched, err := c.buildspaceSchedule(q)
 	if err != nil {
 		return err
 	}
-	sched, err := c.buildspaceSchedule(q)
+	activityCursor, err := c.activityCursor()
+	if err != nil {
+		return err
+	}
+	b, err := q.BuildspaceMentorPage(c.Context(), store.BuildspaceActivityPage{WeekStart: sched.Week.Start, WeekDue: sched.Week.Due, Cursor: activityCursor, MentorID: deref(s.account.ContactID), Visibility: []string{"team", "mentors"}})
 	if err != nil {
 		return err
 	}
@@ -997,7 +1022,7 @@ func (c *Ctx) portalMentor() error {
 		}
 		list = append(list, v)
 	}
-	writeJSON(c.W, 200, map[string]any{"mentor": card, "projects": list, "schedule": sched})
+	writeJSON(c.W, 200, map[string]any{"mentor": card, "projects": list, "schedule": sched, "activityNextCursor": b.ActivityNextCursor})
 	return nil
 }
 

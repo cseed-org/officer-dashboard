@@ -86,6 +86,18 @@ export default function DesignView({ me }: { me: CurrentUser }) {
   const eventId = search.get('eventId') ?? undefined;
 
   const state = useApi('designRequestsList');
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const loadHistory = async () => {
+    if (state.status !== 'ready' || !state.data.deliveredNextCursor || historyBusy) return;
+    setHistoryBusy(true);
+    try {
+      const more = await api('designRequestsList', { query: { deliveredOnly: 'true', deliveredCursor: state.data.deliveredNextCursor } });
+      const byId = new Map(state.data.items.map((i) => [i.id, i]));
+      for (const i of more.items) byId.set(i.id, i);
+      state.set({ ...state.data, items: [...byId.values()], deliveredNextCursor: more.deliveredNextCursor });
+    } catch (error) { setToast({ text: errorMessage(error) }); }
+    finally { setHistoryBusy(false); }
+  };
   const [title, setTitle] = useState('Design request');
   const [toast, setToast] = useState<Toast | null>(null);
   const [live, setLive] = useState('');
@@ -328,6 +340,7 @@ export default function DesignView({ me }: { me: CurrentUser }) {
               ) : (
                 <List data={d} items={shown} menu={menu} />
               )}
+              {d.deliveredNextCursor && <button type="button" class="linkish lane-more" disabled={historyBusy} onClick={() => void loadHistory()}>{historyBusy ? 'Loading delivered work…' : 'Load more delivered work'}</button>}
               <UpcomingRail events={d.upcomingEvents} onRequest={(e) => setParams({ new: 1, eventId: e.id, id: null })} onOpen={(id) => setParams({ id })} onSetNeed={setNeed} />
             </div>
           );

@@ -4,6 +4,7 @@ import { safeUrl } from "../../lib/url";
  * need a look), a project detail with its builders, co-mentors and timeline, and "Add note".
  * The server scopes everything to assigned, non-archived projects (docs/launchpad-cohorts.md).
  */
+import { LoadHistory, mergeActivity } from "../components/LoadHistory";
 import { useState } from "preact/hooks";
 import type { PortalMe, PortalMentorProject, PortalMentorResponse } from "../../lib/contracts";
 import { api } from "../../lib/api/client";
@@ -16,7 +17,13 @@ import { Card, firstName, PortalTimeline, TrackChip, WeekChip } from "./shared";
 
 export function MentorHome({ me }: { me: PortalMe }) {
   const state = useApi("portalMentor");
-  return <Async state={state}>{(d) => <MentorDashboard d={d} me={me} reload={state.reload} />}</Async>;
+  return <Async state={state}>{(d) => <>
+    <MentorDashboard d={d} me={me} reload={state.reload} />
+    {d.activityNextCursor && <LoadHistory key={d.activityNextCursor} load={async (signal) => {
+      const more = await api("portalMentor", {query:{activityCursor:d.activityNextCursor!},signal});
+      state.set({...more,projects:more.projects.map((p) => ({...p,activity:mergeActivity(d.projects.find((old) => old.id===p.id)?.activity ?? [],p.activity)}))});
+    }} />}
+  </>}</Async>;
 }
 
 function MentorDashboard({ d, me, reload }: { d: PortalMentorResponse; me: PortalMe; reload: () => void }) {
