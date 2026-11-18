@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -139,9 +140,22 @@ type gTime struct {
 	DateTime string `json:"dateTime"`
 }
 
-// UpsertEvent creates the event on the primary calendar, or updates eventID when set.
-// It returns the Google event id. A 404/410 on update falls back to creating it again.
-func (g *Google) UpsertEvent(ctx context.Context, accessToken, eventID string, e Event) (string, error) {
+// EventID is the Google event id the dashboard gives an invite on one calendar: a hex
+// digest of the invite UID and the destination, so it is stable across retries and
+// restarts. Hex digits are valid base32hex, which events.insert accepts as a client id.
+func EventID(uid, destination string) string {
+	sum := sha256.Sum256([]byte(uid + "\x00" + destination))
+	return hex.EncodeToString(sum[:])
+}
+
+// UpsertEvent writes the event to the primary calendar and returns its Google event id.
+// eventID, when set, is an event that may already be there (stored from an earlier
+// delivery, possibly one assigned by Google before V0.14.1): it is updated. Otherwise, or
+// when that event is gone (404/410), the event is created with newID as its id. Creating
+// is idempotent: when newID already exists (409, a repeated insert whose answer or record
+// was lost) that same event is updated instead of a second one being added. A
+// cancellation of an event that is gone succeeds without creating anything.
+func (g *Google) UpsertEvent(ctx context.Context, accessToken, eventID, newID string, e Event) (string, error) {
 	body := map[string]any{
 		"summary":     e.Summary,
 		"description": strings.TrimSpace(e.Description + "\n\n" + e.URL),
@@ -158,33 +172,70 @@ func (g *Google) UpsertEvent(ctx context.Context, accessToken, eventID string, e
 	if e.Cancelled {
 		body["status"] = "cancelled"
 	}
-	method, target := http.MethodPost, g.APIBase+"/calendars/primary/events"
+	gone := func(status int) bool { return status == http.StatusNotFound || status == http.StatusGone }
+	if e.Cancelled && eventID == "" {
+		eventID = newID // never create an event just to cancel it
+	}
 	if eventID != "" {
-		method, target = http.MethodPatch, target+"/"+url.PathEscape(eventID)
+		status, id, err := g.writeEvent(ctx, accessToken, http.MethodPatch, eventID, body)
+		switch {
+		case err != nil:
+			return "", err
+		case status/100 == 2:
+			return id, nil
+		case gone(status) && e.Cancelled:
+			return eventID, nil // already gone from that calendar: nothing left to cancel
+		case !gone(status):
+			return "", fmt.Errorf("google calendar: HTTP %d", status)
+		}
+	}
+	if newID != "" {
+		body["id"] = newID
+	}
+	status, id, err := g.writeEvent(ctx, accessToken, http.MethodPost, "", body)
+	switch {
+	case err != nil:
+		return "", err
+	case status/100 == 2:
+		return id, nil
+	case status == http.StatusConflict && newID != "" && newID != eventID:
+		// The id is taken: an earlier insert of this same invite got through. Update it.
+		delete(body, "id")
+		status, id, err = g.writeEvent(ctx, accessToken, http.MethodPatch, newID, body)
+		if err != nil {
+			return "", err
+		}
+		if status/100 == 2 {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("google calendar: HTTP %d", status)
+}
+
+// writeEvent sends one Calendar API write: POST to create (eventID ""), PATCH to update.
+// It returns the HTTP status and, on success, the event id.
+func (g *Google) writeEvent(ctx context.Context, accessToken, method, eventID string, body map[string]any) (int, string, error) {
+	target := g.APIBase + "/calendars/primary/events"
+	if eventID != "" {
+		target += "/" + url.PathEscape(eventID)
 	}
 	raw, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(raw))
 	if err != nil {
-		return "", err
+		return 0, "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
 	res, err := g.client().Do(req)
 	if err != nil {
-		return "", fmt.Errorf("google calendar: %w", err)
+		return 0, "", fmt.Errorf("google calendar: %w", err)
 	}
 	defer res.Body.Close()
-	if eventID != "" && (res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusGone) && e.Cancelled {
-		return eventID, nil // already gone from that calendar: nothing left to cancel
-	}
-	if eventID != "" && (res.StatusCode == http.StatusNotFound || res.StatusCode == http.StatusGone) && !e.Cancelled {
-		return g.UpsertEvent(ctx, accessToken, "", e)
-	}
 	if res.StatusCode == http.StatusUnauthorized {
-		return "", ErrGoogleRevoked
+		return 0, "", ErrGoogleRevoked
 	}
 	if res.StatusCode/100 != 2 {
-		return "", fmt.Errorf("google calendar: HTTP %d", res.StatusCode)
+		return res.StatusCode, "", nil
 	}
 	var out struct {
 		ID string `json:"id"`
@@ -193,7 +244,12 @@ func (g *Google) UpsertEvent(ctx context.Context, accessToken, eventID string, e
 	if out.ID == "" {
 		out.ID = eventID
 	}
-	return out.ID, nil
+	if out.ID == "" {
+		if id, ok := body["id"].(string); ok {
+			out.ID = id
+		}
+	}
+	return res.StatusCode, out.ID, nil
 }
 
 // Sealer encrypts OAuth tokens at rest with AES-256-GCM. The key is derived from the

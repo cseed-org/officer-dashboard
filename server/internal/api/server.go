@@ -84,8 +84,9 @@ type Server struct {
 
 	sealer     *calendar.Sealer
 	bg         sync.WaitGroup // background calendar deliveries
-	calMu      sync.Mutex     // guards calRunning and calKicked
+	calMu      sync.Mutex     // guards calRunning, calKicked and calAll
 	calKicked  bool           // new outbox rows since the worker last looked
+	calAll     bool           // the next pass retries every job, backoff or not
 	calRunning bool           // one worker drains calendar_outbox
 	evLocks    [64]sync.Mutex // eventLock stripes
 }

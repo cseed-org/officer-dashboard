@@ -290,7 +290,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	defer stop()
 	go sessionJanitor(ctx, db, log)
 	// Deliver calendar jobs a previous run left in the outbox, and retry failed
-	// cancellations hourly.
+	// ones hourly.
 	srv.ResumeCalendar()
 	go calendarRetry(ctx, srv)
 	go srv.CloudflareDaily(ctx)
@@ -324,8 +324,8 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 // deploy/compose.cloudflare.yml stop_grace_period (checked by TestStopTimeoutsExceedShutdownBudget).
 const ShutdownBudget = 15 * time.Second
 
-// calendarRetry restarts the calendar outbox worker hourly, so a cancellation that failed
-// (SMTP relay or Google down) is retried without waiting for the next event change.
+// calendarRetry restarts the calendar outbox worker hourly, so every job that failed (SMTP
+// relay or Google down) is retried, whatever its backoff, without waiting for a change.
 func calendarRetry(ctx context.Context, srv *api.Server) {
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()

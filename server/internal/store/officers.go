@@ -140,6 +140,13 @@ func (q *Queries) ActiveCalendarEmail(ctx context.Context, userID string) (*stri
 // for an event. Status "sent" means the destination has the invite; Cancelled means it has
 // since been withdrawn there. Error is the latest attempt's failure, kept beside the last
 // success so a failed update never hides where the invite already is.
+//
+// AttemptSequence is set while a send is in flight: it is written before the send and
+// cleared when its outcome is recorded. A row that still has it after a crash may or may
+// not have reached the destination, so a deletion cancels it too (with a newer SEQUENCE),
+// and the next delivery repeats it. Status "pending" is such a row with no earlier
+// success. For Google, GoogleEventID is also written before the first insert (a stable id
+// the dashboard chooses), so a repeated insert finds the first copy instead of adding one.
 type Delivery struct {
 	EventID       string  `json:"eventId"`
 	UserID        string  `json:"userId"`
@@ -149,6 +156,7 @@ type Delivery struct {
 	GoogleEventID *string `json:"googleEventId,omitempty"`
 	Sequence      int     `json:"sequence"`
 	Status        string  `json:"status"`
+	AttemptSeq    *int    `json:"attemptSequence,omitempty"`
 	Cancelled     bool    `json:"cancelled"`
 	Error         *string `json:"error,omitempty"`
 	ContentHash   *string `json:"contentHash,omitempty"`
@@ -158,12 +166,29 @@ type Delivery struct {
 // Live reports whether the destination still shows the event as scheduled.
 func (d Delivery) Live() bool { return d.Status == "sent" && !d.Cancelled }
 
-const deliveryCols = `event_id,user_id,destination,mode,recipient,google_event_id,sequence,status,cancelled,error,content_hash,updated_at`
+// Unresolved reports a send whose outcome was never recorded (see AttemptSeq).
+func (d Delivery) Unresolved() bool { return d.AttemptSeq != nil }
+
+// NeedsCancel reports whether withdrawing the event must reach this destination: it has
+// the invite, or may have it from an unresolved send.
+func (d Delivery) NeedsCancel() bool { return d.Live() || d.Unresolved() }
+
+// NextSequence is the SEQUENCE for the next message to this destination: newer than
+// anything it was sent, including an unresolved attempt.
+func (d Delivery) NextSequence() int {
+	n := d.Sequence
+	if d.AttemptSeq != nil && *d.AttemptSeq > n {
+		n = *d.AttemptSeq
+	}
+	return n + 1
+}
+
+const deliveryCols = `event_id,user_id,destination,mode,recipient,google_event_id,sequence,status,attempt_sequence,cancelled,error,content_hash,updated_at`
 
 func scanDelivery(r interface{ Scan(...any) error }) (Delivery, error) {
 	var d Delivery
 	var at Ms
-	err := r.Scan(&d.EventID, &d.UserID, &d.Destination, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.Cancelled, &d.Error, &d.ContentHash, &at)
+	err := r.Scan(&d.EventID, &d.UserID, &d.Destination, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.AttemptSeq, &d.Cancelled, &d.Error, &d.ContentHash, &at)
 	d.UpdatedAt = int64(at)
 	return d, err
 }
@@ -196,11 +221,16 @@ func (q *Queries) DeliveriesForEvent(ctx context.Context, eventID, userID string
 	return out, rows.Err()
 }
 
+// DeleteDelivery removes one destination row (an attempt that never went out).
+func (q *Queries) DeleteDelivery(ctx context.Context, eventID, userID, destination string) error {
+	return q.Exec(ctx, `DELETE FROM calendar_deliveries WHERE event_id=? AND user_id=? AND destination=?`, eventID, userID, destination)
+}
+
 func (q *Queries) SaveDelivery(ctx context.Context, d Delivery) error {
-	return q.Exec(ctx, `INSERT INTO calendar_deliveries(`+deliveryCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+	return q.Exec(ctx, `INSERT INTO calendar_deliveries(`+deliveryCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(event_id,user_id,destination) DO UPDATE SET mode=excluded.mode,recipient=excluded.recipient,google_event_id=excluded.google_event_id,
-		sequence=excluded.sequence,status=excluded.status,cancelled=excluded.cancelled,error=excluded.error,content_hash=excluded.content_hash,updated_at=excluded.updated_at`,
-		d.EventID, d.UserID, d.Destination, d.Mode, d.Recipient, d.GoogleEventID, d.Sequence, d.Status, d.Cancelled, d.Error, d.ContentHash, d.UpdatedAt)
+		sequence=excluded.sequence,status=excluded.status,attempt_sequence=excluded.attempt_sequence,cancelled=excluded.cancelled,error=excluded.error,content_hash=excluded.content_hash,updated_at=excluded.updated_at`,
+		d.EventID, d.UserID, d.Destination, d.Mode, d.Recipient, d.GoogleEventID, d.Sequence, d.Status, d.AttemptSeq, d.Cancelled, d.Error, d.ContentHash, d.UpdatedAt)
 }
 
 // ─── Google tokens ───

@@ -32,15 +32,20 @@ func (s CalendarSnapshot) Event() *Event {
 //	sync:     deliver event EventID (re-read when it runs) to every recipient
 //	backfill: deliver every upcoming event to UserID
 //	cancel:   withdraw the deleted event Snapshot from the destinations in Priors
+//
+// A job stays until it has fully succeeded; nothing is dropped after some number of
+// failures. Attempts counts failed runs, and the worker leaves a failed job alone until
+// NextAttemptAt (backoff) unless it is told to retry everything (startup, hourly).
 type CalendarJob struct {
-	ID        int64
-	Kind      string
-	EventID   string
-	UserID    string
-	Snapshot  *CalendarSnapshot
-	Priors    []Delivery
-	Attempts  int
-	LastError *string
+	ID            int64
+	Kind          string
+	EventID       string
+	UserID        string
+	Snapshot      *CalendarSnapshot
+	Priors        []Delivery
+	Attempts      int
+	LastError     *string
+	NextAttemptAt int64
 }
 
 // EnqueueCalendar adds a job; call it in the transaction that makes the change it delivers.
@@ -64,12 +69,14 @@ func (q *Queries) EnqueueCalendar(ctx context.Context, j CalendarJob, now int64)
 		j.Kind, nz(j.EventID), nz(j.UserID), snap, priors, now)
 }
 
-// NextCalendarJob returns the oldest job after afterID, or ErrNotFound.
-func (q *Queries) NextCalendarJob(ctx context.Context, afterID int64) (*CalendarJob, error) {
+// NextCalendarJob returns the oldest job after afterID that is due at now (any job when
+// all is true), or ErrNotFound.
+func (q *Queries) NextCalendarJob(ctx context.Context, afterID, now int64, all bool) (*CalendarJob, error) {
 	var j CalendarJob
 	var eventID, userID, snap, priors sql.NullString
-	err := q.q.QueryRowContext(ctx, `SELECT id,kind,event_id,user_id,snapshot,priors,attempts,last_error FROM calendar_outbox WHERE id>? ORDER BY id LIMIT 1`, afterID).
-		Scan(&j.ID, &j.Kind, &eventID, &userID, &snap, &priors, &j.Attempts, &j.LastError)
+	err := q.q.QueryRowContext(ctx, `SELECT id,kind,event_id,user_id,snapshot,priors,attempts,last_error,next_attempt_at FROM calendar_outbox
+ WHERE id>? AND (? OR next_attempt_at<=?) ORDER BY id LIMIT 1`, afterID, all, now).
+		Scan(&j.ID, &j.Kind, &eventID, &userID, &snap, &priors, &j.Attempts, &j.LastError, &j.NextAttemptAt)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -88,8 +95,9 @@ func (q *Queries) NextCalendarJob(ctx context.Context, afterID int64) (*Calendar
 	return &j, nil
 }
 
-// UpdateCalendarJob records a partial or failed run: what is still to do, and why.
-func (q *Queries) UpdateCalendarJob(ctx context.Context, id int64, priors []Delivery, attempts int, lastError *string) error {
+// UpdateCalendarJob records a partial or failed run: what is still to do, why, and when
+// to try again.
+func (q *Queries) UpdateCalendarJob(ctx context.Context, id int64, priors []Delivery, attempts int, lastError *string, nextAttemptAt int64) error {
 	var p any
 	if priors != nil {
 		b, err := json.Marshal(priors)
@@ -98,7 +106,7 @@ func (q *Queries) UpdateCalendarJob(ctx context.Context, id int64, priors []Deli
 		}
 		p = string(b)
 	}
-	return q.Exec(ctx, `UPDATE calendar_outbox SET priors=?, attempts=?, last_error=? WHERE id=?`, p, attempts, lastError, id)
+	return q.Exec(ctx, `UPDATE calendar_outbox SET priors=?, attempts=?, last_error=?, next_attempt_at=? WHERE id=?`, p, attempts, lastError, nextAttemptAt, id)
 }
 
 // DeleteCalendarJob removes a finished job.

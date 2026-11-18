@@ -326,6 +326,9 @@ func (c *Ctx) eventDelete() error {
 	id := c.R.PathValue("id")
 	// Wait for any delivery of this event that is mid-send, so its delivery row is part of
 	// the snapshot below (and a later send finds the event gone).
+	if testDeleteHook != nil {
+		testDeleteHook(id)
+	}
 	unlock := c.S.eventLock(id)
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		e, err := w.EventByID(ctx, id)
@@ -341,14 +344,15 @@ func (c *Ctx) eventDelete() error {
 		}
 		before := eventSnapshot(e)
 		// Calendar deliveries cascade with the event: queue a cancellation for every
-		// destination that still shows it, in this transaction.
+		// destination that has it, or may have it from a send whose outcome was never
+		// recorded (a crash mid-send), in this transaction.
 		priors, err := w.DeliveriesForEvent(ctx, id, "")
 		if err != nil {
 			return err
 		}
 		var live []store.Delivery
 		for _, d := range priors {
-			if d.Live() {
+			if d.NeedsCancel() {
 				live = append(live, d)
 			}
 		}
@@ -1054,3 +1058,7 @@ func eventForLuma(ctx context.Context, w *store.Queries, lumaID string) (*store.
 	}
 	return nil, err
 }
+
+// testDeleteHook, when a test sets it, runs in eventDelete just before it waits for the
+// event lock.
+var testDeleteHook func(eventID string)
