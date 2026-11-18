@@ -86,3 +86,19 @@ func TestWeekStatusIgnoresFutureDatedEntries(t *testing.T) {
 		}
 	}
 }
+
+// M-082: with a frozen clock, a builder archived on their own in the same millisecond as
+// their project's archive stays archived when the project is restored.
+func TestProjectRestoreKeepsIndependentlyArchivedBuilder(t *testing.T) {
+	e := newEnv(t) // e.clock does not move between requests
+	d := e.director()
+	e.mustOK(e.post("/api/buildspace-launchpad/people/bs-person-01/archive", map[string]any{}, d))
+	e.mustOK(e.post("/api/buildspace-launchpad/projects/bs-moss/archive", map[string]any{}, d))
+	e.mustOK(e.post("/api/buildspace-launchpad/projects/bs-moss/restore", map[string]any{}, d))
+	if v := e.scalar(`SELECT archived_at IS NOT NULL FROM buildspace_launchpad_people WHERE id='bs-person-01'`); v != int64(1) {
+		t.Errorf("independently archived builder was restored with the project")
+	}
+	if v := e.scalar(`SELECT archived_at IS NULL FROM buildspace_launchpad_people WHERE id='bs-person-02'`); v != int64(1) {
+		t.Errorf("builder archived with the project was not restored")
+	}
+}
