@@ -1,0 +1,42 @@
+
+> cseed-officer-dashboard-web@0.0.1 build
+> astro build
+
+10:00:18 [types] Generated 104ms
+10:00:18 [build] output: "static"
+10:00:18 [build] mode: "static"
+10:00:18 [build] directory: C:\Users\Leona\GitHubRepo\officer-dashboard-review\worktrees\v0141-server-perf\web\dist\
+10:00:18 [build] Collecting build info...
+10:00:18 [build] ✓ Completed in 156ms.
+10:00:18 [build] Building static entrypoints...
+10:00:20 [vite] ✓ built in 1.86s
+10:00:21 [vite] ✓ built in 1.33s
+10:00:21 [build] Rearranging server assets...
+
+ generating static routes 
+10:00:21   ├─ /404.html (+36ms) 
+10:00:21   ├─ /admin/users/index.html (+7ms) 
+10:00:21   ├─ /admin/tokens/index.html (+2ms) 
+10:00:21   ├─ /admin/audit/index.html (+2ms) 
+10:00:21   ├─ /admin/index.html (+3ms) 
+10:00:21   ├─ /buildspace-launchpad/index.html (+50ms) 
+10:00:21   ├─ /contacts/index.html (+6ms) 
+10:00:21   ├─ /design/index.html (+10ms) 
+10:00:21   ├─ /events/index.html (+11ms) 
+10:00:21   ├─ /finance/index.html (+7ms) 
+10:00:21   ├─ /launchpad/join/index.html (+5ms) 
+10:00:21   ├─ /launchpad/login/index.html (+4ms) 
+10:00:21   ├─ /launchpad/index.html (+5ms) 
+10:00:21   ├─ /login/index.html (+3ms) 
+10:00:21   ├─ /members/index.html (+6ms) 
+10:00:21   ├─ /officers/index.html (+14ms) 
+10:00:21   ├─ /onboarding/index.html (+11ms) 
+10:00:21   ├─ /settings/index.html (+7ms) 
+10:00:21   ├─ /speakers/index.html (+3ms) 
+10:00:21   ├─ /index.html (+6ms) 
+10:00:21 ✓ Completed in 228ms.
+
+10:00:21 [build] ✓ Completed in 3.57s.
+10:00:21 [cseed-modulepreload] modulepreload links added to 13 page(s)
+10:00:21 [build] 20 page(s) built in 3.82s
+10:00:21 [build] Complete!

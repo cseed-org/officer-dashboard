@@ -1,0 +1,1092 @@
+SIGQUIT: quit
+PC=0x497ac1 m=0 sigcode=0
+
+goroutine 0 gp=0x13b1b80 m=0 mp=0x13b2d60 [idle]:
+runtime.futex(0x13b2eb8, 0x80, 0x0, 0x0, 0x0, 0x0)
+	runtime/sys_linux_amd64.s:575 +0x21 fp=0x7ffe1c1fdd78 sp=0x7ffe1c1fdd70 pc=0x497ac1
+runtime.futexsleep(0x13b2d60?, 0x1c1fddf0?, 0x4652c8?)
+	runtime/os_linux.go:73 +0x30 fp=0x7ffe1c1fddc8 sp=0x7ffe1c1fdd78 pc=0x4514d0
+runtime.notesleep(0x13b2eb8)
+	runtime/lock_futex.go:47 +0x87 fp=0x7ffe1c1fde00 sp=0x7ffe1c1fddc8 pc=0x4259c7
+runtime.mPark(...)
+	runtime/proc.go:1985
+runtime.stopm()
+	runtime/proc.go:3023 +0x8c fp=0x7ffe1c1fde30 sp=0x7ffe1c1fde00 pc=0x45c24c
+runtime.findRunnable()
+	runtime/proc.go:3811 +0xeb7 fp=0x7ffe1c1fe000 sp=0x7ffe1c1fde30 pc=0x45ddd7
+runtime.schedule()
+	runtime/proc.go:4179 +0xb1 fp=0x7ffe1c1fe040 sp=0x7ffe1c1fe000 pc=0x45eef1
+runtime.park_m(0x20abe2a245a0)
+	runtime/proc.go:4319 +0x279 fp=0x7ffe1c1fe0a0 sp=0x7ffe1c1fe040 pc=0x45f379
+runtime.mcall()
+	runtime/asm_amd64.s:463 +0x53 fp=0x7ffe1c1fe0b8 sp=0x7ffe1c1fe0a0 pc=0x494453
+
+goroutine 1 gp=0x20abe23aa1e0 m=nil [select, 8 minutes]:
+runtime.gopark(0x20abe23d9a78?, 0x2?, 0x86?, 0x1?, 0x20abe23d975c?)
+	runtime/proc.go:474 +0xca fp=0x20abe2905408 sp=0x20abe29053e8 pc=0x48f06a
+runtime.selectgo(0x20abe2905a78, 0x20abe23d9758, 0x13d3900?, 0x0, 0xafa339?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe2905548 sp=0x20abe2905408 pc=0x4699d7
+main.serve({0x20abe24a6030, 0x0, 0x0}, 0x12fb9a8, 0x20abe25aef30)
+	officerdashboard/cmd/dashboard/main.go:296 +0x9a7 fp=0x20abe2905d80 sp=0x20abe2905548 pc=0x9893e7
+main.run({0x20abe24a6030?, 0x0?, 0x48c085?}, 0x12fb9a8, {0x12f6080, 0x20abe2482030}, {0x12f6080, 0x20abe2482038})
+	officerdashboard/cmd/dashboard/main.go:60 +0x308 fp=0x20abe2905e68 sp=0x20abe2905d80 pc=0x9865c8
+main.main()
+	officerdashboard/cmd/dashboard/main.go:49 +0x65 fp=0x20abe2905eb8 sp=0x20abe2905e68 pc=0x9862a5
+runtime.main()
+	runtime/proc.go:302 +0x427 fp=0x20abe2905fe0 sp=0x20abe2905eb8 pc=0x4577c7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2905fe8 sp=0x20abe2905fe0 pc=0x495fa1
+
+goroutine 2 gp=0x20abe23aad20 m=nil [force gc (idle), 8 minutes]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe23f2fa8 sp=0x20abe23f2f88 pc=0x48f06a
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.forcegchelper()
+	runtime/proc.go:387 +0xb3 fp=0x20abe23f2fe0 sp=0x20abe23f2fa8 pc=0x457a93
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23f2fe8 sp=0x20abe23f2fe0 pc=0x495fa1
+created by runtime.init.7 in goroutine 1
+	runtime/proc.go:375 +0x1a
+
+goroutine 3 gp=0x20abe23ab2c0 m=nil [GC sweep wait]:
+runtime.gopark(0x1?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe23f3788 sp=0x20abe23f3768 pc=0x48f06a
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.bgsweep(0x20abe241a000)
+	runtime/mgcsweep.go:324 +0x151 fp=0x20abe23f37c8 sp=0x20abe23f3788 pc=0x442591
+runtime.gcenable.gowrap1()
+	runtime/mgc.go:214 +0x17 fp=0x20abe23f37e0 sp=0x20abe23f37c8 pc=0x485857
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23f37e8 sp=0x20abe23f37e0 pc=0x495fa1
+created by runtime.gcenable in goroutine 1
+	runtime/mgc.go:214 +0x66
+
+goroutine 4 gp=0x20abe23ab4a0 m=nil [GC scavenge wait]:
+runtime.gopark(0x10000?, 0x3b9aca00?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe23f3f78 sp=0x20abe23f3f58 pc=0x48f06a
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.(*scavengerState).park(0x13b1680)
+	runtime/mgcscavenge.go:425 +0x49 fp=0x20abe23f3fa8 sp=0x20abe23f3f78 pc=0x440089
+runtime.bgscavenge(0x20abe241a000)
+	runtime/mgcscavenge.go:658 +0x59 fp=0x20abe23f3fc8 sp=0x20abe23f3fa8 pc=0x4405f9
+runtime.gcenable.gowrap2()
+	runtime/mgc.go:215 +0x17 fp=0x20abe23f3fe0 sp=0x20abe23f3fc8 pc=0x485817
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23f3fe8 sp=0x20abe23f3fe0 pc=0x495fa1
+created by runtime.gcenable in goroutine 1
+	runtime/mgc.go:215 +0xa5
+
+goroutine 18 gp=0x20abe2484780 m=nil [finalizer wait, 8 minutes]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe23ee620 sp=0x20abe23ee600 pc=0x48f06a
+runtime.runFinalizers()
+	runtime/mfinal.go:210 +0x107 fp=0x20abe23ee7e0 sp=0x20abe23ee620 pc=0x4335e7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23ee7e8 sp=0x20abe23ee7e0 pc=0x495fa1
+created by runtime.createfing in goroutine 1
+	runtime/mfinal.go:172 +0x3d
+
+goroutine 19 gp=0x20abe2484b40 m=nil [cleanup wait, 8 minutes]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe23eef68 sp=0x20abe23eef48 pc=0x48f06a
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.(*cleanupQueue).dequeue(0x13b1960)
+	runtime/mcleanup.go:522 +0xd3 fp=0x20abe23eefa0 sp=0x20abe23eef68 pc=0x430313
+runtime.runCleanups()
+	runtime/mcleanup.go:718 +0x45 fp=0x20abe23eefe0 sp=0x20abe23eefa0 pc=0x430985
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23eefe8 sp=0x20abe23eefe0 pc=0x495fa1
+created by runtime.(*cleanupQueue).createGs in goroutine 1
+	runtime/mcleanup.go:672 +0xa5
+
+goroutine 20 gp=0x20abe2484f00 m=nil [select, 8 minutes]:
+runtime.gopark(0x20abe23ef788?, 0x2?, 0x0?, 0x0?, 0x20abe23ef784?)
+	runtime/proc.go:474 +0xca fp=0x20abe23ef610 sp=0x20abe23ef5f0 pc=0x48f06a
+runtime.selectgo(0x20abe23ef788, 0x20abe23ef780, 0x0?, 0x0, 0x0?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe23ef750 sp=0x20abe23ef610 pc=0x4699d7
+database/sql.(*DB).connectionOpener(0x20abe267e680, {0x12f9af8, 0x20abe24eab90})
+	database/sql/sql.go:1266 +0x89 fp=0x20abe23ef7b8 sp=0x20abe23ef750 pc=0x7a97e9
+database/sql.OpenDB.gowrap1()
+	database/sql/sql.go:846 +0x1f fp=0x20abe23ef7e0 sp=0x20abe23ef7b8 pc=0x7b413f
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23ef7e8 sp=0x20abe23ef7e0 pc=0x495fa1
+created by database/sql.OpenDB in goroutine 1
+	database/sql/sql.go:846 +0x135
+
+goroutine 21 gp=0x20abe24854a0 m=nil [select, 8 minutes]:
+runtime.gopark(0x20abe23eff88?, 0x2?, 0x0?, 0x0?, 0x20abe23eff84?)
+	runtime/proc.go:474 +0xca fp=0x20abe23efe10 sp=0x20abe23efdf0 pc=0x48f06a
+runtime.selectgo(0x20abe23eff88, 0x20abe23eff80, 0x0?, 0x0, 0x0?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe23eff50 sp=0x20abe23efe10 pc=0x4699d7
+database/sql.(*DB).connectionOpener(0x20abe267e8f0, {0x12f9af8, 0x20abe24eabe0})
+	database/sql/sql.go:1266 +0x89 fp=0x20abe23effb8 sp=0x20abe23eff50 pc=0x7a97e9
+database/sql.OpenDB.gowrap1()
+	database/sql/sql.go:846 +0x1f fp=0x20abe23effe0 sp=0x20abe23effb8 pc=0x7b413f
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23effe8 sp=0x20abe23effe0 pc=0x495fa1
+created by database/sql.OpenDB in goroutine 1
+	database/sql/sql.go:846 +0x135
+
+goroutine 22 gp=0x20abe2485680 m=nil [semacquire]:
+runtime.gopark(0x13ba4a0?, 0x12fc508?, 0xa0?, 0x70?, 0x20abe23f0496?)
+	runtime/proc.go:474 +0xca fp=0x20abe23f0638 sp=0x20abe23f0618 pc=0x48f06a
+runtime.goparkunlock(...)
+	runtime/proc.go:480
+runtime.semacquire1(0x13b2564, 0x0, 0x0, 0x0, 0xd)
+	runtime/sema.go:192 +0x232 fp=0x20abe23f06a0 sp=0x20abe23f0638 pc=0x46a772
+runtime.semacquire(...)
+	runtime/sema.go:143
+runtime.gcMarkDone()
+	runtime/mgc.go:1000 +0x32 fp=0x20abe23f0740 sp=0x20abe23f06a0 pc=0x4350b2
+runtime.gcBgMarkWorker(0x20abe2492f50)
+	runtime/mgc.go:1928 +0x2c5 fp=0x20abe23f07c8 sp=0x20abe23f0740 pc=0x436c05
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1711 +0x17 fp=0x20abe23f07e0 sp=0x20abe23f07c8 pc=0x485d57
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23f07e8 sp=0x20abe23f07e0 pc=0x495fa1
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	runtime/mgc.go:1711 +0xfc
+
+goroutine 23 gp=0x20abe2485860 m=nil [GC worker (idle)]:
+runtime.gopark(0x538ddec72ea?, 0x1?, 0x29?, 0xaf?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe23f0f40 sp=0x20abe23f0f20 pc=0x48f06a
+runtime.gcBgMarkWorker(0x20abe2492f50)
+	runtime/mgc.go:1807 +0xeb fp=0x20abe23f0fc8 sp=0x20abe23f0f40 pc=0x436a2b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1711 +0x17 fp=0x20abe23f0fe0 sp=0x20abe23f0fc8 pc=0x485d57
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23f0fe8 sp=0x20abe23f0fe0 pc=0x495fa1
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	runtime/mgc.go:1711 +0xfc
+
+goroutine 24 gp=0x20abe2485a40 m=nil [GC worker (idle)]:
+runtime.gopark(0x13d5060?, 0x1?, 0x2c?, 0xce?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe23f1740 sp=0x20abe23f1720 pc=0x48f06a
+runtime.gcBgMarkWorker(0x20abe2492f50)
+	runtime/mgc.go:1807 +0xeb fp=0x20abe23f17c8 sp=0x20abe23f1740 pc=0x436a2b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1711 +0x17 fp=0x20abe23f17e0 sp=0x20abe23f17c8 pc=0x485d57
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23f17e8 sp=0x20abe23f17e0 pc=0x495fa1
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	runtime/mgc.go:1711 +0xfc
+
+goroutine 25 gp=0x20abe2485c20 m=nil [GC worker (idle)]:
+runtime.gopark(0x538df9305b1?, 0x1?, 0xae?, 0x85?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe23f1f40 sp=0x20abe23f1f20 pc=0x48f06a
+runtime.gcBgMarkWorker(0x20abe2492f50)
+	runtime/mgc.go:1807 +0xeb fp=0x20abe23f1fc8 sp=0x20abe23f1f40 pc=0x436a2b
+runtime.gcBgMarkStartWorkers.gowrap1()
+	runtime/mgc.go:1711 +0x17 fp=0x20abe23f1fe0 sp=0x20abe23f1fc8 pc=0x485d57
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23f1fe8 sp=0x20abe23f1fe0 pc=0x495fa1
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	runtime/mgc.go:1711 +0xfc
+
+goroutine 34 gp=0x20abe24852c0 m=nil [select, 8 minutes, locked to thread]:
+runtime.gopark(0x20abe28dafa8?, 0x2?, 0x0?, 0x0?, 0x20abe28daf94?)
+	runtime/proc.go:474 +0xca fp=0x20abe28dae18 sp=0x20abe28dadf8 pc=0x48f06a
+runtime.selectgo(0x20abe28dafa8, 0x20abe28daf90, 0x0?, 0x0, 0x0?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe28daf58 sp=0x20abe28dae18 pc=0x4699d7
+runtime.ensureSigM.func1()
+	runtime/signal_unix.go:1093 +0x188 fp=0x20abe28dafe0 sp=0x20abe28daf58 pc=0x489928
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe28dafe8 sp=0x20abe28dafe0 pc=0x495fa1
+created by runtime.ensureSigM in goroutine 1
+	runtime/signal_unix.go:1076 +0xc5
+
+goroutine 50 gp=0x20abe26c2000 m=8 mp=0x20abe2481808 [syscall, 8 minutes]:
+runtime.notetsleepg(0x13d4460, 0xffffffffffffffff)
+	runtime/lock_futex.go:123 +0x29 fp=0x20abe28d6fa0 sp=0x20abe28d6f78 pc=0x425ca9
+os/signal.signal_recv()
+	runtime/sigqueue.go:152 +0x98 fp=0x20abe28d6fc0 sp=0x20abe28d6fa0 pc=0x491178
+os/signal.loop()
+	os/signal/signal_unix.go:23 +0x13 fp=0x20abe28d6fe0 sp=0x20abe28d6fc0 pc=0x8641f3
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe28d6fe8 sp=0x20abe28d6fe0 pc=0x495fa1
+created by os/signal.Notify.func2.1 in goroutine 1
+	os/signal/signal.go:164 +0x1f
+
+goroutine 51 gp=0x20abe26c21e0 m=nil [select, 8 minutes]:
+runtime.gopark(0x20abe28d7798?, 0x2?, 0x0?, 0x0?, 0x20abe28d778c?)
+	runtime/proc.go:474 +0xca fp=0x20abe28d7618 sp=0x20abe28d75f8 pc=0x48f06a
+runtime.selectgo(0x20abe28d7798, 0x20abe28d7788, 0x0?, 0x0, 0x0?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe28d7758 sp=0x20abe28d7618 pc=0x4699d7
+os/signal.NotifyContext.func1()
+	os/signal/signal.go:304 +0x7c fp=0x20abe28d77e0 sp=0x20abe28d7758 pc=0x86453c
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe28d77e8 sp=0x20abe28d77e0 pc=0x495fa1
+created by os/signal.NotifyContext in goroutine 1
+	os/signal/signal.go:303 +0x165
+
+goroutine 52 gp=0x20abe26c23c0 m=nil [select, 8 minutes]:
+runtime.gopark(0x20abe28d7f48?, 0x2?, 0x92?, 0x95?, 0x20abe28d7efc?)
+	runtime/proc.go:474 +0xca fp=0x20abe28d7d68 sp=0x20abe28d7d48 pc=0x48f06a
+runtime.selectgo(0x20abe28d7f48, 0x20abe28d7ef8, 0x0?, 0x0, 0x0?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe28d7ea8 sp=0x20abe28d7d68 pc=0x4699d7
+main.sessionJanitor({0x12f9d98, 0x20abe24b89c0}, 0x20abe267a600, 0x20abe25aef30)
+	officerdashboard/cmd/dashboard/main.go:320 +0xe9 fp=0x20abe28d7fb0 sp=0x20abe28d7ea8 pc=0x989809
+main.serve.gowrap2()
+	officerdashboard/cmd/dashboard/main.go:291 +0x25 fp=0x20abe28d7fe0 sp=0x20abe28d7fb0 pc=0x98c465
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe28d7fe8 sp=0x20abe28d7fe0 pc=0x495fa1
+created by main.serve in goroutine 1
+	officerdashboard/cmd/dashboard/main.go:291 +0x60d
+
+goroutine 53 gp=0x20abe26c25a0 m=nil [select, 8 minutes]:
+runtime.gopark(0x20abe271bf88?, 0x2?, 0xa?, 0x95?, 0x20abe271bf7c?)
+	runtime/proc.go:474 +0xca fp=0x20abe2401df0 sp=0x20abe2401dd0 pc=0x48f06a
+runtime.selectgo(0x20abe2401f88, 0x20abe271bf78, 0x12f60c0?, 0x0, 0x0?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe2401f30 sp=0x20abe2401df0 pc=0x4699d7
+officerdashboard/internal/cfsync.(*Service).Daily(0x20abe267a620, {0x12f9d98, 0x20abe24b89c0})
+	officerdashboard/internal/cfsync/service.go:117 +0x125 fp=0x20abe2401fb8 sp=0x20abe2401f30 pc=0x87b105
+officerdashboard/internal/api.(*Server).CloudflareDaily(...)
+	officerdashboard/internal/api/server.go:316
+main.serve.gowrap3()
+	officerdashboard/cmd/dashboard/main.go:292 +0x25 fp=0x20abe2401fe0 sp=0x20abe2401fb8 pc=0x98c425
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2401fe8 sp=0x20abe2401fe0 pc=0x495fa1
+created by main.serve in goroutine 1
+	officerdashboard/cmd/dashboard/main.go:292 +0x67f
+
+goroutine 54 gp=0x20abe26c2780 m=nil [IO wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe2403bc8 sp=0x20abe2403ba8 pc=0x48f06a
+runtime.netpollblock(0x20abe2403c18?, 0x50a257?, 0x0?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe2403c00 sp=0x20abe2403bc8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039985000, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe2403c20 sp=0x20abe2403c00 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe2686180?, 0x100?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe2403c58 sp=0x20abe2403c20 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Accept(0x20abe2686180)
+	internal/poll/fd_unix.go:618 +0x27d fp=0x20abe2403d00 sp=0x20abe2403c58 pc=0x505a9d
+net.(*netFD).accept(0x20abe2686180)
+	net/fd_unix.go:149 +0x29 fp=0x20abe2403db8 sp=0x20abe2403d00 pc=0x614aa9
+net.(*TCPListener).accept(0x20abe27a2000)
+	net/tcpsock_posix.go:159 +0x1b fp=0x20abe2403e08 sp=0x20abe2403db8 pc=0x62723b
+net.(*TCPListener).Accept(0x20abe27a2000)
+	net/tcpsock.go:387 +0x30 fp=0x20abe2403e48 sp=0x20abe2403e08 pc=0x626550
+net/http.(*Server).Serve(0x20abe25dc000, {0x12f9480, 0x20abe27a2000})
+	net/http/server.go:3578 +0x379 fp=0x20abe2403f78 sp=0x20abe2403e48 pc=0x774ab9
+net/http.(*Server).ListenAndServe(0x20abe25dc000)
+	net/http/server.go:3489 +0x71 fp=0x20abe2403fa8 sp=0x20abe2403f78 pc=0x774651
+main.serve.func1()
+	officerdashboard/cmd/dashboard/main.go:294 +0x25 fp=0x20abe2403fe0 sp=0x20abe2403fa8 pc=0x98c3c5
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2403fe8 sp=0x20abe2403fe0 pc=0x495fa1
+created by main.serve in goroutine 1
+	officerdashboard/cmd/dashboard/main.go:294 +0x6fd
+
+goroutine 13588659 gp=0x20abe28e0780 m=nil [IO wait]:
+runtime.gopark(0x0?, 0x20abe2ab4732?, 0x2?, 0x0?, 0x749082737a00?)
+	runtime/proc.go:474 +0xca fp=0x20abe2ab45c8 sp=0x20abe2ab45a8 pc=0x48f06a
+runtime.netpollblock(0xffffffffffffffff?, 0xe2ab4648?, 0xab?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe2ab4600 sp=0x20abe2ab45c8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039984800, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe2ab4620 sp=0x20abe2ab4600 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe24b2680?, 0x20abe27c2d21?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe2ab4658 sp=0x20abe2ab4620 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x20abe24b2680, {0x20abe27c2d21, 0x1, 0x1})
+	internal/poll/fd_unix.go:170 +0x2a8 fp=0x20abe2ab46f0 sp=0x20abe2ab4658 pc=0x502088
+net.(*netFD).Read(0x20abe24b2680, {0x20abe27c2d21?, 0x20abe2492070?, 0x0?})
+	net/fd_posix.go:68 +0x25 fp=0x20abe2ab4738 sp=0x20abe2ab46f0 pc=0x612e05
+net.(*conn).Read(0x20abe26c8260, {0x20abe27c2d21?, 0x7b5aaf?, 0x20abe281bce0?})
+	net/net.go:196 +0x45 fp=0x20abe2ab4780 sp=0x20abe2ab4738 pc=0x61e885
+net/http.(*connReader).backgroundRead(0x20abe27c2d00)
+	net/http/server.go:742 +0x32 fp=0x20abe2ab47c8 sp=0x20abe2ab4780 pc=0x7694b2
+net/http.(*connReader).startBackgroundRead.gowrap2()
+	net/http/server.go:738 +0x17 fp=0x20abe2ab47e0 sp=0x20abe2ab47c8 pc=0x7907f7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2ab47e8 sp=0x20abe2ab47e0 pc=0x495fa1
+created by net/http.(*connReader).startBackgroundRead in goroutine 13400263
+	net/http/server.go:738 +0xba
+
+goroutine 13588723 gp=0x20abe28e6780 m=nil [runnable]:
+runtime.gopark(0x20abe29dc748?, 0x3?, 0xc5?, 0xeb?, 0x20abe29dc732?)
+	runtime/proc.go:474 +0xca fp=0x20abe29dc5b8 sp=0x20abe29dc598 pc=0x48f06a
+runtime.selectgo(0x20abe29dc748, 0x20abe29dc72c, 0x0?, 0x0, 0x490905?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe29dc6f8 sp=0x20abe29dc5b8 pc=0x4699d7
+database/sql.(*Rows).awaitDone(0x20abe2a99550, {0x12f9ac0, 0x20abe2ae63f0}, {0x0, 0x0}, {0x12f9af8, 0x20abe2928190})
+	database/sql/sql.go:3020 +0xec fp=0x20abe29dc798 sp=0x20abe29dc6f8 pc=0x7b0e8c
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 +0x2f fp=0x20abe29dc7e0 sp=0x20abe29dc798 pc=0x7b5aaf
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe29dc7e8 sp=0x20abe29dc7e0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400263
+	database/sql/sql.go:3007 +0x15a
+
+goroutine 13400261 gp=0x20abe2828b40 m=nil [runnable]:
+runtime.cgocall(0xa05e90, 0x20abe2a10428)
+	runtime/cgocall.go:167 +0x4b fp=0x20abe2a10400 sp=0x20abe2a103c8 pc=0x48c02b
+github.com/mattn/go-sqlite3._Cfunc__sqlite3_prepare_v2_internal(0x749024001148, 0x74902c025250, 0x162, 0x20abe2d5c178, 0x20abe23a8b30)
+	_cgo_gotypes.go:405 +0x46 fp=0x20abe2a10428 sp=0x20abe2a10400 pc=0x7f1ca6
+github.com/mattn/go-sqlite3.(*SQLiteConn).prepare.func2(...)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2230
+github.com/mattn/go-sqlite3.(*SQLiteConn).prepare(0x20abe27223f0, {0x20abe25fc900?, 0x7a1ec5?}, {0x20abe25fc900?, 0x162})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2230 +0x170 fp=0x20abe2a104f8 sp=0x20abe2a10428 pc=0x802750
+github.com/mattn/go-sqlite3.(*SQLiteConn).prepareWithCache(0x20abe27223f0, {0x12f9ac0, 0x20abe2ae6b70}, {0x20abe25fc900, 0x162})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2250 +0x5d fp=0x20abe2a10530 sp=0x20abe2a104f8 pc=0x8029fd
+github.com/mattn/go-sqlite3.(*SQLiteConn).query(0x20abe27223f0, {0x12f9ac0, 0x20abe2ae6b70}, {0x20abe25fc900?, 0x20abe2a106a0?}, {0x20abe2ae73b0, 0x1, 0x1})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:1220 +0x85 fp=0x20abe2a105f0 sp=0x20abe2a10530 pc=0x7fc265
+github.com/mattn/go-sqlite3.(*SQLiteConn).QueryContext(0x20abe2a106a0?, {0x12f9ac0?, 0x20abe2ae6b70?}, {0x20abe25fc900?, 0x20abe2ae6b70?}, {0x20abe2ae73b0?, 0x20abe29db900?, 0x20abe2e7fa10?})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3_sql.go:26 +0x27 fp=0x20abe2a10640 sp=0x20abe2a105f0 pc=0x7f0e27
+database/sql.ctxDriverQuery({0x12f9ac0?, 0x20abe2ae6b70?}, {0x74903ab3c910?, 0x20abe27223f0?}, {0x0?, 0x0?}, {0x20abe25fc900?, 0x20abe2a10750?}, {0x20abe2ae73b0, 0x1, ...})
+	database/sql/ctxutil.go:48 +0xbf fp=0x20abe2a106a0 sp=0x20abe2a10640 pc=0x7a591f
+database/sql.(*DB).queryDC.func1()
+	database/sql/sql.go:1791 +0x15c fp=0x20abe2a10760 sp=0x20abe2a106a0 pc=0x7b4bfc
+database/sql.withLock({0x12f85d8, 0x20abe2686800}, 0x20abe2a108c0)
+	database/sql/sql.go:3621 +0x71 fp=0x20abe2a107a0 sp=0x20abe2a10760 pc=0x7b36f1
+database/sql.(*DB).queryDC(0x20abe2a19d01?, {0x12f9ac0, 0x20abe2ae6b70}, {0x0, 0x0}, 0x20abe2686800, 0x20abe2e7fa20, {0x20abe25fc900, 0x162}, {0x20abe2e7fa10, ...})
+	database/sql/sql.go:1786 +0x1b7 fp=0x20abe2a10950 sp=0x20abe2a107a0 pc=0x7ac657
+database/sql.(*DB).query(0x20abe267e8f0, {0x12f9ac0, 0x20abe2ae6b70}, {0x20abe25fc900, 0x162}, {0x20abe2e7fa10, 0x1, 0x1}, 0x8?)
+	database/sql/sql.go:1769 +0x108 fp=0x20abe2a109c8 sp=0x20abe2a10950 pc=0x7ac428
+database/sql.(*DB).QueryContext.func1(0xc0?)
+	database/sql/sql.go:1747 +0x4f fp=0x20abe2a10a30 sp=0x20abe2a109c8 pc=0x7b498f
+database/sql.(*DB).retry(0x42aae8?, 0x20abe2a10aa0)
+	database/sql/sql.go:1581 +0x42 fp=0x20abe2a10a78 sp=0x20abe2a10a30 pc=0x7ab142
+database/sql.(*DB).QueryContext(0x20abe2e7fa00?, {0x12f9ac0?, 0x20abe2ae6b70?}, {0x20abe25fc900?, 0x471d71?}, {0x20abe2e7fa10?, 0x11?, 0x20abe2a10b70?})
+	database/sql/sql.go:1746 +0x98 fp=0x20abe2a10b08 sp=0x20abe2a10a78 pc=0x7ac1f8
+officerdashboard/internal/store.(*Queries).requests(0x0?, {0x12f9ac0?, 0x20abe2ae6b70?}, {0x20abe25fc900?, 0x0?}, {0x20abe2e7fa10?, 0xafa3e4?, 0x9?})
+	officerdashboard/internal/store/requests.go:161 +0x71 fp=0x20abe2a10cf0 sp=0x20abe2a10b08 pc=0x841d51
+officerdashboard/internal/store.(*Queries).Requests(0x20abe2a112f0, {0x12f9ac0, 0x20abe2ae6b70}, {{0x0, 0x0}, {0x0, 0x0}, {0x0, 0x0}, {0xafa3e4, ...}, ...})
+	officerdashboard/internal/store/requests.go:147 +0x1ae fp=0x20abe2a10dc0 sp=0x20abe2a10cf0 pc=0x841b2e
+officerdashboard/internal/api.(*Ctx).overview(0x20abe2a11388)
+	officerdashboard/internal/api/finance.go:771 +0xd3a fp=0x20abe2a11310 sp=0x20abe2a10dc0 pc=0x8e651a
+officerdashboard/internal/api.(*Server).wrap.func1({0x12f9450, 0x20abe2bb4498}, 0x0?)
+	officerdashboard/internal/api/server.go:235 +0x14e fp=0x20abe2a113e8 sp=0x20abe2a11310 pc=0x96e00e
+net/http.HandlerFunc.ServeHTTP(0x20abe24ca000?, {0x12f9450?, 0x20abe2bb4498?}, 0x75ed65?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2a11410 sp=0x20abe2a113e8 pc=0x7716c9
+net/http.(*ServeMux).ServeHTTP(0x20abe2e0ea00?, {0x12f9450, 0x20abe2bb4498}, 0x20abe2e95680)
+	net/http/server.go:2927 +0x1cf fp=0x20abe2a11460 sp=0x20abe2a11410 pc=0x7732af
+officerdashboard/internal/api.(*Server).withAuth.func1({0x12f9450, 0x20abe2bb4498}, 0x20abe2e0ea00)
+	officerdashboard/internal/api/session.go:188 +0xc19 fp=0x20abe2a11708 sp=0x20abe2a11460 pc=0x96ff19
+net/http.HandlerFunc.ServeHTTP(0x20abe2e0ea00?, {0x12f9450?, 0x20abe2bb4498?}, 0x749082738bf0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2a11730 sp=0x20abe2a11708 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRateLimit.func1({0x12f9450, 0x20abe2bb4498}, 0x20abe2e0ea00)
+	officerdashboard/internal/api/ratelimit.go:267 +0x282 fp=0x20abe2a11790 sp=0x20abe2a11730 pc=0x96f2c2
+net/http.HandlerFunc.ServeHTTP(0x20abe2c93004?, {0x12f9450?, 0x20abe2bb4498?}, 0xb0875a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2a117b8 sp=0x20abe2a11790 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withAPIHygiene.func1({0x12f9450, 0x20abe2bb4498}, 0x20abe2e0ea00)
+	officerdashboard/internal/api/server.go:280 +0x23d fp=0x20abe2a11828 sp=0x20abe2a117b8 pc=0x96effd
+net/http.HandlerFunc.ServeHTTP(0x20abe2884420?, {0x12f9450?, 0x20abe2bb4498?}, 0x749039984f20?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2a11850 sp=0x20abe2a11828 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withForwardedHostCheck.func1({0x12f9450, 0x20abe2bb4498}, 0x20abe2e0ea00)
+	officerdashboard/internal/api/proxyhost.go:25 +0x31a fp=0x20abe2a11908 sp=0x20abe2a11850 pc=0x96ed7a
+net/http.HandlerFunc.ServeHTTP(0x20abe24b2580?, {0x12f9450?, 0x20abe2bb4498?}, 0x42950a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2a11930 sp=0x20abe2a11908 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRecover.func1({0x12f9450?, 0x20abe2bb4498?}, 0x20abe28e5808?)
+	officerdashboard/internal/api/server.go:252 +0x75 fp=0x20abe2a11998 sp=0x20abe2a11930 pc=0x96e875
+net/http.HandlerFunc.ServeHTTP(0x18?, {0x12f9450?, 0x20abe2bb4498?}, 0x40a6d5?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2a119c0 sp=0x20abe2a11998 pc=0x7716c9
+officerdashboard/internal/api.AccessLog.func1({0x12f95d0, 0x20abe2809950}, 0x20abe2e0ea00)
+	officerdashboard/internal/api/accesslog.go:36 +0x11e fp=0x20abe2a11ac0 sp=0x20abe2a119c0 pc=0x98c59e
+net/http.HandlerFunc.ServeHTTP(0x48bef9?, {0x12f95d0?, 0x20abe2809950?}, 0x20abe2a11af0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2a11ae8 sp=0x20abe2a11ac0 pc=0x7716c9
+net/http.serverHandler.ServeHTTP({0x20abe27c2e80?}, {0x12f95d0?, 0x20abe2809950?}, 0x1?)
+	net/http/server.go:3440 +0x8e fp=0x20abe2a11b18 sp=0x20abe2a11ae8 pc=0x7942ce
+net/http.(*conn).serve(0x20abe28dca20, {0x12f9ac0, 0x20abe2680630})
+	net/http/server.go:2161 +0x6dc fp=0x20abe2a11fb8 sp=0x20abe2a11b18 pc=0x76f9fc
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3608 +0x1f fp=0x20abe2a11fe0 sp=0x20abe2a11fb8 pc=0x7911df
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2a11fe8 sp=0x20abe2a11fe0 pc=0x495fa1
+created by net/http.(*Server).Serve in goroutine 54
+	net/http/server.go:3608 +0x4fd
+
+goroutine 13588662 gp=0x20abe29265a0 m=nil [IO wait]:
+runtime.gopark(0x0?, 0x20abe2da7732?, 0x2?, 0x0?, 0x749082738bf0?)
+	runtime/proc.go:474 +0xca fp=0x20abe2da75c8 sp=0x20abe2da75a8 pc=0x48f06a
+runtime.netpollblock(0xffffffffffffffff?, 0xe2da7648?, 0xab?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe2da7600 sp=0x20abe2da75c8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039984e00, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe2da7620 sp=0x20abe2da7600 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe24b2580?, 0x20abe27c2ea1?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe2da7658 sp=0x20abe2da7620 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x20abe24b2580, {0x20abe27c2ea1, 0x1, 0x1})
+	internal/poll/fd_unix.go:170 +0x2a8 fp=0x20abe2da76f0 sp=0x20abe2da7658 pc=0x502088
+net.(*netFD).Read(0x20abe24b2580, {0x20abe27c2ea1?, 0x20abe2492070?, 0x0?})
+	net/fd_posix.go:68 +0x25 fp=0x20abe2da7738 sp=0x20abe2da76f0 pc=0x612e05
+net.(*conn).Read(0x20abe26c8250, {0x20abe27c2ea1?, 0x7b5aaf?, 0x20abe2770000?})
+	net/net.go:196 +0x45 fp=0x20abe2da7780 sp=0x20abe2da7738 pc=0x61e885
+net/http.(*connReader).backgroundRead(0x20abe27c2e80)
+	net/http/server.go:742 +0x32 fp=0x20abe2da77c8 sp=0x20abe2da7780 pc=0x7694b2
+net/http.(*connReader).startBackgroundRead.gowrap2()
+	net/http/server.go:738 +0x17 fp=0x20abe2da77e0 sp=0x20abe2da77c8 pc=0x7907f7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2da77e8 sp=0x20abe2da77e0 pc=0x495fa1
+created by net/http.(*connReader).startBackgroundRead in goroutine 13400261
+	net/http/server.go:738 +0xba
+
+goroutine 13400262 gp=0x20abe2926960 m=nil [runnable]:
+runtime.cgocall(0xa055d0, 0x20abe2906ab0)
+	runtime/cgocall.go:167 +0x4b fp=0x20abe2906a88 sp=0x20abe2906a50 pc=0x48c02b
+github.com/mattn/go-sqlite3._cgo_cmalloc(0x280)
+	_cgo_gotypes.go:1436 +0x45 fp=0x20abe2906ab0 sp=0x20abe2906a88 pc=0x7f4ca5
+github.com/mattn/go-sqlite3._Cfunc__CMalloc(...)
+	_cgo_gotypes.go:259
+github.com/mattn/go-sqlite3.(*SQLiteRows).bindAndFirstStepLocked(0x20abe2cdfb20, {0x20abe28040f0, 0x2, 0x2})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:3067 +0x965 fp=0x20abe2906c60 sp=0x20abe2906ab0 pc=0x807a45
+github.com/mattn/go-sqlite3.(*SQLiteStmt).query(0x20abe288a6e0, {0x12f9af8, 0x20abe28040a0}, {0x20abe28040f0, 0x2, 0x2})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2611 +0xb1 fp=0x20abe2906c98 sp=0x20abe2906c60 pc=0x804b31
+github.com/mattn/go-sqlite3.(*SQLiteConn).query(0x20abe27a6900, {0x12f9af8, 0x20abe28040a0}, {0xb3a710?, 0xa?}, {0x20abe28040f0, 0x2, 0x2})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:1243 +0x117 fp=0x20abe2906d58 sp=0x20abe2906c98 pc=0x7fc2f7
+github.com/mattn/go-sqlite3.(*SQLiteConn).QueryContext(0x20abe2d9cd80?, {0x12f9af8?, 0x20abe28040a0?}, {0xb3a710?, 0x12f9ac0?}, {0x20abe28040f0?, 0x20abe29072f0?, 0x20abe267a990?})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3_sql.go:26 +0x27 fp=0x20abe2906da8 sp=0x20abe2906d58 pc=0x7f0e27
+database/sql.ctxDriverQuery({0x12f9af8?, 0x20abe28040a0?}, {0x74903ab3c910?, 0x20abe27a6900?}, {0x0?, 0x0?}, {0xb3a710?, 0x48bf8b?}, {0x20abe28040f0, 0x2, ...})
+	database/sql/ctxutil.go:48 +0xbf fp=0x20abe2906e08 sp=0x20abe2906da8 pc=0x7a591f
+database/sql.(*DB).queryDC.func1()
+	database/sql/sql.go:1791 +0x15c fp=0x20abe2906ec8 sp=0x20abe2906e08 pc=0x7b4bfc
+database/sql.withLock({0x12f85d8, 0x20abe23ccf80}, 0x20abe2907028)
+	database/sql/sql.go:3621 +0x71 fp=0x20abe2906f08 sp=0x20abe2906ec8 pc=0x7b36f1
+database/sql.(*DB).queryDC(0x20abe2b92001?, {0x12f9af8, 0x20abe28040a0}, {0x0, 0x0}, 0x20abe23ccf80, 0x20abe2ec8ac0, {0xb3a710, 0x1be}, {0x20abe267a980, ...})
+	database/sql/sql.go:1786 +0x1b7 fp=0x20abe29070b8 sp=0x20abe2906f08 pc=0x7ac657
+database/sql.(*DB).query(0x20abe267e8f0, {0x12f9af8, 0x20abe28040a0}, {0xb3a710, 0x1be}, {0x20abe267a980, 0x2, 0x2}, 0x48?)
+	database/sql/sql.go:1769 +0x108 fp=0x20abe2907130 sp=0x20abe29070b8 pc=0x7ac428
+database/sql.(*DB).QueryContext.func1(0xb0?)
+	database/sql/sql.go:1747 +0x4f fp=0x20abe2907198 sp=0x20abe2907130 pc=0x7b498f
+database/sql.(*DB).retry(0x749082738bf0?, 0x20abe2907208)
+	database/sql/sql.go:1581 +0x42 fp=0x20abe29071e0 sp=0x20abe2907198 pc=0x7ab142
+database/sql.(*DB).QueryContext(0x20abe29072a0?, {0x12f9af8?, 0x20abe28040a0?}, {0xb3a710?, 0xffffffffffffffff?}, {0x20abe267a980?, 0x20abe29072c8?, 0x48c79b?})
+	database/sql/sql.go:1746 +0x98 fp=0x20abe2907270 sp=0x20abe29071e0 pc=0x7ac1f8
+database/sql.(*DB).QueryRowContext(0x1a1efc81b78?, {0x12f9af8?, 0x20abe28040a0?}, {0xb3a710?, 0x20abe28fac40?}, {0x20abe267a980?, 0x20abe27e0008?, 0x20abe2907368?})
+	database/sql/sql.go:1847 +0x31 fp=0x20abe29072d8 sp=0x20abe2907270 pc=0x7acc51
+officerdashboard/internal/store.(*Queries).SessionByHash(0x20abe2ec8aa0, {0x12f9af8, 0x20abe28040a0}, {0x20abe28fac40, 0x40}, 0x1a1efc81b78)
+	officerdashboard/internal/store/users.go:182 +0x124 fp=0x20abe2907460 sp=0x20abe29072d8 pc=0x84b7c4
+officerdashboard/internal/api.(*Server).withAuth.func1({0x12f9450, 0x20abe2bb46d8}, 0x20abe2e0f180)
+	officerdashboard/internal/api/session.go:116 +0x33a fp=0x20abe2907708 sp=0x20abe2907460 pc=0x96f63a
+net/http.HandlerFunc.ServeHTTP(0x20abe2e0f180?, {0x12f9450?, 0x20abe2bb46d8?}, 0xe?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2907730 sp=0x20abe2907708 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRateLimit.func1({0x12f9450, 0x20abe2bb46d8}, 0x20abe2e0f180)
+	officerdashboard/internal/api/ratelimit.go:267 +0x282 fp=0x20abe2907790 sp=0x20abe2907730 pc=0x96f2c2
+net/http.HandlerFunc.ServeHTTP(0x20abe2c93484?, {0x12f9450?, 0x20abe2bb46d8?}, 0xb0875a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe29077b8 sp=0x20abe2907790 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withAPIHygiene.func1({0x12f9450, 0x20abe2bb46d8}, 0x20abe2e0f180)
+	officerdashboard/internal/api/server.go:280 +0x23d fp=0x20abe2907828 sp=0x20abe29077b8 pc=0x96effd
+net/http.HandlerFunc.ServeHTTP(0x20abe2884b40?, {0x12f9450?, 0x20abe2bb46d8?}, 0x749039984d20?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2907850 sp=0x20abe2907828 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withForwardedHostCheck.func1({0x12f9450, 0x20abe2bb46d8}, 0x20abe2e0f180)
+	officerdashboard/internal/api/proxyhost.go:25 +0x31a fp=0x20abe2907908 sp=0x20abe2907850 pc=0x96ed7a
+net/http.HandlerFunc.ServeHTTP(0x20abe27e0008?, {0x12f9450?, 0x20abe2bb46d8?}, 0x42942e?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2907930 sp=0x20abe2907908 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRecover.func1({0x12f9450?, 0x20abe2bb46d8?}, 0x3?)
+	officerdashboard/internal/api/server.go:252 +0x75 fp=0x20abe2907998 sp=0x20abe2907930 pc=0x96e875
+net/http.HandlerFunc.ServeHTTP(0x0?, {0x12f9450?, 0x20abe2bb46d8?}, 0x40a6d5?)
+	net/http/server.go:2362 +0x29 fp=0x20abe29079c0 sp=0x20abe2907998 pc=0x7716c9
+officerdashboard/internal/api.AccessLog.func1({0x12f95d0, 0x20abe2eb93b0}, 0x20abe2e0f180)
+	officerdashboard/internal/api/accesslog.go:36 +0x11e fp=0x20abe2907ac0 sp=0x20abe29079c0 pc=0x98c59e
+net/http.HandlerFunc.ServeHTTP(0x48bef9?, {0x12f95d0?, 0x20abe2eb93b0?}, 0x20abe2907af0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2907ae8 sp=0x20abe2907ac0 pc=0x7716c9
+net/http.serverHandler.ServeHTTP({0x20abe28fe780?}, {0x12f95d0?, 0x20abe2eb93b0?}, 0x1?)
+	net/http/server.go:3440 +0x8e fp=0x20abe2907b18 sp=0x20abe2907ae8 pc=0x7942ce
+net/http.(*conn).serve(0x20abe28dcab0, {0x12f9ac0, 0x20abe2680630})
+	net/http/server.go:2161 +0x6dc fp=0x20abe2907fb8 sp=0x20abe2907b18 pc=0x76f9fc
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3608 +0x1f fp=0x20abe2907fe0 sp=0x20abe2907fb8 pc=0x7911df
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2907fe8 sp=0x20abe2907fe0 pc=0x495fa1
+created by net/http.(*Server).Serve in goroutine 54
+	net/http/server.go:3608 +0x4fd
+
+goroutine 13588739 gp=0x20abe28e6f00 m=nil [runnable]:
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 fp=0x20abe29dffe0 sp=0x20abe29dffd8 pc=0x7b5a80
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe29dffe8 sp=0x20abe29dffe0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400260
+	database/sql/sql.go:3007 +0x15a
+
+goroutine 13400263 gp=0x20abe2927680 m=nil [runnable]:
+runtime.cgocall(0xa05a70, 0x20abe2744190)
+	runtime/cgocall.go:167 +0x4b fp=0x20abe2744168 sp=0x20abe2744130 pc=0x48c02b
+github.com/mattn/go-sqlite3._Cfunc__sqlite3_bind_step_columns(0x749028004568, 0x0, 0x0, 0x20abe288a6d0, 0x20abe288a6d4, 0x0, 0x0, 0x20abe288a6d8)
+	_cgo_gotypes.go:284 +0x46 fp=0x20abe2744190 sp=0x20abe2744168 pc=0x7f13c6
+github.com/mattn/go-sqlite3.(*SQLiteRows).bindAndFirstStepLocked.func2.1(...)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:3029
+github.com/mattn/go-sqlite3.(*SQLiteRows).bindAndFirstStepLocked.func2()
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:3029 +0x132 fp=0x20abe2744248 sp=0x20abe2744190 pc=0x80b192
+github.com/mattn/go-sqlite3.(*SQLiteRows).bindAndFirstStepLocked.func3(0x20abe2cdfa40, 0x20abe27443c8)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:3040 +0x64 fp=0x20abe2744280 sp=0x20abe2744248 pc=0x80afc4
+github.com/mattn/go-sqlite3.(*SQLiteRows).bindAndFirstStepLocked(0x20abe2cdfa40, {0x0, 0x0, 0x0})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:3041 +0x64d fp=0x20abe2744430 sp=0x20abe2744280 pc=0x80772d
+github.com/mattn/go-sqlite3.(*SQLiteStmt).query(0x20abe288a640, {0x12f9ac0, 0x20abe2ae63f0}, {0x0, 0x0, 0x0})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2611 +0xb1 fp=0x20abe2744468 sp=0x20abe2744430 pc=0x804b31
+github.com/mattn/go-sqlite3.(*SQLiteConn).query(0x20abe2722090, {0x12f9ac0, 0x20abe2ae63f0}, {0xb300a6?, 0xf09157f200b737d6?}, {0x13d3900, 0x0, 0x0})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:1243 +0x117 fp=0x20abe2744528 sp=0x20abe2744468 pc=0x7fc2f7
+github.com/mattn/go-sqlite3.(*SQLiteConn).QueryContext(0x11fc558?, {0x12f9ac0?, 0x20abe2ae63f0?}, {0xb300a6?, 0x20abe2b3e150?}, {0x13d3900?, 0x4c0f9a?, 0x1242858?})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3_sql.go:26 +0x27 fp=0x20abe2744578 sp=0x20abe2744528 pc=0x7f0e27
+database/sql.ctxDriverQuery({0x12f9ac0?, 0x20abe2ae63f0?}, {0x74903ab3c910?, 0x20abe2722090?}, {0x0?, 0x0?}, {0xb300a6?, 0x1290cd0?}, {0x13d3900, 0x0, ...})
+	database/sql/ctxutil.go:48 +0xbf fp=0x20abe27445d8 sp=0x20abe2744578 pc=0x7a591f
+database/sql.(*DB).queryDC.func1()
+	database/sql/sql.go:1791 +0x15c fp=0x20abe2744698 sp=0x20abe27445d8 pc=0x7b4bfc
+database/sql.withLock({0x12f85d8, 0x20abe24b2200}, 0x20abe27447f8)
+	database/sql/sql.go:3621 +0x71 fp=0x20abe27446d8 sp=0x20abe2744698 pc=0x7b36f1
+database/sql.(*DB).queryDC(0x20abe2744901?, {0x12f9ac0, 0x20abe2ae63f0}, {0x0, 0x0}, 0x20abe24b2200, 0x20abe2ec8c70, {0xb300a6, 0x76}, {0x0, ...})
+	database/sql/sql.go:1786 +0x1b7 fp=0x20abe2744888 sp=0x20abe27446d8 pc=0x7ac657
+database/sql.(*DB).query(0x20abe267e8f0, {0x12f9ac0, 0x20abe2ae63f0}, {0xb300a6, 0x76}, {0x0, 0x0, 0x0}, 0x88?)
+	database/sql/sql.go:1769 +0x108 fp=0x20abe2744900 sp=0x20abe2744888 pc=0x7ac428
+database/sql.(*DB).QueryContext.func1(0x0?)
+	database/sql/sql.go:1747 +0x4f fp=0x20abe2744968 sp=0x20abe2744900 pc=0x7b498f
+database/sql.(*DB).retry(0x7b5cf7?, 0x20abe27449d8)
+	database/sql/sql.go:1581 +0x42 fp=0x20abe27449b0 sp=0x20abe2744968 pc=0x7ab142
+database/sql.(*DB).QueryContext(0xa?, {0x12f9ac0?, 0x20abe2ae63f0?}, {0xb300a6?, 0x20abe2c2d2a8?}, {0x0?, 0x0?, 0x14?})
+	database/sql/sql.go:1746 +0x98 fp=0x20abe2744a40 sp=0x20abe27449b0 pc=0x7ac1f8
+officerdashboard/internal/store.(*Queries).Funds(0x4725cb?, {0x12f9ac0?, 0x20abe2ae63f0?})
+	officerdashboard/internal/store/catalog.go:29 +0x76 fp=0x20abe2744bb0 sp=0x20abe2744a40 pc=0x81be56
+officerdashboard/internal/api.(*Server).loadReportData(0x20abe24850e0, {0x12f9ac0, 0x20abe2ae63f0}, 0x20abe27452f0, {0x20abe2aeef80, 0xa})
+	officerdashboard/internal/api/finance.go:30 +0x93 fp=0x20abe2744dc0 sp=0x20abe2744bb0 pc=0x8df933
+officerdashboard/internal/api.(*Ctx).overview(0x20abe2745388)
+	officerdashboard/internal/api/finance.go:723 +0x19f fp=0x20abe2745310 sp=0x20abe2744dc0 pc=0x8e597f
+officerdashboard/internal/api.(*Server).wrap.func1({0x12f9450, 0x20abe2bb43d8}, 0x0?)
+	officerdashboard/internal/api/server.go:235 +0x14e fp=0x20abe27453e8 sp=0x20abe2745310 pc=0x96e00e
+net/http.HandlerFunc.ServeHTTP(0x20abe24ca000?, {0x12f9450?, 0x20abe2bb43d8?}, 0x75ed25?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2745410 sp=0x20abe27453e8 pc=0x7716c9
+net/http.(*ServeMux).ServeHTTP(0x20abe2e0e8c0?, {0x12f9450, 0x20abe2bb43d8}, 0x20abe2e95540)
+	net/http/server.go:2927 +0x1cf fp=0x20abe2745460 sp=0x20abe2745410 pc=0x7732af
+officerdashboard/internal/api.(*Server).withAuth.func1({0x12f9450, 0x20abe2bb43d8}, 0x20abe2e0e8c0)
+	officerdashboard/internal/api/session.go:188 +0xc19 fp=0x20abe2745708 sp=0x20abe2745460 pc=0x96ff19
+net/http.HandlerFunc.ServeHTTP(0x20abe2e0e8c0?, {0x12f9450?, 0x20abe2bb43d8?}, 0x749082738bf0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2745730 sp=0x20abe2745708 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRateLimit.func1({0x12f9450, 0x20abe2bb43d8}, 0x20abe2e0e8c0)
+	officerdashboard/internal/api/ratelimit.go:267 +0x282 fp=0x20abe2745790 sp=0x20abe2745730 pc=0x96f2c2
+net/http.HandlerFunc.ServeHTTP(0x20abe2c92fa4?, {0x12f9450?, 0x20abe2bb43d8?}, 0xb0875a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe27457b8 sp=0x20abe2745790 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withAPIHygiene.func1({0x12f9450, 0x20abe2bb43d8}, 0x20abe2e0e8c0)
+	officerdashboard/internal/api/server.go:280 +0x23d fp=0x20abe2745828 sp=0x20abe27457b8 pc=0x96effd
+net/http.HandlerFunc.ServeHTTP(0x20abe2680e10?, {0x12f9450?, 0x20abe2bb43d8?}, 0x749039984920?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2745850 sp=0x20abe2745828 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withForwardedHostCheck.func1({0x12f9450, 0x20abe2bb43d8}, 0x20abe2e0e8c0)
+	officerdashboard/internal/api/proxyhost.go:25 +0x31a fp=0x20abe2745908 sp=0x20abe2745850 pc=0x96ed7a
+net/http.HandlerFunc.ServeHTTP(0x20abe24b2680?, {0x12f9450?, 0x20abe2bb43d8?}, 0x42950a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2745930 sp=0x20abe2745908 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRecover.func1({0x12f9450?, 0x20abe2bb43d8?}, 0x20abe27e0808?)
+	officerdashboard/internal/api/server.go:252 +0x75 fp=0x20abe2745998 sp=0x20abe2745930 pc=0x96e875
+net/http.HandlerFunc.ServeHTTP(0x18?, {0x12f9450?, 0x20abe2bb43d8?}, 0x40a6d5?)
+	net/http/server.go:2362 +0x29 fp=0x20abe27459c0 sp=0x20abe2745998 pc=0x7716c9
+officerdashboard/internal/api.AccessLog.func1({0x12f95d0, 0x20abe2809860}, 0x20abe2e0e8c0)
+	officerdashboard/internal/api/accesslog.go:36 +0x11e fp=0x20abe2745ac0 sp=0x20abe27459c0 pc=0x98c59e
+net/http.HandlerFunc.ServeHTTP(0x48bef9?, {0x12f95d0?, 0x20abe2809860?}, 0x20abe2745af0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2745ae8 sp=0x20abe2745ac0 pc=0x7716c9
+net/http.serverHandler.ServeHTTP({0x20abe27c2d00?}, {0x12f95d0?, 0x20abe2809860?}, 0x1?)
+	net/http/server.go:3440 +0x8e fp=0x20abe2745b18 sp=0x20abe2745ae8 pc=0x7942ce
+net/http.(*conn).serve(0x20abe28dcb40, {0x12f9ac0, 0x20abe2680630})
+	net/http/server.go:2161 +0x6dc fp=0x20abe2745fb8 sp=0x20abe2745b18 pc=0x76f9fc
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3608 +0x1f fp=0x20abe2745fe0 sp=0x20abe2745fb8 pc=0x7911df
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2745fe8 sp=0x20abe2745fe0 pc=0x495fa1
+created by net/http.(*Server).Serve in goroutine 54
+	net/http/server.go:3608 +0x4fd
+
+goroutine 13588740 gp=0x20abe27e2f00 m=nil [runnable]:
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 fp=0x20abe2ad07e0 sp=0x20abe2ad07d8 pc=0x7b5a80
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2ad07e8 sp=0x20abe2ad07e0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400260
+	database/sql/sql.go:3007 +0x15a
+
+goroutine 13588717 gp=0x20abe297a3c0 m=nil [runnable]:
+runtime.gopark(0x20abe29d9f48?, 0x3?, 0x40?, 0x9e?, 0x20abe29d9f32?)
+	runtime/proc.go:474 +0xca fp=0x20abe29d9db8 sp=0x20abe29d9d98 pc=0x48f06a
+runtime.selectgo(0x20abe29d9f48, 0x20abe29d9f2c, 0x1322100?, 0x0, 0x490905?, 0x1)
+	runtime/select.go:351 +0xa97 fp=0x20abe29d9ef8 sp=0x20abe29d9db8 pc=0x4699d7
+database/sql.(*Rows).awaitDone(0x20abe2c95080, {0x12f9ac0, 0x20abe27f81e0}, {0x0, 0x0}, {0x12f9af8, 0x20abe298ec80})
+	database/sql/sql.go:3020 +0xec fp=0x20abe29d9f98 sp=0x20abe29d9ef8 pc=0x7b0e8c
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 +0x2f fp=0x20abe29d9fe0 sp=0x20abe29d9f98 pc=0x7b5aaf
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe29d9fe8 sp=0x20abe29d9fe0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400259
+	database/sql/sql.go:3007 +0x15a
+
+goroutine 13588704 gp=0x20abe297b860 m=nil [runnable]:
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 fp=0x20abe29e27e0 sp=0x20abe29e27d8 pc=0x7b5a80
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe29e27e8 sp=0x20abe29e27e0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400260
+	database/sql/sql.go:3007 +0x15a
+
+goroutine 13400264 gp=0x20abe2a24d20 m=nil [IO wait]:
+runtime.gopark(0x20abe26c7000?, 0x20abe23d99a0?, 0x5?, 0x0?, 0x20abe23d9928?)
+	runtime/proc.go:474 +0xca fp=0x20abe23d98b8 sp=0x20abe23d9898 pc=0x48f06a
+runtime.netpollblock(0xffffffffffffffff?, 0xe23d9938?, 0xab?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe23d98f0 sp=0x20abe23d98b8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039984a00, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe23d9910 sp=0x20abe23d98f0 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe24b2700?, 0x20abe2774000?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe23d9948 sp=0x20abe23d9910 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x20abe24b2700, {0x20abe2774000, 0x1000, 0x1000})
+	internal/poll/fd_unix.go:170 +0x2a8 fp=0x20abe23d99e0 sp=0x20abe23d9948 pc=0x502088
+net.(*netFD).Read(0x20abe24b2700, {0x20abe2774000?, 0x509960?, 0x20abe24b2700?})
+	net/fd_posix.go:68 +0x25 fp=0x20abe23d9a28 sp=0x20abe23d99e0 pc=0x612e05
+net.(*conn).Read(0x20abe26c8268, {0x20abe2774000?, 0x1bf08eaf6a?, 0x72?})
+	net/net.go:196 +0x45 fp=0x20abe23d9a70 sp=0x20abe23d9a28 pc=0x61e885
+net/http.(*connReader).Read(0x20abe27c2d80, {0x20abe2774000, 0x1000, 0x1000})
+	net/http/server.go:852 +0x150 fp=0x20abe23d9ac8 sp=0x20abe23d9a70 pc=0x7698d0
+bufio.(*Reader).fill(0x20abe27a0300)
+	bufio/bufio.go:113 +0x103 fp=0x20abe23d9b00 sp=0x20abe23d9ac8 pc=0x6d4c83
+bufio.(*Reader).Peek(0x20abe27a0300, 0x4)
+	bufio/bufio.go:152 +0x52 fp=0x20abe23d9b18 sp=0x20abe23d9b00 pc=0x6d4db2
+net/http.(*conn).serve(0x20abe28dcbd0, {0x12f9ac0, 0x20abe2680630})
+	net/http/server.go:2197 +0x833 fp=0x20abe23d9fb8 sp=0x20abe23d9b18 pc=0x76fb53
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3608 +0x1f fp=0x20abe23d9fe0 sp=0x20abe23d9fb8 pc=0x7911df
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe23d9fe8 sp=0x20abe23d9fe0 pc=0x495fa1
+created by net/http.(*Server).Serve in goroutine 54
+	net/http/server.go:3608 +0x4fd
+
+goroutine 13400266 gp=0x20abe2a250e0 m=nil [runnable]:
+runtime.growslice(0x20abe2ec2c08?, 0x9?, 0x8?, 0x1?, 0x12deb08?)
+	runtime/slice.go:178 +0x6a8 fp=0x20abe2b22058 sp=0x20abe2b22050 pc=0x491aa8
+officerdashboard/internal/accounting.(*calc).fundBalances(0x20abe2b0c5b0)
+	officerdashboard/internal/accounting/reports.go:504 +0x385 fp=0x20abe2b22430 sp=0x20abe2b22058 pc=0x7db465
+officerdashboard/internal/accounting.Make({0xafdfc9, 0xd}, 0x20abe2849e00, {0x7eb, {0x20abe29ffd20, 0xa}, {0x0, 0x0}, {0x0, 0x0}})
+	officerdashboard/internal/accounting/reports.go:378 +0x2b9 fp=0x20abe2b22570 sp=0x20abe2b22430 pc=0x7d8b39
+officerdashboard/internal/api.makeSummary(0x20abe2849e00, {0x7eb, {0x20abe29ffd20, 0xa}, {0x0, 0x0}})
+	officerdashboard/internal/api/finance.go:242 +0x155 fp=0x20abe2b22dc0 sp=0x20abe2b22570 pc=0x8e13f5
+officerdashboard/internal/api.(*Ctx).overview(0x20abe2b23388)
+	officerdashboard/internal/api/finance.go:727 +0x1d6 fp=0x20abe2b23310 sp=0x20abe2b22dc0 pc=0x8e59b6
+officerdashboard/internal/api.(*Server).wrap.func1({0x12f9450, 0x20abe2bb44b0}, 0x0?)
+	officerdashboard/internal/api/server.go:235 +0x14e fp=0x20abe2b233e8 sp=0x20abe2b23310 pc=0x96e00e
+net/http.HandlerFunc.ServeHTTP(0x20abe24ca000?, {0x12f9450?, 0x20abe2bb44b0?}, 0x75ed65?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b23410 sp=0x20abe2b233e8 pc=0x7716c9
+net/http.(*ServeMux).ServeHTTP(0x20abe2e0eb40?, {0x12f9450, 0x20abe2bb44b0}, 0x20abe2e0ec80)
+	net/http/server.go:2927 +0x1cf fp=0x20abe2b23460 sp=0x20abe2b23410 pc=0x7732af
+officerdashboard/internal/api.(*Server).withAuth.func1({0x12f9450, 0x20abe2bb44b0}, 0x20abe2e0eb40)
+	officerdashboard/internal/api/session.go:188 +0xc19 fp=0x20abe2b23708 sp=0x20abe2b23460 pc=0x96ff19
+net/http.HandlerFunc.ServeHTTP(0x20abe2e0eb40?, {0x12f9450?, 0x20abe2bb44b0?}, 0x749082738bf0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b23730 sp=0x20abe2b23708 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRateLimit.func1({0x12f9450, 0x20abe2bb44b0}, 0x20abe2e0eb40)
+	officerdashboard/internal/api/ratelimit.go:267 +0x282 fp=0x20abe2b23790 sp=0x20abe2b23730 pc=0x96f2c2
+net/http.HandlerFunc.ServeHTTP(0x20abe2c93024?, {0x12f9450?, 0x20abe2bb44b0?}, 0xb0875a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b237b8 sp=0x20abe2b23790 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withAPIHygiene.func1({0x12f9450, 0x20abe2bb44b0}, 0x20abe2e0eb40)
+	officerdashboard/internal/api/server.go:280 +0x23d fp=0x20abe2b23828 sp=0x20abe2b237b8 pc=0x96effd
+net/http.HandlerFunc.ServeHTTP(0x20abe28844e0?, {0x12f9450?, 0x20abe2bb44b0?}, 0x749039984720?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b23850 sp=0x20abe2b23828 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withForwardedHostCheck.func1({0x12f9450, 0x20abe2bb44b0}, 0x20abe2e0eb40)
+	officerdashboard/internal/api/proxyhost.go:25 +0x31a fp=0x20abe2b23908 sp=0x20abe2b23850 pc=0x96ed7a
+net/http.HandlerFunc.ServeHTTP(0x20abe24b2800?, {0x12f9450?, 0x20abe2bb44b0?}, 0x42950a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b23930 sp=0x20abe2b23908 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRecover.func1({0x12f9450?, 0x20abe2bb44b0?}, 0x20abe28e2808?)
+	officerdashboard/internal/api/server.go:252 +0x75 fp=0x20abe2b23998 sp=0x20abe2b23930 pc=0x96e875
+net/http.HandlerFunc.ServeHTTP(0x18?, {0x12f9450?, 0x20abe2bb44b0?}, 0x40a6d5?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b239c0 sp=0x20abe2b23998 pc=0x7716c9
+officerdashboard/internal/api.AccessLog.func1({0x12f95d0, 0x20abe2809a40}, 0x20abe2e0eb40)
+	officerdashboard/internal/api/accesslog.go:36 +0x11e fp=0x20abe2b23ac0 sp=0x20abe2b239c0 pc=0x98c59e
+net/http.HandlerFunc.ServeHTTP(0x48bef9?, {0x12f95d0?, 0x20abe2809a40?}, 0x20abe2b23af0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b23ae8 sp=0x20abe2b23ac0 pc=0x7716c9
+net/http.serverHandler.ServeHTTP({0x20abe27c2c00?}, {0x12f95d0?, 0x20abe2809a40?}, 0x1?)
+	net/http/server.go:3440 +0x8e fp=0x20abe2b23b18 sp=0x20abe2b23ae8 pc=0x7942ce
+net/http.(*conn).serve(0x20abe28dccf0, {0x12f9ac0, 0x20abe2680630})
+	net/http/server.go:2161 +0x6dc fp=0x20abe2b23fb8 sp=0x20abe2b23b18 pc=0x76f9fc
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3608 +0x1f fp=0x20abe2b23fe0 sp=0x20abe2b23fb8 pc=0x7911df
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2b23fe8 sp=0x20abe2b23fe0 pc=0x495fa1
+created by net/http.(*Server).Serve in goroutine 54
+	net/http/server.go:3608 +0x4fd
+
+goroutine 13400260 gp=0x20abe2a252c0 m=nil [runnable]:
+runtime.semrelease1(0x1341a4c?, 0x0, 0x0)
+	runtime/sema.go:207 +0x21d fp=0x20abe2b26758 sp=0x20abe2b26750 pc=0x46aa9d
+runtime.semrelease(...)
+	runtime/sema.go:204
+runtime.gcMarkDone()
+	runtime/mgc.go:1049 +0x17c fp=0x20abe2b267f8 sp=0x20abe2b26758 pc=0x4351fc
+runtime.gcAssistAlloc(0x20abe2a252c0)
+	runtime/mgcmark.go:647 +0x2e8 fp=0x20abe2b26890 sp=0x20abe2b267f8 pc=0x439348
+runtime.deductAssistCredit(0x0?)
+	runtime/malloc_stubs.go:176 +0x46 fp=0x20abe2b268b0 sp=0x20abe2b26890 pc=0x42c406
+runtime.mallocgc(0xc0, 0x1280ba8, 0x1)
+	runtime/malloc.go:1116 +0xc7 fp=0x20abe2b268e0 sp=0x20abe2b268b0 pc=0x48cc07
+runtime.makeslice(0x0?, 0x20abe2b26998?, 0x42bd1c?)
+	runtime/slice.go:117 +0x49 fp=0x20abe2b26908 sp=0x20abe2b268e0 pc=0x491369
+github.com/mattn/go-sqlite3.(*SQLiteRows).declTypes(0x20abe2524770)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2920 +0x56 fp=0x20abe2b26958 sp=0x20abe2b26908 pc=0x806996
+github.com/mattn/go-sqlite3.(*SQLiteRows).readStepResult(0x20abe2524770, {0x20abe2b86a80, 0xc, 0xc0?}, 0xe28e5808?, 0x0)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:3098 +0xcd fp=0x20abe2b26a60 sp=0x20abe2b26958 pc=0x807e8d
+github.com/mattn/go-sqlite3.(*SQLiteRows).Next(0x20abe2524770, {0x20abe2b86a80, 0xc, 0xc})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2955 +0x3d1 fp=0x20abe2b26af8 sp=0x20abe2b26a60 pc=0x806ff1
+database/sql.(*Rows).nextLocked(0x20abe2db4f20)
+	database/sql/sql.go:3086 +0x162 fp=0x20abe2b26b58 sp=0x20abe2b26af8 pc=0x7b1242
+database/sql.(*Rows).Next.func1(0x20abe2db4f20, 0x20abe2b26bb7, 0x20abe2b26bb6)
+	database/sql/sql.go:3054 +0x6c fp=0x20abe2b26b98 sp=0x20abe2b26b58 pc=0x7b5b2c
+database/sql.(*Rows).Next(0x20abe2db4f20)
+	database/sql/sql.go:3055 +0x52 fp=0x20abe2b26bc8 sp=0x20abe2b26b98 pc=0x7b1072
+officerdashboard/internal/store.(*Queries).Users(0x20abe2af0b50?, {0x12f9ac0?, 0x20abe2d066c0?})
+	officerdashboard/internal/store/users.go:95 +0x179 fp=0x20abe2b26d20 sp=0x20abe2b26bc8 pc=0x849cb9
+officerdashboard/internal/api.loadCatalog({0x12f9ac0, 0x20abe2d066c0}, 0x20abe2b272f0, 0x1)
+	officerdashboard/internal/api/helpers.go:37 +0x4e fp=0x20abe2b26dc0 sp=0x20abe2b26d20 pc=0x8e6cce
+officerdashboard/internal/api.(*Ctx).overview(0x20abe2b27388)
+	officerdashboard/internal/api/finance.go:731 +0x209 fp=0x20abe2b27310 sp=0x20abe2b26dc0 pc=0x8e59e9
+officerdashboard/internal/api.(*Server).wrap.func1({0x12f9450, 0x20abe2cae528}, 0x0?)
+	officerdashboard/internal/api/server.go:235 +0x14e fp=0x20abe2b273e8 sp=0x20abe2b27310 pc=0x96e00e
+net/http.HandlerFunc.ServeHTTP(0x20abe24ca000?, {0x12f9450?, 0x20abe2cae528?}, 0x75ed65?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b27410 sp=0x20abe2b273e8 pc=0x7716c9
+net/http.(*ServeMux).ServeHTTP(0x20abe25dd2c0?, {0x12f9450, 0x20abe2cae528}, 0x20abe25dd540)
+	net/http/server.go:2927 +0x1cf fp=0x20abe2b27460 sp=0x20abe2b27410 pc=0x7732af
+officerdashboard/internal/api.(*Server).withAuth.func1({0x12f9450, 0x20abe2cae528}, 0x20abe25dd2c0)
+	officerdashboard/internal/api/session.go:188 +0xc19 fp=0x20abe2b27708 sp=0x20abe2b27460 pc=0x96ff19
+net/http.HandlerFunc.ServeHTTP(0x20abe25dd2c0?, {0x12f9450?, 0x20abe2cae528?}, 0x20abe2544e00?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b27730 sp=0x20abe2b27708 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRateLimit.func1({0x12f9450, 0x20abe2cae528}, 0x20abe25dd2c0)
+	officerdashboard/internal/api/ratelimit.go:267 +0x282 fp=0x20abe2b27790 sp=0x20abe2b27730 pc=0x96f2c2
+net/http.HandlerFunc.ServeHTTP(0x20abe2e110c4?, {0x12f9450?, 0x20abe2cae528?}, 0xb0875a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b277b8 sp=0x20abe2b27790 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withAPIHygiene.func1({0x12f9450, 0x20abe2cae528}, 0x20abe25dd2c0)
+	officerdashboard/internal/api/server.go:280 +0x23d fp=0x20abe2b27828 sp=0x20abe2b277b8 pc=0x96effd
+net/http.HandlerFunc.ServeHTTP(0x20abe2d06570?, {0x12f9450?, 0x20abe2cae528?}, 0x749039984320?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b27850 sp=0x20abe2b27828 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withForwardedHostCheck.func1({0x12f9450, 0x20abe2cae528}, 0x20abe25dd2c0)
+	officerdashboard/internal/api/proxyhost.go:25 +0x31a fp=0x20abe2b27908 sp=0x20abe2b27850 pc=0x96ed7a
+net/http.HandlerFunc.ServeHTTP(0x20abe28e5808?, {0x12f9450?, 0x20abe2cae528?}, 0x42942e?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b27930 sp=0x20abe2b27908 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRecover.func1({0x12f9450?, 0x20abe2cae528?}, 0x2?)
+	officerdashboard/internal/api/server.go:252 +0x75 fp=0x20abe2b27998 sp=0x20abe2b27930 pc=0x96e875
+net/http.HandlerFunc.ServeHTTP(0x0?, {0x12f9450?, 0x20abe2cae528?}, 0x40a6d5?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b279c0 sp=0x20abe2b27998 pc=0x7716c9
+officerdashboard/internal/api.AccessLog.func1({0x12f95d0, 0x20abe2aa5b30}, 0x20abe25dd2c0)
+	officerdashboard/internal/api/accesslog.go:36 +0x11e fp=0x20abe2b27ac0 sp=0x20abe2b279c0 pc=0x98c59e
+net/http.HandlerFunc.ServeHTTP(0x48bef9?, {0x12f95d0?, 0x20abe2aa5b30?}, 0x20abe2b27af0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2b27ae8 sp=0x20abe2b27ac0 pc=0x7716c9
+net/http.serverHandler.ServeHTTP({0x20abe2a76c40?}, {0x12f95d0?, 0x20abe2aa5b30?}, 0x1?)
+	net/http/server.go:3440 +0x8e fp=0x20abe2b27b18 sp=0x20abe2b27ae8 pc=0x7942ce
+net/http.(*conn).serve(0x20abe28dc990, {0x12f9ac0, 0x20abe2680630})
+	net/http/server.go:2161 +0x6dc fp=0x20abe2b27fb8 sp=0x20abe2b27b18 pc=0x76f9fc
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3608 +0x1f fp=0x20abe2b27fe0 sp=0x20abe2b27fb8 pc=0x7911df
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2b27fe8 sp=0x20abe2b27fe0 pc=0x495fa1
+created by net/http.(*Server).Serve in goroutine 54
+	net/http/server.go:3608 +0x4fd
+
+goroutine 13588738 gp=0x20abe2a254a0 m=nil [runnable]:
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 fp=0x20abe2ab6fe0 sp=0x20abe2ab6fd8 pc=0x7b5a80
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2ab6fe8 sp=0x20abe2ab6fe0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400260
+	database/sql/sql.go:3007 +0x15a
+
+goroutine 13588771 gp=0x20abe2935a40 m=nil [IO wait]:
+runtime.gopark(0x20abe2a06e40?, 0x128f1d0?, 0x20?, 0x8a?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe2a06dc8 sp=0x20abe2a06da8 pc=0x48f06a
+runtime.netpollblock(0xffffffffffffffff?, 0xe2a06e48?, 0xab?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe2a06e00 sp=0x20abe2a06dc8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039984c00, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe2a06e20 sp=0x20abe2a06e00 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe24b2600?, 0x20abe28fe7a1?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe2a06e58 sp=0x20abe2a06e20 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x20abe24b2600, {0x20abe28fe7a1, 0x1, 0x1})
+	internal/poll/fd_unix.go:170 +0x2a8 fp=0x20abe2a06ef0 sp=0x20abe2a06e58 pc=0x502088
+net.(*netFD).Read(0x20abe24b2600, {0x20abe28fe7a1?, 0x20abe2492070?, 0x0?})
+	net/fd_posix.go:68 +0x25 fp=0x20abe2a06f38 sp=0x20abe2a06ef0 pc=0x612e05
+net.(*conn).Read(0x20abe26c8258, {0x20abe28fe7a1?, 0x7b5aaf?, 0x20abe2db4bb0?})
+	net/net.go:196 +0x45 fp=0x20abe2a06f80 sp=0x20abe2a06f38 pc=0x61e885
+net/http.(*connReader).backgroundRead(0x20abe28fe780)
+	net/http/server.go:742 +0x32 fp=0x20abe2a06fc8 sp=0x20abe2a06f80 pc=0x7694b2
+net/http.(*connReader).startBackgroundRead.gowrap2()
+	net/http/server.go:738 +0x17 fp=0x20abe2a06fe0 sp=0x20abe2a06fc8 pc=0x7907f7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2a06fe8 sp=0x20abe2a06fe0 pc=0x495fa1
+created by net/http.(*connReader).startBackgroundRead in goroutine 13400262
+	net/http/server.go:738 +0xba
+
+goroutine 13588705 gp=0x20abe2b4f2c0 m=nil [runnable]:
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 fp=0x20abe29dcfe0 sp=0x20abe29dcfd8 pc=0x7b5a80
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe29dcfe8 sp=0x20abe29dcfe0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400260
+	database/sql/sql.go:3007 +0x15a
+
+goroutine 13588658 gp=0x20abe2d7e000 m=nil [IO wait]:
+runtime.gopark(0x0?, 0x20abe2da6732?, 0x2?, 0x0?, 0x749082737108?)
+	runtime/proc.go:474 +0xca fp=0x20abe2da65c8 sp=0x20abe2da65a8 pc=0x48f06a
+runtime.netpollblock(0xffffffffffffffff?, 0xe2da6648?, 0xab?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe2da6600 sp=0x20abe2da65c8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039984400, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe2da6620 sp=0x20abe2da6600 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe24b2780?, 0x20abe27c2e21?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe2da6658 sp=0x20abe2da6620 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x20abe24b2780, {0x20abe27c2e21, 0x1, 0x1})
+	internal/poll/fd_unix.go:170 +0x2a8 fp=0x20abe2da66f0 sp=0x20abe2da6658 pc=0x502088
+net.(*netFD).Read(0x20abe24b2780, {0x20abe27c2e21?, 0x20abe2492070?, 0x20abe2da6770?})
+	net/fd_posix.go:68 +0x25 fp=0x20abe2da6738 sp=0x20abe2da66f0 pc=0x612e05
+net.(*conn).Read(0x20abe26c8270, {0x20abe27c2e21?, 0x7b5aaf?, 0x20abe24ae420?})
+	net/net.go:196 +0x45 fp=0x20abe2da6780 sp=0x20abe2da6738 pc=0x61e885
+net/http.(*connReader).backgroundRead(0x20abe27c2e00)
+	net/http/server.go:742 +0x32 fp=0x20abe2da67c8 sp=0x20abe2da6780 pc=0x7694b2
+net/http.(*connReader).startBackgroundRead.gowrap2()
+	net/http/server.go:738 +0x17 fp=0x20abe2da67e0 sp=0x20abe2da67c8 pc=0x7907f7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2da67e8 sp=0x20abe2da67e0 pc=0x495fa1
+created by net/http.(*connReader).startBackgroundRead in goroutine 13400265
+	net/http/server.go:738 +0xba
+
+goroutine 13400259 gp=0x20abe2d7e5a0 m=nil [runnable]:
+runtime.cgocall(0xa06000, 0x20abe2c8a6c8)
+	runtime/cgocall.go:167 +0x4b fp=0x20abe2c8a6a0 sp=0x20abe2c8a668 pc=0x48c02b
+github.com/mattn/go-sqlite3._Cfunc__sqlite3_step_values(0x41be8fd8, 0x4, 0x74902403fe00)
+	_cgo_gotypes.go:495 +0x46 fp=0x20abe2c8a6c8 sp=0x20abe2c8a6a0 pc=0x7f2246
+github.com/mattn/go-sqlite3.(*SQLiteRows).stepCancellableLocked.func1(...)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:3083
+github.com/mattn/go-sqlite3.(*SQLiteRows).stepCancellableLocked(0x20abe2ca0930, 0x4)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:3083 +0xc5 fp=0x20abe2c8a730 sp=0x20abe2c8a6c8 pc=0x807d45
+github.com/mattn/go-sqlite3.(*SQLiteRows).Next(0x20abe2ca0930, {0x20abe24b90c0, 0x4, 0x4})
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2971 +0x1f2 fp=0x20abe2c8a7c8 sp=0x20abe2c8a730 pc=0x806e12
+database/sql.(*Rows).nextLocked(0x20abe2c953f0)
+	database/sql/sql.go:3086 +0x162 fp=0x20abe2c8a828 sp=0x20abe2c8a7c8 pc=0x7b1242
+database/sql.(*Rows).Next.func1(0x20abe2c953f0, 0x20abe2c8a887, 0x20abe2c8a886)
+	database/sql/sql.go:3054 +0x6c fp=0x20abe2c8a868 sp=0x20abe2c8a828 pc=0x7b5b2c
+database/sql.(*Rows).Next(0x20abe2c953f0)
+	database/sql/sql.go:3055 +0x52 fp=0x20abe2c8a898 sp=0x20abe2c8a868 pc=0x7b1072
+officerdashboard/internal/store.(*Queries).EventCounts(0x20abe2c8b2f0, {0x12f9ac0, 0x20abe27f81e0}, {0x0, 0x0}, {0x0, 0x0, 0x20abe2c8aa78?})
+	officerdashboard/internal/store/events.go:265 +0x305 fp=0x20abe2c8aa50 sp=0x20abe2c8a898 pc=0x82ba65
+officerdashboard/internal/api.(*Server).eventItems(0x20abe2c8b2f0?, {0x12f9ac0?, 0x20abe27f81e0?}, 0x0?, 0x20abe2c8e090, {0x20abe2854008, 0x6, 0x20abe2c8af58?}, {0x0, 0x0})
+	officerdashboard/internal/api/helpers.go:191 +0x66 fp=0x20abe2c8adc0 sp=0x20abe2c8aa50 pc=0x8e8386
+officerdashboard/internal/api.(*Ctx).overview(0x20abe2c8b388)
+	officerdashboard/internal/api/finance.go:735 +0x251 fp=0x20abe2c8b310 sp=0x20abe2c8adc0 pc=0x8e5a31
+officerdashboard/internal/api.(*Server).wrap.func1({0x12f9450, 0x20abe270c990}, 0x0?)
+	officerdashboard/internal/api/server.go:235 +0x14e fp=0x20abe2c8b3e8 sp=0x20abe2c8b310 pc=0x96e00e
+net/http.HandlerFunc.ServeHTTP(0x20abe24ca000?, {0x12f9450?, 0x20abe270c990?}, 0x75ed25?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2c8b410 sp=0x20abe2c8b3e8 pc=0x7716c9
+net/http.(*ServeMux).ServeHTTP(0x20abe2c05b80?, {0x12f9450, 0x20abe270c990}, 0x20abe2c05cc0)
+	net/http/server.go:2927 +0x1cf fp=0x20abe2c8b460 sp=0x20abe2c8b410 pc=0x7732af
+officerdashboard/internal/api.(*Server).withAuth.func1({0x12f9450, 0x20abe270c990}, 0x20abe2c05b80)
+	officerdashboard/internal/api/session.go:188 +0xc19 fp=0x20abe2c8b708 sp=0x20abe2c8b460 pc=0x96ff19
+net/http.HandlerFunc.ServeHTTP(0x20abe2c05b80?, {0x12f9450?, 0x20abe270c990?}, 0x749082737a00?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2c8b730 sp=0x20abe2c8b708 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRateLimit.func1({0x12f9450, 0x20abe270c990}, 0x20abe2c05b80)
+	officerdashboard/internal/api/ratelimit.go:267 +0x282 fp=0x20abe2c8b790 sp=0x20abe2c8b730 pc=0x96f2c2
+net/http.HandlerFunc.ServeHTTP(0x20abe2b93c64?, {0x12f9450?, 0x20abe270c990?}, 0xb0875a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2c8b7b8 sp=0x20abe2c8b790 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withAPIHygiene.func1({0x12f9450, 0x20abe270c990}, 0x20abe2c05b80)
+	officerdashboard/internal/api/server.go:280 +0x23d fp=0x20abe2c8b828 sp=0x20abe2c8b7b8 pc=0x96effd
+net/http.HandlerFunc.ServeHTTP(0x20abe2a1fe00?, {0x12f9450?, 0x20abe270c990?}, 0x749039986320?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2c8b850 sp=0x20abe2c8b828 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withForwardedHostCheck.func1({0x12f9450, 0x20abe270c990}, 0x20abe2c05b80)
+	officerdashboard/internal/api/proxyhost.go:25 +0x31a fp=0x20abe2c8b908 sp=0x20abe2c8b850 pc=0x96ed7a
+net/http.HandlerFunc.ServeHTTP(0x20abe24b2300?, {0x12f9450?, 0x20abe270c990?}, 0x42950a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2c8b930 sp=0x20abe2c8b908 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRecover.func1({0x12f9450?, 0x20abe270c990?}, 0x20abe28e2008?)
+	officerdashboard/internal/api/server.go:252 +0x75 fp=0x20abe2c8b998 sp=0x20abe2c8b930 pc=0x96e875
+net/http.HandlerFunc.ServeHTTP(0x18?, {0x12f9450?, 0x20abe270c990?}, 0x40a6d5?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2c8b9c0 sp=0x20abe2c8b998 pc=0x7716c9
+officerdashboard/internal/api.AccessLog.func1({0x12f95d0, 0x20abe27c81e0}, 0x20abe2c05b80)
+	officerdashboard/internal/api/accesslog.go:36 +0x11e fp=0x20abe2c8bac0 sp=0x20abe2c8b9c0 pc=0x98c59e
+net/http.HandlerFunc.ServeHTTP(0x48bef9?, {0x12f95d0?, 0x20abe27c81e0?}, 0x20abe2c8baf0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2c8bae8 sp=0x20abe2c8bac0 pc=0x7716c9
+net/http.serverHandler.ServeHTTP({0x20abe27c2c80?}, {0x12f95d0?, 0x20abe27c81e0?}, 0x1?)
+	net/http/server.go:3440 +0x8e fp=0x20abe2c8bb18 sp=0x20abe2c8bae8 pc=0x7942ce
+net/http.(*conn).serve(0x20abe28dc900, {0x12f9ac0, 0x20abe2680630})
+	net/http/server.go:2161 +0x6dc fp=0x20abe2c8bfb8 sp=0x20abe2c8bb18 pc=0x76f9fc
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3608 +0x1f fp=0x20abe2c8bfe0 sp=0x20abe2c8bfb8 pc=0x7911df
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2c8bfe8 sp=0x20abe2c8bfe0 pc=0x495fa1
+created by net/http.(*Server).Serve in goroutine 54
+	net/http/server.go:3608 +0x4fd
+
+goroutine 13588663 gp=0x20abe2cb6b40 m=nil [IO wait]:
+runtime.gopark(0x0?, 0x20abe29e0732?, 0x2?, 0x0?, 0x749082738bf0?)
+	runtime/proc.go:474 +0xca fp=0x20abe29e05c8 sp=0x20abe29e05a8 pc=0x48f06a
+runtime.netpollblock(0xffffffffffffffff?, 0xe29e0648?, 0xab?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe29e0600 sp=0x20abe29e05c8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039984600, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe29e0620 sp=0x20abe29e0600 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe24b2800?, 0x20abe27c2c21?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe29e0658 sp=0x20abe29e0620 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x20abe24b2800, {0x20abe27c2c21, 0x1, 0x1})
+	internal/poll/fd_unix.go:170 +0x2a8 fp=0x20abe29e06f0 sp=0x20abe29e0658 pc=0x502088
+net.(*netFD).Read(0x20abe24b2800, {0x20abe27c2c21?, 0x20abe2492070?, 0x20abe29e0770?})
+	net/fd_posix.go:68 +0x25 fp=0x20abe29e0738 sp=0x20abe29e06f0 pc=0x612e05
+net.(*conn).Read(0x20abe26c8278, {0x20abe27c2c21?, 0x7b5aaf?, 0x20abe2c4bd90?})
+	net/net.go:196 +0x45 fp=0x20abe29e0780 sp=0x20abe29e0738 pc=0x61e885
+net/http.(*connReader).backgroundRead(0x20abe27c2c00)
+	net/http/server.go:742 +0x32 fp=0x20abe29e07c8 sp=0x20abe29e0780 pc=0x7694b2
+net/http.(*connReader).startBackgroundRead.gowrap2()
+	net/http/server.go:738 +0x17 fp=0x20abe29e07e0 sp=0x20abe29e07c8 pc=0x7907f7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe29e07e8 sp=0x20abe29e07e0 pc=0x495fa1
+created by net/http.(*connReader).startBackgroundRead in goroutine 13400266
+	net/http/server.go:738 +0xba
+
+goroutine 13588756 gp=0x20abe2cb72c0 m=nil [runnable]:
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 fp=0x20abe283c7e0 sp=0x20abe283c7d8 pc=0x7b5a80
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe283c7e8 sp=0x20abe283c7e0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400265
+	database/sql/sql.go:3007 +0x15a
+
+goroutine 13588708 gp=0x20abe2cb7c20 m=nil [IO wait]:
+runtime.gopark(0x486180?, 0x20abe29aa732?, 0x2?, 0x0?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe29aa5c8 sp=0x20abe29aa5a8 pc=0x48f06a
+runtime.netpollblock(0xffffffffffffffff?, 0xe29aa648?, 0xab?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe29aa600 sp=0x20abe29aa5c8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039986200, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe29aa620 sp=0x20abe29aa600 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe24b2300?, 0x20abe27c2ca1?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe29aa658 sp=0x20abe29aa620 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x20abe24b2300, {0x20abe27c2ca1, 0x1, 0x1})
+	internal/poll/fd_unix.go:170 +0x2a8 fp=0x20abe29aa6f0 sp=0x20abe29aa658 pc=0x502088
+net.(*netFD).Read(0x20abe24b2300, {0x20abe27c2ca1?, 0x20abe2492070?, 0x20abe29aa770?})
+	net/fd_posix.go:68 +0x25 fp=0x20abe29aa738 sp=0x20abe29aa6f0 pc=0x612e05
+net.(*conn).Read(0x20abe26c8240, {0x20abe27c2ca1?, 0x7b5aaf?, 0x20abe24af8c0?})
+	net/net.go:196 +0x45 fp=0x20abe29aa780 sp=0x20abe29aa738 pc=0x61e885
+net/http.(*connReader).backgroundRead(0x20abe27c2c80)
+	net/http/server.go:742 +0x32 fp=0x20abe29aa7c8 sp=0x20abe29aa780 pc=0x7694b2
+net/http.(*connReader).startBackgroundRead.gowrap2()
+	net/http/server.go:738 +0x17 fp=0x20abe29aa7e0 sp=0x20abe29aa7c8 pc=0x7907f7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe29aa7e8 sp=0x20abe29aa7e0 pc=0x495fa1
+created by net/http.(*connReader).startBackgroundRead in goroutine 13400259
+	net/http/server.go:738 +0xba
+
+goroutine 13400265 gp=0x20abe2b643c0 m=nil [runnable]:
+runtime.cgocall(0xa06420, 0x20abe2740800)
+	runtime/cgocall.go:167 +0x4b fp=0x20abe27407d8 sp=0x20abe27407a0 pc=0x48c02b
+github.com/mattn/go-sqlite3._Cfunc_sqlite3_finalize(0x74902805ecd8)
+	_cgo_gotypes.go:926 +0x45 fp=0x20abe2740800 sp=0x20abe27407d8 pc=0x7f3a25
+github.com/mattn/go-sqlite3.(*SQLiteStmt).Close.func1(...)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2424
+github.com/mattn/go-sqlite3.(*SQLiteStmt).Close(0x20abe2c36500)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2424 +0x24d fp=0x20abe2740878 sp=0x20abe2740800 pc=0x8035cd
+github.com/mattn/go-sqlite3.(*SQLiteRows).Close(0x20abe2969b20)
+	github.com/mattn/go-sqlite3@v1.14.53/sqlite3.go:2820 +0x18c fp=0x20abe27408f0 sp=0x20abe2740878 pc=0x805f2c
+database/sql.(*Rows).close.func1()
+	database/sql/sql.go:3505 +0x29 fp=0x20abe2740910 sp=0x20abe27408f0 pc=0x7b5e89
+database/sql.withLock({0x12f85d8, 0x20abe2686200}, 0x20abe2740998)
+	database/sql/sql.go:3621 +0x71 fp=0x20abe2740950 sp=0x20abe2740910 pc=0x7b36f1
+database/sql.(*Rows).close(0x20abe2c2c370, {0x0, 0x0})
+	database/sql/sql.go:3504 +0x150 fp=0x20abe27409e8 sp=0x20abe2740950 pc=0x7b2fd0
+database/sql.(*Rows).Close(0x20abe2c2c370?)
+	database/sql/sql.go:3488 +0x35 fp=0x20abe2740a10 sp=0x20abe27409e8 pc=0x7b2e55
+database/sql.(*Rows).Next(0x20abe2c2c370)
+	database/sql/sql.go:3057 +0x65 fp=0x20abe2740a40 sp=0x20abe2740a10 pc=0x7b1085
+officerdashboard/internal/store.(*Queries).ReportLines(0x4725cb?, {0x12f9ac0?, 0x20abe2884b10?})
+	officerdashboard/internal/store/catalog.go:169 +0x179 fp=0x20abe2740bb0 sp=0x20abe2740a40 pc=0x81d959
+officerdashboard/internal/api.(*Server).loadReportData(0x20abe24850e0, {0x12f9ac0, 0x20abe2884b10}, 0x20abe27412f0, {0x20abe2921d70, 0xa})
+	officerdashboard/internal/api/finance.go:34 +0xd1 fp=0x20abe2740dc0 sp=0x20abe2740bb0 pc=0x8df971
+officerdashboard/internal/api.(*Ctx).overview(0x20abe2741388)
+	officerdashboard/internal/api/finance.go:723 +0x19f fp=0x20abe2741310 sp=0x20abe2740dc0 pc=0x8e597f
+officerdashboard/internal/api.(*Server).wrap.func1({0x12f9450, 0x20abe2bb43a8}, 0x0?)
+	officerdashboard/internal/api/server.go:235 +0x14e fp=0x20abe27413e8 sp=0x20abe2741310 pc=0x96e00e
+net/http.HandlerFunc.ServeHTTP(0x20abe24ca000?, {0x12f9450?, 0x20abe2bb43a8?}, 0x75ed65?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2741410 sp=0x20abe27413e8 pc=0x7716c9
+net/http.(*ServeMux).ServeHTTP(0x20abe2e0e780?, {0x12f9450, 0x20abe2bb43a8}, 0x20abe2e0f040)
+	net/http/server.go:2927 +0x1cf fp=0x20abe2741460 sp=0x20abe2741410 pc=0x7732af
+officerdashboard/internal/api.(*Server).withAuth.func1({0x12f9450, 0x20abe2bb43a8}, 0x20abe2e0e780)
+	officerdashboard/internal/api/session.go:188 +0xc19 fp=0x20abe2741708 sp=0x20abe2741460 pc=0x96ff19
+net/http.HandlerFunc.ServeHTTP(0x20abe2e0e780?, {0x12f9450?, 0x20abe2bb43a8?}, 0x749082738bf0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2741730 sp=0x20abe2741708 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRateLimit.func1({0x12f9450, 0x20abe2bb43a8}, 0x20abe2e0e780)
+	officerdashboard/internal/api/ratelimit.go:267 +0x282 fp=0x20abe2741790 sp=0x20abe2741730 pc=0x96f2c2
+net/http.HandlerFunc.ServeHTTP(0x20abe2c92f84?, {0x12f9450?, 0x20abe2bb43a8?}, 0xb0875a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe27417b8 sp=0x20abe2741790 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withAPIHygiene.func1({0x12f9450, 0x20abe2bb43a8}, 0x20abe2e0e780)
+	officerdashboard/internal/api/server.go:280 +0x23d fp=0x20abe2741828 sp=0x20abe27417b8 pc=0x96effd
+net/http.HandlerFunc.ServeHTTP(0x20abe2680d80?, {0x12f9450?, 0x20abe2bb43a8?}, 0x749039984520?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2741850 sp=0x20abe2741828 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withForwardedHostCheck.func1({0x12f9450, 0x20abe2bb43a8}, 0x20abe2e0e780)
+	officerdashboard/internal/api/proxyhost.go:25 +0x31a fp=0x20abe2741908 sp=0x20abe2741850 pc=0x96ed7a
+net/http.HandlerFunc.ServeHTTP(0x20abe24b2780?, {0x12f9450?, 0x20abe2bb43a8?}, 0x42950a?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2741930 sp=0x20abe2741908 pc=0x7716c9
+officerdashboard/internal/api.(*Server).withRecover.func1({0x12f9450?, 0x20abe2bb43a8?}, 0x20abe27e0008?)
+	officerdashboard/internal/api/server.go:252 +0x75 fp=0x20abe2741998 sp=0x20abe2741930 pc=0x96e875
+net/http.HandlerFunc.ServeHTTP(0x18?, {0x12f9450?, 0x20abe2bb43a8?}, 0x40a6d5?)
+	net/http/server.go:2362 +0x29 fp=0x20abe27419c0 sp=0x20abe2741998 pc=0x7716c9
+officerdashboard/internal/api.AccessLog.func1({0x12f95d0, 0x20abe2809770}, 0x20abe2e0e780)
+	officerdashboard/internal/api/accesslog.go:36 +0x11e fp=0x20abe2741ac0 sp=0x20abe27419c0 pc=0x98c59e
+net/http.HandlerFunc.ServeHTTP(0x48bef9?, {0x12f95d0?, 0x20abe2809770?}, 0x20abe2741af0?)
+	net/http/server.go:2362 +0x29 fp=0x20abe2741ae8 sp=0x20abe2741ac0 pc=0x7716c9
+net/http.serverHandler.ServeHTTP({0x20abe27c2e00?}, {0x12f95d0?, 0x20abe2809770?}, 0x1?)
+	net/http/server.go:3440 +0x8e fp=0x20abe2741b18 sp=0x20abe2741ae8 pc=0x7942ce
+net/http.(*conn).serve(0x20abe28dcc60, {0x12f9ac0, 0x20abe2680630})
+	net/http/server.go:2161 +0x6dc fp=0x20abe2741fb8 sp=0x20abe2741b18 pc=0x76f9fc
+net/http.(*Server).Serve.gowrap3()
+	net/http/server.go:3608 +0x1f fp=0x20abe2741fe0 sp=0x20abe2741fb8 pc=0x7911df
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2741fe8 sp=0x20abe2741fe0 pc=0x495fa1
+created by net/http.(*Server).Serve in goroutine 54
+	net/http/server.go:3608 +0x4fd
+
+goroutine 13588699 gp=0x20abe2b65c20 m=nil [IO wait]:
+runtime.gopark(0x6e6f6974?, 0x128f1d0?, 0x20?, 0xe0?, 0x0?)
+	runtime/proc.go:474 +0xca fp=0x20abe28425c8 sp=0x20abe28425a8 pc=0x48f06a
+runtime.netpollblock(0xffffffffffffffff?, 0xe2842648?, 0xab?)
+	runtime/netpoll.go:575 +0xf7 fp=0x20abe2842600 sp=0x20abe28425c8 pc=0x450797
+internal/poll.runtime_pollWait(0x749039984200, 0x72)
+	runtime/netpoll.go:351 +0x85 fp=0x20abe2842620 sp=0x20abe2842600 pc=0x48e265
+internal/poll.(*pollDesc).wait(0x20abe24b2380?, 0x20abe2a76c61?, 0x0)
+	internal/poll/fd_poll_runtime.go:84 +0x27 fp=0x20abe2842658 sp=0x20abe2842620 pc=0x501007
+internal/poll.(*pollDesc).waitRead(...)
+	internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x20abe24b2380, {0x20abe2a76c61, 0x1, 0x1})
+	internal/poll/fd_unix.go:170 +0x2a8 fp=0x20abe28426f0 sp=0x20abe2842658 pc=0x502088
+net.(*netFD).Read(0x20abe24b2380, {0x20abe2a76c61?, 0x20abe2492070?, 0x0?})
+	net/fd_posix.go:68 +0x25 fp=0x20abe2842738 sp=0x20abe28426f0 pc=0x612e05
+net.(*conn).Read(0x20abe26c8248, {0x20abe2a76c61?, 0x7b5aaf?, 0x20abe2db4630?})
+	net/net.go:196 +0x45 fp=0x20abe2842780 sp=0x20abe2842738 pc=0x61e885
+net/http.(*connReader).backgroundRead(0x20abe2a76c40)
+	net/http/server.go:742 +0x32 fp=0x20abe28427c8 sp=0x20abe2842780 pc=0x7694b2
+net/http.(*connReader).startBackgroundRead.gowrap2()
+	net/http/server.go:738 +0x17 fp=0x20abe28427e0 sp=0x20abe28427c8 pc=0x7907f7
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe28427e8 sp=0x20abe28427e0 pc=0x495fa1
+created by net/http.(*connReader).startBackgroundRead in goroutine 13400260
+	net/http/server.go:738 +0xba
+
+goroutine 13588787 gp=0x20abe2b28000 m=nil [runnable]:
+database/sql.(*Rows).initContextClose.gowrap1()
+	database/sql/sql.go:3007 fp=0x20abe2ad3fe0 sp=0x20abe2ad3fd8 pc=0x7b5a80
+runtime.goexit({})
+	runtime/asm_amd64.s:1264 +0x1 fp=0x20abe2ad3fe8 sp=0x20abe2ad3fe0 pc=0x495fa1
+created by database/sql.(*Rows).initContextClose in goroutine 13400259
+	database/sql/sql.go:3007 +0x15a
+
+rax    0xca
+rbx    0x0
+rcx    0x497ac3
+rdx    0x0
+rdi    0x13b2eb8
+rsi    0x80
+rbp    0x7ffe1c1fddb8
+rsp    0x7ffe1c1fdd70
+r8     0x0
+r9     0x0
+r10    0x0
+r11    0x286
+r12    0x1
+r13    0x3
+r14    0x13b1b80
+r15    0x0
+rip    0x497ac1
+rflags 0x286
+cs     0x33
+fs     0x0
+gs     0x0

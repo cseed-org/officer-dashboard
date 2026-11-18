@@ -1,0 +1,14 @@
+
+> cseed-officer-dashboard@0.0.1 contract-check
+> node scripts/contract-check.mjs
+
+Canonical and browser endpoint contracts match (documented dev/Search exceptions).
+building the Go server… done
+seeded /scratch/contract-check-VoiNFS/check.db: 6 users, 6 events, 6 requests, 18 journal lines (FY2027)
+
+Seeded FY2027 statements (asOf 2026-10-31)
+  unrestricted: $1,800.00 − $591.40 + $186.40 released = $1,395.00  (statement says $1,395.00)
+  net assets ending $11,908.60 = total assets $11,908.60  (balanced: true)
+
+299 responses from 139 of 146 endpoints validated against src/core/contracts.ts
+contract check passed: 0 schema errors

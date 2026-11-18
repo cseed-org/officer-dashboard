@@ -1,0 +1,9 @@
+{
+  "old_baseline": "d78ccd4",
+  "before": "fa301df",
+  "after_release": "dc863d5",
+  "tests_head": "a34ec107e03ded87c4779832a1d5be68317ddc08",
+  "web_document_source": "7ff0e5b425666cb36cc1e7fc3d09960182c6e906",
+  "main_during_work": "423362122c6f2e137317e2b59a610cac82d0d662",
+  "post_capture_changes": "Regression checks, client history controls, and a standalone EventSummary store aggregate for PR5; measured handler SQL unchanged."
+}

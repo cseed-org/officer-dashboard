@@ -1,0 +1,4 @@
+=== RUN   TestBinaryAssetValidators
+--- PASS: TestBinaryAssetValidators (0.03s)
+PASS
+ok  	officerdashboard/internal/web	0.037s

@@ -1,0 +1,226 @@
+go version go1.27.4 linux/amd64
+nproc=4
+max 100000
+0-3
+2147483648
+=== bench run 1
+PASS
+ok  	officerdashboard/cmd/dashboard	0.005s
+PASS
+ok  	officerdashboard/internal/accounting	0.002s
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/api
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkReadEndpoints//api/members-4 	    4476	    265577 ns/op	   43172 B/op	     970 allocs/op
+BenchmarkReadEndpoints//api/me-4      	   15843	     77415 ns/op	    8781 B/op	     204 allocs/op
+BenchmarkReadEndpoints//api/lookups-4 	    4680	    236352 ns/op	   53970 B/op	    1186 allocs/op
+BenchmarkReadEndpoints//api/overview-4         	    1357	    854881 ns/op	  187149 B/op	    2929 allocs/op
+BenchmarkReadEndpoints//api/events-4           	    2164	    537009 ns/op	   70301 B/op	    1419 allocs/op
+BenchmarkReadEndpoints//api/events/event-kickoff-4         	    3214	    358050 ns/op	   50778 B/op	    1217 allocs/op
+BenchmarkReadEndpoints//api/events/event-kickoff/metrics-4 	    3273	    326952 ns/op	   39295 B/op	    1167 allocs/op
+BenchmarkReadEndpoints//api/requests?scope=all-4           	    4858	    245066 ns/op	   62045 B/op	    1313 allocs/op
+BenchmarkReadEndpoints//api/requests/req-0002-4            	    3644	    320826 ns/op	   60060 B/op	    1413 allocs/op
+BenchmarkReadEndpoints//api/finance/summary-4              	    3007	    395474 ns/op	  123145 B/op	    1597 allocs/op
+BenchmarkReadEndpoints//api/finance/budgets-4              	    5450	    207200 ns/op	   50340 B/op	    1103 allocs/op
+BenchmarkReadEndpoints//api/finance/reports/budget-vs-actual-4         	    3078	    377691 ns/op	   96274 B/op	    1531 allocs/op
+BenchmarkReadEndpoints//api/finance/reports/statement-of-activities-4  	    3192	    365743 ns/op	   84461 B/op	    1487 allocs/op
+BenchmarkReadEndpoints//api/search?q=demo-4                            	    3146	    381101 ns/op	   42432 B/op	    1028 allocs/op
+BenchmarkCommitmentHistory-4                                           	     498	   2382911 ns/op	  923688 B/op	   20162 allocs/op
+BenchmarkHistoricalFinanceSummary-4                                    	      82	  14063986 ns/op	 6294228 B/op	  117800 allocs/op
+BenchmarkAgentJobs-4                                                   	     445	   2768897 ns/op	 1742798 B/op	   12541 allocs/op
+BenchmarkMCPMultipart-4                                                	      26	  41860854 ns/op	 250.49 MB/s	20985271 B/op	      38 allocs/op
+BenchmarkMemberOfficers-4                                              	   15571	     75686 ns/op	   25074 B/op	     607 allocs/op
+BenchmarkPortalBuilder-4                                               	    2143	    565882 ns/op	   69372 B/op	    1385 allocs/op
+PASS
+ok  	officerdashboard/internal/api	30.434s
+PASS
+ok  	officerdashboard/internal/auth	0.003s
+PASS
+ok  	officerdashboard/internal/calendar	0.002s
+PASS
+ok  	officerdashboard/internal/cfsync	0.004s
+PASS
+ok  	officerdashboard/internal/cloudflare	0.003s
+PASS
+ok  	officerdashboard/internal/files	0.004s
+PASS
+ok  	officerdashboard/internal/fiscal	0.003s
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/luma
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkCSVGuests-4   	      39	  28675165 ns/op	  26.30 MB/s	17007256 B/op	  182100 allocs/op
+PASS
+ok  	officerdashboard/internal/luma	1.153s
+PASS
+ok  	officerdashboard/internal/mcpcheck	0.006s
+PASS
+ok  	officerdashboard/internal/money	0.002s
+PASS
+ok  	officerdashboard/internal/notify	0.003s
+?   	officerdashboard/internal/notion	[no test files]
+PASS
+ok  	officerdashboard/internal/purchases	0.002s
+PASS
+ok  	officerdashboard/internal/seed	0.003s
+PASS
+ok  	officerdashboard/internal/store	0.005s
+PASS
+ok  	officerdashboard/internal/validate	0.003s
+PASS
+ok  	officerdashboard/internal/web	0.004s
+=== bench run 2
+PASS
+ok  	officerdashboard/cmd/dashboard	0.005s
+PASS
+ok  	officerdashboard/internal/accounting	0.002s
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/api
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkReadEndpoints//api/members-4 	    4039	    269986 ns/op	   43188 B/op	     970 allocs/op
+BenchmarkReadEndpoints//api/me-4      	   15232	     78505 ns/op	    8781 B/op	     204 allocs/op
+BenchmarkReadEndpoints//api/lookups-4 	    4648	    223999 ns/op	   53959 B/op	    1186 allocs/op
+BenchmarkReadEndpoints//api/overview-4         	    1377	    853008 ns/op	  187069 B/op	    2929 allocs/op
+BenchmarkReadEndpoints//api/events-4           	    1986	    549328 ns/op	   70154 B/op	    1419 allocs/op
+BenchmarkReadEndpoints//api/events/event-kickoff-4         	    3135	    363383 ns/op	   50764 B/op	    1217 allocs/op
+BenchmarkReadEndpoints//api/events/event-kickoff/metrics-4 	    3616	    332892 ns/op	   39404 B/op	    1167 allocs/op
+BenchmarkReadEndpoints//api/requests?scope=all-4           	    4669	    253373 ns/op	   62094 B/op	    1313 allocs/op
+BenchmarkReadEndpoints//api/requests/req-0002-4            	    3872	    314115 ns/op	   60052 B/op	    1413 allocs/op
+BenchmarkReadEndpoints//api/finance/summary-4              	    2995	    397544 ns/op	  123097 B/op	    1596 allocs/op
+BenchmarkReadEndpoints//api/finance/budgets-4              	    6043	    211114 ns/op	   50349 B/op	    1103 allocs/op
+BenchmarkReadEndpoints//api/finance/reports/budget-vs-actual-4         	    3106	    410370 ns/op	   96343 B/op	    1531 allocs/op
+BenchmarkReadEndpoints//api/finance/reports/statement-of-activities-4  	    2763	    405996 ns/op	   84443 B/op	    1487 allocs/op
+BenchmarkReadEndpoints//api/search?q=demo-4                            	    2731	    395481 ns/op	   42430 B/op	    1028 allocs/op
+BenchmarkCommitmentHistory-4                                           	     482	   2522563 ns/op	  923899 B/op	   20162 allocs/op
+BenchmarkHistoricalFinanceSummary-4                                    	      73	  14487798 ns/op	 6294779 B/op	  117801 allocs/op
+BenchmarkAgentJobs-4                                                   	     418	   2818701 ns/op	 1737506 B/op	   12541 allocs/op
+BenchmarkMCPMultipart-4                                                	      27	  42303382 ns/op	 247.87 MB/s	20985843 B/op	      39 allocs/op
+BenchmarkMemberOfficers-4                                              	   14947	     79626 ns/op	   25077 B/op	     608 allocs/op
+BenchmarkPortalBuilder-4                                               	    2130	    575287 ns/op	   69367 B/op	    1385 allocs/op
+PASS
+ok  	officerdashboard/internal/api	28.374s
+PASS
+ok  	officerdashboard/internal/auth	0.003s
+PASS
+ok  	officerdashboard/internal/calendar	0.003s
+PASS
+ok  	officerdashboard/internal/cfsync	0.005s
+PASS
+ok  	officerdashboard/internal/cloudflare	0.003s
+PASS
+ok  	officerdashboard/internal/files	0.003s
+PASS
+ok  	officerdashboard/internal/fiscal	0.002s
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/luma
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkCSVGuests-4   	      36	  30194056 ns/op	  24.97 MB/s	17017900 B/op	  182101 allocs/op
+PASS
+ok  	officerdashboard/internal/luma	1.126s
+PASS
+ok  	officerdashboard/internal/mcpcheck	0.008s
+PASS
+ok  	officerdashboard/internal/money	0.003s
+PASS
+ok  	officerdashboard/internal/notify	0.004s
+?   	officerdashboard/internal/notion	[no test files]
+PASS
+ok  	officerdashboard/internal/purchases	0.002s
+PASS
+ok  	officerdashboard/internal/seed	0.009s
+PASS
+ok  	officerdashboard/internal/store	0.004s
+PASS
+ok  	officerdashboard/internal/validate	0.002s
+PASS
+ok  	officerdashboard/internal/web	0.003s
+=== bench run 3
+PASS
+ok  	officerdashboard/cmd/dashboard	0.005s
+PASS
+ok  	officerdashboard/internal/accounting	0.002s
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/api
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkReadEndpoints//api/members-4 	    3807	    281523 ns/op	   43175 B/op	     970 allocs/op
+BenchmarkReadEndpoints//api/me-4      	   15102	     79604 ns/op	    8781 B/op	     204 allocs/op
+BenchmarkReadEndpoints//api/lookups-4 	    5325	    225377 ns/op	   53979 B/op	    1186 allocs/op
+BenchmarkReadEndpoints//api/overview-4         	    1366	    873682 ns/op	  187346 B/op	    2929 allocs/op
+BenchmarkReadEndpoints//api/events-4           	    2152	    585191 ns/op	   70174 B/op	    1419 allocs/op
+BenchmarkReadEndpoints//api/events/event-kickoff-4         	    3170	    382901 ns/op	   50797 B/op	    1217 allocs/op
+BenchmarkReadEndpoints//api/events/event-kickoff/metrics-4 	    3268	    345971 ns/op	   39283 B/op	    1167 allocs/op
+BenchmarkReadEndpoints//api/requests?scope=all-4           	    4827	    256826 ns/op	   62080 B/op	    1313 allocs/op
+BenchmarkReadEndpoints//api/requests/req-0002-4            	    3613	    351950 ns/op	   60055 B/op	    1413 allocs/op
+BenchmarkReadEndpoints//api/finance/summary-4              	    2748	    417583 ns/op	  123144 B/op	    1597 allocs/op
+BenchmarkReadEndpoints//api/finance/budgets-4              	    5587	    217196 ns/op	   50346 B/op	    1103 allocs/op
+BenchmarkReadEndpoints//api/finance/reports/budget-vs-actual-4         	    2829	    404201 ns/op	   96334 B/op	    1531 allocs/op
+BenchmarkReadEndpoints//api/finance/reports/statement-of-activities-4  	    2698	    419956 ns/op	   84474 B/op	    1487 allocs/op
+BenchmarkReadEndpoints//api/search?q=demo-4                            	    2898	    406525 ns/op	   42431 B/op	    1028 allocs/op
+BenchmarkCommitmentHistory-4                                           	     480	   2538753 ns/op	  923778 B/op	   20162 allocs/op
+BenchmarkHistoricalFinanceSummary-4                                    	      74	  14420107 ns/op	 6294105 B/op	  117800 allocs/op
+BenchmarkAgentJobs-4                                                   	     422	   2764125 ns/op	 1737027 B/op	   12541 allocs/op
+BenchmarkMCPMultipart-4                                                	      26	  42779677 ns/op	 245.11 MB/s	20985922 B/op	      39 allocs/op
+BenchmarkMemberOfficers-4                                              	   15604	     78369 ns/op	   25073 B/op	     607 allocs/op
+BenchmarkPortalBuilder-4                                               	    1999	    577204 ns/op	   69326 B/op	    1384 allocs/op
+PASS
+ok  	officerdashboard/internal/api	29.633s
+PASS
+ok  	officerdashboard/internal/auth	0.004s
+PASS
+ok  	officerdashboard/internal/calendar	0.004s
+PASS
+ok  	officerdashboard/internal/cfsync	0.005s
+PASS
+ok  	officerdashboard/internal/cloudflare	0.005s
+PASS
+ok  	officerdashboard/internal/files	0.005s
+PASS
+ok  	officerdashboard/internal/fiscal	0.004s
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/luma
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkCSVGuests-4   	      37	  30255303 ns/op	  24.92 MB/s	17023955 B/op	  182101 allocs/op
+PASS
+ok  	officerdashboard/internal/luma	1.158s
+PASS
+ok  	officerdashboard/internal/mcpcheck	0.006s
+PASS
+ok  	officerdashboard/internal/money	0.003s
+PASS
+ok  	officerdashboard/internal/notify	0.003s
+?   	officerdashboard/internal/notion	[no test files]
+PASS
+ok  	officerdashboard/internal/purchases	0.003s
+PASS
+ok  	officerdashboard/internal/seed	0.003s
+PASS
+ok  	officerdashboard/internal/store	0.004s
+PASS
+ok  	officerdashboard/internal/validate	0.003s
+PASS
+ok  	officerdashboard/internal/web	0.004s
+=== latency report (docs/performance.md method)
+=== RUN   TestLatencyReport
+endpoint (2000 requests, seeded data)                     p50      p95      p99
+/api/members                                           0.27ms   0.46ms   0.75ms
+/api/me                                                0.07ms   0.13ms   0.30ms
+/api/lookups                                           0.21ms   0.42ms   0.63ms
+/api/overview                                          0.80ms   1.31ms   1.55ms
+/api/events                                            0.52ms   0.82ms   1.08ms
+/api/events/event-kickoff                              0.35ms   0.61ms   0.90ms
+/api/events/event-kickoff/metrics                      0.32ms   0.53ms   0.86ms
+/api/requests?scope=all                                0.22ms   0.41ms   0.73ms
+/api/requests/req-0002                                 0.29ms   0.50ms   0.81ms
+/api/finance/summary                                   0.36ms   0.68ms   0.92ms
+/api/finance/budgets                                   0.18ms   0.34ms   0.62ms
+/api/finance/reports/budget-vs-actual                  0.35ms   0.66ms   0.90ms
+/api/finance/reports/statement-of-activities           0.35ms   0.62ms   0.87ms
+/api/search?q=demo                                     0.33ms   0.57ms   0.97ms
+--- PASS: TestLatencyReport (10.24s)
+PASS
+ok  	officerdashboard/internal/api	10.251s

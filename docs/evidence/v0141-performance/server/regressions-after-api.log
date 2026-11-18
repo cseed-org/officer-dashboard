@@ -1,0 +1,22 @@
+=== RUN   TestBuildspaceHistoryPagesBoundBodiesAndRetainSignals
+--- PASS: TestBuildspaceHistoryPagesBoundBodiesAndRetainSignals (0.15s)
+=== RUN   TestPrivateWeeklyCompletionSurvivesPortalHistoryFilter
+--- PASS: TestPrivateWeeklyCompletionSurvivesPortalHistoryFilter (0.09s)
+=== RUN   TestOnboardingHasNoOtherProjectsHistoryCursor
+--- PASS: TestOnboardingHasNoOtherProjectsHistoryCursor (0.10s)
+=== RUN   TestHistoricalFinanceDecodeBudget
+--- PASS: TestHistoricalFinanceDecodeBudget (0.11s)
+=== RUN   TestStaticAssetSkipsSessionDatabase
+--- PASS: TestStaticAssetSkipsSessionDatabase (0.00s)
+=== RUN   TestMCPRejectsBeforeReadingBody
+--- PASS: TestMCPRejectsBeforeReadingBody (0.09s)
+=== RUN   TestMCPInFlightBodyCap
+--- PASS: TestMCPInFlightBodyCap (0.09s)
+=== RUN   TestEventSmallPageAllocationBudget
+--- PASS: TestEventSmallPageAllocationBudget (0.11s)
+=== RUN   TestMemberOfficersAllocationBudget
+--- PASS: TestMemberOfficersAllocationBudget (0.21s)
+=== RUN   TestDesignDeliveredHistoryBoundedAndComplete
+--- PASS: TestDesignDeliveredHistoryBoundedAndComplete (0.11s)
+PASS
+ok  	officerdashboard/internal/api	1.088s
