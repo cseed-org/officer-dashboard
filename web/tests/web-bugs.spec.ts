@@ -67,7 +67,7 @@ async function moduleCall(page: Page, name: string, arg?: unknown) {
 const widget = (id: string, size = '2x2') => ({ id, size, me, overview: { status: 'ready', data: { fiscalYear: 2027, kpis: { pendingRequests: 0, pendingRequestsCents: 0 } } }, cloudflare: { status: 'loading' } });
 
 test('M-012: both ApiError schemas accept every intentional error code', () => {
-  for (const code of ['bad_request', 'unauthenticated', 'forbidden', 'not_found', 'conflict', 'invalid_transition', 'import_failed', 'internal', 'onboarding_required', 'over_tolerance', 'archived', 'rate_limited', 'not_configured']) {
+  for (const code of ['bad_request', 'unauthenticated', 'forbidden', 'not_found', 'conflict', 'invalid_transition', 'import_failed', 'internal', 'onboarding_required', 'over_tolerance', 'archived', 'rate_limited', 'not_configured', 'too_large']) {
     const body = { error: { code, message: 'Representative server error', details: {} } };
     expect(WebError.safeParse(body).success, code).toBe(true); expect(CoreError.safeParse(body).success, code).toBe(true);
   }

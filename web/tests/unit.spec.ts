@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { ApiError as BrowserApiError } from '../src/lib/contracts';
+import { ApiError as CanonicalApiError } from '../../src/core/contracts';
 import { byDesigner, designMoveTargets, designStats, designTool, laneOf, laneTarget, thisWeek } from '../src/lib/design';
 import type { CalendarFeedItem, DesignRequestItem } from '../src/lib/contracts';
 import { isGradMonth, isLinkedIn } from '../src/lib/profileRules';
@@ -11,6 +13,14 @@ import { defaultWidgetLayout, layoutForChoices } from '../src/ui/widgets/catalog
 /** Pure-function tests (no browser); run once, in the desktop project. */
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'unit tests run once'));
 const O = 'http://localhost:4340';
+
+test('M-012: API failures including oversized MCP bodies match both contracts', () => {
+  for (const code of ['bad_request', 'unauthenticated', 'forbidden', 'not_found', 'conflict', 'invalid_transition', 'import_failed', 'internal', 'onboarding_required', 'over_tolerance', 'archived', 'rate_limited', 'not_configured', 'too_large']) {
+    const body = { error: { code, message: 'Server failure' } };
+    expect(BrowserApiError.safeParse(body).success, code).toBe(true);
+    expect(CanonicalApiError.safeParse(body).success, code).toBe(true);
+  }
+});
 
 test('P2-2: internalPath accepts same-origin paths and refuses every off-site form', () => {
   expect(internalPath('/finance?id=req-1', O)).toBe('/finance?id=req-1');

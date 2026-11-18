@@ -91,6 +91,7 @@ export const ApiError = z.object({
       'archived',
       'rate_limited',
       'not_configured',
+      'too_large',
       /** 403 while an invited officer hasn't finished setup; only /api/me* is open. */
       'onboarding_required',
     ]),

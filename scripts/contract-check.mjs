@@ -18,7 +18,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { droppedKeys, executableName, spawnFailure } from './contract-helpers.mjs';
@@ -46,6 +46,15 @@ await build({ stdin: { contents: "export * from './src/core/contracts.ts'; expor
 signal.throwIfAborted();
 const { ENDPOINTS, ApiError, BrowserApiError } = await import(pathToFileURL(bundle).href);
 const browserEndpoints = await checkContractParity(root);
+// M-012: every code the server emits must fit both published ApiError schemas.
+for (const name of readdirSync(join(root, 'server/internal/api')).filter((n) => n.endsWith('.go') && !n.endsWith('_test.go'))) {
+  const source = readFileSync(join(root, 'server/internal/api', name), 'utf8');
+  for (const match of source.matchAll(/fail\([^,\n]+,\s*"([a-z_]+)"/g)) {
+    const payload = { error: { code: match[1], message: 'Server failure' } };
+    if (!ApiError.safeParse(payload).success || !BrowserApiError.safeParse(payload).success) throw new Error(`Undocumented ApiError code ${match[1]} in ${name}`);
+  }
+}
+
 signal.throwIfAborted();
 const registryBundle = join(work, 'widget-registry.mjs');
 await build({ entryPoints: [join(root, 'web/src/ui/widgets/defaultLayout.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
