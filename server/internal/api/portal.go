@@ -556,10 +556,7 @@ func (c *Ctx) portalBuilder() error {
 		return err
 	}
 	person := deref(s.account.PersonID)
-	if person == "" {
-		person = "no-person"
-	}
-	register, err := q.BuildspaceCohortPage(c.Context(), deref(s.account.CohortID), store.BuildspaceActivityPage{WeekStart: sched.Week.Start, WeekDue: sched.Week.Due, Cursor: activityCursor, PersonID: person, Visibility: []string{"team"}})
+	register, err := q.BuildspaceCohortPage(c.Context(), deref(s.account.CohortID), store.BuildspaceActivityPage{WeekStart: sched.Week.Start, WeekDue: sched.Week.Due, Cursor: activityCursor, PersonID: person, SkipActivity: s.account.PersonID == nil, Visibility: []string{"team"}})
 	if err != nil {
 		return err
 	}

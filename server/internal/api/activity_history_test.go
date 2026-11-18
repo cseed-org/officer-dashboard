@@ -133,3 +133,24 @@ func TestPrivateWeeklyCompletionSurvivesPortalHistoryFilter(t *testing.T) {
 		t.Fatal(string(r.Raw))
 	}
 }
+
+func TestOnboardingHasNoOtherProjectsHistoryCursor(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.exec(`UPDATE buildspace_launchpad_accounts SET person_id=NULL,onboarded_at=NULL WHERE id='lp-account-alex'`)
+	e.exec(`INSERT INTO buildspace_launchpad_people(id,name,project_id,cohort_id,joined_on) VALUES('no-person','Another builder','bs-moss','cohort-fall-2026','2026-10-01')`)
+	if err := e.db.Write(ctx, func(q *store.Queries) error {
+		for i := 0; i < 201; i++ {
+			if err := q.InsertBuildspaceActivity(ctx, store.BuildspaceActivity{ID: fmt.Sprintf("onboarding-history-%d", i), ProjectID: "bs-moss", Kind: "absence", Date: "2026-10-20", Body: "Team history", Status: "resolved", Source: "manual", Visibility: "team", CreatedAt: 1}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := e.mustOK(e.get("/api/portal/builder", e.portalLogin("lp-account-alex")))
+	if r.at("onboarded") != false || len(r.list("activity")) != 0 || r.str("activityNextCursor") != "" {
+		t.Fatal(string(r.Raw))
+	}
+}
