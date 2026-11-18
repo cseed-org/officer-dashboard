@@ -19,7 +19,8 @@ shell_script = src[script_start:src.index('</script>', script_start) + len('</sc
 
 shell_head = shell_head.replace('<title>Design requests · CSEED design</title>', '<title>Design · CSEED design v0.4</title>')
 shell_head = shell_head.replace('<link rel="stylesheet" href="../v03.css">',
-                                '<link rel="stylesheet" href="../../src/styles/v03.css"><link rel="stylesheet" href="../../src/styles/design-requests.css">')
+                                '<link rel="stylesheet" href="../../src/styles/v03.css"><link rel="stylesheet" href="../../src/styles/design-requests.css">'
+                                '<link rel="stylesheet" href="../mockup-fonts.css">')  # production font URLs are root-relative
 
 E = escape
 

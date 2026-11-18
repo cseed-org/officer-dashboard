@@ -1,0 +1,8 @@
+/* Mockups only. The production stylesheets load the brand fonts from /fonts/, which a mockup opened
+   from disk resolves to the drive root. Link this after them to load the same files from the
+   repository copy; a later @font-face with the same family, weight and style wins. */
+@font-face {font-family:'Playfair Display';src:url('../public/fonts/playfair-display.woff2') format('woff2');font-weight:400 900;font-style:normal;font-display:swap;}
+@font-face {font-family:'Playfair Display';src:url('../public/fonts/playfair-display-italic.woff2') format('woff2');font-weight:400;font-style:italic;font-display:swap;}
+@font-face {font-family:'Poppins';src:url('../public/fonts/poppins-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
+@font-face {font-family:'Poppins';src:url('../public/fonts/poppins-500.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap;}
+@font-face {font-family:'Anonymous Pro';src:url('../public/fonts/anonymous-pro-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap;}
