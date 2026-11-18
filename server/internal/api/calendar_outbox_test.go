@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +50,8 @@ type fakeGoogle struct {
 	events map[string]map[string]string // access token → event id → status
 	calls  []string                     // "POST at-A" / "PATCH at-A g-1 cancelled"
 	srv    *httptest.Server
+	// What the OAuth token endpoint answers a code exchange with (oauthConnect).
+	grantAccess, grantClaims string
 }
 
 func newFakeGoogle(t *testing.T) *fakeGoogle {
@@ -69,6 +72,10 @@ func newFakeGoogle(t *testing.T) *fakeGoogle {
 			g.events[tok] = cal
 		}
 		switch {
+		case r.URL.Path == "/token":
+			idToken := "x." + base64.RawURLEncoding.EncodeToString([]byte(g.grantClaims)) + ".y"
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": g.grantAccess, "refresh_token": "rt", "expires_in": 86400, "id_token": idToken})
+		case r.URL.Path == "/revoke":
 		case r.Method == "POST" && r.URL.Path == "/calendars/primary/events":
 			// Like events.insert: a client-supplied id is used as is, and taking one that
 			// already exists on the calendar is a 409.
@@ -128,9 +135,9 @@ func connectGoogle(t *testing.T, e *testEnv, userID, account string) {
 	sealer := calendar.NewSealer("gsecret")
 	access := sealer.Seal("at-" + account)
 	exp := e.clock.Add(24 * time.Hour).UnixMilli()
-	email := account + "@gmail.test"
+	email, sub := account+"@gmail.test", "sub-"+account
 	if err := e.db.Write(ctx, func(w *store.Queries) error {
-		if err := w.SaveGoogleToken(ctx, store.GoogleToken{UserID: userID, AccountEmail: &email, SealedRefresh: sealer.Seal("rt"), SealedAccess: &access, AccessExpires: &exp, ConnectedAt: e.clock.UnixMilli()}); err != nil {
+		if err := w.SaveGoogleToken(ctx, store.GoogleToken{UserID: userID, AccountSub: &sub, AccountEmail: &email, SealedRefresh: sealer.Seal("rt"), SealedAccess: &access, AccessExpires: &exp, ConnectedAt: e.clock.UnixMilli()}); err != nil {
 			return err
 		}
 		return w.SetDeliveryMode(ctx, userID, "google")
@@ -723,6 +730,8 @@ func legacyDeliveries(t *testing.T, e *testEnv, row func()) {
 	e.exec(`CREATE TABLE review_legacy AS SELECT event_id,user_id,mode,recipient,google_event_id,sequence,status,error,content_hash,updated_at FROM calendar_deliveries`)
 	e.exec(`DROP TABLE calendar_deliveries`)
 	e.exec(`ALTER TABLE review_legacy RENAME TO calendar_deliveries`)
+	// Grants before 0027 had no account_sub: the upgrade leaves them keyed by email.
+	e.exec(`ALTER TABLE google_calendar_tokens DROP COLUMN account_sub`)
 	row()
 	e.exec(`DELETE FROM schema_migrations WHERE name='0027_calendar_outbox.sql'`)
 	e.exec(`DROP TABLE calendar_outbox`)

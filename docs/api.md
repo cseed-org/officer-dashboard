@@ -493,8 +493,9 @@ GET `/api/officers/:id/activity` (V0.10 person drawer) returns `stats` (`eventsH
   is implicit TLS, others require STARTTLS (except localhost).
 - `google`: GET `/api/me/calendar/google/connect?next=` sends the officer to Google
   consent (PKCE, offline access, scope `calendar.events`); `/auth/google/callback`
-  stores the AES-GCM-sealed tokens (key derived from the client secret), switches the
-  mode to google and returns to `next` with `?google=connected|cancelled|failed`.
+  stores the AES-GCM-sealed tokens (key derived from the client secret) with the ID
+  token's `sub` as the account's identity (a grant without one is refused with
+  `?google=failed`), switches the mode to google and returns to `next` with `?google=connected|cancelled|failed`.
   Needs `GOOGLE_OAUTH_CLIENT_ID`/`_SECRET`, redirect URI `APP_URL/auth/google/callback`.
   DELETE disconnects, revokes the grant and falls back to ics.
   The sealing key is derived from the client secret: rotating `GOOGLE_OAUTH_CLIENT_SECRET`
@@ -504,17 +505,23 @@ GET `/api/officers/:id/activity` (V0.10 person drawer) returns `stats` (`eventsH
 - Event create/update (including CSV import and Luma ingest) sends to every active officer
   with a profile. Each change writes a job to `calendar_outbox` in the same transaction;
   one background worker drains it in FIFO order and each job re-reads the event, so the
-  newest content wins. A job is removed only when all of it succeeded: a failed one stays
+  newest content wins; a newer sync of an event (or backfill of an officer) replaces a
+  queued one. A job is removed only when all of it succeeded: a failed one stays
   and is retried with backoff (1 minute doubling to an hour) on later changes, and in full
   at startup and hourly; nothing is dropped after repeated failures. Jobs left by a stop or
   crash run at the next start (delivery is at least once, with the same UID and SEQUENCE;
-  each send is recorded on its destination before it goes out, and Google events get a
-  stable dashboard-chosen id, so a repeated insert updates the first copy). Each recipient
+  each send is recorded on its destination before it goes out, a retry of the same
+  content reuses the recorded SEQUENCE, and Google events get a stable dashboard-chosen
+  id, so a repeated insert updates the first copy). A destination that has received
+  invites keeps its work queued while a restart is missing its transport (SMTP or the
+  Google OAuth config) and gets it once that is configured again; one that never had a
+  working transport, and a Google account the officer has disconnected, are skipped. Each recipient
   has its own 45s timeout. Upcoming events (not cancelled ones) are backfilled, queued in the
   same transaction, when an officer saves their first profile, finishes onboarding,
   changes their active calendar email or delivery mode (including Disconnect Google), or
   connects Google. `calendar_deliveries` has one row per
-  destination (an .ics address, or one Google account) recording what it last received
+  destination (an .ics address, or one Google account, keyed by its `sub`; deliveries
+  from a pre-V0.14.1 grant move to the account when the officer reconnects) recording what it last received
   (a content fingerprint), so unchanged events are never resent, updates replace rather
   than duplicate, a failed attempt keeps the last success, and a newly connected Google
   account gets its own copies. Setting an event's status to cancelled withdraws it from

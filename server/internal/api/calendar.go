@@ -199,15 +199,28 @@ func (c *Ctx) googleCallback() error {
 	if tok.RefreshToken == "" {
 		return back("failed")
 	}
+	// Deliveries are keyed by the Google account, so a grant must say which one it is.
+	// Google always sends the ID token's sub with the openid scope; without it two
+	// accounts could not be told apart, so the grant is refused rather than stored.
+	acct := calendar.AccountFromIDToken(tok.IDToken)
+	if acct.Sub == "" {
+		c.S.log.Warn("google oauth: token response has no ID token sub; not connecting")
+		return back("failed")
+	}
 	now := c.S.nowMs()
 	exp := now + tok.ExpiresIn*1000
 	sealedAccess := c.S.sealer.Seal(tok.AccessToken)
-	t := store.GoogleToken{UserID: c.User.ID, SealedRefresh: c.S.sealer.Seal(tok.RefreshToken), SealedAccess: &sealedAccess, AccessExpires: &exp, ConnectedAt: now}
-	if e := calendar.EmailFromIDToken(tok.IDToken); e != "" {
-		t.AccountEmail = &e
+	t := store.GoogleToken{UserID: c.User.ID, AccountSub: &acct.Sub, SealedRefresh: c.S.sealer.Seal(tok.RefreshToken), SealedAccess: &sealedAccess, AccessExpires: &exp, ConnectedAt: now}
+	if acct.Email != "" {
+		t.AccountEmail = &acct.Email
 	}
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
 		if err := w.SaveGoogleToken(ctx, t); err != nil {
+			return err
+		}
+		// Deliveries made under a grant from before V0.14.1 (keyed by email, or by nothing)
+		// become this account's, so reconnecting it doesn't add copies of its events.
+		if err := w.AdoptLegacyGoogleDeliveries(ctx, t); err != nil {
 			return err
 		}
 		// The (possibly different) account needs the upcoming events.
@@ -445,9 +458,14 @@ func (s *Server) calendarEvent(e *store.Event, seq int, cancelled bool) (calenda
 // (its SEQUENCE and, for a new Google event, the event id the dashboard chose), so a crash
 // between the send and the row that records its outcome loses nothing: a delete before the
 // retry cancels that destination too, with a newer SEQUENCE, and the retry repeats the
-// send with the same UID, which calendar clients apply as the same invite, and the same
-// Google event id, which Google answers with "already exists" and the dashboard then
-// updates instead of creating a second event.
+// send with the same UID and, for the same content, the same SEQUENCE, which calendar
+// clients apply as the same invite, and the same Google event id, which Google answers
+// with "already exists" and the dashboard then updates instead of creating a second event.
+//
+// A missing transport is a failure, not a skip, for a destination that has deliveries
+// (SMTP or Google left out of a restart's config): its work stays queued until the
+// transport is back. Destinations that never had a working transport, and Google
+// accounts the officer has disconnected, are skipped.
 
 const (
 	calendarRetryMin = time.Minute
@@ -645,27 +663,46 @@ func (s *Server) syncEvent(ctx context.Context, eventID string) error {
 	return errors.Join(errs...)
 }
 
-// destination names where r's invites go now: "ics:<address>" or "google:<account>".
-// ok is false when nothing can be delivered (not configured, no address, not connected).
-func (s *Server) destination(ctx context.Context, r recipient) (string, bool) {
+// destState says whether a recipient's destination can be delivered to now.
+type destState int
+
+const (
+	destNone        destState = iota // nothing to deliver to: no address chosen, Google not connected
+	destReady                        // the destination and its transport are both there
+	destUnavailable                  // the destination is set but its transport (SMTP, Google) isn't configured
+)
+
+// destination names where r's invites go now: "ics:<address>" or the Google account's
+// key (store.GoogleToken.Destination), and whether it can be delivered to.
+func (s *Server) destination(ctx context.Context, r recipient) (string, destState) {
 	if r.Mode == "google" {
-		if s.cfg.Google == nil {
-			return "", false
-		}
 		t, err := s.db.Read().GoogleTokenFor(ctx, r.UserID)
 		if err != nil {
-			return "", false
+			return "", destNone
 		}
-		account := ""
-		if t.AccountEmail != nil {
-			account = strings.ToLower(*t.AccountEmail)
+		if s.cfg.Google == nil {
+			return t.Destination(), destUnavailable
 		}
-		return "google:" + account, true
+		return t.Destination(), destReady
 	}
-	if s.cfg.Mailer == nil || r.Email == nil {
-		return "", false
+	if r.Email == nil {
+		return "", destNone
 	}
-	return "ics:" + strings.ToLower(*r.Email), true
+	dest := "ics:" + strings.ToLower(*r.Email)
+	if s.cfg.Mailer == nil {
+		return dest, destUnavailable
+	}
+	return dest, destReady
+}
+
+// transportMissing is the error for work kept in the outbox because the transport its
+// destination needs is not configured on this run (SMTP or Google missing after a
+// restart); the job retries with backoff and goes out once it is configured again.
+func transportMissing(mode string) error {
+	if mode == "google" {
+		return errors.New("google calendar sync is not configured on this run; kept for retry")
+	}
+	return errors.New(".ics email (SMTP) is not configured on this run; kept for retry")
 }
 
 // eventLock serialises, per event, a delivery's read-record-send-record step with the
@@ -736,19 +773,27 @@ type plannedDelivery struct {
 // event, the event id it will get. It returns nil when nothing is to be sent. The caller
 // holds the event lock.
 func (s *Server) planDelivery(ctx context.Context, e *store.Event, r recipient) (*plannedDelivery, error) {
-	dest, ok := s.destination(ctx, r)
-	if !ok {
+	dest, st := s.destination(ctx, r)
+	switch st {
+	case destNone:
 		return nil, nil
+	case destUnavailable:
+		// A destination that already has deliveries had a working transport: this run is
+		// missing it, so keep the work. One that never had any was never set up to receive.
+		used, err := s.db.Read().DestinationUsed(ctx, r.UserID, dest)
+		if err != nil {
+			return nil, err
+		}
+		if !used {
+			return nil, nil
+		}
+		return nil, transportMissing(r.Mode)
 	}
 	prior, err := s.db.Read().DeliveryFor(ctx, e.ID, r.UserID, dest)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	seq := 0
-	if prior != nil {
-		seq = prior.NextSequence()
-	}
-	ev, err := s.calendarEvent(e, seq, false)
+	ev, err := s.calendarEvent(e, 0, false)
 	if err != nil {
 		s.log.Warn("calendar: unparseable event time", "event", e.ID)
 		return nil, nil
@@ -757,11 +802,22 @@ func (s *Server) planDelivery(ctx context.Context, e *store.Event, r recipient) 
 	if prior != nil && prior.Live() && !prior.Unresolved() && prior.ContentHash != nil && *prior.ContentHash == hash {
 		return nil, nil // already on their calendar, unchanged
 	}
+	// Replaying an unresolved attempt of this same content repeats it exactly, with the
+	// SEQUENCE it was recorded with. Anything else is a new message: newer than everything
+	// sent there, the unresolved attempt included, since it may have arrived.
+	seq := 0
+	if prior != nil {
+		seq = prior.NextSequence()
+		if prior.Replays(hash) {
+			seq = *prior.AttemptSeq
+		}
+	}
+	ev.Sequence = seq
 	row := store.Delivery{EventID: e.ID, UserID: r.UserID, Destination: dest, Mode: r.Mode, Recipient: r.Email, Status: "pending"}
 	if prior != nil {
 		row = *prior
 	}
-	row.AttemptSeq = &seq
+	row.AttemptSeq, row.AttemptHash = &seq, &hash
 	if r.Mode == "google" && row.GoogleEventID == nil {
 		id := calendar.EventID(ev.UID, dest)
 		row.GoogleEventID = &id
@@ -777,7 +833,7 @@ func (s *Server) planDelivery(ctx context.Context, e *store.Event, r recipient) 
 func (s *Server) finishDelivery(ctx context.Context, p *plannedDelivery, out deliveryResult) error {
 	d := p.row
 	seq := *d.AttemptSeq
-	d.AttemptSeq, d.UpdatedAt = nil, s.nowMs()
+	d.AttemptSeq, d.AttemptHash, d.UpdatedAt = nil, nil, s.nowMs()
 	var sendErr error
 	switch out.Status {
 	case "sent":
@@ -813,20 +869,25 @@ func (s *Server) finishDelivery(ctx context.Context, p *plannedDelivery, out del
 
 // sendCancel withdraws an event from one destination that has (or may have) it, with a
 // SEQUENCE newer than anything sent there. A Google destination is reachable only while
-// that same account is still connected.
+// that same account is still connected. When the transport the destination needs isn't
+// configured on this run, the cancellation fails, so its job keeps it for later.
 func (s *Server) sendCancel(ctx context.Context, e *store.Event, d store.Delivery) deliveryResult {
 	ev, err := s.calendarEvent(e, d.NextSequence(), true)
 	if err != nil {
 		return deliveryResult{Status: "skipped", Message: "unparseable event time"}
 	}
 	r := recipient{UserID: d.UserID, Mode: d.Mode, Email: d.Recipient}
+	cur, st := s.destination(ctx, r)
 	if d.Mode == "google" {
 		if d.GoogleEventID == nil {
 			return deliveryResult{Status: "skipped", Message: "no Google event to cancel"}
 		}
-		if cur, ok := s.destination(ctx, r); !ok || cur != d.Destination {
+		if st == destNone || cur != d.Destination {
 			return deliveryResult{Status: "skipped", Message: "that Google account is no longer connected"}
 		}
+	}
+	if st == destUnavailable {
+		return deliveryResult{Status: "failed", Message: transportMissing(d.Mode).Error()}
 	}
 	return s.deliverOne(ctx, r, ev, &d)
 }
@@ -866,7 +927,7 @@ func (s *Server) withdrawLocked(ctx context.Context, e *store.Event, userID stri
 			seq := d.NextSequence()
 			ev, _ := s.calendarEvent(e, seq, true)
 			hash := fingerprint(ev, recipient{Mode: d.Mode, Email: d.Recipient})
-			d.Status, d.Sequence, d.AttemptSeq, d.Cancelled, d.Error, d.ContentHash = "sent", seq, nil, true, nil, &hash
+			d.Status, d.Sequence, d.AttemptSeq, d.AttemptHash, d.Cancelled, d.Error, d.ContentHash = "sent", seq, nil, nil, true, nil, &hash
 		case "failed":
 			d.Error = &out.Message
 			s.log.Warn("calendar cancellation failed", "event", e.ID, "user", d.UserID, "error", out.Message)

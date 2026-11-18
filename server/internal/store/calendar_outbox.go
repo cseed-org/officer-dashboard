@@ -49,7 +49,21 @@ type CalendarJob struct {
 }
 
 // EnqueueCalendar adds a job; call it in the transaction that makes the change it delivers.
+// A sync job replaces any queued sync of the same event, and a backfill any queued
+// backfill of the same officer: those re-read everything when they run, so the new job
+// does all the old one would have, and work that waits (for a transport, say) stays one
+// job per event or officer however many changes queue behind it.
 func (q *Queries) EnqueueCalendar(ctx context.Context, j CalendarJob, now int64) error {
+	switch j.Kind {
+	case "sync":
+		if err := q.Exec(ctx, `DELETE FROM calendar_outbox WHERE kind='sync' AND event_id=?`, j.EventID); err != nil {
+			return err
+		}
+	case "backfill":
+		if err := q.Exec(ctx, `DELETE FROM calendar_outbox WHERE kind='backfill' AND user_id=?`, j.UserID); err != nil {
+			return err
+		}
+	}
 	var snap, priors any
 	if j.Snapshot != nil {
 		b, err := json.Marshal(j.Snapshot)

@@ -118,22 +118,31 @@ func (g *Google) Revoke(ctx context.Context, token string) {
 	}
 }
 
-// EmailFromIDToken reads the email claim. The ID token came straight from Google's token
-// endpoint over TLS, so the signature check adds nothing here; it is only for display.
-func EmailFromIDToken(idToken string) string {
+// Account is who a grant belongs to, read from the ID token: Sub is Google's stable,
+// never reassigned account id (always present when the openid scope is granted); Email is
+// for display and may be missing. The ID token came straight from Google's token endpoint
+// over TLS, so the signature check adds nothing here.
+type Account struct {
+	Sub, Email string
+}
+
+// AccountFromIDToken reads the sub and email claims; both are empty when the token is
+// absent or malformed.
+func AccountFromIDToken(idToken string) Account {
 	parts := strings.Split(idToken, ".")
 	if len(parts) != 3 {
-		return ""
+		return Account{}
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return ""
+		return Account{}
 	}
 	var claims struct {
+		Sub   string `json:"sub"`
 		Email string `json:"email"`
 	}
 	_ = json.Unmarshal(raw, &claims)
-	return claims.Email
+	return Account{Sub: claims.Sub, Email: claims.Email}
 }
 
 type gTime struct {

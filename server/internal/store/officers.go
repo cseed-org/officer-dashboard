@@ -141,11 +141,12 @@ func (q *Queries) ActiveCalendarEmail(ctx context.Context, userID string) (*stri
 // since been withdrawn there. Error is the latest attempt's failure, kept beside the last
 // success so a failed update never hides where the invite already is.
 //
-// AttemptSequence is set while a send is in flight: it is written before the send and
-// cleared when its outcome is recorded. A row that still has it after a crash may or may
-// not have reached the destination, so a deletion cancels it too (with a newer SEQUENCE),
-// and the next delivery repeats it. Status "pending" is such a row with no earlier
-// success. For Google, GoogleEventID is also written before the first insert (a stable id
+// AttemptSequence is set while a send is in flight: it is written before the send, with
+// AttemptHash (the fingerprint of the content being sent), and both are cleared when its
+// outcome is recorded. A row that still has them after a crash may or may not have
+// reached the destination, so a deletion cancels it too (with a newer SEQUENCE), and the
+// next delivery replays it: the same content with the same SEQUENCE, or newer content
+// with a newer one. Status "pending" is such a row with no earlier success. For Google, GoogleEventID is also written before the first insert (a stable id
 // the dashboard chooses), so a repeated insert finds the first copy instead of adding one.
 type Delivery struct {
 	EventID       string  `json:"eventId"`
@@ -157,6 +158,7 @@ type Delivery struct {
 	Sequence      int     `json:"sequence"`
 	Status        string  `json:"status"`
 	AttemptSeq    *int    `json:"attemptSequence,omitempty"`
+	AttemptHash   *string `json:"attemptHash,omitempty"`
 	Cancelled     bool    `json:"cancelled"`
 	Error         *string `json:"error,omitempty"`
 	ContentHash   *string `json:"contentHash,omitempty"`
@@ -173,6 +175,12 @@ func (d Delivery) Unresolved() bool { return d.AttemptSeq != nil }
 // the invite, or may have it from an unresolved send.
 func (d Delivery) NeedsCancel() bool { return d.Live() || d.Unresolved() }
 
+// Replays reports whether sending content with fingerprint hash repeats this row's
+// unresolved attempt, which then goes out again with the SEQUENCE it was recorded with.
+func (d Delivery) Replays(hash string) bool {
+	return d.AttemptSeq != nil && d.AttemptHash != nil && *d.AttemptHash == hash
+}
+
 // NextSequence is the SEQUENCE for the next message to this destination: newer than
 // anything it was sent, including an unresolved attempt.
 func (d Delivery) NextSequence() int {
@@ -183,12 +191,12 @@ func (d Delivery) NextSequence() int {
 	return n + 1
 }
 
-const deliveryCols = `event_id,user_id,destination,mode,recipient,google_event_id,sequence,status,attempt_sequence,cancelled,error,content_hash,updated_at`
+const deliveryCols = `event_id,user_id,destination,mode,recipient,google_event_id,sequence,status,attempt_sequence,attempt_hash,cancelled,error,content_hash,updated_at`
 
 func scanDelivery(r interface{ Scan(...any) error }) (Delivery, error) {
 	var d Delivery
 	var at Ms
-	err := r.Scan(&d.EventID, &d.UserID, &d.Destination, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.AttemptSeq, &d.Cancelled, &d.Error, &d.ContentHash, &at)
+	err := r.Scan(&d.EventID, &d.UserID, &d.Destination, &d.Mode, &d.Recipient, &d.GoogleEventID, &d.Sequence, &d.Status, &d.AttemptSeq, &d.AttemptHash, &d.Cancelled, &d.Error, &d.ContentHash, &at)
 	d.UpdatedAt = int64(at)
 	return d, err
 }
@@ -221,22 +229,36 @@ func (q *Queries) DeliveriesForEvent(ctx context.Context, eventID, userID string
 	return out, rows.Err()
 }
 
+// DestinationUsed reports whether anything was ever sent or attempted to one of an
+// officer's destinations, for any event still on the dashboard. A destination with that
+// history had a working transport, so when the transport is missing now it is a
+// temporary gap and its work is kept for later; one without it never had one.
+func (q *Queries) DestinationUsed(ctx context.Context, userID, destination string) (bool, error) {
+	var used bool
+	err := q.q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM calendar_deliveries WHERE user_id=? AND destination=?)`, userID, destination).Scan(&used)
+	return used, err
+}
+
 // DeleteDelivery removes one destination row (an attempt that never went out).
 func (q *Queries) DeleteDelivery(ctx context.Context, eventID, userID, destination string) error {
 	return q.Exec(ctx, `DELETE FROM calendar_deliveries WHERE event_id=? AND user_id=? AND destination=?`, eventID, userID, destination)
 }
 
 func (q *Queries) SaveDelivery(ctx context.Context, d Delivery) error {
-	return q.Exec(ctx, `INSERT INTO calendar_deliveries(`+deliveryCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+	return q.Exec(ctx, `INSERT INTO calendar_deliveries(`+deliveryCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(event_id,user_id,destination) DO UPDATE SET mode=excluded.mode,recipient=excluded.recipient,google_event_id=excluded.google_event_id,
-		sequence=excluded.sequence,status=excluded.status,attempt_sequence=excluded.attempt_sequence,cancelled=excluded.cancelled,error=excluded.error,content_hash=excluded.content_hash,updated_at=excluded.updated_at`,
-		d.EventID, d.UserID, d.Destination, d.Mode, d.Recipient, d.GoogleEventID, d.Sequence, d.Status, d.AttemptSeq, d.Cancelled, d.Error, d.ContentHash, d.UpdatedAt)
+		sequence=excluded.sequence,status=excluded.status,attempt_sequence=excluded.attempt_sequence,attempt_hash=excluded.attempt_hash,cancelled=excluded.cancelled,error=excluded.error,content_hash=excluded.content_hash,updated_at=excluded.updated_at`,
+		d.EventID, d.UserID, d.Destination, d.Mode, d.Recipient, d.GoogleEventID, d.Sequence, d.Status, d.AttemptSeq, d.AttemptHash, d.Cancelled, d.Error, d.ContentHash, d.UpdatedAt)
 }
 
 // ─── Google tokens ───
 
+// GoogleToken is an officer's Google Calendar grant. AccountSub is the ID token's sub,
+// Google's stable id for the account; every grant since V0.14.1 has one. AccountEmail is
+// for display only.
 type GoogleToken struct {
 	UserID        string
+	AccountSub    *string
 	AccountEmail  *string
 	SealedRefresh string
 	SealedAccess  *string
@@ -244,12 +266,53 @@ type GoogleToken struct {
 	ConnectedAt   int64
 }
 
+// Destination is the calendar_deliveries destination of this grant's calendar:
+// "google:sub:<sub>". A grant from before V0.14.1 has no sub and is keyed by its
+// lowercased email, or by "google:" when Google sent none, which is how migration 0027
+// keyed its deliveries; reconnecting moves those rows (AdoptLegacyGoogleDeliveries).
+func (t GoogleToken) Destination() string {
+	if t.AccountSub != nil && *t.AccountSub != "" {
+		return "google:sub:" + *t.AccountSub
+	}
+	email := ""
+	if t.AccountEmail != nil {
+		email = strings.ToLower(*t.AccountEmail)
+	}
+	return "google:" + email
+}
+
+// AdoptLegacyGoogleDeliveries moves an officer's deliveries from destinations keyed the
+// pre-V0.14.1 way onto the account of grant t (which has a sub), so reconnecting the same
+// account updates the events it already has instead of adding copies:
+//   - rows keyed by t's email are that same account: they move as they are, so unchanged
+//     events are not resent;
+//   - rows keyed "google:" belonged to a grant whose account was never known: they move
+//     with their fingerprint cleared, so the next delivery updates each stored Google
+//     event id, and where that account is not the same one (Google answers 404) it
+//     creates the event on t's calendar.
+//
+// Rows keyed by another email are another account and stay where they are. A row whose
+// event already has a row for t's destination is left alone.
+func (q *Queries) AdoptLegacyGoogleDeliveries(ctx context.Context, t GoogleToken) error {
+	dest := t.Destination()
+	if !strings.HasPrefix(dest, "google:sub:") {
+		return nil
+	}
+	if t.AccountEmail != nil && *t.AccountEmail != "" {
+		if err := q.Exec(ctx, `UPDATE OR IGNORE calendar_deliveries SET destination=? WHERE user_id=? AND destination=?`,
+			dest, t.UserID, "google:"+strings.ToLower(*t.AccountEmail)); err != nil {
+			return err
+		}
+	}
+	return q.Exec(ctx, `UPDATE OR IGNORE calendar_deliveries SET destination=?, content_hash=NULL WHERE user_id=? AND destination='google:'`, dest, t.UserID)
+}
+
 func (q *Queries) GoogleTokenFor(ctx context.Context, userID string) (*GoogleToken, error) {
 	var t GoogleToken
 	var exp *Ms
 	var at Ms
-	err := q.q.QueryRowContext(ctx, `SELECT user_id,account_email,sealed_refresh_token,sealed_access_token,access_expires_at,connected_at FROM google_calendar_tokens WHERE user_id=?`, userID).
-		Scan(&t.UserID, &t.AccountEmail, &t.SealedRefresh, &t.SealedAccess, &exp, &at)
+	err := q.q.QueryRowContext(ctx, `SELECT user_id,account_sub,account_email,sealed_refresh_token,sealed_access_token,access_expires_at,connected_at FROM google_calendar_tokens WHERE user_id=?`, userID).
+		Scan(&t.UserID, &t.AccountSub, &t.AccountEmail, &t.SealedRefresh, &t.SealedAccess, &exp, &at)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -258,10 +321,10 @@ func (q *Queries) GoogleTokenFor(ctx context.Context, userID string) (*GoogleTok
 }
 
 func (q *Queries) SaveGoogleToken(ctx context.Context, t GoogleToken) error {
-	return q.Exec(ctx, `INSERT INTO google_calendar_tokens(user_id,account_email,sealed_refresh_token,sealed_access_token,access_expires_at,connected_at) VALUES(?,?,?,?,?,?)
-		ON CONFLICT(user_id) DO UPDATE SET account_email=excluded.account_email,sealed_refresh_token=excluded.sealed_refresh_token,
+	return q.Exec(ctx, `INSERT INTO google_calendar_tokens(user_id,account_sub,account_email,sealed_refresh_token,sealed_access_token,access_expires_at,connected_at) VALUES(?,?,?,?,?,?,?)
+		ON CONFLICT(user_id) DO UPDATE SET account_sub=excluded.account_sub,account_email=excluded.account_email,sealed_refresh_token=excluded.sealed_refresh_token,
 		sealed_access_token=excluded.sealed_access_token,access_expires_at=excluded.access_expires_at,connected_at=excluded.connected_at`,
-		t.UserID, t.AccountEmail, t.SealedRefresh, t.SealedAccess, t.AccessExpires, t.ConnectedAt)
+		t.UserID, t.AccountSub, t.AccountEmail, t.SealedRefresh, t.SealedAccess, t.AccessExpires, t.ConnectedAt)
 }
 
 func (q *Queries) UpdateGoogleAccess(ctx context.Context, userID, sealedAccess string, expires int64) error {

@@ -25,9 +25,13 @@ CREATE TABLE calendar_outbox (
 -- connected Google account gets its own events, and cancellations reach every calendar
 -- that still has the invite. status 'sent' means the destination has it; cancelled = 1
 -- means it has since been withdrawn there. error is the last attempt's failure, kept
--- beside the last success. attempt_sequence is written before each send and cleared when
--- its outcome is recorded: a row that keeps it after a crash may have the invite, so a
--- deletion cancels it too; 'pending' is such a row with no earlier success.
+-- beside the last success. attempt_sequence and attempt_hash (the fingerprint of what is
+-- being sent) are written before each send and cleared when its outcome is recorded: a
+-- row that keeps them after a crash may have the invite, so a deletion cancels it too and
+-- a retry of the same content reuses that SEQUENCE; 'pending' is such a row with no
+-- earlier success. A Google destination is 'google:sub:<sub>' (the account's stable id,
+-- google_calendar_tokens.account_sub below); rows upgraded here keep the old key,
+-- 'google:<email>' or 'google:' when the grant had no email, until the officer reconnects.
 CREATE TABLE __new_calendar_deliveries (
  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -38,12 +42,14 @@ CREATE TABLE __new_calendar_deliveries (
  sequence INTEGER NOT NULL DEFAULT 0,
  status TEXT NOT NULL CHECK(status IN ('sent','failed','pending')),
  attempt_sequence INTEGER,
+ attempt_hash TEXT,
  cancelled INTEGER NOT NULL DEFAULT 0 CHECK(cancelled IN (0,1)),
  error TEXT,
  content_hash TEXT,
  updated_at INTEGER NOT NULL,
  PRIMARY KEY(event_id, user_id, destination),
- CHECK(status <> 'pending' OR attempt_sequence IS NOT NULL)
+ CHECK(status <> 'pending' OR attempt_sequence IS NOT NULL),
+ CHECK((attempt_sequence IS NULL) = (attempt_hash IS NULL))
 );
 --> statement-breakpoint
 -- Each officer's single row becomes the row of the destination it names. A Google row
@@ -74,3 +80,8 @@ WHERE d.mode = 'ics' AND d.google_event_id IS NOT NULL;
 DROP TABLE calendar_deliveries;
 --> statement-breakpoint
 ALTER TABLE __new_calendar_deliveries RENAME TO calendar_deliveries;
+--> statement-breakpoint
+-- The Google account a grant belongs to: the ID token's sub, which Google never changes or
+-- reassigns (an email can be missing from the token). Grants stored before V0.14.1 have
+-- none until the officer reconnects; the server refuses new grants without one.
+ALTER TABLE google_calendar_tokens ADD COLUMN account_sub TEXT;

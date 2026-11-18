@@ -298,7 +298,7 @@ func TestGoogleOAuthConnectSyncAndDisconnect(t *testing.T) {
 				http.Error(w, `{"error":"invalid_request"}`, 400)
 				return
 			}
-			claims := `{"email":"priya@gmail.test"}`
+			claims := `{"sub":"1234567890","email":"priya@gmail.test"}`
 			_, _ = io.WriteString(w, `{"access_token":"at","refresh_token":"rt","expires_in":3600,"id_token":"x.`+b64(claims)+`.y"}`)
 		case r.URL.Path == "/revoke":
 			revoked++
