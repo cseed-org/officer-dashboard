@@ -682,7 +682,13 @@ func (c *Ctx) portalBuilderOnboarding() error {
 			return conflict("You've already finished onboarding")
 		}
 		s.account = acc
-		bc, err := loadBuilder(ctx, q, s)
+		// Linking an officer-added builder needs their existing updates to enforce the
+		// same-project guard. Other builder writes can use the roster-only load.
+		b, err := q.BuildspaceForCohort(ctx, deref(s.account.CohortID))
+		if err != nil {
+			return err
+		}
+		bc, err := loadBuilder(ctx, q, s, &b)
 		if err != nil {
 			return err
 		}
