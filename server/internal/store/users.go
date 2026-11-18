@@ -215,13 +215,26 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID string, now int
 	return q.RevokeUserGrants(ctx, userID, now)
 }
 
-// PurgeExpiredSessions removes dead sessions (housekeeping).
+// PurgeExpiredSessions removes dead officer and portal sessions (housekeeping). A portal
+// session past its sliding expiry is already refused by LaunchpadSessionByHash, so this
+// only stops abandoned rows from accumulating.
 func (q *Queries) PurgeExpiredSessions(ctx context.Context, now int64) (int64, error) {
-	res, err := q.q.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, now)
-	if err != nil {
-		return 0, err
+	var total int64
+	for _, stmt := range []string{
+		`DELETE FROM sessions WHERE expires_at <= ?`,
+		`DELETE FROM buildspace_launchpad_sessions WHERE expires_at <= ?`,
+	} {
+		res, err := q.q.ExecContext(ctx, stmt, now)
+		if err != nil {
+			return 0, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
+		total += n
 	}
-	return res.RowsAffected()
+	return total, nil
 }
 
 var _ = sql.ErrNoRows
