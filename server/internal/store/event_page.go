@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// EventFilter keeps list work proportional to the selected page. Time bounds are
+// EventFilter keeps metrics enrichment proportional to the selected page. Time bounds are
 // instants, resolved in the viewer's zone by the API, including DST transitions.
 type EventFilter struct {
 	When, Search string
@@ -25,7 +25,7 @@ func (q *Queries) EventPage(ctx context.Context, f EventFilter) ([]Event, error)
 	var args []any
 	add := func(cond string, arg any) { conds = append(conds, cond); args = append(args, arg) }
 	addTime := func(op string, t time.Time) {
-		// The millisecond index narrows candidates; the tuple keeps sub-millisecond
+		// The millisecond comparison matches page ordering; the tuple keeps sub-millisecond
 		// comparisons exact, without UnixNano's 1678–2262 range limit.
 		coarse := op
 		if op == "<" {

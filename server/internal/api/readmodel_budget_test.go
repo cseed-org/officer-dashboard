@@ -34,7 +34,11 @@ func TestEventSmallPageAllocationBudget(t *testing.T) {
 			t.Fatal(rec.Code, rec.Body.String())
 		}
 	})
-	if allocations > 5000 {
+	// Plain SQLite compatibility rules out an app-function expression index.
+	// Allow timestamp callbacks while scanning candidates, but still reject the
+	// old full-history row/metrics enrichment (about 60,000 allocations).
+	t.Logf("one-event page with 1,000 historical events: %.0f allocations", allocations)
+	if allocations > 15000 {
 		t.Fatalf("small event page enriched full history: %.0f allocations", allocations)
 	}
 }

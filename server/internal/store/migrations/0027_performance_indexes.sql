@@ -5,6 +5,8 @@ CREATE INDEX audit_type_created_idx ON audit_log(entity_type, created_at, id);
 --> statement-breakpoint
 CREATE INDEX audit_created_id_idx ON audit_log(created_at, id);
 --> statement-breakpoint
+DROP INDEX audit_created_idx;
+--> statement-breakpoint
 CREATE INDEX purchase_requests_created_id_idx ON purchase_requests(created_at, id);
 --> statement-breakpoint
 CREATE INDEX fulfillment_jobs_request_idx ON fulfillment_jobs(request_id);
