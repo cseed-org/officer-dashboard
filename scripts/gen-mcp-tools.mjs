@@ -246,7 +246,7 @@ async function main() {
     if (process.argv.includes('--check')) {
       let current = '';
       try { current = readFileSync(out, 'utf8'); } catch {}
-      if (current !== json) {
+      if (current.replace(/\r\n/g, '\n') !== json) {
         console.error('server/internal/api/mcp_tools.json is out of date: run `node scripts/gen-mcp-tools.mjs`');
         process.exit(1);
       }
