@@ -330,5 +330,5 @@ dialogs = f'<dialog class="gallery" id="gallery" aria-labelledby="gallery-title-
 html = shell('components-v03', 'V0.3 components', 'CSEED design system · V0.3 additions', body, dialogs)
 html = html.replace('</head>', '<link rel="stylesheet" href="../v03.css">' + DEMO_CSS + '</head>', 1)
 html = html.replace('<h1>V0.3 components</h1>', '<h1 class="display">V0.3 components</h1>', 1)
-(root / 'mockups' / 'components-v03.html').write_text(html)
+(root / 'mockups' / 'components-v03.html').write_text(html, encoding='utf-8', newline='\n')
 print('Generated components-v03.html')

@@ -10,7 +10,7 @@ from pathlib import Path
 
 here = Path(__file__).resolve().parent
 ns = {'__file__': str(here / 'build-mockups.py')}
-exec((here / 'build-mockups.py').read_text().split('eventrows=')[0], ns)
+exec((here / 'build-mockups.py').read_text(encoding='utf-8').split('eventrows=')[0], ns)
 ns['nav'] = [
     ('home', 'Home', 'home'), ('events', 'Events', 'calendar'),
     ('officers-v03', 'Officers', 'user'), ('members-v03', 'Members', 'ledger'),
@@ -261,5 +261,5 @@ for key, heading, sub, body, dialogs in pages:
     html = (ns['shell'](key, heading, sub, body, dialogs)
             .replace('</head>', '<link rel="stylesheet" href="../v03.css"></head>')
             .replace('</body>', '<script src="../people-preview.js"></script></body>'))
-    (here / 'mockups' / f'{key}.html').write_text(html)
+    (here / 'mockups' / f'{key}.html').write_text(html, encoding='utf-8', newline='\n')
 print('Built Officers and Members design fixtures')

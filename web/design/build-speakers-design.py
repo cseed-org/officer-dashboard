@@ -2,7 +2,7 @@
 from pathlib import Path
 root=Path(__file__).resolve().parent
 ns={'__file__':str(root/'build-mockups.py')}
-exec((root/'build-mockups.py').read_text().split('eventrows=')[0],ns)
+exec((root/'build-mockups.py').read_text(encoding='utf-8').split('eventrows=')[0],ns)
 globals().update({k:v for k,v in ns.items() if k in ['shell','button','field','dialog','table','title','status','block']})
 ns['nav'] += [('speakers-v03','Speakers','users'),('design-requests-v03','Design','calendar')]
 # Existing icon dictionary uses the names below.
@@ -33,7 +33,7 @@ def write(key,heading,sub,body,dialogs,copy,cta):
  s=re.sub(r'(<td[^>]*>)(.*?)(</td>)',r'\1<div class="list-main">\2</div>\3',s)
  s=s.replace('document.getElementById(e.dataset.open).showModal()', '(()=>{document.querySelectorAll("dialog[open]").forEach(d=>d.close());document.getElementById(e.dataset.open).showModal()})()')
  s=s.replace('</head>','<link rel="stylesheet" href="../v03.css"></head>').replace('</body>',js+'</body>')
- (root/'mockups'/f'{key}.html').write_text(s)
+ (root/'mockups'/f'{key}.html').write_text(s, encoding='utf-8', newline='\n')
 contacts=[('Priya Shah','North Shore Ventures · Partner','Both','Fundraising · Early-stage ventures','priya@northshore.example','priya-shah','Founder stories: building from zero','Maya Patel · Oct 30, 2026','Email · Interested; follow up Nov 5'),('Daniel Kim','Fable Studio · Product designer','Speaker','Product design · Accessibility','daniel@fable.example','daniel-kim','Design for people','Jordan Lee · Oct 25, 2026','LinkedIn · Confirmed for spring'),('Sofia Nguyen','UBC Venture Lab · Mentor','Mentor','Customer discovery · Climate tech','sofia@venture.example','sofia-nguyen','No past events yet','Alex Chen · Oct 29, 2026','Email · Awaiting reply')]
 rows=[]
 for n,org,t,topics,email,li,event,who,outcome in contacts:

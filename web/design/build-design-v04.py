@@ -10,7 +10,7 @@ from html import escape
 from pathlib import Path
 
 DIR = Path(__file__).resolve().parent
-src = (DIR / 'mockups' / 'design-requests-v03.html').read_text()
+src = (DIR / 'mockups' / 'design-requests-v03.html').read_text(encoding='utf-8')
 
 head_end = src.index('<main')
 shell_head = src[:head_end]
@@ -153,5 +153,5 @@ document.getElementById('viewer').onchange=e=>{const officer=e.target.selectedIn
 </script>'''
 
 out = shell_head.replace('</head>', '</head>', 1) + main + shell_script + script + '</body></html>\n'
-(DIR / 'mockups' / 'design-v04.html').write_text(out)
+(DIR / 'mockups' / 'design-v04.html').write_text(out, encoding='utf-8', newline='\n')
 print('wrote mockups/design-v04.html')

@@ -1,6 +1,6 @@
 """Events V0.3 fixture. Reuses the v2 builder without regenerating its pages."""
 from pathlib import Path
-exec((Path(__file__).parent/'build-mockups.py').read_text().split('eventrows=')[0])
+exec((Path(__file__).parent/'build-mockups.py').read_text(encoding='utf-8').split('eventrows=')[0])
 import calendar
 name='Founder stories: building from zero'
 def inp(label,value,kind='text'):
@@ -53,4 +53,4 @@ document.querySelector('#import input[type=file]').onchange=()=>{document.queryS
 document.getElementById('import-guests').onclick=e=>{e.target.disabled=true;document.getElementById('import-status').textContent='Imported 2 guests · 1 added, 1 updated (preview).'};
 document.getElementById('role').onchange=e=>{document.querySelector('.user-chip-role').textContent=e.target.value;document.documentElement.dataset.role=e.target.value==='Owner'?'leadership':e.target.value.toLowerCase();document.getElementById('role-note').textContent=e.target.value+' · Create, edit, delete, import CSV and request design.'};
 </script></body>''')
-(out/'events-v03.html').write_text(html)
+(out/'events-v03.html').write_text(html, encoding='utf-8', newline='\n')

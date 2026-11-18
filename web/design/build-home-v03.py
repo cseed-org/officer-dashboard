@@ -20,4 +20,4 @@ html=shell('home','hey alex, welcome in.','Sunday, November 1 · Fall 2026 · CS
 html=html.replace('<li><a class="nav-link" href="admin.html"', ''.join('<li><a class="nav-link" href="'+key+'.html">'+base['icon'](ico)+'<span class="nav-label">'+label+'</span></a></li>' for key,label,ico in [('officers','Officers','user'),('members','Members','user'),('speakers','Speakers & Mentors','message'),('design','Design','file')])+'<li><a class="nav-link" href="admin.html"')
 html=html.replace('<h1>','<h1 class="display">',1).replace('</head>','<link rel="stylesheet" href="../v03.css"><link rel="stylesheet" href="../home-v03.css"></head>')
 html=html.replace('</body>','<script src="../home-v03.js"></script></body>')
-(p/'mockups/home-v03.html').write_text(html)
+(p/'mockups/home-v03.html').write_text(html, encoding='utf-8', newline='\n')

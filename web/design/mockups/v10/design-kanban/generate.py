@@ -453,7 +453,8 @@ def option_c():
 
 files = {'A-studio-board.html': option_a(), 'B-event-swimlanes.html': option_b(), 'C-pipeline-focus.html': option_c()}
 for name, body in files.items():
-    open(os.path.join(OUT, name), 'w').write(body)
+    with open(os.path.join(OUT, name), 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write(body)
 
 index = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Design Kanban mockups</title>
 <style>{TOKENS}
@@ -468,5 +469,6 @@ index = f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta nam
 Step 0 (the drag fix) is already committed separately. Research notes: research.md.</p>
 ''' + ''.join(f'''<section class="opt"><h2>{t} <a href="{f}" target="_blank">Open full size ↗</a></h2><div class="vp"><iframe src="{f}" loading="lazy" title="{t}"></iframe></div></section>'''
               for f, t in [('A-studio-board.html', 'A · Studio board'), ('B-event-swimlanes.html', 'B · Event swimlanes'), ('C-pipeline-focus.html', 'C · Pipeline + focus')]) + '</div></body></html>'
-open(os.path.join(OUT, 'index.html'), 'w').write(index)
+with open(os.path.join(OUT, 'index.html'), 'w', encoding='utf-8', newline='\n') as fh:
+    fh.write(index)
 print('ok')
