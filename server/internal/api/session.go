@@ -98,6 +98,13 @@ func (s *Server) createSession(ctx context.Context, w http.ResponseWriter, userI
 // answer 401/403 JSON. Static pages stay public; the data behind them is API-protected.
 func (s *Server) withAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Public static files never need session state (or a renewal cookie on a cacheable response).
+		assetPath := cleanPath(r.URL.Path)
+		protected := func(prefix string) bool { return assetPath == prefix || strings.HasPrefix(assetPath, prefix+"/") }
+		if !protected("/api") && !protected("/auth") && !protected("/oauth") && !protected("/mcp") && (strings.HasPrefix(assetPath, "/_astro/") || (path.Ext(assetPath) != "" && path.Ext(assetPath) != ".html")) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		var p principal
 		agent, isAgent := r.Context().Value(agentPrincipalKey{}).(principal)
 		if isAgent {

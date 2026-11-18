@@ -14,7 +14,6 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -188,6 +187,18 @@ func (c *Ctx) mcpPost() error {
 		writeJSON(c.W, 400, rpcResponse{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32600, "Unsupported MCP-Protocol-Version " + v}})
 		return nil
 	}
+	// Reserve memory and one rate-limit token before reading any request bytes.
+	select {
+	case c.S.mcpInFlight <- struct{}{}:
+		defer func() { <-c.S.mcpInFlight }()
+	default:
+		c.mcpRateLimited(nil, false, 1)
+		return nil
+	}
+	if ok, wait := c.S.mcpLimit.allowN(g.ID, 1); !ok {
+		c.mcpRateLimited(nil, false, retryAfter(wait))
+		return nil
+	}
 	raw, err := io.ReadAll(http.MaxBytesReader(c.W, c.R.Body, mcpMaxBody))
 	if err != nil {
 		return fail(http.StatusRequestEntityTooLarge, "too_large", "Request too large")
@@ -212,7 +223,12 @@ func (c *Ctx) mcpPost() error {
 		return nil
 	}
 	// Each agent connection (grant) has its own budget; every message in a batch is a call.
-	if ok, wait := c.S.mcpLimit.allowN(g.ID, len(msgs)); !ok {
+	extra := len(msgs) - 1
+	if c.S.mcpLimit.perMinute >= 0 {
+		extra = min(extra, max(0, int(c.S.mcpLimit.perMinute)-1))
+	}
+	if ok, wait := c.S.mcpLimit.allowN(g.ID, extra); !ok {
+		c.S.mcpLimit.refund(g.ID, 1)
 		c.mcpRateLimited(msgs, batch, retryAfter(wait))
 		return nil
 	}
@@ -524,6 +540,7 @@ func mcpMultipart(t *mcpTool, args map[string]json.RawMessage) (io.Reader, strin
 	var filename, mimeType string
 	_ = json.Unmarshal(args["filename"], &filename)
 	var data []byte
+	var err error
 	if t.Multipart == "csv" {
 		var content string
 		if json.Unmarshal(args["content"], &content) != nil || content == "" {
@@ -537,26 +554,16 @@ func mcpMultipart(t *mcpTool, args map[string]json.RawMessage) (io.Reader, strin
 			filename = "import.csv"
 		}
 	} else {
-		var b64 string
-		if json.Unmarshal(args["contentBase64"], &b64) != nil || b64 == "" {
+		raw := bytes.TrimSpace(args["contentBase64"])
+		if len(raw) < 3 || raw[0] != '"' || raw[len(raw)-1] != '"' {
 			return nil, "", errors.New("missing required argument: contentBase64")
 		}
 		if json.Unmarshal(args["mimeType"], &mimeType) != nil || mimeType == "" {
 			return nil, "", errors.New("missing required argument: mimeType")
 		}
-		b64 = strings.Map(func(r rune) rune {
-			if r == '\n' || r == '\r' || r == ' ' || r == '\t' {
-				return -1
-			}
-			return r
-		}, b64)
-		var err error
-		if data, err = base64.StdEncoding.DecodeString(b64); err != nil {
-			if data, err = base64.RawStdEncoding.DecodeString(strings.TrimRight(b64, "=")); err != nil {
-				if data, err = base64.RawURLEncoding.DecodeString(strings.TrimRight(b64, "=")); err != nil {
-					return nil, "", errors.New("contentBase64 is not valid base64")
-				}
-			}
+		data, err = decodeContentBase64(raw)
+		if err != nil {
+			return nil, "", errors.New("contentBase64 is not valid base64")
 		}
 		if len(data) == 0 {
 			return nil, "", errors.New("the file is empty")

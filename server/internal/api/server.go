@@ -79,8 +79,13 @@ type Server struct {
 	inner http.Handler
 
 	authLimit, uploadLimit *rateLimiter
-	mcpLimit               *rateLimiter // keyed by OAuth grant id
+	mcpLimit               *rateLimiter  // keyed by OAuth grant id
+	mcpInFlight            chan struct{} // global upload/body memory budget
 	trustedProxies         []*net.IPNet
+
+	memberMu         sync.Mutex
+	memberEmails     map[string]string
+	memberGeneration int64
 
 	sealer     *calendar.Sealer
 	bg         sync.WaitGroup // background calendar deliveries
@@ -114,7 +119,7 @@ func New(cfg Config) *Server {
 	if cfg.Version == "" {
 		cfg.Version = "0.1.0"
 	}
-	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log}
+	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log, mcpInFlight: make(chan struct{}, 4)}
 	s.trustedProxies = cfg.TrustedProxies
 	if s.trustedProxies == nil {
 		s.trustedProxies = DefaultTrustedProxies()
