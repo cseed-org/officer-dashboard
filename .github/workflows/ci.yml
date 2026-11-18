@@ -5,17 +5,25 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  # The static front end (web/): production build and type check. The Playwright suite
-  # (web/tests) is too heavy for CI and runs locally: `cd web && npm run test:e2e`.
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -23,16 +31,30 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx astro check
+      - name: Development proxy regression test
+        run: node --test integrations/astro-config.test.mjs
+      - name: Browser-independent unit tests
+        run: |
+          npm ci --prefix ..
+          WEB_ORIGIN=http://127.0.0.1:4340 npx playwright test tests/unit.spec.ts --project=desktop
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 1
 
-  # The Go server (server/): vet, test, build. cgo is on because go-sqlite3 needs it.
   go:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
@@ -47,23 +69,72 @@ jobs:
       - name: build (release flags)
         run: CGO_ENABLED=1 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::7}" -o /tmp/dashboard ./cmd/dashboard
 
-  # Starts the Go server on a seeded temp database and validates every response against the
-  # zod schemas in src/core/contracts.ts. Fails on any schema error.
   contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
       - run: npm ci
       - name: MCP tool list matches the contract
         run: node scripts/gen-mcp-tools.mjs --check
-      - name: Script tests (Discord bot adapter)
+      - name: Script regression tests
         run: npm run test:scripts
-      - run: node scripts/contract-check.mjs
+      - name: Canonical and browser contract parity
+        run: node scripts/contract-parity.mjs
+      - run: npm run contract-check
+
+  release:
+    needs: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: web-dist
+          path: web/dist
+      - name: Build and smoke test the embedded release
+        run: |
+          make -C server build-release VERSION="${GITHUB_SHA::7}"
+          node scripts/release-smoke.mjs --bin server/bin/dashboard
+
+  compose-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start the documented development stack
+        run: docker compose -p ci-e2e -f compose.dev.yaml up -d --build --wait
+      - name: Discover the full suite with stock e2e mounts
+        run: docker compose -p ci-e2e -f compose.dev.yaml run --rm --no-deps e2e npx playwright test --list
+      - name: Exercise shared-contract imports
+        run: docker compose -p ci-e2e -f compose.dev.yaml run --rm --no-deps e2e npx playwright test tests/unit.spec.ts --project=desktop
+      - name: Exercise integrations against the built site
+        run: docker compose -p ci-e2e -f compose.dev.yaml run --rm --no-deps -e WEB_ORIGIN=http://dashboard:8090 e2e npx playwright test tests/home-speed.spec.ts --project=desktop
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -p ci-e2e -f compose.dev.yaml logs --tail 100
+      - name: Clean up
+        if: always()
+        run: docker compose -p ci-e2e -f compose.dev.yaml down -v

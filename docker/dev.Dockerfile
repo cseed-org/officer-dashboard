@@ -8,7 +8,7 @@ COPY web/ ./
 FROM web AS web-build
 RUN npm run build
 
-FROM golang:1.24-bookworm AS go-build
+FROM golang:1.27.4-bookworm AS go-build
 WORKDIR /src/server
 COPY server/go.mod server/go.sum ./
 RUN go mod download

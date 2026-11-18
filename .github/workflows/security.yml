@@ -11,6 +11,49 @@ permissions:
   contents: read
 
 jobs:
+  litestream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Build the shipped image
+        run: |
+          npm ci --prefix web
+          npm run build --prefix web
+          docker build -f server/Dockerfile -t dashboard-security .
+      - name: Smoke test Litestream in the release image
+        run: |
+          docker image inspect dashboard-security --format '{{.Size}}'
+          docker run --rm --entrypoint /bin/sh \
+            -v "$PWD/scripts/litestream-smoke.sh:/litestream-smoke.sh:ro" \
+            dashboard-security /litestream-smoke.sh
+      - name: Prepare the shipped Litestream binary scan
+        run: |
+          container=$(docker create dashboard-security)
+          trap 'docker rm "$container"' EXIT
+          docker cp "$container:/usr/local/bin/litestream" ./litestream
+          go version ./litestream
+          expected=$(sed -n 's/^toolchain //p' server/go.mod)
+          test "$(go version ./litestream)" = "./litestream: $expected"
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - name: Scan the shipped Litestream binary (report-only for AWS SDK v1)
+        # GO-2022-0635 and GO-2022-0646 have no fixed AWS SDK v1 version.
+        # SDK v2 migration requires Litestream code changes, outside this dependency bump.
+        # Build, upstream tests, runtime smoke and toolchain checks remain blocking.
+        continue-on-error: true
+        run: govulncheck -mode=binary ./litestream
+
   govulncheck:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -23,8 +66,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Scan with the current patched toolchain; go.mod declares the minimum.
-          go-version: stable
+          # Scan the same toolchain used by CI and release builds.
+          go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0

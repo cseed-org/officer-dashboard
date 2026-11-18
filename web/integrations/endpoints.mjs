@@ -39,12 +39,12 @@ export function endpointsModule(contractsSource) {
 }
 
 /** Rewrite the generated file when contracts.ts changed; returns whether it did. */
-export function writeEndpoints() {
+export function writeEndpoints(generated = GENERATED) {
   const next = endpointsModule(readFileSync(CONTRACTS, 'utf8'));
   let current = '';
-  try { current = readFileSync(GENERATED, 'utf8'); } catch { /* first run */ }
-  if (current === next) return false;
-  writeFileSync(GENERATED, next);
+  try { current = readFileSync(generated, 'utf8'); } catch { /* first run */ }
+  if (current.replace(/\r\n/g, '\n') === next) return false;
+  writeFileSync(generated, next);
   return true;
 }
 

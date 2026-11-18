@@ -1325,8 +1325,8 @@ export const ContactsQuery = z.object({ hasSpokenForUs: z.enum(['true', 'false']
 export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string().max(10000).optional() });
 
 /**
- * Machine-readable index of every endpoint; docs/api.md is the human version and a test
- * keeps the two in sync.
+ * Machine-readable index of every endpoint; docs/api.md is the human version.
+ * Endpoint changes require a manual review of the corresponding documentation.
  */
 export const BUILDSPACE_TRACKS = ['Software', 'Hardware', 'Creative', 'Extended Virtual Reality (XR)'] as const;
 export const BUILDSPACE_STAGES = ['Ideating', 'Building', 'Demo-ready', 'Shipped', 'At risk'] as const;

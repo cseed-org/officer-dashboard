@@ -5,10 +5,9 @@ import endpoints from './integrations/endpoints.mjs';
 
 /**
  * Static build (web/dist) served by the Go backend. All data comes from /api/* at runtime.
- * In dev, Vite on :4340 proxies /api and /auth to API_ORIGIN (default: the v1 app on :4330;
- * set API_ORIGIN=http://127.0.0.1:8090 for the Go server).
+ * In dev, Vite on :4340 proxies /api and /auth to API_ORIGIN (the Go server on :8090).
  */
-const API_ORIGIN = process.env.API_ORIGIN ?? 'http://127.0.0.1:4330';
+const API_ORIGIN = process.env.API_ORIGIN ?? 'http://127.0.0.1:8090';
 
 /** @type {import('vite').ProxyOptions} */
 const proxy = {

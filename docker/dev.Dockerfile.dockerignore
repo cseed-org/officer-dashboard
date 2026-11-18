@@ -9,6 +9,8 @@ server/bin
 server/data
 tmp
 worktrees
+web/design
+docs/evidence
 **/.env
 **/.env.*
 !**/.env.example
