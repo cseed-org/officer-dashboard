@@ -504,18 +504,24 @@ GET `/api/officers/:id/activity` (V0.10 person drawer) returns `stats` (`eventsH
 - Event create/update (including CSV import and Luma ingest) sends to every active officer
   with a profile. Each change writes a job to `calendar_outbox` in the same transaction;
   one background worker drains it in FIFO order and each job re-reads the event, so the
-  newest content wins. Jobs left by a stop or crash run at the next start (delivery is
-  at least once, with the same UID and SEQUENCE). Each recipient has its own 45s timeout.
-  Upcoming events (not cancelled ones) are backfilled when an officer saves their first
-  profile, finishes onboarding, changes their active calendar email or delivery mode
-  (including Disconnect Google), or connects Google. `calendar_deliveries` has one row per
+  newest content wins. A job is removed only when all of it succeeded: a failed one stays
+  and is retried with backoff (1 minute doubling to an hour) on later changes, and in full
+  at startup and hourly; nothing is dropped after repeated failures. Jobs left by a stop or
+  crash run at the next start (delivery is at least once, with the same UID and SEQUENCE;
+  each send is recorded on its destination before it goes out, and Google events get a
+  stable dashboard-chosen id, so a repeated insert updates the first copy). Each recipient
+  has its own 45s timeout. Upcoming events (not cancelled ones) are backfilled, queued in the
+  same transaction, when an officer saves their first profile, finishes onboarding,
+  changes their active calendar email or delivery mode (including Disconnect Google), or
+  connects Google. `calendar_deliveries` has one row per
   destination (an .ics address, or one Google account) recording what it last received
   (a content fingerprint), so unchanged events are never resent, updates replace rather
   than duplicate, a failed attempt keeps the last success, and a newly connected Google
   account gets its own copies. Setting an event's status to cancelled withdraws it from
   every destination that has it; restoring it sends a normal update. Event deletion
-  queues a cancellation for every destination still showing the event (the rows cascade,
-  so `eventDelete` stores them in the job); failed cancellations are retried hourly.
+  queues a cancellation for every destination still showing the event, or that may show it
+  from a send whose outcome was never recorded (the rows cascade, so `eventDelete` stores
+  them in the job); failed cancellations are retried until they succeed.
   Shutdown takes at most 15s in all.
 - POST `/api/me/calendar/test` sends a sample invite synchronously and reports the result.
 
