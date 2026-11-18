@@ -16,3 +16,5 @@ docs/evidence
 !**/.env.example
 **/*.env
 !**/*.env.example
+# design fixtures and captures (about 50 MB) are not part of the dev build
+web/design

@@ -95,7 +95,7 @@ Status: proposal from design Pane D0, for the page design Panes D1–D5 and the 
 - **One brand line on a work page:** the Home greeting may set `h1.display`.
 - **Calm:** the Members table, Officers directory, Kanban, calendar, finance and admin use no brand faces, no paper and no polaroids.
 
-**Loading.** The fonts are self-hosted latin-subset woff2 files (OFL), 93 KB for all five. They are now in `web/design/fonts/`, and the build Pane copies them to `web/public/fonts/` with `font-display: swap`. Browsers fetch a face only when text uses it, so work pages download nothing. Preload Playfair and Poppins on `/onboarding` only. The old rule against remote fonts still holds, because these files are served from our origin.
+**Loading.** The fonts are self-hosted latin-subset woff2 files (OFL), 93 KB for all five. They live in `web/public/fonts/` (the mockups load the same files from there) with `font-display: swap`. Browsers fetch a face only when text uses it, so work pages download nothing. Preload Playfair and Poppins on `/onboarding` only. The old rule against remote fonts still holds, because these files are served from our origin.
 
 **Highlighter.** `.mark` draws a solid `--seed` stroke behind one or two display words, rotated −1.2°. Ink on yellow measures 10.64:1. It is static and never animates. Use at most one per screen.
 
@@ -140,7 +140,7 @@ Yellow's role widens slightly. It stays decorative everywhere except where ink t
 
 - Reuse v2 classes first. Add a class only when a page truly needs one, and add it to `v03.css` and this table in the same PR.
 - Brand register: onboarding (D2) is the most brand-forward surface. The gallery and empty states (D1, D5) come next. Officers, Members, Events, Speakers and the Kanban (D3–D5) stay on the work register.
-- Photos come from cseed.co (`web/design/img/` holds three for mockups). The build uses real club photos with `alt=""` when they are decorative. Never use stock imagery.
+- Photos come from cseed.co (`web/public/images/brand/` holds three, which the mockups use too). The build uses real club photos with `alt=""` when they are decorative. Never use stock imagery.
 - Both themes, 1440 and 390, with no page-level horizontal scroll: `node web/design/capture.mjs <page>` captures just your page and fails on overflow.
 - Phone principal controls stay at least 44px. The widget handle and remove button grow to 40 and 36px on phone, and the size buttons sit in the same 44px row.
 

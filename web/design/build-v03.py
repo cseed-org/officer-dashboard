@@ -186,7 +186,7 @@ def kcol(stage, name, cards):
 
 board = ('<div class="toolbar"><div class="chips" role="group" aria-label="Filter"><button class="chip" aria-pressed="true">All <span class="chip-count">6</span></button><button class="chip" aria-pressed="false">Mine</button><button class="chip" aria-pressed="false">Unassigned <span class="chip-count">2</span></button></div>'
          + button(icon('plus') + ' New design request', True) + '</div><div class="kanban" role="region" aria-label="Design requests board" tabindex="0">' + ''.join(kcol(*c) for c in cols) + '</div>')
-brand_empty = ('<div class="state state--brand"><div class="state-photos" aria-hidden="true"><figure class="polaroid" style="--tilt:-6deg"><img src="../img/community-tall.webp" alt=""></figure><figure class="polaroid" style="--tilt:5deg"><img src="../img/buildher-tall.webp" alt=""></figure></div>'
+brand_empty = ('<div class="state state--brand"><div class="state-photos" aria-hidden="true"><figure class="polaroid" style="--tilt:-6deg"><img src="../../public/images/brand/community-tall.webp" alt=""></figure><figure class="polaroid" style="--tilt:5deg"><img src="../../public/images/brand/buildher-tall.webp" alt=""></figure></div>'
                '<p class="state-title">No design requests yet.</p><p class="state-body">Need a cover, a poster or a post? Ask the design team; they pick it up from here.</p><div class="state-action">' + button('New design request') + '</div></div>')
 
 HUES = {'Community': 'blue', 'Entrepreneurship': 'amber', 'Saturdays': 'teal', 'Design': 'violet', 'Flagship': 'coral'}
@@ -239,8 +239,8 @@ hello = (f'<div class="onb onb--framed" role="region" aria-label="Onboarding, st
          '<p class="brand-eyebrow">hello from cseed</p><h2 class="display display--xl onb-title" tabindex="-1">hey alex, <span class="mark">welcome in.</span></h2>'
          '<p class="brand-lede onb-lede">Jordan added you to the officer team. Six short steps: check your details, tell us how to reach you, and pick what shows up on your home.</p>'
          '<ul class="onb-checks"><li>' + icon('check') + ' About three minutes</li><li>' + icon('check') + ' You can change everything later in Settings</li></ul></div>'
-         '<div class="onb-art" aria-hidden="true"><figure class="polaroid" style="--tilt:-4deg;left:4%;top:6%;width:52%;height:62%"><img src="../img/buildher-tall.webp" alt=""><figcaption>buildher, fall ’26</figcaption></figure>'
-         '<figure class="polaroid" style="--tilt:3deg;right:2%;top:22%;width:46%;height:52%"><img src="../img/community-tall.webp" alt=""><figcaption>saturdays</figcaption></figure></div></div>'
+         '<div class="onb-art" aria-hidden="true"><figure class="polaroid" style="--tilt:-4deg;left:4%;top:6%;width:52%;height:62%"><img src="../../public/images/brand/buildher-tall.webp" alt=""><figcaption>buildher, fall ’26</figcaption></figure>'
+         '<figure class="polaroid" style="--tilt:3deg;right:2%;top:22%;width:46%;height:52%"><img src="../../public/images/brand/community-tall.webp" alt=""><figcaption>saturdays</figcaption></figure></div></div>'
          '<footer class="onb-foot"><a class="onb-skip" href="#onboarding">Finish later</a>' + button('Let’s go ' + icon('arrow-right'), True) + '</footer></div>')
 confirm = (f'<div class="onb onb--framed" role="region" aria-label="Onboarding, step 2">{onb_top(2)}<div class="onb-main onb-main--single"><div class="onb-step">'
            '<p class="brand-eyebrow">02 · is this you?</p><h2 class="display display--l onb-title" tabindex="-1">check what <span class="mark">leadership</span> filled in.</h2>'
