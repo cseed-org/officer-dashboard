@@ -15,7 +15,7 @@ export function MonthView({ dates, month, today, itemsOn, sources, label }: {
   month: string;
   today: string;
   itemsOn: (date: string) => CalendarFeedItem[];
-  sources: CalendarFeedSource[];
+  sources: Map<string, CalendarFeedSource>;
   label: string;
 }) {
   const [ref, box] = useBox();
@@ -35,10 +35,10 @@ export function MonthView({ dates, month, today, itemsOn, sources, label }: {
           class={`calm-day${weekdayIndex(date) > 4 ? ' is-weekend' : ''}${monthOf(date) !== month ? ' is-outside' : ''}${date === today ? ' is-today' : ''}`}
           aria-label={`${weekdayShort(date)}, ${shortDay(date)}${date === today ? ', today' : ''}: ${list.length ? `${list.length} ${list.length === 1 ? 'item' : 'items'}` : 'nothing scheduled'}`}>
           <span class="calm-dh" aria-hidden="true"><b>{dayNumber(date)}</b>
-            {list.map((item) => <i key={item.source + item.id} class="cal-dot" data-hue={safeHue(sources.find((s) => s.id === item.source)?.hue)} />)}
+            {list.map((item) => <i key={item.source + item.id} class="cal-dot" data-hue={safeHue(sources.get(item.source)?.hue)} />)}
             {more > 0 && <span class="hcal-more">+{more}</span>}
           </span>
-          {shown.map((item) => <CalendarChip key={item.source + item.id} item={item} source={sources.find((s) => s.id === item.source)} index={index++} />)}
+          {shown.map((item) => <CalendarChip key={item.source + item.id} item={item} source={sources.get(item.source)} index={index++} />)}
         </div>;
       })}
     </div>

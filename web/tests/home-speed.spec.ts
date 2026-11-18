@@ -62,13 +62,26 @@ test.describe('Home', () => {
     await expect(alert.getByRole('button')).toBeVisible();
   });
 
-  test('V0.6: built pages preload their island modules after the stylesheets', async ({ page }) => {
+  test('V0.6/M-029: built pages preload their island modules after CSS, without the contract', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'production bundle assertion runs once');
     test.skip(!process.env.WEB_ORIGIN, 'module preloads are added by the production build');
-    const html = await (await page.request.get('/')).text();
-    const preload = html.indexOf('rel="modulepreload"');
-    expect(preload).toBeGreaterThan(html.lastIndexOf('rel="stylesheet"'));
-    for (const m of html.matchAll(/component-url="([^"]+)"/g)) expect(html).toContain(`<link rel="modulepreload" fetchpriority="low" href="${m[1]}">`);
-    // The zod contract is not among them: it loads after the first data.
-    expect(html).not.toMatch(/modulepreload" fetchpriority="low" href="\/_astro\/contracts\./);
+    for (const route of ['/', '/buildspace-launchpad', '/finance']) {
+      const html = await (await page.request.get(route)).text();
+      const preload = html.indexOf('rel="modulepreload"');
+      expect(preload, route).toBeGreaterThan(html.lastIndexOf('rel="stylesheet"'));
+      for (const m of html.matchAll(/component-url="([^"]+)"/g)) expect(html).toContain(`<link rel="modulepreload" fetchpriority="low" href="${m[1]}">`);
+      // The zod contract is not among them: it loads after the first data or on submit.
+      expect(html, route).not.toMatch(/modulepreload" fetchpriority="low" href="\/_astro\/contracts\./);
+    }
+  });
+
+  test('M-084: Officers and Onboarding do not preload HomeView or the widget registry', async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'production bundle assertion runs once');
+    test.skip(!process.env.WEB_ORIGIN, 'inspect the production modulepreload closure');
+    for (const route of ['/officers', '/onboarding']) {
+      const html = await (await page.request.get(route)).text();
+      expect(html, route).not.toMatch(/_astro\/(?:HomePage|HomeView|registry)\./);
+      expect(html, route).not.toMatch(/_astro\/(?:widget|calendar|greeting)\.[^"]+\.css/);
+    }
   });
 });

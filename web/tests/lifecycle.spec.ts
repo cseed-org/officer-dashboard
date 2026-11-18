@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { devLogin, openDialog, overflow, settle, watchErrors } from './helpers';
 
 /**
@@ -8,6 +8,15 @@ import { devLogin, openDialog, overflow, settle, watchErrors } from './helpers';
  * covers a reimbursement through payout. Each run creates new requests (agent-e2e marker).
  */
 const badge = (page: Page) => openDialog(page).locator('.detail-sub .badge');
+const contractChunk = /\/contracts[.\w-]*\.(?:js|ts)(?:\?.*)?$/;
+
+async function fillRequiredRequest(form: Locator, title: string) {
+  await form.getByLabel('what is it?').fill(title);
+  await form.getByLabel('vendor').fill('E2E vendor');
+  await form.getByLabel('unit cost').fill('18');
+  await form.getByLabel('budget category').selectOption({ label: '5100 · Program supplies' });
+  await form.getByLabel('justification').fill('Request form regression coverage.');
+}
 
 test('club purchase: officer submits, director approves, records the purchase and closes it', async ({ page }) => {
   const errors = watchErrors(page);
@@ -114,4 +123,49 @@ test('reimbursement: director approves, approves the payout and confirms it was 
   await expect(timeline).toContainText('payout approved · $16.40');
   await expect(timeline).toContainText('reimbursement paid');
   expect(errors).toEqual([]);
+});
+
+test('request save guards a double submit while the contract chunk is pending', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one viewport is enough');
+  const marker = `agent-e2e-double-${Date.now()}`;
+  const created: string[] = [];
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname !== '/api/requests' || response.request().method() !== 'POST') return;
+    void response.json().then((body) => { if (body.request?.id) created.push(body.request.id); }).catch(() => {});
+  });
+  let release!: () => void;
+  const held = new Promise<void>((r) => { release = r; });
+  await page.route(contractChunk, async (route) => { await held; await route.continue(); });
+  try {
+    await devLogin(page, 'officer');
+    await page.goto('/finance?new=1');
+    const form = openDialog(page);
+    await fillRequiredRequest(form, marker);
+    const submit = form.locator('button[type="submit"]');
+    await submit.evaluate((button) => {
+      (button as HTMLButtonElement).click();
+      (button as HTMLButtonElement).click();
+    });
+    await expect(submit).toBeDisabled();
+    release();
+    await expect(page).toHaveURL(/\/finance\?id=/);
+    await expect.poll(() => created.length).toBe(1);
+  } finally {
+    release();
+    for (const id of created) await page.request.delete(`/api/requests/${id}`).catch(() => {});
+  }
+});
+
+test('request save reports a contract chunk import failure and re-enables submit', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one viewport is enough');
+  await page.route(contractChunk, (route) => route.abort());
+  await devLogin(page, 'officer');
+  await page.goto('/finance?new=1');
+  const form = openDialog(page);
+  const submit = form.getByRole('button', { name: 'submit for approval' });
+  await submit.click();
+  const alert = form.getByRole('alert');
+  await expect(alert).toBeVisible();
+  await expect(alert).not.toBeEmpty();
+  await expect(submit).toBeEnabled();
 });

@@ -1,5 +1,5 @@
 import type { WidgetPlacement } from '../../../lib/contracts';
-import { KPI_GROUP_ID, kpiIds, widgetDef, type BlockSize } from '../registry';
+import { KPI_GROUP_ID, kpiIds, widgetDef, type BlockSize } from '../catalog';
 
 /** A placement as Home renders it: always a V0.4 block size. */
 export type Placement = { id: string; size: BlockSize };

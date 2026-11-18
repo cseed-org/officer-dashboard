@@ -3,7 +3,7 @@ import { fmtTime } from "../../../lib/format";
 import { useApi } from "../../../lib/api/useApi";
 import type { ResponseOf } from "../../../lib/api/client";
 import type { CurrentUser } from "../../../lib/contracts";
-import { widgetDef, type BlockSize } from "../registry";
+import { widgetDef, type BlockSize } from "../catalog";
 import { CountUp } from "../../components/kit";
 import WidgetCard, { WidgetEmpty, WidgetState } from "../shell/WidgetCard";
 

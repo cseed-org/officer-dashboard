@@ -55,6 +55,36 @@ export default function ExternalContactsPage() {
 function Support({ c }: { c: Contact }) {
   return c.clubSupport ? <span class="badge badge--positive" data-club-support>Club support</span> : null;
 }
+
+/** The editor-only event picker; reading a contact never fetches the 100-event directory. */
+function LinkedEvents({ draft, contact, onChange }: { draft: Draft; contact: Contact | null; onChange: (draft: Draft) => void }) {
+  const [eventCursor, setEventCursor] = useState<string | undefined>();
+  const events = useApi("eventsList", { query: { limit: 100, when: "all", cursor: eventCursor } });
+  const [eventOptions, setEventOptions] = useState<EventListItem[]>([]);
+  useEffect(() => {
+    if (events.status === "ready")
+      setEventOptions((prev) => [...new Map([...prev, ...events.data.items].map((e) => [e.id, e])).values()]);
+  }, [events.status === "ready" ? events.data : null]);
+  const toggle = (id: string, checked: boolean) => onChange({
+    ...draft,
+    eventIds: checked ? [...draft.eventIds, id] : draft.eventIds.filter((eventId) => eventId !== id),
+  });
+  return <fieldset class="speakers-fieldset stack">
+    <legend class="field-label">Linked events</legend>
+    {events.status === "ready" ? <>
+      {eventOptions.map((ev) => <label class="choice" key={ev.id}>
+        <input type="checkbox" checked={draft.eventIds.includes(ev.id)} onChange={(e) => toggle(ev.id, e.currentTarget.checked)} />
+        <span>{ev.name} · {fmtDate(ev.startsAt)}</span>
+      </label>)}
+      {contact?.events.filter((ev) => !eventOptions.some((e) => e.id === ev.id)).map((ev) => <label class="choice" key={ev.id}>
+        <input type="checkbox" checked={draft.eventIds.includes(ev.id)} onChange={(e) => toggle(ev.id, e.currentTarget.checked)} />
+        <span>{ev.name}</span>
+      </label>)}
+      {events.data.nextCursor && <button type="button" class="btn" onClick={() => setEventCursor(events.data.nextCursor ?? undefined)}>Load more events</button>}
+    </> : events.status === "error" ? <ErrorState error={events.error} onRetry={events.reload} /> : <p>Loading events…</p>}
+  </fieldset>;
+}
+
 function ExternalContacts({ me }: { me: CurrentUser }) {
   const person = usePersonParam("id");
   const openId = person.personId;
@@ -215,19 +245,6 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
     };
     return <label class="field"><span class="field-label">{title}</span>{inputType === "email" ? <input type="email" {...props} /> : inputType === "url" ? <input type="url" {...props} /> : <input type="text" {...props} />}</label>;
   };
-  const [eventCursor, setEventCursor] = useState<string | undefined>();
-  const events = useApi("eventsList", {
-    query: { limit: 100, when: "all", cursor: eventCursor },
-  });
-  const [eventOptions, setEventOptions] = useState<EventListItem[]>([]);
-  useEffect(() => {
-    if (events.status === "ready")
-      setEventOptions((prev) => [
-        ...new Map(
-          [...prev, ...events.data.items].map((e) => [e.id, e]),
-        ).values(),
-      ]);
-  }, [events.status === "ready" ? events.data : null]);
   const items = list.status === "ready" ? list.data.items : [];
   const topics = [
     ...new Map(
@@ -307,70 +324,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
                     }
                   />
                 </label>
-                <fieldset class="speakers-fieldset stack">
-                  <legend class="field-label">Linked events</legend>
-                  {events.status === "ready" ? (
-                    <>
-                      {eventOptions.map((ev) => (
-                        <label class="choice">
-                          <input
-                            type="checkbox"
-                            checked={draft.eventIds.includes(ev.id)}
-                            onChange={(e) =>
-                              setDraft({
-                                ...draft,
-                                eventIds: e.currentTarget.checked
-                                  ? [...draft.eventIds, ev.id]
-                                  : draft.eventIds.filter((id) => id !== ev.id),
-                              })
-                            }
-                          />
-                          <span>
-                            {ev.name} · {fmtDate(ev.startsAt)}
-                          </span>
-                        </label>
-                      ))}
-                      {contact?.events
-                        .filter(
-                          (ev) => !eventOptions.some((e) => e.id === ev.id),
-                        )
-                        .map((ev) => (
-                          <label class="choice">
-                            <input
-                              type="checkbox"
-                              checked={draft.eventIds.includes(ev.id)}
-                              onChange={(e) =>
-                                setDraft({
-                                  ...draft,
-                                  eventIds: e.currentTarget.checked
-                                    ? [...draft.eventIds, ev.id]
-                                    : draft.eventIds.filter(
-                                        (id) => id !== ev.id,
-                                      ),
-                                })
-                              }
-                            />
-                            <span>{ev.name}</span>
-                          </label>
-                        ))}
-                      {events.data.nextCursor && (
-                        <button
-                          type="button"
-                          class="btn"
-                          onClick={() =>
-                            setEventCursor(events.data.nextCursor ?? undefined)
-                          }
-                        >
-                          Load more events
-                        </button>
-                      )}
-                    </>
-                  ) : events.status === "error" ? (
-                    <ErrorState error={events.error} onRetry={events.reload} />
-                  ) : (
-                    <p>Loading events…</p>
-                  )}
-                </fieldset>
+                <LinkedEvents draft={draft} contact={contact} onChange={setDraft} />
                 {error && <p class="field-error" role="alert">{error}</p>}
                 <button class="btn btn--primary" type="submit">
                   {busy ? "Saving…" : adding ? "Add contact" : "Save contact"}

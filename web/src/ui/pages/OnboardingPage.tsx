@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError } from '../../lib/api/client';
 import type { CalendarSettings, OnboardingState, ProfileResponse, WidgetPlacement, CurrentUser } from '../../lib/contracts';
 import { clearCachedRole } from '../../lib/session';
-import { applyChoices, choiceOf, layoutForChoices, onboardingChoices } from '../widgets/registry';
+import { applyChoices, choiceOf, layoutForChoices, onboardingChoices } from '../widgets/catalog';
 import { ProfileForm, type ProfileFormHandle, type ProfileSection } from '../views/ProfileForm';
 import { CalendarPanel } from '../views/CalendarPanel';
 import { WelcomeIntro, type HelloMedia } from '../onboarding/WelcomeIntro';

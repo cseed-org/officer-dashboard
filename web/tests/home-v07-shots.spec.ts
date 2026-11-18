@@ -23,7 +23,7 @@ for (const theme of ['light', 'dark'] as const) {
       await useTheme(page, theme);
       await devLogin(page, 'director');
       const widgetLayout = layout ? layout.filter((w) => w.id !== 'calendar-month') : undefined;
-      await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true, ...(widgetLayout ? { widgetLayout } : { widgetLayout: (await import('../src/ui/widgets/registry')).defaultWidgetLayout }) } });
+      await page.request.put('/api/me/prefs', { data: { dashboardTutorialSeen: true, ...(widgetLayout ? { widgetLayout } : { widgetLayout: (await import('../src/ui/widgets/catalog')).defaultWidgetLayout }) } });
       await page.goto('/');
       await settle(page);
       await page.waitForLoadState('networkidle');

@@ -8,7 +8,7 @@ import { pacificParts, shortDay, timeRange, weekdayShort, addDays, pacificToday 
 import { CountUp, Progress, Sparkline } from '../../components/kit';
 import WidgetCard, { WidgetEmpty, WidgetState } from '../shell/WidgetCard';
 import { useBox } from '../shell/fit';
-import { widgetDef, type WidgetProps } from '../registry';
+import { widgetDef, type WidgetProps } from '../catalog';
 
 /** The figure: the final text first (count-up animates it only during the Home entrance). */
 const Value = ({ children, negative }: { children: string | number; negative?: boolean }) =>

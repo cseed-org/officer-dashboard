@@ -12,7 +12,7 @@ const savedWidth = async (page: Page) => (await (await page.request.get('/api/me
 async function resetWidth(page: Page) {
   const r = await page.request.put('/api/me/prefs', { data: { sidebarWidth: 0 } });
   expect(r.ok()).toBe(true);
-  await page.evaluate(() => { try { localStorage.removeItem('cseed-sidebar'); localStorage.removeItem('cseed-sidebar-last'); } catch { /* */ } });
+  await page.evaluate(() => { try { localStorage.removeItem('cseed-sidebar'); localStorage.removeItem('cseed-sidebar-seen'); localStorage.removeItem('cseed-sidebar-last'); } catch { /* */ } });
   await page.reload();
 }
 /** Drag the handle to viewport x. */
@@ -46,7 +46,7 @@ test.describe('resizable sidebar', () => {
 
     // Reload with no local cache: the server preference applies, and the width is set before
     // first paint (the DOM shows it as soon as the document is parsed).
-    await page.evaluate(() => localStorage.removeItem('cseed-sidebar'));
+    await page.evaluate(() => { localStorage.removeItem('cseed-sidebar'); localStorage.removeItem('cseed-sidebar-seen'); });
     await page.reload();
     await expect.poll(() => width(page)).toBe(320);
     expect(errors.filter((e) => !/\b(40[134]|404)\b/.test(e))).toEqual([]);
@@ -126,7 +126,7 @@ test.describe('resizable sidebar', () => {
     expect(await gap()).toBeLessThanOrEqual(1);
     // Back to the stylesheet default across a breakpoint (tablet rail <-> desktop 232px).
     await page.request.put('/api/me/prefs', { data: { sidebarWidth: 0 } });
-    await page.evaluate(() => localStorage.removeItem('cseed-sidebar'));
+    await page.evaluate(() => { localStorage.removeItem('cseed-sidebar'); localStorage.removeItem('cseed-sidebar-seen'); });
     await page.reload();
     expect(await gap()).toBeLessThanOrEqual(1);
     const vp = page.viewportSize()!;
@@ -134,12 +134,31 @@ test.describe('resizable sidebar', () => {
     expect(await gap()).toBeLessThanOrEqual(1);
   });
 
+  test('M-140: a cached sidebar paints before stalled prefs are released', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('cseed-sidebar', '240'));
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    await page.route('**/api/me/prefs', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      await held;
+      await route.continue();
+    });
+    try {
+      await page.goto('/events', { waitUntil: 'domcontentloaded' });
+      expect(await page.locator('html').getAttribute('data-sidebar-wait')).toBeNull();
+      await expect(page.locator('.app')).toBeVisible();
+      expect(await width(page)).toBe(240);
+    } finally {
+      release();
+    }
+  });
+
   for (const cache of ['none', 'stale', 'matching'] as const) {
-    test(`a server-saved width is the first thing painted (local cache: ${cache})`, async ({ page }) => {
+    test(`cached width paints immediately; a new device waits for the server (local cache: ${cache})`, async ({ page }) => {
       await page.request.put('/api/me/prefs', { data: { sidebarWidth: 300 } });
       await page.addInitScript((c) => {
         try {
-          if (c === 'none') localStorage.removeItem('cseed-sidebar');
+          if (c === 'none') { localStorage.removeItem('cseed-sidebar'); localStorage.removeItem('cseed-sidebar-seen'); }
           else localStorage.setItem('cseed-sidebar', c === 'stale' ? '150' : '300');
         } catch { /* */ }
         // Every frame in which the shell is visible: its sidebar width and where the content starts.
@@ -152,26 +171,32 @@ test.describe('resizable sidebar', () => {
         };
         requestAnimationFrame(tick);
       }, cache);
-      // Hold the preferences back so a late jump would be visible.
+      // A new device gets the server width before the cap; cached devices never wait for it.
       await page.route('**/api/me/prefs', async (route) => {
         if (route.request().method() !== 'GET') return route.continue();
-        await new Promise((r) => setTimeout(r, 700));
+        await new Promise((r) => setTimeout(r, cache === 'none' ? 100 : 700));
         await route.continue();
       });
       await page.goto('/events');
-      await expect(page.locator('.app')).toBeVisible(); // held hidden until the preferences answer
-      await expect.poll(() => width(page)).toBe(300);
+      await expect(page.locator('.app')).toBeVisible();
+      const expected = cache === 'stale' ? 150 : 300;
+      await expect.poll(() => width(page)).toBe(expected);
       await page.waitForTimeout(300);
       const frames: number[] = await page.evaluate(() => (window as any).__frames);
       expect(frames.length).toBeGreaterThan(0);
-      expect([...new Set(frames)], 'every visible frame uses the saved width').toEqual([300]);
+      expect([...new Set(frames)], 'every visible frame uses the immediate local width').toEqual([expected]);
     });
   }
 
   test('a prefs response after the shell was revealed does not resize this page; the next navigation paints it', async ({ page }) => {
     await page.request.put('/api/me/prefs', { data: { sidebarWidth: 300 } });
     await page.addInitScript(() => {
-      try { localStorage.setItem('cseed-sidebar', '150'); } catch { /* */ }
+      try {
+        if (!sessionStorage.getItem('test-sidebar-seeded')) {
+          localStorage.setItem('cseed-sidebar', '150');
+          sessionStorage.setItem('test-sidebar-seeded', '1');
+        }
+      } catch { /* */ }
       (window as any).__frames = [];
       const tick = () => {
         const app = document.querySelector('.app') as HTMLElement | null;
@@ -184,7 +209,7 @@ test.describe('resizable sidebar', () => {
     let hold = true;
     await page.route('**/api/me/prefs', async (route) => {
       if (route.request().method() !== 'GET' || !hold) return route.continue();
-      await new Promise((r) => setTimeout(r, 2500)); // past the 1.5s reveal timeout
+      await new Promise((r) => setTimeout(r, 1000)); // well past the 300ms new-device reveal cap
       await route.continue();
     });
     await page.goto('/events');

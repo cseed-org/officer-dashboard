@@ -45,14 +45,11 @@ const PEOPLE: NavItem[] = [
 const peopleCurrent = PEOPLE.find((n) => n.key === page);
 const PREPAINT = `(function(){var d=document.documentElement,t,n,r,w;try{t=localStorage.getItem('cseed-theme');n=localStorage.getItem('cseed-density');r=localStorage.getItem('cseed-role');w=+localStorage.getItem('cseed-sidebar');if(localStorage.getItem('cseed-people')==='0')d.dataset.people='closed'}catch(e){}t=t==='dark'||t==='system'?t:'light';var k=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';d.dataset.themePref=t;d.dataset.theme=k;d.style.colorScheme=k;d.dataset.density=n==='compact'?'compact':'comfortable';if(r)d.dataset.role=r;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}})();`;
 /**
- * First paint with the user's saved sidebar width (from the server, so a new device, a cleared
- * cache or a width changed elsewhere never jumps). The head script in lib/early.ts is already
- * fetching /api/me/prefs; until it answers, `data-sidebar-wait` keeps the shell hidden (CSS),
- * with a short timeout so a slow or failed request cannot blank the page. A response that
- * arrives after the shell was revealed only updates the localStorage copy (the next page paints
- * it); the current page is never resized under the user.
+ * First paint with the user's saved sidebar width. A device that already has a local copy paints
+ * immediately; only a new device (or cleared storage) waits briefly for the early prefs read.
+ * A late server width updates localStorage for the next page, never the current page under the user.
  */
-const SIDEBARWAIT = `(function(){var d=document.documentElement,p=window.__cseedEarly&&window.__cseedEarly['/api/me/prefs'];if(!p)return;d.setAttribute('data-sidebar-wait','');var t,waiting=true,done=function(){waiting=false;clearTimeout(t);d.removeAttribute('data-sidebar-wait')};t=setTimeout(function(){window.__cseedSidebarLate=true;done()},1500);p.then(function(r){return r.ok?r.clone().json():null}).then(function(j){if(!j||typeof j.sidebarWidth!=='number')return;var w=j.sidebarWidth;try{if(w)localStorage.setItem('cseed-sidebar',String(w));else localStorage.removeItem('cseed-sidebar')}catch(e){}if(!waiting)return;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}else{delete d.dataset.sidebar;d.style.removeProperty('--sidebar')}}).catch(function(){}).then(done)})();`;
+const SIDEBARWAIT = `(function(){var d=document.documentElement,p=window.__cseedEarly&&window.__cseedEarly['/api/me/prefs'];if(!p)return;var known=false;try{known=localStorage.getItem('cseed-sidebar')!==null||localStorage.getItem('cseed-sidebar-seen')==='1'}catch(e){}if(known){window.__cseedSidebarLate=true;return}d.setAttribute('data-sidebar-wait','');var t,waiting=true,done=function(){waiting=false;clearTimeout(t);d.removeAttribute('data-sidebar-wait')};t=setTimeout(function(){window.__cseedSidebarLate=true;done()},300);p.then(function(r){return r.ok?r.clone().json():null}).then(function(j){if(!j||typeof j.sidebarWidth!=='number')return;var w=j.sidebarWidth;try{localStorage.setItem('cseed-sidebar-seen','1');if(w)localStorage.setItem('cseed-sidebar',String(w));else localStorage.removeItem('cseed-sidebar')}catch(e){}if(!waiting)return;if(w>=64&&w<=320){d.dataset.sidebar=w<=64?'rail':'wide';d.style.setProperty('--sidebar',w+'px')}else{delete d.dataset.sidebar;d.style.removeProperty('--sidebar')}}).catch(function(){}).then(done)})();`;
 /**
  * Phone menu sheet as a modal: dialog semantics while open, focus moved in and trapped
  * (Tab cycles inside), the rest of the page inert, Escape / scrim / close button close it and

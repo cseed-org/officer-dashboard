@@ -22,6 +22,15 @@ import {
   APPROVAL_DECISIONS,
   ATTACHMENT_KINDS,
   CSV_IMPORT_KINDS,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MIME_TYPES,
+  BUILDSPACE_STAGES,
+  BUILDSPACE_TRACKS,
+  CSV_MAX_BYTES,
+  DESIGN_INDICATORS,
+  DESIGN_STAGES,
+  DESIGN_TYPES,
+  SEARCH_KINDS,
   FINANCE_REPORTS,
   FISCAL_PERIOD_STATUSES,
   FORM990_PARTS,
@@ -35,6 +44,7 @@ import {
   SERVICE_TOKEN_SCOPES,
   STORAGE_BACKENDS,
 } from './domain';
+export * from '../core/constants';
 
 // Zod's JIT probes `Function('')`, which the pages' Content-Security-Policy (no 'unsafe-eval')
 // refuses and reports as a violation; the interpreter is fast enough for these payloads.
@@ -585,15 +595,7 @@ export type AttachmentUploadFields = z.infer<typeof AttachmentUploadFields>;
 export const AttachmentUploadResponse = z.object({ attachment: Attachment });
 export type AttachmentUploadResponse = z.infer<typeof AttachmentUploadResponse>;
 
-export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
-export const ATTACHMENT_MIME_TYPES = [
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/heic',
-  'image/webp',
-] as const;
-export const CSV_MAX_BYTES = 5 * 1024 * 1024;
+export { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME_TYPES, CSV_MAX_BYTES };
 
 // ───────────────────────────── Finance ─────────────────────────────
 
@@ -987,7 +989,6 @@ export type HealthResponse = z.infer<typeof HealthResponse>;
 
 // ───────────────────────────── Search (Go backend, v2) ─────────────────────────────
 
-export const SEARCH_KINDS = ['event', 'request', 'user', 'account', 'contact'] as const;
 export type SearchKind = (typeof SEARCH_KINDS)[number];
 
 /** GET /api/search?q=&limit= */
@@ -1147,10 +1148,8 @@ export const CalendarTestResponse = z.object({ status: z.enum(['sent', 'failed',
 // One board everyone sees. Design-subteam members (and director+) assign and move work;
 // only the requester approves in review, which is the only way to reach Delivered.
 
-export const DESIGN_STAGES = ['new', 'accepted', 'in-progress', 'in-review', 'delivered'] as const;
 export const DesignStage = z.enum(DESIGN_STAGES);
 export type DesignStage = z.infer<typeof DesignStage>;
-export const DESIGN_TYPES = ['poster', 'social', 'slides', 'merch', 'video', 'other'] as const;
 export const DesignType = z.enum(DESIGN_TYPES);
 export type DesignType = z.infer<typeof DesignType>;
 export const DesignUrgency = z.enum(['normal', 'high']);
@@ -1210,7 +1209,6 @@ export type DesignRequestDetail = z.infer<typeof DesignRequestDetail>;
  * The Design page's design indicator for an event: requested while any linked request is open,
  * done once every linked request is delivered, otherwise not-needed or needs-design from designNeed.
  */
-export const DESIGN_INDICATORS = ['needs-design', 'requested', 'not-needed', 'done'] as const;
 export const DesignIndicator = z.enum(DESIGN_INDICATORS);
 export type DesignIndicator = z.infer<typeof DesignIndicator>;
 /** An event being planned (draft or published, starting within six weeks) and its design state. */
@@ -1328,8 +1326,6 @@ export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: Outr
  * Machine-readable index of every endpoint; docs/api.md and the feature guides are the
  * human version. scripts/docs.test.mjs checks that every path is documented.
  */
-export const BUILDSPACE_TRACKS = ['Software', 'Hardware', 'Creative', 'Extended Virtual Reality (XR)'] as const;
-export const BUILDSPACE_STAGES = ['Ideating', 'Building', 'Demo-ready', 'Shipped', 'At risk'] as const;
 export const BuildspaceProjectBody = z.object({
  name: z.string().trim().min(1).max(200), description: z.string().max(10000),
  track: z.enum(BUILDSPACE_TRACKS), stage: z.enum(BUILDSPACE_STAGES),

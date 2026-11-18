@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import type { CurrentUser } from '../../../lib/contracts';
 import { Icon, type IconName } from '../../components/Icon';
-import { widgetDef, type BlockSize } from '../registry';
+import { widgetDef, type BlockSize } from '../catalog';
 
 /**
  * The V0.7 widget card (design/mockups/home-v07-notes.md § Card shell): a tinted icon chip and

@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import {
-  BUILDSPACE_STAGES,
-  BUILDSPACE_TRACKS,
-  type BuildspaceData,
-  type BuildspacePerson,
-  type BuildspaceProject,
+import { BUILDSPACE_STAGES, BUILDSPACE_TRACKS } from "../../../core/constants";
+import type {
+  BuildspaceData,
+  BuildspacePerson,
+  BuildspaceProject,
 } from "../../../lib/contracts";
 import { api, fieldErrors } from "../../../lib/api/client";
 import type { Member } from "../../../lib/contracts";

@@ -89,6 +89,34 @@ test('event wall time conversion handles selected zone, DST gaps, and date-only 
   expect(result).toEqual({ winter: '2026-01-15T18:00:00-05:00', summer: '2026-07-15T18:00:00-04:00', gap: null, date: 'Jan 15, 2026', instant: '2026-01-16T08:00' });
 });
 
+test('M-138: todayPacific follows zone changes and reuses its formatter', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'formatter instrumentation runs once');
+  await devSignIn(page, { as: 'officer' });
+  await page.goto('/favicon.svg');
+  const result = await page.evaluate(async () => {
+    const timezoneModule = '/src/lib/timezone.ts';
+    const formatModule = '/src/lib/format.ts';
+    const tz = await import(timezoneModule);
+    const fmt = await import(formatModule);
+    const base = await (await fetch('/api/me/prefs')).json();
+    const instant = new Date('2026-01-15T18:00:00Z');
+    tz.applyTimezone({ ...base, effectiveTimezone: 'Pacific/Kiritimati' });
+    const kiritimati = fmt.todayPacific(instant);
+    tz.applyTimezone({ ...base, effectiveTimezone: 'America/New_York' });
+    const newYork = fmt.todayPacific(instant);
+    tz.applyTimezone({ ...base, effectiveTimezone: 'Europe/London' });
+    const Original = Intl.DateTimeFormat;
+    let formatterBuilds = 0;
+    (Intl as any).DateTimeFormat = new Proxy(Original, {
+      construct(target, args) { formatterBuilds++; return Reflect.construct(target, args); },
+    });
+    try { for (let i = 0; i < 25; i++) fmt.todayPacific(instant); }
+    finally { (Intl as any).DateTimeFormat = Original; }
+    return { kiritimati, newYork, formatterBuilds };
+  });
+  expect(result).toEqual({ kiritimati: '2026-01-16', newYork: '2026-01-15', formatterBuilds: 1 });
+});
+
 test('automatic zone changes preserve an unsaved event and apply after saving', async ({ page }) => {
   await devSignIn(page, { as: 'officer' });
   await page.request.put('/api/me/prefs', { data: { timezoneMode: 'auto', timezone: 'America/Los_Angeles' } });

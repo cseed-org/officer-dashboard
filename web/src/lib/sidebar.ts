@@ -12,6 +12,7 @@ export const SIDEBAR_MAX = 320;
 export const SIDEBAR_SNAP = 120;
 export const SIDEBAR_DEFAULT = 232;
 export const SIDEBAR_KEY = 'cseed-sidebar';
+export const SIDEBAR_SEEN_KEY = 'cseed-sidebar-seen';
 export const SIDEBAR_LAST_KEY = 'cseed-sidebar-last';
 
 /** The sidebar's People folder: '0' = collapsed, anything else (or nothing) = open. Device-local, like the width cache. */
@@ -45,6 +46,7 @@ export const lastWideWidth = () => {
 /** Show a width on the page and remember it on this device. 0 restores the defaults. */
 export function applySidebarWidth(w: number) {
   const root = document.documentElement;
+  store.set(SIDEBAR_SEEN_KEY, '1');
   if (!w) {
     delete root.dataset.sidebar;
     root.style.removeProperty('--sidebar');
@@ -70,6 +72,7 @@ export function syncSidebarFromServer(w: number) {
   if (w2.__cseedSidebarLate) {
     w2.__cseedSidebarLate = false;
     store.set(SIDEBAR_KEY, w ? String(w) : null);
+    store.set(SIDEBAR_SEEN_KEY, '1');
     return;
   }
   if (busy || timer) return;

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { devLogin, useTheme, overflow, THEMES } from "./helpers";
-import { defaultWidgetLayout } from "../src/ui/widgets/registry";
+import { defaultWidgetLayout } from "../src/ui/widgets/catalog";
 
 const makeMember = (n: number) => ({
   person_id: `person-${n}`,
