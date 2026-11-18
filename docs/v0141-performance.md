@@ -65,9 +65,9 @@ Not run in the original measurement pass:
 
 ## Server (Pi)
 
-Historical finance for 300 requests and 6,000 audit rows falls from **614 ms to 14.4 ms**; the builder portal with 5,000 activity rows across three cohorts falls from **23.6 ms to 0.58 ms**. Listing 200 fulfillment jobs falls from **15.2 ms to 2.77 ms** and matching 5,000 members to officers from **8.21 ms to 0.078 ms**. These are medians of three benchmark runs on Go 1.27.4 with four pinned cores and a 2 GB container limit. The small seed HTTP workload remains broadly similar, with individual improvements and regressions below. Startup and whole-process memory do not improve measurably.
+Historical finance for 300 requests and 6,000 audit rows falls from **614 ms to 14.4 ms**; the builder portal with 5,000 activity rows across three cohorts falls from **23.6 ms to 0.58 ms**. Listing 200 fulfillment jobs falls from **15.2 ms to 2.77 ms** and warm (cached) matching of 5,000 members to officers from **8.21 ms to 0.078 ms**. These are medians of three benchmark runs on Go 1.27.4 with four pinned cores and a 2 GB container limit. The small seed HTTP workload remains broadly similar, with individual improvements and regressions below. Startup and whole-process memory do not improve measurably.
 
-The original baseline is `d78ccd4` on Go 1.24.13. The paired BEFORE is `fa301df` (main at task start, including PRs #86 and #87) on Go 1.27.4; AFTER is `dc863d5` on the same toolchain. Main subsequently advanced to `4233621`; its server difference is CLI help text, with no HTTP/SQL change. Later commits add regression checks, client history-control fixes, and the standalone `EventSummary` store aggregate; no measured handler SQL changes. The embedded client bytes in the measured release are pinned to `dc863d5`; final client controls are covered by a fresh production build and browser tests. These are x86 Docker measurements using a Pi resource profile, not measurements on ARM hardware.
+The original baseline is `d78ccd4` on Go 1.24.13. The paired BEFORE is `fa301df` (main at task start, including PRs #86 and #87) on Go 1.27.4; AFTER is `dc863d5` on the same toolchain. Main subsequently advanced to `4233621`; its server difference is CLI help text, with no HTTP/SQL change. Later commits add regression checks, client history-control fixes, and the standalone `EventSummary` store aggregate. The schema portability fix at `2751a04` removes the event timestamp expression index and the redundant single-column audit index. The release HTTP/process tables retain the original `dc863d5` capture, including its expression index; the final index-free event-list benchmark is reported separately below. The embedded client bytes in the measured release are pinned to `dc863d5`; final client controls are covered by a fresh production build and browser tests. These are x86 Docker measurements using a Pi resource profile, not measurements on ARM hardware.
 
 ### Changes and evidence
 
@@ -81,7 +81,7 @@ The original baseline is `d78ccd4` on Go 1.24.13. The paired BEFORE is `fa301df`
 | M-056 | Index audit type/time, job and activity purchase FKs, and OAuth client references. `TestPerformanceQueryPlans`. | Targeted growing-table lookups use indexes; no isolated timing claim. |
 | M-085 | Admit at most four MCP requests globally and reserve a rate token before body reads; stream raw base64 into one decoded buffer. `TestMCPRejectsBeforeReadingBody`, `TestMCPInFlightBodyCap`, `TestStreamingBase64Parity`. | Rejected bodies read zero bytes. 10 MiB multipart fixture: 49.9 → 42.3 ms; 34.98 → 20.99 MB allocated. Early 429 has JSON-RPC id null because the body is unread. |
 | M-087 | Default to 200 completed activity records, preserve current-week/open signals, and expose older pages in officer/builder/mentor views. Dense calendar days use cohort summaries above 20 details. `TestBuildspaceHistoryPagesBoundBodiesAndRetainSignals`, private-weekly and onboarding tests, `TestBuildspaceCalendarAggregatesBusyDaysWithCohortNavigation`, browser history test. | Growth fixture: old 617 rows / 818,802 bytes fails the new ≤225-row / 400 KB budget (200 historical plus live records). Portal benchmark includes this bound; calendar timing not isolated. |
-| M-089 | Select event pages before metrics enrichment, provide the separate `EventSummary` SQL aggregate for UI counters, and omit event-picker reads for fixed-event imports. `TestEventSQLPageParityAcrossOffsetsAndDST`, `TestEventSmallPageAllocationBudget`, `TestEventSummaryIncludesHistoryBeyondPage`, fixed-event CSV browser test. | A one-event page with 1,000 historical events falls below 5,000 allocations (old 60,138). Small-seed event latency does not improve consistently. Event KPI/UI redesign belongs to M-014 in PR 5. |
+| M-089 | Select event pages before metrics enrichment, provide the separate `EventSummary` SQL aggregate for UI counters, and omit event-picker reads for fixed-event imports. Keep app-defined timestamp functions in queries only so plain SQLite backup/repair clients work. `TestEventSQLPageParityAcrossOffsetsAndDST`, `TestEventSmallPageAllocationBudget`, `TestEventSummaryIncludesHistoryBeyondPage`, schema portability tests, fixed-event CSV browser test. | Without the expression index, a one-event page with 1,000 historical events uses about 13,200 allocations (old full-history path 60,138); the guard allows 15,000 for candidate timestamp callbacks. Small-seed event latency does not improve consistently. Event KPI/UI redesign belongs to M-014 in PR 5. |
 | M-090 | Cache immutable officer-email matches until member-table generation changes. `TestMemberEmailCacheTracksCorrectionsReplacementsAndRollback`, `TestMemberOfficersAllEmailKinds`, allocation guard. | Warm 5,000-member reads: 8.21 → 0.078 ms; 30,654 → 607 allocations. Cold first read still builds the index. |
 | M-091 | Hash all assets once; retain body/gzip only for small text files. `TestBinaryAssetValidators`. | Binary conditional GET returns 304 with no body; no timed transfer/RSS reduction claimed. |
 | M-100 | Static extensions and `/_astro/` bypass session DB reads and cookie renewal. `TestStaticAssetSkipsSessionDatabase`. | Guard succeeds with no session database available. No isolated latency gain measured. |
@@ -102,6 +102,27 @@ All values below are three-run medians. MB means decimal bytes/1,000,000. These 
 | Officer matching, 5,000 members (warm) | 8.208 → 0.078 | 1.296 → 0.025 | 30,654 → 607 |
 | MCP multipart, 10 MiB decoded | 49.882 → 42.303 | 34.977 → 20.986 | 41 → 39 |
 | CSV, 26,000 guests | 34.056 → 30.194 | 21.069 → 17.018 | 286,104 → 182,101 |
+
+### Event list after schema portability
+
+The final schema drops the `instant_ms` expression index so SQLite clients without app functions can run backup integrity checks and event writes. Event queries now scan candidate timestamps; metrics enrichment still runs only for the selected page. The existing seeded `BenchmarkReadEndpoints//api/events` handler benchmark was rerun three times on Go 1.27.4, cores 0–3, with a 2 GB container limit and no other heavy work. Host free memory at the gate was 1685 MB. An idle development server remained active for file polling and health checks (17.40% CPU at the gate); no builds, test batches or load runs were concurrent. Treat the timing comparison as indicative, with that background activity recorded in the evidence.
+
+| Revision | ms/op | bytes/op | allocations/op |
+| --- | ---: | ---: | ---: |
+| Main before (`fa301df`) | 0.508 | 75,980 | 1,480 |
+| Earlier PR with expression index (`dc863d5`) | 0.549 | 70,174 | 1,419 |
+| Final portable schema (`2751a04`) | 0.797 | 71,777 | 1,491 |
+
+The event-list result is a regression against the earlier indexed PR capture and main on this small seed, not a latency win. The large-history improvement remains avoiding full-row/metrics enrichment: 60,133 → 13,237 allocations for a one-event page with 1,000 historical events. The revised 15,000-allocation guard fails on main and passes after.
+
+Evidence: [three raw rounds](evidence/v0141-performance/server/fixup1a-event-bench.txt), [medians and memory gate](evidence/v0141-performance/server/fixup1a-event-bench.json). After the same host-memory and quiet-work checks described below, reproduce from the final checkout with:
+
+```sh
+docker run --rm --cpuset-cpus 0-3 --memory 2g \
+  -v "$(cygpath -w "$PWD"):/repo:ro" -v fix-server-perf-scratch:/scratch \
+  golang:1.27.4-bookworm \
+  sh /repo/docs/evidence/v0141-performance/server/tools/event-list-bench.sh
+```
 
 ### Release HTTP load and process costs
 
@@ -138,7 +159,7 @@ Each cell is **p50 / p95 in ms**, median of three eight-second runs at concurren
 
 Startup is 70 → 76 ms on the paired toolchain, and peak RSS 40.7 → 41.2 MiB: neither is a measured win. The approximately two-second container-to-health measurement is dominated by the polling/container harness. Total saturated-load CPU is nearly unchanged. Idle goroutines are 18 in all captures. Go 1.27 load snapshots contain 73 before / 42 after unique goroutine IDs; these single snapshots are not evidence of a sustained reduction. The original Go 1.24 load count was 36 using the legacy parser and is not directly comparable. The updated parser handles Go 1.27's additional gp/m fields, counts the last SIGQUIT dump only, and tolerates Docker log rotation.
 
-Raw data: [original Go 1.24](evidence/v0141-performance/server/baseline-go124.json), [paired BEFORE](evidence/v0141-performance/server/before.json), [AFTER](evidence/v0141-performance/server/after.json), [before benchmark text](evidence/v0141-performance/server/before-go-bench.txt), [after benchmark text](evidence/v0141-performance/server/after-go-bench.txt). JSON retains all per-round observations; `before-hey/` and `after-hey/` retain the load client's text. Process samples, cold-start runs, image identities, resource limits, host-memory gates, query regressions and validation logs are adjacent.
+Raw data: [original Go 1.24](evidence/v0141-performance/server/baseline-go124.json), [paired BEFORE](evidence/v0141-performance/server/before.json), [AFTER](evidence/v0141-performance/server/after.json), [before benchmark text](evidence/v0141-performance/server/before-go-bench.txt), [after benchmark text](evidence/v0141-performance/server/after-go-bench.txt). JSON retains all per-round hey observations and goroutine counts; redundant load-client text and goroutine dumps are omitted. Process samples, cold-start runs, image identities, resource limits, host-memory gates, query regressions and validation logs are adjacent. Four screenshots retain light/dark coverage of delivered history and older Launchpad activity across desktop and phone.
 
 ### Reproducing the server comparison
 
@@ -179,7 +200,7 @@ The recorded BEFORE release reused the original baseline's Linux-built web asset
 
 ### Server validation
 
-Full Go suite, dev API suite, both vet configurations, cgo release build, contract check (299 responses, 139/146 endpoints, zero schema errors), generated MCP tools check and root script tests passed. Final web build and Astro check passed (zero errors, zero warnings, nine existing hints). Native full-suite execution encountered Windows Smart App Control blocks; the required Linux checks ran in Docker without changing that protection. All six focused desktop/phone history and fixed-event CSV tests passed; [light/dark screenshots](evidence/v0141-performance/server/screenshots/) are linked in the PR. The standalone event-summary aggregate also passed the full store suite and both vet configurations. The full browser suite was skipped locally because free memory was below 3 GB. CI runs its configured unit and compose integration checks.
+Full Go suite, dev API suite, both vet configurations, cgo release build, contract check (299 responses, 139/146 endpoints, zero schema errors), generated MCP tools check and root script tests passed. The full Go/dev/vet/contract/script checks passed again after the schema portability fix. Its regression tests fail on `25fed8f` and pass after: plain SQLite can run `PRAGMA integrity_check` and insert an event, and the persisted schema contains no `fold`/`instant_*` calls. The revised event allocation guard still fails on main (`fa301df`, about 60,100 allocations) and passes after (about 13,200); it permits candidate timestamp scans while rejecting full-history enrichment. Final web build and Astro check passed (zero errors, zero warnings, nine existing hints). Native full-suite execution encountered Windows Smart App Control blocks; the required Linux checks ran in Docker without changing that protection. All six focused desktop/phone history and fixed-event CSV tests passed; [light/dark screenshots](evidence/v0141-performance/server/screenshots/) are linked in the PR. The standalone event-summary aggregate also passed the full store suite and both vet configurations. The full browser suite was skipped locally because free memory was below 3 GB. CI runs its configured unit and compose integration checks.
 
 ## How to reproduce
 

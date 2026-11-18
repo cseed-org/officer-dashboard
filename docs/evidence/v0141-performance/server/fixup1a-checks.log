@@ -1,0 +1,7 @@
+go version go1.27.4 linux/amd64
+Portability and audit index regressions passed
+Full Go suite passed
+Dev API suite passed
+Both vet configurations passed
+mcp_tools.json is up to date
+ALL CHECKS PASSED
