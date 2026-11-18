@@ -44,14 +44,9 @@ func (c *Ctx) membersList() error {
 	}
 	defer tx.Rollback()
 	q := store.On(tx)
-	officers, err := c.memberOfficers(c.Context(), q)
+	officers, err := c.withCurrentOfficers(c.Context(), q, &f)
 	if err != nil {
 		return err
-	}
-	for _, o := range officers {
-		if o.MemberID != nil {
-			f.CurrentOfficerIDs = append(f.CurrentOfficerIDs, *o.MemberID)
-		}
 	}
 	// The directory is the officer-only rows (no member row shares their email) followed by the
 	// mirror rows, paged together: offset and total count both. Display only.
@@ -130,6 +125,21 @@ func officerOnlyRows(all []MemberOfficerDTO, f store.MemberFilter) []MemberOffic
 		out = append(out, o)
 	}
 	return out
+}
+
+// withCurrentOfficers lists the active officers and adds the member rows they match to
+// f.CurrentOfficerIDs, so the officer=yes|no filter means the same in the list and export.
+func (c *Ctx) withCurrentOfficers(ctx context.Context, q *store.Queries, f *store.MemberFilter) ([]MemberOfficerDTO, error) {
+	officers, err := c.memberOfficers(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	for _, o := range officers {
+		if o.MemberID != nil {
+			f.CurrentOfficerIDs = append(f.CurrentOfficerIDs, *o.MemberID)
+		}
+	}
+	return officers, nil
 }
 
 func (c *Ctx) memberOfficers(ctx context.Context, q *store.Queries) ([]MemberOfficerDTO, error) {
@@ -381,6 +391,11 @@ func (c *Ctx) membersExport() error {
 	defer tx.Rollback()
 	// Use the typed query method on a read transaction.
 	q := store.On(tx)
+	// The same officer filter as the directory (an active officer's mirrored member row
+	// counts as an officer); the CSV still holds only real member rows.
+	if _, err := c.withCurrentOfficers(c.Context(), q, &f); err != nil {
+		return err
+	}
 	f.Limit = -1
 	f.Offset = 0
 	items, _, err := q.Members(c.Context(), f)

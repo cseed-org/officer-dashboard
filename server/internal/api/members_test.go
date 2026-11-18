@@ -211,3 +211,45 @@ func TestMembersOfficerFilterAndPagingCountOfficerRows(t *testing.T) {
 		t.Fatalf("seen=%d grand=%d want %d", seen, grand, 4+only)
 	}
 }
+
+// M-076: the CSV export applies the directory's officer filter, including an active
+// officer's mirrored member row whose has_been_officer flag is still 0, and holds only
+// real member rows.
+func TestMembersExportUsesTheDirectoryOfficerFilter(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.edu' WHERE id='user-priya'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.Write(ctx, func(q *store.Queries) error {
+		for _, id := range []string{"m-priya", "m-plain"} {
+			p := cloudflare.Person{ID: id, FirstName: id, LastName: "X", JoinDate: "2026-01-01"}
+			if id == "m-priya" {
+				p.UWEmail = strp("priya@uw.edu")
+			}
+			if err := q.SaveMember(ctx, p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	export := func(officer string) string {
+		r := e.do("GET", "/api/members/export?officer="+officer, nil, e.director())
+		if r.Status != 200 {
+			t.Fatalf("export %d %s", r.Status, r.Raw)
+		}
+		return string(r.Raw)
+	}
+	yes, no := export("yes"), export("no")
+	if !strings.Contains(yes, "m-priya") || strings.Contains(yes, "m-plain") {
+		t.Errorf("officer=yes export:\n%s", yes)
+	}
+	if strings.Contains(no, "m-priya") || !strings.Contains(no, "m-plain") {
+		t.Errorf("officer=no export:\n%s", no)
+	}
+	if strings.Contains(yes, "user-") {
+		t.Errorf("officer-only rows leaked into the member CSV:\n%s", yes)
+	}
+}
