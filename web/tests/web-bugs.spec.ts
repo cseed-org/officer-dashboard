@@ -11,7 +11,7 @@ import { auditHref } from '../src/ui/widgets/activity/ActivityWidget';
 // requests relevant to a regression are held, failed, or changed by each test.
 let data: Record<string, any>;
 let me: any, lookups: any, b: any, request: any, design: any, event: any;
-const base = process.env.WEB_ORIGIN ?? 'http://127.0.0.1:3131';
+const base = process.env.WEB_ORIGIN ?? `http://localhost:${process.env.WEB_PORT ?? 4340}`;
 const error = { error: { code: 'internal', message: 'Temporary failure' } };
 const json = (route: Route, value: unknown, status = 200) => route.fulfill({ status, json: value });
 const clone = <T,>(v: T): T => structuredClone(v);
