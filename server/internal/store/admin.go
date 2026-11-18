@@ -150,8 +150,8 @@ func (q *Queries) Audit(ctx context.Context, f AuditFilter) ([]AuditEntry, error
 		args = append(args, f.EntityID)
 	}
 	if f.HasCursor {
-		conds = append(conds, "(created_at < ? OR (created_at = ? AND id < ?))")
-		args = append(args, f.CursorCreatedAt, f.CursorCreatedAt, f.CursorID)
+		conds = append(conds, "(created_at, id) < (?, ?)")
+		args = append(args, f.CursorCreatedAt, f.CursorID)
 	}
 	query := `SELECT id, actor_user_id, actor_token_id, actor_agent_id, action, entity_type, entity_id, before_json, after_json, created_at FROM audit_log`
 	if len(conds) > 0 {
@@ -180,7 +180,7 @@ func (q *Queries) Audit(ctx context.Context, f AuditFilter) ([]AuditEntry, error
 // AuditAfter lists audit rows created after a cutoff (ms), newest first. Reports use it to
 // reconstruct request statuses as of a past date from the immutable before-images.
 func (q *Queries) AuditAfter(ctx context.Context, cutoff int64) ([]AuditEntry, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id, actor_user_id, actor_token_id, actor_agent_id, action, entity_type, entity_id, before_json, after_json, created_at FROM audit_log WHERE created_at > ? ORDER BY created_at DESC, rowid DESC`, cutoff)
+	rows, err := q.q.QueryContext(ctx, `SELECT id, NULL, NULL, NULL, action, entity_type, entity_id, before_json, NULL, created_at FROM audit_log WHERE entity_type IN ('purchase_request','fulfillment_job') AND created_at > ? ORDER BY created_at DESC, rowid DESC`, cutoff)
 	if err != nil {
 		return nil, err
 	}
