@@ -35,6 +35,7 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 		return nil, nil
 	}
 	contains := "%" + likeEscape(needle) + "%"
+	prefix := likeEscape(needle) + "%"
 	score := func(primary string, otherMatched bool) int {
 		p := Fold(primary)
 		switch {
@@ -49,7 +50,7 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 
 	rows, err := q.q.QueryContext(ctx, `SELECT id, name, starts_at, coalesce(location, ''), created_at FROM events
 		WHERE fold(name) LIKE ?1 ESCAPE '\' OR fold(coalesce(location, '')) LIKE ?1 ESCAPE '\' OR fold(coalesce(luma_id, '')) LIKE ?1 ESCAPE '\'
-		ORDER BY starts_at DESC LIMIT ?2`, contains, limit)
+		ORDER BY `+rankSQL("name")+`, starts_at DESC LIMIT ?2`, contains, limit, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +70,7 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 
 	rows, err = q.q.QueryContext(ctx, `SELECT id, title, number, vendor, status, created_at FROM purchase_requests
 		WHERE fold(number) LIKE ?1 ESCAPE '\' OR fold(title) LIKE ?1 ESCAPE '\' OR fold(vendor) LIKE ?1 ESCAPE '\'
-		ORDER BY created_at DESC, id DESC LIMIT ?2`, contains, limit)
+		ORDER BY `+rankSQL("number", "title")+`, created_at DESC, id DESC LIMIT ?2`, contains, limit, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +92,7 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 		return nil, err
 	}
 
-	rows, err = q.q.QueryContext(ctx, `SELECT id,name,org,role,type,updated_at FROM contacts WHERE fold(name) LIKE ?1 ESCAPE '\' OR fold(org) LIKE ?1 ESCAPE '\' OR fold(role) LIKE ?1 ESCAPE '\' OR EXISTS (SELECT 1 FROM json_each(contacts.topics) WHERE fold(value) LIKE ?1 ESCAPE '\') OR fold(email) LIKE ?1 ESCAPE '\' ORDER BY name LIMIT ?2`, contains, limit)
+	rows, err = q.q.QueryContext(ctx, `SELECT id,name,org,role,type,updated_at FROM contacts WHERE fold(name) LIKE ?1 ESCAPE '\' OR fold(org) LIKE ?1 ESCAPE '\' OR fold(role) LIKE ?1 ESCAPE '\' OR EXISTS (SELECT 1 FROM json_each(contacts.topics) WHERE fold(value) LIKE ?1 ESCAPE '\') OR fold(email) LIKE ?1 ESCAPE '\' ORDER BY `+rankSQL("name")+`, name LIMIT ?2`, contains, limit, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 	}
 	rows, err = q.q.QueryContext(ctx, `SELECT id, name, coalesce(title, ''), role, coalesce(email, '') FROM users
 		WHERE fold(name) LIKE ?1 ESCAPE '\' OR fold(coalesce(email, '')) LIKE ?1 ESCAPE '\' OR fold(coalesce(title, '')) LIKE ?1 ESCAPE '\'
-		ORDER BY name LIMIT ?2`, contains, limit)
+		ORDER BY `+rankSQL("name")+`, name LIMIT ?2`, contains, limit, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +134,7 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 
 	rows, err = q.q.QueryContext(ctx, `SELECT id, name, code, type FROM accounts
 		WHERE fold(name) LIKE ?1 ESCAPE '\' OR fold(code) LIKE ?1 ESCAPE '\'
-		ORDER BY code LIMIT ?2`, contains, limit)
+		ORDER BY `+rankSQL("code", "name")+`, code LIMIT ?2`, contains, limit, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -151,6 +152,21 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 		out = append(out, h)
 	}
 	return out, rows.Err()
+}
+
+// rankSQL is the SQL form of Search's Go score, so each kind's LIMIT keeps its best
+// matches rather than its newest or first-named ones: 0 when a ranked column starts with
+// the query (?3), 1 when it contains it (?1), 2 otherwise. Columns are tried in order,
+// like the Go side (requests by number before title, accounts by code before name).
+func rankSQL(cols ...string) string {
+	var b strings.Builder
+	b.WriteString("CASE")
+	for _, c := range cols {
+		f := "fold(coalesce(" + c + ", ''))"
+		b.WriteString(" WHEN " + f + ` LIKE ?3 ESCAPE '\' THEN 0 WHEN ` + f + ` LIKE ?1 ESCAPE '\' THEN 1`)
+	}
+	b.WriteString(" ELSE 2 END")
+	return b.String()
 }
 
 // closeRows closes a result set and reports an error that cut iteration short, so a failure
