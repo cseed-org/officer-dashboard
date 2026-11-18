@@ -952,17 +952,32 @@ func TestOAuthConcurrentCodeReuseRevokesGrant(t *testing.T) {
 
 	entered := make(chan struct{})
 	release := make(chan struct{})
-	oldHook := oauthCodeRedeemedHook
-	oauthCodeRedeemedHook = func() { close(entered); <-release }
-	t.Cleanup(func() { oauthCodeRedeemedHook = oldHook })
+	released := false
+	unblock := func() {
+		if !released {
+			close(release)
+			released = true
+		}
+	}
+	defer unblock()
+	oldHook := oauthCodeConsumedHook
+	oauthCodeConsumedHook = func() { close(entered); <-release }
+	t.Cleanup(func() { oauthCodeConsumedHook = oldHook })
 	first := make(chan reply, 1)
 	go func() { first <- exchange() }()
-	<-entered // The first redemption has committed; it has not answered yet.
-	expectStatus(t, "concurrent replay", exchange(), 400)
-	close(release)
-	tok := <-first
+	<-entered // Code consumption is paused before grant association.
+	if n := e.scalar(`SELECT count(*) FROM oauth_codes WHERE code_hash = ? AND used_at IS NOT NULL AND grant_id IS NULL`, auth.SHA256Hex(code)).(int64); n != 0 {
+		t.Error("consumed code is visible without its grant before redemption commits")
+	}
+	replay := make(chan reply, 1)
+	go func() { replay <- exchange() }()
+	unblock()
+	tok, replayed := <-first, <-replay
 	if tok.Status != 200 {
 		t.Fatalf("first redemption: %d %s", tok.Status, tok.Raw)
+	}
+	if replayed.Status != 400 || replayed.str("error") != "invalid_grant" {
+		t.Fatalf("concurrent replay: %d %s", replayed.Status, replayed.Raw)
 	}
 	expectStatus(t, "access after concurrent replay", e.do("POST", "/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "ping"}, bearer(tok.str("access_token"))), 401)
 	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'agent.revoked_code_reuse'`).(int64); n != 1 {

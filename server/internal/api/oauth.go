@@ -520,9 +520,9 @@ func (c *Ctx) writeTokens(t tokenPair) error {
 
 var errGrant = errors.New("invalid grant")
 
-// oauthCodeRedeemedHook runs after a code redemption commits. The concurrent-replay
-// regression replaces it to hold the first response while a second request replays the code.
-var oauthCodeRedeemedHook = func() {}
+// oauthCodeConsumedHook runs inside the redemption transaction, after code consumption
+// and before grant creation. The concurrent-replay regression uses it to inspect that boundary.
+var oauthCodeConsumedHook = func() {}
 
 // oauthToken redeems an authorization code or rotates a refresh token.
 func (c *Ctx) oauthToken() error {
@@ -543,7 +543,7 @@ func (c *Ctx) oauthToken() error {
 		// Consume, validate and redeem in one transaction. Validation failures return a
 		// successful transaction outcome so the consumed code stays burned (RFC 6749 §4.1.2).
 		var code *store.OAuthCode
-		consumed, invalid := false, false
+		invalid := false
 		err := c.S.db.Write(ctx, func(w *store.Queries) error {
 			var err error
 			code, err = w.TakeOAuthCode(ctx, auth.SHA256Hex(f.Get("code")), now)
@@ -563,7 +563,7 @@ func (c *Ctx) oauthToken() error {
 			if err != nil {
 				return err
 			}
-			consumed = true
+			oauthCodeConsumedHook()
 			// redirect_uri must repeat the one authorized when it was sent (RFC 6749 §4.1.3).
 			ru := f.Get("redirect_uri")
 			if code.ExpiresAt <= now || code.ClientID != f.Get("client_id") || !pkceOK(f.Get("code_verifier"), code.CodeChallenge) || (ru != "" && ru != code.RedirectURI) {
@@ -600,9 +600,6 @@ func (c *Ctx) oauthToken() error {
 			return w.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), ActorUserID: &u.ID, ActorAgent: &g.ID, Action: "agent.connected", EntityType: "agent", EntityID: &g.ID,
 				AfterJSON: snapshot(map[string]any{"client": cl.Name}), CreatedAt: store.Ms(now)})
 		})
-		if consumed {
-			oauthCodeRedeemedHook()
-		}
 		if err != nil {
 			return err
 		}
