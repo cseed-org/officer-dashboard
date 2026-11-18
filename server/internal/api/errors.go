@@ -57,13 +57,16 @@ func writeError(w http.ResponseWriter, e *APIError) {
 	writeJSON(w, e.Status, map[string]any{"error": body})
 }
 
-var (
-	conflictRE = regexp.MustCompile(`(?i)constraint|mutation_guard|last active director|closed|open period|immutable|UNIQUE`)
-	lastDirRE  = regexp.MustCompile(`last active director`)
-)
+var lastDirRE = regexp.MustCompile(`last active director`)
+
+// errNoOpenPeriod is the accounting engine's own refusal (not a SQLite error) when an entry
+// date falls outside every open period; it answers 409 like the trigger that guards the same rule.
+const errNoOpenPeriod = "entry requires an open period"
 
 // toAPIError maps any error from a handler to the response v1 gave: SQLite constraint and
 // trigger failures become 409 conflicts, upload problems 400, anything else a logged 500.
+// Conflicts are recognised by the driver's error code (store.IsConstraint), never by words
+// such as "closed" in the text, so network and closed-database errors stay 500s.
 func toAPIError(err error, log *slog.Logger) *APIError {
 	var ae *APIError
 	if errors.As(err, &ae) {
@@ -85,6 +88,14 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 		return notFoundErr("Record not found")
 	}
 	msg := err.Error()
+	if strings.Contains(msg, errNoOpenPeriod) {
+		log.Warn("database conflict mapped to 409", "error", msg)
+		return conflict("Conflicting state, closed period, or duplicate record")
+	}
+	if !store.IsConstraint(err) {
+		log.Error("API operation failed", "error", msg)
+		return fail(500, "internal", "Operation failed")
+	}
 	if strings.Contains(msg, "last owner") {
 		return conflict("Cannot remove the last owner")
 	}
@@ -100,13 +111,9 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 	if strings.Contains(msg, "at most 5 calendar emails") {
 		return conflict("You can save at most 5 calendar emails")
 	}
-	if conflictRE.MatchString(msg) {
-		log.Warn("database conflict mapped to 409", "error", msg)
-		if lastDirRE.MatchString(msg) {
-			return conflict("Cannot remove the last active director")
-		}
-		return conflict("Conflicting state, closed period, or duplicate record")
+	log.Warn("database conflict mapped to 409", "error", msg)
+	if lastDirRE.MatchString(msg) {
+		return conflict("Cannot remove the last active director")
 	}
-	log.Error("API operation failed", "error", msg)
-	return fail(500, "internal", "Operation failed")
+	return conflict("Conflicting state, closed period, or duplicate record")
 }
