@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"officerdashboard/internal/validate"
 )
@@ -44,12 +45,15 @@ type Result[T any] struct {
 // positions receives the physical line each record starts on.
 func csvRows(text string, positions *[]int) ([][]string, error) {
 	text = strings.TrimPrefix(text, "\ufeff")
-	rs := []rune(text)
+	if !utf8.ValidString(text) {
+		text = string([]rune(text))
+	}
 	physical, record := 1, 1
 	var rows [][]string
 	var row []string
 	var field strings.Builder
 	quoted, ended := false, false
+	start, end := 0, 0
 	nonBlank := func(r []string) bool {
 		for _, v := range r {
 			if strings.TrimSpace(v) != "" {
@@ -58,37 +62,50 @@ func csvRows(text string, positions *[]int) ([][]string, error) {
 		}
 		return false
 	}
-	for i := 0; i < len(rs); i++ {
-		c := rs[i]
-		if c == '\r' || (c == '\n' && (i == 0 || rs[i-1] != '\r')) {
+	finish := func(at int) string {
+		if !ended {
+			end = at
+		}
+		v := text[start:end]
+		if field.Len() > 0 {
+			field.WriteString(v)
+			v = field.String()
+			field.Reset()
+		}
+		return v
+	}
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if c == '\r' || (c == '\n' && (i == 0 || text[i-1] != '\r')) {
 			physical++
 		}
 		switch {
 		case quoted:
 			if c == '"' {
-				if i+1 < len(rs) && rs[i+1] == '"' {
-					field.WriteRune('"')
+				if i+1 < len(text) && text[i+1] == '"' {
+					field.WriteString(text[start : i+1])
 					i++
+					start = i + 1
 				} else {
 					quoted, ended = false, true
+					end = i
 				}
-			} else {
-				field.WriteRune(c)
 			}
 		case c == '"':
-			if field.Len() > 0 || ended {
+			if i > start || field.Len() > 0 || ended {
 				return nil, errors.New("Malformed CSV quote")
 			}
 			quoted = true
+			start = i + 1
 		case c == ',':
-			row = append(row, field.String())
-			field.Reset()
+			row = append(row, finish(i))
+			start = i + 1
 			ended = false
 		case c == '\n' || c == '\r':
-			if c == '\r' && i+1 < len(rs) && rs[i+1] == '\n' {
+			row = append(row, finish(i))
+			if c == '\r' && i+1 < len(text) && text[i+1] == '\n' {
 				i++
 			}
-			row = append(row, field.String())
 			if nonBlank(row) {
 				rows = append(rows, row)
 				if positions != nil {
@@ -97,19 +114,27 @@ func csvRows(text string, positions *[]int) ([][]string, error) {
 			}
 			record = physical
 			row = nil
-			field.Reset()
+			start = i + 1
 			ended = false
 		default:
-			if ended && !unicode.IsSpace(c) {
-				return nil, errors.New("Unexpected text after CSV quote")
+			if ended {
+				r, n := utf8.DecodeRuneInString(text[i:])
+				if !unicode.IsSpace(r) {
+					return nil, errors.New("Unexpected text after CSV quote")
+				}
+				field.WriteString(text[start:end])
+				field.WriteString(text[i : i+n])
+				i += n - 1
+				start = i + 1
+				end = start
 			}
-			field.WriteRune(c)
 		}
 	}
+
 	if quoted {
 		return nil, errors.New("Unterminated CSV quote")
 	}
-	row = append(row, field.String())
+	row = append(row, finish(len(text)))
 	if nonBlank(row) {
 		rows = append(rows, row)
 		if positions != nil {
