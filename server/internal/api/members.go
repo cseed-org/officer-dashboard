@@ -155,7 +155,7 @@ func (c *Ctx) memberOfficers(ctx context.Context, q *store.Queries) ([]MemberOff
 	if err != nil {
 		return nil, err
 	}
-	byEmail, err := q.MemberIDsByEmail(ctx)
+	byEmail, err := c.cachedMemberEmails(ctx, q)
 	if err != nil {
 		return nil, err
 	}
