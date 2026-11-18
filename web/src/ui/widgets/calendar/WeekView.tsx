@@ -15,7 +15,7 @@ export function WeekView({ monday, today, tall, itemsOn, sources, label }: {
   today: string;
   tall: boolean;
   itemsOn: (date: string) => CalendarFeedItem[];
-  sources: CalendarFeedSource[];
+  sources: Map<string, CalendarFeedSource>;
   label: string;
 }) {
   const [ref, box] = useBox();
@@ -31,7 +31,7 @@ export function WeekView({ monday, today, tall, itemsOn, sources, label }: {
         return <div key={date} class={`hcal-day${weekdayIndex(date) > 4 ? ' is-weekend' : ''}${date === today ? ' is-today' : ''}`}
           aria-label={`${weekdayShort(date)}, ${shortDay(date)}${date === today ? ', today' : ''}: ${list.length ? `${list.length} ${list.length === 1 ? 'item' : 'items'}` : 'nothing scheduled'}`} role="group">
           <span class="cal-dh" aria-hidden="true">{weekdayShort(date)} <b>{dayNumber(date)}</b>{more > 0 && <span class="hcal-more">+{more}</span>}</span>
-          {shown.map((item) => <CalendarChip key={item.source + item.id} item={item} source={sources.find((s) => s.id === item.source)} index={index++} twoLine={!tall} />)}
+          {shown.map((item) => <CalendarChip key={item.source + item.id} item={item} source={sources.get(item.source)} index={index++} twoLine={!tall} />)}
         </div>;
       })}
     </div>

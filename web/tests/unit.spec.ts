@@ -1,12 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { byDesigner, designMoveTargets, designStats, designTool, laneOf, laneTarget, thisWeek } from '../src/lib/design';
-import type { DesignRequestItem } from '../src/lib/contracts';
+import type { CalendarFeedItem, DesignRequestItem } from '../src/lib/contracts';
 import { isGradMonth, isLinkedIn } from '../src/lib/profileRules';
 import { normalizeHref } from '../src/lib/routes';
 import { sanitizeResults } from '../src/lib/search';
 import { internalPath, internalRoute, safeImageUrl, safeUrl } from '../src/lib/url';
 import { migrateLayout, moveTo, nearestSize } from '../src/ui/widgets/layout';
-import { defaultWidgetLayout, layoutForChoices } from '../src/ui/widgets/registry';
+import { defaultWidgetLayout, layoutForChoices } from '../src/ui/widgets/catalog';
 
 /** Pure-function tests (no browser); run once, in the desktop project. */
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'unit tests run once'));
@@ -318,4 +318,55 @@ test('V0.10: This week and designer groups on the Design board', () => {
   expect(thisWeek(items, 'u1', '2026-11-13').map((i) => i.id)).toEqual(['late', 'soon', 'approve']);
   const groups = byDesigner([item('a', { assignee: { id: 'z', name: 'Zed', avatarUrl: null } }), item('b', {}), item('c', { assignee: me }), item('d', { assignee: { id: 'y', name: 'Ann', avatarUrl: null } })], 'u1');
   expect(groups.map((g) => g.name)).toEqual(['You', 'Ann', 'Zed', 'Unassigned']);
+});
+
+const calendarItem = (id: string, date: string, startsAt: string | null = null, endsAt: string | null = null): CalendarFeedItem => ({
+  id, source: 'events', type: 'event', title: id, date, startsAt, endsAt, lumaUrl: null, location: null, href: `/events?id=${id}`,
+});
+
+test('M-086: bucketed calendar items equal the old filter for 200 items with ≤ one end conversion each', async () => {
+  const { bucketCalendarItems } = await import('../src/ui/widgets/calendar/CalendarWidget');
+  const day = (offset: number) => new Date(Date.UTC(2026, 9, 26 + offset)).toISOString().slice(0, 10);
+  const feed = Array.from({ length: 200 }, (_, i) => {
+    const date = day(i % 42);
+    const timed = i % 10 !== 0;
+    return calendarItem(`item-${i}`, date, timed ? `${date}T20:00:00Z` : null, timed ? `${day(i % 42 + 2)}T20:00:00Z` : null);
+  });
+  const original = Intl.DateTimeFormat.prototype.formatToParts;
+  let calls = 0;
+  Intl.DateTimeFormat.prototype.formatToParts = function (date) {
+    calls++;
+    return original.call(this, date);
+  };
+  let buckets: Map<string, CalendarFeedItem[]>;
+  try {
+    buckets = bucketCalendarItems(feed, day(0), day(42));
+  } finally {
+    Intl.DateTimeFormat.prototype.formatToParts = original;
+  }
+  expect(calls, 'one exclusive-end conversion per timed item, not 42 per item').toBe(180);
+  const oldItemsOn = (date: string) => feed.filter((item) => {
+    if (!item.startsAt) return item.date === date;
+    const last = item.endsAt ? new Date(new Date(item.endsAt).getTime() - 1) : null;
+    const parts = last ? Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(last).map((x) => [x.type, x.value])) : null;
+    const lastDate = parts ? `${parts.year}-${parts.month}-${parts.day}` : item.date;
+    return item.date <= date && lastDate >= date;
+  }).sort((a, b) => (a.startsAt ?? '').localeCompare(b.startsAt ?? ''));
+  for (let i = 0; i < 42; i++) expect(buckets.get(day(i)) ?? [], day(i)).toEqual(oldItemsOn(day(i)));
+});
+
+test('M-086: multi-day spans and exclusive-midnight ends keep their dates', async () => {
+  const { bucketCalendarItems } = await import('../src/ui/widgets/calendar/CalendarWidget');
+  const items = [
+    calendarItem('dst-span', '2026-10-31', '2026-11-01T06:00:00Z', '2026-11-02T10:00:00Z'),
+    calendarItem('midnight', '2026-11-01', '2026-11-02T07:30:00Z', '2026-11-02T08:00:00Z'),
+    calendarItem('after-midnight', '2026-11-01', '2026-11-02T07:30:00Z', '2026-11-02T08:00:00.001Z'),
+    calendarItem('date-only', '2026-10-30'),
+  ];
+  const buckets = bucketCalendarItems(items, '2026-10-31', '2026-11-04');
+  const dates = (id: string) => [...buckets.entries()].filter(([, list]) => list.some((item) => item.id === id)).map(([date]) => date);
+  expect(dates('dst-span')).toEqual(['2026-10-31', '2026-11-01', '2026-11-02']);
+  expect(dates('midnight')).toEqual(['2026-11-01']);
+  expect(dates('after-midnight')).toEqual(['2026-11-01', '2026-11-02']);
+  expect(dates('date-only')).toEqual([]); // clipped before the visible range
 });

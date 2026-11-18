@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { api } from '../../../lib/api/client';
 import type { CalendarFeedItem, CalendarFeedSource } from '../../../lib/contracts';
 import { addDays, dayNumber, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, shortDay, weekdayShort, weekLabel } from '../../../lib/calendar';
@@ -43,6 +43,23 @@ function sixWeeks(month: string) {
   return Array.from({ length: 42 }, (_, i) => addDays(first, i));
 }
 
+/** Bucket a feed once for the visible [start, end) dates instead of rescanning it per day cell. */
+export function bucketCalendarItems(items: CalendarFeedItem[], start: string, end: string): Map<string, CalendarFeedItem[]> {
+  const buckets = new Map<string, CalendarFeedItem[]>();
+  const rangeEnd = addDays(end, -1);
+  for (const item of items) {
+    // Every selected-zone date it overlaps; an exclusive midnight end stays on the previous day.
+    const last = item.startsAt && item.endsAt ? pacificParts(new Date(new Date(item.endsAt).getTime() - 1)).date : item.date;
+    for (let date = item.date < start ? start : item.date; date <= last && date <= rangeEnd; date = addDays(date, 1)) {
+      const bucket = buckets.get(date);
+      if (bucket) bucket.push(item);
+      else buckets.set(date, [item]);
+    }
+  }
+  for (const list of buckets.values()) list.sort((a, b) => (a.startsAt ?? '').localeCompare(b.startsAt ?? ''));
+  return buckets;
+}
+
 /**
  * Home calendar (notes § Calendar): no controls. 2×1 and 2×2 show this week, 4×2 this month. The
  * month range is fetched once; the week view filters it, so a resize never refetches or blanks it.
@@ -72,14 +89,10 @@ export default function CalendarWidget({ me, size }: WidgetProps) {
     return () => { alive = false; };
   }, [start, end, zone, tick]);
 
-  const sources = feed?.sources ?? fallbackSources;
-  const items = (feed?.items ?? []).filter((item) => item.type !== 'cancelled');
-  const itemsOn = (date: string) => items.filter((item) => {
-    if (!item.startsAt) return item.date === date;
-    // Every local date it overlaps; an exclusive midnight end stays on the previous day.
-    const last = item.endsAt ? pacificParts(new Date(new Date(item.endsAt).getTime() - 1)).date : item.date;
-    return item.date <= date && last >= date;
-  }).sort((a, b) => (a.startsAt ?? '').localeCompare(b.startsAt ?? ''));
+  const sources = useMemo(() => new Map((feed?.sources ?? fallbackSources).map((source) => [source.id, source])), [feed?.sources]);
+  const items = useMemo(() => (feed?.items ?? []).filter((item) => item.type !== 'cancelled'), [feed?.items]);
+  const buckets = useMemo(() => bucketCalendarItems(items, start, end), [items, start, end, zone]);
+  const itemsOn = useCallback((date: string) => buckets.get(date) ?? [], [buckets]);
 
   const monthView = size === '4x2';
   const monday = mondayOf(today);
