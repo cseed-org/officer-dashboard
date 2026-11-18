@@ -287,8 +287,11 @@ test('M-066: Search close and drawer unmount retain scroll locking for the remai
 test('M-069: sidebar writes serialize and coalesce to the latest width', async ({ page }) => {
   const hold = gate(); const writes: number[] = []; let stored = 0;
   await page.route('**/api/me/prefs', async (r) => { const w = r.request().postDataJSON().sidebarWidth; writes.push(w); if (writes.length === 1) await hold.promise; stored = w; return json(r, { ...data['/api/me/prefs'], sidebarWidth: w }); });
-  await mount(page, 'Sidebar'); await page.getByRole('button', { name: '200', exact: true }).click(); await expect.poll(() => writes.length).toBe(1);
-  await page.getByRole('button', { name: '280', exact: true }).click(); await page.waitForTimeout(500); expect(writes).toEqual([200]); hold.resolve(); await expect.poll(() => stored).toBe(280); expect(writes).toEqual([200, 280]); await expect(page.locator('html')).toHaveAttribute('style', /280px/);
+  await page.clock.install();
+  // Pause ahead of the page's own clock: pauseAt rejects a time in its past.
+  await mount(page, 'Sidebar'); await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
+  await page.getByRole('button', { name: '200', exact: true }).click(); await page.clock.runFor(400); await expect.poll(() => writes.length).toBe(1);
+  await page.getByRole('button', { name: '280', exact: true }).click(); await page.clock.runFor(400); expect(writes).toEqual([200]); hold.resolve(); await expect.poll(() => stored).toBe(280); expect(writes).toEqual([200, 280]); await expect(page.locator('html')).toHaveAttribute('style', /280px/);
 });
 test('M-077: My open requests finds older pending work beyond 50 closed purchases and uses all counts', async ({ page }) => {
   const sample = data['/api/requests'].items[0]; let pending = 0;
