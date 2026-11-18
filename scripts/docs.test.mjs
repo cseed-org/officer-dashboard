@@ -1,0 +1,110 @@
+// npm run test:scripts (node --test "scripts/*.test.mjs")
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { test } from "node:test";
+import { extractEndpoints } from "../web/integrations/endpoints.mjs";
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const docsDir = new URL("../docs/", import.meta.url);
+const guides = readdirSync(docsDir, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+  .map((entry) => entry.name);
+const docs = Object.fromEntries(guides.map((name) => [name, readFileSync(new URL(name, docsDir), "utf8")]));
+const allDocs = Object.values(docs).join("\n");
+const canonicalPath = (path) => path
+  .replace(/\/:[A-Za-z][A-Za-z0-9_]*/g, "/:param")
+  .replace(/\/\{[A-Za-z][A-Za-z0-9_]*\}/g, "/:param");
+const documentedPath = (path) => {
+  const normalized = canonicalPath(allDocs);
+  if (normalized.includes(canonicalPath(path))) return true;
+  // The Launchpad guide states the canonical prefix once, then uses short rows such
+  // as `POST /cohorts/:id`. Accept that shorthand only when the prefix is present.
+  const prefix = "/api/buildspace-launchpad";
+  return path.startsWith(`${prefix}/`) && normalized.includes(prefix) && normalized.includes(canonicalPath(path.slice(prefix.length)));
+};
+
+test("every ENDPOINTS path is documented in a guide", () => {
+  const endpoints = extractEndpoints(read("src/core/contracts.ts"));
+  const missing = Object.entries(endpoints)
+    .filter(([, endpoint]) => !documentedPath(endpoint.path))
+    .map(([name, endpoint]) => `${name}: ${endpoint.method} ${endpoint.path}`);
+  assert.deepEqual(missing, [], "document each endpoint in docs/api.md or a feature guide");
+});
+
+test("API guide references live contract enforcement and implementation files", () => {
+  const api = docs["api.md"];
+  for (const path of [
+    "src/core/contracts.ts",
+    "web/src/lib/format.ts",
+    "server/internal/api/dto.go",
+    "server/internal/purchases/lifecycle.go",
+    "scripts/contract-check.mjs",
+    "scripts/gen-mcp-tools.mjs",
+  ]) {
+    assert.ok(existsSync(new URL(`../${path}`, import.meta.url)), `${path} should exist`);
+  }
+  for (const removed of ["tests/core/contracts.test.ts", "src/core/money.ts", "src/core/metrics.ts", "src/core/purchase-lifecycle.ts", "requireRole(locals"]) {
+    assert.ok(!api.includes(removed), `docs/api.md still references removed ${removed}`);
+  }
+});
+
+test("architecture lists every internal package and current command set", () => {
+  const architecture = docs["architecture.md"];
+  const internalDir = new URL("../server/internal/", import.meta.url);
+  const packages = readdirSync(internalDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  assert.deepEqual(packages.filter((name) => !architecture.includes(`internal/${name}`)), []);
+  const main = read("server/cmd/dashboard/main.go");
+  const usage = /usage: dashboard \[([^\]]+)\]/.exec(main)?.[1];
+  const documentedUsage = /cmd\/dashboard\s+main: ([^\n]+)/.exec(architecture)?.[1].replaceAll(" ", "");
+  assert.equal(documentedUsage, usage, "architecture command list should match main.go usage");
+});
+
+test("migration guidance stays after the highest migration", () => {
+  const migrations = readdirSync(new URL("../server/internal/store/migrations/", import.meta.url))
+    .map((name) => /^(\d{4})_.*\.sql$/.exec(name)?.[1])
+    .filter(Boolean)
+    .sort();
+  const next = String(Number(migrations.at(-1)) + 1).padStart(4, "0");
+  assert.ok(read("CONTRIBUTING.md").includes(`${next}_<description>.sql`));
+  assert.ok(docs["architecture.md"].includes("migrations 0000 onward"));
+  assert.ok(!docs["architecture.md"].includes("0000–0010"));
+});
+
+test("documentation index links every top-level guide", () => {
+  const index = docs["README.md"];
+  const missing = guides.filter((name) => name !== "README.md" && !index.includes(`](${name})`));
+  assert.deepEqual(missing, []);
+});
+
+test("README Astro badge and MCP tool count match generated sources", () => {
+  const readme = read("README.md");
+  const astro = JSON.parse(read("web/package.json")).dependencies.astro;
+  assert.ok(readme.includes(`Astro-${astro}-`), "README Astro badge should match web/package.json");
+  const count = JSON.parse(read("server/internal/api/mcp_tools.json")).tools.length;
+  const claimed = /works through (\d+) tools/.exec(readme);
+  if (claimed) assert.equal(Number(claimed[1]), count);
+  assert.ok(docs["mcp.md"].includes(`${count} tools, one per API endpoint`));
+});
+
+test("frontend route table covers current pages and login errors", () => {
+  const routes = docs["frontend.md"].split("## Routes (for the Go server)")[1].split("## Preferences")[0];
+  for (const route of ["/members", "/contacts", "/design", "/onboarding", "/buildspace-launchpad", "/launchpad/", "/launchpad/join", "/launchpad/login", "/speakers", "/buildspace"]) {
+    assert.ok(routes.includes(`\`${route}\``), `missing route ${route}`);
+  }
+  assert.ok(routes.includes("invite_unavailable"));
+  assert.ok(docs["frontend.md"].includes("**Developer\nmode** panel"));
+});
+
+test("pagination convention names offset and unpaginated exceptions", () => {
+  assert.ok(docs["api.md"].includes("Members instead uses `offset`/`limit`"));
+  assert.ok(docs["api.md"].includes("Contacts and the Buildspace register"));
+  assert.ok(!docs["api.md"].includes("Lists take `?cursor=&limit=`"));
+});
+
+test("calendar guides describe the current no-controls widget", () => {
+  assert.ok(docs["calendar-widget.md"].includes("there are no view, source, colour"));
+  assert.ok(docs["calendar-widget.md"].includes("keyed by range and\ntime zone"));
+  assert.ok(!docs["calendar-widget.md"].includes("Options saves view"));
+  assert.ok(docs["purchase-deadlines.md"].includes("Historical V0.6 controls"));
+  assert.ok(docs["buildspace.md"].includes("projects marked **Shipped**"));
+});
