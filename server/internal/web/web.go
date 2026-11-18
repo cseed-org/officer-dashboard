@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 	"strings"
@@ -51,6 +52,10 @@ func Handler(root fs.FS, opt Options) http.Handler {
 			http.Redirect(w, r, target, http.StatusMovedPermanently)
 			return
 		}
+		if target, ok := legacyDetail(r.URL.Path); ok {
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
 		clean := path.Clean("/" + r.URL.Path)
 		for _, seg := range strings.Split(clean, "/") {
 			if strings.HasPrefix(seg, ".") && seg != "" {
@@ -66,6 +71,24 @@ func Handler(root fs.FS, opt Options) http.Handler {
 		}
 		notFound(w, r, pc, root, opt, assets)
 	})
+}
+
+// legacyDetail maps the v1 detail paths that old Discord notifications link to,
+// /requests/<id> and /events/<id>, to their v2 pages (web/src/lib/routes.ts href.request
+// and href.event). Other paths, including /requests/new and /events/import, are untouched.
+func legacyDetail(p string) (string, bool) {
+	for prefix, page := range map[string]string{"/requests/": "/finance?id=", "/events/": "/events?id="} {
+		rest, ok := strings.CutPrefix(strings.TrimSuffix(p, "/"), prefix)
+		if !ok || rest == "" || strings.Contains(rest, "/") || rest == "new" || rest == "import" {
+			continue
+		}
+		id, err := url.PathUnescape(rest)
+		if err != nil {
+			return "", false
+		}
+		return page + url.QueryEscape(id), true
+	}
+	return "", false
 }
 
 func candidates(root fs.FS, name string) []string {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -782,8 +783,11 @@ func (c *Ctx) notify(r *store.Request, action, comment string) {
 	default:
 		e.Type, e.Status = "request.status", r.Status
 	}
-	c.S.cfg.Notifier.Notify(ctx, e, c.S.link("/requests/"+r.ID, c.R))
+	c.S.cfg.Notifier.Notify(ctx, e, c.S.link(requestPage(r.ID), c.R))
 }
+
+// requestPage is the web app's page for one request (web/src/lib/routes.ts href.request).
+func requestPage(id string) string { return "/finance?id=" + url.QueryEscape(id) }
 
 // link builds an absolute URL to an app page.
 func (s *Server) link(path string, r *http.Request) string {

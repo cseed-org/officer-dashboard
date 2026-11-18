@@ -208,3 +208,24 @@ func TestBuildspaceLegacyRedirect(t *testing.T) {
 		}
 	}
 }
+
+// M-015: v1 detail links in old Discord messages redirect to their v2 pages.
+func TestLegacyDetailRedirects(t *testing.T) {
+	for path, want := range map[string]string{
+		"/requests/abc":       "/finance?id=abc",
+		"/requests/abc/":      "/finance?id=abc",
+		"/events/ev-1":        "/events?id=ev-1",
+		"/requests/a%20b":     "/finance?id=a+b",
+		"/requests/2027-0007": "/finance?id=2027-0007",
+	} {
+		r := get(Handler(site(), Options{}), "GET", path)
+		if r.Code != 301 || r.Header().Get("Location") != want {
+			t.Errorf("%s: %d %q, want 301 %q", path, r.Code, r.Header().Get("Location"), want)
+		}
+	}
+	for _, path := range []string{"/requests/new", "/events/import", "/requests/a/b", "/requests/"} {
+		if r := get(Handler(site(), Options{}), "GET", path); r.Code == 301 {
+			t.Errorf("%s redirected to %s", path, r.Header().Get("Location"))
+		}
+	}
+}

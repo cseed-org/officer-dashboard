@@ -307,7 +307,7 @@ func (c *Ctx) agentJobComplete() error {
 		return err
 	}
 	if heldNote != nil {
-		c.S.cfg.Notifier.Notify(ctx, *heldNote, c.S.link("/requests/"+heldNote.RequestID, c.R))
+		c.S.cfg.Notifier.Notify(ctx, *heldNote, c.S.link(requestPage(heldNote.RequestID), c.R))
 		return conflict(heldMsg)
 	}
 	if doneReq != nil {

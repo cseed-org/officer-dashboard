@@ -699,7 +699,7 @@ func TestAdminSurfaceBudgetsLookupsAuditAndNotifications(t *testing.T) {
 	var found bool
 	for _, w := range e.webhooks.all() {
 		emb := w["embeds"].([]any)[0].(map[string]any)
-		if emb["description"] == "request.submitted" && strings.HasPrefix(emb["title"].(string), made.str("request", "number")) && strings.HasSuffix(emb["url"].(string), "/requests/"+made.str("request", "id")) {
+		if emb["description"] == "request.submitted" && strings.HasPrefix(emb["title"].(string), made.str("request", "number")) && strings.HasSuffix(emb["url"].(string), "/finance?id="+made.str("request", "id")) {
 			found = true
 		}
 	}
