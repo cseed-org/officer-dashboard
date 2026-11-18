@@ -11,6 +11,10 @@ const guides = readdirSync(docsDir, { withFileTypes: true })
   .map((entry) => entry.name);
 const docs = Object.fromEntries(guides.map((name) => [name, readFileSync(new URL(name, docsDir), "utf8")]));
 const allDocs = Object.values(docs).join("\n");
+const normalizeProse = (markdown) => markdown
+  .replace(/\*\*|__/g, "")
+  .replace(/\s+/g, " ")
+  .trim();
 const canonicalPath = (path) => path
   .replace(/\/:[A-Za-z][A-Za-z0-9_]*/g, "/:param")
   .replace(/\/\{[A-Za-z][A-Za-z0-9_]*\}/g, "/:param");
@@ -59,13 +63,11 @@ test("architecture lists every internal package and current command set", () => 
   assert.equal(documentedUsage, usage, "architecture command list should match main.go usage");
 });
 
-test("migration guidance stays after the highest migration", () => {
-  const migrations = readdirSync(new URL("../server/internal/store/migrations/", import.meta.url))
-    .map((name) => /^(\d{4})_.*\.sql$/.exec(name)?.[1])
-    .filter(Boolean)
-    .sort();
-  const next = String(Number(migrations.at(-1)) + 1).padStart(4, "0");
-  assert.ok(read("CONTRIBUTING.md").includes(`${next}_<description>.sql`));
+test("migration guidance uses the highest existing file without pinning the next number", () => {
+  const contributing = normalizeProse(read("CONTRIBUTING.md"));
+  assert.ok(contributing.includes("next zero-padded, numbered SQL file"));
+  assert.ok(contributing.includes("after the highest existing file"));
+  assert.ok(contributing.includes("illustrative example only"));
   assert.ok(docs["architecture.md"].includes("migrations 0000 onward"));
   assert.ok(!docs["architecture.md"].includes("0000–0010"));
 });
@@ -92,19 +94,30 @@ test("frontend route table covers current pages and login errors", () => {
     assert.ok(routes.includes(`\`${route}\``), `missing route ${route}`);
   }
   assert.ok(routes.includes("invite_unavailable"));
-  assert.ok(docs["frontend.md"].includes("**Developer\nmode** panel"));
+  const develop = normalizeProse(docs["frontend.md"].split("## Develop")[1].split("## Routes")[0]);
+  assert.ok(develop.includes("open `/login`"));
+  assert.ok(develop.includes("Developer mode panel"));
+  assert.ok(develop.includes("[development](development.md#developer-mode-on-a-test-deployment)"));
+  assert.ok(!develop.includes("dev: director / officer"));
 });
 
 test("pagination convention names offset and unpaginated exceptions", () => {
-  assert.ok(docs["api.md"].includes("Members instead uses `offset`/`limit`"));
-  assert.ok(docs["api.md"].includes("Contacts and the Buildspace register"));
-  assert.ok(!docs["api.md"].includes("Lists take `?cursor=&limit=`"));
+  const api = normalizeProse(docs["api.md"]);
+  assert.ok(api.includes("Members instead uses `offset`/`limit`"));
+  assert.ok(api.includes("Contacts and the Buildspace register"));
+  assert.ok(!api.includes("Lists take `?cursor=&limit=`"));
 });
 
 test("calendar guides describe the current no-controls widget", () => {
-  assert.ok(docs["calendar-widget.md"].includes("there are no view, source, colour"));
-  assert.ok(docs["calendar-widget.md"].includes("keyed by range and\ntime zone"));
-  assert.ok(!docs["calendar-widget.md"].includes("Options saves view"));
+  const calendar = normalizeProse(docs["calendar-widget.md"]);
+  for (const view of ["Compact current week", "Expanded current week", "Six-week month grid"]) {
+    assert.ok(calendar.includes(view), `missing automatic view ${view}`);
+  }
+  assert.ok(calendar.includes("no view, source, colour, weekend, subscribe or add-event controls"));
+  assert.ok(calendar.includes("`GET /api/calendar/feed"));
+  assert.ok(calendar.includes("keyed by range and time zone"));
+  assert.ok(!calendar.includes("Options saves view"));
+  assert.ok(!calendar.includes("keyed by sources and time zone"));
   assert.ok(docs["purchase-deadlines.md"].includes("Historical V0.6 controls"));
-  assert.ok(docs["buildspace.md"].includes("projects marked **Shipped**"));
+  assert.ok(normalizeProse(docs["buildspace.md"]).includes("projects marked Shipped"));
 });
