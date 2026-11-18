@@ -49,6 +49,9 @@ func (c *Ctx) requestsList() error {
 		return err
 	}
 	f := store.RequestFilter{EventID: eventID.V, Q: qtext.V, ByDeadline: sortBy == "deadline"}
+	if !auth.HasRole(u.Role, auth.RoleDirector) {
+		f.DraftsOf = u.ID // another officer's draft is private (scope=all, counts)
+	}
 	if scope == "mine" {
 		f.RequesterID = u.ID
 	}
@@ -117,6 +120,11 @@ func (c *Ctx) requestDetail() error {
 	q := c.S.db.Read()
 	r, err := q.RequestByID(ctx, c.R.PathValue("id"))
 	if err != nil {
+		return notFoundErr("Record not found")
+	}
+	// Drafts are private to their requester and directors; anyone else gets the same 404 as a
+	// missing request.
+	if r.Status == "draft" && r.RequesterID != u.ID && !auth.HasRole(u.Role, auth.RoleDirector) {
 		return notFoundErr("Record not found")
 	}
 	cat, err := loadCatalog(ctx, q, true)

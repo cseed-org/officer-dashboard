@@ -553,7 +553,8 @@ func TestNumbersRequestsFYNNNNSequentiallyAndWithoutCollisionsUnderConcurrentCre
 
 func TestRequestListFiltersCountsAndPages(t *testing.T) {
 	e := newEnv(t)
-	all := e.get("/api/requests?scope=all&limit=2", e.officer())
+	// A director sees every draft (D-22: drafts are private to the requester and directors).
+	all := e.get("/api/requests?scope=all&limit=2", e.director())
 	if len(all.list("items")) != 2 || all.at("nextCursor") == nil {
 		t.Fatalf("page 1 %s", all.Raw)
 	}
@@ -563,7 +564,7 @@ func TestRequestListFiltersCountsAndPages(t *testing.T) {
 	var seen []string
 	cursor := ""
 	for i := 0; i < 5; i++ {
-		r := e.get("/api/requests?scope=all&limit=2"+cursor, e.officer())
+		r := e.get("/api/requests?scope=all&limit=2"+cursor, e.director())
 		for _, it := range r.list("items") {
 			seen = append(seen, it.(map[string]any)["number"].(string))
 		}

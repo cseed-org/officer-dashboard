@@ -101,8 +101,9 @@ func TestSearchShowsUsersAndAccountsOnlyToDirectors(t *testing.T) {
 func TestSearchRanksPrefixMatchesFirstAndHonoursLimit(t *testing.T) {
 	e := newEnv(t)
 	// "hack": the event "Hack Night" starts with it; the request "Hack Night prizes" starts with it too,
-	// while a request merely mentioning it in the vendor would rank lower.
-	r := e.mustOK(e.get("/api/search?q=hack", e.officer()))
+	// while a request merely mentioning it in the vendor would rank lower. That request is
+	// Marcus' draft, which only he and directors can find.
+	r := e.mustOK(e.get("/api/search?q=hack", e.as("user-marcus")))
 	if len(r.list("results")) < 2 || r.str("results", 0, "kind") != "event" || r.str("results", 0, "title") != "Hack Night" {
 		t.Errorf("ranking: %s", r.Raw)
 	}

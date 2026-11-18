@@ -141,3 +141,59 @@ func TestImportAndIngestValidateEventsAndStoreMatchedLumaID(t *testing.T) {
 		t.Fatalf("EventByLumaID after CSV import: %v %v", ev, err)
 	}
 }
+
+// M-040 (D-22): a purchase draft is private to its requester and directors in the list
+// (scope=all and its counts), detail, search and calendar.
+func TestDraftsArePrivateToRequesterAndDirectors(t *testing.T) {
+	e := newEnv(t)
+	draft := e.mustOK(e.post("/api/requests", with(purchase, "title", "Zq7private kit", "neededBy", "2026-11-12"), e.officer()))
+	id := draft.str("request", "id")
+	other, director := e.as("user-ava"), e.director()
+	listed := func(who actor) (bool, int64) {
+		r := e.mustOK(e.get("/api/requests?scope=all&q=Zq7private", who))
+		found := false
+		for _, it := range r.list("items") {
+			found = found || it.(map[string]any)["id"] == id
+		}
+		return found, r.num("counts", "draft")
+	}
+	searched := func(who actor) bool {
+		for _, it := range e.mustOK(e.get("/api/search?q=Zq7private", who)).list("results") {
+			if it.(map[string]any)["id"] == id {
+				return true
+			}
+		}
+		return false
+	}
+	onCalendar := func(who actor) bool {
+		r := e.mustOK(e.get("/api/calendar/feed?start=2026-11-09&end=2026-11-16&sources=purchase-deadlines", who))
+		for _, it := range r.list("items") {
+			if it.(map[string]any)["id"] == id {
+				return true
+			}
+		}
+		return false
+	}
+	if found, n := listed(other); found || n != 0 {
+		t.Errorf("another officer lists the draft (found %v, draft count %d)", found, n)
+	}
+	expectStatus(t, "another officer opens the draft", e.get("/api/requests/"+id, other), 404)
+	if searched(other) {
+		t.Error("another officer finds the draft in search")
+	}
+	if onCalendar(other) {
+		t.Error("another officer sees the draft on the calendar")
+	}
+	for name, who := range map[string]actor{"requester": e.officer(), "director": director} {
+		if found, n := listed(who); !found || n != 1 {
+			t.Errorf("%s: list found %v, draft count %d", name, found, n)
+		}
+		expectStatus(t, name+" opens the draft", e.get("/api/requests/"+id, who), 200)
+		if !searched(who) {
+			t.Errorf("%s does not find the draft in search", name)
+		}
+	}
+	if !onCalendar(e.officer()) {
+		t.Error("requester does not see their own draft on the calendar")
+	}
+}

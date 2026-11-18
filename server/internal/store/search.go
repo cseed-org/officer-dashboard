@@ -29,13 +29,19 @@ type SearchHit struct {
 // vendors and emails using LIKE. FTS5 was measured against it and rejected: the tables
 // hold hundreds of rows, and an FTS index would add triggers and a sync step to save
 // microseconds. Each kind returns at most `limit` hits; the caller merges and trims.
-func (q *Queries) Search(ctx context.Context, text string, limit int, includeDirectorKinds bool) ([]SearchHit, error) {
+// Drafts are private to their requester and directors: with includeDirectorKinds false,
+// only viewerID's own drafts match.
+func (q *Queries) Search(ctx context.Context, text string, limit int, includeDirectorKinds bool, viewerID string) ([]SearchHit, error) {
 	needle := Fold(strings.TrimSpace(text))
 	if needle == "" {
 		return nil, nil
 	}
 	contains := "%" + likeEscape(needle) + "%"
 	prefix := likeEscape(needle) + "%"
+	draftsOf := viewerID
+	if includeDirectorKinds {
+		draftsOf = ""
+	}
 	score := func(primary string, otherMatched bool) int {
 		p := Fold(primary)
 		switch {
@@ -69,8 +75,9 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 	}
 
 	rows, err = q.q.QueryContext(ctx, `SELECT id, title, number, vendor, status, created_at FROM purchase_requests
-		WHERE fold(number) LIKE ?1 ESCAPE '\' OR fold(title) LIKE ?1 ESCAPE '\' OR fold(vendor) LIKE ?1 ESCAPE '\'
-		ORDER BY `+rankSQL("number", "title")+`, created_at DESC, id DESC LIMIT ?2`, contains, limit, prefix)
+		WHERE (fold(number) LIKE ?1 ESCAPE '\' OR fold(title) LIKE ?1 ESCAPE '\' OR fold(vendor) LIKE ?1 ESCAPE '\')
+		AND (?4 = '' OR status <> 'draft' OR requester_id = ?4)
+		ORDER BY `+rankSQL("number", "title")+`, created_at DESC, id DESC LIMIT ?2`, contains, limit, prefix, draftsOf)
 	if err != nil {
 		return nil, err
 	}
