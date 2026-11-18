@@ -475,7 +475,9 @@ func weekStatus(b *store.Buildspace, sched store.BuildspaceSchedule, p *store.Bu
 		return "not-joined"
 	}
 	for _, a := range b.Activity {
-		if a.Kind == "weekly" && a.PersonID != nil && *a.PersonID == p.ID && a.Date >= sched.Week.Start && a.Date <= sched.Week.Due {
+		// Only entries dated through today count, like the officers' check-in signal; a
+		// future-dated entry does not finish this week early.
+		if a.Kind == "weekly" && a.PersonID != nil && *a.PersonID == p.ID && a.Date >= sched.Week.Start && a.Date <= sched.Week.Due && a.Date <= sched.Today {
 			return "done"
 		}
 	}

@@ -58,3 +58,31 @@ func TestFirstProfileSaveKeepsDirectorTitle(t *testing.T) {
 		t.Fatalf("title after choosing one = %q", got)
 	}
 }
+
+// M-075: a weekly entry dated later this week does not complete today's check-in (the
+// builder's thisWeek and the mentor's awaiting flag both use weekStatus).
+func TestWeekStatusIgnoresFutureDatedEntries(t *testing.T) {
+	pid := "b1"
+	sched := store.BuildspaceSchedule{Today: "2026-11-17", Week: store.BuildspaceWeek{Start: "2026-11-16", Due: "2026-11-22"}}
+	person := &store.BuildspacePerson{ID: pid, JoinedOn: "2026-09-01"}
+	with := func(dates ...string) *store.Buildspace {
+		b := &store.Buildspace{}
+		for _, d := range dates {
+			b.Activity = append(b.Activity, store.BuildspaceActivity{Kind: "weekly", PersonID: &pid, Date: d})
+		}
+		return b
+	}
+	if got := weekStatus(with("2026-11-22"), sched, person); got != "awaiting" {
+		t.Errorf("future-only entry: %q, want awaiting", got)
+	}
+	past := sched
+	past.PastDue = true
+	if got := weekStatus(with("2026-11-22"), past, person); got != "past-due" {
+		t.Errorf("future-only entry past due: %q, want past-due", got)
+	}
+	for _, d := range []string{"2026-11-16", "2026-11-17"} {
+		if got := weekStatus(with(d), sched, person); got != "done" {
+			t.Errorf("entry on %s: %q, want done", d, got)
+		}
+	}
+}
