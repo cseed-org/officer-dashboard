@@ -102,7 +102,7 @@ invite link is a sign-up credential. When invite email is not configured, the in
 answer 409 and the officer invites from the dashboard. The dashboard itself is unchanged.
 
 Not exposed: sign-in and onboarding, Google Calendar connection, file downloads,
-`/api/admin/*` (owners, roles, accounts, service tokens: an agent never manages access
+`/api/admin/*` (owners, roles, accounts and service tokens: an agent never manages those
 or credentials), officer invites (an invite link is a sign-up credential), the
 builder/mentor portal (`/api/portal/*`: portal accounts have their own table, session and
 cookie; a bearer token never authenticates there, and a portal session never reaches `/mcp`

@@ -21,7 +21,7 @@ func leadershipCmd(args []string, getenv func(string) string, stdout io.Writer) 
 	var discordID string
 	var owner bool
 	fs.BoolVar(&owner, "owner", false, "also provision dashboard ownership")
-	fs.StringVar(&discordID, "discord-id", "", "existing active owner's Discord ID (required)")
+	fs.StringVar(&discordID, "discord-id", "", "existing active user's Discord ID (required)")
 	cfg, err := loadSettings(fs, args, getenv)
 	if err != nil {
 		return err

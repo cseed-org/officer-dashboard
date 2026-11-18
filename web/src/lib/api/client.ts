@@ -1,8 +1,9 @@
 import { savingForm } from '../unsaved';
 /**
  * The UI's only way to reach the backend. Every call is named by an ENDPOINTS key from
- * src/core/contracts.ts, so the path, method, body and response types all come from the
- * contract, and responses are validated with the contract's zod schema (contract drift
+ * web/src/lib/contracts.ts (the hand-synced copy of the canonical src/core/contracts.ts),
+ * so the path, method, body and response types all come from the contract, and responses
+ * are validated with the contract's zod schema (contract drift
  * shows up as a ContractError instead of a blank page).
  *
  * The zod contract is about half of a page's JavaScript, and no request needs it to be sent,

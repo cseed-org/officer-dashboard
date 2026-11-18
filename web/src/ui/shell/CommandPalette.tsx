@@ -27,7 +27,7 @@ const pages = (director: boolean): Item[] => [
   { kind: 'page', id: 'settings', title: 'Settings', subtitle: 'theme, density, sign out', href: href.settings },
 ];
 
-/** Until the Go server's /api/search exists (v1 answers 404), search requests and events with their list endpoints. */
+/** Compatibility with older backends without /api/search: query the request and event lists after a 404. */
 let fallback = false;
 async function searchApi(q: string, signal: AbortSignal): Promise<Item[]> {
   if (!fallback) {

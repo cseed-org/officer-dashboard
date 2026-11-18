@@ -24,7 +24,7 @@ Every response is still validated against its zod schema. What changed is when:
 
 - **Writes** (non-GET) and **any read once the schemas have loaded** are validated before `api()` returns, exactly as before.
 - **Reads that arrive before the schemas have loaded** (a page's first data) render at once and are validated when the schemas load. `api()` starts that load after the page's `load` event, at the next idle moment, so evaluating the schemas never competes with the first render. A mismatch logs the issues and replaces the page with the same "did not match the API contract" error state, with a reload button.
-- Responses are used as sent rather than as zod's parsed output. The response schemas that use defaults (`dashboardTutorialSeen`, club links) are always sent by the Go server, and `contract-check` in CI still checks every response.
+- Reads rendered before the schemas load use the response as sent. Writes and reads after the schemas load use zod's parsed output, with unknown keys stripped and defaults filled. The response schemas that use defaults (`dashboardTutorialSeen`, club links) are always sent by the Go server, and `contract-check` in CI still checks every response.
 
 `src/lib/endpoints.generated.ts` is rewritten from `ENDPOINTS` by every `npm run build` and `npm run dev`. Commit it with contract changes; `tests/home-speed.spec.ts` fails when the committed copy is stale. Endpoint entries must stay on one line as `name: { method: '…', path: '…', … }`, and the build stops with a message if one doesn't.
 

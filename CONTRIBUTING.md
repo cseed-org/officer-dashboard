@@ -21,7 +21,7 @@ test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
 go vet ./...
 go vet -tags dev ./...
 go test ./...
-go test -tags dev ./internal/api
+go test -tags dev ./internal/api ./cmd/...
 CGO_ENABLED=1 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_SHA::7}" -o /tmp/dashboard ./cmd/dashboard
 ```
 
@@ -37,6 +37,8 @@ From the repository root:
 
 ```sh
 npm ci
+node scripts/gen-mcp-tools.mjs --check
+npm run test:scripts
 node scripts/contract-check.mjs
 ```
 
@@ -44,9 +46,10 @@ node scripts/contract-check.mjs
 
 ## Database and API changes
 
-- Add the next zero-padded, numbered SQL file under `server/internal/store/migrations/` (for example `0011_<description>.sql` after `0010_officers.sql`). SQL migrations are embedded in the Go binary; preserve existing migrations and test both fresh databases and upgrades.
+- Add the next zero-padded, numbered SQL file under `server/internal/store/migrations/` after the highest existing file. The filename `0026_<description>.sql` is an illustrative example only, not a fixed next number; calculate it from the migrations present in your branch. SQL migrations are embedded in the Go binary; preserve existing migrations and test both fresh databases and upgrades.
 - Tests derive the migration count with `store.MigrationCount()`; do not hard-code a new count.
 - Keep `src/core/contracts.ts` and `web/src/lib/contracts.ts` in sync for shared API schemas, along with their domain types. Preserve web-specific additions. Update the Go handlers and contract scenarios when behavior changes, then run `npm run contract-check`.
+- After changing `ENDPOINTS` or `scripts/gen-mcp-tools.mjs`, run `npm run mcp-tools` and commit `server/internal/api/mcp_tools.json`.
 
 ## UI changes
 

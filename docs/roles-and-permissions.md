@@ -25,7 +25,8 @@ identity is checked in.
 The bootstrap environment cannot reclaim ownership after transfer. Explicit operator
 recovery with `provision-leadership --owner` remains available even when owners already
 exist: shell/database administrators can intentionally add an owner, and this action
-is audited. Discord login itself never creates users or grants leadership/ownership.
+is audited. Discord login never grants leadership or ownership; it creates an officer account
+only for a pending, unexpired invite.
 
 ## Setup before access
 

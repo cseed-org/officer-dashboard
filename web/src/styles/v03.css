@@ -1,7 +1,6 @@
-/* CSEED dashboard · V0.3 design-system additions (proposal).
-   Loaded after tokens.css, base.css and components.css by web/design/mockups/components-v03.html.
-   Build Panes move the token block into src/styles/tokens.css, the @font-face block into a new
-   src/styles/fonts.css (fonts copied to public/fonts/), and the component rules into components.css.
+/* CSEED dashboard · production V0.3 design-system additions.
+   Loaded after tokens.css, base.css and components.css by AppLayout.astro and PortalLayout.astro.
+   This is the production source of truth; web/design/v03.css is a historical design copy.
    Every class here is part of the contract in spec.md § "V0.3 additions". */
 
 /* ───────────── Brand fonts: self-hosted latin subsets (OFL), swap, downloaded only when used ───────────── */

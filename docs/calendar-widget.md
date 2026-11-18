@@ -15,28 +15,18 @@ and 4×2 sizes.
 
 | Size | Automatic view |
 | --- | --- |
-| 2×1 | One-day agenda |
-| 2×2 | Week strip and agenda |
-| 4×2 | Month grid |
+| 2×1 | Compact current week, Monday–Sunday |
+| 2×2 | Expanded current week, Monday–Sunday |
+| 4×2 | Six-week month grid |
 
-Options saves view, sources, colour grouping and weekend visibility to the signed-in
-officer's account. Small widgets always use an agenda; other sizes allow explicit
-agenda, week or month views. At 4×2 the legend shows every source as a chip; chips wrap
-inside their own area and the time-zone label keeps its own column (or line on phones), so
-they never overlap. At 2×1 and 2×2 the chips collapse into a **Sources (n/total)** menu whose
-panel floats over the calendar, so opening it moves nothing; Tab reaches the toggles and
-Escape closes it and returns focus. Toggles stay focusable while a change saves. The
-legend's initial source list mirrors the server registry, so it doesn't grow when the
-feed loads. Toggle sources directly in the legend; calendar icons mark blue club events and pen
-icons mark amber design deadlines. Legend changes save immediately. Hover or focus
-a month/week chip to see its time, location, source, detail link and Luma link.
-Timed chips include a compact start time (for example, **6p Hack Night**). Each day
-shows two chips plus **+N more**; select that overflow to open the full date agenda.
-Event and design links open the existing detail pages. **+ event** opens the Events
-creation form. **Options → Subscribe** links to the existing ICS email delivery
-settings and, when configured, the existing Google Calendar connection flow. This
-is invitation delivery rather than a public ICS subscription URL; no such feed
-exists in the current app.
+The current widget has a fixed display for each size: there are no view, source, colour,
+weekend, subscribe or add-event controls. Phone month cells use dots instead of item chips.
+Each day shows as many chips as fit, followed by a non-interactive **+n** count. Hover or
+focus a chip to see its time, location or deadline, optional detail, source, detail link and
+Luma link; Escape closes the details card. Timed chips include a compact start time (for
+example, **6p Hack Night**). Event, design, purchase and Buildspace links open their existing
+detail pages. Existing ICS email delivery and Google Calendar settings remain under Settings;
+they are invitation delivery rather than a public ICS subscription URL, and no such feed exists.
 
 Date-only deadlines stay on their calendar date. Events follow the effective time
 zone in Settings, including events spanning midnight and daylight-saving changes.
@@ -49,16 +39,16 @@ from the feed.
   returns items tagged by source and type, their local detail href and optional
   location/Luma URL, plus the effective time zone and source registry metadata.
   The end date is exclusive; the range must be 1–93 calendar days.
-  Omitting sources selects the default sources (events and design); an empty sources value (or `none`) selects none.
-- `GET /api/me/calendar-widget` returns the user's options.
+  Omitting sources selects role defaults: events and design for every officer, plus purchase deadlines for directors and leadership. Buildspace sources stay off. An empty sources value (or `none`) selects none. The current Home widget omits `sources`, and neither it nor this default selection applies the saved options below.
+- `GET /api/me/calendar-widget` returns the user's saved options for API clients.
 - `PUT /api/me/calendar-widget` replaces options with
   `{view, colourBy, showWeekends, sources: string[]}`. The original
   `events`/`design` boolean request format remains accepted for older clients.
   Writes are audited and do not replace Home layout preferences.
 
 SQLite filters before returning data. Expression and date indexes support the range
-queries. The widget caches a bounded set of ranges for 60 seconds, keyed by sources
-and time zone; errors offer Retry.
+queries. The widget caches a bounded set of ranges for 60 seconds, keyed by range and
+time zone; errors offer Retry.
 
 ## Adding a feed source
 
@@ -79,22 +69,22 @@ deadline) or StartsAt/EndsAt (ISO instants). Location and LumaURL are optional.
 The dispatcher assigns Source; the API normalizes timed items' Date and sorts
 the merged result. Loaders are called only for selected sources.
 
-Registry metadata is returned even when every source is hidden. It drives the
-legend, options, source colours/icons and source validation. Current icon hints
-are calendar, pen, user and check; other values use a calendar fallback. Hues use
-the existing blue/amber/teal/coral/violet/green tokens. A saved account opts into
-new sources via its legend/options; defaults for accounts without saved options include
-entries without `DisabledByDefault` whose optional `DefaultRole` the account holds
-(`auth.HasRole`, so leadership inherits director defaults). Optional `Detail` text on an
-item appears in the popover and agenda (for example an amount and status).
+Registry metadata is returned even when every source is hidden. It drives source
+validation, item colours/icons and popover source labels. Current icon hints are calendar,
+pen, wallet, user and check; other values use a calendar fallback. Hues use the existing
+blue/amber/teal/coral/violet/green tokens. Default feeds include entries without
+`DisabledByDefault` whose optional `DefaultRole` the account holds (`auth.HasRole`, so
+leadership inherits director defaults). Saved options do not change the current Home widget's
+feed; API clients opt into other sources with `sources=`. Optional `Detail` text on an item
+appears in the popover (for example an amount and status).
 Register entries once during startup; do not mutate the registry while serving
 requests. **Purchase deadlines** (`purchase-deadlines`, wallet icon, green) shows open
 purchase requests with a `needed by` date: submitted, approved and buying, plus the
 viewer's own drafts. Denied, cancelled, bought, paid-out and closed requests are hidden.
 Each item shows the title, request number, amount and status and links to the request
 detail. It is on by default for directors and leadership (who approve and buy) and off
-for officers, who can turn it on in the legend or Options. See
-[Purchase deadlines](purchase-deadlines.md). Buildspace registers three optional sources: absences, weekly check-in due dates and mentor check-ins. All are off by default and toggleable in Options or the legend. See [Buildspace calendar policy](buildspace.md#home-calendar-sources) for dates, visibility and note redaction.
+for officers; any officer can select it explicitly through the feed API. See
+[Purchase deadlines](purchase-deadlines.md). Buildspace registers three optional sources: absences, weekly check-in due dates and mentor check-ins. All are off by default and require an explicit API `sources=` request under the current UI. See [Buildspace calendar policy](buildspace.md#home-calendar-sources) for dates, visibility and note redaction.
 
 Calendar settings and date indexes use migration **0016_calendar_widget.sql**,
 after dashboard-ux’s **0015_dashboard.sql**. The purchase-deadline index is
@@ -109,8 +99,9 @@ appear here. No external calendar credentials or network calls are introduced.
 ## Screenshots
 
 These show local seeded data and clearly named QA events at desktop and phone
-widths, including month, week and small agenda views. Runtime verification also exercises small and medium views,
-options persistence, source filtering and existing detail-page navigation.
+widths, including month and compact/expanded week views. Historical captures may show
+removed controls. Current runtime verification exercises week/month rendering, the absence
+of controls, stable loading layout and chip/popover navigation; API tests cover source filtering.
 
 | Light | Dark |
 | --- | --- |
@@ -118,17 +109,17 @@ options persistence, source filtering and existing detail-page navigation.
 | ![Phone light](evidence/calendar-widget/phone-light.png) | ![Phone dark](evidence/calendar-widget/phone-dark.png) |
 
 
-| Week | Small agenda |
+| Week | Compact week |
 | --- | --- |
-| ![Week light](evidence/calendar-widget/week-light.png) | ![Small agenda light](evidence/calendar-widget/small-light.png) |
-| ![Week dark](evidence/calendar-widget/week-dark.png) | ![Small agenda dark](evidence/calendar-widget/small-dark.png) |
+| ![Week light](evidence/calendar-widget/week-light.png) | ![Compact week light](evidence/calendar-widget/small-light.png) |
+| ![Week dark](evidence/calendar-widget/week-dark.png) | ![Compact week dark](evidence/calendar-widget/small-dark.png) |
 
 ![Keyboard focus reveals event time, location, source and Luma link](evidence/calendar-widget/item-focus.png)
 
-| Phone week | Phone small agenda |
+| Phone week | Phone compact week |
 | --- | --- |
-| ![Phone week light](evidence/calendar-widget/week-phone-light.png) | ![Phone small light](evidence/calendar-widget/small-phone-light.png) |
-| ![Phone week dark](evidence/calendar-widget/week-phone-dark.png) | ![Phone small dark](evidence/calendar-widget/small-phone-dark.png) |
+| ![Phone week light](evidence/calendar-widget/week-phone-light.png) | ![Phone compact week light](evidence/calendar-widget/small-phone-light.png) |
+| ![Phone week dark](evidence/calendar-widget/week-phone-dark.png) | ![Phone compact week dark](evidence/calendar-widget/small-phone-dark.png) |
 
 ![Phone focus card stays inside the viewport](evidence/calendar-widget/item-focus-phone.png)
 

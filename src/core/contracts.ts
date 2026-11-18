@@ -10,7 +10,8 @@
  *   serialised as ISO datetimes.
  * - Errors always use ApiError with an HTTP status: 400 validation, 401 not signed in,
  *   403 wrong role, 404 not found, 409 invalid state transition / conflict, 422 import errors.
- * - Lists are cursor-paginated: pass `cursor` from the previous `nextCursor`.
+ * - Cursor-paginated lists pass `cursor` from the previous `nextCursor`; Members uses
+ *   offset/limit and some small collections are unpaginated.
  */
 import { z } from 'zod';
 import {
@@ -129,7 +130,7 @@ export const FundOption = z.object({
 export type FundOption = z.infer<typeof FundOption>;
 
 /**
- * Event health counts (see src/core/metrics.ts). reflectionRate counts only reflections
+ * Event health counts (see eventCounts in server/internal/api/dto.go). reflectionRate counts only reflections
  * matched to a checked-in guest by normalized email, so it stays within 0..1; the rest
  * are reported as unmatchedReflections so the UI can flag the data problem.
  */
@@ -1332,8 +1333,8 @@ export const ContactsQuery = z.object({ hasSpokenForUs: z.enum(['true', 'false']
 export const OutreachCreateRequest = z.object({ date: IsoDateTime, channel: OutreachChannel, outcome: OutreachOutcome, note: z.string().max(10000).optional() });
 
 /**
- * Machine-readable index of every endpoint; docs/api.md is the human version.
- * Endpoint changes require a manual review of the corresponding documentation.
+ * Machine-readable index of every endpoint; docs/api.md and the feature guides are the
+ * human version. scripts/docs.test.mjs checks that every path is documented.
  */
 export const BUILDSPACE_TRACKS = ['Software', 'Hardware', 'Creative', 'Extended Virtual Reality (XR)'] as const;
 export const BUILDSPACE_STAGES = ['Ideating', 'Building', 'Demo-ready', 'Shipped', 'At risk'] as const;
