@@ -1,7 +1,7 @@
 /**
- * Every URL the UI builds. v2 has five pages; details open in a panel on the list page and
- * are addressed with query strings, so the static build needs no server-side fallback.
- * See README.md "Routes" for the table the Go server mirrors.
+ * Every URL the UI builds. Details open in a panel on the list page and are addressed with
+ * query strings, so the static build needs no server-side fallback.
+ * See docs/frontend.md "Routes" for the table the Go server mirrors.
  */
 const enc = encodeURIComponent;
 const qs = (params: Record<string, string | number | null | undefined | false>) => {
@@ -41,9 +41,9 @@ export const href = {
 };
 
 /**
- * Map a v1-style path (the Go server's search may return these) to its v2 home:
+ * Map legacy paths from old links or backends to their current homes:
  * /requests/:id → /finance?id=, /events/:id → /events?id=, /admin/tokens → /officers?tab=tokens.
- * Anything else passes through.
+ * Anything else passes through. These mappings apply to in-app links, not server routes.
  */
 export function normalizeHref(raw: string): string {
   let u: URL;
