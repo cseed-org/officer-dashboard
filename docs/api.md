@@ -2,15 +2,17 @@
 
 The UI and the backend meet at `src/core/contracts.ts`: every request body, query string
 and response is a zod schema there with its TypeScript type inferred under the same name.
-`ENDPOINTS` in that file is the machine-readable version of the table below, and
-`tests/core/contracts.test.ts` fails if the two drift apart.
+`ENDPOINTS` in that file is the machine-readable version of the table below. CI's contract
+job (`scripts/contract-check.mjs`) runs a seeded Go server and validates every response against
+these schemas; `gen-mcp-tools --check` and `TestMCPToolsMatchRoutes` fail if `ENDPOINTS` and
+`routes.go` drift. `scripts/docs.test.mjs` checks that every endpoint path appears in these guides.
 
 ## Conventions
 
 - JSON in and out. File uploads (CSV import, receipts) are `multipart/form-data`.
-- **Money is integer cents** (`*Cents`). Format it in the UI with `formatCents` from `src/core/money.ts`.
+- **Money is integer cents** (`*Cents`). Format it in the UI with `formatCents` from `web/src/lib/format.ts`.
 - **Rates** are fractions 0–1, or `null` when the denominator is zero ("no data", not 0%).
-- **Event metrics** (`EventCounts`, computed by `src/core/metrics.ts`):
+- **Event metrics** (`EventCounts`, computed by `eventCounts` in `server/internal/api/dto.go`):
   - `checkInRate` = checkedIn ÷ registered.
   - `reflectionRate` = `matchedReflections` ÷ checkedIn, where a reflection is matched when
     its email, trimmed and lower-cased, belongs to a checked-in guest.
@@ -18,17 +20,21 @@ and response is a zod schema there with its TypeScript type inferred under the s
     out of the rate. The UI should flag a non-zero value as a data problem, such as a missed
     door scan or a typo'd email.
 - Dates are `YYYY-MM-DD`; datetimes are ISO 8601 with an offset.
-- Lists take `?cursor=&limit=` (`PageQuery`) and return `{ items, nextCursor }`.
-- Every error is an `ApiError` body: `{ error: { code, message, details? } }`, with status
+- Cursor-paginated lists take `?cursor=&limit=` (`PageQuery`) and return `{ items, nextCursor }`.
+  Members instead uses `offset`/`limit` and returns `total`, `limit` and `offset`; small
+  collections such as Contacts and the Buildspace register return unpaginated `items` or a
+  complete register without a cursor.
+- Every JSON API error is an `ApiError` body: `{ error: { code, message, details? } }`, with status
   400 `bad_request` (zod `flatten()` in `details`), 401 `unauthenticated`, 403 `forbidden`,
   404 `not_found`, 409 `conflict` / `invalid_transition` / `over_tolerance`, 422 `import_failed`,
-  429 `rate_limited` (with `Retry-After`).
+  429 `rate_limited` (with `Retry-After`). Rate-limited `/auth/*` and `/oauth/*` responses are
+  plain text; `/mcp` rate-limit errors use JSON-RPC.
 - Every response to a signed-in session carries `X-Perm-Version`, a 16-hex fingerprint of the
   user's role, owner flag and subteam, computed on each request. The web client compares it with
   the version its `/api/me` was loaded with and refetches `/api/me` when it differs (see
   [roles and permissions](roles-and-permissions.md#permission-changes-apply-at-once)).
-- Handlers parse input with the request schema and should `.parse()` their own output with
-  the response schema in tests.
+- CI validates seeded Go responses against these schemas with `scripts/contract-check.mjs`;
+  run it locally with `npm run contract-check`.
 
 ## Auth column
 
@@ -37,7 +43,7 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | public | No session needed. |
 | owner | Active dashboard owner (`isOwner=true`, role leadership). Owner-only operations recheck authorization inside the transaction. |
 | officer | Any signed-in, active officer, director, or leadership user. |
-| director | Director or leadership; officers get 403. `/api/admin/*` is enforced by the middleware, the rest by `requireRole(locals, 'director')` in the handler. |
+| director | Director or leadership; officers get 403. `/api/admin/*` is enforced by the middleware, the rest by a role check in the handler (`c.director()`). |
 | token:&lt;scope&gt; | `Authorization: Bearer <service token>` with that scope (issued on `/officers?tab=tokens`). No session. |
 | portal / portal:builder / portal:mentor | A Launchpad portal session (`cseed_launchpad` cookie, `__Host-` over HTTPS) for any, a builder, or a mentor account. Never an officer session: officer cookies get 401 here, and portal cookies get 401 on every officer endpoint. |
 
@@ -53,10 +59,14 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | GET | `/api/cloudflare/widgets` | officer | — | — | `CloudflareWidgetsResponse` |
 | GET | `/api/health` | public | — | — | `HealthResponse` |
 | GET | `/api/me` | officer | — | — | `MeResponse` |
+| GET | `/api/me/stats` | officer | — | — | `MyStats` |
 | GET | `/api/club/settings` | officer | — | — | `ClubSettings` |
 | PUT | `/api/club/settings` | leadership | — | `ClubSettings` | `ClubSettings` |
 | GET | `/api/me/prefs` | officer | — | — | `WidgetPrefs` |
 | PUT | `/api/me/prefs` | officer | — | `PrefsUpdate` | `WidgetPrefs` |
+| GET | `/api/me/calendar-widget` | officer | — | — | `CalendarWidgetOptions` |
+| PUT | `/api/me/calendar-widget` | officer | — | `CalendarWidgetUpdate` | `CalendarWidgetOptions` |
+| GET | `/api/calendar/feed` | officer | `start`, `end`, `sources` | — | `CalendarFeed` |
 | GET | `/api/me/calendar-emails` | officer | — | — | `CalendarEmailsResponse` |
 | POST | `/api/me/calendar-emails` | officer | — | `CalendarEmailCreateRequest` | `CalendarEmailResponse` |
 | PATCH | `/api/me/calendar-emails/:id` | officer | — | `CalendarEmailUpdateRequest` | `CalendarEmailResponse` |
@@ -146,6 +156,12 @@ and response is a zod schema there with its TypeScript type inferred under the s
 | POST | `/auth/logout` | officer | — | — | redirect |
 | GET | `/auth/dev` | public (dev builds) | `as`/`user`/`discord`, `next`, `key` | — | confirmation page (HTML form) |
 | POST | `/auth/dev` | public (dev builds) | — | form: `as`/`user`/`discord`, `next`, `key` | redirect (303) |
+| GET | `/auth/dev/info` | public (dev builds) | `key` | — | `DevInfoResponse` |
+
+Calendar widget options and role-default feeds are described in [calendar-widget.md](calendar-widget.md).
+Buildspace ([buildspace.md](buildspace.md)), Launchpad cohort and portal
+([launchpad-cohorts.md](launchpad-cohorts.md)), and OAuth/MCP ([mcp.md](mcp.md)) routes are
+documented in those guides.
 
 ¹ `?format=csv` returns `text/csv`. `:report` is one of `FINANCE_REPORTS` (`src/core/domain.ts`).
 Officers may read `budget-vs-actual` and `fund-balances` (`OFFICER_FINANCE_REPORTS`); the
@@ -161,7 +177,7 @@ literal) against:
 
 | Kind | Who sees it | Matched on | `title` / `subtitle` | `href` |
 | --- | --- | --- | --- | --- |
-| `event` | officers, directors | name, location, Luma id | name / `<Pacific date> · <location>` | `/events?id=<id>` |
+| `event` | officers, directors | name, location, Luma id | name / `<date in the viewer's time zone> · <location>` | `/events?id=<id>` |
 | `request` | officers, directors | number, title, vendor | title / `<number> · <vendor> · <status>` | `/finance?id=<id>` |
 | `contact` | all officers | name, organization, role, email, topics | name / `<org> · <role> · <type>` | `/contacts?id=<id>` |
 | `user` | directors only | name, email, title | name / `<title> · <role> · <email>` | `/officers?person=<id>` |
@@ -175,7 +191,7 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 
 - **Requests.** Every officer can read every request. Only the requester edits or deletes a
   draft (`PATCH`/`DELETE` → 409 after submission) and submits it. Status moves must be allowed
-  by `canTransition()` in `src/core/purchase-lifecycle.ts`, else 409 `invalid_transition`.
+  by `CanTransition` in `server/internal/purchases/lifecycle.go`, else 409 `invalid_transition`.
   A director cannot approve their own request (403). `totalCents` is always computed
   server-side. `PurchaseRequestDetail.allowedTransitions` and `canEdit` tell the UI which
   buttons to show for the current user.
@@ -192,7 +208,8 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   sees or claims (409) a job for a request its creator filed, and a completion that arrives
   anyway is held (`job.held_for_review`, 409) for another director to settle.
 - **Settlement ceiling.** A director may record at most the approved estimate plus the agent
-  tolerance (`AGENT_SETTLEMENT_TOLERANCE_*`, default max(estimate × 1.10, estimate + $25));
+  tolerance (`AGENT_SETTLEMENT_TOLERANCE_*`, default max(estimate × 1.10, estimate + $25);
+  see [integrations](integrations.md#agent-settlement-tolerance));
   more answers 409 `over_tolerance` and leadership settles it. `PurchaseRequestDetail.maxSettlementCents`
   carries the viewer's ceiling (null when they cannot settle, or for leadership).
 - **Settlement: the actual amount replaces the estimate.** `totalCents` is the approved
@@ -243,8 +260,8 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
   - `DesignRequestDetail.permissions` tells the UI which actions the viewer has.
   - **From an event.** `GET /api/events/:id/design-request-draft` proposes a request for
     the event: title "<event> promo", type social, a brief with the date, place and RSVP
-    link, and a due date a week before the event (Vancouver time), never before today, or
-    null for a past event. `POST /api/events/:id/design-requests` creates it directly; any
+    link, and a due date a week before the event (in the club time zone, Settings), never
+    before today, or null for a past event. `POST /api/events/:id/design-requests` creates it directly; any
     supplied field overrides the draft, and the event link is fixed. The Design page also
     opens the prefilled form at `/design?new=1&eventId=<id>`.
   - **Upcoming events and design needs (V0.4).** `events.design_need` (migration 0013) is
@@ -268,10 +285,11 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 - **Member paging.** Any officer may list members; reading past the first page
   (`offset > 0`) writes a `members.paged` audit row (offset, limit, rows returned, filters).
 - **Health.** `GET /api/health` returns `version` only to signed-in callers.
-- **Rate limits.** Per client IP, `/auth/*` and the upload/import routes
+- **Rate limits.** Per client IP, `/auth/*`, `GET /api/portal/invite` and every `POST /oauth/*`
+  share a 30-requests-a-minute sign-in budget. The upload/import routes
   (`POST /api/requests/:id/attachments`, `POST /api/design-requests/:id/files`,
-  `PUT /api/events/:id/cover`, `POST /api/events/import`, `POST /api/ingest/luma`) allow 30
-  requests a minute each, then answer 429. Behind a trusted proxy (`TRUSTED_PROXIES`, loopback by
+  `PUT /api/events/:id/cover`, `POST /api/events/import`, `POST /api/ingest/luma`) share a
+  separate 30-requests-a-minute upload budget, then answer 429. Behind a trusted proxy (`TRUSTED_PROXIES`, loopback by
   default) the client is the right-most `X-Forwarded-For` hop that is not itself a trusted proxy;
   IPv6 clients share a budget per /64; each limiter tracks at most 10,000 clients. Direct loopback
   requests without the header (local tools, tests) are not limited.
@@ -283,13 +301,26 @@ is `{ "results": [] }`. A missing or blank `q`, or a `limit` outside 1–50, is 
 
 | Path | Role | Notes |
 | --- | --- | --- |
-| `/login` | public | "Sign in with Discord" |
-| `/` | officer | Overview KPIs + recent events (`OverviewResponse`) |
+| `/login` | public | "Sign in with Discord"; Developer mode panel only in authorized dev builds |
+| `/` | officer | Widget grid with KPIs, calendar, recent events, actions, budget and activity |
 | `/events`, `/events?id=<id>` | officer | List, month and week views; editor, Luma handoff kit, request design; CSV import on `/events?import=1` |
-| `/requests`, `/requests/new`, `/finance?id=<id>` | officer | Approve / deny buttons for directors |
-| `/finance` | officer | Directors see every report; officers see the summary |
+| `/finance`, `/finance?id=<id>`, `/finance?new=1` | officer | Purchase requests; approve / deny buttons for directors; officers may also read `budget-vs-actual` and `fund-balances` |
+| `/members` | officer | Member directory and person drawer |
+| `/officers` | officer | Officer directory; Invites, Access, Tokens and Audit tabs require director |
+| `/contacts` | officer | External Contacts, speaking history and outreach |
+| `/design`, `/design?id=<id>`, `/design?new=1&eventId=<id>` | officer | Design needs and request board; query parameters select views, filters and the prefilled form |
+| `/settings` | officer | Profile, preferences, calendar, connected agents and sign out |
+| `/onboarding` | officer | Welcome and officer setup flow |
+| `/buildspace-launchpad` | officer | Builder register, projects, mentors, cohorts and accounts |
+| `/launchpad/` | portal | Builder/mentor portal; portal session |
+| `/launchpad/join` | public | Launchpad invite acceptance |
+| `/launchpad/login` | public | Launchpad portal sign-in |
 | `/admin`, `/admin/users`, `/admin/tokens`, `/admin/audit` | officer | Redirect to Officers; management tabs require director |
-| `/design`, `/design?id=<id>`, `/design?new=1&eventId=<id>`, `?view=board\|list\|mine`, `?filter=mine\|unassigned\|due`, `?type=<type>` | officer | Design page: upcoming events with design needs, then the request board (list view on phones) or My work; opens a request or the prefilled form |
+| `/speakers` | public | 308 redirect to `/contacts`, preserving the query string |
+| `/buildspace` | public | 301 redirect to `/buildspace-launchpad`, preserving the query string |
+
+Legacy `/requests`, `/requests/new` and similar v1 links are mapped to current pages only when
+the app builds or normalizes an in-app link; the Go static handler does not serve those paths.
 
 
 ## Backend implementation notes
@@ -345,8 +376,10 @@ Roles rank `leadership > director > officer`. Only leadership may change `role` 
 PATCH `/api/admin/users/:id` or create a user with a role other than officer.
 Directors may create officers and invites, and deactivate or reactivate officers. Changing
 the active status of a director or leadership account, or modifying an existing leadership
-user at all, requires leadership. Role changes invalidate the affected user's sessions. The last
-active director-or-leadership account cannot be deactivated or demoted to officer.
+user at all, requires leadership. Role changes keep the person signed in; their next request
+carries a new `X-Perm-Version` (see [roles-and-permissions.md](roles-and-permissions.md)).
+Deactivation ends their sessions. The last active director-or-leadership account cannot be
+deactivated or demoted to officer.
 
 `GET/PUT /api/me/prefs` returns `{widgetLayout: [{id, size}], timezoneMode, timezone, effectiveTimezone}`. PUT accepts partial updates so widget and timezone preferences never overwrite each other. `timezoneMode` is `club` (the default), `auto`, or `manual`; `timezone` is the detected/manual IANA name, or an empty string for club fallback. Manual mode requires a valid zone. `effectiveTimezone` is read-only. Array order is
 widget order, IDs are unique (1–64 characters), maximum 50 widgets. Sizes are Home grid
@@ -383,9 +416,8 @@ removal returns 409. Repeating add/remove is safe. POST `/api/admin/owners/trans
 accepts `{toUserId}`: the active target becomes an owner before the caller loses their
 flag, atomically. Caller remains active leadership and other co-owners remain owners.
 It returns `{users: [target, caller]}`. Self-transfer is 400; missing targets are 404;
-inactive targets are 400. All changed users receive audit entries. Promotion invalidates
-the target's sessions; transferring/removing ownership preserves sessions when the role
-stays leadership, and subsequent requests read the current owner flag.
+inactive targets are 400. All changed users receive audit entries. Promotion, transfer and
+owner removal keep the target's sessions; the next request reads the new role and owner flag.
 
 Startup provisioning uses `BOOTSTRAP_OWNER_DISCORD_ID` and `BOOTSTRAP_OWNER_NAME`.
 The old `BOOTSTRAP_DIRECTOR_DISCORD_ID` is a deprecated ID alias. If no owner exists,
@@ -649,9 +681,9 @@ Design, lifecycle rules and the security model: [launchpad-cohorts.md](launchpad
 - `PUT /projects/:id`: `cohortId` picks the cohort when creating (an archived cohort is 409; older clients that omit it get the newest active cohort; 400 when none exists). Ignored on update. `PUT /people/:id` also takes `designation`, `pronouns`, `bio` and `email`; omitted fields keep their stored values. A builder cannot move between cohorts (409). `POST /activity` takes `visibility` (`team` | `mentors` | `officers`, default `officers`); Discord ingest writes `team`.
 - Writes to an archived project, builder or cohort return 409 (restore first). Ingest for an archived builder, project or cohort returns 400.
 - Cohorts (director): `POST /cohorts`, `PATCH /cohorts/:id` (partial; `status` archives/restores), `DELETE /cohorts/:id` (only when nothing references it, else 409). Duplicate names (case-insensitive) are 409.
-- Invites (officer): `POST /cohorts/:id/invites` with `{invites: [{email, name?}] (1–200), method}`. Emails are lowercased. Duplicates in the request, already-active and disabled accounts are skipped with a reason; a pending invite is re-issued (new token, 14-day expiry). Email is sent in the background through the SMTP mailer; `links` lists join URLs when `method` is `link`/`both` or SMTP is not configured. `POST /accounts/:id/resend` re-issues a pending invite and always returns the link. `POST /accounts/:id/disable` / `enable` (director) end or restore access; enabling an account that never accepted makes it a pending invite again. `DELETE /accounts/:id` revokes a pending invite (409 otherwise). Mentor accounts need director access for every account action.
+- Invites (officer): `POST /cohorts/:id/invites` with `{invites: [{email, name?}] (1–200), method}`. Emails are lowercased. Duplicates in the request, already-active and disabled accounts are skipped with a reason; a pending invite is re-issued (new token, 14-day expiry). Email is sent in the background through the SMTP mailer; `links` lists join URLs when `method` is `link`/`both` or SMTP is not configured. `POST /accounts/:id/resend` re-issues a pending invite and always returns the link. `POST /accounts/:id/disable` / `POST /accounts/:id/enable` (director) end or restore access; enabling an account that never accepted makes it a pending invite again. `DELETE /accounts/:id` revokes a pending invite (409 otherwise). Mentor accounts need director access for every account action.
 - Roster: `POST /mentors/:contactId/invite` (director; email defaults to the contact's), `PUT /mentors/:contactId/settings` `{available, maxProjects|null}` (officer).
 - Auto-assign (officer): `POST /cohorts/:id/auto-assign/preview` returns a plan; `POST /cohorts/:id/auto-assign` `{assignments}` applies it all-or-nothing (409 when any pair is stale or over a cap).
-- Archive (officer) / delete (director): `POST /projects/:id/archive|restore`, `DELETE /projects/:id` (no builders and no activity), `POST /people/:id/archive|restore`, `DELETE /people/:id` (no activity; deletes their portal account). Archive and restore are idempotent.
+- Archive (officer) / delete (director): `POST /projects/:id/archive` / `POST /projects/:id/restore`, `DELETE /projects/:id` (no builders and no activity), `POST /people/:id/archive` / `POST /people/:id/restore`, `DELETE /people/:id` (no activity; deletes their portal account). Archive and restore are idempotent.
 - Portal: `GET /api/portal/invite?token=` (public, rate-limited), `GET /api/portal/me`, `POST /api/portal/logout`, `GET /api/portal/builder`, `POST /api/portal/builder/onboarding`, `PATCH /api/portal/builder/profile`, `PATCH /api/portal/builder/project`, `POST /api/portal/builder/activity`, `GET /api/portal/mentor`, `POST /api/portal/mentor/activity`. Builders in an archived cohort read but get 409 on writes. Unsafe portal requests from another origin are 403.
 - Sign-in: `/auth/login?launchpad=<token>` accepts an invite; `/auth/login?portal=1` signs a bound account in. Outcomes redirect to `/launchpad`, `/launchpad/join?error=invalid|expired|used|disabled|discord_taken|failed`, or `/launchpad/login?error=not_found|disabled|archived`. The ordinary officer sign-in falls through to a portal session when the Discord account has no officer account but has an active portal account.
