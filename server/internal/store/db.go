@@ -230,13 +230,22 @@ func (d *DB) Write(ctx context.Context, fn func(w *Queries) error) error {
 	return tx.Commit()
 }
 
-// IsConstraint reports whether err is SQLite refusing a write: a UNIQUE/CHECK/NOT NULL/FK
-// constraint or a trigger's RAISE(ABORT), which SQLite also reports as SQLITE_CONSTRAINT.
-// It matches the driver's error type, not its text, so a network or "database is closed"
-// error that happens to contain one of those words is not mistaken for a conflict.
-func IsConstraint(err error) bool {
+// IsConflict reports whether err is SQLite refusing a write because of the data already
+// there: a UNIQUE/PRIMARY KEY/FOREIGN KEY constraint or a trigger's RAISE(ABORT), which
+// SQLite reports as SQLITE_CONSTRAINT. NOT NULL and CHECK failures are left out: handlers
+// validate their input before writing, so one of those is a server bug, not a conflict the
+// caller can resolve. It matches the driver's (extended) error code, not its text, so a
+// network or "database is closed" error that happens to contain such words never matches.
+func IsConflict(err error) bool {
 	var se sqlite3.Error
-	return errors.As(err, &se) && se.Code == sqlite3.ErrConstraint
+	if !errors.As(err, &se) || se.Code != sqlite3.ErrConstraint {
+		return false
+	}
+	switch se.ExtendedCode {
+	case sqlite3.ErrConstraintNotNull, sqlite3.ErrConstraintCheck:
+		return false
+	}
+	return true
 }
 
 // ErrNotFound is returned for a missing row.

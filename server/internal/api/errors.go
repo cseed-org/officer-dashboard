@@ -63,9 +63,10 @@ var lastDirRE = regexp.MustCompile(`last active director`)
 // date falls outside every open period; it answers 409 like the trigger that guards the same rule.
 const errNoOpenPeriod = "entry requires an open period"
 
-// toAPIError maps any error from a handler to the response v1 gave: SQLite constraint and
-// trigger failures become 409 conflicts, upload problems 400, anything else a logged 500.
-// Conflicts are recognised by the driver's error code (store.IsConstraint), never by words
+// toAPIError maps any error from a handler to the response v1 gave: SQLite uniqueness, FK and
+// trigger failures become 409 conflicts, upload problems 400, anything else (NOT NULL and
+// CHECK failures included: those are handler bugs) a logged 500.
+// Conflicts are recognised by the driver's error code (store.IsConflict), never by words
 // such as "closed" in the text, so network and closed-database errors stay 500s.
 func toAPIError(err error, log *slog.Logger) *APIError {
 	var ae *APIError
@@ -92,7 +93,7 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 		log.Warn("database conflict mapped to 409", "error", msg)
 		return conflict("Conflicting state, closed period, or duplicate record")
 	}
-	if !store.IsConstraint(err) {
+	if !store.IsConflict(err) {
 		log.Error("API operation failed", "error", msg)
 		return fail(500, "internal", "Operation failed")
 	}

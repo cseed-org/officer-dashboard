@@ -58,3 +58,38 @@ func TestToAPIErrorMatchesConstraintCodeNotText(t *testing.T) {
 		})
 	}
 }
+
+// M-109 (review R-should-fix): real driver errors. NOT NULL and CHECK failures are handler
+// bugs (input is validated before writing), so they answer 500; uniqueness and foreign-key
+// failures stay 409 conflicts.
+func TestReviewRealSQLiteProgrammingConstraintsAreServerErrors(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`CREATE TABLE parent(id TEXT PRIMARY KEY);
+		CREATE TABLE probe(v TEXT NOT NULL CHECK(length(v)>1) UNIQUE, p TEXT REFERENCES parent(id));
+		INSERT INTO probe(v) VALUES('taken')`); err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, c := range []struct {
+		query  string
+		status int
+	}{
+		{`INSERT INTO probe(v) VALUES(NULL)`, 500},
+		{`INSERT INTO probe(v) VALUES('x')`, 500},
+		{`INSERT INTO probe(v) VALUES('taken')`, 409},
+		{`INSERT INTO probe(v,p) VALUES('orphan','missing')`, 409},
+	} {
+		_, err := db.Exec(c.query)
+		if err == nil {
+			t.Fatalf("%s: expected a constraint error", c.query)
+		}
+		if got := toAPIError(fmt.Errorf("wrapped: %w", err), log); got.Status != c.status {
+			t.Errorf("%s: real error %v => HTTP %d, want %d", c.query, err, got.Status, c.status)
+		}
+	}
+}
