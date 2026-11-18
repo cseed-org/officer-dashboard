@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/url"
 )
 
@@ -103,9 +105,24 @@ func loadBuildspaceWeeklyDue(ctx context.Context, q *Queries, window CalendarRan
 			if b.joined > w.Due || done[b.id+"|"+w.Due] {
 				continue
 			}
-			out = append(out, CalendarItem{ID: "buildspace-weekly-" + b.id + "-" + w.Due, Date: w.Due, Type: "weekly-check-in",
+			out = append(out, CalendarItem{ID: weeklyItemID(b.id, w.Due), Date: w.Due, Type: "weekly-check-in",
 				Title: label + " · " + b.name + " · " + b.project, Href: "/buildspace-launchpad?person=" + url.QueryEscape(b.id)})
 		}
 	}
 	return out, nil
+}
+
+// calendarItemIDMax is CalendarFeedItem.id's length limit in the API contract.
+const calendarItemIDMax = 64
+
+// weeklyItemID is "buildspace-weekly-<builder>-<due date>". A builder ID long enough to
+// break the 64-character limit (officer-created builders use 36-character UUIDs) is
+// replaced by a stable digest of it; the item's href keeps the real ID.
+func weeklyItemID(builderID, due string) string {
+	const prefix = "buildspace-weekly-"
+	if id := prefix + builderID + "-" + due; len(id) <= calendarItemIDMax {
+		return id
+	}
+	sum := sha256.Sum256([]byte(builderID))
+	return prefix + "h" + hex.EncodeToString(sum[:8]) + "-" + due
 }

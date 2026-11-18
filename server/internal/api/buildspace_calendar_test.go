@@ -90,3 +90,44 @@ func TestBuildspaceCalendarOptInDatesAndNotes(t *testing.T) {
 		}
 	}
 }
+
+// M-044: weekly check-in items for officer-created builders (36-character UUIDs) keep
+// CalendarFeedItem.id within 64 characters, stay stable across reads, and link the real ID;
+// a builder ID that already fits keeps the readable form.
+func TestBuildspaceWeeklyItemIDsFitTheContract(t *testing.T) {
+	e := newEnv(t)
+	who := e.officer()
+	project := map[string]any{"name": "Long ids", "description": "", "track": "Software", "stage": "Building", "links": []string{}, "mentorIds": []string{}}
+	e.mustOK(e.do("PUT", "/api/buildspace-launchpad/projects/long-id-project", project, who))
+	uuid := "0b3f8c1e-5a47-4d2b-9c61-2f7e8a9d4b10"                                   // crypto.randomUUID(), as the officer form makes
+	boundary := strings.Repeat("b", 64-len("buildspace-weekly-")-len("-2027-03-14")) // item id exactly 64 long
+	for _, id := range []string{uuid, boundary} {
+		e.mustOK(e.do("PUT", "/api/buildspace-launchpad/people/"+id, map[string]any{"name": "Builder " + id[:4], "projectId": "long-id-project", "joinedOn": "2027-03-01"}, who))
+	}
+	e.mustOK(e.do("PUT", "/api/me/calendar-widget", map[string]any{"view": "month", "colourBy": "source", "showWeekends": true, "sources": []string{"buildspace-weekly"}}, who))
+	read := func() map[string]string {
+		out := map[string]string{} // href → id
+		for _, v := range e.mustOK(e.get("/api/calendar/feed?start=2027-03-08&end=2027-03-15&sources=buildspace-weekly", who)).list("items") {
+			item := v.(map[string]any)
+			id := item["id"].(string)
+			if len(id) > 64 {
+				t.Errorf("item id %q is %d characters", id, len(id))
+			}
+			out[item["href"].(string)] = id
+		}
+		return out
+	}
+	first, second := read(), read()
+	uuidItem, ok := first["/buildspace-launchpad?person="+uuid]
+	if !ok || strings.Contains(uuidItem, uuid) {
+		t.Fatalf("UUID builder item %q (items %v)", uuidItem, first)
+	}
+	if got := first["/buildspace-launchpad?person="+boundary]; got != "buildspace-weekly-"+boundary+"-2027-03-14" || len(got) != 64 {
+		t.Errorf("64-character id changed: %q", got)
+	}
+	for href, id := range first {
+		if second[href] != id {
+			t.Errorf("id for %s not stable: %q then %q", href, id, second[href])
+		}
+	}
+}
