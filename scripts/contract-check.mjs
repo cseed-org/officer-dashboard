@@ -18,11 +18,13 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { droppedKeys, executableName, spawnFailure } from './contract-helpers.mjs';
 import { checkContractParity } from './contract-parity.mjs';
+import { withContractWorkspace } from './contract-workspace.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -35,23 +37,20 @@ const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : u
 const verbose = flag('--verbose');
 
 const work = mkdtempSync(join(process.env.PANE_SCRATCH_DIR ?? tmpdir(), 'contract-check-'));
-let server;
-const cleanup = () => {
-  server?.kill('SIGTERM');
-  if (!flag('--keep')) rmSync(work, { recursive: true, force: true });
-};
-process.on('exit', cleanup);
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
+async function check(resources, signal) {
 
 // ───────────── schemas ─────────────
 // contracts.ts has extensionless relative imports, so bundle it (zod included) for node.
 const bundle = join(work, 'contracts.mjs');
 await build({ entryPoints: [join(root, 'src/core/contracts.ts')], bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'error' });
+signal.throwIfAborted();
 const { ENDPOINTS, ApiError } = await import(pathToFileURL(bundle).href);
 const browserEndpoints = await checkContractParity(root);
+signal.throwIfAborted();
 const registryBundle = join(work, 'widget-registry.mjs');
 await build({ entryPoints: [join(root, 'web/src/ui/widgets/defaultLayout.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
 const { defaultWidgetLayout } = await import(pathToFileURL(registryBundle).href);
+signal.throwIfAborted();
 
 // ───────────── binary, database, server ─────────────
 let bin = option('--bin');
@@ -75,20 +74,22 @@ const port = await new Promise((ok) => {
     s.close(() => ok(p));
   });
 });
+signal.throwIfAborted();
 const base = `http://127.0.0.1:${port}`;
-server = spawn(bin, ['serve'], { env: { ...env, ADDR: `127.0.0.1:${port}`, APP_URL: base }, stdio: ['ignore', 'ignore', verbose ? 'inherit' : 'ignore'] });
-server.on('error', (error) => { console.error(`server spawn failed: ${error.message}`); process.exit(1); });
+const server = resources.server = spawn(bin, ['serve'], { env: { ...env, ADDR: `127.0.0.1:${port}`, APP_URL: base }, stdio: ['ignore', 'ignore', verbose ? 'inherit' : 'ignore'] });
+server.on('error', (error) => resources.abort(new Error(`server spawn failed: ${error.message}`)));
 server.on('exit', (code) => code && console.error(`server exited with ${code}`));
 for (let i = 0; ; i++) {
   try {
-    if ((await fetch(`${base}/api/health`)).ok) break;
+    if ((await fetch(`${base}/api/health`, { signal })).ok) break;
   } catch {}
+  signal.throwIfAborted();
   if (i > 100) throw new Error('server did not start');
-  await new Promise((r) => setTimeout(r, 50));
+  await delay(50, undefined, { signal });
 }
 
 // ───────────── sessions without Discord: insert rows the way the server would ─────────────
-const db = new DatabaseSync(dbPath);
+const db = resources.db = new DatabaseSync(dbPath);
 db.exec('PRAGMA busy_timeout = 5000');
 function sessionFor(userId) {
   const token = randomBytes(32).toString('base64url');
@@ -129,7 +130,7 @@ async function call(name, { who = anon, params = {}, query, body, form, expect =
     const qs = new URLSearchParams(query).toString();
     if (qs) path += `?${qs}`;
   }
-  const init = { method: spec.method, redirect: 'manual', headers: { ...headers } };
+  const init = { method: spec.method, redirect: 'manual', headers: { ...headers }, signal };
   if (who.cookie) init.headers.cookie = who.cookie;
   if (who.bearer) init.headers.authorization = `Bearer ${who.bearer}`;
   if (form) {
@@ -438,18 +439,18 @@ await call('calendarEmailDelete', { who: officer, params: { id: savedEmail.json.
 // MCP agents (docs/mcp.md): OAuth 2.1 + PKCE as the officer, one tool call, then the
 // Connected agents endpoints and the audit attribution.
 {
-  const reg = await fetch(`${base}/oauth/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: 'Contract agent', redirect_uris: ['http://127.0.0.1:9/callback'] }) });
+  const reg = await fetch(`${base}/oauth/register`, { signal, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: 'Contract agent', redirect_uris: ['http://127.0.0.1:9/callback'] }) });
   const client = await reg.json();
   must(reg.status === 201 && client.client_id, 'MCP client registers');
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
   const form = new URLSearchParams({ client_id: client.client_id, redirect_uri: 'http://127.0.0.1:9/callback', response_type: 'code', code_challenge: challenge, code_challenge_method: 'S256', state: 'xyz', decision: 'allow' });
-  const authz = await fetch(`${base}/oauth/authorize`, { method: 'POST', redirect: 'manual', headers: { cookie: officer.cookie, 'content-type': 'application/x-www-form-urlencoded', origin: base }, body: form });
+  const authz = await fetch(`${base}/oauth/authorize`, { signal, method: 'POST', redirect: 'manual', headers: { cookie: officer.cookie, 'content-type': 'application/x-www-form-urlencoded', origin: base }, body: form });
   const back = new URL(authz.headers.get('location') ?? 'http://x/');
   must(authz.status === 302 && back.searchParams.get('state') === 'xyz' && back.searchParams.get('code'), 'officer authorizes the agent');
-  const tok = await (await fetch(`${base}/oauth/token`, { method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', code: back.searchParams.get('code'), code_verifier: verifier, client_id: client.client_id, redirect_uri: 'http://127.0.0.1:9/callback' }) })).json();
+  const tok = await (await fetch(`${base}/oauth/token`, { signal, method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', code: back.searchParams.get('code'), code_verifier: verifier, client_id: client.client_id, redirect_uri: 'http://127.0.0.1:9/callback' }) })).json();
   must(typeof tok.access_token === 'string' && typeof tok.refresh_token === 'string', 'code exchanges for tokens');
-  const rpc = (body, bearer = tok.access_token) => fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify(body) });
+  const rpc = (body, bearer = tok.access_token) => fetch(`${base}/mcp`, { signal, method: 'POST', headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify(body) });
   const created = await (await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create_contact', arguments: { body: { name: 'Agent Contact', type: 'speaker' } } } })).json();
   must(created.result && created.result.isError === false, 'MCP tool call creates a contact as the officer', created);
   const agents = await call('agentsList', { who: officer });
@@ -708,7 +709,15 @@ console.log(`\n${responses} responses from ${exercised} of ${Object.keys(ENDPOIN
 if (failures.length) {
   console.error(`\n${failures.length} problem(s):\n- ${failures.join('\n- ')}`);
   if (!verbose) console.error('\n(re-run with --verbose for the full call log)');
-  process.exit(1);
+  process.exitCode = 1;
+} else {
+  console.log('contract check passed: 0 schema errors');
 }
-console.log('contract check passed: 0 schema errors');
-process.exit(0); // the spawned server would otherwise keep the event loop alive
+}
+
+try {
+  await withContractWorkspace(work, { keep: flag('--keep') }, check);
+} catch (error) {
+  console.error(error.message);
+  process.exitCode = error.exitCode ?? 1;
+}

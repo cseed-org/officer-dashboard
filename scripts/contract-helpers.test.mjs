@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { z } from 'zod';
 import { droppedKeys, executableName, spawnFailure } from './contract-helpers.mjs';
@@ -14,11 +16,16 @@ test('M-033: Windows executable names and actual spawn errors survive diagnostic
 });
 
 test('M-033: contract checker reports the underlying seed spawn failure', () => {
-  const result = spawnSync(process.execPath, ['scripts/contract-check.mjs', '--bin', 'nonexistent-dashboard-contract-check-command'], {
-    cwd: resolve(import.meta.dirname, '..'), encoding: 'utf8',
-  });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /seed failed: .*ENOENT/);
+  const work = mkdtempSync(join(process.env.PANE_SCRATCH_DIR ?? tmpdir(), 'contract-error-test-'));
+  try {
+    const result = spawnSync(process.execPath, ['scripts/contract-check.mjs', '--bin', 'nonexistent-dashboard-contract-check-command'], {
+      cwd: resolve(import.meta.dirname, '..'), encoding: 'utf8',
+      env: { ...process.env, PANE_SCRATCH_DIR: work },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /seed failed: .*ENOENT/);
+    assert.deepEqual(readdirSync(work), [], 'a setup error must not leak its workspace');
+  } finally { rmSync(work, { recursive: true, force: true }); }
 });
 
 test('M-149: undeclared fields at every depth fail while declared arbitrary records survive', () => {
