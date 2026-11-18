@@ -1,12 +1,14 @@
 # CSEED officer dashboard · visual specification
 
+> **Status.** The base sections (Principles through Alternatives and iteration) describe the V0.2 design. Later sections override earlier ones: V0.3 additions, then the V0.4 Home block grid and Design page. This file stops at V0.4. For later designs, see [mockups/home-v07-notes.md](mockups/home-v07-notes.md) (V0.7 widget cards), [onboarding-notes.md](onboarding-notes.md) and `shots/v09/` (V0.9 onboarding and Settings) and [mockups/v10/design-kanban/README.md](mockups/v10/design-kanban/README.md) (V0.10 Design Kanban). Launchpad and Buildspace have no design section; their behaviour is in [docs/launchpad-cohorts.md](../../docs/launchpad-cohorts.md) and [docs/buildspace.md](../../docs/buildspace.md). Paragraphs marked *Superseded* are kept for history.
+
 ## Principles
 
 A calm working ledger. White is the canvas; structure comes from spacing, typography and one-pixel rules. Square inspires the number density and predictable tables; Notion informs the quiet sidebar, blocks and inline properties. Precision means aligned columns, explicit states, legible metadata and generous separation between tasks—not decoration.
 
 Use a single ink primary action for the current task. Other actions are hairline buttons or underlined text. Status is a five-pixel dot plus a written label; never a coloured capsule. Yellow (#f5d140) appears only in the tiny wordmark underline, active-navigation edge and a secondary focus accent. No gradients, emoji, glow or ornamental illustrations.
 
-Use system sans-serif throughout, including headings. This is an intentional choice over the v1 serif: the same letterforms connect a page title to a financial line item, and load immediately without font downloads. System monospace is reserved for identifiers and literal secrets. Numeric columns use the main font with tabular figures. Retain the CSEED wordmark; use the existing brand artwork when integrating, with accessible text and a dark variant as needed.
+*Superseded by [Brand typography decision](#brand-typography-decision) (V0.3): work text stays system sans, and three self-hosted brand faces return on a few surfaces.* Use system sans-serif throughout, including headings. This is an intentional choice over the v1 serif: the same letterforms connect a page title to a financial line item, and load immediately without font downloads. System monospace is reserved for identifiers and literal secrets. Numeric columns use the main font with tabular figures. Retain the CSEED wordmark; use the existing brand artwork when integrating, with accessible text and a dark variant as needed.
 
 Light is the default. Dark is a separately specified neutral palette, not an inversion. Compact density reduces gaps and row padding without shrinking text. Make state explicit in words, including missing metrics, empty lists, closed periods and failed imports. Never imply that zero and unavailable data are equivalent.
 
@@ -49,13 +51,13 @@ Use the existing builder markup. These are exact classes, not illustrative names
 
 ## Page composition
 
-Home: title, reporting-period subtitle, five KPIs; recent events full width; requests needing action and budget/actual in adjacent blocks; chronological activity below. Avoid a second primary CTA where no creation task is present.
+*Superseded by the [V0.4 Home block grid](#v04-home-block-grid) and the V0.7 widget cards ([mockups/home-v07-notes.md](mockups/home-v07-notes.md)).* Home: title, reporting-period subtitle, five KPIs; recent events full width; requests needing action and budget/actual in adjacent blocks; chronological activity below. Avoid a second primary CTA where no creation task is present.
 
 Events: search and time filter, one Import CSV button, event table. Detail drawer carries date/location properties, attendance metrics, understated trend chart and guests; import dialog uses the file/preview/error pattern.
 
 Requests & Finance: Requests, Budgets, Reports, Periods tabs. Requests default to actionable entries; one New request action opens a drawer. Detail places amount and status above properties, receipts and history; approve/deny/settle controls follow permission and state. Budgets show allocated/spent/committed/available columns. Reports are statement tables with restrained CSV export. Periods expose close state in text and place destructive close/reopen behind a confirmation.
 
-Officers: Directory (default), Invites, Access, Service tokens, Audit log tabs. All officers see the directory; director+ see the management tabs. Access reuses searchable officer controls; ownership actions live in the row menu. Directors manage officer active status; leadership changes roles and manages director/leadership active status, with owner guards enforced on the server. Tokens reveal their secret once in `.secret` with copy action. Audit retains actor, timestamp and target. Settings: separate Theme, Density, Profile sections with native radio groups and inline properties; save preferences immediately and announce the change.
+Officers: Directory (default), Invites, Access, Service tokens, Audit log tabs. All officers see the directory; director+ see the management tabs. Access reuses searchable officer controls; ownership actions live in the row menu. Directors manage officer active status; leadership changes roles and manages director/leadership active status, with owner guards enforced on the server. Tokens reveal their secret once in `.secret` with copy action. Audit retains actor, timestamp and target. *Superseded (V0.9): Settings now has a stats row, then Account, Preferences (appearance, time zone, club location), Club, Calendar & Dashboard and Session sections; see `shots/v09/settings-after-desktop.png`.* Settings: separate Theme, Density, Profile sections with native radio groups and inline properties; save preferences immediately and announce the change.
 
 ## Responsive layouts
 
