@@ -13,27 +13,27 @@
 10:00:21 [vite] ✓ built in 1.33s
 10:00:21 [build] Rearranging server assets...
 
- generating static routes 
-10:00:21   ├─ /404.html (+36ms) 
-10:00:21   ├─ /admin/users/index.html (+7ms) 
-10:00:21   ├─ /admin/tokens/index.html (+2ms) 
-10:00:21   ├─ /admin/audit/index.html (+2ms) 
-10:00:21   ├─ /admin/index.html (+3ms) 
-10:00:21   ├─ /buildspace-launchpad/index.html (+50ms) 
-10:00:21   ├─ /contacts/index.html (+6ms) 
-10:00:21   ├─ /design/index.html (+10ms) 
-10:00:21   ├─ /events/index.html (+11ms) 
-10:00:21   ├─ /finance/index.html (+7ms) 
-10:00:21   ├─ /launchpad/join/index.html (+5ms) 
-10:00:21   ├─ /launchpad/login/index.html (+4ms) 
-10:00:21   ├─ /launchpad/index.html (+5ms) 
-10:00:21   ├─ /login/index.html (+3ms) 
-10:00:21   ├─ /members/index.html (+6ms) 
-10:00:21   ├─ /officers/index.html (+14ms) 
-10:00:21   ├─ /onboarding/index.html (+11ms) 
-10:00:21   ├─ /settings/index.html (+7ms) 
-10:00:21   ├─ /speakers/index.html (+3ms) 
-10:00:21   ├─ /index.html (+6ms) 
+ generating static routes
+10:00:21   ├─ /404.html (+36ms)
+10:00:21   ├─ /admin/users/index.html (+7ms)
+10:00:21   ├─ /admin/tokens/index.html (+2ms)
+10:00:21   ├─ /admin/audit/index.html (+2ms)
+10:00:21   ├─ /admin/index.html (+3ms)
+10:00:21   ├─ /buildspace-launchpad/index.html (+50ms)
+10:00:21   ├─ /contacts/index.html (+6ms)
+10:00:21   ├─ /design/index.html (+10ms)
+10:00:21   ├─ /events/index.html (+11ms)
+10:00:21   ├─ /finance/index.html (+7ms)
+10:00:21   ├─ /launchpad/join/index.html (+5ms)
+10:00:21   ├─ /launchpad/login/index.html (+4ms)
+10:00:21   ├─ /launchpad/index.html (+5ms)
+10:00:21   ├─ /login/index.html (+3ms)
+10:00:21   ├─ /members/index.html (+6ms)
+10:00:21   ├─ /officers/index.html (+14ms)
+10:00:21   ├─ /onboarding/index.html (+11ms)
+10:00:21   ├─ /settings/index.html (+7ms)
+10:00:21   ├─ /speakers/index.html (+3ms)
+10:00:21   ├─ /index.html (+6ms)
 10:00:21 ✓ Completed in 228ms.
 
 10:00:21 [build] ✓ Completed in 3.57s.

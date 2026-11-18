@@ -40,8 +40,7 @@
 [7m500[0m   test(`frame strips for the PR (${theme})`, async ({ page }, info) => {
 [7m   [0m [93m                                                              ~~~~[0m
 
-Result (223 files): 
+Result (223 files):
 - 0 errors
 - 0 warnings
 - 9 hints
-

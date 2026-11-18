@@ -1,17 +1,17 @@
-docker : time="2026-11-18T10:02:08-08:00" level=warning msg="volume \"fix-server-perf_web_modules\" already exists but 
+docker : time="2026-11-18T10:02:08-08:00" level=warning msg="volume \"fix-server-perf_web_modules\" already exists but
 was not created by Docker Compose. Use `external: true` to use an existing volume"
 At line:2 char:181
 + ... TEXITCODE}; docker compose -p fix-server-perf -f compose.dev.yaml -f  ...
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : NotSpecified: (time="2026-11-1...xisting volume":String) [], RemoteException
     + FullyQualifiedErrorId : NativeCommandError
- 
- Volume fix-server-perf_web_astro Creating 
- Volume fix-server-perf_web_astro Creating 
- Volume fix-server-perf_web_astro Created 
- Volume fix-server-perf_web_astro Created 
- Container fix-server-perf-e2e-run-5193f19052fb Creating 
- Container fix-server-perf-e2e-run-5193f19052fb Created 
+
+ Volume fix-server-perf_web_astro Creating
+ Volume fix-server-perf_web_astro Creating
+ Volume fix-server-perf_web_astro Created
+ Volume fix-server-perf_web_astro Created
+ Container fix-server-perf-e2e-run-5193f19052fb Creating
+ Container fix-server-perf-e2e-run-5193f19052fb Created
 
 Running 6 tests using 1 worker
 

@@ -5,7 +5,7 @@ Summary:
   Fastest:	0.0005 secs
   Average:	0.0017 secs
   Requests/sec:	4608.3319
-  
+
 
 Response time histogram:
   0.000 [1]	|
@@ -39,6 +39,3 @@ Details (average, fastest, slowest):
 
 Status code distribution:
   [200]	36874 responses
-
-
-

@@ -5,7 +5,7 @@ Summary:
   Fastest:	0.0006 secs
   Average:	0.0024 secs
   Requests/sec:	3370.5971
-  
+
   Total data:	9332312 bytes
   Size/request:	346 bytes
 
@@ -41,6 +41,3 @@ Details (average, fastest, slowest):
 
 Status code distribution:
   [200]	26972 responses
-
-
-
