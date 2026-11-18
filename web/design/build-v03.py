@@ -261,7 +261,7 @@ onb = section('onboarding', '5 · Onboarding shell', 'Full screen on paper · si
               demo('Step 1 · hello (collage hides below 1100px)', hello) + demo('Step 2 · confirm what leadership pre-filled', confirm) + demo('Motion rules', motion))
 
 # ───────────── 6. Calendar-email picker ─────────────
-EMAILS = [('alex.chen@gmail.com', 'personal'), ('achen@student.ubc.ca', 'school'), ('alex@cseed.co', 'club'), ('alex.chen.work@outlook.com', ''), ('a.chen@sauder.ubc.ca', '')]
+EMAILS = [('alex.chen@example.com', 'personal'), ('achen@student.ubc.example', 'school'), ('alex@cseed.co', 'club'), ('alex.chen.work@example.net', ''), ('a.chen@sauder.ubc.example', '')]
 
 
 def picker(n, open_=True, adding=False, selected=0):

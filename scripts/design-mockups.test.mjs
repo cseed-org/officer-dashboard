@@ -32,3 +32,17 @@ test("every local href and src in the mockups points at a file that exists", () 
   }
   assert.deepEqual(broken, [], "broken local links");
 });
+
+const designText = files(design, (n) => /\.(html|py|m?js|css|md)$/.test(n));
+
+test("fixture contact data uses reserved domains and placeholder LinkedIn profiles", () => {
+  const real = [];
+  for (const file of designText) {
+    const text = read(file);
+    // Real mail providers and universities; fixtures use example.com/.net/.edu or *.example.
+    for (const [m] of text.matchAll(/[\w.%+-]+@(?:[\w-]+\.)*(?:gmail\.com|outlook\.com|hotmail\.com|yahoo\.com|uw\.edu|washington\.edu|ubc\.ca)\b/gi))
+      real.push(`${rel(file)}: ${m}`);
+    for (const [m] of text.matchAll(/linkedin\.com\/in\/(?!example-)[\w-]+/gi)) real.push(`${rel(file)}: ${m}`);
+  }
+  assert.deepEqual(real, [], "fixture contacts that could belong to real people");
+});
