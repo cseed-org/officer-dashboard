@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"officerdashboard/internal/luma"
@@ -11,6 +12,33 @@ import (
 	"testing"
 	"time"
 )
+
+func TestEventListDTOParityWithReferenceCatalog(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	q := e.db.Read()
+	cat, err := loadCatalog(ctx, q, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := e.srv.eventItems(ctx, q, cat, cat.events, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]store.Event{}
+	for _, event := range cat.events {
+		byID[event.ID] = event
+	}
+	want := paginate(items, func(item EventListItem) string { return eventKey(byID[item.ID]) }, "", 50)
+	response := e.mustOK(e.get("/api/events", e.officer()))
+	var got page[EventListItem]
+	if err := json.Unmarshal([]byte(response.Raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("event list DTOs changed:\ngot %+v\nwant %+v", got, want)
+	}
+}
 
 func TestEventSQLPageParityAcrossOffsetsAndDST(t *testing.T) {
 	e := newEnv(t)

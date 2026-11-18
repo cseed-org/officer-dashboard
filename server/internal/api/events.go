@@ -20,6 +20,26 @@ import (
 
 const csvMaxBytes = 5 * 1024 * 1024
 
+// Event list DTOs use people and teams, without the finance catalog or full event history.
+func loadEventCatalog(ctx context.Context, q *store.Queries) (*catalog, error) {
+	users, err := q.Users(ctx)
+	if err != nil {
+		return nil, err
+	}
+	teams, err := q.Subteams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cat := &catalog{users: make(map[string]*store.User, len(users)), teamByID: make(map[string]*store.Subteam, len(teams))}
+	for i := range users {
+		cat.users[users[i].ID] = &users[i]
+	}
+	for i := range teams {
+		cat.teamByID[teams[i].ID] = &teams[i]
+	}
+	return cat, nil
+}
+
 func (c *Ctx) eventsList() error {
 	if _, err := c.officer(); err != nil {
 		return err
@@ -39,20 +59,22 @@ func (c *Ctx) eventsList() error {
 	}
 	ctx := c.Context()
 	q := c.S.db.Read()
-	cat, err := loadCatalog(ctx, q, false)
+	cat, err := loadEventCatalog(ctx, q)
 	if err != nil {
 		return err
 	}
 	f := store.EventFilter{When: when, Search: qtext.V, Limit: limit + 1, Now: c.S.now()}
-	zone := c.S.effectiveZone(ctx, c.User.ID)
-	if from.V != "" {
-		day, _ := time.ParseInLocation("2006-01-02", from.V, zone)
-		f.From = &day
-	}
-	if to.V != "" {
-		day, _ := time.ParseInLocation("2006-01-02", to.V, zone)
-		end := day.AddDate(0, 0, 1)
-		f.To = &end
+	if from.V != "" || to.V != "" {
+		zone := c.S.effectiveZone(ctx, c.User.ID)
+		if from.V != "" {
+			day, _ := time.ParseInLocation("2006-01-02", from.V, zone)
+			f.From = &day
+		}
+		if to.V != "" {
+			day, _ := time.ParseInLocation("2006-01-02", to.V, zone)
+			end := day.AddDate(0, 0, 1)
+			f.To = &end
+		}
 	}
 	if cursor != "" {
 		f.CursorMs, f.CursorID, err = parseCursor(cursor)
