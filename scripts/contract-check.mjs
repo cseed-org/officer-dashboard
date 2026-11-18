@@ -21,6 +21,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
+import { droppedKeys, executableName, spawnFailure } from './contract-helpers.mjs';
+import { checkContractParity } from './contract-parity.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -32,7 +34,7 @@ const flag = (name) => args.includes(name);
 const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const verbose = flag('--verbose');
 
-const work = mkdtempSync(join(tmpdir(), 'contract-check-'));
+const work = mkdtempSync(join(process.env.PANE_SCRATCH_DIR ?? tmpdir(), 'contract-check-'));
 let server;
 const cleanup = () => {
   server?.kill('SIGTERM');
@@ -46,6 +48,7 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130)
 const bundle = join(work, 'contracts.mjs');
 await build({ entryPoints: [join(root, 'src/core/contracts.ts')], bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'error' });
 const { ENDPOINTS, ApiError } = await import(pathToFileURL(bundle).href);
+const browserEndpoints = await checkContractParity(root);
 const registryBundle = join(work, 'widget-registry.mjs');
 await build({ entryPoints: [join(root, 'web/src/ui/widgets/defaultLayout.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
 const { defaultWidgetLayout } = await import(pathToFileURL(registryBundle).href);
@@ -53,17 +56,17 @@ const { defaultWidgetLayout } = await import(pathToFileURL(registryBundle).href)
 // ───────────── binary, database, server ─────────────
 let bin = option('--bin');
 if (!bin) {
-  bin = join(work, 'dashboard');
+  bin = join(work, executableName('dashboard'));
   process.stdout.write('building the Go server… ');
   const built = spawnSync(process.env.GO ?? 'go', ['build', '-o', bin, './cmd/dashboard'], { cwd: join(root, 'server'), stdio: ['ignore', 'inherit', 'inherit'] });
-  if (built.status !== 0) throw new Error('go build failed');
+  if (built.status !== 0) throw new Error(spawnFailure('go build', built));
   console.log('done');
 }
 const dbPath = join(work, 'check.db');
 const env = { ...process.env, DB_PATH: dbPath, RECEIPTS_DIR: join(work, 'receipts') };
 for (const k of ['DEV_AUTH', 'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'GOOGLE_SERVICE_ACCOUNT_JSON', 'BOOTSTRAP_DIRECTOR_DISCORD_ID', 'BOOTSTRAP_OWNER_DISCORD_ID', 'BOOTSTRAP_OWNER_NAME', 'CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_ZONE_ID', 'D1_DATABASE_ID', 'DISCORD_BOT_TOKEN', 'SMTP_HOST', 'SMTP_FROM', 'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET']) delete env[k];
 const seeded = spawnSync(bin, ['seed', '-reset'], { env, encoding: 'utf8' });
-if (seeded.status !== 0) throw new Error(`seed failed: ${seeded.stderr}`);
+if (seeded.status !== 0) throw new Error(spawnFailure('seed', seeded));
 console.log(seeded.stdout.trim());
 
 const port = await new Promise((ok) => {
@@ -74,6 +77,7 @@ const port = await new Promise((ok) => {
 });
 const base = `http://127.0.0.1:${port}`;
 server = spawn(bin, ['serve'], { env: { ...env, ADDR: `127.0.0.1:${port}`, APP_URL: base }, stdio: ['ignore', 'ignore', verbose ? 'inherit' : 'ignore'] });
+server.on('error', (error) => { console.error(`server spawn failed: ${error.message}`); process.exit(1); });
 server.on('exit', (code) => code && console.error(`server exited with ${code}`));
 for (let i = 0; ; i++) {
   try {
@@ -156,16 +160,24 @@ async function call(name, { who = anon, params = {}, query, body, form, expect =
     if (!r.success) {
       verdict = 'bad ApiError';
       fail(label, 'error body is not an ApiError', { json, issues: r.error.issues });
+    } else {
+      const dropped = droppedKeys(json, r.data);
+      if (dropped.length) fail(label, 'error body contains undeclared keys', dropped);
     }
   } else if (csv || spec.response === 'csv') {
     const text = raw?.toString() ?? '';
     if (!type.startsWith('text/csv') || !res.headers.get('content-disposition')?.includes('attachment')) fail(label, 'CSV headers wrong', { type });
     if (!(name === 'membersExport' ? text.startsWith('Person ID,First name,Last name') && text.endsWith('\r\n') : text.startsWith('"fiscalYear"') && text.endsWith('\r\n'))) fail(label, 'CSV body is not the report table', text.slice(0, 120));
   } else if (typeof spec.response !== 'string') {
+    const browserResult = browserEndpoints[name]?.response.safeParse(json);
+    if (browserResult && !browserResult.success) fail(label, 'response violates the browser contract', browserResult.error.issues.slice(0, 5));
     const r = spec.response.safeParse(json);
     if (!r.success) {
       verdict = 'SCHEMA ERROR';
       fail(label, 'response violates the contract', r.error.issues.slice(0, 5));
+    } else {
+      const dropped = droppedKeys(json, r.data);
+      if (dropped.length) fail(label, 'response contains undeclared keys', dropped);
     }
   }
   log.push(`${verdict === 'ok' ? '✓' : '✗'} ${String(res.status).padEnd(3)} ${spec.method.padEnd(6)} ${path.padEnd(58)} ${ms.toFixed(1).padStart(6)} ms`);
