@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"officerdashboard/internal/luma"
@@ -236,7 +237,7 @@ type Counts struct {
 // EventCounts computes counts for one event, or for every event when eventID is "".
 // Registered follows Luma's approval states; a reflection is matched when its email
 // belongs to a checked-in guest of the same event.
-func (q *Queries) EventCounts(ctx context.Context, eventID string) (map[string]*Counts, error) {
+func (q *Queries) EventCounts(ctx context.Context, eventID string, onlyIDs ...[]string) (map[string]*Counts, error) {
 	out := map[string]*Counts{}
 	get := func(id string) *Counts {
 		c := out[id]
@@ -249,6 +250,13 @@ func (q *Queries) EventCounts(ctx context.Context, eventID string) (map[string]*
 	where, args := "", []any{}
 	if eventID != "" {
 		where, args = " WHERE event_id = ?", []any{eventID}
+	}
+	if len(onlyIDs) > 0 {
+		if len(onlyIDs[0]) == 0 {
+			return out, nil
+		}
+		raw, _ := json.Marshal(onlyIDs[0])
+		where, args = " WHERE event_id IN (SELECT value FROM json_each(?))", []any{string(raw)}
 	}
 	rows, err := q.q.QueryContext(ctx, `SELECT event_id, approval_status, checked_in_at IS NOT NULL, count(*) FROM event_guests`+where+` GROUP BY event_id, approval_status, checked_in_at IS NOT NULL`, args...)
 	if err != nil {

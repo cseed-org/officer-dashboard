@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"officerdashboard/internal/luma"
 	"runtime"
 	"sort"
 	"strings"
@@ -28,6 +29,30 @@ const driverName = "sqlite3_fold"
 
 func init() {
 	sql.Register(driverName, &sqlite3.SQLiteDriver{ConnectHook: func(c *sqlite3.SQLiteConn) error {
+		if err := c.RegisterFunc("instant_ms", func(s string) any {
+			t, err := luma.ParseInstant(s)
+			if err != nil {
+				return nil
+			}
+			return t.UnixMilli()
+		}, true); err != nil {
+			return err
+		}
+		for name, field := range map[string]func(time.Time) int64{
+			"instant_seconds":  func(t time.Time) int64 { return t.Unix() },
+			"instant_fraction": func(t time.Time) int64 { return int64(t.Nanosecond()) },
+		} {
+			if err := c.RegisterFunc(name, func(s string) any {
+				t, err := luma.ParseInstant(s)
+				if err != nil {
+					return nil
+				}
+				return field(t)
+			}, true); err != nil {
+				return err
+			}
+		}
+
 		return c.RegisterFunc("fold", func(s string) string { return Fold(s) }, true)
 	}})
 }
