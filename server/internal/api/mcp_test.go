@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -152,6 +154,53 @@ func TestOAuthRegisterValidatesRedirects(t *testing.T) {
 	expectStatus(t, "confidential client", e.do("POST", "/oauth/register", map[string]any{"redirect_uris": []string{testRedirect}, "token_endpoint_auth_method": "client_secret_basic"}, loopback(anon)), 400)
 	for _, good := range []string{"https://claude.ai/api/mcp/auth_callback", "http://localhost:6274/oauth/callback", "cursor://anysphere.cursor-retrieval/oauth/callback"} {
 		registerClient(t, e, "ok", good)
+	}
+}
+
+func TestOAuthRegistrationStorageIsGloballyBounded(t *testing.T) {
+	e := newEnv(t)
+	authorized, _ := connectAgent(t, e, "user-priya", "Authorized client")
+	uris := make([]string, 7)
+	for i := range uris {
+		uris[i] = "https://example.com/" + strings.Repeat("x", 2000)
+	}
+	register := func(name string, n int) string {
+		t.Helper()
+		a := anon
+		a.remote = fmt.Sprintf("203.0.113.%d:40000", n%250+1)
+		r := e.do("POST", "/oauth/register", map[string]any{"client_name": name, "redirect_uris": uris}, a)
+		if r.Status != 201 {
+			t.Fatalf("register %s from %s: %d %s", name, a.remote, r.Status, r.Raw)
+		}
+		return r.str("client_id")
+	}
+	oldest := register("oldest unused", 0)
+	newest := ""
+	for i := 0; i < 400; i++ {
+		newest = register(fmt.Sprintf("unused-%03d", i), i+1)
+	}
+
+	var count, bytes int
+	err := e.db.R.QueryRow(`SELECT count(*), COALESCE(sum(length(id)+length(name)+length(redirect_uris)),0) FROM oauth_clients c
+		WHERE NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id=c.id)
+		AND NOT EXISTS (SELECT 1 FROM oauth_codes code WHERE code.client_id=c.id)`).Scan(&count, &bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count > 1024 || bytes > 4<<20 {
+		t.Fatalf("unused client storage unbounded: %d rows, %d bytes", count, bytes)
+	}
+	if _, err := e.db.Read().OAuthClientByID(context.Background(), oldest); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("oldest unused registration was not reclaimed: %v", err)
+	}
+	if _, err := e.db.Read().OAuthClientByID(context.Background(), newest); err != nil {
+		t.Fatalf("newest unused registration missing: %v", err)
+	}
+	if _, err := e.db.Read().OAuthClientByID(context.Background(), authorized); err != nil {
+		t.Fatalf("authorized client was evicted: %v", err)
+	}
+	if n := e.scalar(`SELECT count(*) FROM oauth_grants WHERE client_id = ?`, authorized).(int64); n != 1 {
+		t.Fatalf("authorized client's grant count = %d, want 1", n)
 	}
 }
 

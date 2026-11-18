@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -54,5 +55,34 @@ func TestOAuthRefreshHistoryLifecycle(t *testing.T) {
 	}
 	if _, err := q.GrantByID(ctx, "grant"); err != nil {
 		t.Fatalf("expired grant audit row was deleted: %v", err)
+	}
+}
+
+func TestOAuthUnusedClientRowCap(t *testing.T) {
+	db, err := Open(t.TempDir() + "/oauth-clients.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	if err := db.Write(ctx, func(q *Queries) error {
+		for i := 0; i < oauthUnusedClientMaxRows+3; i++ {
+			if err := q.InsertOAuthClient(ctx, OAuthClient{ID: fmt.Sprintf("client-%04d", i), Name: "Client", RedirectURIs: []string{"https://example.com/cb"}, CreatedAt: Ms(i + 1)}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.R.QueryRowContext(ctx, `SELECT count(*) FROM oauth_clients`).Scan(&count); err != nil || count != oauthUnusedClientMaxRows {
+		t.Fatalf("client rows = %d, want %d (err=%v)", count, oauthUnusedClientMaxRows, err)
+	}
+	if _, err := db.Read().OAuthClientByID(ctx, "client-0000"); err == nil {
+		t.Fatal("oldest unused client survived the row cap")
+	}
+	if _, err := db.Read().OAuthClientByID(ctx, fmt.Sprintf("client-%04d", oauthUnusedClientMaxRows+2)); err != nil {
+		t.Fatalf("newest client missing: %v", err)
 	}
 }

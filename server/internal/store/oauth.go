@@ -16,6 +16,16 @@ var ErrCodeReused = errors.New("authorization code already used")
 // redeemed code is still recognised.
 const usedCodeKeepMs = 60 * 60 * 1000
 
+const (
+	// Bound abandoned public-client registrations globally; per-IP rate limits do not stop
+	// distributed writers. Clients with a grant or an in-flight/redeemed code are not unused.
+	oauthUnusedClientMaxRows  = 1024
+	oauthUnusedClientMaxBytes = 4 << 20
+)
+
+const unusedOAuthClient = `NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)
+	AND NOT EXISTS (SELECT 1 FROM oauth_codes c WHERE c.client_id = oauth_clients.id)`
+
 // OAuthClient is an oauth_clients row: an MCP client (Claude Code, Cursor, …) that
 // registered itself. Clients are public (no secret); PKCE protects the code exchange.
 type OAuthClient struct {
@@ -25,11 +35,33 @@ type OAuthClient struct {
 	CreatedAt    Ms
 }
 
-// InsertOAuthClient stores a dynamically registered client.
+// InsertOAuthClient stores a dynamically registered client, first reclaiming the oldest
+// unused registrations to keep their global row count and serialized size bounded.
 func (q *Queries) InsertOAuthClient(ctx context.Context, c OAuthClient) error {
 	uris, err := json.Marshal(c.RedirectURIs)
 	if err != nil {
 		return err
+	}
+	incomingBytes := len(c.ID) + len(c.Name) + len(uris)
+	for {
+		var rows, bytes int
+		if err := q.q.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(length(CAST(id AS BLOB))+length(CAST(name AS BLOB))+length(CAST(redirect_uris AS BLOB))),0) FROM oauth_clients WHERE `+unusedOAuthClient).Scan(&rows, &bytes); err != nil {
+			return err
+		}
+		if rows < oauthUnusedClientMaxRows && bytes+incomingBytes <= oauthUnusedClientMaxBytes {
+			break
+		}
+		var rowID int64
+		err := q.q.QueryRowContext(ctx, `SELECT rowid FROM oauth_clients WHERE `+unusedOAuthClient+` ORDER BY created_at, rowid LIMIT 1`).Scan(&rowID)
+		if errors.Is(err, sql.ErrNoRows) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := q.q.ExecContext(ctx, `DELETE FROM oauth_clients WHERE rowid = ?`, rowID); err != nil {
+			return err
+		}
 	}
 	_, err = q.q.ExecContext(ctx, `INSERT INTO oauth_clients (id, name, redirect_uris, created_at) VALUES (?,?,?,?)`, c.ID, c.Name, string(uris), int64(c.CreatedAt))
 	return err
