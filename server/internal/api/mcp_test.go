@@ -890,6 +890,37 @@ func TestMCPLaunchpadInviteNeedsMailer(t *testing.T) {
 	}
 }
 
+func TestOAuthConcurrentCodeReuseRevokesGrant(t *testing.T) {
+	e := newEnv(t)
+	clientID := registerClient(t, e, "Claude Code")
+	verifier, challenge := pkcePair()
+	allow := e.do("POST", "/oauth/authorize", authorizeForm(clientID, challenge, "allow"), loopback(e.officer()))
+	loc, _ := url.Parse(allow.Header.Get("Location"))
+	code := loc.Query().Get("code")
+	exchange := func() reply {
+		return e.do("POST", "/oauth/token", url.Values{"grant_type": {"authorization_code"}, "code": {code}, "code_verifier": {verifier}, "client_id": {clientID}}, loopback(anon))
+	}
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	oldHook := oauthCodeRedeemedHook
+	oauthCodeRedeemedHook = func() { close(entered); <-release }
+	t.Cleanup(func() { oauthCodeRedeemedHook = oldHook })
+	first := make(chan reply, 1)
+	go func() { first <- exchange() }()
+	<-entered // The first redemption has committed; it has not answered yet.
+	expectStatus(t, "concurrent replay", exchange(), 400)
+	close(release)
+	tok := <-first
+	if tok.Status != 200 {
+		t.Fatalf("first redemption: %d %s", tok.Status, tok.Raw)
+	}
+	expectStatus(t, "access after concurrent replay", e.do("POST", "/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "ping"}, bearer(tok.str("access_token"))), 401)
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action = 'agent.revoked_code_reuse'`).(int64); n != 1 {
+		t.Fatalf("concurrent reuse audit rows = %d, want 1", n)
+	}
+}
+
 // A redeemed code presented again revokes the tokens it bought (RFC 6749 §4.1.2); a code
 // that never produced tokens (its one try failed) is simply refused.
 func TestOAuthCodeReplayRevokes(t *testing.T) {
