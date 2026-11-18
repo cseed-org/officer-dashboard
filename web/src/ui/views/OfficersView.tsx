@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError, fieldErrors } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import type { Contact, CurrentUser, DMResult, Invite, InviteResponse, Officer, OfficerActivityResponse, ProfileResponse, Subteam } from '../../lib/contracts';
@@ -183,14 +183,14 @@ function InviteDialog({
   open: boolean;
   onClose: () => void;
   subteams: Subteam[];
-  dmConfigured: boolean;
+  dmConfigured: boolean | null;
   prefill: { name: string; discordId: string; subteamId: string } | null;
   onSent: () => void;
 }) {
   const [name, setName] = useState('');
   const [discordId, setDiscordId] = useState('');
   const [subteamId, setSubteamId] = useState('');
-  const [dm, setDm] = useState(dmConfigured);
+  const [dm, setDm] = useState(!!dmConfigured);
   const [link, setLink] = useState(true);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -202,7 +202,7 @@ function InviteDialog({
     setName(prefill?.name ?? '');
     setDiscordId(prefill?.discordId ?? '');
     setSubteamId(prefill?.subteamId ?? subteams[0]?.id ?? '');
-    setDm(dmConfigured);
+    setDm(!!dmConfigured);
     setLink(true);
     setErrors({});
     setError(null);
@@ -296,7 +296,7 @@ function InviteDialog({
             <label class="choice">
               <input type="checkbox" checked={dm} disabled={!dmConfigured} onChange={(e) => setDm((e.target as HTMLInputElement).checked)} data-invite-dm />
               <span class="choice-title">Discord DM</span>
-              <span class="choice-sub">{dmConfigured ? 'The CSEED bot messages them a sign-in link' : 'Not set up: the dashboard has no Discord bot token'}</span>
+              <span class="choice-sub">{dmConfigured === null ? 'Couldn’t check Discord DM setup' : dmConfigured ? 'The CSEED bot messages them a sign-in link' : 'Not set up: the dashboard has no Discord bot token'}</span>
             </label>
             <label class="choice">
               <input type="checkbox" checked={link} onChange={(e) => setLink((e.target as HTMLInputElement).checked)} data-invite-copy />
@@ -305,7 +305,7 @@ function InviteDialog({
             </label>
           </div>
           <p class="field-hint" id="inv-method-hint">
-            {dmConfigured ? 'Choose one or both.' : 'Discord DMs aren’t configured (DISCORD_BOT_TOKEN), so invites are copy-link only for now.'}
+            {dmConfigured === null ? 'Couldn’t check Discord DM setup. Try loading invites again; copy-link invites are available.' : dmConfigured ? 'Choose one or both.' : 'Discord DMs aren’t configured (DISCORD_BOT_TOKEN), so invites are copy-link only for now.'}
           </p>
           {fe('method')}
         </fieldset>
@@ -480,12 +480,17 @@ function InvitesSection({
 }) {
   const [note, setNote] = useState<string | null>(null);
   const [editing, setEditing] = useState<Invite | null>(null);
+  const pendingInvites = useRef(new Set<string>());
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [freshLink, setFreshLink] = useState<{ id: string; link: string } | null>(null);
   const recent = invites.filter((i) => i.status !== 'onboarded' || Date.now() - Date.parse(i.onboardedAt ?? i.createdAt) < 14 * 864e5);
   const counts = { pending: 0, expired: 0, accepted: 0 };
   for (const i of recent) counts[i.status === 'pending' ? 'pending' : i.status === 'expired' ? 'expired' : 'accepted']++;
 
   const reissue = async (i: Invite, method: 'dm' | 'link') => {
+    if (pendingInvites.current.has(i.id)) return;
+    pendingInvites.current.add(i.id);
+    setPendingIds(new Set(pendingInvites.current));
     setNote(null);
     try {
       const r = await api('inviteCreate', { body: { name: i.name, discordId: i.discordId, subteamId: i.subteam?.id ?? '', method } });
@@ -497,6 +502,9 @@ function InvitesSection({
       onChanged();
     } catch (e) {
       setNote(errText(e, 'That didn’t work.'));
+    } finally {
+      pendingInvites.current.delete(i.id);
+      setPendingIds(new Set(pendingInvites.current));
     }
   };
 
@@ -562,32 +570,33 @@ function InvitesSection({
                     <span class="people-cell">
                       {i.status === 'accepted' ? (
                         <span class="action-row">
-                          <button class="btn btn--small" onClick={() => setEditing(i)} data-invite-edit>
+                          <button class="btn btn--small" disabled={pendingIds.has(i.id)} onClick={() => setEditing(i)} data-invite-edit>
                             Edit details
                           </button>
                         </span>
                       ) : i.status === 'pending' || i.status === 'expired' ? (
                         <span class="action-row">
-                          <button class="btn btn--small" onClick={() => setEditing(i)} data-invite-edit>
+                          <button class="btn btn--small" disabled={pendingIds.has(i.id)} onClick={() => setEditing(i)} data-invite-edit>
                             Edit details
                           </button>
                           {i.status === 'expired' && (
-                            <button class="btn btn--small" onClick={() => onResend(i)}>
+                            <button class="btn btn--small" disabled={pendingIds.has(i.id)} onClick={() => onResend(i)}>
                               Resend
                             </button>
                           )}
                           {i.status === 'pending' && dmConfigured && (
-                            <button class="btn btn--small" onClick={() => reissue(i, 'dm')}>
+                            <button class="btn btn--small" disabled={pendingIds.has(i.id)} onClick={() => reissue(i, 'dm')}>
                               {i.dmError ? 'Retry DM' : 'Resend DM'}
                             </button>
                           )}
                           {i.status === 'pending' && (
-                            <button class="btn btn--small" title="Creates a fresh link; earlier links stop working" onClick={() => reissue(i, 'link')}>
+                            <button class="btn btn--small" disabled={pendingIds.has(i.id)} title="Creates a fresh link; earlier links stop working" onClick={() => reissue(i, 'link')}>
                               Copy link
                             </button>
                           )}
                           <button
                             class="btn btn--small"
+                            disabled={pendingIds.has(i.id)}
                             onClick={() =>
                               confirm({
                                 title: i.status === 'expired' ? 'Remove invite' : 'Revoke invite',
@@ -1022,15 +1031,19 @@ function SupportDrawer({ contact, onClose }: { contact: Contact | null; onClose:
 function MyProfileDrawer({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
   const [data, setData] = useState<ProfileResponse | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!open) return;
+    const ctrl = new AbortController();
     setData(null);
-    api('profileGet').then(setData, setError);
-  }, [open]);
+    setError(null);
+    api('profileGet', { signal: ctrl.signal }).then((data) => !ctrl.signal.aborted && setData(data), (error) => !ctrl.signal.aborted && setError(error));
+    return () => ctrl.abort();
+  }, [open, attempt]);
   return (
     <Drawer open={open} onClose={onClose} id="own-profile" title="My profile" size="lg">
       <div class="stack">
-        {error ? <ErrorState error={error} /> : !data ? <Loading rows={4} label="Loading your profile" /> : <ProfileForm data={data} onSaved={(r) => (setData(r), onSaved())} />}
+        {error ? <ErrorState error={error} onRetry={() => setAttempt((n) => n + 1)} /> : !data ? <Loading rows={4} label="Loading your profile" /> : <ProfileForm data={data} onSaved={(r) => (setData(r), onSaved())} />}
         <section class="stack" id="calendar">
           <h3>Calendar</h3>
           <CalendarPanel next="/officers?profile=me" removable />
@@ -1045,11 +1058,9 @@ function MyProfileDrawer({ open, onClose, onSaved }: { open: boolean; onClose: (
 export default function OfficersView({ me, section = 'directory' }: { me: CurrentUser; section?: 'directory' | 'invites' }) {
   const list = useApi('officersList');
   const isDirector = me.role !== 'officer';
-  const [invites, setInvites] = useState<{ invites: Invite[]; dmConfigured: boolean } | null>(null);
-  const loadInvites = () => {
-    if (isDirector) api('invitesList').then(setInvites, () => setInvites({ invites: [], dmConfigured: false }));
-  };
-  useEffect(loadInvites, []);
+  const invitesState = useApi('invitesList', {}, null, isDirector);
+  const invites = invitesState.status === 'ready' ? invitesState.data : null;
+  const loadInvites = invitesState.reload;
   const [q, setQ] = useState('');
   const [team, setTeam] = useState('');
   const [sort, setSort] = useState<Sort<OfficerSort> | null>(null);
@@ -1160,9 +1171,9 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
               onSort={setSort}
               empty={
                 support.length === 0 ? (
-                  <p class="muted small people-group-empty" role="status">
-                    {supportLoaded && !needle ? 'None yet. Mark an external contact as club support on the Contacts page.' : 'No club support contacts match.'}
-                  </p>
+                  <div class="muted small people-group-empty" role="status">
+                    {supportList.status === 'loading' ? <Loading label="Loading support contacts" /> : supportList.status === 'error' ? <ErrorState error={supportList.error} onRetry={supportList.reload} /> : supportLoaded && !needle ? 'None yet. Mark an external contact as club support on the Contacts page.' : 'No club support contacts match.'}
+                  </div>
                 ) : undefined
               }
             >
@@ -1193,6 +1204,8 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
         </PeopleCard>
       )}
 
+      {section === 'invites' && isDirector && invitesState.status === 'loading' && <Loading label="Loading invites" />}
+      {section === 'invites' && isDirector && invitesState.status === 'error' && <ErrorState error={invitesState.error} onRetry={loadInvites} />}
       {section === 'invites' && isDirector && invites && (
         <InvitesSection
           invites={invites.invites}
@@ -1227,7 +1240,7 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
           open={inviteOpen}
           onClose={() => setInviteOpen(false)}
           subteams={subteams}
-          dmConfigured={invites?.dmConfigured ?? false}
+          dmConfigured={invites?.dmConfigured ?? null}
           prefill={prefill}
           onSent={refresh}
         />

@@ -2,7 +2,7 @@ import { useImperativeHandle, useRef, useState } from 'preact/hooks';
 import type { Ref } from 'preact';
 import { api, ApiCallError, fieldErrors } from '../../lib/api/client';
 import type { MyProfile, ProfileResponse, ProfileUpsertRequest } from '../../lib/contracts';
-import { isGradMonth, isLinkedIn, PROFILE_MAX } from '../../lib/profileRules';
+import { isEmail, isGradMonth, isLinkedIn, PROFILE_MAX } from '../../lib/profileRules';
 import { OFFICER_TEAMS } from '../../lib/officerTeams';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -52,9 +52,8 @@ function check(v: Values, needsSubteam: boolean, section?: ProfileSection): Reco
   else if (!/^[+0-9 ().-]+$/.test(v.phone.trim()) || digits < 7 || digits > 15) e.phone = 'Enter a phone number with at least 7 digits';
   if (!v.month || !v.day) e.birthday = 'Choose the month and day of your birthday';
   else if (+v.day > DAYS_IN[+v.month - 1]!) e.birthday = `${MONTHS[+v.month - 1]} has only ${DAYS_IN[+v.month - 1]} days`;
-  const email = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-  if (v.personalEmail && !email.test(v.personalEmail.trim())) e.personalEmail = 'Enter a valid email, like you@example.org';
-  if (v.schoolEmail && !email.test(v.schoolEmail.trim())) e.schoolEmail = 'Enter a valid email, like you@school.edu';
+  if (v.personalEmail && !isEmail(v.personalEmail.trim())) e.personalEmail = 'Enter a valid email, like you@example.org';
+  if (v.schoolEmail && !isEmail(v.schoolEmail.trim())) e.schoolEmail = 'Enter a valid email, like you@school.edu';
   if (v.gradDate.trim() && !isGradMonth(v.gradDate.trim())) e.gradDate = 'Enter a month, like 2028-05';
   if (v.linkedin.trim() && !isLinkedIn(v.linkedin.trim())) e.linkedin = 'Use your https://linkedin.com/in/… address';
   if (needsSubteam && !v.subteamId) e.subteamId = 'Choose your subteam';
@@ -150,6 +149,8 @@ export function ProfileForm({
       const fe = fieldErrors(e);
       if (Object.keys(fe).length) {
         setErrors(fe);
+        const hidden = section && Object.keys(fe).filter((field) => !SECTION_FIELDS[section].includes(field));
+        if (hidden && hidden.length) setFormError(hidden.map((field) => `${field}: ${fe[field]}`).join('. ') + '. Return to that profile stage to correct it.');
         focusFirst(fe);
       } else setFormError(e instanceof ApiCallError ? e.message : 'We couldn’t save your profile. Your entries are still here. Try again.');
       return false;
