@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { devLogin, overflow, THEMES, useTheme, watchErrors } from './helpers';
-import { defaultWidgetLayout } from '../src/ui/widgets/registry';
+import { defaultWidgetLayout } from '../src/ui/widgets/catalog';
 
 /**
  * V0.4 Home block grid. Every test starts by writing a known layout, so a failed earlier run (or
@@ -539,6 +539,33 @@ test('Whole-tile drag has a threshold, a lifted live card, and native cursors', 
   await card.locator('.blk-handle').click();
   await expect(card.locator('.blk-handle')).toBeFocused();
   await expect(clone).toHaveCount(0);
+});
+
+test('M-088: a 20-step pointer drag does not rerender an unchanged widget body', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'mouse drag runs once');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openHome(page, [{ id: 'calendar', size: '2x1' }, { id: 'links', size: '2x1' }]);
+  await page.waitForLoadState('networkidle');
+  await page.evaluate(async () => {
+    const modulePath = '/src/ui/widgets/registry.ts';
+    const { widgetDef } = await import(modulePath);
+    const def = widgetDef('links')!;
+    const Original = def.component;
+    (window as any).__linkRenders = 0;
+    def.component = ((props: any) => {
+      (window as any).__linkRenders++;
+      return (Original as any)(props);
+    }) as any;
+  });
+  await page.getByRole('button', { name: 'Edit home' }).click();
+  const box = (await widget(page, 'calendar').boundingBox())!;
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 160, y + 80, { steps: 20 });
+  await page.waitForTimeout(150);
+  await page.mouse.up();
+  expect(await page.evaluate(() => (window as any).__linkRenders)).toBe(0);
 });
 
 test('Edit sway runs without replaying the entrance after Done', async ({ page }) => {
