@@ -11,10 +11,12 @@ import (
 type recordingQ struct {
 	Q
 	statements []string
+	arguments  [][]any
 }
 
 func (r *recordingQ) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	r.statements = append(r.statements, query)
+	r.arguments = append(r.arguments, append([]any(nil), args...))
 	return r.Q.QueryContext(ctx, query, args...)
 }
 
@@ -49,21 +51,18 @@ func TestPerformanceQueryPlans(t *testing.T) {
 		t.Fatal(err)
 	}
 	if plan := explain(t, x.db, rec.statements[0]); !strings.Contains(plan, "contributions_journal_entry_idx") {
-		t.Fatal(plan)
+		t.Error(plan)
 	}
 	for _, f := range []AuditFilter{{Limit: 51}, {EntityType: "purchase_request", Limit: 51}} {
 		f.HasCursor, f.CursorCreatedAt, f.CursorID = true, 100, "cursor"
 		rec.statements = nil
+		rec.arguments = nil
 		if _, err := q.Audit(ctx, f); err != nil {
 			t.Fatal(err)
 		}
-		args := []any{100, "cursor"}
-		if f.EntityType != "" {
-			args = append([]any{f.EntityType}, args...)
-		}
-		plan := explain(t, x.db, rec.statements[0], args...)
+		plan := explain(t, x.db, rec.statements[0], rec.arguments[0]...)
 		if strings.Contains(plan, "TEMP B-TREE") || strings.Contains(plan, "MULTI-INDEX OR") {
-			t.Fatal(plan)
+			t.Error(plan)
 		}
 	}
 	for _, tc := range []struct{ query, index string }{
@@ -73,7 +72,7 @@ func TestPerformanceQueryPlans(t *testing.T) {
 		{"SELECT id FROM buildspace_launchpad_activity WHERE purchase_id=?", "buildspace_activity_purchase_idx"},
 	} {
 		if plan := explain(t, x.db, tc.query, "x"); !strings.Contains(plan, tc.index) {
-			t.Fatal(plan)
+			t.Error(plan)
 		}
 	}
 }
@@ -189,7 +188,7 @@ func TestRequestCursorParityAndPlan(t *testing.T) {
 	if _, err := On(rec).Requests(ctx, f); err != nil {
 		t.Fatal(err)
 	}
-	plan := explain(t, x.db, rec.statements[0], f.CursorCreatedAt, f.CursorID)
+	plan := explain(t, x.db, rec.statements[0], rec.arguments[0]...)
 	if strings.Contains(plan, "TEMP B-TREE") || strings.Contains(plan, "MULTI-INDEX OR") {
 		t.Fatal(plan)
 	}
