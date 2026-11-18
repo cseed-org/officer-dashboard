@@ -26,8 +26,9 @@ g['paths'].update({
     'grid': 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
     'arrow-right': 'M5 12h14M13 6l6 6-6 6',
 })
-g['nav'] = [('home', 'Home', 'home'), ('events', 'Events', 'calendar'), ('officers', 'Officers', 'users'),
-            ('members', 'Members', 'user'), ('speakers', 'Speakers', 'mic'), ('design', 'Design', 'palette'),
+# Keys are mockup filenames: the V0.3 people, speakers and design previews are versioned.
+g['nav'] = [('home', 'Home', 'home'), ('events', 'Events', 'calendar'), ('officers-v03', 'Officers', 'users'),
+            ('members-v03', 'Members', 'user'), ('speakers-v03', 'Speakers', 'mic'), ('design-requests-v03', 'Design', 'palette'),
             ('finance', 'Requests & Finance', 'wallet'), ('admin', 'Admin', 'shield')]
 
 GRIP = '<svg class="icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' + ''.join(
