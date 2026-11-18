@@ -34,8 +34,9 @@ A failed job returns its request to approved, clears its token claim and re-queu
 automatically while fewer than three total claims have been attempted. The default
 queued-job poll discovers retries. After the third failed attempt the job stays failed
 for a director to resolve manually. Only the current claiming token may complete it. Revoking a token
-prevents future use; deactivating a user ends sessions but does not revoke independently
-issued service tokens (revoke those separately).
+prevents future use. Deactivating its creator or demoting them below director revokes every
+service token they created in the same transaction (`token.revoked_with_user` in the audit log);
+tokens also answer 401 whenever their creator is inactive or below director.
 
 **Behind Cloudflare Access.** `/api/ingest/*` and `/api/agent/*` sit behind an Access application
 with a Service Auth policy ([deployment, step 5](deployment.md#5-a-service-token-for-the-bot-the-luma-ingest-and-the-purchasing-agent)).
@@ -54,8 +55,9 @@ claim calls from the agent return 409 and can never re-queue it (no second purch
 Directors get a `request.held` notification with the attempted vs approved amount, and
 the request page shows a "held for director review" banner (`settlementHold`). A
 director settles it with `POST /api/requests/:id/transition` (`to: 'fulfilled'`), which
-clears the hold; sending it back to `approved` cancels the held job instead. The
-director's own settlement has no limit.
+clears the hold; sending it back to `approved` cancels the held job instead. Ordinary
+directors share the estimate-plus-tolerance settlement ceiling; only leadership can settle
+above it.
 
 ## Receipts and Google service accounts
 

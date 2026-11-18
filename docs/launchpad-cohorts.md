@@ -85,7 +85,7 @@ Builders read `team` entries on their own project. Mentors read `team` and `ment
 
 - **Cohort**: create, rename and archive need director access. Archiving makes the cohort read-only everywhere: officer writes return 409, builder portals become read-only, its builders drop out of weekly-due calendar items and the awaiting counts, and Discord ingest for its builders returns 400. Restoring is allowed. A cohort can be deleted only when it has no projects, people or accounts.
 - **Project archive/restore** (officer): archiving also archives the project's builders (same timestamp) and ends their portal sessions; restoring brings back exactly those builders. Archived projects drop out of mentor load, auto-assign, mentor portals and calendars. **Delete** (director) needs no builders (archived builders count) and no activity.
-- **Builder archive/restore** (officer): disables or re-enables the linked account. **Delete** (director) needs no activity. It deletes their portal account, which ends the sessions.
+- **Builder archive/restore** (officer): archiving ends the linked account's portal sessions and pauses sign-in (403 `archived`); its account status is unchanged, and restoring resumes access. **Delete** (director) needs no activity. It deletes their portal account, which ends the sessions.
 - Every write that touches an archived project, builder or cohort returns 409, except restore.
 - Pending builder invites can be revoked (deleting the account row) by any officer. Disabling or enabling an active account needs director access.
 
