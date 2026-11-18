@@ -46,6 +46,7 @@ export function CalendarPanel({ next, removable = false, onState }: { next: stri
   if (!st) return <div class="skel skel--row" aria-busy="true" />;
 
   const setMode = async (mode: 'ics' | 'google') => {
+    if (busy) return;
     setNote(null);
     if (mode === 'google' && !st.google.connected) {
       apply({ ...st, mode: 'google' }); // shows the Connect panel; not saved until connected
@@ -107,12 +108,12 @@ export function CalendarPanel({ next, removable = false, onState }: { next: stri
         <legend>How should events reach you?</legend>
         <div class="choice-row choice-row--compact">
           <label class="choice">
-            <input type="radio" name="cal-mode" value="ics" checked={st.mode === 'ics'} onChange={() => setMode('ics')} />
+            <input type="radio" name="cal-mode" value="ics" disabled={busy} checked={st.mode === 'ics'} onChange={() => setMode('ics')} />
             <span class="choice-title">.ics email invites</span>
             <span class="choice-sub">An invite email to the address above, for any calendar app</span>
           </label>
           <label class="choice">
-            <input type="radio" name="cal-mode" value="google" checked={st.mode === 'google'} disabled={!st.hasProfile} onChange={() => setMode('google')} />
+            <input type="radio" name="cal-mode" value="google" checked={st.mode === 'google'} disabled={busy || !st.hasProfile} onChange={() => setMode('google')} />
             <span class="choice-title">Google Calendar sync</span>
             <span class="choice-sub">{st.google.configured ? 'Connect Google once; events appear and update by themselves' : 'Not configured on this dashboard'}</span>
           </label>
