@@ -23,7 +23,7 @@ Leadership sets the weekly due day from the Buildspace + Launchpad page itself (
 - **Club time zone.** “Today”, the current week and the due moment use the club time zone from Settings (previously hard-coded Pacific). Weeks are calendar dates in that zone, so DST changes never move a boundary; a due time on a DST night resolves like a wall clock (a skipped 02:30 becomes 03:30, never earlier).
 - **A week is the dates up to and including its due date.** With a Wednesday due day, weeks run Thursday–Wednesday. A dated weekly entry counts for the week containing its date. The due time affects only the “Past due” signal and calendar titles, not which week an entry belongs to, because entries are date-only; a check-in dated on the due day still counts for that week.
 - **Changing the setting mid-week never moves the current deadline.** The new rule starts the day after the current week's due date. Its first week runs from then to the first new due weekday at least six days later, so the transition week lasts 7–13 days instead of demanding two check-ins in a few days. Example: on Tuesday Nov 3, switching from Sunday to Wednesday keeps this week as Nov 2–8, then Nov 9–18 (10 days), then Thursday–Wednesday weeks. Saving again before the change takes effect replaces the pending change; choosing the current rule again cancels it. Past weeks never change, because rules only ever take effect after the current week.
-- **Everything follows the same rules:** the “Awaiting this week” summary and filter, each builder's This week status, the drawer notice, absences this week, Discord ingest (its response reports the assigned `week`), seeding, and the `buildspace-weekly` calendar items.
+- **Everything follows the same week rules:** the “Awaiting this week” summary and filter, each builder's This week status, the drawer notice, absences this week, Discord ingest (its response reports the assigned `week`), seeding, and the `buildspace-weekly` calendar items. Calendar items additionally exclude builders on projects marked **Shipped**, along with the archived and not-yet-joined exclusions below.
 
 Rules are versioned rows in `buildspace_launchpad_week_rules` (migration `0019_buildspace_schedule.sql`, after #49's `0018`): each governs dates from its `effective_from` until the next row. The week arithmetic lives in `server/internal/store/buildspace_schedule.go`, with unit tests for different due days, year ends, transitions, DST due moments and the club-zone “today” on a fall-back night, and API tests for leadership-only writes, auditing, a mid-week change, ingest assignment and calendar items.
 
@@ -78,17 +78,17 @@ Resolved in V0.12 ([launchpad-cohorts.md](launchpad-cohorts.md)): mentor-note pr
 
 ## Home calendar sources
 
-The Home calendar registry includes `buildspace-absences`, `buildspace-weekly` and `buildspace-mentor`. All three are **off by default**, including for new accounts and feed requests without an explicit source list. Enable them in Calendar → Options → Sources or toggle their legend entries. Existing saved source choices remain unchanged.
+The Home calendar registry includes `buildspace-absences`, `buildspace-weekly` and `buildspace-mentor`. All three are **off by default**, including for new accounts and feed requests without an explicit source list. The current Home widget has no source controls and does not apply saved calendar-widget options; API clients can select these sources explicitly with the feed's `sources=` parameter.
 
 Absence and mentor check-in entries appear on their reported date, linking to their project drawer. Titles show the event kind, project, and builder when present; note bodies and absence reasons are omitted. All existing officers already have access to the full Buildspace + Launchpad register, and these sources follow that same cohort visibility policy.
 
 Weekly due items follow the check-in schedule: one per builder on each week's due date (titles include the due time when set), including the longer transition week after a change. A dated weekly entry for that builder in the same week removes the due item. Builders not yet joined, projects marked Shipped, archived projects and builders, and archived cohorts are excluded. Due items link to the builder drawer, remain date-only across viewer time zones, and send no reminders.
 
-The loaders filter the requested exclusive date range in SQL; the registry controls metadata, validation and widget toggles without another frontend source switch. Migration `0017_buildspace.sql` follows dashboard `0015` and calendar `0016`.
+The loaders filter the requested exclusive date range in SQL; the registry controls metadata, validation and item presentation without another frontend source switch. Migration `0017_buildspace.sql` follows dashboard `0015` and calendar `0016`.
 
 ## Motion (V0.6)
 
-Buildspace + Launchpad uses the shared V0.5 motion system (`docs/motion-performance-v05.md`) rather than one-offs: tokens from `tokens.css`, the page-content rise from the Gate, the `Async` skeleton crossfade, the first-eight `.motion-list` stagger (People/Projects/Mentors tables, card groups, board lanes, drawer timelines and partner lists, and the manual-entry/project/builder forms, so conditionally revealed fields enter too), the native drawer edge slide with backdrop fade, and the shared `Tabs` component for People/Projects/Mentors, whose single indicator slides with transform only (they are now a real tablist with arrow-key navigation). Drawer sections switch with the shared `.tab-panel` enter; the schedule popover uses `pop-in` like the calendar Options popover.
+Buildspace + Launchpad uses the shared V0.5 motion system (`docs/motion-performance-v05.md`) rather than one-offs: tokens from `tokens.css`, the page-content rise from the Gate, the `Async` skeleton crossfade, the first-eight `.motion-list` stagger (People/Projects/Mentors tables, card groups, board lanes, drawer timelines and partner lists, and the manual-entry/project/builder forms, so conditionally revealed fields enter too), the native drawer edge slide with backdrop fade, and the shared `Tabs` component for People/Projects/Mentors, whose single indicator slides with transform only (they are now a real tablist with arrow-key navigation). Drawer sections switch with the shared `.tab-panel` enter; the schedule popover uses the shared `pop-in` motion.
 
 Two small shared helpers live in `web/src/ui/components/motion.ts`:
 
@@ -112,7 +112,7 @@ Screenshots (built site, leadership): [people desktop light](evidence/buildspace
 
 ## Rename compatibility
 
-Migration 0023 renames the five tables and recreates the three explicit indexes under `buildspace_launchpad_*`, preserving rows and foreign keys. API aliases retain old clients and ingest tokens (`ingest:buildspace`). Calendar source IDs and item IDs remain stable for saved preferences and ICS subscriptions; titles and links use the new name and route. The legacy page redirects with 301 and keeps query parameters.
+Migration 0023 renames the five tables and recreates the three explicit indexes under `buildspace_launchpad_*`, preserving rows and foreign keys. API aliases retain old clients and ingest tokens (`ingest:buildspace`). Calendar source IDs and item IDs remain stable for saved preferences and feed consumers; titles and links use the new name and route. The legacy page redirects with 301 and keeps query parameters.
 
 Audit history retains its original identifiers: rows written before migration 0023 use `buildspace.*` actions and `buildspace_*` entities; new rows use `buildspace_launchpad.*` actions and `buildspace_launchpad_*` entities. Searches and exports spanning the rename must include both prefixes. Existing audit rows are not rewritten.
 

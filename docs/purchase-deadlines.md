@@ -39,17 +39,17 @@ so it doesn't rely on colour: amber for due within 7 days, red for due today or 
 
 - submitted, approved and fulfilling requests with a deadline in the range, plus
   the viewer's **own** drafts. Other officers' drafts are left out to avoid clutter.
-- the title, plus `#number · amount · status` in the popover and agenda, and a link to the
-  request detail (`/finance?id=…`).
+- the title, plus `#number · amount · status` in the popover, and a link to the request
+  detail (`/finance?id=…`).
 
 Denied, cancelled, fulfilled (bought), reimbursed (paid out) and closed requests are hidden.
 
 **Default visibility:** on for directors and leadership, off for officers. Directors approve
 and buy, so deadlines are part of their work. Officers mostly care about their own requests,
-which already appear in My actions. Anyone can turn it on or off from the calendar legend or
-**Options**. This default applies only to accounts that haven't saved calendar options.
-Accounts that saved options before this release keep their sources and can opt in. The
-`DefaultRole` field on a calendar source does this and is available to other sources.
+which already appear in My actions. The current Home widget has no source controls and does
+not apply saved calendar-widget options; any officer can still request this source explicitly
+with `GET /api/calendar/feed?...&sources=purchase-deadlines`. The `DefaultRole` field on a
+calendar source controls the default feed and is available to other sources.
 
 Every officer can already read every request (Finance → everyone), so the calendar shows
 nothing new to anyone.
@@ -75,8 +75,9 @@ range query and the deadline sort.
   single day), status filtering, draft privacy, date stability across time zones, and
   role-based defaults.
 - Playwright (`web/tests/purchase-deadline.spec.ts`, phone/tablet/desktop, light and dark):
-  form validation and `min`, list hints and sort, the calendar legend at 4×2/2×2/2×1 (no time-zone overlap, no layout shift on load or menu open, keyboard toggling), inline edit, another officer can't edit,
-  the calendar chip, popover and toggle, My actions hint, and the overdue state.
+  form validation and `min`, list hints and sort, director calendar chips and popovers, no
+  calendar controls at 4×2/2×2/2×1, no layout shift on load, no overflow, phone month dots,
+  inline edit, another officer can't edit, My actions hint, and the overdue state.
   `DEADLINE_SHOTS=1` regenerates the screenshots below. The browser clock is fixed at
   2026-11-04 (and 2026-11-08 for overdue).
 
@@ -84,7 +85,7 @@ range query and the deadline sort.
 
 | | Light | Dark |
 | --- | --- | --- |
-| Calendar, desktop | ![calendar-desktop-light](evidence/purchase-deadlines/calendar-desktop-light.png) | ![calendar-desktop-dark](evidence/purchase-deadlines/calendar-desktop-dark.png) |
+| Calendar, desktop (historical controls) | ![calendar-desktop-light](evidence/purchase-deadlines/calendar-desktop-light.png) | ![calendar-desktop-dark](evidence/purchase-deadlines/calendar-desktop-dark.png) |
 | Calendar, phone | ![calendar-phone-light](evidence/purchase-deadlines/calendar-phone-light.png) | ![calendar-phone-dark](evidence/purchase-deadlines/calendar-phone-dark.png) |
 | Finance list, desktop | ![finance-desktop-light](evidence/purchase-deadlines/finance-desktop-light.png) | ![finance-desktop-dark](evidence/purchase-deadlines/finance-desktop-dark.png) |
 | Finance list, phone | ![finance-phone-light](evidence/purchase-deadlines/finance-phone-light.png) | ![finance-phone-dark](evidence/purchase-deadlines/finance-phone-dark.png) |
@@ -95,7 +96,9 @@ range query and the deadline sort.
 
 ### Calendar legend at each size
 
-With six sources, small and medium widgets use a compact **Sources** menu. The full chip row wraps without touching the time-zone label.
+**Historical V0.6 controls:** these captures show the former legend and **Sources** menu.
+The current widget has no legend, Sources menu or other controls; the screenshots are retained
+as design history, not current UI instructions.
 
 | | Light | Dark |
 | --- | --- | --- |
