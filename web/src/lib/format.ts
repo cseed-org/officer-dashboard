@@ -1,4 +1,4 @@
-import { dateTimeFormatter, effectiveTimezone } from './timezone';
+import { dateTimeFormatter } from './timezone';
 import type { FunctionalClass, PurchaseStatus, PurchaseType, Restriction, FundKind, FinanceReport } from './domain';
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 /** 123450 → "$1,234.50"; -310 → "-$3.10" (same as v1 core/money). */
@@ -24,7 +24,8 @@ export const dollars = (cents: number) => usd0.format(Math.round(cents / 100));
 
 /** Today's date in selected time zone time as YYYY-MM-DD (not the UTC date). */
 export function todayPacific(now = new Date()): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: effectiveTimezone(), year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  const p = Object.fromEntries(dateTimeFormatter({ year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
 }
 const toDate = (v: string) => (v.length === 10 ? new Date(`${v}T12:00:00Z`) : new Date(v));
 export const fmtDate = (v: string | null | undefined) => v ? dateTimeFormatter({ month: 'short', day: 'numeric', year: 'numeric' }, v.length === 10).format(toDate(v)) : '—';
@@ -109,7 +110,7 @@ export function pacificIso(date: string, time = '18:00'): string {
   const wall = Date.UTC(y, m - 1, d, hh, mm);
   const offsetAt = (instant: number) => {
     const p = Object.fromEntries(
-      new Intl.DateTimeFormat('en-US', { timeZone: effectiveTimezone(), hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      dateTimeFormatter({ hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
         .formatToParts(new Date(instant))
         .map((x) => [x.type, x.value]),
     );
