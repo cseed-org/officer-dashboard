@@ -102,23 +102,54 @@ func (s *Service) recordError(ctx context.Context, kind string, err error) {
 	})
 }
 
-// Daily also catches up at startup; cancellation stops timers and in-flight requests.
+// failureBackoff is how long Daily waits after consecutive failed runs (a boot before the
+// network is up, a Cloudflare 5xx or 429) before trying again; past the end it stays at the
+// last value until a run succeeds, then the 24 h cadence resumes.
+var failureBackoff = []time.Duration{5 * time.Minute, 15 * time.Minute, time.Hour, 6 * time.Hour}
+
+// nextDelay is the wait after a run that returned err, given how many runs in a row had
+// failed before it; it returns the updated failure count.
+func nextDelay(err error, failures int) (time.Duration, int) {
+	switch {
+	case err == nil:
+		return 24 * time.Hour, 0
+	case errors.Is(err, ErrBusy):
+		return time.Minute, failures
+	}
+	i := min(failures, len(failureBackoff)-1)
+	return failureBackoff[i], failures + 1
+}
+
+// Daily also catches up at startup, and retries a failed run with backoff instead of
+// waiting a full day; cancellation stops timers and in-flight requests.
 func (s *Service) Daily(ctx context.Context) {
-	for {
-		err := s.Run(ctx, nil)
-		delay := 24 * time.Hour
-		if errors.Is(err, ErrBusy) {
-			delay = time.Minute
-			if s.Log != nil {
-				s.Log.Info("Cloudflare daily sync busy; retrying in one minute")
-			}
-		}
-		timer := time.NewTimer(delay)
+	s.daily(ctx, func(ctx context.Context) error { return s.Run(ctx, nil) }, func(ctx context.Context, d time.Duration) bool {
+		timer := time.NewTimer(d)
+		defer timer.Stop()
 		select {
 		case <-ctx.Done():
-			timer.Stop()
-			return
+			return false
 		case <-timer.C:
+			return true
+		}
+	})
+}
+
+func (s *Service) daily(ctx context.Context, run func(context.Context) error, wait func(context.Context, time.Duration) bool) {
+	failures := 0
+	for {
+		err := run(ctx)
+		var delay time.Duration
+		delay, failures = nextDelay(err, failures)
+		if s.Log != nil {
+			if errors.Is(err, ErrBusy) {
+				s.Log.Info("Cloudflare daily sync busy; retrying in one minute")
+			} else if err != nil {
+				s.Log.Info("Cloudflare daily sync failed; retrying", "in", delay.String())
+			}
+		}
+		if !wait(ctx, delay) {
+			return
 		}
 	}
 }

@@ -278,14 +278,19 @@ func (c *Ctx) calendarEmailMutate(create, remove bool) error {
 		if err != nil {
 			return err
 		}
+		// A new active address should receive the upcoming events it hasn't had yet.
+		if (remove && wasActive) || out.Active {
+			if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
+				return err
+			}
+		}
 		return c.audit(ctx, q, action, "calendar_email", out.ID, map[string]any{"emails": emails}, map[string]any{"email": after, "emails": updated})
 	})
 	if err != nil {
 		return err
 	}
-	// A new active address should receive the upcoming events it hasn't had yet.
 	if (remove && wasActive) || out.Active {
-		c.S.backfillCalendar(u.ID)
+		c.S.kickCalendar()
 	}
 	if remove {
 		writeJSON(c.W, 200, map[string]any{"ok": true})

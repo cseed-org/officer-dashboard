@@ -871,6 +871,17 @@ func (c *Ctx) launchpadProjectArchive() error {
 			return nil
 		}
 		now := c.S.nowMs()
+		// Restore brings back the builders whose archived_at equals the project's. Pick a
+		// stamp no builder of this project already has (one archived on their own in the same
+		// millisecond), so a restore never revives a builder the project did not archive.
+		for taken := true; taken; {
+			taken = false
+			for _, v := range b.People {
+				if v.ProjectID == p.ID && v.ArchivedAt != nil && *v.ArchivedAt == now {
+					now, taken = now+1, true
+				}
+			}
+		}
 		if err := q.SetBuildspaceProjectArchived(c.Context(), p.ID, &now); err != nil {
 			return err
 		}

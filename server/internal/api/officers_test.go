@@ -258,12 +258,19 @@ func TestICSDeliveryOnEventCreateAndUpdate(t *testing.T) {
 	if last.To != "priya.other@example.org" {
 		t.Fatalf("no backfill to the new address: %+v", last.To)
 	}
-	// Deleting the event cancels it wherever it was sent.
+	// Deleting the event cancels it wherever it was sent: both addresses received it.
 	before := len(m.all())
 	e.mustOK(e.do("DELETE", "/api/events/"+ev.str("event", "id"), nil, e.officer()))
 	e.srv.WaitBackground()
 	cancels := m.all()[before:]
-	if len(cancels) != 1 || cancels[0].Method != "CANCEL" || !strings.Contains(cancels[0].ICS, "STATUS:CANCELLED") || !strings.HasPrefix(cancels[0].Subject, "Cancelled") {
+	to := map[string]bool{}
+	for _, c := range cancels {
+		if c.Method != "CANCEL" || !strings.Contains(c.ICS, "STATUS:CANCELLED") || !strings.HasPrefix(c.Subject, "Cancelled") {
+			t.Fatalf("cancellation %+v", c)
+		}
+		to[c.To] = true
+	}
+	if len(cancels) != 2 || !to["priya.cal@example.org"] || !to["priya.other@example.org"] {
 		t.Fatalf("cancellation %+v", cancels)
 	}
 	test := e.mustOK(e.post("/api/me/calendar/test", nil, e.officer()))
@@ -291,7 +298,7 @@ func TestGoogleOAuthConnectSyncAndDisconnect(t *testing.T) {
 				http.Error(w, `{"error":"invalid_request"}`, 400)
 				return
 			}
-			claims := `{"email":"priya@gmail.test"}`
+			claims := `{"sub":"1234567890","email":"priya@gmail.test"}`
 			_, _ = io.WriteString(w, `{"access_token":"at","refresh_token":"rt","expires_in":3600,"id_token":"x.`+b64(claims)+`.y"}`)
 		case r.URL.Path == "/revoke":
 			revoked++

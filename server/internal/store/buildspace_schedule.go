@@ -114,6 +114,16 @@ func BuildspaceDueMoment(due string, dueTime *string, loc *time.Location) time.T
 	if want, got := t.Hour()*60+t.Minute(), at.Hour()*60+at.Minute(); at.Day() == d.Day() && got < want {
 		at = at.Add(time.Duration(want-got) * time.Minute)
 	}
+	// time.Date does not promise which instant a repeated wall time (02:30 on a fall-back
+	// night) maps to. If the clock was set back shortly before at, the same wall time also
+	// occurred one offset-difference earlier; take that first occurrence.
+	_, offAt := at.Zone()
+	if _, offBefore := at.Add(-3 * time.Hour).Zone(); offBefore > offAt {
+		earlier := at.Add(-time.Duration(offBefore-offAt) * time.Second)
+		if earlier.Format("2006-01-02 15:04") == at.Format("2006-01-02 15:04") {
+			at = earlier
+		}
+	}
 	return at
 }
 

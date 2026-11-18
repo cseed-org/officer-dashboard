@@ -28,7 +28,7 @@ dev: build-dev    ## seeded dev server on :8090 serving ../web/dist
 	DEV_AUTH=1 DB_PATH=./data/dev.db STATIC_DIR=../web/dist ./bin/dashboard-dev serve
 
 seed:
-	DB_PATH=./data/dev.db $(GO) run ./cmd/dashboard seed -reset
+	DB_PATH=./data/dev.db $(GO) run -tags dev ./cmd/dashboard seed -reset
 
 bench:
 	$(GO) test -run '^$$' -bench . -benchmem -benchtime 2s ./internal/api

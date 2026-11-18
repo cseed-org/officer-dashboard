@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"officerdashboard/internal/auth"
 	"officerdashboard/internal/store"
 	"officerdashboard/internal/validate"
 )
@@ -131,6 +132,7 @@ func (c *Ctx) calendarFeed() error {
 	items, err := c.S.db.Read().CalendarItems(c.Context(), store.CalendarRange{
 		Start: start.UTC().Format(time.RFC3339), End: end.UTC().Format(time.RFC3339),
 		FirstDate: query.Get("start"), EndDate: query.Get("end"), UserID: u.ID,
+		Director: auth.HasRole(u.Role, auth.RoleDirector),
 	}, selected)
 	if err != nil {
 		return err

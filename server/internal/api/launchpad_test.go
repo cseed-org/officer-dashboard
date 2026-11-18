@@ -282,19 +282,34 @@ func TestLaunchpadReturningBuilderOnboardsWithSameDiscord(t *testing.T) {
 	}
 }
 
-// An officer-added builder (this cohort, no portal account) links to the account on onboarding;
-// an archived one is left for an officer.
+// An officer-added builder (this cohort, no portal account) links to the account on onboarding
+// when they pick the project their updates are on (M-018: another or a new project is 409, as
+// for an officer moving them); an archived one is left for an officer.
 func TestLaunchpadOnboardingLinksExistingBuilder(t *testing.T) {
 	e := newEnv(t)
 	people := func() int64 { return e.scalar(`SELECT count(*) FROM buildspace_launchpad_people`).(int64) }
 	before := people()
 	sky := e.activate("lp-invite-sky", "100000000000000002") // bs-person-02's Discord ID
+	activity := func() string {
+		return e.scalar(`SELECT group_concat(id||":"||project_id) FROM (SELECT id, project_id FROM buildspace_launchpad_activity WHERE person_id='bs-person-02' ORDER BY id)`).(string)
+	}
+	history := activity()
+	for name, project := range map[string]map[string]any{
+		"another project": {"mode": "join", "projectId": "bs-sprout"},
+		"a new project":   {"mode": "new", "name": "Fresh idea", "description": "", "track": "Software", "links": []string{}},
+	} {
+		expectStatus(t, "onboard with history into "+name, e.post("/api/portal/builder/onboarding", map[string]any{"name": "Sky Morales", "pronouns": "she/her", "designation": "Lead", "bio": "", "project": project}, sky), 409)
+	}
+	if e.scalar(`SELECT person_id FROM buildspace_launchpad_accounts WHERE id='lp-invite-sky'`) != nil || people() != before || activity() != history ||
+		e.scalar(`SELECT project_id FROM buildspace_launchpad_people WHERE id='bs-person-02'`) != "bs-moss" {
+		t.Fatal("a refused onboarding changed rows")
+	}
 	e.mustOK(e.post("/api/portal/builder/onboarding", map[string]any{"name": "Sky Morales", "pronouns": "she/her", "designation": "Lead", "bio": "",
-		"project": map[string]any{"mode": "join", "projectId": "bs-sprout"}}, sky))
+		"project": map[string]any{"mode": "join", "projectId": "bs-moss"}}, sky))
 	if e.scalar(`SELECT person_id FROM buildspace_launchpad_accounts WHERE id='lp-invite-sky'`) != "bs-person-02" || people() != before {
 		t.Fatal("did not link the existing builder record")
 	}
-	if e.scalar(`SELECT name||'|'||project_id FROM buildspace_launchpad_people WHERE id='bs-person-02'`) != "Sky Morales|bs-sprout" {
+	if e.scalar(`SELECT name||'|'||project_id FROM buildspace_launchpad_people WHERE id='bs-person-02'`) != "Sky Morales|bs-moss" {
 		t.Fatal("linked record not updated from onboarding")
 	}
 	e.exec(`UPDATE buildspace_launchpad_people SET archived_at=1 WHERE id='bs-person-03'`)

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"net/http"
 	"strings"
 	"time"
@@ -106,6 +107,9 @@ func (c *Ctx) calendarPut() error {
 			if err := c.audit(ctx, q, "calendar.mode", "officer_profile", u.ID, map[string]any{"mode": before.DeliveryMode}, map[string]any{"mode": mode}); err != nil {
 				return err
 			}
+			if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
+				return err
+			}
 		}
 		out, err = c.calendarSettings(ctx, q, u.ID)
 		return err
@@ -114,7 +118,7 @@ func (c *Ctx) calendarPut() error {
 		return err
 	}
 	if changed {
-		c.S.backfillCalendar(u.ID)
+		c.S.kickCalendar()
 	}
 	writeJSON(c.W, 200, out)
 	return nil
@@ -195,15 +199,32 @@ func (c *Ctx) googleCallback() error {
 	if tok.RefreshToken == "" {
 		return back("failed")
 	}
+	// Deliveries are keyed by the Google account, so a grant must say which one it is.
+	// Google always sends the ID token's sub with the openid scope; without it two
+	// accounts could not be told apart, so the grant is refused rather than stored.
+	acct := calendar.AccountFromIDToken(tok.IDToken)
+	if acct.Sub == "" {
+		c.S.log.Warn("google oauth: token response has no ID token sub; not connecting")
+		return back("failed")
+	}
 	now := c.S.nowMs()
 	exp := now + tok.ExpiresIn*1000
 	sealedAccess := c.S.sealer.Seal(tok.AccessToken)
-	t := store.GoogleToken{UserID: c.User.ID, SealedRefresh: c.S.sealer.Seal(tok.RefreshToken), SealedAccess: &sealedAccess, AccessExpires: &exp, ConnectedAt: now}
-	if e := calendar.EmailFromIDToken(tok.IDToken); e != "" {
-		t.AccountEmail = &e
+	t := store.GoogleToken{UserID: c.User.ID, AccountSub: &acct.Sub, SealedRefresh: c.S.sealer.Seal(tok.RefreshToken), SealedAccess: &sealedAccess, AccessExpires: &exp, ConnectedAt: now}
+	if acct.Email != "" {
+		t.AccountEmail = &acct.Email
 	}
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
 		if err := w.SaveGoogleToken(ctx, t); err != nil {
+			return err
+		}
+		// Deliveries made under a grant from before V0.14.1 (keyed by email, or by nothing)
+		// become this account's, so reconnecting it doesn't add copies of its events.
+		if err := w.AdoptLegacyGoogleDeliveries(ctx, t); err != nil {
+			return err
+		}
+		// The (possibly different) account needs the upcoming events.
+		if err := c.S.queueBackfill(ctx, w, c.User.ID); err != nil {
 			return err
 		}
 		if _, err := w.ProfileByUser(ctx, c.User.ID); err == nil {
@@ -217,7 +238,7 @@ func (c *Ctx) googleCallback() error {
 		c.S.log.Error("save google token failed", "error", err)
 		return back("failed")
 	}
-	c.S.backfillCalendar(c.User.ID)
+	c.S.kickCalendar()
 	return back("connected")
 }
 
@@ -229,6 +250,7 @@ func (c *Ctx) googleDisconnect() error {
 	ctx := c.Context()
 	var refresh string
 	var out *CalendarSettings
+	switched := false
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
 		t, err := q.GoogleTokenFor(ctx, u.ID)
 		if errors.Is(err, store.ErrNotFound) {
@@ -245,7 +267,12 @@ func (c *Ctx) googleDisconnect() error {
 			return err
 		}
 		if p, err := q.ProfileByUser(ctx, u.ID); err == nil && p.DeliveryMode == "google" {
+			switched = true
 			if err := q.SetDeliveryMode(ctx, u.ID, "ics"); err != nil {
+				return err
+			}
+			// Falling back to .ics email: send the upcoming events there.
+			if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
 				return err
 			}
 		}
@@ -257,6 +284,9 @@ func (c *Ctx) googleDisconnect() error {
 	})
 	if err != nil {
 		return err
+	}
+	if switched {
+		c.S.kickCalendar()
 	}
 	if refresh != "" && c.S.cfg.Google != nil {
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -299,10 +329,13 @@ type deliveryResult struct {
 	Status        string // sent | failed | skipped | not_configured
 	Message       string
 	GoogleEventID string
+	// Revoked marks a Google failure only reconnecting fixes. Retrying cannot help, and
+	// reconnecting queues a backfill, so event syncs don't keep retrying it.
+	Revoked bool
 }
 
-// deliverOne sends ev to one person. prior is the last delivery of the same event, which
-// carries the Google event id to update.
+// deliverOne sends ev to one person. prior is the last delivery of the same event to that
+// destination, which carries the Google event id to update.
 func (s *Server) deliverOne(ctx context.Context, r recipient, ev calendar.Event, prior *store.Delivery) deliveryResult {
 	res := func(status, msg string) deliveryResult { return deliveryResult{Status: status, Message: msg} }
 	switch r.Mode {
@@ -315,15 +348,18 @@ func (s *Server) deliverOne(ctx context.Context, r recipient, ev calendar.Event,
 			return res("skipped", "Google Calendar isn't connected.")
 		}
 		if err != nil {
-			return res("failed", googleMessage(err))
+			return deliveryResult{Status: "failed", Message: googleMessage(err), Revoked: errors.Is(err, calendar.ErrGoogleRevoked)}
 		}
-		gid := ""
+		known := ""
 		if prior != nil && prior.GoogleEventID != nil {
-			gid = *prior.GoogleEventID
+			known = *prior.GoogleEventID
 		}
-		id, err := s.cfg.Google.UpsertEvent(ctx, access, gid, ev)
+		// A new event gets the dashboard's own stable id for this calendar, so repeating an
+		// insert whose result was lost updates the first copy instead of adding another.
+		dest, _ := s.destination(ctx, r)
+		id, err := s.cfg.Google.UpsertEvent(ctx, access, known, calendar.EventID(ev.UID, dest), ev)
 		if err != nil {
-			return res("failed", googleMessage(err))
+			return deliveryResult{Status: "failed", Message: googleMessage(err), Revoked: errors.Is(err, calendar.ErrGoogleRevoked)}
 		}
 		return deliveryResult{Status: "sent", Message: "Added to Google Calendar.", GoogleEventID: id}
 	default:
@@ -404,28 +440,87 @@ func (s *Server) calendarEvent(e *store.Event, seq int, cancelled bool) (calenda
 	return ev, nil
 }
 
-// ─── delivery queue ───
+// ─── delivery outbox ───
 //
-// Deliveries run one at a time, in order, on a single background worker. Each job names an
-// event by ID and re-reads it when it runs, so the newest saved content always wins and
-// two quick edits can never land out of order. Deletes carry a snapshot, since the row is gone.
+// Every event change is a row in calendar_outbox, written in the same transaction as the
+// change (syncEventInTx, and eventDelete's cancel job); so is every recipient backfill,
+// written in the transaction that changes where that officer's invites go (queueBackfill).
+// One background worker drains the rows in order. A job is deleted only once all of its
+// work succeeded; a failed one stays, with its attempt count and error, and is retried
+// after a backoff (on the next change once it is due) and in full at startup and hourly
+// (ResumeCalendar). Nothing is ever dropped after a number of failures. A sync job re-reads
+// its event when it runs, so the newest saved content always wins and two quick edits never
+// land out of order; destinations that already have that content are skipped, so a retry
+// only repeats what failed. A delete stores its cancellations (the event snapshot and every
+// destination that has or may have it), because the delivery rows cascade with the event.
+//
+// Delivery is at least once. Before each send the destination row records the attempt
+// (its SEQUENCE and, for a new Google event, the event id the dashboard chose), so a crash
+// between the send and the row that records its outcome loses nothing: a delete before the
+// retry cancels that destination too, with a newer SEQUENCE, and the retry repeats the
+// send with the same UID and, for the same content, the same SEQUENCE, which calendar
+// clients apply as the same invite, and the same Google event id, which Google answers
+// with "already exists" and the dashboard then updates instead of creating a second event.
+//
+// A missing transport is a failure, not a skip, for a destination that has deliveries
+// (SMTP or Google left out of a restart's config, both of them included): its work stays
+// queued until the transport is back. Destinations that never had a working transport,
+// and Google accounts the officer has disconnected, are skipped. So jobs are written and
+// the worker runs whatever is configured: on a dashboard that never had SMTP or Google
+// every job finds nothing to send and is removed, and the outbox stays empty.
 
-type calJob struct {
-	eventID   string       // "" with onlyUser: every upcoming event (backfill)
-	snapshot  *store.Event // set for cancellations
-	cancelled bool
-	priors    map[string]store.Delivery // cancellations: what each officer received before the delete
-	onlyUser  string
+const (
+	calendarRetryMin = time.Minute
+	calendarRetryMax = time.Hour
+	// calendarAlertAttempts is when a job that keeps failing is logged as an error. It
+	// still stays in the outbox and is retried.
+	calendarAlertAttempts = 24
+)
+
+// calendarBackoff is how long a job that has failed attempts times waits before a change
+// retries it: 1, 2, 4 … minutes, at most an hour.
+func calendarBackoff(attempts int) time.Duration {
+	d := calendarRetryMin
+	for i := 1; i < attempts && d < calendarRetryMax; i++ {
+		d *= 2
+	}
+	return min(d, calendarRetryMax)
 }
 
-func (s *Server) calendarsConfigured() bool { return s.cfg.Mailer != nil || s.cfg.Google != nil }
+// enqueueCalendar adds a job in the caller's write transaction. Call kickCalendar after
+// the transaction commits. It writes the job even when no transport is configured on
+// this run: a destination that already has deliveries still needs the change once its
+// transport is back, and the worker removes jobs that have nowhere to go.
+func (s *Server) enqueueCalendar(ctx context.Context, w *store.Queries, j store.CalendarJob) error {
+	return w.EnqueueCalendar(ctx, j, s.nowMs())
+}
 
-func (s *Server) enqueue(j calJob) {
-	if !s.calendarsConfigured() {
-		return
-	}
+// syncEventInTx queues delivery of a created or changed event to every recipient.
+func (s *Server) syncEventInTx(ctx context.Context, w *store.Queries, eventID string) error {
+	return s.enqueueCalendar(ctx, w, store.CalendarJob{Kind: "sync", EventID: eventID})
+}
+
+// queueBackfill queues sending the upcoming events to one officer, in the write
+// transaction that changes where their invites go (mode, Google connection, active
+// calendar email, a new profile, finishing onboarding), so a restart right after that
+// commit cannot lose it. Call kickCalendar after the transaction commits. Events already
+// delivered unchanged to the same place are skipped.
+func (s *Server) queueBackfill(ctx context.Context, w *store.Queries, userID string) error {
+	return s.enqueueCalendar(ctx, w, store.CalendarJob{Kind: "backfill", UserID: userID})
+}
+
+// kickCalendar starts the worker, or tells a running one to look again, for jobs that are
+// due: new ones, and failed ones whose backoff has passed.
+func (s *Server) kickCalendar() { s.startCalendar(false) }
+
+// ResumeCalendar drains every job in the outbox, failed ones included whatever their
+// backoff: call it at startup for what a previous run left; the server also calls it hourly.
+func (s *Server) ResumeCalendar() { s.startCalendar(true) }
+
+func (s *Server) startCalendar(all bool) {
 	s.calMu.Lock()
-	s.calQueue = append(s.calQueue, j)
+	s.calKicked = true
+	s.calAll = s.calAll || all
 	start := !s.calRunning
 	s.calRunning = true
 	s.calMu.Unlock()
@@ -439,85 +534,183 @@ func (s *Server) calWorker() {
 	defer s.bg.Done()
 	for {
 		s.calMu.Lock()
-		if len(s.calQueue) == 0 {
+		s.calKicked = false
+		all := s.calAll
+		s.calAll = false
+		s.calMu.Unlock()
+		// One pass runs each due job once, oldest first; a job that fails waits for its
+		// backoff (or the next full pass), so passes never spin on a failing job.
+		var last int64
+		for {
+			j, err := s.db.Read().NextCalendarJob(context.Background(), last, s.nowMs(), all)
+			if err != nil {
+				if !errors.Is(err, store.ErrNotFound) {
+					s.log.Error("calendar outbox: read", "error", err)
+				}
+				break
+			}
+			last = j.ID
+			s.runCalJob(j)
+		}
+		s.calMu.Lock()
+		if !s.calKicked {
 			s.calRunning = false
 			s.calMu.Unlock()
 			return
 		}
-		j := s.calQueue[0]
-		s.calQueue = s.calQueue[1:]
 		s.calMu.Unlock()
-		s.runCalJob(j)
 	}
 }
 
-func (s *Server) runCalJob(j calJob) {
+func (s *Server) runCalJob(j *store.CalendarJob) {
 	ctx := context.Background()
-	if j.eventID == "" {
-		events, err := s.db.Read().Events(ctx)
-		if err != nil {
-			s.log.Error("calendar backfill: list events", "error", err)
-			return
+	var err error
+	var left []store.Delivery
+	switch j.Kind {
+	case "backfill":
+		err = s.backfillUser(ctx, j.UserID)
+	case "sync":
+		err = s.syncEvent(ctx, j.EventID)
+	case "cancel":
+		left, err = s.cancelDeleted(ctx, j)
+	default:
+		err = fmt.Errorf("unknown calendar job kind %q", j.Kind)
+	}
+	write := func(fn func(q *store.Queries) error) {
+		if werr := s.db.Write(ctx, fn); werr != nil {
+			s.log.Error("calendar outbox: write", "job", j.ID, "error", werr)
 		}
-		for i := range events {
-			if start, _, err := calendar.Window(events[i].StartsAt, events[i].EndsAt); err == nil && start.After(s.now()) {
-				s.deliverEvent(&events[i], false, j.onlyUser)
-			}
-		}
+	}
+	if err == nil && len(left) == 0 {
+		write(func(q *store.Queries) error { return q.DeleteCalendarJob(ctx, j.ID) })
 		return
 	}
-	if j.cancelled {
-		s.cancelEvent(j.snapshot, j.priors)
-		return
-	}
-	e, err := s.db.Read().EventByID(ctx, j.eventID)
+	// Keep the job, and for a cancellation exactly the destinations still to withdraw.
+	attempts := j.Attempts + 1
+	msg := "cancellation not delivered"
 	if err != nil {
-		return // deleted since; its cancellation job handles it
+		msg = err.Error()
 	}
-	s.deliverEvent(e, false, j.onlyUser)
+	if attempts >= calendarAlertAttempts {
+		s.log.Error("calendar job still failing; it stays queued and is retried", "job", j.ID, "kind", j.Kind, "event", j.EventID, "attempts", attempts, "error", msg)
+	} else {
+		s.log.Warn("calendar job failed; will retry", "job", j.ID, "kind", j.Kind, "event", j.EventID, "attempts", attempts, "error", msg)
+	}
+	if j.Kind != "cancel" {
+		left = nil
+	}
+	next := s.now().Add(calendarBackoff(attempts)).UnixMilli()
+	write(func(q *store.Queries) error { return q.UpdateCalendarJob(ctx, j.ID, left, attempts, &msg, next) })
 }
 
-// SyncEventToCalendars sends a created or changed event to every active officer, in the
-// background, after the caller's write has committed.
-func (s *Server) SyncEventToCalendars(e store.Event) { s.enqueue(calJob{eventID: e.ID}) }
-
-// CancelEventOnCalendars withdraws a deleted event from every calendar it reached. priors
-// must be read (DeliveriesForEvent) before the delete, since those rows cascade with it.
-func (s *Server) CancelEventOnCalendars(e store.Event, priors map[string]store.Delivery) {
-	if len(priors) == 0 {
-		return
+func (s *Server) recipientFor(ctx context.Context, userID string) (*recipient, error) {
+	recips, err := s.db.Read().CalendarRecipients(ctx)
+	if err != nil {
+		return nil, err
 	}
-	snap := e
-	s.enqueue(calJob{eventID: e.ID, snapshot: &snap, cancelled: true, priors: priors})
-}
-
-// cancelEvent sends a CANCEL (.ics) or cancels the Google event for each officer who had
-// it. The event row is gone, so nothing is recorded afterwards.
-func (s *Server) cancelEvent(e *store.Event, priors map[string]store.Delivery) {
-	for userID, prior := range priors {
-		if prior.Status != "sent" {
-			continue
+	for _, rc := range recips {
+		if rc.UserID == userID {
+			return &recipient{UserID: rc.UserID, Name: rc.Name, Mode: rc.Mode, Email: rc.ActiveEmail}, nil
 		}
-		p := prior
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		ev, err := s.calendarEvent(e, prior.Sequence+1, true)
-		if err == nil {
-			out := s.deliverOne(ctx, recipient{UserID: userID, Mode: prior.Mode, Email: prior.Recipient}, ev, &p)
-			if out.Status == "failed" {
-				s.log.Warn("calendar cancellation failed", "event", e.ID, "user", userID, "error", out.Message)
-			}
-		}
-		cancel()
 	}
+	return nil, nil
 }
 
-// syncEventID is SyncEventToCalendars for callers that only have the ID (imports).
-func (s *Server) syncEventID(id string) { s.enqueue(calJob{eventID: id}) }
+// backfillUser brings one officer's calendar up to date with the upcoming events. A
+// cancelled event is never a new invitation; deliverTo only withdraws it where this
+// officer still has it.
+func (s *Server) backfillUser(ctx context.Context, userID string) error {
+	r, err := s.recipientFor(ctx, userID)
+	if err != nil || r == nil {
+		return err
+	}
+	events, err := s.db.Read().Events(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for i := range events {
+		if start, _, err := calendar.Window(events[i].StartsAt, events[i].EndsAt); err == nil && start.After(s.now()) {
+			errs = append(errs, s.deliverTo(ctx, events[i].ID, *r))
+		}
+	}
+	return errors.Join(errs...)
+}
 
-// backfillCalendar sends upcoming events to one officer after their destination changes
-// (mode, Google connection, active calendar email, finishing onboarding). Events already
-// delivered unchanged to the same place are skipped.
-func (s *Server) backfillCalendar(userID string) { s.enqueue(calJob{onlyUser: userID}) }
+func (s *Server) syncEvent(ctx context.Context, eventID string) error {
+	e, err := s.db.Read().EventByID(ctx, eventID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil // deleted since; its cancel job handles it
+	}
+	if err != nil {
+		return err
+	}
+	if e.Status == "cancelled" {
+		return s.withdraw(ctx, e.ID, "")
+	}
+	recips, err := s.db.Read().CalendarRecipients(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, rc := range recips {
+		errs = append(errs, s.deliverTo(ctx, e.ID, recipient{UserID: rc.UserID, Name: rc.Name, Mode: rc.Mode, Email: rc.ActiveEmail}))
+	}
+	return errors.Join(errs...)
+}
+
+// destState says whether a recipient's destination can be delivered to now.
+type destState int
+
+const (
+	destNone        destState = iota // nothing to deliver to: no address chosen, Google not connected
+	destReady                        // the destination and its transport are both there
+	destUnavailable                  // the destination is set but its transport (SMTP, Google) isn't configured
+)
+
+// destination names where r's invites go now: "ics:<address>" or the Google account's
+// key (store.GoogleToken.Destination), and whether it can be delivered to.
+func (s *Server) destination(ctx context.Context, r recipient) (string, destState) {
+	if r.Mode == "google" {
+		t, err := s.db.Read().GoogleTokenFor(ctx, r.UserID)
+		if err != nil {
+			return "", destNone
+		}
+		if s.cfg.Google == nil {
+			return t.Destination(), destUnavailable
+		}
+		return t.Destination(), destReady
+	}
+	if r.Email == nil {
+		return "", destNone
+	}
+	dest := "ics:" + strings.ToLower(*r.Email)
+	if s.cfg.Mailer == nil {
+		return dest, destUnavailable
+	}
+	return dest, destReady
+}
+
+// transportMissing is the error for work kept in the outbox because the transport its
+// destination needs is not configured on this run (SMTP or Google missing after a
+// restart); the job retries with backoff and goes out once it is configured again.
+func transportMissing(mode string) error {
+	if mode == "google" {
+		return errors.New("google calendar sync is not configured on this run; kept for retry")
+	}
+	return errors.New(".ics email (SMTP) is not configured on this run; kept for retry")
+}
+
+// eventLock serialises, per event, a delivery's read-record-send-record step with the
+// event's deletion: a delete either happens before a send starts (the send then finds no
+// event and stops) or sees the delivery it made and cancels it with a newer SEQUENCE.
+func (s *Server) eventLock(eventID string) func() {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(eventID))
+	m := &s.evLocks[h.Sum32()%uint32(len(s.evLocks))]
+	m.Lock()
+	return m.Unlock
+}
 
 // fingerprint identifies what a recipient last received, so unchanged events aren't resent.
 func fingerprint(ev calendar.Event, r recipient) string {
@@ -530,63 +723,254 @@ func fingerprint(ev calendar.Event, r recipient) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Server) deliverEvent(e *store.Event, cancelled bool, onlyUser string) {
-	recips, err := s.db.Read().CalendarRecipients(context.Background())
+// deliverTo sends one event to one officer's current destination, with its own timeout so
+// a slow relay or a long queue never starves later recipients. It returns an error when
+// the destination still needs the event (the send or its record failed), so the job that
+// asked for it stays queued.
+func (s *Server) deliverTo(ctx context.Context, eventID string, r recipient) error {
+	unlock := s.eventLock(eventID)
+	defer unlock()
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	e, err := s.db.Read().EventByID(ctx, eventID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil // deleted while queued; its cancel job withdraws what was sent
+	}
 	if err != nil {
-		s.log.Error("calendar recipients", "error", err)
-		return
+		return err
 	}
-	for _, rc := range recips {
-		if onlyUser != "" && rc.UserID != onlyUser {
-			continue
-		}
-		s.deliverTo(e, cancelled, recipient{UserID: rc.UserID, Name: rc.Name, Mode: rc.Mode, Email: rc.ActiveEmail})
+	if e.Status == "cancelled" {
+		return s.withdrawLocked(ctx, e, r.UserID)
 	}
+	p, err := s.planDelivery(ctx, e, r)
+	if err != nil || p == nil {
+		return err
+	}
+	if testDeliveryHook != nil {
+		testDeliveryHook(e.ID, r.UserID)
+	}
+	return s.finishDelivery(ctx, p, s.deliverOne(ctx, p.r, p.ev, p.prior))
 }
 
-// deliverTo sends one event to one officer with its own timeout, so a slow relay or a
-// long queue never starves later recipients.
-func (s *Server) deliverTo(e *store.Event, cancelled bool, r recipient) {
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	prior, err := s.db.Read().DeliveryFor(ctx, e.ID, r.UserID)
+// testDeliveryHook, when a test sets it, runs inside deliverTo just before the send.
+var testDeliveryHook func(eventID, userID string)
+
+// plannedDelivery is a send whose attempt is already recorded on its destination row.
+type plannedDelivery struct {
+	r     recipient
+	ev    calendar.Event
+	hash  string
+	prior *store.Delivery // the row before this attempt; nil for a first send
+	row   store.Delivery  // the row with this attempt recorded
+}
+
+// planDelivery decides whether r's current destination needs e, and when it does records
+// the attempt before anything is sent: the SEQUENCE about to go out and, for a new Google
+// event, the event id it will get. It returns nil when nothing is to be sent. The caller
+// holds the event lock.
+func (s *Server) planDelivery(ctx context.Context, e *store.Event, r recipient) (*plannedDelivery, error) {
+	dest, st := s.destination(ctx, r)
+	switch st {
+	case destNone:
+		return nil, nil
+	case destUnavailable:
+		// A destination that already has deliveries had a working transport: this run is
+		// missing it, so keep the work. One that never had any was never set up to receive.
+		used, err := s.db.Read().DestinationUsed(ctx, r.UserID, dest)
+		if err != nil {
+			return nil, err
+		}
+		if !used {
+			return nil, nil
+		}
+		return nil, transportMissing(r.Mode)
+	}
+	prior, err := s.db.Read().DeliveryFor(ctx, e.ID, r.UserID, dest)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		return
+		return nil, err
 	}
-	seq := 0
-	if prior != nil {
-		seq = prior.Sequence + 1
-	}
-	ev, err := s.calendarEvent(e, seq, cancelled)
+	ev, err := s.calendarEvent(e, 0, false)
 	if err != nil {
 		s.log.Warn("calendar: unparseable event time", "event", e.ID)
-		return
+		return nil, nil
 	}
 	hash := fingerprint(ev, r)
-	if prior != nil && prior.Status == "sent" && prior.ContentHash != nil && *prior.ContentHash == hash {
-		return // already on their calendar, unchanged
+	if prior != nil && prior.Live() && !prior.Unresolved() && prior.ContentHash != nil && *prior.ContentHash == hash {
+		return nil, nil // already on their calendar, unchanged
 	}
-	out := s.deliverOne(ctx, r, ev, prior)
-	if out.Status != "sent" && out.Status != "failed" {
-		return
-	}
-	d := store.Delivery{EventID: e.ID, UserID: r.UserID, Mode: r.Mode, Recipient: r.Email, Sequence: seq, Status: out.Status, UpdatedAt: s.nowMs()}
+	// Replaying an unresolved attempt of this same content repeats it exactly, with the
+	// SEQUENCE it was recorded with. Anything else is a new message: newer than everything
+	// sent there, the unresolved attempt included, since it may have arrived.
+	seq := 0
 	if prior != nil {
-		d.GoogleEventID = prior.GoogleEventID // kept across mode switches, so going back patches it
-	}
-	if out.GoogleEventID != "" {
-		id := out.GoogleEventID
-		d.GoogleEventID = &id
-	}
-	if out.Status == "sent" {
-		d.ContentHash = &hash
-	} else {
-		d.Error = &out.Message
-		if prior != nil {
-			d.Sequence = prior.Sequence // a failed send doesn't consume a SEQUENCE
+		seq = prior.NextSequence()
+		if prior.Replays(hash) {
+			seq = *prior.AttemptSeq
 		}
+	}
+	ev.Sequence = seq
+	row := store.Delivery{EventID: e.ID, UserID: r.UserID, Destination: dest, Mode: r.Mode, Recipient: r.Email, Status: "pending"}
+	if prior != nil {
+		row = *prior
+	}
+	row.AttemptSeq, row.AttemptHash = &seq, &hash
+	if r.Mode == "google" && row.GoogleEventID == nil {
+		id := calendar.EventID(ev.UID, dest)
+		row.GoogleEventID = &id
+	}
+	row.UpdatedAt = s.nowMs()
+	if err := s.db.Write(ctx, func(q *store.Queries) error { return q.SaveDelivery(ctx, row) }); err != nil {
+		return nil, fmt.Errorf("record calendar attempt: %w", err)
+	}
+	return &plannedDelivery{r: r, ev: ev, hash: hash, prior: prior, row: row}, nil
+}
+
+// finishDelivery records the outcome of a planned send and clears its attempt.
+func (s *Server) finishDelivery(ctx context.Context, p *plannedDelivery, out deliveryResult) error {
+	d := p.row
+	seq := *d.AttemptSeq
+	d.AttemptSeq, d.AttemptHash, d.UpdatedAt = nil, nil, s.nowMs()
+	var sendErr error
+	switch out.Status {
+	case "sent":
+		d.Mode, d.Recipient, d.Sequence, d.Status, d.Cancelled, d.Error, d.ContentHash = p.r.Mode, p.r.Email, seq, "sent", false, nil, &p.hash
+		if out.GoogleEventID != "" {
+			id := out.GoogleEventID
+			d.GoogleEventID = &id
+		}
+	case "failed":
+		// A failed update leaves the last success (destination, Google id, SEQUENCE, content)
+		// in place, so a later delete still cancels it; only the error is new. A failed
+		// send doesn't consume a SEQUENCE.
+		d.Error = &out.Message
+		if d.Status == "pending" {
+			d.Status = "failed"
+		}
+		if !out.Revoked {
+			sendErr = errors.New(out.Message)
+		}
+	default:
+		// Nothing went out (not configured, not connected): put the row back as it was.
+		if p.prior == nil {
+			return s.db.Write(ctx, func(q *store.Queries) error { return q.DeleteDelivery(ctx, d.EventID, d.UserID, d.Destination) })
+		}
+		d = *p.prior
 	}
 	if err := s.db.Write(ctx, func(q *store.Queries) error { return q.SaveDelivery(ctx, d) }); err != nil {
 		s.log.Error("save calendar delivery", "error", err)
+		return errors.Join(sendErr, fmt.Errorf("record calendar delivery: %w", err))
 	}
+	return sendErr
+}
+
+// sendCancel withdraws an event from one destination that has (or may have) it, with a
+// SEQUENCE newer than anything sent there. A Google destination is reachable only while
+// that same account is still connected. When the transport the destination needs isn't
+// configured on this run, the cancellation fails, so its job keeps it for later.
+func (s *Server) sendCancel(ctx context.Context, e *store.Event, d store.Delivery) deliveryResult {
+	ev, err := s.calendarEvent(e, d.NextSequence(), true)
+	if err != nil {
+		return deliveryResult{Status: "skipped", Message: "unparseable event time"}
+	}
+	r := recipient{UserID: d.UserID, Mode: d.Mode, Email: d.Recipient}
+	cur, st := s.destination(ctx, r)
+	if d.Mode == "google" {
+		if d.GoogleEventID == nil {
+			return deliveryResult{Status: "skipped", Message: "no Google event to cancel"}
+		}
+		if st == destNone || cur != d.Destination {
+			return deliveryResult{Status: "skipped", Message: "that Google account is no longer connected"}
+		}
+	}
+	if st == destUnavailable {
+		return deliveryResult{Status: "failed", Message: transportMissing(d.Mode).Error()}
+	}
+	return s.deliverOne(ctx, r, ev, &d)
+}
+
+// withdraw cancels an event marked cancelled on every destination that still shows it,
+// for one officer or (userID "") everyone.
+func (s *Server) withdraw(ctx context.Context, eventID, userID string) error {
+	unlock := s.eventLock(eventID)
+	defer unlock()
+	e, err := s.db.Read().EventByID(ctx, eventID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.withdrawLocked(ctx, e, userID)
+}
+
+// withdrawLocked does withdraw's work under the event lock. It returns an error while a
+// destination still shows the event (its cancellation or the record of it failed).
+func (s *Server) withdrawLocked(ctx context.Context, e *store.Event, userID string) error {
+	rows, err := s.db.Read().DeliveriesForEvent(ctx, e.ID, userID)
+	if err != nil {
+		return fmt.Errorf("calendar withdraw: deliveries: %w", err)
+	}
+	var errs []error
+	for _, d := range rows {
+		if !d.NeedsCancel() {
+			continue
+		}
+		dctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		out := s.sendCancel(dctx, e, d)
+		cancel()
+		switch out.Status {
+		case "sent":
+			seq := d.NextSequence()
+			ev, _ := s.calendarEvent(e, seq, true)
+			hash := fingerprint(ev, recipient{Mode: d.Mode, Email: d.Recipient})
+			d.Status, d.Sequence, d.AttemptSeq, d.AttemptHash, d.Cancelled, d.Error, d.ContentHash = "sent", seq, nil, nil, true, nil, &hash
+		case "failed":
+			d.Error = &out.Message
+			s.log.Warn("calendar cancellation failed", "event", e.ID, "user", d.UserID, "error", out.Message)
+			if !out.Revoked {
+				errs = append(errs, errors.New(out.Message))
+			}
+		default:
+			continue
+		}
+		d.UpdatedAt = s.nowMs()
+		if err := s.db.Write(ctx, func(q *store.Queries) error { return q.SaveDelivery(ctx, d) }); err != nil {
+			s.log.Error("save calendar delivery", "error", err)
+			errs = append(errs, fmt.Errorf("record calendar cancellation: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// cancelDeleted sends a CANCEL (.ics) or cancels the Google event on each destination a
+// deleted event reached. It returns the destinations still to retry, and records progress
+// after each success so a restart doesn't repeat finished ones; a failure to record that
+// progress is an error too, so the job is retried rather than considered done.
+func (s *Server) cancelDeleted(ctx context.Context, j *store.CalendarJob) ([]store.Delivery, error) {
+	if j.Snapshot == nil {
+		return nil, nil
+	}
+	e := j.Snapshot.Event()
+	left := append([]store.Delivery(nil), j.Priors...)
+	var errs []error
+	for i := 0; i < len(left); {
+		dctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		out := s.sendCancel(dctx, e, left[i])
+		cancel()
+		if out.Status == "failed" {
+			s.log.Warn("calendar cancellation failed", "event", e.ID, "user", left[i].UserID, "error", out.Message)
+			errs = append(errs, errors.New(out.Message))
+			i++
+			continue
+		}
+		left = append(left[:i], left[i+1:]...)
+		rest := append([]store.Delivery{}, left...)
+		if err := s.db.Write(ctx, func(q *store.Queries) error {
+			return q.UpdateCalendarJob(ctx, j.ID, rest, j.Attempts, j.LastError, j.NextAttemptAt)
+		}); err != nil {
+			s.log.Error("calendar outbox: record progress", "job", j.ID, "error", err)
+			errs = append(errs, fmt.Errorf("record cancellation progress: %w", err))
+		}
+	}
+	return left, errors.Join(errs...)
 }

@@ -475,7 +475,9 @@ func weekStatus(b *store.Buildspace, sched store.BuildspaceSchedule, p *store.Bu
 		return "not-joined"
 	}
 	for _, a := range b.Activity {
-		if a.Kind == "weekly" && a.PersonID != nil && *a.PersonID == p.ID && a.Date >= sched.Week.Start && a.Date <= sched.Week.Due {
+		// Only entries dated through today count, like the officers' check-in signal; a
+		// future-dated entry does not finish this week early.
+		if a.Kind == "weekly" && a.PersonID != nil && *a.PersonID == p.ID && a.Date >= sched.Week.Start && a.Date <= sched.Week.Due && a.Date <= sched.Today {
 			return "done"
 		}
 	}
@@ -716,6 +718,19 @@ func (c *Ctx) portalBuilderOnboarding() error {
 			}
 			if v.CohortID == bc.cohort.ID && v.ArchivedAt == nil {
 				if _, err := q.LaunchpadAccountByPerson(ctx, v.ID); errors.Is(err, store.ErrNotFound) {
+					// The same guard as an officer moving a builder: their updates belong to the
+					// project they were written on, so linking to another project needs an officer.
+					if v.ProjectID != project.ID {
+						for _, a := range bc.b.Activity {
+							if a.PersonID != nil && *a.PersonID == v.ID {
+								name := "your current project"
+								if old := bc.b.Project(v.ProjectID); old != nil {
+									name = old.Name
+								}
+								return conflict("You already have updates on " + name + ". Choose that project, or ask an officer to move you.")
+							}
+						}
+					}
 					person.ID, person.JoinedOn, person.MemberID = v.ID, v.JoinedOn, v.MemberID
 					linked = true
 					continue

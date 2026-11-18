@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -266,5 +267,78 @@ func TestTrustedProxiesSetting(t *testing.T) {
 	}
 	if err := build("172.18.0.0/16, proxy.local"); err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXIES") {
 		t.Errorf("malformed list → %v", err)
+	}
+}
+
+// M-021: the service manager's stop timeout must exceed the server's own shutdown budget,
+// with room for db.Close (systemd) and Litestream's final flush (compose).
+func TestStopTimeoutsExceedShutdownBudget(t *testing.T) {
+	read := func(path, key string) time.Duration {
+		t.Helper()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			line = strings.TrimSpace(line)
+			if v, ok := strings.CutPrefix(line, key); ok {
+				d, err := time.ParseDuration(strings.TrimSpace(strings.TrimLeft(v, "=:")))
+				if err != nil {
+					t.Fatalf("%s %s: %v", path, key, err)
+				}
+				return d
+			}
+		}
+		t.Fatalf("%s has no %s", path, key)
+		return 0
+	}
+	if d := read("../../deploy/dashboard.service", "TimeoutStopSec"); d < ShutdownBudget+10*time.Second {
+		t.Errorf("TimeoutStopSec %s leaves under 10 s past the %s shutdown budget", d, ShutdownBudget)
+	}
+	if d := read("../../deploy/compose.cloudflare.yml", "stop_grace_period"); d < ShutdownBudget+20*time.Second {
+		t.Errorf("stop_grace_period %s leaves under 20 s past the %s shutdown budget for Litestream", d, ShutdownBudget)
+	}
+}
+
+// M-060: `seed` refuses a database that already has real data (here, the owner serve
+// provisions), and a release build refuses `seed -reset` on an existing file, unless -force.
+func TestSeedRefusesALiveDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "live.db")
+	e := env(map[string]string{"DB_PATH": path})
+	db, err := openDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.BootstrapOwner(context.Background(), "200000000000000042", "Real Owner", time.Now().UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	var out, errb bytes.Buffer
+	if code := run([]string{"seed"}, e, &out, &errb); code == 0 {
+		t.Fatalf("seed on a live database succeeded: %s", out.String())
+	}
+	check, err := openDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var periods, sample int
+	_ = check.R.QueryRow(`SELECT count(*) FROM fiscal_periods WHERE id = 'period-2026-07'`).Scan(&periods)
+	_ = check.R.QueryRow(`SELECT count(*) FROM users WHERE id = 'user-leadership'`).Scan(&sample)
+	check.Close()
+	if periods != 0 || sample != 0 {
+		t.Fatalf("refused seed still wrote: periods=%d sample users=%d", periods, sample)
+	}
+	errb.Reset()
+	code := run([]string{"seed", "-reset"}, e, &out, &errb)
+	_, statErr := os.Stat(path)
+	if api.DevBuild {
+		if code != 0 {
+			t.Fatalf("dev build seed -reset → %d %s", code, errb.String())
+		}
+	} else if code == 0 || statErr != nil {
+		t.Fatalf("release build seed -reset → %d (file kept: %v)", code, statErr == nil)
+	}
+	if code := run([]string{"seed", "-reset", "-force"}, e, &out, &errb); code != 0 {
+		t.Fatalf("seed -reset -force → %d %s", code, errb.String())
 	}
 }

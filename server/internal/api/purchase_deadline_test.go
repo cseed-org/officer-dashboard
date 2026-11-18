@@ -92,7 +92,7 @@ func TestPurchaseRequestListSortsByDeadline(t *testing.T) {
 		if cursor != "" {
 			path += "&cursor=" + cursor
 		}
-		r := e.mustOK(e.get(path, who))
+		r := e.mustOK(e.get(path, e.director())) // sees every draft, including the seeded one
 		for _, v := range r.list("items") {
 			dates = append(dates, v.(map[string]any)["neededBy"].(string))
 		}

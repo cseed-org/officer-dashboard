@@ -77,7 +77,7 @@ func TestCachePolicy(t *testing.T) {
 
 func TestUnknownPathsGetTheFallbackAndNeverLeakDotfilesOrEscapeTheRoot(t *testing.T) {
 	h := Handler(site(), Options{})
-	for _, p := range []string{"/nope", "/events/abc", "/.env", "/_astro/.env", "/../etc/passwd", "/%2e%2e/etc/passwd"} {
+	for _, p := range []string{"/nope", "/people/abc", "/.env", "/_astro/.env", "/../etc/passwd", "/%2e%2e/etc/passwd"} {
 		rec := get(h, "GET", p)
 		if rec.Code != 404 || !strings.Contains(rec.Body.String(), "nope") || strings.Contains(rec.Body.String(), "SECRET") {
 			t.Errorf("%s → %d %q", p, rec.Code, rec.Body.String())
@@ -88,7 +88,7 @@ func TestUnknownPathsGetTheFallbackAndNeverLeakDotfilesOrEscapeTheRoot(t *testin
 	}
 	// An SPA shell as the fallback answers 200 so client-side routes work.
 	spa := Handler(fstest.MapFS{"index.html": {Data: []byte("shell")}, "200.html": {Data: []byte("shell")}}, Options{Fallback: "200.html", FallbackStatus: 200})
-	if rec := get(spa, "GET", "/events/abc"); rec.Code != 200 || rec.Body.String() != "shell" {
+	if rec := get(spa, "GET", "/people/abc"); rec.Code != 200 || rec.Body.String() != "shell" {
 		t.Errorf("spa fallback → %d %q", rec.Code, rec.Body.String())
 	}
 	// With no fallback page at all, a plain 404.
@@ -205,6 +205,27 @@ func TestBuildspaceLegacyRedirect(t *testing.T) {
 		r := get(Handler(site(), Options{}), "GET", path)
 		if r.Code != 301 || r.Header().Get("Location") != "/buildspace-launchpad?person=abc" {
 			t.Fatalf("redirect: %d %s", r.Code, r.Header().Get("Location"))
+		}
+	}
+}
+
+// M-015: v1 detail links in old Discord messages redirect to their v2 pages.
+func TestLegacyDetailRedirects(t *testing.T) {
+	for path, want := range map[string]string{
+		"/requests/abc":       "/finance?id=abc",
+		"/requests/abc/":      "/finance?id=abc",
+		"/events/ev-1":        "/events?id=ev-1",
+		"/requests/a%20b":     "/finance?id=a+b",
+		"/requests/2027-0007": "/finance?id=2027-0007",
+	} {
+		r := get(Handler(site(), Options{}), "GET", path)
+		if r.Code != 301 || r.Header().Get("Location") != want {
+			t.Errorf("%s: %d %q, want 301 %q", path, r.Code, r.Header().Get("Location"), want)
+		}
+	}
+	for _, path := range []string{"/requests/new", "/events/import", "/requests/a/b", "/requests/"} {
+		if r := get(Handler(site(), Options{}), "GET", path); r.Code == 301 {
+			t.Errorf("%s redirected to %s", path, r.Header().Get("Location"))
 		}
 	}
 }

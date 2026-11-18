@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -48,6 +49,9 @@ func (c *Ctx) requestsList() error {
 		return err
 	}
 	f := store.RequestFilter{EventID: eventID.V, Q: qtext.V, ByDeadline: sortBy == "deadline"}
+	if !auth.HasRole(u.Role, auth.RoleDirector) {
+		f.DraftsOf = u.ID // another officer's draft is private (scope=all, counts)
+	}
 	if scope == "mine" {
 		f.RequesterID = u.ID
 	}
@@ -116,6 +120,11 @@ func (c *Ctx) requestDetail() error {
 	q := c.S.db.Read()
 	r, err := q.RequestByID(ctx, c.R.PathValue("id"))
 	if err != nil {
+		return notFoundErr("Record not found")
+	}
+	// Drafts are private to their requester and directors; anyone else gets the same 404 as a
+	// missing request.
+	if r.Status == "draft" && r.RequesterID != u.ID && !auth.HasRole(u.Role, auth.RoleDirector) {
 		return notFoundErr("Record not found")
 	}
 	cat, err := loadCatalog(ctx, q, true)
@@ -693,7 +702,7 @@ func (c *Ctx) settleWrites(ctx context.Context, w *store.Queries, r *store.Reque
 		return err
 	}
 	if fund.Restriction == "with_donor" {
-		available, err := w.AvailableRestricted(ctx, r.FundID)
+		available, err := w.AvailableRestricted(ctx, r.FundID, today)
 		if err != nil {
 			return err
 		}
@@ -782,8 +791,11 @@ func (c *Ctx) notify(r *store.Request, action, comment string) {
 	default:
 		e.Type, e.Status = "request.status", r.Status
 	}
-	c.S.cfg.Notifier.Notify(ctx, e, c.S.link("/requests/"+r.ID, c.R))
+	c.S.cfg.Notifier.Notify(ctx, e, c.S.link(requestPage(r.ID), c.R))
 }
+
+// requestPage is the web app's page for one request (web/src/lib/routes.ts href.request).
+func requestPage(id string) string { return "/finance?id=" + url.QueryEscape(id) }
 
 // link builds an absolute URL to an app page.
 func (s *Server) link(path string, r *http.Request) string {
@@ -928,7 +940,9 @@ func (c *Ctx) lifecycle(action string) error {
 		if in.To == "submitted" {
 			change.SubmittedAt = &now
 		}
-		if in.To == "approved" || in.To == "denied" {
+		// Only the decision itself (approve or deny a submitted request) dates it; sending a
+		// request back from buying to approved keeps the original approval time.
+		if (in.To == "approved" || in.To == "denied") && r.Status == "submitted" {
 			change.DecidedAt = &now
 		}
 		if in.Settle != nil {

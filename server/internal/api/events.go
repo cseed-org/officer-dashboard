@@ -193,7 +193,6 @@ func (c *Ctx) eventCreate() error {
 	ctx := c.Context()
 	id := auth.UUID()
 	var out EventListItem
-	var synced store.Event
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		cat, err := loadCatalog(ctx, w, false)
 		if err != nil {
@@ -226,7 +225,9 @@ func (c *Ctx) eventCreate() error {
 		if err := c.audit(ctx, w, "event.created", "event", id, nil, eventSnapshot(&e)); err != nil {
 			return err
 		}
-		synced = e
+		if err := c.S.syncEventInTx(ctx, w, id); err != nil {
+			return err
+		}
 		items, err := c.S.eventItems(ctx, w, cat, []store.Event{e}, id)
 		if err != nil {
 			return err
@@ -237,7 +238,7 @@ func (c *Ctx) eventCreate() error {
 	if err != nil {
 		return err
 	}
-	c.S.SyncEventToCalendars(synced)
+	c.S.kickCalendar()
 	writeJSON(c.W, 200, map[string]any{"event": out})
 	return nil
 }
@@ -253,7 +254,6 @@ func (c *Ctx) eventUpdate() error {
 	ctx := c.Context()
 	id := c.R.PathValue("id")
 	var out EventListItem
-	var synced store.Event
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		e, err := w.EventByID(ctx, id)
 		if err != nil {
@@ -300,7 +300,9 @@ func (c *Ctx) eventUpdate() error {
 		if err := c.audit(ctx, w, "event.updated", "event", id, before, eventSnapshot(updated)); err != nil {
 			return err
 		}
-		synced = *updated
+		if err := c.S.syncEventInTx(ctx, w, id); err != nil {
+			return err
+		}
 		items, err := c.S.eventItems(ctx, w, cat, []store.Event{*updated}, id)
 		if err != nil {
 			return err
@@ -311,7 +313,7 @@ func (c *Ctx) eventUpdate() error {
 	if err != nil {
 		return err
 	}
-	c.S.SyncEventToCalendars(synced)
+	c.S.kickCalendar()
 	writeJSON(c.W, 200, map[string]any{"event": out})
 	return nil
 }
@@ -322,8 +324,12 @@ func (c *Ctx) eventDelete() error {
 	}
 	ctx := c.Context()
 	id := c.R.PathValue("id")
-	var deleted store.Event
-	var priors map[string]store.Delivery
+	// Wait for any delivery of this event that is mid-send, so its delivery row is part of
+	// the snapshot below (and a later send finds the event gone).
+	if testDeleteHook != nil {
+		testDeleteHook(id)
+	}
+	unlock := c.S.eventLock(id)
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
 		e, err := w.EventByID(ctx, id)
 		if err != nil {
@@ -337,20 +343,35 @@ func (c *Ctx) eventDelete() error {
 			return conflict(fmt.Sprintf("%s has %d purchase request%s. Move them to another event before deleting it.", e.Name, n, map[bool]string{true: "", false: "s"}[n == 1]))
 		}
 		before := eventSnapshot(e)
-		// Calendar deliveries cascade with the event: keep them to send cancellations.
-		if priors, err = w.DeliveriesForEvent(ctx, id); err != nil {
+		// Calendar deliveries cascade with the event: queue a cancellation for every
+		// destination that has it, or may have it from a send whose outcome was never
+		// recorded (a crash mid-send), in this transaction.
+		priors, err := w.DeliveriesForEvent(ctx, id, "")
+		if err != nil {
 			return err
 		}
-		deleted = *e
+		var live []store.Delivery
+		for _, d := range priors {
+			if d.NeedsCancel() {
+				live = append(live, d)
+			}
+		}
+		if len(live) > 0 {
+			snap := store.SnapshotOf(e)
+			if err := c.S.enqueueCalendar(ctx, w, store.CalendarJob{Kind: "cancel", EventID: id, Snapshot: &snap, Priors: live}); err != nil {
+				return err
+			}
+		}
 		if err := w.DeleteEvent(ctx, id); err != nil {
 			return err
 		}
 		return c.audit(ctx, w, "event.deleted", "event", id, before, nil)
 	})
+	unlock()
 	if err != nil {
 		return err
 	}
-	c.S.CancelEventOnCalendars(deleted, priors)
+	c.S.kickCalendar()
 	writeJSON(c.W, 200, map[string]any{"ok": true})
 	return nil
 }
@@ -703,8 +724,10 @@ func (c *Ctx) eventsImport() error {
 	rd := validate.FromValues(r.MultipartForm.Value)
 	kind := rd.Str("kind", validate.S{Req: true, Enum: []string{"luma_guests", "reflections"}})
 	eventID := rd.Str("eventId", validate.S{Min: 1, Max: 64})
-	lumaEventID := rd.Str("lumaEventId", validate.S{})
-	eventName := rd.Str("eventName", validate.S{})
+	// The same limits as create/update (readEvent), so an import cannot store a name or id
+	// the editor would reject.
+	lumaEventID := rd.Str("lumaEventId", validate.S{Trim: true, Max: 100})
+	eventName := rd.Str("eventName", validate.S{Trim: true, Min: 1, Max: 200})
 	startsAt := rd.Str("eventStartsAt", validate.S{Format: "datetime"})
 	dry := rd.Str("dryRun", validate.S{Enum: []string{"true", "false"}, HasDef: true, Default: "false"})
 	if rd.Issues.Any() {
@@ -779,6 +802,13 @@ func (c *Ctx) eventsImport() error {
 		if qerr != nil && !errors.Is(qerr, store.ErrNotFound) {
 			return qerr
 		}
+		if eventID.V == "" && existing != nil && existing.LumaID == nil {
+			// Matched through its lu.ma/event/<id> link: store the id, so the event is still
+			// found if the link later changes to a vanity URL.
+			if err := w.UpdateEvent(ctx, existing.ID, store.EventPatch{LumaID: store.Opt[string]{Set: true, V: lumaEventID.V}}, c.S.nowMs()); err != nil {
+				return err
+			}
+		}
 		if eventID.V != "" && existing == nil {
 			return notFoundErr("Event not found")
 		}
@@ -842,6 +872,9 @@ func (c *Ctx) eventsImport() error {
 		}
 		k, d := kind.V, dryRun
 		result = importResult{EventID: id, Kind: &k, DryRun: &d, Rows: total, Created: created, Updated: updated, Skipped: total - created - updated, Errors: errs, Metrics: eventCounts(counts[id])}
+		if err := c.S.syncEventInTx(ctx, w, id); err != nil { // a new event from the CSV reaches calendars too
+			return err
+		}
 		if dryRun {
 			return errRollback
 		}
@@ -851,7 +884,7 @@ func (c *Ctx) eventsImport() error {
 		return err
 	}
 	if err == nil && result.EventID != "" {
-		c.S.syncEventID(result.EventID) // a new event from the CSV reaches calendars too
+		c.S.kickCalendar()
 	}
 	writeJSON(c.W, 200, result)
 	return nil
@@ -904,11 +937,11 @@ func (c *Ctx) ingestLuma() error {
 		} else {
 			sub := validate.FromJSON(raw)
 			sub.Issues = r.Issues
-			ev.LumaID = sub.Str("lumaId", validate.S{Req: true, Min: 1})
-			ev.Name = sub.Str("name", validate.S{Req: true, Min: 1})
+			ev.LumaID = sub.Str("lumaId", validate.S{Req: true, Trim: true, Min: 1, Max: 100})
+			ev.Name = sub.Str("name", validate.S{Req: true, Trim: true, Min: 1, Max: 200})
 			ev.StartsAt = sub.Str("startsAt", validate.S{Req: true, Format: "datetime"})
 			ev.EndsAt = sub.Str("endsAt", validate.S{Null: true, Format: "datetime"})
-			ev.Location = sub.Str("location", validate.S{Null: true})
+			ev.Location = sub.Str("location", validate.S{Null: true, Max: 200})
 			ev.URL = sub.Str("url", validate.S{Null: true, Format: "url"})
 		}
 		r.Objects("guests", true, 5000, func(_ int, sub *validate.Reader) {
@@ -934,10 +967,20 @@ func (c *Ctx) ingestLuma() error {
 			return qerr
 		}
 		now := c.S.nowMs()
+		ends := ptrIf(ev.EndsAt)
+		if !ev.EndsAt.Set && existing != nil {
+			ends = existing.EndsAt
+		}
+		if ends != nil && endsBeforeStarts(ev.StartsAt.V, *ends) {
+			return badRequest("Event ends before it starts")
+		}
 		var id string
 		if existing != nil {
 			id = existing.ID
 			patch := store.EventPatch{Name: optOf(ev.Name), StartsAt: optOf(ev.StartsAt), EndsAt: optOf(ev.EndsAt), Location: optOf(ev.Location), URL: optOf(ev.URL)}
+			if existing.LumaID == nil {
+				patch.LumaID = store.Opt[string]{Set: true, V: ev.LumaID.V} // matched through its lu.ma/event link
+			}
 			if err := w.UpdateEvent(ctx, id, patch, now); err != nil {
 				return err
 			}
@@ -990,12 +1033,15 @@ func (c *Ctx) ingestLuma() error {
 		}
 		total := len(guests)
 		result = importResult{EventID: id, Rows: total, Created: created, Updated: updated, Skipped: total - created - updated, Errors: []rowError{}, Metrics: eventCounts(counts[id])}
+		if err := c.S.syncEventInTx(ctx, w, id); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	c.S.syncEventID(result.EventID) // unchanged events are skipped per recipient
+	c.S.kickCalendar() // unchanged events are skipped per recipient
 	writeJSON(c.W, 200, result)
 	return nil
 }
@@ -1012,3 +1058,7 @@ func eventForLuma(ctx context.Context, w *store.Queries, lumaID string) (*store.
 	}
 	return nil, err
 }
+
+// testDeleteHook, when a test sets it, runs in eventDelete just before it waits for the
+// event lock.
+var testDeleteHook func(eventID string)

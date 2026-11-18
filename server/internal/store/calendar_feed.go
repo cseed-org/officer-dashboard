@@ -30,6 +30,9 @@ type CalendarItem struct {
 // personal data to UserID and return only items overlapping this exclusive range.
 type CalendarRange struct {
 	Start, End, FirstDate, EndDate, UserID string
+	// Director is true when the viewer holds the director role (from the session, never
+	// the query): directors see every officer's draft purchase deadlines (D-22).
+	Director bool
 }
 
 // CalendarSource is the extension point for new dated sources. Register loaders here

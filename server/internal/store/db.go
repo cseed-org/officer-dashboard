@@ -43,8 +43,14 @@ type DB struct {
 	Path string
 }
 
+// uriPath escapes the characters SQLite's URI parser treats specially ('%' starts an escape,
+// '?' the query, '#' a fragment), so a literal filesystem path such as "go#1.db" opens that
+// file and keeps the query parameters (mode=ro on the reader pool). Every other character,
+// including Windows drive letters and separators, passes through unchanged.
+var uriPath = strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23")
+
 func dsn(path string, params url.Values) string {
-	return "file:" + path + "?" + params.Encode()
+	return "file:" + uriPath.Replace(path) + "?" + params.Encode()
 }
 
 // Open opens (creating if needed) the database in WAL mode, applies pending migrations and
@@ -199,6 +205,17 @@ type Queries struct{ q Q }
 // Read returns queries bound to the reader pool.
 func (d *DB) Read() *Queries { return &Queries{q: d.R} }
 
+// ReadTx runs fn in one read transaction on the reader pool: in WAL mode every query fn
+// makes sees the same snapshot, without taking the single writer connection.
+func (d *DB) ReadTx(ctx context.Context, fn func(r *Queries) error) error {
+	tx, err := d.R.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	return fn(&Queries{q: tx})
+}
+
 // Write runs fn in one IMMEDIATE transaction on the single writer connection and returns
 // fn's error after rolling back; a nil error commits.
 func (d *DB) Write(ctx context.Context, fn func(w *Queries) error) error {
@@ -211,6 +228,24 @@ func (d *DB) Write(ctx context.Context, fn func(w *Queries) error) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// IsConflict reports whether err is SQLite refusing a write because of the data already
+// there: a UNIQUE/PRIMARY KEY/FOREIGN KEY constraint or a trigger's RAISE(ABORT), which
+// SQLite reports as SQLITE_CONSTRAINT. NOT NULL and CHECK failures are left out: handlers
+// validate their input before writing, so one of those is a server bug, not a conflict the
+// caller can resolve. It matches the driver's (extended) error code, not its text, so a
+// network or "database is closed" error that happens to contain such words never matches.
+func IsConflict(err error) bool {
+	var se sqlite3.Error
+	if !errors.As(err, &se) || se.Code != sqlite3.ErrConstraint {
+		return false
+	}
+	switch se.ExtendedCode {
+	case sqlite3.ErrConstraintNotNull, sqlite3.ErrConstraintCheck:
+		return false
+	}
+	return true
 }
 
 // ErrNotFound is returned for a missing row.

@@ -289,6 +289,10 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go sessionJanitor(ctx, db, log)
+	// Deliver calendar jobs a previous run left in the outbox, and retry failed
+	// ones hourly.
+	srv.ResumeCalendar()
+	go calendarRetry(ctx, srv)
 	go srv.CloudflareDaily(ctx)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
@@ -300,16 +304,39 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		}
 	case <-ctx.Done():
 		log.Info("shutting down")
-		shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		// One deadline for the whole stop, so it fits inside the service manager's timeout.
+		deadline := time.Now().Add(ShutdownBudget)
+		shutdown, cancel := context.WithDeadline(context.Background(), deadline)
 		defer cancel()
 		err := httpSrv.Shutdown(shutdown)
-		// Let queued calendar deliveries finish (and record themselves), within reason.
-		if !srv.WaitBackgroundFor(20 * time.Second) {
-			log.Warn("calendar deliveries still running at shutdown; the next event change resends them")
+		// Let the calendar worker finish (and record) what it is sending, within the budget.
+		if !srv.WaitBackgroundFor(time.Until(deadline)) {
+			log.Warn("calendar deliveries still running at shutdown; the outbox resumes them at the next start")
 		}
 		return err
 	}
 	return nil
+}
+
+// ShutdownBudget is the most serve spends stopping after SIGTERM: draining HTTP requests,
+// then waiting for the calendar worker. The service manager must allow more, with room
+// for db.Close and Litestream's final flush: deploy/dashboard.service TimeoutStopSec and
+// deploy/compose.cloudflare.yml stop_grace_period (checked by TestStopTimeoutsExceedShutdownBudget).
+const ShutdownBudget = 15 * time.Second
+
+// calendarRetry restarts the calendar outbox worker hourly, so every job that failed (SMTP
+// relay or Google down) is retried, whatever its backoff, without waiting for a change.
+func calendarRetry(ctx context.Context, srv *api.Server) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			srv.ResumeCalendar()
+		}
+	}
 }
 
 // sessionJanitor deletes expired sessions, OAuth codes and unused MCP clients hourly.
@@ -350,11 +377,17 @@ func sessionJanitor(ctx context.Context, db *store.DB, log *slog.Logger) {
 func seedCmd(args []string, getenv func(string) string, stdout io.Writer, log *slog.Logger) error {
 	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
 	reset := fs.Bool("reset", false, "delete the database first")
+	force := fs.Bool("force", false, "seed a database that holds real data, or -reset one outside a dev build")
 	s, err := loadSettings(fs, args, getenv)
 	if err != nil {
 		return err
 	}
 	if *reset {
+		// The release image's DB_PATH is the production file; deleting it needs a dev build or
+		// an explicit -force. A path with no file yet (a fresh check database) is fine.
+		if _, err := os.Stat(s.DBPath); err == nil && !api.DevBuild && !*force {
+			return fmt.Errorf("seed -reset would delete %s, and this is a release build; pass -force if that is really what you want", s.DBPath)
+		}
 		for _, suffix := range []string{"", "-wal", "-shm"} {
 			if err := os.Remove(s.DBPath + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
@@ -366,6 +399,15 @@ func seedCmd(args []string, getenv func(string) string, stdout io.Writer, log *s
 		return err
 	}
 	defer db.Close()
+	if !*force {
+		real, err := seed.HasRealData(context.Background(), db)
+		if err != nil {
+			return err
+		}
+		if real {
+			return fmt.Errorf("%s already holds users or journal entries the seed did not create; seeding it would post immutable sample entries and close July-September for good. Pass -force to seed it anyway", s.DBPath)
+		}
+	}
 	if err := seed.Apply(context.Background(), db); err != nil {
 		return err
 	}

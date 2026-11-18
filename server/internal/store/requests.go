@@ -60,10 +60,13 @@ func scanRequest(s interface{ Scan(...any) error }) (*Request, error) {
 // RequestFilter selects purchase requests for a list.
 type RequestFilter struct {
 	RequesterID string // "" = everyone
-	EventID     string
-	Q           string // case-insensitive substring of title, vendor or number
-	Status      string // "" = any
-	Limit       int    // 0 = no limit
+	// DraftsOf, when set, hides drafts except this user's own: drafts are private to their
+	// requester and directors (directors leave it empty).
+	DraftsOf string
+	EventID  string
+	Q        string // case-insensitive substring of title, vendor or number
+	Status   string // "" = any
+	Limit    int    // 0 = no limit
 	// ByDeadline lists only requests with a needed-by date, soonest first
 	// (needed_by, id); its cursor uses CursorDate and CursorID.
 	ByDeadline bool
@@ -84,6 +87,10 @@ func (f RequestFilter) where(withStatus bool) (string, []any) {
 	if f.RequesterID != "" {
 		conds = append(conds, "requester_id = ?")
 		args = append(args, f.RequesterID)
+	}
+	if f.DraftsOf != "" {
+		conds = append(conds, "(status <> 'draft' OR requester_id = ?)")
+		args = append(args, f.DraftsOf)
 	}
 	if f.EventID != "" {
 		conds = append(conds, "event_id = ?")

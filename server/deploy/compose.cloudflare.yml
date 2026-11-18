@@ -52,8 +52,9 @@ services:
       timeout: 3s
       retries: 3
       start_period: 15s
-    # Litestream flushes on SIGTERM; give it time.
-    stop_grace_period: 30s
+    # The server stops within 15 s (cmd/dashboard ShutdownBudget); Litestream then flushes
+    # its last WAL frames to the replica. Give both time before Docker kills the container.
+    stop_grace_period: 45s
 
   cloudflared:
     # Official image. Pin a release and bump it deliberately

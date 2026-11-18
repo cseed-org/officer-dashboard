@@ -417,13 +417,25 @@ func (c *Ctx) profilePut() error {
 	p.UserID = u.ID
 	ctx := c.Context()
 	var resp map[string]any
-	created := false
+	created, modeChanged := false, false
 	err = c.S.db.Write(ctx, func(q *store.Queries) error {
 		before, err := q.ProfileByUser(ctx, u.ID)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 		created = before == nil
+		// A director may have titled the account (Officers → Access) before the person ever
+		// saved a profile. Setup's first stage doesn't show the title field, so a new profile
+		// without one keeps that title instead of erasing it.
+		if before == nil && p.Title == nil {
+			cur, err := q.UserByID(ctx, u.ID)
+			if err != nil {
+				return err
+			}
+			if cur.Title != nil && strings.TrimSpace(*cur.Title) != "" {
+				p.Title = cur.Title
+			}
+		}
 		inv, invErr := q.InviteForUser(ctx, u.ID)
 		onboarding := invErr == nil && inv.OnboardedAt == nil
 		switch {
@@ -482,6 +494,7 @@ func (c *Ctx) profilePut() error {
 			t := c.S.clubTerm(ctx, q)
 			p.StartTerm = &t
 		}
+		modeChanged = before != nil && before.DeliveryMode != p.DeliveryMode
 		if err := q.SaveProfile(ctx, p); err != nil {
 			return err
 		}
@@ -492,14 +505,21 @@ func (c *Ctx) profilePut() error {
 		if err := c.audit(ctx, q, "profile.updated", "officer_profile", u.ID, redactProfile(before), redactProfile(&p)); err != nil {
 			return err
 		}
+		// A new recipient, or one whose delivery mode just changed, needs the upcoming events
+		// sent to the destination they now use.
+		if created || modeChanged {
+			if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
+				return err
+			}
+		}
 		resp, err = c.profileResponse(ctx, q, u.ID)
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	if created {
-		c.S.backfillCalendar(u.ID) // they just became a calendar recipient
+	if created || modeChanged {
+		c.S.kickCalendar()
 	}
 	writeJSON(c.W, 200, resp)
 	return nil
@@ -652,6 +672,11 @@ func (c *Ctx) onboardingComplete() error {
 		if err != nil {
 			return err
 		}
+		// A finished officer receives the upcoming events (queued with the change, so a
+		// restart can't lose it; rolled back with it when finishing is refused).
+		if err := c.S.queueBackfill(ctx, q, u.ID); err != nil {
+			return err
+		}
 		inv, invErr := q.InviteForUser(ctx, u.ID)
 		invPending := invErr == nil && inv.OnboardedAt == nil
 		if version >= OnboardingVersion && !invPending {
@@ -674,7 +699,7 @@ func (c *Ctx) onboardingComplete() error {
 	if err != nil {
 		return err
 	}
-	c.S.backfillCalendar(u.ID)
+	c.S.kickCalendar()
 	writeJSON(c.W, 200, map[string]any{"user": currentUser(u), "onboarding": nil})
 	return nil
 }

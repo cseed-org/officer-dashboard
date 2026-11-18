@@ -220,7 +220,8 @@ func TestHealthShowsTheVersionOnlyToSignedInUsers(t *testing.T) {
 // officers may not.
 func TestReceiptDownloadIsLimitedToRequesterAndDirectors(t *testing.T) {
 	e := newEnv(t)
-	id := e.mustOK(e.post("/api/requests", purchase, e.officer())).str("request", "id")
+	// Submitted, so every officer can open the request (drafts are private).
+	id := e.mustOK(e.post("/api/requests", with(purchase, "submit", true), e.officer())).str("request", "id")
 	att := e.do("POST", "/api/requests/"+id+"/attachments", formBody{
 		fields: map[string]string{"kind": "receipt"}, files: []formFile{{"file", "r.pdf", "application/pdf", "%PDF-1.4\nR"}},
 	}, e.officer())

@@ -22,8 +22,9 @@ Environment=DB_PATH=/var/lib/officer-dashboard/dashboard.db
 ExecStart=/opt/officer-dashboard/dashboard serve
 Restart=on-failure
 RestartSec=2s
-# SIGTERM drains in-flight requests (15 s) and checkpoints the WAL.
-TimeoutStopSec=20s
+# SIGTERM gets 15 s (cmd/dashboard ShutdownBudget) to drain in-flight requests and let the
+# calendar worker record what it is sending, then closes the database. Allow more than that.
+TimeoutStopSec=30s
 
 # State lives under /var/lib/officer-dashboard (created, owned and writable by the unit).
 StateDirectory=officer-dashboard

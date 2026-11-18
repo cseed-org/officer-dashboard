@@ -75,14 +75,16 @@ test('Finance lists due hints, sorts by deadline, and the requester edits a draf
   }
 });
 
-test('another officer cannot edit the deadline of someone else’s draft', async ({ page }) => {
+// D-22: a draft is private to its requester and directors, so another officer can neither
+// open it nor edit its deadline.
+test('another officer cannot open or edit someone else’s draft', async ({ page }) => {
   await devLogin(page, 'officer');
   const mine = await draft(page, `deadline-e2e private ${Date.now()}`, laDate(5));
   try {
     await devSignIn(page, { as: 'officer', user: 'user-marcus' });
     await page.goto(`/finance?id=${mine.id}`);
-    await expect(page.locator('.due-fact')).toContainText('due in 5 days');
-    await expect(page.locator('.due-fact').getByRole('button')).toHaveCount(0);
+    expect((await page.request.get(`/api/requests/${mine.id}`)).status()).toBe(404);
+    await expect(page.locator('.due-fact')).toHaveCount(0);
   } finally {
     await devLogin(page, 'officer');
     await remove(page, mine.id);
