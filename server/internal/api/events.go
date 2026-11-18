@@ -720,8 +720,10 @@ func (c *Ctx) eventsImport() error {
 	rd := validate.FromValues(r.MultipartForm.Value)
 	kind := rd.Str("kind", validate.S{Req: true, Enum: []string{"luma_guests", "reflections"}})
 	eventID := rd.Str("eventId", validate.S{Min: 1, Max: 64})
-	lumaEventID := rd.Str("lumaEventId", validate.S{})
-	eventName := rd.Str("eventName", validate.S{})
+	// The same limits as create/update (readEvent), so an import cannot store a name or id
+	// the editor would reject.
+	lumaEventID := rd.Str("lumaEventId", validate.S{Trim: true, Max: 100})
+	eventName := rd.Str("eventName", validate.S{Trim: true, Min: 1, Max: 200})
 	startsAt := rd.Str("eventStartsAt", validate.S{Format: "datetime"})
 	dry := rd.Str("dryRun", validate.S{Enum: []string{"true", "false"}, HasDef: true, Default: "false"})
 	if rd.Issues.Any() {
@@ -795,6 +797,13 @@ func (c *Ctx) eventsImport() error {
 		}
 		if qerr != nil && !errors.Is(qerr, store.ErrNotFound) {
 			return qerr
+		}
+		if eventID.V == "" && existing != nil && existing.LumaID == nil {
+			// Matched through its lu.ma/event/<id> link: store the id, so the event is still
+			// found if the link later changes to a vanity URL.
+			if err := w.UpdateEvent(ctx, existing.ID, store.EventPatch{LumaID: store.Opt[string]{Set: true, V: lumaEventID.V}}, c.S.nowMs()); err != nil {
+				return err
+			}
 		}
 		if eventID.V != "" && existing == nil {
 			return notFoundErr("Event not found")
@@ -924,11 +933,11 @@ func (c *Ctx) ingestLuma() error {
 		} else {
 			sub := validate.FromJSON(raw)
 			sub.Issues = r.Issues
-			ev.LumaID = sub.Str("lumaId", validate.S{Req: true, Min: 1})
-			ev.Name = sub.Str("name", validate.S{Req: true, Min: 1})
+			ev.LumaID = sub.Str("lumaId", validate.S{Req: true, Trim: true, Min: 1, Max: 100})
+			ev.Name = sub.Str("name", validate.S{Req: true, Trim: true, Min: 1, Max: 200})
 			ev.StartsAt = sub.Str("startsAt", validate.S{Req: true, Format: "datetime"})
 			ev.EndsAt = sub.Str("endsAt", validate.S{Null: true, Format: "datetime"})
-			ev.Location = sub.Str("location", validate.S{Null: true})
+			ev.Location = sub.Str("location", validate.S{Null: true, Max: 200})
 			ev.URL = sub.Str("url", validate.S{Null: true, Format: "url"})
 		}
 		r.Objects("guests", true, 5000, func(_ int, sub *validate.Reader) {
@@ -954,10 +963,20 @@ func (c *Ctx) ingestLuma() error {
 			return qerr
 		}
 		now := c.S.nowMs()
+		ends := ptrIf(ev.EndsAt)
+		if !ev.EndsAt.Set && existing != nil {
+			ends = existing.EndsAt
+		}
+		if ends != nil && endsBeforeStarts(ev.StartsAt.V, *ends) {
+			return badRequest("Event ends before it starts")
+		}
 		var id string
 		if existing != nil {
 			id = existing.ID
 			patch := store.EventPatch{Name: optOf(ev.Name), StartsAt: optOf(ev.StartsAt), EndsAt: optOf(ev.EndsAt), Location: optOf(ev.Location), URL: optOf(ev.URL)}
+			if existing.LumaID == nil {
+				patch.LumaID = store.Opt[string]{Set: true, V: ev.LumaID.V} // matched through its lu.ma/event link
+			}
 			if err := w.UpdateEvent(ctx, id, patch, now); err != nil {
 				return err
 			}

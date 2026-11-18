@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"officerdashboard/internal/accounting"
@@ -100,5 +101,43 @@ func TestProjectRestoreKeepsIndependentlyArchivedBuilder(t *testing.T) {
 	}
 	if v := e.scalar(`SELECT archived_at IS NULL FROM buildspace_launchpad_people WHERE id='bs-person-02'`); v != int64(1) {
 		t.Errorf("builder archived with the project was not restored")
+	}
+}
+
+// M-039: CSV import and Luma ingest apply the editor's field limits and chronology check,
+// and an event matched through its lu.ma/event/<id> link stores that Luma id.
+func TestImportAndIngestValidateEventsAndStoreMatchedLumaID(t *testing.T) {
+	e := newEnv(t)
+	csv := []formFile{{"file", "guests.csv", "text/csv", "Email,Name\nnew@example.org,New Guest"}}
+	long := strings.Repeat("n", 201)
+	for name, fields := range map[string]map[string]string{
+		"201-character name":    {"kind": "luma_guests", "lumaEventId": "evt-long", "eventName": long, "eventStartsAt": "2026-11-01T10:00:00Z"},
+		"whitespace name":       {"kind": "luma_guests", "lumaEventId": "evt-blank", "eventName": "   ", "eventStartsAt": "2026-11-01T10:00:00Z"},
+		"101-character luma id": {"kind": "luma_guests", "lumaEventId": strings.Repeat("x", 101), "eventName": "Ok", "eventStartsAt": "2026-11-01T10:00:00Z"},
+	} {
+		expectStatus(t, "import "+name, e.do("POST", "/api/events/import", formBody{fields: fields, files: csv}, e.officer()), 400)
+	}
+	issued := e.mustOK(e.post("/api/admin/tokens", map[string]any{"name": "ingest", "scopes": []string{"ingest:luma"}}, e.director()))
+	tok := bearer(issued.str("plaintext"))
+	guests := []any{map[string]any{"email": "g@example.org"}}
+	expectStatus(t, "ingest ends before it starts", e.post("/api/ingest/luma", map[string]any{
+		"event": map[string]any{"lumaId": "evt-order", "name": "Backwards", "startsAt": "2026-11-01T10:00:00Z", "endsAt": "2026-11-01T09:00:00Z"}, "guests": guests}, tok), 400)
+	expectStatus(t, "ingest 201-character name", e.post("/api/ingest/luma", map[string]any{
+		"event": map[string]any{"lumaId": "evt-n", "name": long, "startsAt": "2026-11-01T10:00:00Z"}, "guests": guests}, tok), 400)
+
+	// An officer pasted the lu.ma/event link before any import.
+	linked := e.mustOK(e.post("/api/events", map[string]any{"name": "Linked first", "startsAt": "2026-11-05T18:00:00-08:00", "lumaUrl": "https://lu.ma/event/evt-linked1"}, e.officer())).str("event", "id")
+	got := e.mustOK(e.post("/api/ingest/luma", map[string]any{"event": map[string]any{"lumaId": "evt-linked1", "name": "Linked first", "startsAt": "2026-11-06T02:00:00Z"}, "guests": guests}, tok))
+	if got.str("eventId") != linked {
+		t.Fatalf("ingest made a new event %s instead of %s", got.str("eventId"), linked)
+	}
+	if ev, err := e.db.Read().EventByLumaID(context.Background(), "evt-linked1"); err != nil || ev.ID != linked {
+		t.Fatalf("EventByLumaID after ingest: %v %v", ev, err)
+	}
+	// The CSV path stores it too.
+	csvLinked := e.mustOK(e.post("/api/events", map[string]any{"name": "CSV linked", "startsAt": "2026-11-07T18:00:00-08:00", "lumaUrl": "https://lu.ma/event/evt-csv01"}, e.officer())).str("event", "id")
+	e.mustOK(e.do("POST", "/api/events/import", formBody{fields: map[string]string{"kind": "luma_guests", "lumaEventId": "evt-csv01"}, files: csv}, e.officer()))
+	if ev, err := e.db.Read().EventByLumaID(context.Background(), "evt-csv01"); err != nil || ev.ID != csvLinked {
+		t.Fatalf("EventByLumaID after CSV import: %v %v", ev, err)
 	}
 }
