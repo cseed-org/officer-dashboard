@@ -19,6 +19,7 @@ import {
   VISIBILITY_LABEL,
   missed,
   openActivity,
+  projectActivities,
   projectMentors,
   projectPeople,
 } from "./model";
@@ -48,11 +49,7 @@ export function BuildspaceDetail({
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
   const tab = section ?? localTab;
-  const activities = b.activity.filter(
-    (a) =>
-      a.projectId === project.id &&
-      (!person || !a.personId || a.personId === person.id),
-  );
+  const activities = projectActivities(project.id, b, person?.id);
   const mentors = projectMentors(project, b),
     people = projectPeople(project, b);
   const timeline = activities.filter((a) =>

@@ -1,11 +1,7 @@
 import { PersonDrawer, usePersonParam } from "../components/PersonDrawer";
-import { useRef, useState } from "preact/hooks";
-import {
-  BUILDSPACE_STAGES,
-  BUILDSPACE_TRACKS,
-  type BuildspaceData,
-  type BuildspaceProject,
-} from "../../lib/contracts";
+import { useMemo, useRef, useState } from "preact/hooks";
+import { BUILDSPACE_STAGES, BUILDSPACE_TRACKS } from "../../core/constants";
+import type { BuildspaceData, BuildspaceProject } from "../../lib/contracts";
 import { useApi } from "../../lib/api/useApi";
 import { fmtDate, fmtShort } from "../../lib/format";
 import { setParams, useSearch } from "../../lib/nav";
@@ -29,10 +25,14 @@ import { lifecycleActions } from "./buildspace/lifecycle";
 import { ACCOUNT_HUE, accountLabel, isDirector } from "./buildspace/launchpad";
 import { PeopleChip } from "../components/PeopleTable";
 import {
+  absenceThisWeek,
   missed,
   openActivity,
+  projectActivities,
+  projectById,
   projectMentors,
   projectPeople,
+  projectSearchText,
   trackShort,
 } from "./buildspace/model";
 
@@ -177,50 +177,23 @@ function BuildspaceContent({
         : "Checked in"}
     </Badge>
   );
-  const project = (id: string) => b.projects.find((p) => p.id === id)!;
+  const project = (id: string) => projectById(id, b)!;
   const search = (qs.get("q") || "").toLowerCase();
   const flag = qs.get("flag") || "";
   const matches = (p: BuildspaceProject, personId?: string) => {
-    const people = projectPeople(p, b),
-      mentors = projectMentors(p, b);
-    const activities = b.activity.filter(
-      (a) =>
-        a.projectId === p.id &&
-        (!personId || !a.personId || a.personId === personId),
-    );
-    return (
-      (!qs.get("track") || p.track === qs.get("track")) &&
-      (!qs.get("mentor") || p.mentorIds.includes(qs.get("mentor")!)) &&
-      (!qs.get("stage") || p.stage === qs.get("stage")) &&
-      (!search ||
-        [
-          p.name,
-          p.description,
-          ...people
-            .filter((x) => !personId || x.id === personId)
-            .map((x) => x.name),
-          ...mentors.map((x) => x.name),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(search)) &&
-      (!flag ||
-        (flag === "unmentored" && p.mentorIds.length === 0) ||
-        (flag === "missed" &&
-          people.some(
-            (x) => (!personId || x.id === personId) && missed(x, b),
-          )) ||
-        (flag === "requests" && activities.some(openActivity)) ||
-        (flag === "purchases" &&
-          activities.some((a) => a.kind === "purchase" && openActivity(a))) ||
-        (flag === "absences" &&
-          activities.some(
-            (a) =>
-              a.kind === "absence" &&
-              a.date >= b.weekStart &&
-              a.date <= b.today,
-          )))
-    );
+    // Cheap URL filters reject most rows before names or activity are touched.
+    if (qs.get("track") && p.track !== qs.get("track")) return false;
+    if (qs.get("mentor") && !p.mentorIds.includes(qs.get("mentor")!)) return false;
+    if (qs.get("stage") && p.stage !== qs.get("stage")) return false;
+    const people = projectPeople(p, b);
+    if (search && !projectSearchText(p, b, personId).includes(search)) return false;
+    if (!flag) return true;
+    if (flag === "unmentored") return p.mentorIds.length === 0;
+    if (flag === "missed") return people.some((x) => (!personId || x.id === personId) && missed(x, b));
+    const activities = projectActivities(p.id, b, personId);
+    if (flag === "requests") return activities.some(openActivity);
+    if (flag === "purchases") return activities.some((a) => a.kind === "purchase" && openActivity(a));
+    return flag === "absences" && activities.some((a) => a.kind === "absence" && a.date >= b.weekStart && a.date <= b.today);
   };
   const projects = b.projects.filter((p) => matches(p));
   const people = b.people.filter((p) => matches(project(p.projectId), p.id));
@@ -282,16 +255,11 @@ function BuildspaceContent({
     </button>
   );
   const requestCount = (projectId: string) => {
-    const count = b.activity.filter(
-      (a) => a.projectId === projectId && openActivity(a),
-    ).length;
+    const count = projectActivities(projectId, b).filter(openActivity).length;
     return `${count} open ${count === 1 ? "request" : "requests"}`;
   };
   const activityCounts = (projectId: string, personId: string) => {
-    const activity = b.activity.filter(
-      (a) =>
-        a.projectId === projectId && (!a.personId || a.personId === personId),
-    );
+    const activity = projectActivities(projectId, b, personId);
     const counts = [
       {
         icon: "message",
@@ -346,21 +314,16 @@ function BuildspaceContent({
       : group === "project"
         ? projects.map((p) => ({ id: p.id, label: p.name }))
         : BUILDSPACE_TRACKS.map((t) => ({ id: t, label: t }));
-  const live = b.people.filter((p) => p.archivedAt === null);
-  const liveProjects = b.projects.filter((p) => p.archivedAt === null);
-  const awaiting = live.filter((p) => missed(p, b)).length;
-  // Tile figures count builder rows, the same rows the tile's filter shows on the People tab.
-  const openRequestBuilders = live.filter((x) =>
-    b.activity.some(
-      (a) =>
-        a.projectId === x.projectId &&
-        (!a.personId || a.personId === x.id) &&
-        openActivity(a),
-    ),
-  ).length;
-  const unmentored = live.filter(
-    (x) => !project(x.projectId).mentorIds.length,
-  ).length;
+  // Summary counts depend only on the register, not search, selection or an open drawer.
+  const { live, liveProjects, awaiting, openRequestBuilders, unmentored } = useMemo(() => {
+    const live = b.people.filter((p) => p.archivedAt === null);
+    const liveProjects = b.projects.filter((p) => p.archivedAt === null);
+    const awaiting = live.filter((p) => missed(p, b)).length;
+    // Tile figures count builder rows, the same rows the tile's filter shows on the People tab.
+    const openRequestBuilders = live.filter((x) => projectActivities(x.projectId, b, x.id).some(openActivity)).length;
+    const unmentored = live.filter((x) => !projectById(x.projectId, b)!.mentorIds.length).length;
+    return { live, liveProjects, awaiting, openRequestBuilders, unmentored };
+  }, [b]);
   const flagHref = (f: string) => {
     const u = new URLSearchParams(qs);
     if (flag === f) u.delete("flag");
@@ -698,13 +661,7 @@ function BuildspaceContent({
                             <td data-label="Stage">{stageBadge(pr)}</td>
                             <td data-label="This week">
                               {weekBadge(p)}
-                              {b.activity.some(
-                                (a) =>
-                                  a.personId === p.id &&
-                                  a.kind === "absence" &&
-                                  a.date >= b.weekStart &&
-                                  a.date <= b.today,
-                              ) && <span class="bs-sub">Absence logged</span>}
+                              {absenceThisWeek(p, b) && <span class="bs-sub">Absence logged</span>}
                             </td>
                             <td data-label="Activity">
                               {activityCounts(pr.id, p.id)}

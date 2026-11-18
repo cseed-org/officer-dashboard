@@ -17,8 +17,11 @@ import { Icon, type IconName } from "../../components/Icon";
 import { PeopleChip } from "../../components/PeopleTable";
 import { Avatar, RowMenu, type MenuItem } from "../../components/people";
 import {
+  absenceThisWeek,
   missed,
   openActivity,
+  projectActivities,
+  projectById,
   projectMentors,
   projectPeople,
   trackShort,
@@ -59,14 +62,10 @@ export function checkIn(p: Person, b: BuildspaceData) {
 }
 
 const lastActivity = (b: BuildspaceData, projectId: string, personId?: string) =>
-  b.activity
-    .filter((a) => a.projectId === projectId && (!personId || !a.personId || a.personId === personId))
-    .reduce<string | null>((m, a) => (!m || a.date > m ? a.date : m), null);
+  projectActivities(projectId, b, personId).reduce<string | null>((m, a) => (!m || a.date > m ? a.date : m), null);
 
 const openCount = (b: BuildspaceData, projectId: string, personId?: string) =>
-  b.activity.filter(
-    (a) => a.projectId === projectId && (!personId || !a.personId || a.personId === personId) && openActivity(a),
-  ).length;
+  projectActivities(projectId, b, personId).filter(openActivity).length;
 
 /** One signal line: an icon, a label for screen readers and the value. */
 function Signal({ icon, label, children, alert, data }: { icon: IconName; label: string; children: ComponentChildren; alert?: boolean; data?: string }) {
@@ -124,12 +123,12 @@ function CardShell({
 const memberHref = (id: string) => `/members?person=${encodeURIComponent(id)}`;
 
 export function PersonCard({ p, b, scope, onPerson }: { p: Person; b: BuildspaceData; scope: string; onPerson: (id: string) => void }) {
-  const pr = b.projects.find((x) => x.id === p.projectId)!;
+  const pr = projectById(p.projectId, b)!;
   const mentors = projectMentors(pr, b);
   const week = checkIn(p, b);
   const open = openCount(b, pr.id, p.id);
   const last = lastActivity(b, pr.id, p.id);
-  const absent = b.activity.some((a) => a.personId === p.id && a.kind === "absence" && a.date >= b.weekStart && a.date <= b.today);
+  const absent = absenceThisWeek(p, b);
   return (
     <CardShell
       hue={personHue(p.id)}
