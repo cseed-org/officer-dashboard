@@ -514,14 +514,17 @@ GET `/api/officers/:id/activity` (V0.10 person drawer) returns `stats` (`eventsH
   content reuses the recorded SEQUENCE, and Google events get a stable dashboard-chosen
   id, so a repeated insert updates the first copy). A destination that has received
   invites keeps its work queued while a restart is missing its transport (SMTP or the
-  Google OAuth config) and gets it once that is configured again; one that never had a
-  working transport, and a Google account the officer has disconnected, are skipped. Each recipient
+  Google OAuth config, or both) and gets it once that is configured again; one that never had a
+  working transport, and a Google account the officer has disconnected, are skipped, so on a
+  dashboard that never had either the outbox stays empty. Each recipient
   has its own 45s timeout. Upcoming events (not cancelled ones) are backfilled, queued in the
   same transaction, when an officer saves their first profile, finishes onboarding,
   changes their active calendar email or delivery mode (including Disconnect Google), or
   connects Google. `calendar_deliveries` has one row per
   destination (an .ics address, or one Google account, keyed by its `sub`; deliveries
-  from a pre-V0.14.1 grant move to the account when the officer reconnects) recording what it last received
+  from a pre-V0.14.1 grant, keyed by its email or by nothing, move to the account when the
+  officer reconnects, and their next delivery updates each stored Google event, or creates it
+  if that account doesn't have it) recording what it last received
   (a content fingerprint), so unchanged events are never resent, updates replace rather
   than duplicate, a failed attempt keeps the last success, and a newly connected Google
   account gets its own copies. Setting an event's status to cancelled withdraws it from
