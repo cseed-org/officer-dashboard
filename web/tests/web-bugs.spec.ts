@@ -420,6 +420,40 @@ test('M-128: Make co-owner confirmation says the promoted person stays signed in
   expect(text).toContain('They stay signed in'); expect(text).not.toContain('signs them out');
 });
 
+for (const field of ['mode', 'manual', 'clubZone', 'location'] as const) {
+  test(`R-02: reverted ${field} follows the last applied same-zone snapshot`, async ({ page }) => {
+    let prefs = { ...data['/api/me/prefs'], timezoneMode: 'manual', timezone: 'America/Los_Angeles', effectiveTimezone: 'America/Los_Angeles' };
+    let club = { ...data['/api/club/settings'], clubTimezone: 'America/Los_Angeles', location: 'First' };
+    await page.route('**/api/me/prefs', (r) => json(r, prefs));
+    await page.route('**/api/club/settings', (r) => json(r, club));
+    await mount(page, 'TimezonePanel', { me: { ...me, role: 'leadership' } });
+    await moduleCall(page, 'refreshTimezone');
+    const selector = { mode: 'input[name=timezone-mode]:checked', manual: '#manual-timezone', clubZone: '#club-timezone', location: '#club-location-label' }[field];
+    const input = page.locator(selector);
+    const original = field === 'mode' ? 'manual' : field === 'location' ? 'First' : 'America/Los_Angeles';
+    const temporary = field === 'mode' ? 'club' : field === 'location' ? 'Temporary' : 'Asia/Tokyo';
+    const next = field === 'mode' ? 'club' : field === 'location' ? 'Second' : 'UTC';
+    const edit = async (value: string) => {
+      if (field === 'mode') await page.locator(`input[name=timezone-mode][value=${value}]`).check();
+      else await input.fill(value);
+    };
+    const refresh = async (value: string) => {
+      if (field === 'mode') prefs = { ...prefs, timezoneMode: value };
+      else if (field === 'manual') prefs = { ...prefs, timezone: value };
+      else if (field === 'clubZone') club = { ...club, clubTimezone: value };
+      else club = { ...club, location: value };
+      await moduleCall(page, 'refreshTimezone');
+      await expect(page.locator('[data-timezone-preview]')).toContainText('America/Los_Angeles');
+    };
+    await expect(input).toHaveValue(original);
+    await edit(temporary); await edit(original);
+    await refresh(next); await expect(input).toHaveValue(next);
+    // An actual edit survives refresh; reverting to the new baseline is clean too.
+    await edit(original); await refresh(next); await expect(input).toHaveValue(original);
+    await edit(next); await refresh(original); await expect(input).toHaveValue(original);
+  });
+}
+
 test('M-073: deleting the implicit default cohort reloads the fallback register', async ({ page }) => {
   const empty = { ...b.cohorts[0], id: 'empty', name: 'Empty default', counts: { projects: 0, builders: 0, invited: 0 } };
   let register = { ...clone(b), cohortId: empty.id, projects: [], people: [], activity: [], cohorts: [empty, ...b.cohorts] }; let reads = 0;

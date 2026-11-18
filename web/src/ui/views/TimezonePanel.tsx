@@ -20,6 +20,11 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
   const [manual, setManual] = useState(snapshot.prefs?.timezone || effectiveTimezone());
   const [clubZone, setClubZone] = useState(snapshot.club?.clubTimezone ?? effectiveTimezone());
   const [location, setLocation] = useState(snapshot.club?.location ?? '');
+  const appliedFields = useRef({ mode, manual, clubZone, location });
+  function markDirty(field: keyof typeof appliedFields.current, value: string) {
+    if (value === appliedFields.current[field]) dirtyFields.current.delete(field);
+    else dirtyFields.current.add(field);
+  }
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ at: 'personal' | 'club'; text: string; ok: boolean } | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -29,13 +34,14 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
       const next = timezoneSnapshot();
       setPrefs(next.prefs); setClub(next.club);
       const dirty = dirtyFields.current;
+      const applied = appliedFields.current;
       if (next.prefs) {
-        if (!dirty.has('mode')) setMode(next.prefs.timezoneMode);
-        if (!dirty.has('manual')) setManual(next.prefs.timezone || effectiveTimezone());
+        if (!dirty.has('mode')) { applied.mode = next.prefs.timezoneMode; setMode(applied.mode); }
+        if (!dirty.has('manual')) { applied.manual = next.prefs.timezone || effectiveTimezone(); setManual(applied.manual); }
       }
       if (next.club) {
-        if (!dirty.has('clubZone')) setClubZone(next.club.clubTimezone);
-        if (!dirty.has('location')) setLocation(next.club.location);
+        if (!dirty.has('clubZone')) { applied.clubZone = next.club.clubTimezone; setClubZone(applied.clubZone); }
+        if (!dirty.has('location')) { applied.location = next.club.location; setLocation(applied.location); }
       }
     };
     window.addEventListener('cseed-timezone-snapshot', changed);
@@ -75,13 +81,13 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
               ['club', 'Club default', club?.clubTimezone ?? 'Club location'],
               ['manual', 'Choose manually', 'Keep a selected IANA time zone.'],
             ] as const).map(([value, label, sub]) => <label class="choice" key={value}>
-              <input type="radio" name="timezone-mode" value={value} checked={mode === value} onChange={() => { dirtyFields.current.add('mode'); setMode(value); }} />
+              <input type="radio" name="timezone-mode" value={value} checked={mode === value} onChange={() => { markDirty('mode', value); setMode(value); }} />
               <span class="choice-title">{label}</span><span class="choice-sub">{sub}</span>
             </label>)}
           </div>
         </fieldset>
         {mode === 'manual' && <Field id="manual-timezone" label="Manual time zone" error={errors.timezone} hint="Search by region or city, for example Asia/Tokyo.">
-          <input {...describe('manual-timezone', errors.timezone, true)} class="input" list="iana-timezones" value={manual} onInput={(e) => { dirtyFields.current.add('manual'); setManual(e.currentTarget.value); }} required disabled={busy} />
+          <input {...describe('manual-timezone', errors.timezone, true)} class="input" list="iana-timezones" value={manual} onInput={(e) => { markDirty('manual', e.currentTarget.value); setManual(e.currentTarget.value); }} required disabled={busy} />
         </Field>}
         <p class="muted small">Current time: <TimezoneClock /></p>
         {status('personal')}
@@ -91,8 +97,8 @@ export function TimezonePanel({ me, between }: { me: CurrentUser; between?: Comp
     {between}
     <Section title="club location" id="club-location">
       {me.role === 'leadership' ? <form class="form" onSubmit={(e) => { e.preventDefault(); void saveClub(); }}>
-        <Field id="club-location-label" label="Club location" error={errors.location}><input {...describe('club-location-label', errors.location)} class="input" value={location} onInput={(e) => { dirtyFields.current.add('location'); setLocation(e.currentTarget.value); }} maxLength={200} required disabled={busy} /></Field>
-        <Field id="club-timezone" label="Club default time zone" error={errors.clubTimezone} hint="Set the IANA zone for the club’s location. Used by everyone choosing Club default."><input {...describe('club-timezone', errors.clubTimezone, true)} class="input" list="iana-timezones" value={clubZone} onInput={(e) => { dirtyFields.current.add('clubZone'); setClubZone(e.currentTarget.value); }} required disabled={busy} /></Field>
+        <Field id="club-location-label" label="Club location" error={errors.location}><input {...describe('club-location-label', errors.location)} class="input" value={location} onInput={(e) => { markDirty('location', e.currentTarget.value); setLocation(e.currentTarget.value); }} maxLength={200} required disabled={busy} /></Field>
+        <Field id="club-timezone" label="Club default time zone" error={errors.clubTimezone} hint="Set the IANA zone for the club’s location. Used by everyone choosing Club default."><input {...describe('club-timezone', errors.clubTimezone, true)} class="input" list="iana-timezones" value={clubZone} onInput={(e) => { markDirty('clubZone', e.currentTarget.value); setClubZone(e.currentTarget.value); }} required disabled={busy} /></Field>
         {status('club')}
         <div><button class="btn" type="submit" disabled={busy}>Save club location</button></div>
       </form> : <><dl class="facts"><div><dt>Location</dt><dd>{club?.location}</dd></div><div><dt>Default time zone</dt><dd>{club?.clubTimezone}</dd></div></dl></>}
