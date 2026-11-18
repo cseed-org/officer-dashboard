@@ -136,7 +136,11 @@ func TestGoogleDeliveryRecreatesMissingRemoteEvent(t *testing.T) {
 			fake.mu.Unlock()
 			e.mustOK(e.do("PATCH", "/api/events/"+id, map[string]any{"name": "Recreated"}, e.officer()))
 			e.srv.WaitBackground()
-			delivery, err := e.db.Read().DeliveryFor(context.Background(), id, "user-priya")
+			grant, err := e.db.Read().GoogleTokenFor(context.Background(), "user-priya")
+			if err != nil {
+				t.Fatal(err)
+			}
+			delivery, err := e.db.Read().DeliveryFor(context.Background(), id, "user-priya", grant.Destination())
 			if err != nil || delivery.GoogleEventID == nil || *delivery.GoogleEventID != "google-2" || delivery.Status != "sent" {
 				t.Fatalf("recreated delivery=%+v error=%v", delivery, err)
 			}
