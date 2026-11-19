@@ -1,0 +1,29 @@
+go: downloading github.com/mattn/go-sqlite3 v1.14.53
+=== RUN   TestEventTimestampMigrationBackfillsExactInstants
+    event_timestamp_test.go:58: no such column: starts_at_ms
+--- FAIL: TestEventTimestampMigrationBackfillsExactInstants (1.46s)
+=== RUN   TestEventTimestampWritersAndPagePlan
+    event_timestamp_test.go:91: no such column: starts_at_ms
+--- FAIL: TestEventTimestampWritersAndPagePlan (0.20s)
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds/1500-01-01T00:00:00.0000005Z
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds/1969-12-31T23:59:59.9999995Z
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds/2026-11-01T01:30:00.123456789-07:00
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds/2026-11-01T01:30:00.123-08:00
+--- PASS: TestEventTimestampColumnPreservesExactTimeBounds (0.58s)
+    --- PASS: TestEventTimestampColumnPreservesExactTimeBounds/1500-01-01T00:00:00.0000005Z (0.14s)
+    --- PASS: TestEventTimestampColumnPreservesExactTimeBounds/1969-12-31T23:59:59.9999995Z (0.14s)
+    --- PASS: TestEventTimestampColumnPreservesExactTimeBounds/2026-11-01T01:30:00.123456789-07:00 (0.19s)
+    --- PASS: TestEventTimestampColumnPreservesExactTimeBounds/2026-11-01T01:30:00.123-08:00 (0.12s)
+FAIL
+FAIL	officerdashboard/internal/store	2.244s
+=== RUN   TestEveryEventWritePathKeepsTimestampColumnInSync
+    event_timestamp_test.go:32: no such column: starts_at_ms
+--- FAIL: TestEveryEventWritePathKeepsTimestampColumnInSync (0.11s)
+=== RUN   TestEventSmallPageAllocationBudget
+    readmodel_budget_test.go:38: one-event page with 1,000 historical events: 13237 allocations
+    readmodel_budget_test.go:40: small event page enriched full history: 13237 allocations
+--- FAIL: TestEventSmallPageAllocationBudget (0.14s)
+FAIL
+FAIL	officerdashboard/internal/api	0.258s
+FAIL

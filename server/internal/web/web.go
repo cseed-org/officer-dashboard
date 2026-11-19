@@ -164,17 +164,19 @@ func serveFile(w http.ResponseWriter, r *http.Request, pc *policies, root fs.FS,
 	}
 	if a, ok := assets[name]; ok && a.size == info.Size() && a.modTime.Equal(info.ModTime()) {
 		h.Set("ETag", a.etag)
-		h.Add("Vary", "Accept-Encoding")
-		body := a.body
-		if acceptsGzip(r.Header.Get("Accept-Encoding")) && len(a.gzip) > 0 && r.Header.Get("Range") == "" {
-			body = a.gzip
-			h.Set("Content-Encoding", "gzip")
+		if a.body != nil {
+			h.Add("Vary", "Accept-Encoding")
+			body := a.body
+			if acceptsGzip(r.Header.Get("Accept-Encoding")) && len(a.gzip) > 0 && r.Header.Get("Range") == "" {
+				body = a.gzip
+				h.Set("Content-Encoding", "gzip")
+			}
+			if ct := a.contentType; ct != "" {
+				h.Set("Content-Type", ct)
+			}
+			http.ServeContent(w, r, path.Base(name), time.Time{}, bytes.NewReader(body))
+			return true
 		}
-		if ct := a.contentType; ct != "" {
-			h.Set("Content-Type", ct)
-		}
-		http.ServeContent(w, r, path.Base(name), time.Time{}, bytes.NewReader(body))
-		return true
 	}
 	rs, ok := f.(io.ReadSeeker)
 	if !ok {
@@ -226,13 +228,27 @@ func prepareAssets(root fs.FS) map[string]asset {
 		if err != nil || d.IsDir() {
 			return nil
 		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		f, err := root.Open(name)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		hash := sha256.New()
+		if _, err := io.Copy(hash, f); err != nil {
+			return nil
+		}
+		a := asset{size: info.Size(), modTime: info.ModTime(), etag: fmt.Sprintf("W/\"%x\"", hash.Sum(nil)), contentType: contentType(name)}
+		assets[name] = a
 		switch path.Ext(name) {
 		case ".html", ".css", ".js", ".svg", ".json":
 		default:
 			return nil
 		}
-		info, err := d.Info()
-		if err != nil || info.Size() > 2<<20 {
+		if info.Size() > 2<<20 {
 			return nil
 		}
 		body, err := fs.ReadFile(root, name)
@@ -245,7 +261,7 @@ func prepareAssets(root fs.FS) map[string]asset {
 		z, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
 		_, _ = z.Write(body)
 		_ = z.Close()
-		a := asset{body: body, size: info.Size(), modTime: info.ModTime(), etag: fmt.Sprintf("W/\"%x\"", sha256.Sum256(body)), contentType: contentType(name)}
+		a.body = body
 		if a.contentType == "" {
 			switch path.Ext(name) {
 			case ".js":

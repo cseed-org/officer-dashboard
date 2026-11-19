@@ -128,7 +128,7 @@ func BuildspaceDueMoment(due string, dueTime *string, loc *time.Location) time.T
 }
 
 func (q *Queries) BuildspaceWeekRules(ctx context.Context) ([]BuildspaceWeekRule, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT effective_from,due_weekday,due_time,updated_at,updated_by FROM buildspace_launchpad_week_rules ORDER BY effective_from`)
+	rows, err := q.query(ctx, `SELECT effective_from,due_weekday,due_time,updated_at,updated_by FROM buildspace_launchpad_week_rules ORDER BY effective_from`)
 	if err != nil {
 		return nil, err
 	}
@@ -168,6 +168,36 @@ func (q *Queries) BuildspaceClock(ctx context.Context, now time.Time) (Buildspac
 	}
 	local := now.In(loc)
 	return BuildspaceClock{Loc: loc, Now: now, Today: local.Format(isoDate)}, nil
+}
+
+// BuildspaceScheduleInput loads the due rules and club zone in one read.
+func (q *Queries) BuildspaceScheduleInput(ctx context.Context, now time.Time) ([]BuildspaceWeekRule, BuildspaceClock, error) {
+	rows, err := q.query(ctx, `SELECT r.effective_from,r.due_weekday,r.due_time,r.updated_at,r.updated_by,s.club_timezone
+ FROM buildspace_launchpad_week_rules r CROSS JOIN club_settings s WHERE s.id=1 ORDER BY r.effective_from`)
+	if err != nil {
+		return nil, BuildspaceClock{}, err
+	}
+	defer rows.Close()
+	out := []BuildspaceWeekRule{}
+	zone := ""
+	for rows.Next() {
+		var r BuildspaceWeekRule
+		if err := rows.Scan(&r.EffectiveFrom, &r.DueWeekday, &r.DueTime, &r.UpdatedAt, &r.UpdatedBy, &zone); err != nil {
+			return nil, BuildspaceClock{}, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, BuildspaceClock{}, err
+	}
+	if len(out) == 0 {
+		return nil, BuildspaceClock{}, errors.New("buildspace_launchpad_week_rules has no seed rule")
+	}
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return nil, BuildspaceClock{}, err
+	}
+	return out, BuildspaceClock{Loc: loc, Now: now, Today: now.In(loc).Format(isoDate)}, nil
 }
 
 // BuildspaceSchedule is the setting as leadership sees it: the rule for the current

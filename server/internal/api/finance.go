@@ -80,9 +80,10 @@ func (s *Server) loadReportData(ctx context.Context, q *store.Queries, asOf stri
 			return nil, err
 		}
 	}
+	byRequest := commitmentHistory(history)
 	for i := range requests {
 		r := &requests[i]
-		if !s.committedAt(r, history, settled[r.ID], asOf, cutoff) {
+		if !s.committedAt(r, byRequest[r.ID], settled[r.ID], asOf, cutoff) {
 			continue
 		}
 		at := int64(r.CreatedAt)
@@ -96,11 +97,18 @@ func (s *Server) loadReportData(ctx context.Context, q *store.Queries, asOf stri
 	return data, nil
 }
 
-func (s *Server) committedAt(r *store.Request, history []store.AuditEntry, settlementDate, asOf string, cutoff time.Time) bool {
-	status := r.Status
-	known, replayed := true, false
-	// Undo later mutations using their immutable before-images (history is newest first).
+// statusBefore is a single decoded undo step, in newest-first audit order.
+type statusBefore struct {
+	status string
+	known  bool
+}
+
+func commitmentHistory(history []store.AuditEntry) map[string][]statusBefore {
+	out := make(map[string][]statusBefore)
 	for _, a := range history {
+		if a.EntityType != "purchase_request" && a.EntityType != "fulfillment_job" {
+			continue
+		}
 		var before struct {
 			Status    *string `json:"status"`
 			RequestID string  `json:"requestId"`
@@ -108,22 +116,35 @@ func (s *Server) committedAt(r *store.Request, history []store.AuditEntry, settl
 		if a.BeforeJSON != nil {
 			_ = json.Unmarshal([]byte(*a.BeforeJSON), &before)
 		}
-		if a.EntityType == "purchase_request" && a.EntityID != nil && *a.EntityID == r.ID {
-			replayed = true
+		var id string
+		step := statusBefore{}
+		if a.EntityType == "purchase_request" {
+			if a.EntityID == nil {
+				continue
+			}
+			id = *a.EntityID
 			if before.Status != nil {
-				status, known = *before.Status, true
-			} else {
-				status, known = "", false
+				step.status, step.known = *before.Status, true
 			}
-		}
-		if a.EntityType == "fulfillment_job" && before.RequestID == r.ID {
+		} else {
+			id = before.RequestID
+			if id == "" {
+				continue
+			}
+			step.status, step.known = "fulfilling", true
 			if a.Action == "job.claimed" {
-				status = "approved"
-			} else {
-				status = "fulfilling"
+				step.status = "approved"
 			}
-			known, replayed = true, true
 		}
+		out[id] = append(out[id], step)
+	}
+	return out
+}
+
+func (s *Server) committedAt(r *store.Request, history []statusBefore, settlementDate, asOf string, cutoff time.Time) bool {
+	status, known := r.Status, true
+	for _, step := range history {
+		status, known = step.status, step.known
 	}
 	at := int64(r.CreatedAt)
 	if r.SubmittedAt != nil {
@@ -132,10 +153,7 @@ func (s *Server) committedAt(r *store.Request, history []store.AuditEntry, settl
 	if at > cutoff.UnixMilli() {
 		return false
 	}
-	// A later decision date means "not yet approved at asOf" only when the audit replay
-	// had nothing to undo for this request; otherwise the replayed status is authoritative
-	// (a request sent back from buying keeps an older decision but has newer history).
-	if !replayed && r.DecidedAt != nil && *r.DecidedAt > cutoff.UnixMilli() {
+	if len(history) == 0 && r.DecidedAt != nil && *r.DecidedAt > cutoff.UnixMilli() {
 		return false
 	}
 	if settlementDate != "" && settlementDate > asOf && known && (status == "fulfilled" || status == "reimbursed" || status == "closed") {

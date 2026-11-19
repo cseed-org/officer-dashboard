@@ -784,7 +784,8 @@ func TestMCPRateLimitPerAgent(t *testing.T) {
 			t.Fatalf("%s: Retry-After %q", what, r.Header.Get("Retry-After"))
 		}
 		msg, _ := r.Body["error"].(map[string]any)["message"].(string)
-		if r.Body["jsonrpc"] != "2.0" || r.Body["id"] != float64(7) || r.Body["error"].(map[string]any)["code"] != float64(-32000) || !strings.Contains(msg, "120 calls a minute") {
+		// Early admission rejection does not read the JSON-RPC id from the body.
+		if r.Body["jsonrpc"] != "2.0" || r.Body["id"] != nil || r.Body["error"].(map[string]any)["code"] != float64(-32000) || !strings.Contains(msg, "120 calls a minute") {
 			t.Fatalf("%s: JSON-RPC error body: %s", what, r.Raw)
 		}
 	}

@@ -4,22 +4,32 @@ import { safeUrl } from "../../lib/url";
  * need a look), a project detail with its builders, co-mentors and timeline, and "Add note".
  * The server scopes everything to assigned, non-archived projects (docs/launchpad-cohorts.md).
  */
+import { LoadHistory, mergeActivity } from "../components/LoadHistory";
 import { useState } from "preact/hooks";
 import type { PortalMe, PortalMentorProject, PortalMentorResponse } from "../../lib/contracts";
 import { api } from "../../lib/api/client";
 import { useApi } from "../../lib/api/useApi";
 import { setParams, useSearch } from "../../lib/nav";
-import { plural } from "../../lib/format";
+import { fmtShort, plural } from "../../lib/format";
 import { Drawer } from "../components/Drawer";
 import { Async, Empty, errorMessage, Notice } from "../components/states";
 import { Card, firstName, PortalTimeline, TrackChip, WeekChip } from "./shared";
 
 export function MentorHome({ me }: { me: PortalMe }) {
   const state = useApi("portalMentor");
-  return <Async state={state}>{(d) => <MentorDashboard d={d} me={me} reload={state.reload} />}</Async>;
+  const loadOlder = async (signal: AbortSignal) => {
+    if (state.status !== "ready" || !state.data.activityNextCursor) return;
+    const d = state.data;
+    const more = await api("portalMentor", {query:{activityCursor:d.activityNextCursor!},signal});
+    state.set({...more,projects:more.projects.map((p) => ({...p,activity:mergeActivity(d.projects.find((old) => old.id===p.id)?.activity ?? [],p.activity)}))});
+  };
+  return <Async state={state}>{(d) => <>
+    <MentorDashboard d={d} me={me} reload={state.reload} loadOlder={loadOlder} />
+    {d.activityNextCursor && <LoadHistory key={d.activityNextCursor} load={loadOlder} />}
+  </>}</Async>;
 }
 
-function MentorDashboard({ d, me, reload }: { d: PortalMentorResponse; me: PortalMe; reload: () => void }) {
+function MentorDashboard({ d, me, reload, loadOlder }: { d: PortalMentorResponse; me: PortalMe; reload: () => void; loadOlder: (signal: AbortSignal) => Promise<void> }) {
   const qs = useSearch();
   const [notice, setNotice] = useState("");
   const open = d.projects.find((p) => p.id === qs.get("project"));
@@ -56,6 +66,7 @@ function MentorDashboard({ d, me, reload }: { d: PortalMentorResponse; me: Porta
             }}
           />
         )}
+        {open && d.activityNextCursor && <LoadHistory key={d.activityNextCursor} load={loadOlder} />}
       </Drawer>
     </div>
   );
@@ -94,6 +105,7 @@ function ProjectCard({ p, onOpen }: { p: PortalMentorProject; onOpen: () => void
       ) : (
         <p class="small muted flush">All caught up this week.</p>
       )}
+      {p.lastActivityDate && <p class="small muted flush">Last active: {fmtShort(p.lastActivityDate)}</p>}
       {last && (
         <p class="small muted flush portal-clamp">
           Latest: {last.body}

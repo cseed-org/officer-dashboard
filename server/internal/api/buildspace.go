@@ -24,13 +24,19 @@ func (c *Ctx) buildspaceList() error {
 		return badRequest("Invalid query")
 	}
 	q := c.S.db.Read()
-	b, err := q.Buildspace(c.Context())
+	sched, err := c.buildspaceSchedule(q)
 	if err != nil {
 		return err
 	}
-	if b.Schedule, err = c.buildspaceSchedule(q); err != nil {
+	activityCursor, err := c.activityCursor()
+	if err != nil {
 		return err
 	}
+	b, err := q.BuildspaceCohortPage(c.Context(), cohortID, store.BuildspaceActivityPage{WeekStart: sched.Week.Start, WeekDue: sched.Week.Due, Cursor: activityCursor, FilterArchived: archived != "1"})
+	if err != nil {
+		return err
+	}
+	b.Schedule = sched
 	b.WeekStart, b.WeekDue, b.Today = b.Schedule.Week.Start, b.Schedule.Week.Due, b.Schedule.Today
 	out, err := launchpadView(b, cohortID, archived == "1", c.S.nowMs())
 	if err != nil {
@@ -98,11 +104,7 @@ func writableProject(b *store.Buildspace, p *store.BuildspaceProject) error {
 
 // buildspaceSchedule reads the due-day rules and the club-time-zone clock together.
 func (c *Ctx) buildspaceSchedule(q *store.Queries) (store.BuildspaceSchedule, error) {
-	rules, err := q.BuildspaceWeekRules(c.Context())
-	if err != nil {
-		return store.BuildspaceSchedule{}, err
-	}
-	clock, err := q.BuildspaceClock(c.Context(), c.S.now())
+	rules, clock, err := q.BuildspaceScheduleInput(c.Context(), c.S.now())
 	if err != nil {
 		return store.BuildspaceSchedule{}, err
 	}

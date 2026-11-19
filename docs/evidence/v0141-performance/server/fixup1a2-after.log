@@ -1,0 +1,37 @@
+=== RUN   TestEventSummaryIncludesHistoryBeyondPage
+--- PASS: TestEventSummaryIncludesHistoryBeyondPage (0.13s)
+=== RUN   TestEventTimestampMigrationBackfillsExactInstants
+--- PASS: TestEventTimestampMigrationBackfillsExactInstants (1.36s)
+=== RUN   TestEventTimestampWritersAndPagePlan
+--- PASS: TestEventTimestampWritersAndPagePlan (0.21s)
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds/1500-01-01T00:00:00.0000005Z
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds/1969-12-31T23:59:59.9999995Z
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds/2026-11-01T01:30:00.123456789-07:00
+=== RUN   TestEventTimestampColumnPreservesExactTimeBounds/2026-11-01T01:30:00.123-08:00
+--- PASS: TestEventTimestampColumnPreservesExactTimeBounds (0.44s)
+    --- PASS: TestEventTimestampColumnPreservesExactTimeBounds/1500-01-01T00:00:00.0000005Z (0.11s)
+    --- PASS: TestEventTimestampColumnPreservesExactTimeBounds/1969-12-31T23:59:59.9999995Z (0.14s)
+    --- PASS: TestEventTimestampColumnPreservesExactTimeBounds/2026-11-01T01:30:00.123456789-07:00 (0.09s)
+    --- PASS: TestEventTimestampColumnPreservesExactTimeBounds/2026-11-01T01:30:00.123-08:00 (0.09s)
+=== RUN   TestMigratedSchemaHasNoAppFunctions
+--- PASS: TestMigratedSchemaHasNoAppFunctions (0.10s)
+=== RUN   TestMigratedDatabaseWorksWithoutAppFunctions
+=== RUN   TestMigratedDatabaseWorksWithoutAppFunctions/backup_integrity_check
+=== RUN   TestMigratedDatabaseWorksWithoutAppFunctions/manual_event_insert
+--- PASS: TestMigratedDatabaseWorksWithoutAppFunctions (0.09s)
+    --- PASS: TestMigratedDatabaseWorksWithoutAppFunctions/backup_integrity_check (0.00s)
+    --- PASS: TestMigratedDatabaseWorksWithoutAppFunctions/manual_event_insert (0.00s)
+PASS
+ok  	officerdashboard/internal/store	2.339s
+=== RUN   TestEventListDTOParityWithReferenceCatalog
+--- PASS: TestEventListDTOParityWithReferenceCatalog (0.11s)
+=== RUN   TestEventSQLPageParityAcrossOffsetsAndDST
+--- PASS: TestEventSQLPageParityAcrossOffsetsAndDST (0.13s)
+=== RUN   TestEveryEventWritePathKeepsTimestampColumnInSync
+--- PASS: TestEveryEventWritePathKeepsTimestampColumnInSync (0.11s)
+=== RUN   TestEventSmallPageAllocationBudget
+    readmodel_budget_test.go:38: one-event page with 1,000 historical events: 589 allocations
+--- PASS: TestEventSmallPageAllocationBudget (0.12s)
+PASS
+ok  	officerdashboard/internal/api	0.475s

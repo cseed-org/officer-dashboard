@@ -20,6 +20,26 @@ import (
 
 const csvMaxBytes = 5 * 1024 * 1024
 
+// Event list DTOs use people and teams, without the finance catalog or full event history.
+func loadEventCatalog(ctx context.Context, q *store.Queries) (*catalog, error) {
+	users, err := q.Users(ctx)
+	if err != nil {
+		return nil, err
+	}
+	teams, err := q.Subteams(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cat := &catalog{users: make(map[string]*store.User, len(users)), teamByID: make(map[string]*store.Subteam, len(teams))}
+	for i := range users {
+		cat.users[users[i].ID] = &users[i]
+	}
+	for i := range teams {
+		cat.teamByID[teams[i].ID] = &teams[i]
+	}
+	return cat, nil
+}
+
 func (c *Ctx) eventsList() error {
 	if _, err := c.officer(); err != nil {
 		return err
@@ -39,47 +59,54 @@ func (c *Ctx) eventsList() error {
 	}
 	ctx := c.Context()
 	q := c.S.db.Read()
-	cat, err := loadCatalog(ctx, q, true)
+	cat, err := loadEventCatalog(ctx, q)
 	if err != nil {
 		return err
 	}
-	now := c.S.now()
-	needle := strings.ToLower(qtext.V)
-	zone := c.S.effectiveZone(ctx, c.User.ID)
-	var rows []store.Event
-	for _, e := range cat.events {
-		t, err := luma.ParseInstant(e.StartsAt)
-		if err != nil {
-			continue
+	f := store.EventFilter{When: when, Search: qtext.V, Limit: limit + 1, Now: c.S.now()}
+	if from.V != "" || to.V != "" {
+		zone := c.S.effectiveZone(ctx, c.User.ID)
+		if from.V != "" {
+			day, _ := time.ParseInLocation("2006-01-02", from.V, zone)
+			f.From = &day
 		}
-		switch when {
-		case "past":
-			if !t.Before(now) {
-				continue
-			}
-		case "upcoming":
-			if t.Before(now) {
-				continue
-			}
+		if to.V != "" {
+			day, _ := time.ParseInLocation("2006-01-02", to.V, zone)
+			end := day.AddDate(0, 0, 1)
+			f.To = &end
 		}
-		if needle != "" && !strings.Contains(strings.ToLower(e.Name), needle) && (e.Location == nil || !strings.Contains(strings.ToLower(*e.Location), needle)) {
-			continue
-		}
-		day := t.In(zone).Format("2006-01-02")
-		if from.V != "" && day < from.V || to.V != "" && day > to.V {
-			continue
-		}
-		rows = append(rows, e)
 	}
-	items, err := c.S.eventItems(ctx, q, cat, rows, "")
+	if cursor != "" {
+		f.CursorMs, f.CursorID, err = parseCursor(cursor)
+		if err != nil || cursorKey(f.CursorMs, f.CursorID) != cursor {
+			// Preserve the lexical cursors older clients could send. Canonical cursors
+			// use the indexed tuple comparison.
+			f.CursorRaw = cursor
+		} else {
+			f.HasCursor = true
+		}
+	}
+	rows, err := q.EventPage(ctx, f)
 	if err != nil {
 		return err
 	}
-	byID := map[string]store.Event{}
+	p := page[EventListItem]{Items: []EventListItem{}}
+	if len(rows) > limit {
+		last := eventKey(rows[limit-1])
+		p.NextCursor = &last
+		rows = rows[:limit]
+	}
+	ids := make([]string, 0, len(rows))
 	for _, e := range rows {
-		byID[e.ID] = e
+		ids = append(ids, e.ID)
 	}
-	p := paginate(items, func(it EventListItem) string { return eventKey(byID[it.ID]) }, cursor, limit)
+	counts, err := q.EventCounts(ctx, "", ids)
+	if err != nil {
+		return err
+	}
+	for _, e := range rows {
+		p.Items = append(p.Items, eventItem(cat, e, counts[e.ID]))
+	}
 	writeJSON(c.W, 200, p)
 	return nil
 }
@@ -386,7 +413,7 @@ func (c *Ctx) eventDetail() error {
 	if err != nil {
 		return notFoundErr("Record not found")
 	}
-	cat, err := loadCatalog(ctx, q, true)
+	cat, err := loadCatalog(ctx, q, false)
 	if err != nil {
 		return err
 	}
@@ -743,12 +770,14 @@ func (c *Ctx) eventsImport() error {
 	if err != nil {
 		return badRequest("CSV file required (maximum 5 MB)")
 	}
-	raw, err := io.ReadAll(f)
+	var csv strings.Builder
+	csv.Grow(int(fhs[0].Size))
+	_, err = io.Copy(&csv, f)
 	f.Close()
 	if err != nil {
 		return badRequest("CSV file required (maximum 5 MB)")
 	}
-	text = string(raw)
+	text = csv.String()
 	settings, err := c.S.db.Read().ClubSettings(c.Context())
 	if err != nil {
 		return err

@@ -9,6 +9,7 @@ import { sanitizeResults } from '../src/lib/search';
 import { internalPath, internalRoute, safeImageUrl, safeUrl } from '../src/lib/url';
 import { migrateLayout, moveTo, nearestSize } from '../src/ui/widgets/layout';
 import { defaultWidgetLayout, layoutForChoices } from '../src/ui/widgets/catalog';
+import { mergeActivity } from '../src/ui/components/LoadHistory';
 
 /** Pure-function tests (no browser); run once, in the desktop project. */
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'unit tests run once'));
@@ -20,6 +21,19 @@ test('M-012: API failures including oversized MCP bodies match both contracts', 
     expect(BrowserApiError.safeParse(body).success, code).toBe(true);
     expect(CanonicalApiError.safeParse(body).success, code).toBe(true);
   }
+});
+
+test('activity history merges in timeline order across page boundaries', () => {
+  const old = [
+    { id: 'live-old', date: '2026-01-01', createdAt: 50 },
+    { id: 'same-b', date: '2026-10-20', createdAt: 10 },
+  ];
+  const more = [
+    { id: 'newer', date: '2026-11-01', createdAt: 1 },
+    { id: 'same-new', date: '2026-10-20', createdAt: 20 },
+    { id: 'same-a', date: '2026-10-20', createdAt: 10 },
+  ];
+  expect(mergeActivity(old, more).map((a) => a.id)).toEqual(['newer', 'same-new', 'same-a', 'same-b', 'live-old']);
 });
 
 test('P2-2: internalPath accepts same-origin paths and refuses every off-site form', () => {

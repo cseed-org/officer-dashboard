@@ -16,7 +16,6 @@ type Kind = 'luma_guests' | 'reflections';
  * "Check file" runs a dry run first so officers see row errors before anything is written.
  */
 export function CsvImportForm({ eventId, compact, onImported }: { eventId?: string; compact?: boolean; onImported?: (r: CsvImportResponse) => void }) {
-  const lookups = useApi('lookups');
   const [kind, setKind] = useState<Kind>('luma_guests');
   const [target, setTarget] = useState<string>(eventId ?? '');
   const [newName, setNewName] = useState('');
@@ -106,12 +105,7 @@ export function CsvImportForm({ eventId, compact, onImported }: { eventId?: stri
           <Field id={`${idp}-event`} label="event" error={errors.eventId}>
             <select class="select" {...describe(`${idp}-event`, errors.eventId)} value={target} onChange={(e) => setTarget(e.currentTarget.value)}>
               <option value="">choose an event…</option>
-              {lookups.status === 'ready' &&
-                lookups.data.events.map((ev) => (
-                  <option value={ev.id} key={ev.id}>
-                    {ev.name} — {fmtDate(ev.startsAt)}
-                  </option>
-                ))}
+              <EventOptions />
               <option value="__new">+ a new event from this export</option>
             </select>
           </Field>
@@ -194,4 +188,12 @@ function ImportResult({ r }: { r: CsvImportResponse }) {
       )}
     </div>
   );
+}
+
+// Mounted only when the import is not already attached to an event.
+function EventOptions() {
+  const lookups = useApi('lookups');
+  return <>{lookups.status === 'ready' && lookups.data.events.map((ev) => (
+    <option value={ev.id} key={ev.id}>{ev.name} — {fmtDate(ev.startsAt)}</option>
+  ))}</>;
 }

@@ -1,0 +1,39 @@
+go version go1.27.4 linux/amd64
+0-3
+2147483648
+main-round-1
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/api
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkFixup1B//api/buildspace-launchpad-4         	    2856	    411736 ns/op	  103977 B/op	    1473 allocs/op
+BenchmarkFixup1B//api/design-requests-4              	    4231	    271073 ns/op	   61036 B/op	    1380 allocs/op
+BenchmarkFixup1B//api/portal/builder-4               	    2036	    571613 ns/op	  124944 B/op	    2696 allocs/op
+BenchmarkFixup1B//api/portal/mentor-4                	    3469	    342049 ns/op	   76068 B/op	    1458 allocs/op
+BenchmarkFixup1B//mcp_ping-4                         	   33999	     35617 ns/op	    8851 B/op	     203 allocs/op
+PASS
+ok  	officerdashboard/internal/api	6.522s
+main-round-2
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/api
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkFixup1B//api/buildspace-launchpad-4         	    2701	    428753 ns/op	  104033 B/op	    1473 allocs/op
+BenchmarkFixup1B//api/design-requests-4              	    4356	    278027 ns/op	   61027 B/op	    1380 allocs/op
+BenchmarkFixup1B//api/portal/builder-4               	    2067	    565679 ns/op	  124881 B/op	    2696 allocs/op
+BenchmarkFixup1B//api/portal/mentor-4                	    3555	    347199 ns/op	   76079 B/op	    1458 allocs/op
+BenchmarkFixup1B//mcp_ping-4                         	   31848	     36175 ns/op	    8851 B/op	     203 allocs/op
+PASS
+ok  	officerdashboard/internal/api	6.594s
+main-round-3
+goos: linux
+goarch: amd64
+pkg: officerdashboard/internal/api
+cpu: 12th Gen Intel(R) Core(TM) i7-12700H
+BenchmarkFixup1B//api/buildspace-launchpad-4         	    2750	    438741 ns/op	  104235 B/op	    1473 allocs/op
+BenchmarkFixup1B//api/design-requests-4              	    4045	    284472 ns/op	   61032 B/op	    1380 allocs/op
+BenchmarkFixup1B//api/portal/builder-4               	    2025	    584672 ns/op	  124941 B/op	    2696 allocs/op
+BenchmarkFixup1B//api/portal/mentor-4                	    3405	    342805 ns/op	   76046 B/op	    1458 allocs/op
+BenchmarkFixup1B//mcp_ping-4                         	   34578	     35264 ns/op	    8851 B/op	     203 allocs/op
+PASS
+ok  	officerdashboard/internal/api	6.562s

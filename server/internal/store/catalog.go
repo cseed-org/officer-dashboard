@@ -8,7 +8,7 @@ import (
 
 // Accounts lists the chart of accounts in insertion order.
 func (q *Queries) Accounts(ctx context.Context) ([]accounting.Account, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id, code, name, type, form990_part, form990_line, form990_label, restriction, budgetable, active FROM accounts ORDER BY rowid`)
+	rows, err := q.query(ctx, `SELECT id, code, name, type, form990_part, form990_line, form990_label, restriction, budgetable, active FROM accounts ORDER BY rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -26,7 +26,7 @@ func (q *Queries) Accounts(ctx context.Context) ([]accounting.Account, error) {
 
 // Funds lists funds in insertion order.
 func (q *Queries) Funds(ctx context.Context) ([]accounting.Fund, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id, code, name, kind, restriction, active, start_date, end_date, amount_awarded_cents FROM funds ORDER BY rowid`)
+	rows, err := q.query(ctx, `SELECT id, code, name, kind, restriction, active, start_date, end_date, amount_awarded_cents FROM funds ORDER BY rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ type FiscalPeriod struct {
 
 // FiscalPeriods lists periods by start date.
 func (q *Queries) FiscalPeriods(ctx context.Context) ([]FiscalPeriod, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id, fiscal_year, name, start_date, end_date, status, closed_at, closed_by FROM fiscal_periods ORDER BY start_date`)
+	rows, err := q.query(ctx, `SELECT id, fiscal_year, name, start_date, end_date, status, closed_at, closed_by FROM fiscal_periods ORDER BY start_date`)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (q *Queries) Budgets(ctx context.Context, fy int) ([]BudgetRow, error) {
 		query += ` WHERE fiscal_year = ?`
 		args = append(args, fy)
 	}
-	rows, err := q.q.QueryContext(ctx, query+` ORDER BY rowid`, args...)
+	rows, err := q.query(ctx, query+` ORDER BY rowid`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (q *Queries) ReplaceBudgets(ctx context.Context, fy int, lines []BudgetRow,
 // ReportLines loads every posted journal line with the entry facts reports need,
 // in a stable order (entry date, entry id, line number).
 func (q *Queries) ReportLines(ctx context.Context) ([]accounting.ReportLine, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT l.account_id, l.fund_id, e.entry_date, e.source, coalesce(r.source, ''), l.debit_cents, l.credit_cents, coalesce(l.functional_class, ''),
+	rows, err := q.query(ctx, `SELECT l.account_id, l.fund_id, e.entry_date, e.source, coalesce(r.source, ''), l.debit_cents, l.credit_cents, coalesce(l.functional_class, ''),
 		EXISTS (SELECT 1 FROM contributions c WHERE c.kind IN ('in_kind', 'stock') AND c.journal_entry_id IN (e.id, e.reverses_entry_id))
 		FROM journal_lines l
 		JOIN journal_entries e ON e.id = l.entry_id
@@ -178,7 +178,7 @@ func (q *Queries) ReportLines(ctx context.Context) ([]accounting.ReportLine, err
 
 // SettlementDates maps a purchase request to the date of its earliest posted expense line.
 func (q *Queries) SettlementDates(ctx context.Context) (map[string]string, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT e.purchase_request_id, min(e.entry_date) FROM journal_entries e
+	rows, err := q.query(ctx, `SELECT e.purchase_request_id, min(e.entry_date) FROM journal_entries e
 		JOIN journal_lines l ON l.entry_id = e.id JOIN accounts a ON a.id = l.account_id AND a.type = 'expense'
 		WHERE e.status = 'posted' AND e.purchase_request_id IS NOT NULL GROUP BY e.purchase_request_id`)
 	if err != nil {

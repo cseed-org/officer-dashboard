@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
+	"officerdashboard/internal/luma"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mattn/go-sqlite3" // SQLite via cgo: the faster option for a single box
@@ -28,6 +30,30 @@ const driverName = "sqlite3_fold"
 
 func init() {
 	sql.Register(driverName, &sqlite3.SQLiteDriver{ConnectHook: func(c *sqlite3.SQLiteConn) error {
+		if err := c.RegisterFunc("instant_ms", func(s string) any {
+			t, err := luma.ParseInstant(s)
+			if err != nil {
+				return nil
+			}
+			return t.UnixMilli()
+		}, true); err != nil {
+			return err
+		}
+		for name, field := range map[string]func(time.Time) int64{
+			"instant_seconds":  func(t time.Time) int64 { return t.Unix() },
+			"instant_fraction": func(t time.Time) int64 { return int64(t.Nanosecond()) },
+		} {
+			if err := c.RegisterFunc(name, func(s string) any {
+				t, err := luma.ParseInstant(s)
+				if err != nil {
+					return nil
+				}
+				return field(t)
+			}, true); err != nil {
+				return err
+			}
+		}
+
 		return c.RegisterFunc("fold", func(s string) string { return Fold(s) }, true)
 	}})
 }
@@ -38,9 +64,17 @@ var migrationFS embed.FS
 // DB is one SQLite file opened twice: a single writer connection (so writes are serialised
 // by the connection itself, not by lock errors) and a pool of read-only connections.
 type DB struct {
-	W    *sql.DB
-	R    *sql.DB
-	Path string
+	W     *sql.DB
+	R     *sql.DB
+	Path  string
+	cache *queryCache
+}
+
+// queryCache stores only statements explicitly selected by read models. Their
+// query strings are fixed code, never request input; arbitrary filters stay uncached.
+type queryCache struct {
+	mu    sync.Mutex
+	stmts map[string]*sql.Stmt
 }
 
 // uriPath escapes the characters SQLite's URI parser treats specially ('%' starts an escape,
@@ -92,12 +126,21 @@ func Open(path string) (*DB, error) {
 	}
 	r.SetMaxOpenConns(n)
 	r.SetMaxIdleConns(n)
-	return &DB{W: w, R: r, Path: path}, nil
+	return &DB{W: w, R: r, Path: path, cache: &queryCache{stmts: map[string]*sql.Stmt{}}}, nil
 }
 
 // Close checkpoints the WAL and closes both pools.
 func (d *DB) Close() {
 	_, _ = d.W.Exec(`PRAGMA optimize`)
+	if d.cache != nil {
+		d.cache.mu.Lock()
+		for _, stmt := range d.cache.stmts {
+			_ = stmt.Close()
+		}
+		// Keep the map usable: a reader finishing a concurrent prepare may still
+		// insert its statement before the reader pool closes.
+		d.cache.mu.Unlock()
+	}
 	_ = d.R.Close()
 	_ = d.W.Close()
 }
@@ -200,10 +243,55 @@ type Q interface {
 }
 
 // Queries is the typed method set, bound to the reader pool or to one write transaction.
-type Queries struct{ q Q }
+type Queries struct {
+	q     Q
+	cache *queryCache
+}
+
+// query reuses selected read-only statements. Transaction-bound Queries have no
+// cache, keeping every statement on that transaction's snapshot/connection.
+func (q *Queries) query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if q.cache == nil {
+		return q.q.QueryContext(ctx, query, args...)
+	}
+	q.cache.mu.Lock()
+	stmt := q.cache.stmts[query]
+	var err error
+	if stmt == nil {
+		stmt, err = q.q.PrepareContext(ctx, query)
+		if err == nil {
+			q.cache.stmts[query] = stmt
+		}
+	}
+	q.cache.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return stmt.QueryContext(ctx, args...)
+}
+
+func (q *Queries) queryRow(ctx context.Context, query string, args ...any) *sql.Row {
+	if q.cache == nil {
+		return q.q.QueryRowContext(ctx, query, args...)
+	}
+	q.cache.mu.Lock()
+	stmt := q.cache.stmts[query]
+	var err error
+	if stmt == nil {
+		stmt, err = q.q.PrepareContext(ctx, query)
+		if err == nil {
+			q.cache.stmts[query] = stmt
+		}
+	}
+	q.cache.mu.Unlock()
+	if err != nil {
+		return q.q.QueryRowContext(ctx, query, args...)
+	}
+	return stmt.QueryRowContext(ctx, args...)
+}
 
 // Read returns queries bound to the reader pool.
-func (d *DB) Read() *Queries { return &Queries{q: d.R} }
+func (d *DB) Read() *Queries { return &Queries{q: d.R, cache: d.cache} }
 
 // ReadTx runs fn in one read transaction on the reader pool: in WAL mode every query fn
 // makes sees the same snapshot, without taking the single writer connection.

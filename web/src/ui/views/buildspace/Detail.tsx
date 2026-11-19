@@ -1,3 +1,4 @@
+import { LoadHistory } from "../../components/LoadHistory";
 import { DueDate } from "../../components/DueDate";
 import type { PurchaseStatus } from "../../../lib/domain";
 import { useState } from "preact/hooks";
@@ -28,6 +29,7 @@ export function BuildspaceDetail({
   person,
   project,
   reload,
+  loadOlder,
   onPerson,
   section,
   lifecycle = [],
@@ -37,6 +39,7 @@ export function BuildspaceDetail({
   person?: BuildspacePerson;
   project: BuildspaceProject;
   reload: () => void;
+  loadOlder?: (signal: AbortSignal) => Promise<void>;
   onPerson: (id: string) => void;
   section?: string;
   /** Archive / restore / delete for this project (drawer header). */
@@ -480,6 +483,7 @@ export function BuildspaceDetail({
           </Empty>
         )}
       </div>
+      {tab !== "add entry" && b.activityNextCursor && loadOlder && <LoadHistory key={b.activityNextCursor} load={loadOlder} />}
     </div>
   );
 }

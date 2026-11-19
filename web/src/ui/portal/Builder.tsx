@@ -4,6 +4,7 @@ import { safeUrl } from "../../lib/url";
  * a record, then their own dashboard: this week's check-in, their project, team, mentors,
  * requests/absences and the team timeline (docs/launchpad-cohorts.md).
  */
+import { LoadHistory, mergeActivity } from "../components/LoadHistory";
 import { useState } from "preact/hooks";
 import { BUILDSPACE_STAGES, BUILDSPACE_TRACKS } from "../../core/constants";
 import type { PortalBuilderResponse, PortalMe } from "../../lib/contracts";
@@ -28,8 +29,8 @@ export function BuilderHome({ me, refreshMe }: { me: PortalMe; refreshMe: () => 
   const state = useApi("portalBuilder");
   return (
     <Async state={state}>
-      {(d) =>
-        !d.onboarded ? (
+      {(d) => <>
+        {!d.onboarded ? (
           d.readOnly ? (
             <Empty title={`${d.cohort.name} has ended`}>This cohort is archived, so setup is closed. Ask an officer if you still need to join.</Empty>
           ) : (
@@ -44,8 +45,12 @@ export function BuilderHome({ me, refreshMe }: { me: PortalMe; refreshMe: () => 
           )
         ) : (
           <Dashboard d={d} reload={state.reload} />
-        )
-      }
+        )}
+        {d.activityNextCursor && <LoadHistory key={d.activityNextCursor} load={async (signal) => {
+          const more = await api("portalBuilder", {query:{activityCursor:d.activityNextCursor!},signal});
+          state.set({...more,activity:mergeActivity(d.activity,more.activity)});
+        }} />}
+      </>}
     </Async>
   );
 }

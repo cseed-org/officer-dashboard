@@ -69,7 +69,7 @@ func scanCohort(r interface{ Scan(...any) error }) (LaunchpadCohort, error) {
 // LaunchpadCohorts lists cohorts newest first (start date, then creation).
 func (q *Queries) LaunchpadCohorts(ctx context.Context) ([]LaunchpadCohort, error) {
 	out := []LaunchpadCohort{}
-	err := iter(q.q.QueryContext(ctx, `SELECT `+cohortCols+` FROM buildspace_launchpad_cohorts c ORDER BY c.starts_on DESC,c.created_at DESC,c.id`)).each(func(rows *sql.Rows) error {
+	err := iter(q.query(ctx, `SELECT `+cohortCols+` FROM buildspace_launchpad_cohorts c ORDER BY c.starts_on DESC,c.created_at DESC,c.id`)).each(func(rows *sql.Rows) error {
 		c, err := scanCohort(rows)
 		out = append(out, c)
 		return err
@@ -118,7 +118,7 @@ func scanAccount(r interface{ Scan(...any) error }) (LaunchpadAccount, error) {
 
 func (q *Queries) LaunchpadAccounts(ctx context.Context) ([]LaunchpadAccount, error) {
 	out := []LaunchpadAccount{}
-	err := iter(q.q.QueryContext(ctx, `SELECT `+accountCols+` FROM buildspace_launchpad_accounts ORDER BY created_at DESC,email`)).each(func(rows *sql.Rows) error {
+	err := iter(q.query(ctx, `SELECT `+accountCols+` FROM buildspace_launchpad_accounts ORDER BY created_at DESC,email`)).each(func(rows *sql.Rows) error {
 		a, err := scanAccount(rows)
 		out = append(out, a)
 		return err
@@ -184,7 +184,7 @@ func (q *Queries) InsertLaunchpadSession(ctx context.Context, idHash, accountID 
 // LaunchpadSessionByHash returns a live session of an active account, or ErrNotFound.
 func (q *Queries) LaunchpadSessionByHash(ctx context.Context, idHash string, now int64) (*LaunchpadSession, error) {
 	var s LaunchpadSession
-	row := q.q.QueryRowContext(ctx, `SELECT s.id,s.expires_at,s.created_at,`+accountColsAliased+` FROM buildspace_launchpad_sessions s JOIN buildspace_launchpad_accounts a ON a.id=s.account_id
+	row := q.queryRow(ctx, `SELECT s.id,s.expires_at,s.created_at,`+accountColsAliased+` FROM buildspace_launchpad_sessions s JOIN buildspace_launchpad_accounts a ON a.id=s.account_id
  WHERE s.id=? AND s.expires_at>? AND a.status='active'`, idHash, now)
 	var a LaunchpadAccount
 	err := row.Scan(&s.ID, &s.ExpiresAt, &s.CreatedAt, &a.ID, &a.Kind, &a.Email, &a.Name, &a.Status, &a.CohortID, &a.PersonID, &a.ContactID, &a.DiscordID, &a.InviteTokenHash, &a.InviteExpiresAt, &a.InviteSentAt, &a.InviteError, &a.InvitedBy, &a.CreatedAt, &a.UpdatedAt, &a.AcceptedAt, &a.OnboardedAt, &a.LastLoginAt)

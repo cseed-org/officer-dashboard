@@ -1,0 +1,1552 @@
+{
+  "source": "fa301df",
+  "go": "go1.27.4 linux/amd64",
+  "benchmarks": {
+    "BenchmarkReadEndpoints//api/members": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 4310,
+          "ns_op": 273554.0,
+          "b_op": 43392,
+          "allocs_op": 966
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 4342,
+          "ns_op": 270384.0,
+          "b_op": 43360,
+          "allocs_op": 966
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 4209,
+          "ns_op": 273547.0,
+          "b_op": 43381,
+          "allocs_op": 966
+        }
+      ],
+      "ns_op": 273547.0,
+      "b_op": 43381,
+      "allocs_op": 966
+    },
+    "BenchmarkReadEndpoints//api/me": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 15344,
+          "ns_op": 76386.0,
+          "b_op": 8765,
+          "allocs_op": 201
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 15166,
+          "ns_op": 77871.0,
+          "b_op": 8765,
+          "allocs_op": 201
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 15692,
+          "ns_op": 77912.0,
+          "b_op": 8765,
+          "allocs_op": 201
+        }
+      ],
+      "ns_op": 77871.0,
+      "b_op": 8765,
+      "allocs_op": 201
+    },
+    "BenchmarkReadEndpoints//api/lookups": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 5318,
+          "ns_op": 220009.0,
+          "b_op": 53932,
+          "allocs_op": 1183
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 5516,
+          "ns_op": 213037.0,
+          "b_op": 53918,
+          "allocs_op": 1183
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 5210,
+          "ns_op": 212398.0,
+          "b_op": 53923,
+          "allocs_op": 1183
+        }
+      ],
+      "ns_op": 213037.0,
+      "b_op": 53923,
+      "allocs_op": 1183
+    },
+    "BenchmarkReadEndpoints//api/overview": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 1506,
+          "ns_op": 783656.0,
+          "b_op": 186914,
+          "allocs_op": 2925
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 1515,
+          "ns_op": 822680.0,
+          "b_op": 187034,
+          "allocs_op": 2925
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 1378,
+          "ns_op": 873374.0,
+          "b_op": 187147,
+          "allocs_op": 2925
+        }
+      ],
+      "ns_op": 822680.0,
+      "b_op": 187034,
+      "allocs_op": 2925
+    },
+    "BenchmarkReadEndpoints//api/events": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 2437,
+          "ns_op": 508425.0,
+          "b_op": 75782,
+          "allocs_op": 1480
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 2287,
+          "ns_op": 498044.0,
+          "b_op": 76057,
+          "allocs_op": 1480
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 2230,
+          "ns_op": 521059.0,
+          "b_op": 75980,
+          "allocs_op": 1480
+        }
+      ],
+      "ns_op": 508425.0,
+      "b_op": 75980,
+      "allocs_op": 1480
+    },
+    "BenchmarkReadEndpoints//api/events/event-kickoff": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 3002,
+          "ns_op": 416406.0,
+          "b_op": 61463,
+          "allocs_op": 1458
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3142,
+          "ns_op": 400678.0,
+          "b_op": 61450,
+          "allocs_op": 1458
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3014,
+          "ns_op": 394343.0,
+          "b_op": 61517,
+          "allocs_op": 1458
+        }
+      ],
+      "ns_op": 400678.0,
+      "b_op": 61463,
+      "allocs_op": 1458
+    },
+    "BenchmarkReadEndpoints//api/events/event-kickoff/metrics": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 3723,
+          "ns_op": 323619.0,
+          "b_op": 39230,
+          "allocs_op": 1164
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3368,
+          "ns_op": 325260.0,
+          "b_op": 39266,
+          "allocs_op": 1164
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3015,
+          "ns_op": 339689.0,
+          "b_op": 39186,
+          "allocs_op": 1164
+        }
+      ],
+      "ns_op": 325260.0,
+      "b_op": 39230,
+      "allocs_op": 1164
+    },
+    "BenchmarkReadEndpoints//api/requests?scope=all": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 4972,
+          "ns_op": 243026.0,
+          "b_op": 62045,
+          "allocs_op": 1310
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 4927,
+          "ns_op": 245002.0,
+          "b_op": 62010,
+          "allocs_op": 1310
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 4437,
+          "ns_op": 244857.0,
+          "b_op": 62008,
+          "allocs_op": 1310
+        }
+      ],
+      "ns_op": 244857.0,
+      "b_op": 62010,
+      "allocs_op": 1310
+    },
+    "BenchmarkReadEndpoints//api/requests/req-0002": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 3686,
+          "ns_op": 311388.0,
+          "b_op": 59994,
+          "allocs_op": 1410
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3556,
+          "ns_op": 304144.0,
+          "b_op": 59988,
+          "allocs_op": 1410
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3542,
+          "ns_op": 307811.0,
+          "b_op": 59992,
+          "allocs_op": 1410
+        }
+      ],
+      "ns_op": 307811.0,
+      "b_op": 59992,
+      "allocs_op": 1410
+    },
+    "BenchmarkReadEndpoints//api/finance/summary": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 2982,
+          "ns_op": 390298.0,
+          "b_op": 123008,
+          "allocs_op": 1592
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3300,
+          "ns_op": 364759.0,
+          "b_op": 123024,
+          "allocs_op": 1593
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3240,
+          "ns_op": 370354.0,
+          "b_op": 122992,
+          "allocs_op": 1592
+        }
+      ],
+      "ns_op": 370354.0,
+      "b_op": 123008,
+      "allocs_op": 1592
+    },
+    "BenchmarkReadEndpoints//api/finance/budgets": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 5821,
+          "ns_op": 203439.0,
+          "b_op": 50282,
+          "allocs_op": 1100
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 6164,
+          "ns_op": 197812.0,
+          "b_op": 50273,
+          "allocs_op": 1100
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 5665,
+          "ns_op": 208227.0,
+          "b_op": 50275,
+          "allocs_op": 1100
+        }
+      ],
+      "ns_op": 203439.0,
+      "b_op": 50275,
+      "allocs_op": 1100
+    },
+    "BenchmarkReadEndpoints//api/finance/reports/budget-vs-actual": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 3354,
+          "ns_op": 350943.0,
+          "b_op": 96067,
+          "allocs_op": 1527
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3490,
+          "ns_op": 351490.0,
+          "b_op": 96099,
+          "allocs_op": 1527
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3082,
+          "ns_op": 380093.0,
+          "b_op": 96075,
+          "allocs_op": 1527
+        }
+      ],
+      "ns_op": 351490.0,
+      "b_op": 96075,
+      "allocs_op": 1527
+    },
+    "BenchmarkReadEndpoints//api/finance/reports/statement-of-activities": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 3450,
+          "ns_op": 340173.0,
+          "b_op": 84243,
+          "allocs_op": 1483
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3399,
+          "ns_op": 355456.0,
+          "b_op": 84283,
+          "allocs_op": 1483
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3114,
+          "ns_op": 347644.0,
+          "b_op": 84277,
+          "allocs_op": 1483
+        }
+      ],
+      "ns_op": 347644.0,
+      "b_op": 84277,
+      "allocs_op": 1483
+    },
+    "BenchmarkReadEndpoints//api/search?q=demo": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 3319,
+          "ns_op": 366344.0,
+          "b_op": 42381,
+          "allocs_op": 1025
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3169,
+          "ns_op": 361265.0,
+          "b_op": 42380,
+          "allocs_op": 1025
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 3014,
+          "ns_op": 360287.0,
+          "b_op": 42382,
+          "allocs_op": 1025
+        }
+      ],
+      "ns_op": 361265.0,
+      "b_op": 42381,
+      "allocs_op": 1025
+    },
+    "BenchmarkHistoricalFinanceSummary": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 2,
+          "ns_op": 616243895.0,
+          "b_op": 123306944,
+          "allocs_op": 5624185
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 2,
+          "ns_op": 614204772.0,
+          "b_op": 123296056,
+          "allocs_op": 5624171
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 2,
+          "ns_op": 605731528.0,
+          "b_op": 123301232,
+          "allocs_op": 5624175
+        }
+      ],
+      "ns_op": 614204772.0,
+      "b_op": 123301232,
+      "allocs_op": 5624175
+    },
+    "BenchmarkAgentJobs": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 72,
+          "ns_op": 15219489.0,
+          "b_op": 3041568,
+          "allocs_op": 47516
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 70,
+          "ns_op": 15201591.0,
+          "b_op": 3008299,
+          "allocs_op": 47514
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 69,
+          "ns_op": 15242808.0,
+          "b_op": 2991185,
+          "allocs_op": 47513
+        }
+      ],
+      "ns_op": 15219489.0,
+      "b_op": 3008299,
+      "allocs_op": 47514
+    },
+    "BenchmarkMCPMultipart": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 21,
+          "ns_op": 49587197.0,
+          "b_op": 34977662,
+          "allocs_op": 42
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 21,
+          "ns_op": 50107631.0,
+          "b_op": 34976841,
+          "allocs_op": 41
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 21,
+          "ns_op": 49882166.0,
+          "b_op": 34976533,
+          "allocs_op": 40
+        }
+      ],
+      "ns_op": 49882166.0,
+      "b_op": 34976841,
+      "allocs_op": 41
+    },
+    "BenchmarkMemberOfficers": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 151,
+          "ns_op": 7863337.0,
+          "b_op": 1296333,
+          "allocs_op": 30654
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 150,
+          "ns_op": 8279968.0,
+          "b_op": 1296337,
+          "allocs_op": 30654
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 142,
+          "ns_op": 8207918.0,
+          "b_op": 1296335,
+          "allocs_op": 30654
+        }
+      ],
+      "ns_op": 8207918.0,
+      "b_op": 1296335,
+      "allocs_op": 30654
+    },
+    "BenchmarkPortalBuilder": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 44,
+          "ns_op": 23003630.0,
+          "b_op": 13509264,
+          "allocs_op": 172823
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 44,
+          "ns_op": 23707453.0,
+          "b_op": 13509315,
+          "allocs_op": 172824
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 50,
+          "ns_op": 23551494.0,
+          "b_op": 13509248,
+          "allocs_op": 172823
+        }
+      ],
+      "ns_op": 23551494.0,
+      "b_op": 13509264,
+      "allocs_op": 172823
+    },
+    "BenchmarkCSVGuests": {
+      "runs": [
+        {
+          "gomaxprocs": 4,
+          "n": 36,
+          "ns_op": 31632659.0,
+          "b_op": 21069264,
+          "allocs_op": 286104
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 32,
+          "ns_op": 34055515.0,
+          "b_op": 21081109,
+          "allocs_op": 286104
+        },
+        {
+          "gomaxprocs": 4,
+          "n": 34,
+          "ns_op": 34514107.0,
+          "b_op": 21060041,
+          "allocs_op": 286103
+        }
+      ],
+      "ns_op": 34055515.0,
+      "b_op": 21069264,
+      "allocs_op": 286104
+    }
+  },
+  "server": {
+    "idle": {
+      "idle-1": {
+        "label": "idle-1",
+        "t_ms": 1795021936785,
+        "vmrss_kb": 26912,
+        "vmhwm_kb": 26912,
+        "threads": 9,
+        "utime_s": 0.08,
+        "stime_s": 0.03,
+        "cgroup_memory_current": 18739200,
+        "cgroup_anon": 16109568,
+        "cgroup_file": 40960
+      },
+      "idle-2": {
+        "label": "idle-2",
+        "t_ms": 1795021950115,
+        "vmrss_kb": 25280,
+        "vmhwm_kb": 26084,
+        "threads": 9,
+        "utime_s": 0.07,
+        "stime_s": 0.05,
+        "cgroup_memory_current": 17063936,
+        "cgroup_anon": 14368768,
+        "cgroup_file": 28672
+      }
+    },
+    "after_load": {
+      "label": "after round 3",
+      "t_ms": 1795022405915,
+      "vmrss_kb": 37812,
+      "vmhwm_kb": 41564,
+      "threads": 17,
+      "utime_s": 969.22,
+      "stime_s": 272.77,
+      "cgroup_memory_current": 28741632,
+      "cgroup_anon": 26058752,
+      "cgroup_file": 28672
+    },
+    "settled_30s": {
+      "label": "settled-30s",
+      "t_ms": 1795022436333,
+      "vmrss_kb": 37812,
+      "vmhwm_kb": 41564,
+      "threads": 17,
+      "utime_s": 969.22,
+      "stime_s": 272.77,
+      "cgroup_memory_current": 29061120,
+      "cgroup_anon": 26333184,
+      "cgroup_file": 28672
+    },
+    "under_load_overview": {
+      "label": "under-load-overview",
+      "t_ms": 1795022441780,
+      "vmrss_kb": 40828,
+      "vmhwm_kb": 41684,
+      "threads": 17,
+      "utime_s": 982.59,
+      "stime_s": 274.92,
+      "cgroup_memory_current": 32907264,
+      "cgroup_anon": 29696000,
+      "cgroup_file": 28672
+    },
+    "load_cpu_total_s": 1241.87,
+    "load_wall_s": 455.8,
+    "peak_rss_kb": 41684,
+    "goroutines": {
+      "idle": 18,
+      "under_load": 73,
+      "method": "Unique nonzero goroutine IDs in the last SIGQUIT dump (Go 1.27 gp/m fields supported)."
+    },
+    "coldstart": [
+      {
+        "run": 1,
+        "startedAt": "2026-11-18T17:24:23.051797438Z",
+        "started_to_healthy_ms": 1982,
+        "server_startup_ms": 77
+      },
+      {
+        "run": 2,
+        "startedAt": "2026-11-18T17:24:28.985358752Z",
+        "started_to_healthy_ms": 1999,
+        "server_startup_ms": 71
+      },
+      {
+        "run": 3,
+        "startedAt": "2026-11-18T17:24:34.870157479Z",
+        "started_to_healthy_ms": 1997,
+        "server_startup_ms": 70
+      },
+      {
+        "run": 4,
+        "startedAt": "2026-11-18T17:24:40.745871514Z",
+        "started_to_healthy_ms": 1982,
+        "server_startup_ms": 69
+      },
+      {
+        "run": 5,
+        "startedAt": "2026-11-18T17:24:46.649930922Z",
+        "started_to_healthy_ms": 1992,
+        "server_startup_ms": 67
+      }
+    ],
+    "endpoints": {
+      "/api/members": {
+        "rounds": [
+          {
+            "rps": 5662.0747,
+            "p50_ms": 1.2,
+            "p95_ms": 2.8,
+            "p99_ms": 4.2,
+            "slowest_ms": 58.0,
+            "codes": {
+              "200": 45311
+            },
+            "requests": 45311,
+            "cpu_s": 27.01,
+            "cpu_ms_per_1k_req": 596.1,
+            "rss_after_kb": 33004
+          },
+          {
+            "rps": 4740.5301,
+            "p50_ms": 1.5,
+            "p95_ms": 3.3,
+            "p99_ms": 4.8999999999999995,
+            "slowest_ms": 22.1,
+            "codes": {
+              "200": 37930
+            },
+            "requests": 37930,
+            "cpu_s": 26.07,
+            "cpu_ms_per_1k_req": 687.3,
+            "rss_after_kb": 37664
+          },
+          {
+            "rps": 4813.0147,
+            "p50_ms": 1.5,
+            "p95_ms": 3.3,
+            "p99_ms": 4.6,
+            "slowest_ms": 15.5,
+            "codes": {
+              "200": 38517
+            },
+            "requests": 38517,
+            "cpu_s": 26.26,
+            "cpu_ms_per_1k_req": 681.8,
+            "rss_after_kb": 37388
+          }
+        ],
+        "median": {
+          "rps": 4813.01,
+          "p50_ms": 1.5,
+          "p95_ms": 3.3,
+          "p99_ms": 4.6,
+          "cpu_s": 26.26,
+          "cpu_ms_per_1k_req": 681.8
+        },
+        "all_200": true
+      },
+      "/api/me": {
+        "rounds": [
+          {
+            "rps": 7857.8397,
+            "p50_ms": 0.9,
+            "p95_ms": 1.8,
+            "p99_ms": 2.4,
+            "slowest_ms": 14.9,
+            "codes": {
+              "200": 62870
+            },
+            "requests": 62870,
+            "cpu_s": 25.42,
+            "cpu_ms_per_1k_req": 404.3,
+            "rss_after_kb": 33224
+          },
+          {
+            "rps": 6572.6071,
+            "p50_ms": 1.1,
+            "p95_ms": 2.0,
+            "p99_ms": 2.7,
+            "slowest_ms": 16.2,
+            "codes": {
+              "200": 52586
+            },
+            "requests": 52586,
+            "cpu_s": 25.05,
+            "cpu_ms_per_1k_req": 476.4,
+            "rss_after_kb": 37092
+          },
+          {
+            "rps": 6490.0821,
+            "p50_ms": 1.2,
+            "p95_ms": 2.1,
+            "p99_ms": 2.7,
+            "slowest_ms": 18.3,
+            "codes": {
+              "200": 51934
+            },
+            "requests": 51934,
+            "cpu_s": 25.38,
+            "cpu_ms_per_1k_req": 488.7,
+            "rss_after_kb": 37476
+          }
+        ],
+        "median": {
+          "rps": 6572.61,
+          "p50_ms": 1.1,
+          "p95_ms": 2.0,
+          "p99_ms": 2.7,
+          "cpu_s": 25.38,
+          "cpu_ms_per_1k_req": 476.4
+        },
+        "all_200": true
+      },
+      "/api/lookups": {
+        "rounds": [
+          {
+            "rps": 5124.1196,
+            "p50_ms": 1.3,
+            "p95_ms": 3.2,
+            "p99_ms": 4.6,
+            "slowest_ms": 17.4,
+            "codes": {
+              "200": 41007
+            },
+            "requests": 41007,
+            "cpu_s": 26.12,
+            "cpu_ms_per_1k_req": 637.0,
+            "rss_after_kb": 33384
+          },
+          {
+            "rps": 4683.3199,
+            "p50_ms": 1.5,
+            "p95_ms": 3.4,
+            "p99_ms": 4.8999999999999995,
+            "slowest_ms": 16.5,
+            "codes": {
+              "200": 37479
+            },
+            "requests": 37479,
+            "cpu_s": 25.76,
+            "cpu_ms_per_1k_req": 687.3,
+            "rss_after_kb": 37588
+          },
+          {
+            "rps": 4820.6235,
+            "p50_ms": 1.5,
+            "p95_ms": 3.2,
+            "p99_ms": 4.6,
+            "slowest_ms": 19.0,
+            "codes": {
+              "200": 38573
+            },
+            "requests": 38573,
+            "cpu_s": 26.1,
+            "cpu_ms_per_1k_req": 676.6,
+            "rss_after_kb": 37644
+          }
+        ],
+        "median": {
+          "rps": 4820.62,
+          "p50_ms": 1.5,
+          "p95_ms": 3.2,
+          "p99_ms": 4.6,
+          "cpu_s": 26.1,
+          "cpu_ms_per_1k_req": 676.6
+        },
+        "all_200": true
+      },
+      "/api/overview": {
+        "rounds": [
+          {
+            "rps": 2073.557,
+            "p50_ms": 3.5,
+            "p95_ms": 7.4,
+            "p99_ms": 9.799999999999999,
+            "slowest_ms": 20.1,
+            "codes": {
+              "200": 16596
+            },
+            "requests": 16596,
+            "cpu_s": 25.85,
+            "cpu_ms_per_1k_req": 1557.6,
+            "rss_after_kb": 35596
+          },
+          {
+            "rps": 2035.7493,
+            "p50_ms": 3.6,
+            "p95_ms": 7.5,
+            "p99_ms": 10.1,
+            "slowest_ms": 19.900000000000002,
+            "codes": {
+              "200": 16296
+            },
+            "requests": 16296,
+            "cpu_s": 25.84,
+            "cpu_ms_per_1k_req": 1585.7,
+            "rss_after_kb": 38328
+          },
+          {
+            "rps": 2041.5987,
+            "p50_ms": 3.6,
+            "p95_ms": 7.4,
+            "p99_ms": 9.799999999999999,
+            "slowest_ms": 21.4,
+            "codes": {
+              "200": 16339
+            },
+            "requests": 16339,
+            "cpu_s": 25.98,
+            "cpu_ms_per_1k_req": 1590.1,
+            "rss_after_kb": 37812
+          }
+        ],
+        "median": {
+          "rps": 2041.6,
+          "p50_ms": 3.6,
+          "p95_ms": 7.4,
+          "p99_ms": 9.8,
+          "cpu_s": 25.85,
+          "cpu_ms_per_1k_req": 1585.7
+        },
+        "all_200": true
+      },
+      "/api/events": {
+        "rounds": [
+          {
+            "rps": 3338.879,
+            "p50_ms": 2.1,
+            "p95_ms": 4.8999999999999995,
+            "p99_ms": 6.8999999999999995,
+            "slowest_ms": 16.5,
+            "codes": {
+              "200": 26718
+            },
+            "requests": 26718,
+            "cpu_s": 26.62,
+            "cpu_ms_per_1k_req": 996.3,
+            "rss_after_kb": 36276
+          },
+          {
+            "rps": 3130.7163,
+            "p50_ms": 2.2,
+            "p95_ms": 5.1000000000000005,
+            "p99_ms": 7.0,
+            "slowest_ms": 24.5,
+            "codes": {
+              "200": 25056
+            },
+            "requests": 25056,
+            "cpu_s": 26.02,
+            "cpu_ms_per_1k_req": 1038.5,
+            "rss_after_kb": 38600
+          },
+          {
+            "rps": 3255.9953,
+            "p50_ms": 2.1,
+            "p95_ms": 4.8999999999999995,
+            "p99_ms": 7.1000000000000005,
+            "slowest_ms": 25.0,
+            "codes": {
+              "200": 26061
+            },
+            "requests": 26061,
+            "cpu_s": 26.55,
+            "cpu_ms_per_1k_req": 1018.8,
+            "rss_after_kb": 37844
+          }
+        ],
+        "median": {
+          "rps": 3256.0,
+          "p50_ms": 2.1,
+          "p95_ms": 4.9,
+          "p99_ms": 7.0,
+          "cpu_s": 26.55,
+          "cpu_ms_per_1k_req": 1018.8
+        },
+        "all_200": true
+      },
+      "/api/events/event-kickoff": {
+        "rounds": [
+          {
+            "rps": 3338.4999,
+            "p50_ms": 2.2,
+            "p95_ms": 4.3,
+            "p99_ms": 5.8,
+            "slowest_ms": 17.0,
+            "codes": {
+              "200": 26720
+            },
+            "requests": 26720,
+            "cpu_s": 26.48,
+            "cpu_ms_per_1k_req": 991.0,
+            "rss_after_kb": 36228
+          },
+          {
+            "rps": 3147.4377,
+            "p50_ms": 2.3,
+            "p95_ms": 4.5,
+            "p99_ms": 6.1000000000000005,
+            "slowest_ms": 16.8,
+            "codes": {
+              "200": 25186
+            },
+            "requests": 25186,
+            "cpu_s": 26.26,
+            "cpu_ms_per_1k_req": 1042.6,
+            "rss_after_kb": 38328
+          },
+          {
+            "rps": 3199.1204,
+            "p50_ms": 2.3,
+            "p95_ms": 4.5,
+            "p99_ms": 5.8,
+            "slowest_ms": 16.6,
+            "codes": {
+              "200": 25600
+            },
+            "requests": 25600,
+            "cpu_s": 26.27,
+            "cpu_ms_per_1k_req": 1026.2,
+            "rss_after_kb": 37684
+          }
+        ],
+        "median": {
+          "rps": 3199.12,
+          "p50_ms": 2.3,
+          "p95_ms": 4.5,
+          "p99_ms": 5.8,
+          "cpu_s": 26.27,
+          "cpu_ms_per_1k_req": 1026.2
+        },
+        "all_200": true
+      },
+      "/api/events/event-kickoff/metrics": {
+        "rounds": [
+          {
+            "rps": 4115.5,
+            "p50_ms": 1.8,
+            "p95_ms": 3.6,
+            "p99_ms": 4.8999999999999995,
+            "slowest_ms": 21.9,
+            "codes": {
+              "200": 32934
+            },
+            "requests": 32934,
+            "cpu_s": 26.88,
+            "cpu_ms_per_1k_req": 816.2,
+            "rss_after_kb": 36028
+          },
+          {
+            "rps": 3850.1807,
+            "p50_ms": 1.9,
+            "p95_ms": 3.8,
+            "p99_ms": 5.2,
+            "slowest_ms": 20.5,
+            "codes": {
+              "200": 30812
+            },
+            "requests": 30812,
+            "cpu_s": 26.68,
+            "cpu_ms_per_1k_req": 865.9,
+            "rss_after_kb": 37696
+          },
+          {
+            "rps": 3936.6807,
+            "p50_ms": 1.8,
+            "p95_ms": 3.7,
+            "p99_ms": 5.1000000000000005,
+            "slowest_ms": 19.900000000000002,
+            "codes": {
+              "200": 31505
+            },
+            "requests": 31505,
+            "cpu_s": 26.7,
+            "cpu_ms_per_1k_req": 847.5,
+            "rss_after_kb": 38000
+          }
+        ],
+        "median": {
+          "rps": 3936.68,
+          "p50_ms": 1.8,
+          "p95_ms": 3.7,
+          "p99_ms": 5.1,
+          "cpu_s": 26.7,
+          "cpu_ms_per_1k_req": 847.5
+        },
+        "all_200": true
+      },
+      "/api/requests?scope=all": {
+        "rounds": [
+          {
+            "rps": 4608.3319,
+            "p50_ms": 1.5,
+            "p95_ms": 3.5,
+            "p99_ms": 5.1000000000000005,
+            "slowest_ms": 19.2,
+            "codes": {
+              "200": 36874
+            },
+            "requests": 36874,
+            "cpu_s": 26.2,
+            "cpu_ms_per_1k_req": 710.5,
+            "rss_after_kb": 37656
+          },
+          {
+            "rps": 4362.9536,
+            "p50_ms": 1.6,
+            "p95_ms": 3.5,
+            "p99_ms": 4.8999999999999995,
+            "slowest_ms": 14.8,
+            "codes": {
+              "200": 34919
+            },
+            "requests": 34919,
+            "cpu_s": 26.07,
+            "cpu_ms_per_1k_req": 746.6,
+            "rss_after_kb": 37600
+          },
+          {
+            "rps": 4406.2135,
+            "p50_ms": 1.6,
+            "p95_ms": 3.5,
+            "p99_ms": 5.0,
+            "slowest_ms": 22.700000000000003,
+            "codes": {
+              "200": 35261
+            },
+            "requests": 35261,
+            "cpu_s": 26.1,
+            "cpu_ms_per_1k_req": 740.2,
+            "rss_after_kb": 37100
+          }
+        ],
+        "median": {
+          "rps": 4406.21,
+          "p50_ms": 1.6,
+          "p95_ms": 3.5,
+          "p99_ms": 5.0,
+          "cpu_s": 26.1,
+          "cpu_ms_per_1k_req": 740.2
+        },
+        "all_200": true
+      },
+      "/api/requests/req-0002": {
+        "rounds": [
+          {
+            "rps": 4076.2123,
+            "p50_ms": 1.7,
+            "p95_ms": 3.9,
+            "p99_ms": 5.4,
+            "slowest_ms": 21.7,
+            "codes": {
+              "200": 32620
+            },
+            "requests": 32620,
+            "cpu_s": 26.57,
+            "cpu_ms_per_1k_req": 814.5,
+            "rss_after_kb": 36932
+          },
+          {
+            "rps": 3956.0724,
+            "p50_ms": 1.8,
+            "p95_ms": 4.0,
+            "p99_ms": 5.5,
+            "slowest_ms": 12.1,
+            "codes": {
+              "200": 31656
+            },
+            "requests": 31656,
+            "cpu_s": 26.37,
+            "cpu_ms_per_1k_req": 833.0,
+            "rss_after_kb": 37748
+          },
+          {
+            "rps": 3976.7163,
+            "p50_ms": 1.8,
+            "p95_ms": 3.9,
+            "p99_ms": 5.6,
+            "slowest_ms": 22.9,
+            "codes": {
+              "200": 31823
+            },
+            "requests": 31823,
+            "cpu_s": 26.61,
+            "cpu_ms_per_1k_req": 836.2,
+            "rss_after_kb": 38472
+          }
+        ],
+        "median": {
+          "rps": 3976.72,
+          "p50_ms": 1.8,
+          "p95_ms": 3.9,
+          "p99_ms": 5.5,
+          "cpu_s": 26.57,
+          "cpu_ms_per_1k_req": 833.0
+        },
+        "all_200": true
+      },
+      "/api/finance/summary": {
+        "rounds": [
+          {
+            "rps": 3508.7206,
+            "p50_ms": 2.0,
+            "p95_ms": 4.5,
+            "p99_ms": 6.3,
+            "slowest_ms": 16.2,
+            "codes": {
+              "200": 28083
+            },
+            "requests": 28083,
+            "cpu_s": 25.82,
+            "cpu_ms_per_1k_req": 919.4,
+            "rss_after_kb": 37416
+          },
+          {
+            "rps": 3393.2296,
+            "p50_ms": 2.1,
+            "p95_ms": 4.6,
+            "p99_ms": 6.3,
+            "slowest_ms": 23.2,
+            "codes": {
+              "200": 27158
+            },
+            "requests": 27158,
+            "cpu_s": 25.76,
+            "cpu_ms_per_1k_req": 948.5,
+            "rss_after_kb": 37112
+          },
+          {
+            "rps": 3352.782,
+            "p50_ms": 2.1,
+            "p95_ms": 4.7,
+            "p99_ms": 6.3,
+            "slowest_ms": 12.7,
+            "codes": {
+              "200": 26830
+            },
+            "requests": 26830,
+            "cpu_s": 25.67,
+            "cpu_ms_per_1k_req": 956.8,
+            "rss_after_kb": 39448
+          }
+        ],
+        "median": {
+          "rps": 3393.23,
+          "p50_ms": 2.1,
+          "p95_ms": 4.6,
+          "p99_ms": 6.3,
+          "cpu_s": 25.76,
+          "cpu_ms_per_1k_req": 948.5
+        },
+        "all_200": true
+      },
+      "/api/finance/budgets": {
+        "rounds": [
+          {
+            "rps": 4951.4769,
+            "p50_ms": 1.4,
+            "p95_ms": 3.3,
+            "p99_ms": 4.8,
+            "slowest_ms": 17.0,
+            "codes": {
+              "200": 39618
+            },
+            "requests": 39618,
+            "cpu_s": 26.0,
+            "cpu_ms_per_1k_req": 656.3,
+            "rss_after_kb": 36948
+          },
+          {
+            "rps": 4679.1972,
+            "p50_ms": 1.5,
+            "p95_ms": 3.4,
+            "p99_ms": 5.2,
+            "slowest_ms": 23.3,
+            "codes": {
+              "200": 37442
+            },
+            "requests": 37442,
+            "cpu_s": 25.86,
+            "cpu_ms_per_1k_req": 690.7,
+            "rss_after_kb": 38764
+          },
+          {
+            "rps": 4583.095,
+            "p50_ms": 1.5,
+            "p95_ms": 3.5,
+            "p99_ms": 4.8999999999999995,
+            "slowest_ms": 25.9,
+            "codes": {
+              "200": 36672
+            },
+            "requests": 36672,
+            "cpu_s": 25.78,
+            "cpu_ms_per_1k_req": 703.0,
+            "rss_after_kb": 37368
+          }
+        ],
+        "median": {
+          "rps": 4679.2,
+          "p50_ms": 1.5,
+          "p95_ms": 3.4,
+          "p99_ms": 4.9,
+          "cpu_s": 25.86,
+          "cpu_ms_per_1k_req": 690.7
+        },
+        "all_200": true
+      },
+      "/api/finance/reports/budget-vs-actual": {
+        "rounds": [
+          {
+            "rps": 3641.2548,
+            "p50_ms": 1.9,
+            "p95_ms": 4.4,
+            "p99_ms": 6.2,
+            "slowest_ms": 21.7,
+            "codes": {
+              "200": 29139
+            },
+            "requests": 29139,
+            "cpu_s": 25.96,
+            "cpu_ms_per_1k_req": 890.9,
+            "rss_after_kb": 36460
+          },
+          {
+            "rps": 3423.4661,
+            "p50_ms": 2.1,
+            "p95_ms": 4.6,
+            "p99_ms": 6.3,
+            "slowest_ms": 20.0,
+            "codes": {
+              "200": 27397
+            },
+            "requests": 27397,
+            "cpu_s": 25.71,
+            "cpu_ms_per_1k_req": 938.4,
+            "rss_after_kb": 37880
+          },
+          {
+            "rps": 3575.95,
+            "p50_ms": 2.0,
+            "p95_ms": 4.4,
+            "p99_ms": 6.0,
+            "slowest_ms": 18.2,
+            "codes": {
+              "200": 28619
+            },
+            "requests": 28619,
+            "cpu_s": 25.94,
+            "cpu_ms_per_1k_req": 906.4,
+            "rss_after_kb": 36716
+          }
+        ],
+        "median": {
+          "rps": 3575.95,
+          "p50_ms": 2.0,
+          "p95_ms": 4.4,
+          "p99_ms": 6.2,
+          "cpu_s": 25.94,
+          "cpu_ms_per_1k_req": 906.4
+        },
+        "all_200": true
+      },
+      "/api/finance/reports/statement-of-activities": {
+        "rounds": [
+          {
+            "rps": 3819.1915,
+            "p50_ms": 1.8,
+            "p95_ms": 4.2,
+            "p99_ms": 6.0,
+            "slowest_ms": 19.5,
+            "codes": {
+              "200": 30563
+            },
+            "requests": 30563,
+            "cpu_s": 26.25,
+            "cpu_ms_per_1k_req": 858.9,
+            "rss_after_kb": 36760
+          },
+          {
+            "rps": 3659.7575,
+            "p50_ms": 1.9,
+            "p95_ms": 4.3,
+            "p99_ms": 5.8999999999999995,
+            "slowest_ms": 12.8,
+            "codes": {
+              "200": 29295
+            },
+            "requests": 29295,
+            "cpu_s": 26.02,
+            "cpu_ms_per_1k_req": 888.2,
+            "rss_after_kb": 36592
+          },
+          {
+            "rps": 3677.1023,
+            "p50_ms": 1.9,
+            "p95_ms": 4.2,
+            "p99_ms": 5.8,
+            "slowest_ms": 19.900000000000002,
+            "codes": {
+              "200": 29424
+            },
+            "requests": 29424,
+            "cpu_s": 26.0,
+            "cpu_ms_per_1k_req": 883.6,
+            "rss_after_kb": 37392
+          }
+        ],
+        "median": {
+          "rps": 3677.1,
+          "p50_ms": 1.9,
+          "p95_ms": 4.2,
+          "p99_ms": 5.9,
+          "cpu_s": 26.02,
+          "cpu_ms_per_1k_req": 883.6
+        },
+        "all_200": true
+      },
+      "/api/search?q=demo": {
+        "rounds": [
+          {
+            "rps": 3362.1578,
+            "p50_ms": 2.2,
+            "p95_ms": 4.2,
+            "p99_ms": 5.5,
+            "slowest_ms": 15.6,
+            "codes": {
+              "200": 26905
+            },
+            "requests": 26905,
+            "cpu_s": 26.27,
+            "cpu_ms_per_1k_req": 976.4,
+            "rss_after_kb": 38036
+          },
+          {
+            "rps": 3370.5667,
+            "p50_ms": 2.2,
+            "p95_ms": 4.1000000000000005,
+            "p99_ms": 5.3,
+            "slowest_ms": 21.3,
+            "codes": {
+              "200": 26969
+            },
+            "requests": 26969,
+            "cpu_s": 26.21,
+            "cpu_ms_per_1k_req": 971.9,
+            "rss_after_kb": 37780
+          },
+          {
+            "rps": 3366.6273,
+            "p50_ms": 2.2,
+            "p95_ms": 4.1000000000000005,
+            "p99_ms": 5.3,
+            "slowest_ms": 16.400000000000002,
+            "codes": {
+              "200": 26943
+            },
+            "requests": 26943,
+            "cpu_s": 26.32,
+            "cpu_ms_per_1k_req": 976.9,
+            "rss_after_kb": 37928
+          }
+        ],
+        "median": {
+          "rps": 3366.63,
+          "p50_ms": 2.2,
+          "p95_ms": 4.1,
+          "p99_ms": 5.3,
+          "cpu_s": 26.27,
+          "cpu_ms_per_1k_req": 976.4
+        },
+        "all_200": true
+      },
+      "/": {
+        "rounds": [
+          {
+            "rps": 6917.1458,
+            "p50_ms": 1.1,
+            "p95_ms": 2.0,
+            "p99_ms": 2.6,
+            "slowest_ms": 28.2,
+            "codes": {
+              "200": 55347
+            },
+            "requests": 55347,
+            "cpu_s": 23.99,
+            "cpu_ms_per_1k_req": 433.4,
+            "rss_after_kb": 37684
+          },
+          {
+            "rps": 6783.9308,
+            "p50_ms": 1.1,
+            "p95_ms": 2.0,
+            "p99_ms": 2.6,
+            "slowest_ms": 21.5,
+            "codes": {
+              "200": 54281
+            },
+            "requests": 54281,
+            "cpu_s": 24.09,
+            "cpu_ms_per_1k_req": 443.8,
+            "rss_after_kb": 38112
+          },
+          {
+            "rps": 6680.3022,
+            "p50_ms": 1.1,
+            "p95_ms": 2.1,
+            "p99_ms": 2.8,
+            "slowest_ms": 22.1,
+            "codes": {
+              "200": 53453
+            },
+            "requests": 53453,
+            "cpu_s": 24.01,
+            "cpu_ms_per_1k_req": 449.2,
+            "rss_after_kb": 37748
+          }
+        ],
+        "median": {
+          "rps": 6783.93,
+          "p50_ms": 1.1,
+          "p95_ms": 2.0,
+          "p99_ms": 2.6,
+          "cpu_s": 24.01,
+          "cpu_ms_per_1k_req": 443.8
+        },
+        "all_200": true
+      },
+      "/login/": {
+        "rounds": [
+          {
+            "rps": 7539.7637,
+            "p50_ms": 1.0,
+            "p95_ms": 1.8,
+            "p99_ms": 2.4,
+            "slowest_ms": 16.400000000000002,
+            "codes": {
+              "200": 60332
+            },
+            "requests": 60332,
+            "cpu_s": 24.33,
+            "cpu_ms_per_1k_req": 403.3,
+            "rss_after_kb": 37396
+          },
+          {
+            "rps": 6873.8131,
+            "p50_ms": 1.1,
+            "p95_ms": 2.0,
+            "p99_ms": 2.7,
+            "slowest_ms": 17.9,
+            "codes": {
+              "200": 54998
+            },
+            "requests": 54998,
+            "cpu_s": 24.33,
+            "cpu_ms_per_1k_req": 442.4,
+            "rss_after_kb": 37744
+          },
+          {
+            "rps": 7373.3611,
+            "p50_ms": 1.0,
+            "p95_ms": 1.9,
+            "p99_ms": 2.5,
+            "slowest_ms": 16.8,
+            "codes": {
+              "200": 58997
+            },
+            "requests": 58997,
+            "cpu_s": 24.33,
+            "cpu_ms_per_1k_req": 412.4,
+            "rss_after_kb": 37812
+          }
+        ],
+        "median": {
+          "rps": 7373.36,
+          "p50_ms": 1.0,
+          "p95_ms": 1.9,
+          "p99_ms": 2.5,
+          "cpu_s": 24.33,
+          "cpu_ms_per_1k_req": 412.4
+        },
+        "all_200": true
+      }
+    }
+  }
+}

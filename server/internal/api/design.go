@@ -95,6 +95,15 @@ type DesignViewer struct {
 	CanAssign  bool `json:"canAssign"`
 }
 
+type DesignRequestsListResponse struct {
+	Items               []DesignRequestItem   `json:"items"`
+	Designers           []UserSummary         `json:"designers"`
+	Viewer              DesignViewer          `json:"viewer"`
+	UpcomingEvents      []DesignUpcomingEvent `json:"upcomingEvents"`
+	DeliveredNextCursor *string               `json:"deliveredNextCursor"`
+	DeliveredTotal      int                   `json:"deliveredTotal"`
+}
+
 type DesignRequestDraft struct {
 	Title   string         `json:"title"`
 	Type    string         `json:"type"`
@@ -371,15 +380,63 @@ func (c *Ctx) designList() error {
 	}
 	ctx := c.Context()
 	q := c.S.db.Read()
+	var cursor string
+	var history bool
+	if err := c.query(func(r *validate.Reader) {
+		cursor = r.Str("deliveredCursor", validate.S{}).V
+		history = r.Str("deliveredOnly", validate.S{Enum: []string{"true", "false"}}).V == "true"
+	}); err != nil {
+		return err
+	}
 	dc, err := loadDesignCtx(ctx, q, u)
 	if err != nil {
 		return err
 	}
-	rows, err := q.DesignRequests(ctx)
+	var at int64
+	var id string
+	if cursor != "" {
+		at, id, err = parseCursor(cursor)
+		if err != nil {
+			return err
+		}
+	}
+	delivered, deliveredTotal, err := q.DesignDeliveredPage(ctx, cursor != "", at, id, 7)
 	if err != nil {
 		return err
 	}
-	comments, fileCounts, err := q.DesignCounts(ctx)
+	var next *string
+	if len(delivered) > 6 {
+		last := cursorKey(delivered[5].UpdatedAt, delivered[5].ID)
+		next = &last
+		delivered = delivered[:6]
+	}
+	rows := []store.DesignRequest{}
+	if !history {
+		rows, err = q.DesignBoard(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	rows = append(rows, delivered...)
+	var ids []string
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	now := c.S.now()
+	horizon := now.Add(designHorizon)
+	var upcomingIDs []string
+	for i := range dc.cat.events {
+		e := &dc.cat.events[i]
+		starts, parseErr := luma.ParseInstant(e.StartsAt)
+		if (e.Status == "draft" || e.Status == "published") && parseErr == nil && !starts.Before(now) && !starts.After(horizon) {
+			upcomingIDs = append(upcomingIDs, e.ID)
+		}
+	}
+	linked, err := q.DesignRequestsForEvents(ctx, upcomingIDs)
+	if err != nil {
+		return err
+	}
+	comments, fileCounts, err := q.DesignCounts(ctx, ids)
 	if err != nil {
 		return err
 	}
@@ -391,8 +448,7 @@ func (c *Ctx) designList() error {
 		}
 		items = append(items, it)
 	}
-	writeJSON(c.W, 200, map[string]any{"items": items, "designers": dc.designerSummaries(), "viewer": DesignViewer{IsDesigner: dc.isDesigner(u.ID), CanAssign: dc.worker()},
-		"upcomingEvents": dc.upcomingEvents(c.S.now(), rows)})
+	writeJSON(c.W, 200, DesignRequestsListResponse{Items: items, Designers: dc.designerSummaries(), Viewer: DesignViewer{IsDesigner: dc.isDesigner(u.ID), CanAssign: dc.worker()}, UpcomingEvents: dc.upcomingEvents(c.S.now(), linked), DeliveredNextCursor: next, DeliveredTotal: deliveredTotal})
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sort"
+	"strings"
 )
 
 type BuildspaceProject struct {
@@ -18,6 +19,8 @@ type BuildspaceProject struct {
 	UpdatedAt   int64    `json:"updatedAt"`
 	CohortID    string   `json:"cohortId"`
 	ArchivedAt  *int64   `json:"archivedAt"`
+	// Latest visible activity, independent of the bounded history page.
+	LastActivityDate *string `json:"lastActivityDate"`
 }
 type BuildspacePerson struct {
 	ID          string  `json:"id"`
@@ -35,6 +38,8 @@ type BuildspacePerson struct {
 	// The builder's portal account, when one exists (read-only; never saved from here).
 	AccountID     *string `json:"accountId"`
 	AccountStatus *string `json:"accountStatus"`
+	// Latest visible project-wide or own activity, independent of history paging.
+	LastActivityDate *string `json:"lastActivityDate"`
 }
 
 // BuildspaceMentor is a roster row: a mentor contact with availability, cap, current load
@@ -86,17 +91,19 @@ type BuildspaceActivity struct {
 	AuthorName      *string `json:"authorName"`
 }
 type Buildspace struct {
-	Projects  []BuildspaceProject  `json:"projects"`
-	People    []BuildspacePerson   `json:"people"`
-	Mentors   []BuildspaceMentor   `json:"mentors"`
-	Activity  []BuildspaceActivity `json:"activity"`
-	WeekStart string               `json:"weekStart"`
-	WeekDue   string               `json:"weekDue"`
-	Today     string               `json:"today"`
-	Schedule  BuildspaceSchedule   `json:"schedule"`
-	Cohorts   []LaunchpadCohort    `json:"cohorts"`
-	CohortID  *string              `json:"cohortId"`
-	Accounts  []LaunchpadAccount   `json:"accounts"`
+	WeeklyDone         map[string]bool      `json:"-"`
+	ActivityNextCursor *string              `json:"activityNextCursor,omitempty"`
+	Projects           []BuildspaceProject  `json:"projects"`
+	People             []BuildspacePerson   `json:"people"`
+	Mentors            []BuildspaceMentor   `json:"mentors"`
+	Activity           []BuildspaceActivity `json:"activity"`
+	WeekStart          string               `json:"weekStart"`
+	WeekDue            string               `json:"weekDue"`
+	Today              string               `json:"today"`
+	Schedule           BuildspaceSchedule   `json:"schedule"`
+	Cohorts            []LaunchpadCohort    `json:"cohorts"`
+	CohortID           *string              `json:"cohortId"`
+	Accounts           []LaunchpadAccount   `json:"accounts"`
 }
 
 // Project finds a project by ID.
@@ -186,12 +193,48 @@ func (r rowIter) each(fn func(*sql.Rows) error) error {
 // Buildspace reads the whole register: every cohort, project, builder, mentor, account and
 // activity entry. The cohort is small; the API filters by cohort and archive state.
 func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
+	return q.buildspace(ctx, nil, nil)
+}
+
+// BuildspaceForCohort reads activity only for the selected cohort. An empty ID selects
+// the default cohort; all cohort metadata remains available for navigation and mentor loads.
+func (q *Queries) BuildspaceForCohort(ctx context.Context, cohortID string) (Buildspace, error) {
+	return q.buildspace(ctx, &cohortID, nil)
+}
+
+func (q *Queries) LaunchpadPersonArchived(ctx context.Context, id string) (bool, error) {
+	var archived bool
+	err := q.q.QueryRowContext(ctx, `SELECT archived_at IS NOT NULL FROM buildspace_launchpad_people WHERE id=?`, id).Scan(&archived)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return archived, err
+}
+
+const buildspaceActivityCols = `a.id,a.project_id,a.person_id,a.mentor_id,a.kind,a.date,a.body,a.status,a.purchase_id,a.source,a.external_id,a.created_at,p.title,p.status,p.needed_by,a.visibility,a.author_account_id,
+ CASE WHEN acc.id IS NULL THEN NULL ELSE COALESCE((SELECT name FROM buildspace_launchpad_people WHERE id=acc.person_id),(SELECT name FROM contacts WHERE id=acc.contact_id),acc.name) END`
+
+func scanBuildspaceActivity(rows *sql.Rows) (BuildspaceActivity, error) {
+	var a BuildspaceActivity
+	err := rows.Scan(&a.ID, &a.ProjectID, &a.PersonID, &a.MentorID, &a.Kind, &a.Date, &a.Body, &a.Status, &a.PurchaseID, &a.Source, &a.ExternalID, &a.CreatedAt, &a.PurchaseTitle, &a.PurchaseStatus, &a.PurchaseNeededBy, &a.Visibility, &a.AuthorAccountID, &a.AuthorName)
+	return a, err
+}
+
+func activityIDScope(column string, ids []string) (string, []any) {
+	if len(ids) == 0 {
+		return " AND 0", nil
+	}
+	raw, _ := json.Marshal(ids)
+	return ` AND a.` + column + ` IN (SELECT value FROM json_each(?))`, []any{string(raw)}
+}
+
+func (q *Queries) buildspace(ctx context.Context, cohortID *string, page *BuildspaceActivityPage) (Buildspace, error) {
 	b := Buildspace{Projects: []BuildspaceProject{}, People: []BuildspacePerson{}, Mentors: []BuildspaceMentor{}, Activity: []BuildspaceActivity{}, Cohorts: []LaunchpadCohort{}, Accounts: []LaunchpadAccount{}}
 	var err error
 	if b.Cohorts, err = q.LaunchpadCohorts(ctx); err != nil {
 		return b, err
 	}
-	err = iter(q.q.QueryContext(ctx, `SELECT id,name,description,track,stage,links,updated_at,cohort_id,archived_at FROM buildspace_launchpad_projects ORDER BY name`)).each(func(rows *sql.Rows) error {
+	err = iter(q.query(ctx, `SELECT id,name,description,track,stage,links,updated_at,cohort_id,archived_at FROM buildspace_launchpad_projects ORDER BY name`)).each(func(rows *sql.Rows) error {
 		var p BuildspaceProject
 		var links string
 		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Track, &p.Stage, &links, &p.UpdatedAt, &p.CohortID, &p.ArchivedAt); err != nil {
@@ -204,7 +247,7 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 	if err != nil {
 		return b, err
 	}
-	err = iter(q.q.QueryContext(ctx, `SELECT project_id,contact_id FROM buildspace_launchpad_mentors ORDER BY contact_id`)).each(func(rows *sql.Rows) error {
+	err = iter(q.query(ctx, `SELECT project_id,contact_id FROM buildspace_launchpad_mentors ORDER BY contact_id`)).each(func(rows *sql.Rows) error {
 		var p, m string
 		if err := rows.Scan(&p, &m); err != nil {
 			return err
@@ -217,7 +260,7 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 	if err != nil {
 		return b, err
 	}
-	err = iter(q.q.QueryContext(ctx, `SELECT b.id,b.name,b.member_id,b.discord_id,b.project_id,b.joined_on,b.cohort_id,b.archived_at,b.designation,b.pronouns,b.bio,b.email,a.id,a.status
+	err = iter(q.query(ctx, `SELECT b.id,b.name,b.member_id,b.discord_id,b.project_id,b.joined_on,b.cohort_id,b.archived_at,b.designation,b.pronouns,b.bio,b.email,a.id,a.status
  FROM buildspace_launchpad_people b LEFT JOIN buildspace_launchpad_accounts a ON a.person_id=b.id ORDER BY b.name`)).each(func(rows *sql.Rows) error {
 		var p BuildspacePerson
 		if err := rows.Scan(&p.ID, &p.Name, &p.MemberID, &p.DiscordID, &p.ProjectID, &p.JoinedOn, &p.CohortID, &p.ArchivedAt, &p.Designation, &p.Pronouns, &p.Bio, &p.Email, &p.AccountID, &p.AccountStatus); err != nil {
@@ -238,7 +281,7 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 			mentorAccounts[*a.ContactID] = a
 		}
 	}
-	err = iter(q.q.QueryContext(ctx, `SELECT c.id,c.name,c.org,c.topics,c.email,c.type,COALESCE(s.available,1),s.max_projects FROM contacts c
+	err = iter(q.query(ctx, `SELECT c.id,c.name,c.org,c.topics,c.email,c.type,COALESCE(s.available,1),s.max_projects FROM contacts c
  LEFT JOIN buildspace_launchpad_mentor_settings s ON s.contact_id=c.id
  WHERE c.type IN ('mentor','both') OR c.id IN (SELECT contact_id FROM buildspace_launchpad_mentors) ORDER BY c.name`)).each(func(rows *sql.Rows) error {
 		var m BuildspaceMentor
@@ -268,18 +311,124 @@ func (q *Queries) Buildspace(ctx context.Context) (Buildspace, error) {
 			}
 		}
 	}
-	err = iter(q.q.QueryContext(ctx, `SELECT a.id,a.project_id,a.person_id,a.mentor_id,a.kind,a.date,a.body,a.status,a.purchase_id,a.source,a.external_id,a.created_at,p.title,p.status,p.needed_by,a.visibility,a.author_account_id,
- CASE WHEN acc.id IS NULL THEN NULL ELSE COALESCE((SELECT name FROM buildspace_launchpad_people WHERE id=acc.person_id),(SELECT name FROM contacts WHERE id=acc.contact_id),acc.name) END
- FROM buildspace_launchpad_activity a LEFT JOIN purchase_requests p ON p.id=a.purchase_id LEFT JOIN buildspace_launchpad_accounts acc ON acc.id=a.author_account_id
- ORDER BY a.date DESC,a.created_at DESC,a.id`)).each(func(rows *sql.Rows) error {
-		var a BuildspaceActivity
-		if err := rows.Scan(&a.ID, &a.ProjectID, &a.PersonID, &a.MentorID, &a.Kind, &a.Date, &a.Body, &a.Status, &a.PurchaseID, &a.Source, &a.ExternalID, &a.CreatedAt, &a.PurchaseTitle, &a.PurchaseStatus, &a.PurchaseNeededBy, &a.Visibility, &a.AuthorAccountID, &a.AuthorName); err != nil {
-			return err
+	activityWhere := " WHERE 1=1"
+	if page != nil && page.SkipActivity {
+		return b, nil
+	}
+	var activityArgs []any
+	var lastActivityWhere string
+	var lastActivityArgs []any
+	if cohortID != nil {
+		id := *cohortID
+		if id == "" {
+			if cohort := b.DefaultCohort(); cohort != nil {
+				id = cohort.ID
+			}
 		}
-		b.Activity = append(b.Activity, a)
-		return nil
-	})
-	return b, err
+		projectIDs := []string{}
+		for i := range b.Projects {
+			project := &b.Projects[i]
+			if project.CohortID == id && (page == nil || !page.FilterArchived || project.ArchivedAt == nil) {
+				projectIDs = append(projectIDs, project.ID)
+			}
+		}
+		condition, ids := activityIDScope("project_id", projectIDs)
+		activityWhere += condition
+		activityArgs = append(activityArgs, ids...)
+	}
+	if page != nil {
+		weeklyWhere := activityWhere
+		weeklyArgs := append([]any(nil), activityArgs...)
+		scopePage := *page
+		if scopePage.FilterArchived {
+			peopleIDs := []string{}
+			for i := range b.People {
+				if b.People[i].ArchivedAt == nil {
+					peopleIDs = append(peopleIDs, b.People[i].ID)
+				}
+			}
+			condition, ids := activityIDScope("person_id", peopleIDs)
+			condition = ` AND (a.person_id IS NULL OR ` + strings.TrimPrefix(condition, " AND ") + `)`
+			activityWhere += condition
+			activityArgs = append(activityArgs, ids...)
+			weeklyWhere += condition
+			weeklyArgs = append(weeklyArgs, ids...)
+			scopePage.FilterArchived = false
+		}
+		if scopePage.PersonID != "" {
+			person := b.Person(scopePage.PersonID)
+			condition, ids := "", []any(nil)
+			if person != nil {
+				condition, ids = activityIDScope("project_id", []string{person.ProjectID})
+			} else {
+				condition = " AND 0"
+			}
+			activityWhere += condition
+			activityArgs = append(activityArgs, ids...)
+			weeklyWhere += ` AND a.person_id=?`
+			weeklyArgs = append(weeklyArgs, scopePage.PersonID)
+			scopePage.PersonID = ""
+		}
+		if scopePage.MentorID != "" {
+			projectIDs := []string{}
+			for i := range b.Projects {
+				project := &b.Projects[i]
+				if !b.ProjectLive(project) {
+					continue
+				}
+				for _, mentorID := range project.MentorIDs {
+					if mentorID == scopePage.MentorID {
+						projectIDs = append(projectIDs, project.ID)
+						break
+					}
+				}
+			}
+			condition, ids := activityIDScope("project_id", projectIDs)
+			activityWhere += condition
+			activityArgs = append(activityArgs, ids...)
+			weeklyWhere += condition
+			weeklyArgs = append(weeklyArgs, ids...)
+			scopePage.MentorID = ""
+		}
+		activityWhere, activityArgs = activityScope(activityWhere, activityArgs, scopePage)
+		lastActivityWhere = activityWhere
+		lastActivityArgs = append([]any(nil), activityArgs...)
+		b.Activity, b.ActivityNextCursor, b.WeeklyDone, err = q.activityPageWhere(ctx, activityWhere, activityArgs, weeklyWhere, weeklyArgs, scopePage)
+		if err != nil {
+			return b, err
+		}
+	} else {
+		err = iter(q.query(ctx, `SELECT `+buildspaceActivityCols+`
+ FROM buildspace_launchpad_activity a LEFT JOIN purchase_requests p ON p.id=a.purchase_id LEFT JOIN buildspace_launchpad_accounts acc ON acc.id=a.author_account_id
+`+activityWhere+` ORDER BY a.date DESC,a.created_at DESC,a.id`, activityArgs...)).each(func(rows *sql.Rows) error {
+			a, err := scanBuildspaceActivity(rows)
+			if err != nil {
+				return err
+			}
+			b.Activity = append(b.Activity, a)
+			return nil
+		})
+		if err != nil {
+			return b, err
+		}
+	}
+	if page != nil {
+		sort.Slice(b.Activity, func(i, j int) bool {
+			if b.Activity[i].Date != b.Activity[j].Date {
+				return b.Activity[i].Date > b.Activity[j].Date
+			}
+			if b.Activity[i].CreatedAt != b.Activity[j].CreatedAt {
+				return b.Activity[i].CreatedAt > b.Activity[j].CreatedAt
+			}
+			return b.Activity[i].ID < b.Activity[j].ID
+		})
+	}
+	if page == nil || (page.Cursor == "" && b.ActivityNextCursor == nil) {
+		lastActivityFromRows(&b)
+	} else if err := q.lastActivityDates(ctx, lastActivityWhere, lastActivityArgs, *page, &b); err != nil {
+		return b, err
+	}
+	return b, nil
 }
 
 // MarkExpired fills the invite-expired flags against now (milliseconds).
@@ -357,7 +506,7 @@ func (q *Queries) DeleteBuildspacePerson(ctx context.Context, id string) error {
 // MemberIDsByUWEmail returns members whose UW email matches (case-insensitive), sorted.
 func (q *Queries) MemberIDsByUWEmail(ctx context.Context, email string) ([]string, error) {
 	out := []string{}
-	err := iter(q.q.QueryContext(ctx, `SELECT person_id FROM members_mirror WHERE lower(trim(uw_email))=lower(trim(?)) AND trim(?)<>''`, email, email)).each(func(rows *sql.Rows) error {
+	err := iter(q.query(ctx, `SELECT person_id FROM members_mirror WHERE lower(trim(uw_email))=lower(trim(?)) AND trim(?)<>''`, email, email)).each(func(rows *sql.Rows) error {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			return err

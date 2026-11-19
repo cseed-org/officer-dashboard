@@ -2162,7 +2162,10 @@
       "method": "GET",
       "path": "/api/design-requests",
       "minRole": "officer",
-      "queryKeys": [],
+      "queryKeys": [
+        "deliveredCursor",
+        "deliveredOnly"
+      ],
       "fieldKeys": [],
       "multipart": "",
       "response": "json",
@@ -2175,7 +2178,18 @@
       },
       "inputSchema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "deliveredCursor": {
+            "type": "string"
+          },
+          "deliveredOnly": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false"
+            ]
+          }
+        },
         "required": [],
         "additionalProperties": false
       }
@@ -3621,6 +3635,7 @@
       "path": "/api/buildspace-launchpad",
       "minRole": "officer",
       "queryKeys": [
+        "activityCursor",
         "cohort",
         "archived"
       ],
@@ -3637,6 +3652,10 @@
       "inputSchema": {
         "type": "object",
         "properties": {
+          "activityCursor": {
+            "type": "string",
+            "maxLength": 128
+          },
           "cohort": {
             "type": "string",
             "minLength": 1,

@@ -24,6 +24,36 @@ func site() fstest.MapFS {
 	}
 }
 
+func TestBinaryAssetValidators(t *testing.T) {
+	root := site()
+	for _, name := range []string{"fonts/x.woff2", "images/x.png", "favicon.ico", "large.bin"} {
+		root[name] = &fstest.MapFile{Data: []byte(strings.Repeat("binary", 400000))}
+	}
+	assets := prepareAssets(root)
+	h := Handler(root, Options{})
+	for name := range root {
+		if strings.HasSuffix(name, ".html") || strings.HasSuffix(name, ".js") || strings.HasSuffix(name, ".svg") || name == ".env" {
+			continue
+		}
+		a := assets[name]
+		if a.etag == "" || a.body != nil || a.gzip != nil {
+			t.Fatalf("binary cache: %s %+v", name, a)
+		}
+		first := get(h, "GET", "/"+name)
+		etag := first.Header().Get("ETag")
+		if etag == "" {
+			t.Fatalf("%s has no validator", name)
+		}
+		req := httptest.NewRequest("GET", "/"+name, nil)
+		req.Header.Set("If-None-Match", etag)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 304 || rec.Body.Len() != 0 {
+			t.Fatalf("%s: %d", name, rec.Code)
+		}
+	}
+}
+
 func get(h http.Handler, method, path string) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))

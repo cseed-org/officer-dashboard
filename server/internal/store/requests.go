@@ -108,11 +108,11 @@ func (f RequestFilter) where(withStatus bool) (string, []any) {
 		conds = append(conds, "needed_by IS NOT NULL")
 	}
 	if withStatus && f.HasCursor && f.ByDeadline {
-		conds = append(conds, "(needed_by > ? OR (needed_by = ? AND id > ?))")
-		args = append(args, f.CursorDate, f.CursorDate, f.CursorID)
+		conds = append(conds, "(needed_by, id) > (?, ?)")
+		args = append(args, f.CursorDate, f.CursorID)
 	} else if withStatus && f.HasCursor {
-		conds = append(conds, "(created_at < ? OR (created_at = ? AND id < ?))")
-		args = append(args, f.CursorCreatedAt, f.CursorCreatedAt, f.CursorID)
+		conds = append(conds, "(created_at, id) < (?, ?)")
+		args = append(args, f.CursorCreatedAt, f.CursorID)
 	}
 	if len(conds) == 0 {
 		return "", nil
@@ -465,14 +465,19 @@ func (q *Queries) InsertJob(ctx context.Context, j Job) error {
 }
 
 // JobsByStatus lists jobs in a status, oldest first.
-func (q *Queries) JobsByStatus(ctx context.Context, status string) ([]Job, error) {
+func (q *Queries) JobsByStatus(ctx context.Context, status string, excludeRequester ...string) ([]Job, error) {
 	// A queued job is only claimable while its request is approved (a director may have moved
 	// it to "buying" by hand), so the agent's queue leaves the rest out.
-	where := `status = ?`
+	where := ` WHERE status = ?`
 	if status == "queued" {
 		where += ` AND request_id IN (SELECT id FROM purchase_requests WHERE status = 'approved')`
 	}
-	rows, err := q.q.QueryContext(ctx, `SELECT `+jobCols+` FROM fulfillment_jobs WHERE `+where+` ORDER BY created_at, rowid`, status)
+	args := []any{status}
+	if len(excludeRequester) > 0 {
+		where += ` AND request_id IN (SELECT id FROM purchase_requests WHERE requester_id<>?)`
+		args = append(args, excludeRequester[0])
+	}
+	rows, err := q.q.QueryContext(ctx, `SELECT `+jobCols+` FROM fulfillment_jobs`+where+` ORDER BY created_at, rowid`, args...)
 	if err != nil {
 		return nil, err
 	}

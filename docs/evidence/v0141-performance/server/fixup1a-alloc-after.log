@@ -1,0 +1,5 @@
+=== RUN   TestEventSmallPageAllocationBudget
+    readmodel_budget_test.go:40: one-event page with 1,000 historical events: 13237 allocations
+--- PASS: TestEventSmallPageAllocationBudget (0.16s)
+PASS
+ok  	officerdashboard/internal/api	0.163s

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"officerdashboard/internal/luma"
@@ -53,7 +54,7 @@ func scanEvent(s interface{ Scan(...any) error }) (*Event, error) {
 
 // Events lists every event (callers filter and page: there are tens per year).
 func (q *Queries) Events(ctx context.Context) ([]Event, error) {
-	rows, err := q.q.QueryContext(ctx, eventSelect+` ORDER BY e.rowid`)
+	rows, err := q.query(ctx, eventSelect+` ORDER BY e.rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +88,16 @@ func (q *Queries) EventByLumaURL(ctx context.Context, lumaURL string) (*Event, e
 	return e, notFound(err)
 }
 
+// Invalid legacy timestamps retain a NULL sort key, matching the list's parse-and-skip behavior.
+func eventStartMillis(raw string) *int64 {
+	t, err := luma.ParseInstant(raw)
+	if err != nil {
+		return nil
+	}
+	ms := t.UnixMilli()
+	return &ms
+}
+
 // InsertEvent adds an event. An empty Status stores "published" (imports come from Luma).
 func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	if e.Status == "" {
@@ -95,9 +106,9 @@ func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	if e.DesignNeed == "" {
 		e.DesignNeed = "unknown"
 	}
-	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`, starts_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		e.ID, e.LumaID, e.Name, e.StartsAt, e.EndsAt, e.Location, e.URL, e.HostUserID, e.Status, e.Description, e.Capacity, e.HostSubteamID,
-		e.LumaURL, e.NotionURL, e.DesignNeed, int64(e.CreatedAt), int64(e.UpdatedAt))
+		e.LumaURL, e.NotionURL, e.DesignNeed, int64(e.CreatedAt), int64(e.UpdatedAt), eventStartMillis(e.StartsAt))
 	return err
 }
 
@@ -132,6 +143,9 @@ func (q *Queries) UpdateEvent(ctx context.Context, id string, p EventPatch, now 
 	str := func(col string, o Opt[string]) { add(col, o.Set, o.val()) }
 	str("name", p.Name)
 	str("starts_at", p.StartsAt)
+	if p.StartsAt.Set {
+		add("starts_at_ms", true, eventStartMillis(p.StartsAt.V))
+	}
 	str("ends_at", p.EndsAt)
 	str("location", p.Location)
 	str("url", p.URL)
@@ -209,7 +223,7 @@ type Subteam struct {
 
 // Subteams lists subteams by name.
 func (q *Queries) Subteams(ctx context.Context) ([]Subteam, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id, name FROM subteams ORDER BY name`)
+	rows, err := q.query(ctx, `SELECT id, name FROM subteams ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +250,7 @@ type Counts struct {
 // EventCounts computes counts for one event, or for every event when eventID is "".
 // Registered follows Luma's approval states; a reflection is matched when its email
 // belongs to a checked-in guest of the same event.
-func (q *Queries) EventCounts(ctx context.Context, eventID string) (map[string]*Counts, error) {
+func (q *Queries) EventCounts(ctx context.Context, eventID string, onlyIDs ...[]string) (map[string]*Counts, error) {
 	out := map[string]*Counts{}
 	get := func(id string) *Counts {
 		c := out[id]
@@ -249,6 +263,13 @@ func (q *Queries) EventCounts(ctx context.Context, eventID string) (map[string]*
 	where, args := "", []any{}
 	if eventID != "" {
 		where, args = " WHERE event_id = ?", []any{eventID}
+	}
+	if len(onlyIDs) > 0 {
+		if len(onlyIDs[0]) == 0 {
+			return out, nil
+		}
+		raw, _ := json.Marshal(onlyIDs[0])
+		where, args = " WHERE event_id IN (SELECT value FROM json_each(?))", []any{string(raw)}
 	}
 	rows, err := q.q.QueryContext(ctx, `SELECT event_id, approval_status, checked_in_at IS NOT NULL, count(*) FROM event_guests`+where+` GROUP BY event_id, approval_status, checked_in_at IS NOT NULL`, args...)
 	if err != nil {

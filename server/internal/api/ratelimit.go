@@ -91,9 +91,25 @@ func newRateLimiter(perMinute int, now func() time.Time) *rateLimiter {
 // allow takes one token for key; when none is left it reports how long until one is.
 func (l *rateLimiter) allow(key string) (bool, time.Duration) { return l.allowN(key, 1) }
 
+// refund releases a reservation when a parsed batch cannot reserve its remaining
+// messages. Rejected batches retain the existing all-or-none charging behavior.
+func (l *rateLimiter) refund(key string, n int) {
+	if l.perMinute < 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if b := l.buckets[key]; b != nil {
+		b.tokens = min(l.perMinute, b.tokens+float64(n))
+	}
+}
+
 // allowN takes n tokens for key, all or none; when too few are left it reports how long
 // until there are. n is capped at the bucket size so a large request can always go eventually.
 func (l *rateLimiter) allowN(key string, n int) (bool, time.Duration) {
+	if n <= 0 {
+		return true, 0
+	}
 	if l.perMinute < 0 {
 		return true, 0
 	}

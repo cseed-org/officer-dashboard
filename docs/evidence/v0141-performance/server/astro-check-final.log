@@ -1,0 +1,46 @@
+10:00:25 [types] Generated 79ms
+10:00:25 [check] Getting diagnostics for Astro files in C:\Users\Leona\GitHubRepo\officer-dashboard-review\worktrees\v0141-server-perf\web...
+[96msrc/lib/contracts.ts[0m:[93m1381[0m:[93m63[0m - [93mwarning[0m[90m ts(6385): [0m'(params?: string | { pattern?: RegExp | undefined; abort?: boolean | undefined; error?: string | $ZodErrorMap<$ZodIssueInvalidStringFormat> | undefined; message?: string | undefined; } | undefined): ZodString' is deprecated.
+
+[7m1381[0m export const Email = z.string().trim().toLowerCase().max(254).email();
+[7m    [0m [93m                                                              ~~~~~[0m
+[96msrc/lib/contracts.ts[0m:[93m1347[0m:[93m50[0m - [93mwarning[0m[90m ts(6385): [0m'(params?: string | { pattern?: RegExp | undefined; abort?: boolean | undefined; error?: string | $ZodErrorMap<$ZodIssueInvalidStringFormat> | undefined; message?: string | undefined; } | undefined): ZodString' is deprecated.
+
+[7m1347[0m  email: z.string().trim().toLowerCase().max(254).email().nullable().optional(),
+[7m    [0m [93m                                                 ~~~~~[0m
+
+[96msrc/ui/pages/ExternalContactsPage.tsx[0m:[93m794[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'Spoken' is declared but its value is never read.
+
+[7m794[0m function Spoken({ c }: { c: Contact }) {
+[7m   [0m [93m         ~~~~~~[0m
+[96msrc/ui/pages/ExternalContactsPage.tsx[0m:[93m757[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'Reach' is declared but its value is never read.
+
+[7m757[0m function Reach({ c }: { c: Contact }) {
+[7m   [0m [93m         ~~~~~[0m
+[96msrc/ui/pages/ExternalContactsPage.tsx[0m:[93m250[0m:[93m9[0m - [93mwarning[0m[90m ts(6133): [0m'reached' is declared but its value is never read.
+
+[7m250[0m   const reached = (c: Contact) =>
+[7m   [0m [93m        ~~~~~~~[0m
+[96msrc/ui/pages/ExternalContactsPage.tsx[0m:[93m55[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'Support' is declared but its value is never read.
+
+[7m55[0m function Support({ c }: { c: Contact }) {
+[7m  [0m [93m         ~~~~~~~[0m
+
+[96msrc/ui/shell/CommandPalette.tsx[0m:[93m140[0m:[93m28[0m - [93mwarning[0m[90m ts(6385): [0m'keyCode' is deprecated.
+
+[7m140[0m     if (e.isComposing || e.keyCode === 229) return; // IME candidate selection, not a command
+[7m   [0m [93m                           ~~~~~~~[0m
+
+[96mtests/onboarding-intro.spec.ts[0m:[93m556[0m:[93m115[0m - [93mwarning[0m[90m ts(6133): [0m'info' is declared but its value is never read.
+
+[7m556[0m test('a press during a language change melts the greeting from where it is, with no jump (R-3)', async ({ page }, info) => {
+[7m   [0m [93m                                                                                                                  ~~~~[0m
+[96mtests/onboarding-intro.spec.ts[0m:[93m500[0m:[93m63[0m - [93mwarning[0m[90m ts(6133): [0m'info' is declared but its value is never read.
+
+[7m500[0m   test(`frame strips for the PR (${theme})`, async ({ page }, info) => {
+[7m   [0m [93m                                                              ~~~~[0m
+
+Result (224 files):
+- 0 errors
+- 0 warnings
+- 9 hints

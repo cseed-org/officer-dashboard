@@ -1241,8 +1241,12 @@ export const DesignUpcomingEvent = z.object({
 });
 export type DesignUpcomingEvent = z.infer<typeof DesignUpcomingEvent>;
 
-/** GET /api/design-requests: the whole board (club scale, no paging). */
+export const DesignRequestsListQuery = z.object({ deliveredCursor: z.string().optional(), deliveredOnly: z.enum(['true', 'false']).optional() });
+/** GET /api/design-requests: active cards and a page of delivered history. */
 export const DesignRequestsListResponse = z.object({
+  deliveredNextCursor: z.string().nullable(),
+  /** Total delivered requests, including history not loaded into items. */
+  deliveredTotal: z.number().int().nonnegative(),
   items: z.array(DesignRequestItem),
   designers: z.array(UserSummary),
   viewer: z.object({ isDesigner: z.boolean(), canAssign: z.boolean() }),
@@ -1347,7 +1351,7 @@ export const BuildspaceProjectBody = z.object({
  /** Required when creating; a project's cohort never changes. */
  cohortId: Id.optional(),
 });
-export const BuildspaceProject = BuildspaceProjectBody.extend({id: Id, updatedAt: z.number().int(), cohortId: Id, archivedAt: z.number().int().nullable()});
+export const BuildspaceProject = BuildspaceProjectBody.extend({id: Id, updatedAt: z.number().int(), cohortId: Id, archivedAt: z.number().int().nullable(), lastActivityDate: IsoDate.nullable()});
 export type BuildspaceProject = z.infer<typeof BuildspaceProject>;
 export const BuildspacePersonBody = z.object({
  name: z.string().trim().min(1).max(200), memberId: Id.nullable().optional(), discordId: DiscordId.nullable().optional(), projectId: Id, joinedOn: IsoDate,
@@ -1359,6 +1363,8 @@ export const BuildspacePerson = BuildspacePersonBody.extend({
  designation: z.string(), pronouns: z.string(), bio: z.string(), email: z.string().nullable(),
  /** The builder's portal account, when one exists. */
  accountId: Id.nullable(), accountStatus: z.enum(['invited', 'active', 'disabled']).nullable(),
+ /** Latest project-wide or own activity, retained outside the bounded history page. */
+ lastActivityDate: IsoDate.nullable(),
 });
 export type BuildspacePerson = z.infer<typeof BuildspacePerson>;
 export const BuildspaceActivityBody = z.object({
@@ -1437,7 +1443,8 @@ export const LaunchpadAutoAssignPreview = z.object({
 export const LaunchpadAutoAssignBody = z.object({assignments: z.array(LaunchpadAssignment).min(1).max(500)});
 export const LaunchpadAutoAssignResponse = z.object({ok: z.literal(true), assigned: z.number().int()});
 export const LaunchpadOk = z.object({ok: z.literal(true)});
-export const LaunchpadQuery = z.object({cohort: Id.optional(), archived: z.enum(['0', '1']).optional()});
+export const ActivityHistoryQuery = z.object({activityCursor: z.string().max(128).optional()});
+export const LaunchpadQuery = ActivityHistoryQuery.extend({cohort: Id.optional(), archived: z.enum(['0', '1']).optional()});
 
 // Portal (builder / mentor accounts; their own cookie, never an officer session).
 export const PortalInvitePreview = z.object({
@@ -1458,7 +1465,7 @@ export type PortalPerson = z.infer<typeof PortalPerson>;
 export const PortalMentorCard = z.object({id: Id, name: z.string(), org: z.string(), topics: z.array(z.string())});
 export const PortalProject = z.object({
  id: Id, name: z.string(), description: z.string(), track: z.enum(BUILDSPACE_TRACKS), stage: z.enum(BUILDSPACE_STAGES),
- links: z.array(z.string()), archived: z.boolean(),
+ links: z.array(z.string()), archived: z.boolean(), lastActivityDate: IsoDate.nullable(),
 });
 export type PortalProject = z.infer<typeof PortalProject>;
 export const PortalActivity = z.object({
@@ -1470,6 +1477,7 @@ export const PortalActivity = z.object({
 export type PortalActivity = z.infer<typeof PortalActivity>;
 export const PortalWeekStatus = z.enum(['done', 'awaiting', 'past-due', 'not-joined']);
 export const PortalBuilderResponse = z.object({
+ activityNextCursor: z.string().nullable().optional(),
  cohort: z.object({id: Id, name: z.string(), status: z.enum(['active', 'archived']), startsOn: IsoDate, endsOn: IsoDate.nullable()}),
  onboarded: z.boolean(), readOnly: z.boolean(),
  me: PortalPerson.nullable(), email: z.string(),
@@ -1503,6 +1511,7 @@ export const PortalMentorProject = PortalProject.extend({
 });
 export type PortalMentorProject = z.infer<typeof PortalMentorProject>;
 export const PortalMentorResponse = z.object({
+ activityNextCursor: z.string().nullable().optional(),
  mentor: PortalMentorCard, projects: z.array(PortalMentorProject), schedule: BuildspaceSchedule,
 });
 export type PortalMentorResponse = z.infer<typeof PortalMentorResponse>;
@@ -1512,6 +1521,7 @@ export const PortalMentorActivityBody = z.object({
 });
 
 export const BuildspaceResponse = z.object({
+ activityNextCursor: z.string().nullable().optional(),
  projects: z.array(BuildspaceProject), people: z.array(BuildspacePerson),
  mentors: z.array(LaunchpadMentor),
  activity: z.array(BuildspaceActivity), weekStart: IsoDate, weekDue: IsoDate, today: IsoDate, schedule: BuildspaceSchedule,
@@ -1555,12 +1565,12 @@ export const ENDPOINTS = {
  portalInvitePreview: {method: 'GET', path: '/api/portal/invite', auth: 'public', query: PortalInviteQuery, response: PortalInvitePreview},
  portalMe: {method: 'GET', path: '/api/portal/me', auth: 'portal', response: PortalMe},
  portalLogout: {method: 'POST', path: '/api/portal/logout', auth: 'portal', response: LaunchpadOk},
- portalBuilder: {method: 'GET', path: '/api/portal/builder', auth: 'portal:builder', response: PortalBuilderResponse},
+ portalBuilder: {method: 'GET', path: '/api/portal/builder', auth: 'portal:builder', query: ActivityHistoryQuery, response: PortalBuilderResponse},
  portalBuilderOnboarding: {method: 'POST', path: '/api/portal/builder/onboarding', auth: 'portal:builder', body: PortalOnboardingBody, response: LaunchpadOk},
  portalBuilderProfile: {method: 'PATCH', path: '/api/portal/builder/profile', auth: 'portal:builder', body: PortalProfileBody, response: z.object({me: PortalPerson})},
  portalBuilderProject: {method: 'PATCH', path: '/api/portal/builder/project', auth: 'portal:builder', body: PortalProjectPatch, response: z.object({project: PortalProject})},
  portalBuilderActivity: {method: 'POST', path: '/api/portal/builder/activity', auth: 'portal:builder', body: PortalBuilderActivityBody, response: BuildspaceEntryResponse},
- portalMentor: {method: 'GET', path: '/api/portal/mentor', auth: 'portal:mentor', response: PortalMentorResponse},
+ portalMentor: {method: 'GET', path: '/api/portal/mentor', auth: 'portal:mentor', query: ActivityHistoryQuery, response: PortalMentorResponse},
  portalMentorActivity: {method: 'POST', path: '/api/portal/mentor/activity', auth: 'portal:mentor', body: PortalMentorActivityBody, response: BuildspaceEntryResponse},
   membersList: {method:'GET',path:'/api/members',auth:'officer',query:MembersQuery,response:MembersResponse},
   membersExport: {method:'GET',path:'/api/members/export',auth:'director',query:MembersQuery,response:'csv'},
@@ -1607,7 +1617,7 @@ export const ENDPOINTS = {
   googleConnect: { method: 'GET', path: '/api/me/calendar/google/connect', auth: 'officer', response: 'redirect' },
   googleDisconnect: { method: 'DELETE', path: '/api/me/calendar/google', auth: 'officer', response: CalendarSettings },
   googleCallback: { method: 'GET', path: '/auth/google/callback', auth: 'public', response: 'redirect' },
-  designRequestsList: { method: 'GET', path: '/api/design-requests', auth: 'officer', response: DesignRequestsListResponse },
+  designRequestsList: { method: 'GET', path: '/api/design-requests', auth: 'officer', query: DesignRequestsListQuery, response: DesignRequestsListResponse },
   designRequestCreate: { method: 'POST', path: '/api/design-requests', auth: 'officer', body: DesignRequestCreateRequest, response: DesignRequestResponse },
   designRequestDetail: { method: 'GET', path: '/api/design-requests/:id', auth: 'officer', response: DesignRequestResponse },
   designRequestUpdate: { method: 'PATCH', path: '/api/design-requests/:id', auth: 'officer', body: DesignRequestUpdateRequest, response: DesignRequestResponse },

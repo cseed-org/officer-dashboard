@@ -1,0 +1,29 @@
+
+> cseed-officer-dashboard@0.0.1 test:scripts
+> node --test "scripts/*.test.mjs"
+
+✔ without Access credentials no Access headers are sent (72.9688ms)
+✔ with CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET both headers are sent (22.1509ms)
+✔ an Access sign-in redirect is reported, not followed (13.4166ms)
+✔ half a service token is refused before any request (2.0941ms)
+✔ M-033: Windows executable names and actual spawn errors survive diagnostics (6.3733ms)
+✔ M-033: contract checker reports the underlying seed spawn failure (362.7704ms)
+✔ M-149: undeclared fields at every depth fail while declared arbitrary records survive (3.9452ms)
+✔ M-058: parity detects response, request, query, method, path and missing endpoint drift (4.7567ms)
+✔ M-033/R-01: cleanup with open SQLite and running child on success (82.8644ms)
+✔ M-033/R-01: cleanup with open SQLite and running child on error (67.8599ms)
+✔ M-033/R-01: cleanup with open SQLite and running child on SIGINT (65.764ms)
+✔ M-033/R-01: cleanup with open SQLite and running child on SIGTERM (61.795ms)
+✔ M-033/R-01: cleanup with open SQLite and running child on keep (58.1311ms)
+﹣ M-033/R-01: kill fallback waits for a child that ignores SIGTERM (0.3585ms) # Windows terminates the child immediately on SIGTERM
+✔ M-033/R-01: server spawn errors abort work and clean up SQLite (6.1191ms)
+✔ M-013: MCP freshness accepts a CRLF copy of the generated output (236.5507ms)
+✔ M-013: endpoint generation leaves an equivalent CRLF file untouched (3.8865ms)
+ℹ tests 17
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 635.7261
