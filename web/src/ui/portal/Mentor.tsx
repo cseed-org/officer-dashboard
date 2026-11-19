@@ -10,7 +10,7 @@ import type { PortalMe, PortalMentorProject, PortalMentorResponse } from "../../
 import { api } from "../../lib/api/client";
 import { useApi } from "../../lib/api/useApi";
 import { setParams, useSearch } from "../../lib/nav";
-import { plural } from "../../lib/format";
+import { fmtShort, plural } from "../../lib/format";
 import { Drawer } from "../components/Drawer";
 import { Async, Empty, errorMessage, Notice } from "../components/states";
 import { Card, firstName, PortalTimeline, TrackChip, WeekChip } from "./shared";
@@ -105,6 +105,7 @@ function ProjectCard({ p, onOpen }: { p: PortalMentorProject; onOpen: () => void
       ) : (
         <p class="small muted flush">All caught up this week.</p>
       )}
+      {p.lastActivityDate && <p class="small muted flush">Last active: {fmtShort(p.lastActivityDate)}</p>}
       {last && (
         <p class="small muted flush portal-clamp">
           Latest: {last.body}

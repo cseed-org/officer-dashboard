@@ -86,17 +86,33 @@ export default function DesignView({ me }: { me: CurrentUser }) {
   const eventId = search.get('eventId') ?? undefined;
 
   const state = useApi('designRequestsList');
+  const latest = useRef(state);
+  latest.current = state;
   const [historyBusy, setHistoryBusy] = useState(false);
+  const historyRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    historyRequest.current?.abort();
+    historyRequest.current = null;
+  }, []);
   const loadHistory = async () => {
-    if (state.status !== 'ready' || !state.data.deliveredNextCursor || historyBusy) return;
+    const before = latest.current;
+    if (before.status !== 'ready' || !before.data.deliveredNextCursor || historyRequest.current) return;
+    const ctrl = new AbortController();
+    historyRequest.current = ctrl;
     setHistoryBusy(true);
     try {
-      const more = await api('designRequestsList', { query: { deliveredOnly: 'true', deliveredCursor: state.data.deliveredNextCursor } });
-      const byId = new Map(state.data.items.map((i) => [i.id, i]));
+      const more = await api('designRequestsList', { query: { deliveredOnly: 'true', deliveredCursor: before.data.deliveredNextCursor }, signal: ctrl.signal });
+      const current = latest.current;
+      if (ctrl.signal.aborted || current.status !== 'ready') return;
+      const byId = new Map(current.data.items.map((i) => [i.id, i]));
       for (const i of more.items) byId.set(i.id, i);
-      state.set({ ...state.data, items: [...byId.values()], deliveredNextCursor: more.deliveredNextCursor });
-    } catch (error) { setToast({ text: errorMessage(error) }); }
-    finally { setHistoryBusy(false); }
+      state.set({ ...current.data, items: [...byId.values()], deliveredNextCursor: more.deliveredNextCursor });
+    } catch (error) {
+      if (!ctrl.signal.aborted) setToast({ text: errorMessage(error) });
+    } finally {
+      if (historyRequest.current === ctrl) historyRequest.current = null;
+      if (!ctrl.signal.aborted) setHistoryBusy(false);
+    }
   };
   const [title, setTitle] = useState('Design request');
   const [toast, setToast] = useState<Toast | null>(null);
@@ -124,10 +140,8 @@ export default function DesignView({ me }: { me: CurrentUser }) {
 
   const moving = useRef(false);
   const [movePending, setMovePending] = useState(false);
-  // Toast callbacks (Undo) run after later renders: they read the list through this ref, never
+  // Toast callbacks (Undo) and delivered history read the latest list through this ref, never
   // a snapshot from the render that created them.
-  const latest = useRef(state);
-  latest.current = state;
   const move = async (item: DesignRequestItem, to: DesignStage, opts: { undoing?: boolean } = {}) => {
     if (to === 'delivered' && !confirm('Deliver without the requester’s approval? This leadership override will be recorded in the audit log.')) return;
     const state = latest.current;
@@ -265,7 +279,7 @@ export default function DesignView({ me }: { me: CurrentUser }) {
           const shown = d.items.filter((i) => matchesFilter(i, filter, me.id, today) && (!type || i.type === type));
           return (
             <div class="stack design-body">
-              {d.items.length > 0 && view === 'board' && <Pipeline items={d.items} />}
+              {d.items.length > 0 && view === 'board' && <Pipeline items={d.items} deliveredTotal={d.deliveredTotal} />}
               {d.items.length > 0 && view === 'board' && <ThisWeek items={thisWeek(d.items, me.id, today)} onOpen={(id) => setParams({ id })} />}
               <div class="design-toolbar">
                 <a class="btn btn--primary" href={href.newDesignRequest()} onClick={(e) => (e.preventDefault(), setParams({ new: 1, eventId: null }))} data-new-design>
@@ -395,8 +409,8 @@ export default function DesignView({ me }: { me: CurrentUser }) {
 }
 
 /** How the work splits across the four lanes, sized by count. */
-function Pipeline({ items }: { items: DesignRequestItem[] }) {
-  const n = (k: DesignLane) => items.filter((i) => laneOf(i.stage) === k).length;
+function Pipeline({ items, deliveredTotal }: { items: DesignRequestItem[]; deliveredTotal: number }) {
+  const n = (k: DesignLane) => k === 'done' ? deliveredTotal : items.filter((i) => laneOf(i.stage) === k).length;
   const label = DESIGN_LANES.map((k) => `${LANE_LABEL[k]} ${n(k)}`).join(', ');
   return (
     <div class="pipeline" role="img" aria-label={`Pipeline: ${label}`} data-pipeline>
@@ -604,7 +618,7 @@ function Board({
     return el && root.current?.contains(el) ? (el.dataset.lane as DesignLane) : null;
   };
 
-  const count = (l: DesignLane) => all.filter((i) => laneOf(i.stage) === l).length;
+  const count = (l: DesignLane) => l === 'done' ? data.deliveredTotal : all.filter((i) => laneOf(i.stage) === l).length;
   // While dragging: allowed lanes are outlined, refused lanes fade; the card's own lane stays as it is.
   const laneClass = (l: DesignLane) => {
     const from = dragged.current && laneOf(dragged.current.stage);
@@ -791,8 +805,8 @@ function Board({
                   {LANE_LABEL[l]}
                 </h3>
                 <span class="lane-count">
-                  {items.length}
-                  <span class="visually-hidden"> {items.length === 1 ? 'request' : 'requests'}</span>
+                  {count(l)}
+                  <span class="visually-hidden"> {count(l) === 1 ? 'request' : 'requests'}</span>
                 </span>
                 {l === 'done' && party > 0 && <Confetti />}
               </header>

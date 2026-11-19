@@ -1237,6 +1237,8 @@ export const DesignRequestsListQuery = z.object({ deliveredCursor: z.string().op
 /** GET /api/design-requests: active cards and a page of delivered history. */
 export const DesignRequestsListResponse = z.object({
   deliveredNextCursor: z.string().nullable(),
+  /** Total delivered requests, including history not loaded into items. */
+  deliveredTotal: z.number().int().nonnegative(),
   items: z.array(DesignRequestItem),
   designers: z.array(UserSummary),
   viewer: z.object({ isDesigner: z.boolean(), canAssign: z.boolean() }),
@@ -1340,7 +1342,7 @@ export const BuildspaceProjectBody = z.object({
  /** Required when creating; a project's cohort never changes. */
  cohortId: Id.optional(),
 });
-export const BuildspaceProject = BuildspaceProjectBody.extend({id: Id, updatedAt: z.number().int(), cohortId: Id, archivedAt: z.number().int().nullable()});
+export const BuildspaceProject = BuildspaceProjectBody.extend({id: Id, updatedAt: z.number().int(), cohortId: Id, archivedAt: z.number().int().nullable(), lastActivityDate: IsoDate.nullable()});
 export type BuildspaceProject = z.infer<typeof BuildspaceProject>;
 export const BuildspacePersonBody = z.object({
  name: z.string().trim().min(1).max(200), memberId: Id.nullable().optional(), discordId: DiscordId.nullable().optional(), projectId: Id, joinedOn: IsoDate,
@@ -1352,6 +1354,8 @@ export const BuildspacePerson = BuildspacePersonBody.extend({
  designation: z.string(), pronouns: z.string(), bio: z.string(), email: z.string().nullable(),
  /** The builder's portal account, when one exists. */
  accountId: Id.nullable(), accountStatus: z.enum(['invited', 'active', 'disabled']).nullable(),
+ /** Latest project-wide or own activity, retained outside the bounded history page. */
+ lastActivityDate: IsoDate.nullable(),
 });
 export type BuildspacePerson = z.infer<typeof BuildspacePerson>;
 export const BuildspaceActivityBody = z.object({
@@ -1452,7 +1456,7 @@ export type PortalPerson = z.infer<typeof PortalPerson>;
 export const PortalMentorCard = z.object({id: Id, name: z.string(), org: z.string(), topics: z.array(z.string())});
 export const PortalProject = z.object({
  id: Id, name: z.string(), description: z.string(), track: z.enum(BUILDSPACE_TRACKS), stage: z.enum(BUILDSPACE_STAGES),
- links: z.array(z.string()), archived: z.boolean(),
+ links: z.array(z.string()), archived: z.boolean(), lastActivityDate: IsoDate.nullable(),
 });
 export type PortalProject = z.infer<typeof PortalProject>;
 export const PortalActivity = z.object({

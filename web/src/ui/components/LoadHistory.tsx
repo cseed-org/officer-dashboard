@@ -18,8 +18,12 @@ export function LoadHistory({ load }: { load: (signal: AbortSignal) => Promise<v
   </div>;
 }
 
-export function mergeActivity<T extends { id: string }>(old: T[], more: T[]): T[] {
+export function mergeActivity<T extends { id: string; date: string; createdAt: number }>(old: T[], more: T[]): T[] {
   const byId = new Map(old.map((a) => [a.id, a]));
   for (const a of more) byId.set(a.id, a);
-  return [...byId.values()];
+  return [...byId.values()].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
 }

@@ -61,8 +61,12 @@ export function checkIn(p: Person, b: BuildspaceData) {
     : { label: `Awaiting check-in · due ${due}`, hue: "amber" as Hue, missed: true };
 }
 
-const lastActivity = (b: BuildspaceData, projectId: string, personId?: string) =>
-  projectActivities(projectId, b, personId).reduce<string | null>((m, a) => (!m || a.date > m ? a.date : m), null);
+const lastActivity = (b: BuildspaceData, projectId: string, personId?: string) => {
+  const retained = personId
+    ? b.people.find((p) => p.id === personId)?.lastActivityDate
+    : projectById(projectId, b)?.lastActivityDate;
+  return retained ?? projectActivities(projectId, b, personId).reduce<string | null>((m, a) => (!m || a.date > m ? a.date : m), null);
+};
 
 const openCount = (b: BuildspaceData, projectId: string, personId?: string) =>
   projectActivities(projectId, b, personId).filter(openActivity).length;
