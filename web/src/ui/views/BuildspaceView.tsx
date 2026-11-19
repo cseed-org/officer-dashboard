@@ -64,7 +64,7 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
             canManage={canDirector}
             changed={(message, select) => {
               setNotice(message);
-              if (select !== undefined) setParams({ cohort: select, person: null, project: null });
+              if (select !== undefined && select !== (params.get("cohort") || null)) setParams({ cohort: select, person: null, project: null });
               else state.reload();
             }}
           />
@@ -100,6 +100,7 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
             </Empty>
           ) : (
             <BuildspaceContent
+              key={b.cohortId}
               b={b}
               reload={state.reload}
               notice={notice}
@@ -303,7 +304,7 @@ function BuildspaceContent({
     );
   };
   const card = (p: BuildspaceProject, scope = "") => (
-    <ProjectCard key={p.id} p={p} b={b} scope={scope} onPerson={personDrawer.open} />
+    <ProjectCard readOnly={readOnly} key={p.id} p={p} b={b} scope={scope} onPerson={personDrawer.open} />
   );
   const groups =
     group === "mentor"
@@ -552,7 +553,7 @@ function BuildspaceContent({
                       ? ps.map((p) => card(p, g.id + ":"))
                       : tab === "people"
                         ? pe.map((p) => (
-                            <PersonCard key={p.id} p={p} b={b} scope={g.id + ":"} onPerson={personDrawer.open} />
+                            <PersonCard readOnly={readOnly} key={p.id} p={p} b={b} scope={g.id + ":"} onPerson={personDrawer.open} />
                           ))
                         : ms.map((m) => (
                             <MentorCard key={m.id} m={m} b={b} scope={g.id + ":"} projects={ps.filter((p) => p.mentorIds.includes(m.id))} />
@@ -811,9 +812,9 @@ function BuildspaceContent({
         eyebrow="Buildspace + Launchpad"
       >
         {form === "project" ? (
-          <ProjectForm b={b} project={editingProject} saved={saved} />
+          <ProjectForm key={editingProject?.id ?? "new-project"} readOnly={readOnly} b={b} project={editingProject} saved={saved} />
         ) : form === "person" ? (
-          <PersonForm b={b} person={editingPerson} saved={saved} />
+          <PersonForm key={editingPerson?.id ?? "new-person"} readOnly={readOnly} b={b} person={editingPerson} saved={saved} />
         ) : detailProject && !qs.get("person") ? (
           <BuildspaceDetail
             key={detailProject.id}

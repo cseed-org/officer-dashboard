@@ -37,6 +37,7 @@ export function RequestSummary({ r }: { r: PurchaseRequestDetail }) {
 export default function RequestDetail({
   id,
   meId,
+  director = false,
   flash = {},
   onTitle,
   onChanged,
@@ -44,6 +45,7 @@ export default function RequestDetail({
 }: {
   id: string;
   meId: string;
+  director?: boolean;
   flash?: Flash;
   onTitle?: (title: string) => void;
   onChanged?: () => void;
@@ -156,7 +158,7 @@ export default function RequestDetail({
           </div>
         </Section>
 
-        <Attachments r={r} onUploaded={(next) => state.set({ request: next })} />
+        <Attachments r={r} authorized={director || meId === r.requester.id} onUploaded={(added) => state.set((current) => ({ request: { ...current.request, attachments: [...current.request.attachments, ...added.filter((a) => !current.request.attachments.some((old) => old.id === a.id))] } }))} />
 
         <Section title="timeline" id="timeline">
           <Timeline r={r} />
@@ -479,7 +481,7 @@ function Actions({
                   () =>
                     api('requestTransition', {
                       params: { id: r.id },
-                      body: { to: settleTo, actualTotalCents: cents, attachmentIds: r.attachments.map((a) => a.id), orderReference: orderRef.trim() || undefined },
+                      body: { to: settleTo, actualTotalCents: cents, attachmentIds: r.attachments.filter((a) => a.kind === 'receipt').slice(-20).map((a) => a.id), orderReference: orderRef.trim() || undefined },
                     }),
                   settleTo === 'reimbursed'
                     ? `Payout of ${formatCents(cents)} to ${r.requester.name} approved and posted to the ledger; it is awaiting payment.`
@@ -576,13 +578,15 @@ function Actions({
   );
 }
 
-function Attachments({ r, onUploaded }: { r: PurchaseRequestDetail; onUploaded: (r: PurchaseRequestDetail) => void }) {
+function Attachments({ r, authorized, onUploaded }: { r: PurchaseRequestDetail; authorized: boolean; onUploaded: (added: PurchaseRequestDetail['attachments']) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const canUpload = !['denied', 'closed', 'cancelled'].includes(r.status);
+  const uploading = useRef(false);
+  const canUpload = authorized && !['denied', 'closed', 'cancelled'].includes(r.status);
 
   const upload = async (list: FileList | null) => {
-    if (!list?.length) return;
+    if (!list?.length || uploading.current || !canUpload) return;
+    uploading.current = true;
     setError(null);
     const added = [];
     const problems: string[] = [];
@@ -612,7 +616,8 @@ function Attachments({ r, onUploaded }: { r: PurchaseRequestDetail; onUploaded: 
     }
     setBusy(null);
     if (problems.length) setError(problems.join('. '));
-    if (added.length) onUploaded({ ...r, attachments: [...r.attachments, ...added] });
+    if (added.length) onUploaded(added);
+    uploading.current = false;
   };
 
   return (

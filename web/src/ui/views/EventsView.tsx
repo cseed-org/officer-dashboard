@@ -1,5 +1,6 @@
 import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useState } from 'preact/hooks';
+import { api } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import { addDays, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, weekLabel, whenShort } from '../../lib/calendar';
 import type { EventListItem } from '../../lib/contracts';
@@ -97,7 +98,7 @@ function listColumns(now: number): Column<EventListItem>[] {
 function healthEvent(items: EventListItem[], now: number) {
   return items
     .filter((e) => new Date(e.startsAt).getTime() < now && e.metrics.registered > 0)
-    .sort((a, b) => b.startsAt.localeCompare(a.startsAt))[0];
+    .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))[0];
 }
 
 function EventHealth({ e }: { e: EventListItem }) {
@@ -160,8 +161,25 @@ export default function EventsView() {
   const query = { when: 'all' as const, q: view === 'list' ? debounced || undefined : undefined, limit: 200, ...range };
   // Every event (counts, event health); the unfiltered list view reuses it instead of asking twice.
   const all = useApi('eventsList', { query: { when: 'all', limit: 200 } });
+  const [summary, setSummary] = useState<{ first: unknown; items: EventListItem[]; error?: unknown } | null>(null);
+  const [summaryTick, setSummaryTick] = useState(0);
+  const first = all.status === 'ready' ? all.data : null;
+  useEffect(() => {
+    if (!first) return;
+    const ctrl = new AbortController();
+    void (async () => {
+      const items = [...first.items];
+      let cursor = first.nextCursor;
+      while (cursor) {
+        const next = await api('eventsList', { query: { when: 'all', limit: 200, cursor }, signal: ctrl.signal });
+        items.push(...next.items); cursor = next.nextCursor;
+      }
+      if (!ctrl.signal.aborted) setSummary({ first, items });
+    })().catch((error) => { if (!ctrl.signal.aborted) setSummary({ first, items: [], error }); });
+    return () => ctrl.abort();
+  }, [first, summaryTick]);
   const filtered = view !== 'list' || !!debounced;
-  const narrow = useApi('eventsList', { query: filtered ? query : { when: 'all', limit: 1 } }, filtered ? query : 'idle');
+  const narrow = useApi('eventsList', { query }, query, filtered);
   const state = filtered ? narrow : all;
   const reload = () => {
     all.reload();
@@ -189,15 +207,16 @@ export default function EventsView() {
                 ? plural(ready!.items.length, 'matching event')
                 : `${plural(ready!.items.length, 'event')} · ${upcoming} upcoming`;
 
-  const items = all.status === 'ready' ? all.data.items : [];
-  const stats = all.status === 'ready' && {
+  const summaryReady = !!first && summary?.first === first && !summary.error;
+  const items = summaryReady ? summary!.items : [];
+  const stats = summaryReady && {
     upcoming: items.filter((e) => live(e) && new Date(e.startsAt).getTime() >= now).length,
     thisMonth: items.filter((e) => live(e) && monthOf(pacificParts(e.startsAt).date) === monthOf(today)).length,
     attendees: items.reduce((n, e) => n + e.metrics.checkedIn, 0),
     drafts: items.filter((e) => e.status === 'draft').length,
   };
-  const loadingStats = all.status === 'loading';
-  const health = all.status === 'ready' ? healthEvent(all.data.items, now) : undefined;
+  const loadingStats = all.status === 'loading' || !summaryReady;
+  const health = all.status === 'ready' ? healthEvent(items, now) : undefined;
   const closeAll = () => setParams({ ...PANELS });
   /** After a delete: wait until every dialog has closed (each returns focus to its opener), then focus the heading. */
   const focusPeriod = () => {
@@ -211,7 +230,7 @@ export default function EventsView() {
 
   return (
     <div class="stack events-page">
-      {all.status !== 'error' && (
+      {summary?.first === first && summary?.error != null ? <ErrorState error={summary.error} onRetry={() => setSummaryTick((n) => n + 1)} /> : all.status !== 'error' && (
         <StatRow
           label="Events summary"
           tiles={[

@@ -1,20 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError } from '../../lib/api/client';
-import type { CurrentUser, SearchResult } from '../../lib/contracts';
+import type { SearchResult } from '../../lib/contracts';
 import { fmtDate, formatCents, STATUS_LABEL } from '../../lib/format';
 import { navigate } from '../../lib/nav';
 import { href } from '../../lib/routes';
 import { sanitizeResults } from '../../lib/search';
-import { loadMe } from '../../lib/session';
+import { useMe } from '../../lib/session';
 import { Icon } from '../components/Icon';
 
 type Kind = SearchResult['kind'] | 'page';
 type Item = { kind: Kind; id: string; title: string; subtitle: string; href: string };
 
 const GROUP_LABEL: Record<Kind, string> = { page: 'go to', request: 'requests', event: 'events', user: 'people', account: 'accounts', contact: 'External Contacts' };
-const GROUP_ORDER: Kind[] = ['request', 'event', 'user', 'account', 'contact', 'page'];
+const GROUP_ORDER: Kind[] = ['page', 'request', 'event', 'user', 'account', 'contact'];
 
 const pages = (director: boolean): Item[] => [
+  { kind: 'page', id: 'design', title: 'Design', subtitle: 'creative requests', href: '/design' },
+  { kind: 'page', id: 'officers', title: 'Board Members', subtitle: 'board, officers, directory', href: '/officers' },
+  { kind: 'page', id: 'members', title: 'Members', subtitle: 'member directory', href: '/members' },
   { kind: 'page', id: 'new-request', title: 'New purchase request', subtitle: 'finance', href: href.newRequest() },
   { kind: 'page', id: 'home', title: 'Home', subtitle: 'overview', href: href.home },
   { kind: 'page', id: 'buildspace', title: 'Buildspace + Launchpad', subtitle: 'builders, projects and mentors', href: '/buildspace-launchpad' },
@@ -56,10 +59,11 @@ export default function CommandPalette() {
   const [results, setResults] = useState<Item[]>([]);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [active, setActive] = useState(0);
-  const [me, setMe] = useState<CurrentUser | null>(null);
+  const session = useMe();
+  const me = session.status === 'ready' ? session.user : null;
+  const epoch = session.status === 'ready' ? session.epoch : -1;
 
   useEffect(() => {
-    loadMe().then(setMe, () => {});
     const show = () => {
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setOpen(true);
@@ -106,6 +110,7 @@ export default function CommandPalette() {
       return;
     }
     const ctrl = new AbortController();
+    setResults([]);
     setStatus('loading');
     const t = setTimeout(() => {
       searchApi(term, ctrl.signal).then(
@@ -121,11 +126,11 @@ export default function CommandPalette() {
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [q, open]);
+  }, [q, open, epoch]);
 
   const items = useMemo(() => {
     const term = q.trim().toLowerCase();
-    const pageHits = pages(!!me && me.role !== 'officer').filter((p) => !term || p.title.toLowerCase().includes(term) || p.subtitle.includes(term));
+    const pageHits = pages(!!me && me.role !== 'officer').filter((p) => !term || p.title.toLowerCase().includes(term) || p.subtitle.includes(term)).sort((a, b) => Number(b.title.toLowerCase() === term) - Number(a.title.toLowerCase() === term));
     const all = [...results, ...pageHits];
     return GROUP_ORDER.flatMap((k) => all.filter((i) => i.kind === k));
   }, [results, q, me]);
@@ -167,7 +172,7 @@ export default function CommandPalette() {
       onClose={() => {
         setOpen(false);
         setQ('');
-        document.documentElement.classList.remove('has-modal');
+        if (!document.querySelector('dialog[open]')) document.documentElement.classList.remove('has-modal');
         if (opener.current?.isConnected) opener.current.focus();
       }}
       onClick={(e) => {

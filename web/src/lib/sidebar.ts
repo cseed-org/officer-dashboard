@@ -75,31 +75,37 @@ export function syncSidebarFromServer(w: number) {
     store.set(SIDEBAR_SEEN_KEY, '1');
     return;
   }
-  if (busy || timer) return;
+  if (busy || timer || inFlight || pending !== null) return;
   if (w !== (Number(store.get(SIDEBAR_KEY)) || 0)) applySidebarWidth(w);
 }
 export const setResizing = (on: boolean) => { busy = on; document.documentElement.classList.toggle('is-resizing', on); };
 
 let pending: number | null = null;
 let flushOnLeave = false;
+let inFlight = false;
+let leaving = false;
+let saveLatest: ((w: number) => Promise<unknown>) | null = null;
+async function drainSaves() {
+  if (inFlight || pending === null || !saveLatest) return;
+  const w = pending;
+  pending = null;
+  inFlight = true;
+  try {
+    if (leaving) await fetch('/api/me/prefs', { method: 'PUT', credentials: 'same-origin', keepalive: true, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sidebarWidth: w }) });
+    else await saveLatest(w);
+  } catch { /* the local width still applies */ }
+  finally { inFlight = false; if (!timer) void drainSaves(); }
+}
 /**
  * Leaving the page inside the debounce window (resize, then click a nav link at once) would drop
  * the save, and the next page's SIDEBARWAIT would then restore the old server width. Send the
  * pending width with keepalive so it outlives this document.
  */
 function flushPendingSave() {
-  if (!timer || pending === null) return;
+  leaving = true;
   clearTimeout(timer);
   timer = 0;
-  const w = pending;
-  pending = null;
-  fetch('/api/me/prefs', {
-    method: 'PUT',
-    credentials: 'same-origin',
-    keepalive: true,
-    headers: { accept: 'application/json', 'content-type': 'application/json' },
-    body: JSON.stringify({ sidebarWidth: w }),
-  }).catch(() => {});
+  void drainSaves();
 }
 
 /** Save after the user stops adjusting. Failures keep the local width for this device. */
@@ -109,11 +115,11 @@ export function saveSidebarWidth(w: number, save: (w: number) => Promise<unknown
     window.addEventListener('pagehide', flushPendingSave);
   }
   clearTimeout(timer);
+  saveLatest = save;
   pending = w;
   timer = window.setTimeout(() => {
     timer = 0;
-    pending = null;
-    save(w).catch(() => {});
+    void drainSaves();
   }, 400);
 }
 

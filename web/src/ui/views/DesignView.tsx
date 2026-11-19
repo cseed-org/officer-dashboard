@@ -338,7 +338,7 @@ export default function DesignView({ me }: { me: CurrentUser }) {
       </p>
 
       <Drawer id="design-new" open={creating} onClose={() => creating && setParams({ new: null, eventId: null })} title="New design request" size="lg">
-        {creating && <DesignRequestForm eventId={eventId} onDone={onCreated} onCancel={() => setParams({ new: null, eventId: null })} />}
+        {creating && <DesignRequestForm userId={me.id} eventId={eventId} onDone={onCreated} onCancel={() => setParams({ new: null, eventId: null })} />}
       </Drawer>
 
       <Drawer id="design-detail" open={!!openId && !creating} onClose={() => openId && setParams({ id: null })} title={title} eyebrow="Design request" size="lg">

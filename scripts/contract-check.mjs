@@ -18,7 +18,7 @@
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { droppedKeys, executableName, spawnFailure } from './contract-helpers.mjs';
@@ -42,10 +42,19 @@ async function check(resources, signal) {
 // ───────────── schemas ─────────────
 // contracts.ts has extensionless relative imports, so bundle it (zod included) for node.
 const bundle = join(work, 'contracts.mjs');
-await build({ entryPoints: [join(root, 'src/core/contracts.ts')], bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'error' });
+await build({ stdin: { contents: "export * from './src/core/contracts.ts'; export { ApiError as BrowserApiError } from './web/src/lib/contracts.ts';", resolveDir: root, loader: 'ts' }, bundle: true, format: 'esm', platform: 'node', outfile: bundle, logLevel: 'error' });
 signal.throwIfAborted();
-const { ENDPOINTS, ApiError } = await import(pathToFileURL(bundle).href);
+const { ENDPOINTS, ApiError, BrowserApiError } = await import(pathToFileURL(bundle).href);
 const browserEndpoints = await checkContractParity(root);
+// M-012: every code the server emits must fit both published ApiError schemas.
+for (const name of readdirSync(join(root, 'server/internal/api')).filter((n) => n.endsWith('.go') && !n.endsWith('_test.go'))) {
+  const source = readFileSync(join(root, 'server/internal/api', name), 'utf8');
+  for (const match of source.matchAll(/fail\([^,\n]+,\s*"([a-z_]+)"/g)) {
+    const payload = { error: { code: match[1], message: 'Server failure' } };
+    if (!ApiError.safeParse(payload).success || !BrowserApiError.safeParse(payload).success) throw new Error(`Undocumented ApiError code ${match[1]} in ${name}`);
+  }
+}
+
 signal.throwIfAborted();
 const registryBundle = join(work, 'widget-registry.mjs');
 await build({ entryPoints: [join(root, 'web/src/ui/widgets/defaultLayout.ts')], bundle: true, format: 'esm', platform: 'node', outfile: registryBundle, logLevel: 'error' });
@@ -157,6 +166,8 @@ async function call(name, { who = anon, params = {}, query, body, form, expect =
     verdict = `status ${res.status}`;
     fail(label, `expected ${expect}, got ${res.status}`, json ?? raw?.toString().slice(0, 200));
   } else if (expect >= 400) {
+    const browserError = BrowserApiError.safeParse(json);
+    if (!browserError.success) fail(label, 'error body violates browser ApiError', browserError.error.issues);
     const r = ApiError.safeParse(json);
     if (!r.success) {
       verdict = 'bad ApiError';
@@ -293,6 +304,8 @@ const approved = await call('requestApprove', { who: directorB, params: { id }, 
 must(approved.json.request.status === 'approved', 'a second director approves');
 const committed = (await call('financeSummary', { who: officer })).json.totals.committedCents;
 await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilling' } });
+const overCeiling = await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilled', actualTotalCents: 30000, attachmentIds: [attachmentId] }, expect: 409 });
+must(overCeiling.json.error?.code === 'over_tolerance', 'M-012: settlement ceiling uses the published error vocabulary');
 const settled = await call('requestTransition', { who: directorB, params: { id }, body: { to: 'fulfilled', actualTotalCents: 9500, attachmentIds: [attachmentId], orderReference: 'ORD-1', comment: '5% discount' } });
 must(settled.json.request.actualTotalCents === 9500 && settled.json.request.journalEntryIds.length === 1, 'settled at the actual 95.00 with one journal entry');
 const afterSettle = (await call('financeSummary', { who: officer })).json.totals.committedCents;
@@ -666,6 +679,10 @@ must(lpDash.json.project?.id === 'bs-moss' && lpDash.json.activity.every(a => a.
 await call('portalBuilderProfile', {who: lpBuilder, body: {name: 'Alex Kim', pronouns: 'they/them', designation: 'Founder', bio: 'Calmer study tools.'}});
 await call('portalBuilderProject', {who: lpBuilder, body: {name: 'Moss', description: lpDash.json.project.description, track: 'Software', stage: 'Building', links: lpDash.json.project.links}});
 await call('portalBuilderActivity', {who: lpBuilder, body: {kind: 'weekly', date: today, body: 'Contract check-in', status: 'on-track'}});
+db.prepare("UPDATE buildspace_launchpad_people SET archived_at=? WHERE id=?").run(Date.now(), lpDash.json.me.id);
+const archivedWrite = await call('portalBuilderActivity', {who: lpBuilder, body: {kind: 'weekly', date: today, body: 'Archived write', status: 'on-track'}, expect: 403});
+must(archivedWrite.json.error?.code === 'archived', 'M-012: archived portal writes use the published error vocabulary');
+db.prepare("UPDATE buildspace_launchpad_people SET archived_at=NULL WHERE id=?").run(lpDash.json.me.id);
 await call('portalBuilderOnboarding', {who: lpBuilder, body: {name: 'A', pronouns: '', designation: '', bio: '', project: {mode: 'join', projectId: 'bs-moss'}}, expect: 409});
 await call('portalMentor', {who: lpBuilder, expect: 403});
 const lpMentorDash = await call('portalMentor', {who: lpMentor});
@@ -697,6 +714,12 @@ for (const w of [1, 63, 321, -1, 100.5, '200']) must(!widthBody.safeParse({sideb
 const widthPut = await call('prefsPut', {who: officer, body: {sidebarWidth: 240}});
 must(widthPut.json.sidebarWidth === 240, 'sidebarWidth saves');
 await call('prefsPut', {who: officer, body: {sidebarWidth: 0}});
+
+// M-012: exercise the real upload limiter (loopback plus a forwarded hop is not exempt).
+for (let i = 0; i < 31; i++) {
+  const limited = await call('requestAttach', {who: directorA, params: {id: 'missing-rate-limit'}, form: upload(), headers: {'x-forwarded-for': '192.0.2.200'}, expect: i < 30 ? 404 : 429});
+  if (i === 30) must(limited.json.error.code === 'rate_limited', 'upload limiter uses published ApiError');
+}
 
 // Everything with a zod response schema must have been exercised.
 const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback']); // redirects, and dev-build-only routes: covered by the Go tests

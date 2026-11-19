@@ -1,5 +1,5 @@
 import type { ComponentChildren } from 'preact';
-import { useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { LookupsResponse } from '../../lib/contracts';
 import {
   ATTACHMENT_MAX_BYTES,
@@ -125,6 +125,8 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const saving = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const summaryRef = useRef<HTMLDivElement>(null);
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }));
 
@@ -202,7 +204,7 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
           }
         }
       }
-      onCreated(request.id, { created: submit ? 'submitted' : 'draft', uploadFailed: failed, storageOff });
+      if (alive.current) onCreated(request.id, { created: submit ? 'submitted' : 'draft', uploadFailed: failed, storageOff });
     } catch (err) {
       const fe = apiFieldErrors(err);
       const friendly = Object.fromEntries(Object.keys(fe).map((k) => [k, FRIENDLY[k] ?? fe[k]!]));

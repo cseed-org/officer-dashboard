@@ -56,7 +56,12 @@ export function Drawer({
     }
   }, [open, id]);
 
-  useEffect(() => () => document.documentElement.classList.remove('has-modal'), []);
+  useEffect(() => {
+    const own = ref.current;
+    return () => {
+      document.documentElement.classList.toggle('has-modal', Array.from(document.querySelectorAll('dialog[open]')).some((d) => d !== own));
+    };
+  }, []);
 
   return (
     <dialog

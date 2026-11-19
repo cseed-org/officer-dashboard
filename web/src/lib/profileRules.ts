@@ -3,6 +3,8 @@
  * server/internal/api/officers.go), so the form refuses exactly what the server would.
  */
 
+export const isEmail = (s: string) => /^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/.test(s);
+
 /** Server length limits per field. */
 export const PROFILE_MAX = { phone: 32, preferredName: 60, pronouns: 40, personalEmail: 254, schoolEmail: 254, title: 100, team: 60, linkedin: 300 } as const;
 

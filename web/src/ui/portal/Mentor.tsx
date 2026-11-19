@@ -1,3 +1,4 @@
+import { safeUrl } from "../../lib/url";
 /**
  * The mentor portal: cards for the projects this mentor is assigned to (with the signals that
  * need a look), a project detail with its builders, co-mentors and timeline, and "Add note".
@@ -113,9 +114,9 @@ function ProjectDetail({ p, today, schedule, added }: { p: PortalMentorProject; 
         <p class="flush portal-pre">{p.description || <span class="muted">No description yet.</span>}</p>
         {p.links.length > 0 && (
           <ul class="portal-links" role="list">
-            {p.links.map((l) => (
+            {p.links.filter((l) => safeUrl(l)).map((l) => (
               <li key={l}>
-                <a href={l} target="_blank" rel="noreferrer noopener">
+                <a href={safeUrl(l)!} target="_blank" rel="noreferrer noopener">
                   {l.replace(/^https?:\/\//, "")}
                 </a>
               </li>

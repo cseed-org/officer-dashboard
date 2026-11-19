@@ -12,11 +12,14 @@ export function ProjectForm({
   b,
   project,
   saved,
+  readOnly = false,
 }: {
   b: BuildspaceData;
   project?: BuildspaceProject;
   saved: () => void;
+  readOnly?: boolean;
 }) {
+  const newId = useRef(project?.id || crypto.randomUUID()).current;
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [track, setTrack] = useState(project?.track || "Software");
@@ -26,12 +29,13 @@ export function ProjectForm({
       class="bs-form motion-list"
       onSubmit={async (e) => {
         e.preventDefault();
+        if (busy || readOnly) return;
         const f = new FormData(e.currentTarget);
         setBusy(true);
         setError("");
         try {
           await api("buildspaceProjectSave", {
-            params: { id: project?.id || crypto.randomUUID() },
+            params: { id: newId },
             body: {
               name: String(f.get("name")),
               description: String(f.get("description")),
@@ -135,7 +139,7 @@ export function ProjectForm({
         />
       </label>
       {error && <Notice tone="negative">{error}</Notice>}
-      <button class="btn btn--primary" disabled={busy}>
+      <button class="btn btn--primary" disabled={busy || readOnly}>
         {busy ? "Saving…" : "Save project"}
       </button>
     </form>
@@ -145,11 +149,14 @@ export function PersonForm({
   b,
   person,
   saved,
+  readOnly = false,
 }: {
   b: BuildspaceData;
   person?: BuildspacePerson;
   saved: () => void;
+  readOnly?: boolean;
 }) {
+  const newId = useRef(person?.id || crypto.randomUUID()).current;
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [projectId, setProjectId] = useState(person?.projectId || "");
@@ -160,13 +167,14 @@ export function PersonForm({
       class="bs-form motion-list"
       onSubmit={async (e) => {
         e.preventDefault();
+        if (busy || readOnly) return;
         const f = new FormData(e.currentTarget);
         setBusy(true);
         setError("");
         try {
           setFields({});
           await api("buildspacePersonSave", {
-            params: { id: person?.id || crypto.randomUUID() },
+            params: { id: newId },
             body: {
               name: String(f.get("name")),
               projectId: String(f.get("projectId")),
@@ -267,7 +275,7 @@ export function PersonForm({
         />
       </label>
       {error && <Notice tone="negative">{error}</Notice>}
-      <button class="btn btn--primary" disabled={busy || !projects.length}>
+      <button class="btn btn--primary" disabled={busy || readOnly || !projects.length}>
         {busy ? "Saving…" : "Save builder"}
       </button>
     </form>

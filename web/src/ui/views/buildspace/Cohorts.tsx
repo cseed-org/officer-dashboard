@@ -5,6 +5,7 @@
 import { useState } from "preact/hooks";
 import type { LaunchpadCohort } from "../../../lib/contracts";
 import { api, fieldErrors } from "../../../lib/api/client";
+import { pacificToday } from "../../../lib/calendar";
 import { fmtShort } from "../../../lib/format";
 import { setParams } from "../../../lib/nav";
 import { Drawer } from "../../components/Drawer";
@@ -148,7 +149,7 @@ function CohortForm({ cohort, saved }: { cohort?: LaunchpadCohort; saved: (c: La
       </label>
       <label>
         Starts on
-        <input class="input" type="date" name="startsOn" required defaultValue={cohort?.startsOn ?? new Date().toISOString().slice(0, 10)} />
+        <input class="input" type="date" name="startsOn" required defaultValue={cohort?.startsOn ?? pacificToday()} />
       </label>
       <label>
         Ends on · optional

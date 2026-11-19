@@ -38,7 +38,10 @@ function CompactBudget({ d }: { d: FinanceSummaryResponse }) {
 }
 
 function Budget({ d, size }: { d: FinanceSummaryResponse; size: BlockSize }) {
-  if (size === '1x1') return <CompactBudget d={d} />;
+  return size === '1x1' ? <CompactBudget d={d} /> : <FullBudget d={d} size={size} />;
+}
+
+function FullBudget({ d, size }: { d: FinanceSummaryResponse; size: BlockSize }) {
   const wide = size === '4x2';
   const [wrap, box] = useBox();
   const [legendRef, legendBox] = useBox();

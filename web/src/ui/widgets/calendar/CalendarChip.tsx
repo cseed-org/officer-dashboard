@@ -1,3 +1,4 @@
+import { safeUrl } from "../../../lib/url";
 import { useEffect, useId, useRef, useState } from 'preact/hooks';
 import { createPortal } from 'preact/compat';
 import type { CalendarFeedItem, CalendarFeedSource } from '../../../lib/contracts';
@@ -57,7 +58,7 @@ export function CalendarChip({ item, source, index, twoLine }: { item: CalendarF
       if (e.key === 'Tab' && !e.shiftKey && position && e.target === trigger.current) { e.preventDefault(); card.current?.querySelector<HTMLAnchorElement>('a')?.focus(); }
       else escape(e);
     }}>
-    <a ref={trigger} href={item.href} class={`cal-chip${twoLine ? ' cal-chip--2' : ''}`} data-hue={hue} style={{ '--c': index }} aria-describedby={position ? id : undefined}>
+    <a ref={trigger} href={safeUrl(item.href) ?? undefined} class={`cal-chip${twoLine ? ' cal-chip--2' : ''}`} data-hue={hue} style={{ '--c': index }} aria-describedby={position ? id : undefined}>
       <time dateTime={item.startsAt ?? item.date}>{shortTime(item.startsAt)}</time>
       <span>{item.title}</span>
     </a>
@@ -76,8 +77,8 @@ export function CalendarChip({ item, source, index, twoLine }: { item: CalendarF
       <span>{item.location || (item.startsAt ? 'Location not set' : 'Deadline')}</span>
       {item.detail && <span class="cw-popover-detail">{item.detail}</span>}
       <span class="cw-popover-source"><Icon name={sourceIcon(source)} size={13} />{source?.label ?? item.source}</span>
-      <a href={item.href}>Open details →</a>
-      {item.lumaUrl && <a href={item.lumaUrl} target="_blank" rel="noopener noreferrer">Open in Luma ↗</a>}
+      <a href={safeUrl(item.href) ?? undefined}>Open details →</a>
+      {safeUrl(item.lumaUrl) && <a href={safeUrl(item.lumaUrl)!} target="_blank" rel="noopener noreferrer">Open in Luma ↗</a>}
     </div>, document.body)}
   </div>;
 }

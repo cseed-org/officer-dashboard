@@ -187,13 +187,13 @@ export default function HomeTour({ onPreview }: { onPreview: (editing: boolean, 
     if (saving) return;
     setSaving(true);
     setError('');
+    dialog.current?.close();
+    setActive(false);
+    const url = new URL(location.href);
+    url.searchParams.delete('tutorial');
+    history.replaceState(null, '', url);
     try {
       await api('prefsPut', { body: { dashboardTutorialSeen: true } });
-      dialog.current?.close();
-      setActive(false);
-      const url = new URL(location.href);
-      url.searchParams.delete('tutorial');
-      history.replaceState(null, '', url);
     } catch (e) {
       setError(`Couldn’t save that you’ve seen the tour. ${(e as Error).message}`);
     } finally {
@@ -206,7 +206,7 @@ export default function HomeTour({ onPreview }: { onPreview: (editing: boolean, 
   };
   const last = step === steps.length - 1;
 
-  if (!active) return null;
+  if (!active) return error ? <p class="notice notice--negative" role="status">Couldn’t save that you’ve seen the tour; it may show again.</p> : null;
   return (
     <dialog
       ref={dialog}

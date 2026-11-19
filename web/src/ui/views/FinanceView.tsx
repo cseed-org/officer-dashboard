@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { BudgetLine, BudgetsResponse, CurrentUser, LookupsResponse, PurchaseRequestsListQuery } from '../../lib/contracts';
 import { FINANCE_REPORTS, OFFICER_FINANCE_REPORTS, type FinanceReport, type PurchaseStatus } from '../../core/constants';
 import { api } from '../../lib/api/client';
@@ -89,6 +89,7 @@ export default function FinanceView({ me }: { me: CurrentUser }) {
             key={openId}
             id={openId}
             meId={me.id}
+            director={director}
             flash={flash}
             onTitle={setTitle}
             onChanged={() => setListTick((n) => n + 1)}
@@ -101,7 +102,7 @@ export default function FinanceView({ me }: { me: CurrentUser }) {
       </Drawer>
 
       <Drawer id="new-request" open={creating} onClose={() => creating && setParams({ new: null, eventId: null })} title="new purchase request" size="lg">
-        <RequestFormView
+        {creating && <RequestFormView
           initialEventId={search.get('eventId') ?? undefined}
           onCancel={() => setParams({ new: null, eventId: null })}
           onCreated={(id, f) => {
@@ -110,7 +111,7 @@ export default function FinanceView({ me }: { me: CurrentUser }) {
             // Close the form and open the new request in one history step.
             setParams({ new: null, eventId: null, tab: null, id }, { replace: true });
           }}
-        />
+        />}
       </Drawer>
     </div>
   );
@@ -223,6 +224,28 @@ function RequestsPanel({ director, tick, fy, fyFailed, onRetryFy }: { director: 
   }, [q]);
 
   const state = useApi('requestsList', { query: { scope, status: status === 'any' ? undefined : status, q: debounced || undefined, sort, limit: 100 } }, { scope, status, debounced, sort, tick });
+  const pageIdentity = JSON.stringify([scope, status, debounced, sort, tick]);
+  const currentPage = useRef({ identity: pageIdentity });
+  // A new generation also distinguishes A -> B -> A from an old A cursor.
+  if (currentPage.current.identity !== pageIdentity) currentPage.current = { identity: pageIdentity };
+  const generation = currentPage.current;
+  const [pagination, setPagination] = useState({ generation, busy: false, error: null as unknown });
+  const moreBusy = pagination.generation === generation && pagination.busy;
+  const moreError = pagination.generation === generation ? pagination.error : null;
+  const pageLock = useRef<typeof generation | null>(null);
+  const more = async () => {
+    if (state.status !== 'ready' || !state.data.nextCursor || pageLock.current === generation) return;
+    const active = () => currentPage.current === generation;
+    pageLock.current = generation; setPagination({ generation, busy: true, error: null });
+    try {
+      const next = await api('requestsList', { query: { scope, status: status === 'any' ? undefined : status, q: debounced || undefined, sort, limit: 100, cursor: state.data.nextCursor } });
+      if (!active()) return;
+      state.set((current) => ({ ...next, items: [...current.items, ...next.items.filter((r) => !current.items.some((old) => old.id === r.id))] }));
+    } catch (error) { if (active()) setPagination({ generation, busy: false, error }); }
+    finally {
+      if (active()) { pageLock.current = null; setPagination((p) => ({ ...p, busy: false })); }
+    }
+  };
   const counts = state.status === 'ready' ? state.data.counts : {};
   const countFor = (f: (typeof FILTERS)[number]) =>
     f.key === 'any' ? Object.values(counts).reduce((a, b) => a + (b ?? 0), 0) : f.statuses.reduce((a, st) => a + (counts[st] ?? 0), 0);
@@ -301,8 +324,10 @@ function RequestsPanel({ director, tick, fy, fyFailed, onRetryFy }: { director: 
             <>
               <DataTable rows={d.items} columns={requestColumns({ showRequester: scope === 'all' })} rowKey={(r) => r.id} caption="Purchase requests" bs />
               <p class="muted small">
-                {d.items.length} request{d.items.length === 1 ? '' : 's'} · {formatCents(d.items.reduce((sum, r) => sum + r.totalCents, 0))} total
+                {d.nextCursor ? `first ${d.items.length} of ${countFor(FILTERS.find((f) => f.key === status)!)} requests` : `${d.items.length} request${d.items.length === 1 ? '' : 's'}`} · {formatCents(d.items.reduce((sum, r) => sum + r.totalCents, 0))} {d.nextCursor ? 'shown' : 'total'}
               </p>
+              {moreError != null && <ErrorState error={moreError} onRetry={() => void more()} />}
+              {d.nextCursor && <button type="button" class="btn" disabled={moreBusy} onClick={() => void more()}>{moreBusy ? 'Loading…' : 'Show more'}</button>}
             </>
           )
         }
@@ -315,14 +340,15 @@ function RequestsPanel({ director, tick, fy, fyFailed, onRetryFy }: { director: 
 
 function BudgetsPanel({ query, director, lookups }: { query: Q; director: boolean; lookups: LookupsResponse | null }) {
   const lines = useApi('budgetsGet', { query: { fiscalYear: query.fiscalYear } });
+  const [summaryTick, setSummaryTick] = useState(0);
   return (
     <div class="stack">
-      <BudgetSummary query={query} onOpen={(report) => setParams({ tab: 'reports', report }, {})} />
+      <BudgetSummary query={query} refresh={summaryTick} onOpen={(report) => setParams({ tab: 'reports', report }, {})} />
       <Section title={`budget lines · FY${query.fiscalYear}`} id="budget-lines">
         <Async state={lines} loading={<Loading rows={5} label="Loading budget lines" />}>
           {(d) =>
             director && lookups ? (
-              <BudgetEditor data={d} lookups={lookups} onSaved={(next) => lines.set(next)} key={`${d.fiscalYear}-${d.lines.length}`} />
+              <BudgetEditor data={d} lookups={lookups} onSaved={(next) => { lines.set(next); setSummaryTick((n) => n + 1); }} key={`${d.fiscalYear}-${d.lines.length}`} />
             ) : d.lines.length === 0 ? (
               <Empty title="No budget set">A director sets the year’s budget by category.</Empty>
             ) : (
@@ -362,13 +388,11 @@ function BudgetEditor({ data, lookups, onSaved }: { data: BudgetsResponse; looku
 
   const save = async () => {
     const e: Record<string, string> = {};
-    const seen = new Set<string>();
     for (const r of rows) {
       const c = dollarsToCents(r.amount);
       if (!r.accountId) e[r.key] = 'Pick a category.';
       else if (c === null || Number.isNaN(c)) e[r.key] = 'Enter an amount, like 500.00.';
-      else if (seen.has(`${r.accountId}|${r.fundId}`)) e[r.key] = 'This category and fund already has a line.';
-      seen.add(`${r.accountId}|${r.fundId}`);
+      else if (rows.some((other) => other !== r && other.accountId === r.accountId && (other.fundId === r.fundId || !other.fundId || !r.fundId))) e[r.key] = "An all-funds line can't sit next to a fund-specific line for the same category, or duplicate its category and fund.";
     }
     setErrors(e);
     if (Object.keys(e).length) return;
@@ -383,6 +407,7 @@ function BudgetEditor({ data, lookups, onSaved }: { data: BudgetsResponse; looku
         },
       });
       onSaved(next);
+      setRows(next.lines.map(toDraft));
       setNotice({ tone: 'positive', text: `FY${data.fiscalYear} budget saved.` });
     } catch (err) {
       setNotice({ tone: 'negative', text: errorMessage(err) });

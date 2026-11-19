@@ -9,7 +9,7 @@ import { fmtDateTime, relative } from '../../lib/format';
 import { Drawer } from '../components/Drawer';
 import { describe, Field } from '../components/kit';
 import { Avatar, CopyText, RoleToggle, RowMenu } from '../components/people';
-import { Async, Empty, errorMessage, Loading, Notice } from '../components/states';
+import { Async, Empty, ErrorState, errorMessage, Loading, Notice } from '../components/states';
 
 const ROLE_OPTIONS = [
   { key: 'officer' as const, label: 'officer', hue: ROLE_HUE.officer },
@@ -30,7 +30,7 @@ export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, 
   const [showInactive, setShowInactive] = useState(false);
 
   const patch = async (u: AdminUser, body: { role?: Role; active?: boolean }, msg: string) => {
-    if (state.status !== 'ready') return;
+    if (state.status !== 'ready' || busyId !== null) return;
     setBusyId(u.id);
     setNotice(null);
     try {
@@ -47,7 +47,7 @@ export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, 
   const ownership = async (u: AdminUser, action: 'add' | 'remove' | 'transfer') => {
     const message = action === 'transfer'
       ? `Transfer ownership to ${u.name}? They become an owner and you remain leadership without owner access. Other co-owners keep their access.`
-      : action === 'add' ? `Make ${u.name} a co-owner? Owners can transfer ownership and manage other owners.${u.role !== 'leadership' ? ' This also promotes them to leadership and signs them out of existing sessions.' : ''}` : `Remove owner access from ${u.name}? They remain leadership. The last owner cannot be removed.`;
+      : action === 'add' ? `Make ${u.name} a co-owner? Owners can transfer ownership and manage other owners.${u.role !== 'leadership' ? ' This also promotes them to leadership. They stay signed in; their open pages switch on their next action.' : ''}` : `Remove owner access from ${u.name}? They remain leadership. The last owner cannot be removed.`;
     if (!confirm(message)) return;
     setBusyId(u.id); setNotice(null);
     try {
@@ -208,7 +208,7 @@ function UserList({
                         label={`Role for ${u.name}`}
                         value={u.role}
                         options={ROLE_OPTIONS}
-                        disabled={!canChangeRoles || (u.isOwner && !isOwner) || busyId === u.id || !u.active}
+                        disabled={!canChangeRoles || (u.isOwner && !isOwner) || busyId !== null || !u.active}
                         hint={!canChangeRoles ? 'Only leadership can change roles.' : u.isOwner && !isOwner ? "Only an owner can change an owner's role." : !u.active ? 'Reactivate this account to change its role.' : undefined}
                         onChange={(role) => {
                           if (!confirm(`Make ${u.name} ${role}? Only leadership can change roles.`)) return;
@@ -272,6 +272,8 @@ function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolea
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
+  if (lookups.status === 'error') return <ErrorState error={lookups.error} onRetry={lookups.reload} />;
+  if (lookups.status === 'loading') return <Loading label="Loading subteams" />;
 
   return (
     <form
@@ -318,7 +320,7 @@ function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolea
       </Field>
       <Field id="au-subteam" label="subteam" error={errors.subteamId} hint="They confirm it during setup, before the rest of the dashboard opens.">
         <select class="select" {...describe('au-subteam', errors.subteamId, true)} value={f.subteamId} onChange={(e) => set('subteamId', e.currentTarget.value)}>
-          <option value="">{lookups.status === 'loading' ? 'Loading subteams…' : 'Choose a subteam'}</option>
+          <option value="">Choose a subteam</option>
           {subteams.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}

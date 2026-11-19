@@ -122,7 +122,7 @@ function CardShell({
 
 const memberHref = (id: string) => `/members?person=${encodeURIComponent(id)}`;
 
-export function PersonCard({ p, b, scope, onPerson }: { p: Person; b: BuildspaceData; scope: string; onPerson: (id: string) => void }) {
+export function PersonCard({ p, b, readOnly = false, scope, onPerson }: { p: Person; b: BuildspaceData; readOnly?: boolean; scope: string; onPerson: (id: string) => void }) {
   const pr = projectById(p.projectId, b)!;
   const mentors = projectMentors(pr, b);
   const week = checkIn(p, b);
@@ -138,7 +138,7 @@ export function PersonCard({ p, b, scope, onPerson }: { p: Person; b: Buildspace
       menuLabel={`Actions for ${p.name}`}
       actions={[
         { label: "Open profile", onSelect: () => onPerson(p.id) },
-        { label: "Edit builder", onSelect: () => pushEntry({ person: p.id, edit: "person" }) },
+        ...(!readOnly ? [{ label: "Edit builder", onSelect: () => pushEntry({ person: p.id, edit: "person" }) }] : []),
         { label: "Open project", onSelect: () => pushEntry({ project: pr.id }) },
         ...(p.memberId ? [{ label: "Member record", onSelect: () => navigate(memberHref(p.memberId!)) }] : []),
       ]}
@@ -190,7 +190,7 @@ function Faces({ people }: { people: Person[] }) {
   );
 }
 
-export function ProjectCard({ p, b, scope = "", onPerson }: { p: BuildspaceProject; b: BuildspaceData; scope?: string; onPerson: (id: string) => void }) {
+export function ProjectCard({ p, b, readOnly = false, scope = "", onPerson }: { p: BuildspaceProject; b: BuildspaceData; readOnly?: boolean; scope?: string; onPerson: (id: string) => void }) {
   const people = projectPeople(p, b);
   const mentors = projectMentors(p, b);
   const awaiting = people.filter((x) => missed(x, b)).length;
@@ -206,7 +206,7 @@ export function ProjectCard({ p, b, scope = "", onPerson }: { p: BuildspaceProje
       menuLabel={`Actions for ${p.name}`}
       actions={[
         { label: "Open project", onSelect: openProject },
-        { label: "Edit project", onSelect: () => pushEntry({ project: p.id, edit: "project" }) },
+        ...(!readOnly ? [{ label: "Edit project", onSelect: () => pushEntry({ project: p.id, edit: "project" }) }] : []),
       ]}
     >
       <header class="bs-card-id">
