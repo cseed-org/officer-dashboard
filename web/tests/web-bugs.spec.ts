@@ -5,7 +5,7 @@ import { dollars } from '../src/lib/format';
 import { weekSlot } from '../src/lib/calendar';
 import * as profileRules from '../src/lib/profileRules';
 import { parseInvites } from '../src/ui/views/buildspace/launchpad';
-import { auditHref } from '../src/ui/widgets/activity/ActivityWidget';
+import { auditHref } from '../src/ui/widgets/activity/audit';
 
 // Components run in a real browser, with actual seeded response shapes. Only the
 // requests relevant to a regression are held, failed, or changed by each test.
