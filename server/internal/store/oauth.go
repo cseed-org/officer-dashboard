@@ -179,7 +179,7 @@ func (q *Queries) InsertOAuthGrant(ctx context.Context, g OAuthGrant) error {
 
 // GrantByAccessHash returns ErrNotFound for an unknown access token.
 func (q *Queries) GrantByAccessHash(ctx context.Context, hash string) (*OAuthGrant, error) {
-	g, err := scanGrant(q.q.QueryRowContext(ctx, `SELECT `+grantCols+grantFrom+` WHERE g.access_hash = ?`, hash))
+	g, err := scanGrant(q.queryRow(ctx, `SELECT `+grantCols+grantFrom+` WHERE g.access_hash = ?`, hash))
 	return g, notFound(err)
 }
 

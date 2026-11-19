@@ -92,6 +92,67 @@ func TestBuildspaceHistoryPagesBoundBodiesAndRetainSignals(t *testing.T) {
 	}
 }
 
+func TestBuildspaceLastActivitySurvivesHistoryPaging(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	person := "quiet-person"
+	err := e.db.Write(ctx, func(q *store.Queries) error {
+		if err := q.SaveBuildspaceProject(ctx, store.BuildspaceProject{ID: "quiet-project", Name: "Quiet project", Track: "Software", Stage: "Building", Links: []string{}, MentorIDs: []string{"bs-mentor-maya"}, CohortID: "cohort-fall-2026"}); err != nil {
+			return err
+		}
+		if err := q.SaveBuildspacePerson(ctx, store.BuildspacePerson{ID: person, Name: "Quiet builder", ProjectID: "quiet-project", CohortID: "cohort-fall-2026", JoinedOn: "2026-08-01"}); err != nil {
+			return err
+		}
+		if err := q.InsertBuildspaceActivity(ctx, store.BuildspaceActivity{ID: "quiet-last", ProjectID: "quiet-project", PersonID: &person, Kind: "weekly", Date: "2026-08-03", Body: "Last check-in", Status: "resolved", Source: "manual", Visibility: "team", CreatedAt: 1}); err != nil {
+			return err
+		}
+		for i := 0; i < 250; i++ {
+			if err := q.InsertBuildspaceActivity(ctx, store.BuildspaceActivity{ID: fmt.Sprintf("quiet-newer-%03d", i), ProjectID: "bs-moss", Kind: "absence", Date: "2026-10-20", Body: "Newer cohort history", Status: "resolved", Source: "manual", Visibility: "team", CreatedAt: int64(i + 2)}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := e.mustOK(e.get("/api/buildspace-launchpad", e.officer()))
+	for _, v := range r.list("activity") {
+		if v.(map[string]any)["id"] == "quiet-last" {
+			t.Fatal("probe requires the old row to fall outside the first history page")
+		}
+	}
+	foundProject, foundPerson := false, false
+	for _, v := range r.list("projects") {
+		p := v.(map[string]any)
+		if p["id"] == "quiet-project" {
+			foundProject = true
+			if p["lastActivityDate"] != "2026-08-03" {
+				t.Fatalf("project last activity = %v", p["lastActivityDate"])
+			}
+		}
+	}
+	for _, v := range r.list("people") {
+		p := v.(map[string]any)
+		if p["id"] == person {
+			foundPerson = true
+			if p["lastActivityDate"] != "2026-08-03" {
+				t.Fatalf("person last activity = %v", p["lastActivityDate"])
+			}
+		}
+	}
+	if !foundProject || !foundPerson {
+		t.Fatalf("probe rows missing: project=%t person=%t", foundProject, foundPerson)
+	}
+	mentor := e.mustOK(e.get("/api/portal/mentor", e.portalLogin("lp-account-maya")))
+	for _, v := range mentor.list("projects") {
+		p := v.(map[string]any)
+		if p["id"] == "quiet-project" && p["lastActivityDate"] != "2026-08-03" {
+			t.Fatalf("mentor project last activity = %v", p["lastActivityDate"])
+		}
+	}
+}
+
 func TestBuilderPreloadedRegisterNeedsNoQueries(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()

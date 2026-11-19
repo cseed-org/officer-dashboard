@@ -394,13 +394,14 @@ type portalMentorCard struct {
 	Topics []string `json:"topics"`
 }
 type portalProject struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Track       string   `json:"track"`
-	Stage       string   `json:"stage"`
-	Links       []string `json:"links"`
-	Archived    bool     `json:"archived"`
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Description      string   `json:"description"`
+	Track            string   `json:"track"`
+	Stage            string   `json:"stage"`
+	Links            []string `json:"links"`
+	Archived         bool     `json:"archived"`
+	LastActivityDate *string  `json:"lastActivityDate"`
 }
 type portalActivity struct {
 	ID         string  `json:"id"`
@@ -424,7 +425,7 @@ func toPortalProject(p *store.BuildspaceProject) portalProject {
 	if links == nil {
 		links = []string{}
 	}
-	return portalProject{p.ID, p.Name, p.Description, p.Track, p.Stage, links, p.ArchivedAt != nil}
+	return portalProject{p.ID, p.Name, p.Description, p.Track, p.Stage, links, p.ArchivedAt != nil, p.LastActivityDate}
 }
 func mentorCard(b *store.Buildspace, id string) portalMentorCard {
 	if m := b.Mentor(id); m != nil {

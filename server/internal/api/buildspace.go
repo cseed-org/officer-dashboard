@@ -104,11 +104,7 @@ func writableProject(b *store.Buildspace, p *store.BuildspaceProject) error {
 
 // buildspaceSchedule reads the due-day rules and the club-time-zone clock together.
 func (c *Ctx) buildspaceSchedule(q *store.Queries) (store.BuildspaceSchedule, error) {
-	rules, err := q.BuildspaceWeekRules(c.Context())
-	if err != nil {
-		return store.BuildspaceSchedule{}, err
-	}
-	clock, err := q.BuildspaceClock(c.Context(), c.S.now())
+	rules, clock, err := q.BuildspaceScheduleInput(c.Context(), c.S.now())
 	if err != nil {
 		return store.BuildspaceSchedule{}, err
 	}

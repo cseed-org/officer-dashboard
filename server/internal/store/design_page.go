@@ -7,7 +7,7 @@ import (
 )
 
 func (q *Queries) designRows(ctx context.Context, where string, args ...any) ([]DesignRequest, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT `+designCols+` FROM design_requests `+where, args...)
+	rows, err := q.query(ctx, `SELECT `+designCols+` FROM design_requests `+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -28,14 +28,51 @@ func (q *Queries) DesignBoard(ctx context.Context) ([]DesignRequest, error) {
 	return q.designRows(ctx, `WHERE stage<>'delivered' ORDER BY updated_at DESC,id`)
 }
 
-func (q *Queries) DesignDeliveredPage(ctx context.Context, hasCursor bool, at int64, id string, limit int) ([]DesignRequest, error) {
+func (q *Queries) DesignDeliveredTotal(ctx context.Context) (int, error) {
+	rows, err := q.query(ctx, `SELECT count(*) FROM design_requests WHERE stage='delivered'`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return 0, rows.Err()
+	}
+	var total int
+	if err := rows.Scan(&total); err != nil {
+		return 0, err
+	}
+	return total, rows.Err()
+}
+
+func (q *Queries) DesignDeliveredPage(ctx context.Context, hasCursor bool, at int64, id string, limit int) ([]DesignRequest, int, error) {
 	where := `WHERE stage='delivered'`
 	var args []any
 	if hasCursor {
 		where += ` AND (updated_at < ? OR (updated_at=? AND id>?))`
 		args = append(args, at, at, id)
 	}
-	return q.designRows(ctx, where+fmt.Sprintf(` ORDER BY updated_at DESC,id LIMIT %d`, limit), args...)
+	rows, err := q.query(ctx, `SELECT (SELECT count(*) FROM design_requests WHERE stage='delivered'),`+designCols+` FROM design_requests `+where+fmt.Sprintf(` ORDER BY updated_at DESC,id LIMIT %d`, limit), args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []DesignRequest{}
+	total := 0
+	for rows.Next() {
+		var d DesignRequest
+		if err := rows.Scan(&total, &d.ID, &d.Title, &d.Type, &d.Formats, &d.DueDate, &d.Urgency, &d.Brief, &d.Refs, &d.EventID, &d.Program, &d.Stage,
+			&d.RequesterID, &d.AssigneeID, &d.ApprovedBy, &d.ApprovedAt, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if len(out) == 0 {
+		total, err = q.DesignDeliveredTotal(ctx)
+	}
+	return out, total, err
 }
 
 func (q *Queries) DesignRequestsForEvents(ctx context.Context, ids []string) ([]DesignRequest, error) {
@@ -45,7 +82,7 @@ func (q *Queries) DesignRequestsForEvents(ctx context.Context, ids []string) ([]
 	raw, _ := json.Marshal(ids)
 	// The rail needs summaries, not briefs/references. Retain all active links and
 	// six delivered links per event; the board's history cursor covers the rest.
-	rows, err := q.q.QueryContext(ctx, `WITH ranked AS (
+	rows, err := q.query(ctx, `WITH ranked AS (
  SELECT id,title,event_id,stage,assignee_id,created_at,updated_at,
  row_number() OVER(PARTITION BY event_id,(stage='delivered') ORDER BY updated_at DESC,id) rn
  FROM design_requests WHERE event_id IN (SELECT value FROM json_each(?))
@@ -70,7 +107,7 @@ func (q *Queries) EventsByIDs(ctx context.Context, ids []string) ([]Event, error
 		return nil, nil
 	}
 	raw, _ := json.Marshal(ids)
-	rows, err := q.q.QueryContext(ctx, eventSelect+` WHERE e.id IN (SELECT value FROM json_each(?))`, string(raw))
+	rows, err := q.query(ctx, eventSelect+` WHERE e.id IN (SELECT value FROM json_each(?))`, string(raw))
 	if err != nil {
 		return nil, err
 	}

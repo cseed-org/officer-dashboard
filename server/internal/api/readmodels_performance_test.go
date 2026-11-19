@@ -112,6 +112,7 @@ func TestDesignDeliveredHistoryBoundedAndComplete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	total := e.scalar(`SELECT count(*) FROM design_requests WHERE stage='delivered'`).(int64)
 	seen := map[string]bool{}
 	cursor := ""
 	first := true
@@ -121,6 +122,9 @@ func TestDesignDeliveredHistoryBoundedAndComplete(t *testing.T) {
 			path += "?deliveredOnly=true&deliveredCursor=" + cursor
 		}
 		r := e.mustOK(e.get(path, who))
+		if got := r.num("deliveredTotal"); got != total {
+			t.Fatalf("delivered total = %d, want %d", got, total)
+		}
 		for _, v := range r.list("upcomingEvents") {
 			event := v.(map[string]any)
 			deliveredLinks := 0

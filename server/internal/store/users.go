@@ -74,7 +74,7 @@ func scanUser(s interface{ Scan(...any) error }) (*User, error) {
 
 // UserByID returns ErrNotFound for an unknown id.
 func (q *Queries) UserByID(ctx context.Context, id string) (*User, error) {
-	u, err := scanUser(q.q.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE id = ?`, id))
+	u, err := scanUser(q.queryRow(ctx, `SELECT `+userCols+` FROM users WHERE id = ?`, id))
 	return u, notFound(err)
 }
 
@@ -86,7 +86,7 @@ func (q *Queries) UserByDiscordID(ctx context.Context, discordID string) (*User,
 
 // Users lists everyone in insertion order.
 func (q *Queries) Users(ctx context.Context) ([]User, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT `+userCols+` FROM users ORDER BY rowid`)
+	rows, err := q.query(ctx, `SELECT `+userCols+` FROM users ORDER BY rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (q *Queries) InsertSession(ctx context.Context, idHash, userID string, expi
 
 // SessionByHash returns the live session and its active user, or ErrNotFound.
 func (q *Queries) SessionByHash(ctx context.Context, idHash string, now int64) (*Session, error) {
-	row := q.q.QueryRowContext(ctx, `SELECT s.id, s.expires_at, s.created_at, u.id, u.discord_id, u.name, u.email, u.avatar_url, u.role, u.is_owner, u.active, u.title, u.last_login_at, u.created_at, u.updated_at,
+	row := q.queryRow(ctx, `SELECT s.id, s.expires_at, s.created_at, u.id, u.discord_id, u.name, u.email, u.avatar_url, u.role, u.is_owner, u.active, u.title, u.last_login_at, u.created_at, u.updated_at,
 		COALESCE((SELECT p.subteam_id || ':' || COALESCE(lower(t.name), '') FROM officer_profiles p LEFT JOIN subteams t ON t.id = p.subteam_id WHERE p.user_id = u.id), '')
 		FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > ? AND u.active = 1`, idHash, now)
 	var s Session

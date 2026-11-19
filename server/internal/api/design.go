@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"officerdashboard/internal/auth"
@@ -102,6 +101,7 @@ type DesignRequestsListResponse struct {
 	Viewer              DesignViewer          `json:"viewer"`
 	UpcomingEvents      []DesignUpcomingEvent `json:"upcomingEvents"`
 	DeliveredNextCursor *string               `json:"deliveredNextCursor"`
+	DeliveredTotal      int                   `json:"deliveredTotal"`
 }
 
 type DesignRequestDraft struct {
@@ -131,12 +131,8 @@ func (d *designCtx) staff() bool { return auth.HasRole(d.viewer.Role, auth.RoleD
 
 func (d *designCtx) worker() bool { return d.isDesigner(d.viewer.ID) || d.staff() }
 
-func loadDesignCtx(ctx context.Context, q *store.Queries, viewer *store.User, withEvents ...bool) (*designCtx, error) {
-	events := true
-	if len(withEvents) > 0 {
-		events = withEvents[0]
-	}
-	cat, err := loadCatalog(ctx, q, events)
+func loadDesignCtx(ctx context.Context, q *store.Queries, viewer *store.User) (*designCtx, error) {
+	cat, err := loadCatalog(ctx, q, true)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +388,7 @@ func (c *Ctx) designList() error {
 	}); err != nil {
 		return err
 	}
-	dc, err := loadDesignCtx(ctx, q, u, false)
+	dc, err := loadDesignCtx(ctx, q, u)
 	if err != nil {
 		return err
 	}
@@ -404,7 +400,7 @@ func (c *Ctx) designList() error {
 			return err
 		}
 	}
-	delivered, err := q.DesignDeliveredPage(ctx, cursor != "", at, id, 7)
+	delivered, deliveredTotal, err := q.DesignDeliveredPage(ctx, cursor != "", at, id, 7)
 	if err != nil {
 		return err
 	}
@@ -422,30 +418,19 @@ func (c *Ctx) designList() error {
 		}
 	}
 	rows = append(rows, delivered...)
-	var ids, eventIDs []string
+	var ids []string
 	for _, r := range rows {
 		ids = append(ids, r.ID)
-		if r.EventID != nil {
-			eventIDs = append(eventIDs, *r.EventID)
-		}
 	}
-	events, err := q.EventsByIDs(ctx, eventIDs)
-	if err != nil {
-		return err
-	}
-	for i := range events {
-		dc.cat.eventByID[events[i].ID] = &events[i]
-	}
-	horizon := c.S.now().Add(designHorizon).Add(time.Nanosecond)
-	upcoming, err := q.EventPage(ctx, store.EventFilter{When: "upcoming", Now: c.S.now(), To: &horizon})
-	if err != nil {
-		return err
-	}
-	dc.cat.events = upcoming
+	now := c.S.now()
+	horizon := now.Add(designHorizon)
 	var upcomingIDs []string
-	for i := range upcoming {
-		dc.cat.eventByID[upcoming[i].ID] = &upcoming[i]
-		upcomingIDs = append(upcomingIDs, upcoming[i].ID)
+	for i := range dc.cat.events {
+		e := &dc.cat.events[i]
+		starts, parseErr := luma.ParseInstant(e.StartsAt)
+		if (e.Status == "draft" || e.Status == "published") && parseErr == nil && !starts.Before(now) && !starts.After(horizon) {
+			upcomingIDs = append(upcomingIDs, e.ID)
+		}
 	}
 	linked, err := q.DesignRequestsForEvents(ctx, upcomingIDs)
 	if err != nil {
@@ -463,7 +448,7 @@ func (c *Ctx) designList() error {
 		}
 		items = append(items, it)
 	}
-	writeJSON(c.W, 200, DesignRequestsListResponse{Items: items, Designers: dc.designerSummaries(), Viewer: DesignViewer{IsDesigner: dc.isDesigner(u.ID), CanAssign: dc.worker()}, UpcomingEvents: dc.upcomingEvents(c.S.now(), linked), DeliveredNextCursor: next})
+	writeJSON(c.W, 200, DesignRequestsListResponse{Items: items, Designers: dc.designerSummaries(), Viewer: DesignViewer{IsDesigner: dc.isDesigner(u.ID), CanAssign: dc.worker()}, UpcomingEvents: dc.upcomingEvents(c.S.now(), linked), DeliveredNextCursor: next, DeliveredTotal: deliveredTotal})
 	return nil
 }
 

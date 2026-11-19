@@ -81,6 +81,8 @@ type Server struct {
 	authLimit, uploadLimit *rateLimiter
 	mcpLimit               *rateLimiter  // keyed by OAuth grant id
 	mcpInFlight            chan struct{} // global upload/body memory budget
+	mcpGrantMu             sync.Mutex
+	mcpGrantInFlight       map[string]int // per-grant fairness within the global budget
 	trustedProxies         []*net.IPNet
 
 	memberMu         sync.Mutex
@@ -119,7 +121,7 @@ func New(cfg Config) *Server {
 	if cfg.Version == "" {
 		cfg.Version = "0.1.0"
 	}
-	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log, mcpInFlight: make(chan struct{}, 4)}
+	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log, mcpInFlight: make(chan struct{}, mcpGlobalInFlight), mcpGrantInFlight: map[string]int{}}
 	s.trustedProxies = cfg.TrustedProxies
 	if s.trustedProxies == nil {
 		s.trustedProxies = DefaultTrustedProxies()

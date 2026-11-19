@@ -54,7 +54,7 @@ func scanEvent(s interface{ Scan(...any) error }) (*Event, error) {
 
 // Events lists every event (callers filter and page: there are tens per year).
 func (q *Queries) Events(ctx context.Context) ([]Event, error) {
-	rows, err := q.q.QueryContext(ctx, eventSelect+` ORDER BY e.rowid`)
+	rows, err := q.query(ctx, eventSelect+` ORDER BY e.rowid`)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +223,7 @@ type Subteam struct {
 
 // Subteams lists subteams by name.
 func (q *Queries) Subteams(ctx context.Context) ([]Subteam, error) {
-	rows, err := q.q.QueryContext(ctx, `SELECT id, name FROM subteams ORDER BY name`)
+	rows, err := q.query(ctx, `SELECT id, name FROM subteams ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}

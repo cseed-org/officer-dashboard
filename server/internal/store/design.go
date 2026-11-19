@@ -97,29 +97,26 @@ func (q *Queries) DesignCounts(ctx context.Context, selected ...[]string) (comme
 		where = ` WHERE request_id IN (SELECT value FROM json_each(?))`
 		args = []any{string(raw)}
 	}
-	for _, t := range []struct {
-		table string
-		into  map[string]int
-	}{{"design_request_comments", comments}, {"design_request_files", files}} {
-		rows, err := q.q.QueryContext(ctx, `SELECT request_id, count(*) FROM `+t.table+where+` GROUP BY request_id`, args...)
-		if err != nil {
+	queryArgs := append(append([]any{}, args...), args...)
+	rows, err := q.query(ctx, `SELECT request_id,count(*),0 FROM design_request_comments`+where+` GROUP BY request_id
+ UNION ALL SELECT request_id,count(*),1 FROM design_request_files`+where+` GROUP BY request_id`, queryArgs...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var n, kind int
+		if err := rows.Scan(&id, &n, &kind); err != nil {
 			return nil, nil, err
 		}
-		for rows.Next() {
-			var id string
-			var n int
-			if err := rows.Scan(&id, &n); err != nil {
-				rows.Close()
-				return nil, nil, err
-			}
-			t.into[id] = n
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return nil, nil, err
+		if kind == 0 {
+			comments[id] = n
+		} else {
+			files[id] = n
 		}
 	}
-	return comments, files, nil
+	return comments, files, rows.Err()
 }
 
 // DesignComment is a design_request_comments row.

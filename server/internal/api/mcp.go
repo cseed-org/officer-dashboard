@@ -92,11 +92,14 @@ func init() {
 }
 
 const (
-	mcpMaxBody     = 16 << 20 // base64 of a 10 MB receipt fits
-	mcpMaxBatch    = 20       // JSON-RPC batches (dropped from MCP in 2025-06-18) stay small
-	mcpMaxResult   = 256 << 10
-	mcpLatestProto = "2025-11-25"
-	mcpInstruction = "You are acting as a CSEED club officer on the CSEED Officer Dashboard, with exactly that officer's permissions. " +
+	mcpMaxBody          = 16 << 20 // base64 of a 10 MB receipt fits
+	mcpSmallBody        = 1 << 20  // control messages do not need a large-body slot
+	mcpMaxBatch         = 20       // JSON-RPC batches (dropped from MCP in 2025-06-18) stay small
+	mcpMaxResult        = 256 << 10
+	mcpPerGrantInFlight = 4
+	mcpGlobalInFlight   = 16
+	mcpLatestProto      = "2025-11-25"
+	mcpInstruction      = "You are acting as a CSEED club officer on the CSEED Officer Dashboard, with exactly that officer's permissions. " +
 		"Call whoami first to learn their role and time zone. Use search or the list_* tools to find ids. " +
 		"Money is integer cents; dates are YYYY-MM-DD; datetimes are ISO 8601 with offset. " +
 		"Every change is recorded in the audit log as the officer, via this agent. " +
@@ -172,6 +175,40 @@ type rpcResponse struct {
 	Error   *rpcError       `json:"error,omitempty"`
 }
 
+// acquireMCPInFlight reserves both a grant's fair share and the larger server-wide
+// memory budget. One busy agent cannot consume every slot available to other agents.
+func (s *Server) acquireMCPInFlight(grant string) bool {
+	s.mcpGrantMu.Lock()
+	if s.mcpGrantInFlight[grant] >= mcpPerGrantInFlight {
+		s.mcpGrantMu.Unlock()
+		return false
+	}
+	s.mcpGrantInFlight[grant]++
+	s.mcpGrantMu.Unlock()
+	select {
+	case s.mcpInFlight <- struct{}{}:
+		return true
+	default:
+		s.releaseMCPGrant(grant)
+		return false
+	}
+}
+
+func (s *Server) releaseMCPGrant(grant string) {
+	s.mcpGrantMu.Lock()
+	if s.mcpGrantInFlight[grant] <= 1 {
+		delete(s.mcpGrantInFlight, grant)
+	} else {
+		s.mcpGrantInFlight[grant]--
+	}
+	s.mcpGrantMu.Unlock()
+}
+
+func (s *Server) releaseMCPInFlight(grant string) {
+	<-s.mcpInFlight
+	s.releaseMCPGrant(grant)
+}
+
 func (c *Ctx) mcpPost() error {
 	allowCORS(c.W)
 	g, u, err := c.mcpAuthenticate()
@@ -187,18 +224,34 @@ func (c *Ctx) mcpPost() error {
 		writeJSON(c.W, 400, rpcResponse{JSONRPC: "2.0", ID: json.RawMessage("null"), Error: &rpcError{-32600, "Unsupported MCP-Protocol-Version " + v}})
 		return nil
 	}
-	// Reserve memory and one rate-limit token before reading any request bytes.
-	select {
-	case c.S.mcpInFlight <- struct{}{}:
-		defer func() { <-c.S.mcpInFlight }()
-	default:
-		c.mcpRateLimited(nil, false, 1)
-		return nil
+	// Small, known-length messages cannot exhaust the large-body budget. Keeping
+	// ping/tools/list outside its queues also prevents a busy agent starving peers.
+	if c.R.ContentLength < 0 || c.R.ContentLength > mcpSmallBody {
+		return c.mcpPostLarge(g, u)
 	}
 	if ok, wait := c.S.mcpLimit.allowN(g.ID, 1); !ok {
 		c.mcpRateLimited(nil, false, retryAfter(wait))
 		return nil
 	}
+	return c.mcpPostBody(g, u, true)
+}
+
+func (c *Ctx) mcpPostLarge(g *store.OAuthGrant, u *store.User) error {
+	// Reserve memory before reading any large or unknown request bytes.
+	if !c.S.acquireMCPInFlight(g.ID) {
+		c.mcpRateLimited(nil, false, 1)
+		return nil
+	}
+	defer c.S.releaseMCPInFlight(g.ID)
+	// Consume a rate-limit token before reading large or unknown request bytes.
+	if ok, wait := c.S.mcpLimit.allowN(g.ID, 1); !ok {
+		c.mcpRateLimited(nil, false, retryAfter(wait))
+		return nil
+	}
+	return c.mcpPostBody(g, u, false)
+}
+
+func (c *Ctx) mcpPostBody(g *store.OAuthGrant, u *store.User, smallBody bool) error {
 	raw, err := io.ReadAll(http.MaxBytesReader(c.W, c.R.Body, mcpMaxBody))
 	if err != nil {
 		return fail(http.StatusRequestEntityTooLarge, "too_large", "Request too large")
@@ -227,11 +280,39 @@ func (c *Ctx) mcpPost() error {
 	if c.S.mcpLimit.perMinute >= 0 {
 		extra = min(extra, max(0, int(c.S.mcpLimit.perMinute)-1))
 	}
-	if ok, wait := c.S.mcpLimit.allowN(g.ID, extra); !ok {
-		c.S.mcpLimit.refund(g.ID, 1)
-		c.mcpRateLimited(msgs, batch, retryAfter(wait))
+	if extra > 0 {
+		if ok, wait := c.S.mcpLimit.allowN(g.ID, extra); !ok {
+			c.S.mcpLimit.refund(g.ID, 1)
+			c.mcpRateLimited(msgs, batch, retryAfter(wait))
+			return nil
+		}
+	}
+	controlOnly := true
+	for _, m := range msgs {
+		if m.Method != "ping" && m.Method != "tools/list" {
+			controlOnly = false
+			break
+		}
+	}
+	if smallBody && !controlOnly {
+		return c.mcpPostCapped(p, g.ID, msgs, batch)
+	}
+	return c.mcpPostDispatch(p, msgs, batch)
+}
+
+// mcpPostCapped bounds tool execution after a small body has been parsed. Only
+// verified ping/tools/list messages bypass these slots; large/unknown bodies are
+// admitted before reading in mcpPostLarge instead.
+func (c *Ctx) mcpPostCapped(p principal, grant string, msgs []rpcMessage, batch bool) error {
+	if !c.S.acquireMCPInFlight(grant) {
+		c.mcpRateLimited(nil, false, 1)
 		return nil
 	}
+	defer c.S.releaseMCPInFlight(grant)
+	return c.mcpPostDispatch(p, msgs, batch)
+}
+
+func (c *Ctx) mcpPostDispatch(p principal, msgs []rpcMessage, batch bool) error {
 	var out []rpcResponse
 	for _, m := range msgs {
 		if r := c.mcpHandle(p, m); r != nil {
