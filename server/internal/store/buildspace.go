@@ -224,11 +224,8 @@ func activityIDScope(column string, ids []string) (string, []any) {
 	if len(ids) == 0 {
 		return " AND 0", nil
 	}
-	args := make([]any, len(ids))
-	for i := range ids {
-		args[i] = ids[i]
-	}
-	return ` AND a.` + column + ` IN (` + strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",") + `)`, args
+	raw, _ := json.Marshal(ids)
+	return ` AND a.` + column + ` IN (SELECT value FROM json_each(?))`, []any{string(raw)}
 }
 
 func (q *Queries) buildspace(ctx context.Context, cohortID *string, page *BuildspaceActivityPage) (Buildspace, error) {

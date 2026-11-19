@@ -1,0 +1,22 @@
+go version go1.27.4 linux/amd64
+ok  	officerdashboard/cmd/dashboard	16.319s
+ok  	officerdashboard/internal/accounting	0.046s
+ok  	officerdashboard/internal/api	303.934s
+ok  	officerdashboard/internal/auth	0.079s
+ok  	officerdashboard/internal/calendar	0.057s
+ok  	officerdashboard/internal/cfsync	10.584s
+ok  	officerdashboard/internal/cloudflare	0.089s
+ok  	officerdashboard/internal/files	0.431s
+ok  	officerdashboard/internal/fiscal	0.035s
+ok  	officerdashboard/internal/luma	0.040s
+ok  	officerdashboard/internal/mcpcheck	24.357s
+ok  	officerdashboard/internal/money	0.043s
+ok  	officerdashboard/internal/notify	0.097s
+?   	officerdashboard/internal/notion	[no test files]
+ok  	officerdashboard/internal/purchases	0.038s
+ok  	officerdashboard/internal/seed	7.336s
+ok  	officerdashboard/internal/store	58.634s
+ok  	officerdashboard/internal/validate	0.063s
+ok  	officerdashboard/internal/web	0.147s
+ok  	officerdashboard/internal/api	288.940s
+ok  	officerdashboard/cmd/dashboard	11.099s

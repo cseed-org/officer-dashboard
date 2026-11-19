@@ -68,17 +68,8 @@ func activityVisibility(p BuildspaceActivityPage) (string, []any) {
 	if len(p.Visibility) == 0 {
 		return "", nil
 	}
-	literals := make([]string, 0, len(p.Visibility))
-	for _, visibility := range p.Visibility {
-		switch visibility {
-		case "officers", "mentors", "team":
-			literals = append(literals, "'"+visibility+"'")
-		default:
-			raw, _ := json.Marshal(p.Visibility)
-			return ` AND a.visibility IN (SELECT value FROM json_each(?))`, []any{string(raw)}
-		}
-	}
-	return ` AND a.visibility IN (` + strings.Join(literals, ",") + `)`, nil
+	raw, _ := json.Marshal(p.Visibility)
+	return ` AND a.visibility IN (SELECT value FROM json_each(?))`, []any{string(raw)}
 }
 
 // lastActivityFromRows avoids another query when the response already contains

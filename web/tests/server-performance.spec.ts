@@ -41,6 +41,42 @@ test('delivered history loads another page without dropping active cards', async
   await expect(page.getByRole('button', { name: 'Load more delivered work', exact: true })).toHaveCount(0);
 });
 
+test('filtered Done lane counts loaded matches while Pipeline keeps the delivered total', async ({ page }) => {
+  await devLoginSkipTour(page, 'director');
+  const response = await page.request.get('/api/design-requests');
+  expect(response.ok()).toBe(true);
+  const data = await response.json();
+  const sample = data.items[0];
+  expect(sample).toBeTruthy();
+  const active = { ...sample, id: 'perf-filter-active', title: 'Unassigned active work', stage: 'new', type: 'social', assignee: null };
+  const delivered = (i: number) => ({
+    ...sample,
+    id: `perf-filter-done-${i}`,
+    title: `Assigned delivered work ${i}`,
+    stage: 'delivered',
+    type: 'poster',
+    assignee: { id: 'perf-designer', name: 'Designer', avatarUrl: null },
+  });
+  await page.route('**/api/design-requests*', (route) => route.fulfill({ json: {
+    ...data,
+    items: [active, ...Array.from({ length: 6 }, (_, i) => delivered(i + 1))],
+    deliveredNextCursor: 'more-delivered',
+    deliveredTotal: 120,
+  } }));
+  for (const filter of ['filter=unassigned', 'type=social']) {
+    await page.goto(`/design?view=board&lane=done&${filter}`);
+    await settle(page);
+    await expect(page.locator('[data-pipeline]')).toHaveAttribute('aria-label', /Done 120/);
+    await expect(page.locator('section[data-lane="done"] .lane-count')).toHaveText('0+ requests');
+    await expect(page.locator('.board-tab[data-lane="done"] b')).toHaveText('0+');
+    await expect(page.locator('section[data-lane="done"] .kanban-card')).toHaveCount(0);
+  }
+  await page.goto('/design?view=board&lane=done');
+  await settle(page);
+  await expect(page.locator('section[data-lane="done"] .lane-count')).toHaveText('120 requests');
+  await expect(page.locator('section[data-lane="done"] .kanban-card')).toHaveCount(6);
+});
+
 test('a fixed-event CSV form opens without an event-picker lookup', async ({ page }) => {
   await devLoginSkipTour(page, 'director');
   const lookups: string[] = [];

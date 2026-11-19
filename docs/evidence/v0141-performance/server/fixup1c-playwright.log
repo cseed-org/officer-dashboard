@@ -1,0 +1,30 @@
+docker :  Container fix-server-perf-web-1 Running
+At line:2 char:1
++ docker compose -p fix-server-perf -f compose.dev.yaml -f .pane/prompt ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ( Container fix-...-web-1 Running :String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+ Container fix-server-perf-app-1 Running
+ Container fix-server-perf-app-1 Waiting
+ Container fix-server-perf-app-1 Healthy
+ Container fix-server-perf-web-1 Waiting
+ Container fix-server-perf-web-1 Healthy
+ Container fix-server-perf-e2e-run-3ebbecb68c28 Creating
+ Container fix-server-perf-e2e-run-3ebbecb68c28 Created
+
+Running 6 tests using 1 worker
+
+  ✓  1 [desktop] › tests/server-performance.spec.ts:16:1 › delivered history loads another page without dropping active cards (6.2s)
+  ✓  2 [desktop] › tests/server-performance.spec.ts:44:1 › filtered Done lane counts loaded matches while Pipeline keeps the delivered total (3.2s)
+  ✓  3 [desktop] › tests/server-performance.spec.ts:80:1 › a fixed-event CSV form opens without an event-picker lookup (4.4s)
+  ✓  4 [desktop] › tests/server-performance.spec.ts:90:1 › Buildspace exposes a cancellable older-activity page (5.1s)
+  ✓  5 [desktop] › tests/server-performance.spec.ts:112:1 › Buildspace cards use retained last-activity dates when history is not loaded (2.1s)
+  ✓  6 [desktop] › tests/server-performance.spec.ts:137:1 › delivered history does not overwrite a newer board reload (2.4s)
+
+  6 passed (31.3s)
+npm notice
+npm notice New major version of npm available! 11.20.0 -> 12.2.3
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.3
+npm notice To update run: npm install -g npm@12.2.3
+npm notice

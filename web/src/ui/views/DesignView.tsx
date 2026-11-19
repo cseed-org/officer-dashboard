@@ -348,6 +348,7 @@ export default function DesignView({ me }: { me: CurrentUser }) {
                   lane={lane}
                   onLane={(k) => setParams({ lane: k === 'todo' ? null : k }, { replace: true })}
                   scope={`${filter}|${type ?? ''}`}
+                  filtered={filter !== 'all' || type !== null}
                   party={party}
                   onOpen={(id) => setParams({ id })}
                 />
@@ -566,6 +567,7 @@ function Board({
   lane: shownLane,
   onLane,
   scope,
+  filtered,
   party,
   onOpen,
 }: {
@@ -579,6 +581,7 @@ function Board({
   lane: DesignLane;
   onLane: (l: DesignLane) => void;
   scope: string;
+  filtered: boolean;
   party: number;
   onOpen: (id: string) => void;
 }) {
@@ -618,7 +621,8 @@ function Board({
     return el && root.current?.contains(el) ? (el.dataset.lane as DesignLane) : null;
   };
 
-  const count = (l: DesignLane) => l === 'done' ? data.deliveredTotal : all.filter((i) => laneOf(i.stage) === l).length;
+  const count = (l: DesignLane) => l === 'done' && !filtered ? data.deliveredTotal : all.filter((i) => laneOf(i.stage) === l).length;
+  const countText = (l: DesignLane) => `${count(l)}${l === 'done' && filtered && data.deliveredNextCursor ? '+' : ''}`;
   // While dragging: allowed lanes are outlined, refused lanes fade; the card's own lane stays as it is.
   const laneClass = (l: DesignLane) => {
     const from = dragged.current && laneOf(dragged.current.stage);
@@ -764,7 +768,7 @@ function Board({
             aria-controls={`lane-panel-${l}`}
             onClick={() => onLane(l)}
           >
-            <b>{count(l)}</b>
+            <b>{countText(l)}</b>
             <span>{LANE_LABEL[l]}</span>
             {l === 'done' && party > 0 && <Confetti />}
           </button>
@@ -805,7 +809,7 @@ function Board({
                   {LANE_LABEL[l]}
                 </h3>
                 <span class="lane-count">
-                  {count(l)}
+                  {countText(l)}
                   <span class="visually-hidden"> {count(l) === 1 ? 'request' : 'requests'}</span>
                 </span>
                 {l === 'done' && party > 0 && <Confetti />}

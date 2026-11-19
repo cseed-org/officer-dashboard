@@ -227,6 +227,20 @@ Raw rounds: [main](evidence/v0141-performance/server/fixup1b-main-bench.txt) · 
 
 After the final rebase onto #96 (web-only changes; the measured server tree is unchanged), the root scripts, generated MCP tool check, Astro check, production build, and all 38 pure unit tests passed again. Free host memory was then 1,742.3 MB, so the browser suite was not rerun locally; required CI covers the final rebased head.
 
+### Fix-up 1C statement-cache and filtered-count check
+
+Roster-derived activity scopes now use one `json_each(?)` argument, keeping their SQL text fixed as project and person counts change. Visibility lists use the same fixed-arity form, and the delivered-page limit is bound rather than interpolated. Actual `EXPLAIN QUERY PLAN` regressions require indexed searches through `buildspace_launchpad_activity_project` and `buildspace_launchpad_activity_person`. The statement cache stays constant over 30 roster-growth steps and six delivered page sizes. Closing the database leaves the cache map usable for a reader finishing a concurrent prepare until the reader pool closes. The Done lane uses the global delivered total only with no board filter; filtered views show their loaded matching count with `+` while more delivered history remains. The Pipeline retains the global total.
+
+The same production-handler fixture and clean `origin/main` archive used for fix-up 1B ran three fresh-process paired rounds on Go 1.27.4, cores 0–3 and a 2 GB container. The host had 797.4 MB free at the start, and the browser stack was stopped. Absolute timings were slower than the 1B runs under this host pressure; the paired medians are the comparison. Every requested endpoint remains no slower than main.
+
+| Handler | Main ms/op | Fix-up 1C ms/op | Change |
+| --- | ---: | ---: | ---: |
+| `/api/buildspace-launchpad` | 2.519813 | **2.231418** | −11.4% |
+| `/api/portal/builder` | 3.579519 | **2.710936** | −24.3% |
+| `/api/portal/mentor` | 2.163826 | **1.845931** | −14.7% |
+
+Raw rounds: [main](evidence/v0141-performance/server/fixup1c-main-bench.txt) · [fix-up](evidence/v0141-performance/server/fixup1c-after-bench.txt). The new cache and filtered-Done tests fail on `90d59d5` and pass after ([before Go](evidence/v0141-performance/server/fixup1c-before-go.log) · [before browser](evidence/v0141-performance/server/fixup1c-before-web.log)). Final validation passed: full Linux Go and dev-tag suites, both vet modes, production web build, Astro check (zero errors/warnings, nine existing hints), and all six focused desktop tests in `server-performance.spec.ts`. The isolated compose stack and its volumes were removed.
+
 ## How to reproduce
 
 The original measurements ran on Windows 11 Home 10.0.26300, an Intel Core i7-12700H (14 cores / 20 threads) with 15.68 GB RAM, Docker Desktop 29.9.3 and WSL2. Server and browser containers use the Pi-like limits `--cpuset-cpus 0-3 --memory 2g`; the static-closure measurement itself only reads build output on the host. Web builds use the Node 26 `web-build` stage of `docker/dev.Dockerfile`.

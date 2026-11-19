@@ -137,7 +137,8 @@ func (d *DB) Close() {
 		for _, stmt := range d.cache.stmts {
 			_ = stmt.Close()
 		}
-		d.cache.stmts = nil
+		// Keep the map usable: a reader finishing a concurrent prepare may still
+		// insert its statement before the reader pool closes.
 		d.cache.mu.Unlock()
 	}
 	_ = d.R.Close()

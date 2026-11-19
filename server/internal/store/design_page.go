@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 )
 
 func (q *Queries) designRows(ctx context.Context, where string, args ...any) ([]DesignRequest, error) {
@@ -51,7 +50,8 @@ func (q *Queries) DesignDeliveredPage(ctx context.Context, hasCursor bool, at in
 		where += ` AND (updated_at < ? OR (updated_at=? AND id>?))`
 		args = append(args, at, at, id)
 	}
-	rows, err := q.query(ctx, `SELECT (SELECT count(*) FROM design_requests WHERE stage='delivered'),`+designCols+` FROM design_requests `+where+fmt.Sprintf(` ORDER BY updated_at DESC,id LIMIT %d`, limit), args...)
+	args = append(args, limit)
+	rows, err := q.query(ctx, `SELECT (SELECT count(*) FROM design_requests WHERE stage='delivered'),`+designCols+` FROM design_requests `+where+` ORDER BY updated_at DESC,id LIMIT ?`, args...)
 	if err != nil {
 		return nil, 0, err
 	}
