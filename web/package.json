@@ -14,14 +14,14 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@astrojs/preact": "6.1.5",
-    "astro": "7.4.11",
+    "@astrojs/preact": "6.1.6",
+    "astro": "7.4.12",
     "preact": "11.2.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.12",
-    "@playwright/test": "1.65.0",
+    "@playwright/test": "1.65.1",
     "@types/node": "^26.6.6",
     "typescript": "6.0.3"
   }
