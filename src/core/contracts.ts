@@ -1598,6 +1598,8 @@ export const ENDPOINTS = {
   programExceptionSave: {method:'POST', path:'/api/programs/:id/exceptions', auth:'officer', body:ProgramExceptionWriteRequest, response:ProgramResponse},
   programExceptionDelete: {method:'DELETE', path:'/api/programs/:id/exceptions', auth:'officer', query:z.object({onDate:IsoDate}), response:ProgramResponse},
   orgGoogleStatus: {method:'GET', path:'/api/settings/org-google/status', auth:'leadership', response:OrgGoogleStatus},
+  orgGoogleConnect: {method:'GET', path:'/api/settings/org-google/connect', auth:'leadership', response:'redirect'},
+  orgGoogleCallback: {method:'GET', path:'/auth/org-google/callback', auth:'leadership', response:'redirect'},
   orgGoogleDisconnect: {method:'DELETE', path:'/api/settings/org-google', auth:'leadership', response:OrgGoogleStatus},
 
  buildspaceList: {method: 'GET', path: '/api/buildspace-launchpad', auth: 'officer', query: LaunchpadQuery, response: BuildspaceResponse},

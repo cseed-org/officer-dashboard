@@ -16,6 +16,8 @@ const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   programExceptionSave: { method: 'POST', path: '/api/programs/:id/exceptions' },
   programExceptionDelete: { method: 'DELETE', path: '/api/programs/:id/exceptions' },
   orgGoogleStatus: { method: 'GET', path: '/api/settings/org-google/status' },
+  orgGoogleConnect: { method: 'GET', path: '/api/settings/org-google/connect' },
+  orgGoogleCallback: { method: 'GET', path: '/auth/org-google/callback' },
   orgGoogleDisconnect: { method: 'DELETE', path: '/api/settings/org-google' },
   buildspaceList: { method: 'GET', path: '/api/buildspace-launchpad' },
   buildspaceProjectSave: { method: 'PUT', path: '/api/buildspace-launchpad/projects/:id' },
