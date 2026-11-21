@@ -651,6 +651,21 @@ func (s *Server) syncEvent(ctx context.Context, eventID string) error {
 	if e.Status == "cancelled" {
 		return s.withdraw(ctx, e.ID, "")
 	}
+	if e.StartsAt == "" {
+		unlock := s.eventLock(eventID)
+		defer unlock()
+		cur, err := s.db.Read().EventByID(ctx, eventID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if cur.StartsAt != "" {
+			return nil
+		}
+		return s.withdrawTentativeLocked(ctx, cur.ID, "")
+	}
 	recips, err := s.db.Read().CalendarRecipients(ctx)
 	if err != nil {
 		return err
@@ -744,6 +759,9 @@ func (s *Server) deliverTo(ctx context.Context, eventID string, r recipient) err
 	}
 	if e.Status == "cancelled" {
 		return s.withdrawLocked(ctx, e, r.UserID)
+	}
+	if e.StartsAt == "" {
+		return s.withdrawTentativeLocked(ctx, e.ID, r.UserID)
 	}
 	p, err := s.planDelivery(ctx, e, r)
 	if err != nil || p == nil {
@@ -909,6 +927,9 @@ func (s *Server) withdraw(ctx context.Context, eventID, userID string) error {
 // withdrawLocked does withdraw's work under the event lock. It returns an error while a
 // destination still shows the event (its cancellation or the record of it failed).
 func (s *Server) withdrawLocked(ctx context.Context, e *store.Event, userID string) error {
+	if e.StartsAt == "" {
+		return s.withdrawTentativeLocked(ctx, e.ID, userID)
+	}
 	rows, err := s.db.Read().DeliveriesForEvent(ctx, e.ID, userID)
 	if err != nil {
 		return fmt.Errorf("calendar withdraw: deliveries: %w", err)
@@ -943,6 +964,20 @@ func (s *Server) withdrawLocked(ctx context.Context, e *store.Event, userID stri
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func (s *Server) withdrawTentativeLocked(ctx context.Context, id, userID string) error {
+	fixed, err := s.db.Read().LastFixedCalendarEvent(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if fixed.StartsAt == "" {
+		return nil
+	}
+	return s.withdrawLocked(ctx, fixed, userID)
 }
 
 // cancelDeleted sends a CANCEL (.ics) or cancels the Google event on each destination a

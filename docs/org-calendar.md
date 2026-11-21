@@ -29,6 +29,9 @@ Google receives an all-day `[Tentative]` entry, ending the day after tentativeTo
 fixed start/end clears the range and replaces the same Google event. Fixed all-day meetings
 use date strings and an exclusive endsAt. Dashboard drafts carry `[Draft]`; cancelled or
 deleted source events are removed. See [programs](programs.md) for recurring source sessions.
+Changing a fixed source event back to tentative withdraws its old per-officer invitation.
+The last fixed window is retained for retries and deletion; setting a fixed date again
+restores delivery through the existing Google/ICS path.
 
 Writes save their projection and outbox in one SQLite transaction. Failures retain jobs with
 exponential backoff from one minute to one hour. Startup/hourly retry resumes jobs;

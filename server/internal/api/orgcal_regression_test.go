@@ -5,7 +5,41 @@ import (
 	"officerdashboard/internal/orgcal"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestOrgCalendarEditDuringSendIsDeliveredAfterOriginal(t *testing.T) {
+	e, f := orgGoogleEnv(t)
+	pause, entered := make(chan struct{}), make(chan struct{})
+	f.pauseWrite = pause
+	f.enteredWrite = entered
+	r := e.mustOK(e.post("/api/orgcal/events", map[string]any{"calendarKey": "internal", "title": "Original", "startsAt": "2026-11-24T18:00:00Z", "endsAt": "2026-11-24T19:00:00Z"}, e.officer()))
+	id := r.str("event", "id")
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		close(pause)
+		t.Fatal("send did not start")
+	}
+	r = e.do("PATCH", "/api/orgcal/events/"+id, map[string]any{"title": "Newest edit"}, e.officer())
+	close(pause)
+	e.mustOK(r)
+	e.srv.WaitBackground()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	posts, patches := 0, 0
+	for _, r := range f.requests {
+		if r.Path == "/calendars/internal/events" && r.Method == "POST" {
+			posts++
+		}
+		if strings.HasPrefix(r.Path, "/calendars/internal/events/") && r.Method == "PATCH" && r.Body["summary"] == "Newest edit" {
+			patches++
+		}
+	}
+	if posts != 1 || patches < 1 {
+		t.Fatalf("duplicate or lost send: posts=%d latest patches=%d", posts, patches)
+	}
+}
 
 func TestOrgCalendarTentativeGoogleRoundTripThenFixed(t *testing.T) {
 	e, _ := orgGoogleEnv(t)
@@ -32,6 +66,28 @@ func TestOrgCalendarAllDayRecurrenceAcrossFallDST(t *testing.T) {
 	r := e.mustOK(e.get("/api/orgcal/events?from=2026-11-01&to=2026-11-03&cal=internal", who))
 	if len(r.list("events")) != 1 || r.str("events", 0, "endsAt") != "2026-11-02" {
 		t.Fatal(string(r.Raw))
+	}
+}
+
+func TestOrgCalendarSourceTentativeWithdrawsPersonalInviteAndFixedRestores(t *testing.T) {
+	e, f := googleDeliveryEnv(t)
+	id := googleDeliveryEvent(e)
+	who := e.officer()
+	e.mustOK(e.do("PATCH", "/api/events/"+id, map[string]any{"startsAt": nil, "tentativeFrom": "2026-11-24", "tentativeTo": "2026-11-28"}, who))
+	e.srv.WaitBackground()
+	f.mu.Lock()
+	n := len(f.requests)
+	if n != 2 || f.requests[n-1].body["status"] != "cancelled" {
+		t.Error(f.requests)
+	}
+	f.mu.Unlock()
+	e.mustOK(e.do("PATCH", "/api/events/"+id, map[string]any{"startsAt": "2026-11-25T18:00:00Z", "endsAt": "2026-11-25T19:00:00Z"}, who))
+	e.srv.WaitBackground()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n = len(f.requests)
+	if n != 3 || f.requests[n-1].body["status"] != "confirmed" {
+		t.Fatal(f.requests)
 	}
 }
 func TestOrgCalendarImportedRecurrenceCanBeEditedWithoutTimezoneDrift(t *testing.T) {

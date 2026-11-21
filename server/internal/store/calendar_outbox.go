@@ -134,3 +134,15 @@ func (q *Queries) PendingCalendarJobs(ctx context.Context) (int, error) {
 	err := q.q.QueryRowContext(ctx, `SELECT count(*) FROM calendar_outbox`).Scan(&n)
 	return n, err
 }
+
+func (q *Queries) LastFixedCalendarEvent(ctx context.Context, id string) (*Event, error) {
+	var raw string
+	if err := q.q.QueryRowContext(ctx, `SELECT snapshot FROM event_calendar_history WHERE event_id=?`, id).Scan(&raw); err != nil {
+		return nil, notFound(err)
+	}
+	var snap CalendarSnapshot
+	if err := json.Unmarshal([]byte(raw), &snap); err != nil {
+		return nil, err
+	}
+	return snap.Event(), nil
+}

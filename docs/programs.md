@@ -13,6 +13,8 @@ PATCH `/api/programs/:id` return `{program}` and accept:
 
 PATCH fields are optional. Weekdays are Sunday=0 to Saturday=6. Times use HH:MM in
 America/Los_Angeles. Dates are inclusive (at most five years); duration is 1–1440 minutes.
+The range must include a scheduled weekday. Changing its weekday/range removes exceptions
+that no longer refer to a scheduled session.
 DELETE `/api/programs/:id` returns `{ok:true}` and withdraws its recurring master.
 
 POST `/api/programs/:id/exceptions` replaces one exception; DELETE on the same path with

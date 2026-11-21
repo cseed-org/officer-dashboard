@@ -22,18 +22,29 @@ type orgRequest struct {
 	Body                map[string]any
 }
 type orgFake struct {
-	mu         sync.Mutex
-	requests   []orgRequest
-	events     map[string][]orgcal.Event
-	failWrites bool
-	gone       bool
-	instances  []orgcal.Event
+	mu                       sync.Mutex
+	requests                 []orgRequest
+	events                   map[string][]orgcal.Event
+	failWrites               bool
+	gone                     bool
+	instances                []orgcal.Event
+	pauseWrite, enteredWrite chan struct{}
 }
 
 func (f *orgFake) serve(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodHead && r.URL.Path == "/" {
 		w.WriteHeader(http.StatusOK)
 		return
+	}
+	if r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/events") {
+		f.mu.Lock()
+		pause, entered := f.pauseWrite, f.enteredWrite
+		f.pauseWrite = nil
+		f.mu.Unlock()
+		if pause != nil {
+			close(entered)
+			<-pause
+		}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -416,6 +416,14 @@ func (c *Ctx) eventDelete() error {
 		}
 		if len(live) > 0 {
 			snap := store.SnapshotOf(e)
+			if e.StartsAt == "" {
+				fixed, err := w.LastFixedCalendarEvent(ctx, id)
+				if err == nil {
+					snap = store.SnapshotOf(fixed)
+				} else if !errors.Is(err, store.ErrNotFound) {
+					return err
+				}
+			}
 			if err := c.S.enqueueCalendar(ctx, w, store.CalendarJob{Kind: "cancel", EventID: id, Snapshot: &snap, Priors: live}); err != nil {
 				return err
 			}
