@@ -15,7 +15,7 @@ func TestOrgCalendarMeetingsAndLocks(t *testing.T) {
 	if id == "" {
 		t.Fatal(string(r.Raw))
 	}
-	r = e.mustOK(e.get("/api/orgcal/events?from=2026-11-01&to=2026-12-01", who))
+	r = e.mustOK(e.get("/api/orgcal/events?from=2026-11-01&to=2026-12-01&cal=internal", who))
 	if len(r.list("events")) != 1 {
 		t.Fatal(string(r.Raw))
 	}
@@ -26,7 +26,7 @@ func TestOrgCalendarMeetingsAndLocks(t *testing.T) {
 	}
 	e.mustOK(e.do("PATCH", "/api/orgcal/events/"+id, map[string]any{"title": "Revised"}, e.director()))
 	e.mustOK(e.do("DELETE", "/api/orgcal/events/"+id, nil, who))
-	r = e.mustOK(e.get("/api/orgcal/events?from=2026-11-01&to=2026-12-01", who))
+	r = e.mustOK(e.get("/api/orgcal/events?from=2026-11-01&to=2026-12-01&cal=internal", who))
 	if len(r.list("events")) != 0 {
 		t.Fatal(string(r.Raw))
 	}

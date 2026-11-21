@@ -89,13 +89,21 @@ type Server struct {
 	memberEmails     map[string]string
 	memberGeneration int64
 
-	sealer     *calendar.Sealer
-	bg         sync.WaitGroup // background calendar deliveries
-	calMu      sync.Mutex     // guards calRunning, calKicked and calAll
-	calKicked  bool           // new outbox rows since the worker last looked
-	calAll     bool           // the next pass retries every job, backoff or not
-	calRunning bool           // one worker drains calendar_outbox
-	evLocks    [64]sync.Mutex // eventLock stripes
+	sealer                  *calendar.Sealer
+	bg                      sync.WaitGroup // background calendar deliveries
+	calMu                   sync.Mutex     // guards calRunning, calKicked and calAll
+	calKicked               bool           // new outbox rows since the worker last looked
+	calAll                  bool           // the next pass retries every job, backoff or not
+	calRunning              bool           // one worker drains calendar_outbox
+	evLocks                 [64]sync.Mutex // eventLock stripes
+	orgMu                   sync.Mutex
+	orgRunMu                sync.Mutex
+	orgRunning, orgKicked   bool
+	orgCtx                  context.Context
+	orgNextPull, orgNextACL time.Time
+	orgACLGeneration        int64
+	orgFailures             int
+	orgRetryAt              time.Time
 }
 
 // New builds a server from its config.

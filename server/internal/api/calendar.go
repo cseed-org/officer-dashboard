@@ -518,7 +518,7 @@ func (s *Server) kickCalendar() { s.startCalendar(false); s.kickOrgCalendar() }
 
 // ResumeCalendar drains every job in the outbox, failed ones included whatever their
 // backoff: call it at startup for what a previous run left; the server also calls it hourly.
-func (s *Server) ResumeCalendar() { s.startCalendar(true) }
+func (s *Server) ResumeCalendar() { s.startCalendar(true); s.resumeOrgCalendar() }
 
 func (s *Server) startCalendar(all bool) {
 	s.calMu.Lock()

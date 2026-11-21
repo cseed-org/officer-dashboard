@@ -3,12 +3,13 @@ package api
 import (
 	"context"
 	"errors"
+	"officerdashboard/internal/orgcal"
 	"officerdashboard/internal/store"
 	"strings"
 	"time"
 )
 
-func orgTZ() *time.Location   { loc, _ := time.LoadLocation("America/Los_Angeles"); return loc }
+func orgTZ() *time.Location { loc, _ := time.LoadLocation("America/Los_Angeles"); return loc }
 func (s *Server) projectProgram(ctx context.Context, q *store.Queries, p store.Program) error {
 	start, _ := time.ParseInLocation("2006-01-02 15:04", p.StartsOn+" "+p.StartTime, orgTZ())
 	for int(start.Weekday()) != p.Weekday {
@@ -68,61 +69,86 @@ func (s *Server) projectOrgEvent(ctx context.Context, q *store.Queries, id strin
 	return q.SaveOrgEvent(ctx, e, true)
 }
 
-// expandOrgEvent expands weekly masters into local wall-time instances, preserving DST.
+// expandOrgEvent returns visible instances, preserving the master's editing id.
 func expandOrgEvent(e store.OrgEvent, from, to string) []store.OrgEvent {
-	overlaps := func(v store.OrgEvent) bool {
-		a, b := "", ""
-		if v.StartsAt != nil {
-			a = *v.StartsAt
-			b = a
-			if v.EndsAt != nil {
-				b = *v.EndsAt
-			}
-		} else if v.TentativeFrom != nil {
-			a = *v.TentativeFrom
-			b = *v.TentativeTo
-		}
-		if len(a) > 10 {
-			a = a[:10]
-		}
-		if len(b) > 10 {
-			b = b[:10]
-		}
-		return a < to && b >= from
-	}
-	if e.RRule == nil || e.StartsAt == nil || e.EndsAt == nil {
-		if overlaps(e) {
+	if e.StartsAt == nil {
+		if e.TentativeFrom != nil && *e.TentativeFrom < to && *e.TentativeTo >= from {
 			return []store.OrgEvent{e}
 		}
 		return nil
 	}
-	start, err := time.Parse(time.RFC3339Nano, *e.StartsAt)
+	loc := orgTZ()
+	if e.TimeZone != "" {
+		if z, err := time.LoadLocation(e.TimeZone); err == nil {
+			loc = z
+		}
+	}
+	parse := func(s string) (time.Time, error) {
+		if e.AllDay {
+			return time.ParseInLocation("2006-01-02", s, loc)
+		}
+		return time.Parse(time.RFC3339Nano, s)
+	}
+	start, err := parse(*e.StartsAt)
 	if err != nil {
 		return nil
 	}
-	end, err := time.Parse(time.RFC3339Nano, *e.EndsAt)
+	end, err := parse(*e.EndsAt)
 	if err != nil {
 		return nil
 	}
-	duration := end.Sub(start)
-	start = start.In(orgTZ())
-	until := time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
-	for _, part := range strings.Split(*e.RRule, ";") {
-		if strings.HasPrefix(part, "UNTIL=") {
-			if u, err := time.Parse("20060102T150405Z", strings.TrimPrefix(part, "UNTIL=")); err == nil {
-				until = u
+	start = start.In(loc)
+	end = end.In(loc)
+	a, _ := time.ParseInLocation("2006-01-02", from, orgTZ())
+	b, _ := time.ParseInLocation("2006-01-02", to, orgTZ())
+	overlaps := func(s, t time.Time) bool { return s.Before(b) && t.After(a) }
+	if e.RRule == nil {
+		if overlaps(start, end) {
+			return []store.OrgEvent{e}
+		}
+		return nil
+	}
+	// Include long sessions beginning before the requested range.
+	first := a.Add(-end.Sub(start)).In(loc).Format("2006-01-02")
+	dates := orgcal.Occurrences(start, *e.RRule, first, to)
+	out := []store.OrgEvent{}
+	for _, t := range dates {
+		excluded := false
+		for _, line := range e.Recurrence {
+			if !strings.HasPrefix(line, "EXDATE") {
+				continue
+			}
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			for _, d := range strings.Split(parts[1], ",") {
+				if d == t.Format("20060102T150405") || d == t.UTC().Format("20060102T150405Z") || d == t.Format("20060102") {
+					excluded = true
+				}
 			}
 		}
-	}
-	out := []store.OrgEvent{}
-	for n := 0; n < 26000 && start.Format("2006-01-02") < to && !start.After(until); n++ {
-		v := e
-		v.StartsAt = strPtr(start.Format(time.RFC3339))
-		v.EndsAt = strPtr(start.Add(duration).Format(time.RFC3339))
-		if overlaps(v) {
-			out = append(out, v)
+		if excluded {
+			continue
 		}
-		start = start.AddDate(0, 0, 7)
+		finish := t.Add(end.Sub(start))
+		if e.AllDay {
+			a := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+			b := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.UTC)
+			finish = t.AddDate(0, 0, int(b.Sub(a)/(24*time.Hour)))
+		}
+		if !overlaps(t, finish) {
+			continue
+		}
+		v := e
+		if e.AllDay {
+			v.StartsAt = strPtr(t.Format("2006-01-02"))
+			v.EndsAt = strPtr(finish.Format("2006-01-02"))
+		} else {
+			v.StartsAt = strPtr(t.Format(time.RFC3339))
+			v.EndsAt = strPtr(finish.Format(time.RFC3339))
+		}
+		out = append(out, v)
 	}
 	return out
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"officerdashboard/internal/luma"
 )
@@ -100,6 +101,22 @@ func eventStartMillis(raw string) *int64 {
 	return &ms
 }
 
+func eventSortMillis(raw string, tentative *string) *int64 {
+	if raw != "" {
+		return eventStartMillis(raw)
+	}
+	if tentative == nil {
+		return nil
+	}
+	loc, _ := time.LoadLocation("America/Los_Angeles")
+	t, err := time.ParseInLocation("2006-01-02", *tentative, loc)
+	if err != nil {
+		return nil
+	}
+	ms := t.UnixMilli()
+	return &ms
+}
+
 // InsertEvent adds an event. An empty Status stores "published" (imports come from Luma).
 func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	if e.Status == "" {
@@ -110,7 +127,7 @@ func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	}
 	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`, starts_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		e.ID, e.LumaID, e.Name, nullableEventStart(e.StartsAt), e.EndsAt, e.Location, e.URL, e.HostUserID, e.Status, e.Description, e.Capacity, e.HostSubteamID,
-		e.LumaURL, e.NotionURL, e.DesignNeed, int64(e.CreatedAt), int64(e.UpdatedAt), e.TentativeFrom, e.TentativeTo, eventStartMillis(e.StartsAt))
+		e.LumaURL, e.NotionURL, e.DesignNeed, int64(e.CreatedAt), int64(e.UpdatedAt), e.TentativeFrom, e.TentativeTo, eventSortMillis(e.StartsAt, e.TentativeFrom))
 	return err
 }
 
@@ -156,8 +173,23 @@ func (q *Queries) UpdateEvent(ctx context.Context, id string, p EventPatch, now 
 	str("starts_at", p.StartsAt)
 	str("tentative_from", p.TentativeFrom)
 	str("tentative_to", p.TentativeTo)
-	if p.StartsAt.Set {
-		add("starts_at_ms", true, eventStartMillis(p.StartsAt.V))
+	if p.StartsAt.Set || p.TentativeFrom.Set {
+		cur, err := q.EventByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		start, tf := cur.StartsAt, cur.TentativeFrom
+		if p.StartsAt.Set {
+			start = p.StartsAt.V
+		}
+		if p.TentativeFrom.Set {
+			if p.TentativeFrom.Null {
+				tf = nil
+			} else {
+				tf = &p.TentativeFrom.V
+			}
+		}
+		add("starts_at_ms", true, eventSortMillis(start, tf))
 	}
 	str("ends_at", p.EndsAt)
 	str("location", p.Location)

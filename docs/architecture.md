@@ -18,6 +18,7 @@ server/
   internal/luma        Luma/survey CSV parsing, Pacific-time handling
   internal/auth        roles, allowlist decision, safe redirects, Discord OAuth2 + PKCE
   internal/calendar    ICS invitations over SMTP, Google Calendar OAuth and sync
+  internal/orgcal      Organization Google calendars, sharing, incremental pulls and recurrence expansion
   internal/cfsync      membership D1 mirror and synchronization jobs
   internal/cloudflare  Cloudflare D1 and GraphQL analytics client
   internal/mcpcheck    the mcp-check deployment reachability checks

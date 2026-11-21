@@ -19,3 +19,10 @@ CREATE INDEX events_starts_idx ON events(starts_at);
 CREATE UNIQUE INDEX events_luma_url_unique ON events(lower(luma_url)) WHERE luma_url IS NOT NULL;
 CREATE INDEX events_calendar_start_idx ON events(julianday(starts_at));
 CREATE INDEX events_starts_ms_id_idx ON events(starts_at_ms,id);
+-- Existing dashboard events must appear before the first edit, even without Google.
+INSERT INTO org_cal_events(id,calendar_key,title,description,location,starts_at,ends_at,source_kind,source_id,created_at,updated_at)
+ SELECT 'event-'||id,'events',CASE WHEN status='draft' THEN '[Draft] ' ELSE '' END||name,
+ coalesce(description,''),coalesce(location,''),starts_at,
+ coalesce(ends_at,strftime('%Y-%m-%dT%H:%M:%SZ',starts_at_ms/1000.0+3600,'unixepoch')),
+ 'event',id,created_at,updated_at FROM events WHERE status!='cancelled' AND starts_at_ms IS NOT NULL;
+INSERT INTO org_cal_outbox(event_id,revision) SELECT id,revision FROM org_cal_events;

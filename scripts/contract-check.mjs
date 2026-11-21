@@ -202,6 +202,25 @@ const money = (c) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toLocaleString('
 
 // ───────────── 1. every GET endpoint, on the freshly seeded books ─────────────
 await call('health');
+// Org calendar and programs: all published JSON endpoints, including locks.
+await call('orgCalendars', {who: officer});
+await call('orgGoogleStatus', {who: leadership});
+await call('orgGoogleDisconnect', {who: leadership});
+const orgMeeting = await call('orgEventCreate', {who: officer, body: {calendarKey:'internal',title:'Contract meeting',startsAt:'2026-11-24T18:00:00Z',endsAt:'2026-11-24T19:00:00Z'}});
+const orgId = orgMeeting.json.event.id;
+await call('orgEventUpdate', {who: officer,params:{id:orgId},body:{title:'Updated meeting'}});
+await call('orgEvents', {who: officer,query:{from:'2026-11-01',to:'2026-12-01'}});
+await call('orgEventCreate', {who: officer,body:{calendarKey:'events',title:'Locked'},expect:403});
+await call('orgEventDelete', {who: officer,params:{id:orgId}});
+const tracks = await call('programTracks', {who: officer});
+await call('programTrackCreate', {who: leadership,body:{key:'contract-track',name:'Contract track',hue:'blue'}});
+const program = await call('programCreate', {who: officer,body:{trackId:tracks.json.tracks[0].id,name:'Contract program',weekday:2,startTime:'10:00',durationMin:60,startsOn:'2026-11-01',endsOn:'2026-11-30'}});
+const programId = program.json.program.id;
+await call('programUpdate', {who: officer,params:{id:programId},body:{name:'Updated program'}});
+await call('programExceptionSave', {who: officer,params:{id:programId},body:{onDate:'2026-11-03',kind:'skip'}});
+await call('programExceptionDelete', {who: officer,params:{id:programId},query:{onDate:'2026-11-03'}});
+await call('programsList', {who: officer});
+await call('programDelete', {who: officer,params:{id:programId}});
 const me = await call('me', { who: officer });
 must(me.json?.user?.id === 'user-priya', 'me returns the signed-in user');
 const lookups = await call('lookups', { who: officer });

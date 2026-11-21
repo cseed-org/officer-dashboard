@@ -224,6 +224,12 @@ func (c *Ctx) eventCreate() error {
 	if in.StartsAt.V == "" && (in.TentativeFrom.V == "" || in.TentativeTo.V < in.TentativeFrom.V) {
 		return badRequest("Set startsAt or an inclusive tentative date range")
 	}
+	if in.StartsAt.V == "" {
+		in.EndsAt = validate.Field[string]{Set: true, Null: true}
+	} else {
+		in.TentativeFrom = validate.Field[string]{}
+		in.TentativeTo = validate.Field[string]{}
+	}
 	ctx := c.Context()
 	id := auth.UUID()
 	var out EventListItem
@@ -329,6 +335,7 @@ func (c *Ctx) eventUpdate() error {
 		}
 		if in.StartsAt.Null {
 			startsAt = ""
+			in.EndsAt = validate.Field[string]{Set: true, Null: true}
 		}
 		if startsAt == "" && (tf == nil || tt == nil || *tt < *tf) {
 			return badRequest("Set startsAt or an inclusive tentative range")

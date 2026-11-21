@@ -73,6 +73,13 @@ func validateProgram(p store.Program) error {
 	if b.Sub(a) > 5*366*24*time.Hour {
 		return badRequest("Program range must be at most five years")
 	}
+	first := a
+	for int(first.Weekday()) != p.Weekday {
+		first = first.AddDate(0, 0, 1)
+	}
+	if first.After(b) {
+		return badRequest("Program range must include a scheduled weekday")
+	}
 	return nil
 }
 func (c *Ctx) programWrite() error {
@@ -130,6 +137,13 @@ func (c *Ctx) programWrite() error {
 			return badRequest("Unknown program track")
 		}
 		if err = q.SaveProgram(c.Context(), *p); err != nil {
+			return err
+		}
+		if err = q.PruneProgramExceptions(c.Context(), *p); err != nil {
+			return err
+		}
+		p, err = q.Program(c.Context(), p.ID)
+		if err != nil {
 			return err
 		}
 		if err = c.S.projectProgram(c.Context(), q, *p); err != nil {

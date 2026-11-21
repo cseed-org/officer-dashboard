@@ -66,6 +66,8 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("GET /api/club/settings", (*Ctx).clubSettingsGet)
 	h("PUT /api/club/settings", (*Ctx).clubSettingsPut)
 	h("GET /api/settings/org-google/status", (*Ctx).orgGoogleStatus)
+	h("GET /api/settings/org-google/connect", (*Ctx).orgGoogleConnect)
+	h("GET /auth/org-google/callback", (*Ctx).orgGoogleCallback)
 	h("DELETE /api/settings/org-google", (*Ctx).orgGoogleDisconnect)
 	h("GET /api/orgcal/calendars", (*Ctx).orgCalendars)
 	h("GET /api/orgcal/events", (*Ctx).orgEvents)

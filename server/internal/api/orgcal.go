@@ -2,12 +2,11 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
-	"net/http"
 	"strings"
 	"time"
 
 	"officerdashboard/internal/auth"
+	"officerdashboard/internal/orgcal"
 	"officerdashboard/internal/store"
 )
 
@@ -32,7 +31,11 @@ func (c *Ctx) orgOfficer(write bool) error {
 	if err != nil {
 		return err
 	}
-	c.Agent = "service:" + tok.ID
+	if pending, err := c.S.onboardingPending(c.Context(), c.User.ID); err != nil {
+		return err
+	} else if pending {
+		return fail(403, "onboarding_required", "Finish setting up your account first")
+	}
 	return nil
 }
 func (c *Ctx) orgCalendars() error {
@@ -80,7 +83,83 @@ func (c *Ctx) orgEvents() error {
 		if len(keys) > 0 && !keys[e.CalendarKey] {
 			continue
 		}
-		out = append(out, expandOrgEvent(e, from, to)...)
+		if e.SourceKind == "program" && e.SourceID != nil {
+			p, err := c.S.db.Read().Program(c.Context(), *e.SourceID)
+			if err != nil {
+				return err
+			}
+			for _, v := range expandOrgEvent(e, from, to) {
+				date := (*v.StartsAt)[:10]
+				skip := false
+				for _, ex := range p.Exceptions {
+					if ex.OnDate == date {
+						skip = true
+						break
+					}
+				}
+				if !skip {
+					out = append(out, v)
+				}
+			}
+			for _, ex := range p.Exceptions {
+				if ex.Kind != "move" {
+					continue
+				}
+				v := e
+				v.RRule = nil
+				v.StartsAt = ex.NewStartsAt
+				v.EndsAt = ex.NewEndsAt
+				if ex.NewLocation != nil {
+					v.Location = *ex.NewLocation
+				}
+				out = append(out, expandOrgEvent(v, from, to)...)
+			}
+		} else {
+			items := expandOrgEvent(e, from, to)
+			if e.GoogleEventID != nil && e.RRule != nil {
+				overrides, err := c.S.db.Read().OrgOverrides(c.Context(), e.CalendarKey, *e.GoogleEventID)
+				if err != nil {
+					return err
+				}
+				for _, o := range overrides {
+					var g orgcal.Event
+					if err = json.Unmarshal([]byte(o.Payload), &g); err != nil {
+						return err
+					}
+					keep := items[:0]
+					for _, v := range items {
+						matches := *v.StartsAt == o.OriginalStart
+						if !matches && !e.AllDay {
+							a, ea := time.Parse(time.RFC3339Nano, *v.StartsAt)
+							b, eb := time.Parse(time.RFC3339Nano, o.OriginalStart)
+							matches = ea == nil && eb == nil && a.Equal(b)
+						}
+						if !matches {
+							keep = append(keep, v)
+						}
+					}
+					items = keep
+					if g.Status != "cancelled" {
+						v := e
+						v.RRule = nil
+						v.Title = g.Summary
+						v.Location = g.Location
+						v.Description = g.Description
+						if g.Start.Date != "" {
+							v.AllDay = true
+							v.StartsAt = &g.Start.Date
+							v.EndsAt = &g.End.Date
+						} else {
+							v.AllDay = false
+							v.StartsAt = &g.Start.DateTime
+							v.EndsAt = &g.End.DateTime
+						}
+						items = append(items, expandOrgEvent(v, from, to)...)
+					}
+				}
+			}
+			out = append(out, items...)
+		}
 	}
 	writeJSON(c.W, 200, map[string]any{"events": out, "timezone": "America/Los_Angeles"})
 	return nil
@@ -101,7 +180,10 @@ func (c *Ctx) mergeOrgJSON(dst any) error {
 	}
 	return nil
 }
-func validateOrgEvent(e *store.OrgEvent) error {
+func validateOrgEvent(e *store.OrgEvent, checkRecurrence bool) error {
+	if e.CalendarKey != "internal" && e.CalendarKey != "external" {
+		return forbidden("Weekly Programs and Events calendars are locked; edit the source program or event")
+	}
 	e.Title = strings.TrimSpace(e.Title)
 	if e.Title == "" || len(e.Title) > 200 || len(e.Description) > 10000 || len(e.Location) > 500 {
 		return badRequest("Title is required (at most 200 characters); description/location too long")
@@ -140,7 +222,7 @@ func validateOrgEvent(e *store.OrgEvent) error {
 		e.EndsAt = nil
 		e.AllDay = true
 	}
-	if e.RRule != nil {
+	if e.RRule != nil && checkRecurrence {
 		if err := validateOrgRecurrence(*e.RRule); err != nil {
 			return err
 		}
@@ -209,8 +291,18 @@ func (c *Ctx) orgEventWrite() error {
 		}
 		before := *e
 		oldKey := e.CalendarKey
+		oldRule := ""
+		if e.RRule != nil {
+			oldRule = *e.RRule
+		}
 		if err := json.Unmarshal(raw, e); err != nil {
 			return badRequest("Invalid field type")
+		}
+		if fields["rrule"] != nil {
+			e.Recurrence = nil
+		}
+		if fields["startsAt"] != nil && fields["allDay"] == nil && e.StartsAt != nil {
+			e.AllDay = orgDate(*e.StartsAt)
 		}
 		if create && fields["sendInvites"] == nil {
 			e.SendInvites = e.CalendarKey == "external"
@@ -218,11 +310,23 @@ func (c *Ctx) orgEventWrite() error {
 		if !create && oldKey != e.CalendarKey {
 			return badRequest("A meeting cannot change calendars; create it in the other calendar")
 		}
-		if err := validateOrgEvent(e); err != nil {
+		checkRule := create || (fields["rrule"] != nil && e.RRule != nil && *e.RRule != oldRule)
+		if err := validateOrgEvent(e, checkRule); err != nil {
 			return err
+		}
+		if e.Invitees == nil {
+			e.Invitees = []store.OrgInvitee{}
+		}
+		if e.Reminders == nil {
+			e.Reminders = []store.OrgReminder{}
 		}
 		e.UpdatedBy = &c.User.ID
 		e.UpdatedAt = c.S.nowMs()
+		if c.Token != nil {
+			if err := q.TouchToken(ctx, c.Token.ID, c.S.nowMs()); err != nil {
+				return err
+			}
+		}
 		if err := q.SaveOrgEvent(ctx, *e, true); err != nil {
 			return err
 		}
@@ -300,6 +404,3 @@ func validateOrgRecurrence(rule string) error {
 	}
 	return nil
 }
-
-var _ = errors.Is
-var _ = http.MethodGet

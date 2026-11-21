@@ -46,6 +46,8 @@ type OrgEvent struct {
 	UpdatedAt     int64         `json:"updatedAt"`
 	DeletedAt     *int64        `json:"-"`
 	Revision      int64         `json:"-"`
+	Recurrence    []string      `json:"-"`
+	TimeZone      string        `json:"-"`
 }
 
 func (q *Queries) OrgCalendars(ctx context.Context) ([]OrgCalendar, error) {
@@ -65,14 +67,17 @@ func (q *Queries) OrgCalendars(ctx context.Context) ([]OrgCalendar, error) {
 	return out, rows.Err()
 }
 
-const orgEventCols = `id,calendar_key,title,description,location,starts_at,ends_at,all_day,tentative_from,tentative_to,rrule,reminders,send_invites,source_kind,source_id,google_event_id,google_etag,created_by,updated_by,created_at,updated_at,deleted_at,revision`
+const orgEventCols = `id,calendar_key,title,description,location,starts_at,ends_at,all_day,tentative_from,tentative_to,rrule,reminders,send_invites,source_kind,source_id,google_event_id,google_etag,created_by,updated_by,created_at,updated_at,deleted_at,revision,recurrence,timezone`
 
 func scanOrgEvent(s interface{ Scan(...any) error }) (*OrgEvent, error) {
 	var e OrgEvent
-	var rem string
-	err := s.Scan(&e.ID, &e.CalendarKey, &e.Title, &e.Description, &e.Location, &e.StartsAt, &e.EndsAt, &e.AllDay, &e.TentativeFrom, &e.TentativeTo, &e.RRule, &rem, &e.SendInvites, &e.SourceKind, &e.SourceID, &e.GoogleEventID, &e.GoogleETag, &e.CreatedBy, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt, &e.Revision)
+	var rem, rec string
+	err := s.Scan(&e.ID, &e.CalendarKey, &e.Title, &e.Description, &e.Location, &e.StartsAt, &e.EndsAt, &e.AllDay, &e.TentativeFrom, &e.TentativeTo, &e.RRule, &rem, &e.SendInvites, &e.SourceKind, &e.SourceID, &e.GoogleEventID, &e.GoogleETag, &e.CreatedBy, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt, &e.DeletedAt, &e.Revision, &rec, &e.TimeZone)
 	if err != nil {
 		return nil, notFound(err)
+	}
+	if err = json.Unmarshal([]byte(rec), &e.Recurrence); err != nil {
+		return nil, err
 	}
 	e.Reminders = []OrgReminder{}
 	if err = json.Unmarshal([]byte(rem), &e.Reminders); err != nil {
@@ -147,9 +152,16 @@ func (q *Queries) SaveOrgEvent(ctx context.Context, e OrgEvent, enqueue bool) er
 	if err != nil {
 		return err
 	}
-	_, err = q.q.ExecContext(ctx, `INSERT INTO org_cal_events (`+orgEventCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
- ON CONFLICT(id) DO UPDATE SET calendar_key=excluded.calendar_key,title=excluded.title,description=excluded.description,location=excluded.location,starts_at=excluded.starts_at,ends_at=excluded.ends_at,all_day=excluded.all_day,tentative_from=excluded.tentative_from,tentative_to=excluded.tentative_to,rrule=excluded.rrule,reminders=excluded.reminders,send_invites=excluded.send_invites,source_kind=excluded.source_kind,source_id=excluded.source_id,google_event_id=excluded.google_event_id,google_etag=excluded.google_etag,updated_by=excluded.updated_by,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,revision=org_cal_events.revision+1`,
-		e.ID, e.CalendarKey, e.Title, e.Description, e.Location, e.StartsAt, e.EndsAt, e.AllDay, e.TentativeFrom, e.TentativeTo, e.RRule, string(raw), e.SendInvites, e.SourceKind, e.SourceID, e.GoogleEventID, e.GoogleETag, e.CreatedBy, e.UpdatedBy, e.CreatedAt, e.UpdatedAt, e.DeletedAt)
+	if e.Recurrence == nil {
+		e.Recurrence = []string{}
+	}
+	rec, _ := json.Marshal(e.Recurrence)
+	if e.TimeZone == "" {
+		e.TimeZone = "America/Los_Angeles"
+	}
+	_, err = q.q.ExecContext(ctx, `INSERT INTO org_cal_events (`+orgEventCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
+ ON CONFLICT(id) DO UPDATE SET calendar_key=excluded.calendar_key,title=excluded.title,description=excluded.description,location=excluded.location,starts_at=excluded.starts_at,ends_at=excluded.ends_at,all_day=excluded.all_day,tentative_from=excluded.tentative_from,tentative_to=excluded.tentative_to,rrule=excluded.rrule,reminders=excluded.reminders,send_invites=excluded.send_invites,source_kind=excluded.source_kind,source_id=excluded.source_id,google_event_id=excluded.google_event_id,google_etag=excluded.google_etag,updated_by=excluded.updated_by,updated_at=excluded.updated_at,deleted_at=excluded.deleted_at,revision=org_cal_events.revision+1,recurrence=excluded.recurrence,timezone=excluded.timezone`,
+		e.ID, e.CalendarKey, e.Title, e.Description, e.Location, e.StartsAt, e.EndsAt, e.AllDay, e.TentativeFrom, e.TentativeTo, e.RRule, string(raw), e.SendInvites, e.SourceKind, e.SourceID, e.GoogleEventID, e.GoogleETag, e.CreatedBy, e.UpdatedBy, e.CreatedAt, e.UpdatedAt, e.DeletedAt, string(rec), e.TimeZone)
 	if err != nil {
 		return err
 	}
@@ -274,6 +286,11 @@ func (q *Queries) SaveProgram(ctx context.Context, p Program) error {
 }
 func (q *Queries) DeleteProgram(ctx context.Context, id string) error {
 	_, err := q.q.ExecContext(ctx, `DELETE FROM programs WHERE id=?`, id)
+	return err
+}
+
+func (q *Queries) PruneProgramExceptions(ctx context.Context, p Program) error {
+	_, err := q.q.ExecContext(ctx, `DELETE FROM program_exceptions WHERE program_id=? AND (on_date<? OR on_date>? OR CAST(strftime('%w',on_date) AS INTEGER)!=?)`, p.ID, p.StartsOn, p.EndsOn, p.Weekday)
 	return err
 }
 func (q *Queries) ProgramExceptions(ctx context.Context, id string) ([]ProgramException, error) {

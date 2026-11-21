@@ -710,3 +710,20 @@ Design, lifecycle rules and the security model: [launchpad-cohorts.md](launchpad
 - Archive (officer) / delete (director): `POST /projects/:id/archive` / `POST /projects/:id/restore`, `DELETE /projects/:id` (no builders and no activity), `POST /people/:id/archive` / `POST /people/:id/restore`, `DELETE /people/:id` (no activity; deletes their portal account). Archive and restore are idempotent.
 - Portal: `GET /api/portal/invite?token=` (public, rate-limited), `GET /api/portal/me`, `POST /api/portal/logout`, `GET /api/portal/builder`, `POST /api/portal/builder/onboarding`, `PATCH /api/portal/builder/profile`, `PATCH /api/portal/builder/project`, `POST /api/portal/builder/activity`, `GET /api/portal/mentor`, `POST /api/portal/mentor/activity`. Builders in an archived cohort read but get 409 on writes. Unsafe portal requests from another origin are 403.
 - Sign-in: `/auth/login?launchpad=<token>` accepts an invite; `/auth/login?portal=1` signs a bound account in. Outcomes redirect to `/launchpad`, `/launchpad/join?error=invalid|expired|used|disabled|discord_taken|failed`, or `/launchpad/login?error=not_found|disabled|archived`. The ordinary officer sign-in falls through to a portal session when the Discord account has no officer account but has an active portal account.
+
+## Organization calendar and programs (V0.15)
+
+See [org-calendar.md](org-calendar.md) and [programs.md](programs.md). Shared contracts are
+OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
+
+- Officer or calendar:read/calendar:write service token: GET /api/orgcal/calendars;
+  GET /api/orgcal/events?from&to&cal (date range, to exclusive, maximum 366 days).
+- Officer or calendar:write token: POST /api/orgcal/events; PATCH/DELETE /api/orgcal/events/:id.
+  Internal/External only; locked Programs/Events return 403. Responses are {event} or {ok:true}.
+- Officer: GET/POST /api/programs; PATCH/DELETE /api/programs/:id;
+  POST/DELETE /api/programs/:id/exceptions (DELETE takes onDate query).
+- Officer GET /api/program-tracks; leadership POST /api/program-tracks.
+- Leadership: GET /api/settings/org-google/status, navigation GET /api/settings/org-google/connect,
+  DELETE /api/settings/org-google. OAuth callback: /auth/org-google/callback.
+- Event create/update accepts nullable startsAt and inclusive tentativeFrom/tentativeTo dates.
+  EventListItem startsAt is an empty string for tentative events and gains nullable range fields.

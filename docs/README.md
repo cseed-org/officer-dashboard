@@ -9,6 +9,8 @@
 | [Buildspace + Launchpad](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
 | [Launchpad cohorts](launchpad-cohorts.md) | Cohorts, email invites, builder/mentor portals, identity and security model, auto-assign. |
 | [Home calendar](calendar-widget.md) | Calendar widget views, feed API, adding a source. |
+| [Organization calendar](org-calendar.md) | Shared Google calendars, meetings, OAuth, ACLs and two-way sync. |
+| [Weekly programs](programs.md) | Tracks, recurring sessions and skip/move exceptions. |
 | [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
 | [Roles and permissions](roles-and-permissions.md) | Officers management tabs, role matrix, owner provisioning, transfer and recovery. |
 | [Purchase deadlines](purchase-deadlines.md) | Optional “needed by” dates on purchase requests, due hints, deadline sort and the Home calendar source. |

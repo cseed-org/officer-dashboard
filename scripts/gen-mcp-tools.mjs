@@ -32,6 +32,11 @@ const out = join(root, 'server/internal/api/mcp_tools.json');
  * club settings, preferences/widget layout and Cloudflare sync.
  */
 const TOOLS = {
+  orgEvents: { name: 'orgcal_list', title: 'Organization calendar', hint: 'read', description: 'List meetings, weekly programs and dashboard events. from/to are dates (to exclusive); cal optionally filters calendar keys.' },
+  orgEventCreate: { name: 'orgcal_create', title: 'Create meeting', description: 'Create an Internal or External meeting. Weekly Programs and Events calendars are locked. External meetings send invites by default.' },
+  orgEventUpdate: { name: 'orgcal_update', title: 'Update meeting', hint: 'idempotent', description: 'Edit any Internal or External meeting by id. Locked items must be changed through their source workflow.' },
+  orgEventDelete: { name: 'orgcal_delete', title: 'Delete meeting', hint: 'destructive', description: 'Delete an Internal or External meeting. Locked calendars cannot be changed here.' },
+  programsList: { name: 'programs_list', title: 'List weekly programs', hint: 'read', description: 'Read all weekly programs, tracks, schedules and skip/move exceptions.' },
   // ── context ──
   me: { name: 'whoami', title: 'Who am I', hint: 'read', description: 'The signed-in officer this agent acts as: id, name, role (officer < director < leadership), owner flag, subteam and time zone. Call first: role decides which other tools will succeed.' },
   meStats: { name: 'my_stats', title: 'My hosting stats', hint: 'read', description: "The officer's own hosting stats: events hosted, attendees, last event." },
