@@ -345,8 +345,37 @@
                 "maxLength": 200
               },
               "startsAt": {
-                "type": "string",
-                "format": "date-time"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeFrom": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeTo": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "endsAt": {
                 "anyOf": [
@@ -469,8 +498,7 @@
               }
             },
             "required": [
-              "name",
-              "startsAt"
+              "name"
             ],
             "description": "The JSON request body."
           }
@@ -516,8 +544,37 @@
                 "maxLength": 200
               },
               "startsAt": {
-                "type": "string",
-                "format": "date-time"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeFrom": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeTo": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "endsAt": {
                 "anyOf": [

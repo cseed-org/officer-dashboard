@@ -45,20 +45,22 @@ type EventCounts struct {
 }
 
 type EventListItem struct {
-	ID          string        `json:"id"`
-	LumaID      *string       `json:"lumaId"`
-	Name        string        `json:"name"`
-	StartsAt    string        `json:"startsAt"`
-	EndsAt      *string       `json:"endsAt"`
-	Location    *string       `json:"location"`
-	Host        *UserSummary  `json:"host"`
-	HostSubteam *SubteamBrief `json:"hostSubteam"`
-	Status      string        `json:"status"`
-	Capacity    *int64        `json:"capacity"`
-	LumaURL     *string       `json:"lumaUrl"`
-	CoverURL    *string       `json:"coverUrl"`
-	Metrics     EventCounts   `json:"metrics"`
-	DesignNeed  string        `json:"designNeed"`
+	TentativeFrom *string       `json:"tentativeFrom"`
+	TentativeTo   *string       `json:"tentativeTo"`
+	ID            string        `json:"id"`
+	LumaID        *string       `json:"lumaId"`
+	Name          string        `json:"name"`
+	StartsAt      string        `json:"startsAt"`
+	EndsAt        *string       `json:"endsAt"`
+	Location      *string       `json:"location"`
+	Host          *UserSummary  `json:"host"`
+	HostSubteam   *SubteamBrief `json:"hostSubteam"`
+	Status        string        `json:"status"`
+	Capacity      *int64        `json:"capacity"`
+	LumaURL       *string       `json:"lumaUrl"`
+	CoverURL      *string       `json:"coverUrl"`
+	Metrics       EventCounts   `json:"metrics"`
+	DesignNeed    string        `json:"designNeed"`
 }
 
 type SubteamBrief struct {

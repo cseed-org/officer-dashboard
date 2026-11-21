@@ -112,6 +112,8 @@ func (c *Ctx) eventsList() error {
 }
 
 type eventInput struct {
+	TentativeFrom validate.Field[string]
+	TentativeTo   validate.Field[string]
 	Name          validate.Field[string]
 	StartsAt      validate.Field[string]
 	EndsAt        validate.Field[string]
@@ -130,7 +132,9 @@ type eventInput struct {
 func readEvent(r *validate.Reader, create bool) eventInput {
 	in := eventInput{
 		Name:          r.Str("name", validate.S{Req: create, Trim: true, Min: 1, Max: 200}),
-		StartsAt:      r.Str("startsAt", validate.S{Req: create, Format: "datetime"}),
+		StartsAt:      r.Str("startsAt", validate.S{Null: true, Format: "datetime"}),
+		TentativeFrom: r.Str("tentativeFrom", validate.S{Null: true, Format: "date"}),
+		TentativeTo:   r.Str("tentativeTo", validate.S{Null: true, Format: "date"}),
 		EndsAt:        r.Str("endsAt", validate.S{Null: true, Format: "datetime"}),
 		Location:      r.Str("location", validate.S{Null: true, Max: 200}),
 		URL:           r.Str("url", validate.S{Null: true, Format: "url"}),
@@ -217,6 +221,9 @@ func (c *Ctx) eventCreate() error {
 	if err := c.jsonBody(func(r *validate.Reader) { in = readEvent(r, true) }); err != nil {
 		return err
 	}
+	if in.StartsAt.V == "" && (in.TentativeFrom.V == "" || in.TentativeTo.V < in.TentativeFrom.V) {
+		return badRequest("Set startsAt or an inclusive tentative date range")
+	}
 	ctx := c.Context()
 	id := auth.UUID()
 	var out EventListItem
@@ -235,7 +242,7 @@ func (c *Ctx) eventCreate() error {
 			return forbidden(skipDesignDenied)
 		}
 		now := store.Ms(c.S.nowMs())
-		e := store.Event{ID: id, Name: in.Name.V, StartsAt: in.StartsAt.V, EndsAt: ptrIf(in.EndsAt), Location: ptrIf(in.Location), URL: ptrIf(in.URL),
+		e := store.Event{ID: id, Name: in.Name.V, TentativeFrom: ptrIf(in.TentativeFrom), TentativeTo: ptrIf(in.TentativeTo), StartsAt: in.StartsAt.V, EndsAt: ptrIf(in.EndsAt), Location: ptrIf(in.Location), URL: ptrIf(in.URL),
 			LumaID: ptrIf(in.LumaID), HostUserID: ptrIf(in.HostUserID), Status: in.Status.V, Description: ptrIf(in.Description), Capacity: intPtrIf(in.Capacity),
 			HostSubteamID: ptrIf(in.HostSubteamID), LumaURL: ptrIf(in.LumaURL), DesignNeed: in.DesignNeed.V, CreatedAt: now, UpdatedAt: now}
 		// TODO(notion): the stub only hands back a placeholder link. A real client must not
@@ -313,8 +320,25 @@ func (c *Ctx) eventUpdate() error {
 		if in.DesignNeed.V == "not_needed" && e.DesignNeed != "not_needed" && !canSkipDesign(c.User, e.HostUserID) {
 			return forbidden(skipDesignDenied)
 		}
+		tf, tt := e.TentativeFrom, e.TentativeTo
+		if in.TentativeFrom.Set {
+			tf = ptrIf(in.TentativeFrom)
+		}
+		if in.TentativeTo.Set {
+			tt = ptrIf(in.TentativeTo)
+		}
+		if in.StartsAt.Null {
+			startsAt = ""
+		}
+		if startsAt == "" && (tf == nil || tt == nil || *tt < *tf) {
+			return badRequest("Set startsAt or an inclusive tentative range")
+		}
+		if in.StartsAt.Has() {
+			in.TentativeFrom = validate.Field[string]{Set: true, Null: true}
+			in.TentativeTo = validate.Field[string]{Set: true, Null: true}
+		}
 		before := eventSnapshot(e)
-		patch := store.EventPatch{Name: optOf(in.Name), StartsAt: optOf(in.StartsAt), EndsAt: optOf(in.EndsAt), Location: optOf(in.Location),
+		patch := store.EventPatch{TentativeFrom: optOf(in.TentativeFrom), TentativeTo: optOf(in.TentativeTo), Name: optOf(in.Name), StartsAt: optOf(in.StartsAt), EndsAt: optOf(in.EndsAt), Location: optOf(in.Location),
 			URL: optOf(in.URL), LumaID: optOf(in.LumaID), HostUserID: optOf(in.HostUserID), Status: optOf(in.Status), Description: optOf(in.Description),
 			Capacity: optOf(in.Capacity), HostSubteamID: optOf(in.HostSubteamID), LumaURL: optOf(in.LumaURL), DesignNeed: optOf(in.DesignNeed)}
 		if err := w.UpdateEvent(ctx, id, patch, c.S.nowMs()); err != nil {
@@ -388,6 +412,9 @@ func (c *Ctx) eventDelete() error {
 			if err := c.S.enqueueCalendar(ctx, w, store.CalendarJob{Kind: "cancel", EventID: id, Snapshot: &snap, Priors: live}); err != nil {
 				return err
 			}
+		}
+		if err := w.DeleteOrgSource(ctx, "event", id, c.S.nowMs()); err != nil {
+			return err
 		}
 		if err := w.DeleteEvent(ctx, id); err != nil {
 			return err

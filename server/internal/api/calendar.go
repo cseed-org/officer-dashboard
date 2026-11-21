@@ -497,6 +497,9 @@ func (s *Server) enqueueCalendar(ctx context.Context, w *store.Queries, j store.
 
 // syncEventInTx queues delivery of a created or changed event to every recipient.
 func (s *Server) syncEventInTx(ctx context.Context, w *store.Queries, eventID string) error {
+	if err := s.projectOrgEvent(ctx, w, eventID); err != nil {
+		return err
+	}
 	return s.enqueueCalendar(ctx, w, store.CalendarJob{Kind: "sync", EventID: eventID})
 }
 
@@ -511,7 +514,7 @@ func (s *Server) queueBackfill(ctx context.Context, w *store.Queries, userID str
 
 // kickCalendar starts the worker, or tells a running one to look again, for jobs that are
 // due: new ones, and failed ones whose backoff has passed.
-func (s *Server) kickCalendar() { s.startCalendar(false) }
+func (s *Server) kickCalendar() { s.startCalendar(false); s.kickOrgCalendar() }
 
 // ResumeCalendar drains every job in the outbox, failed ones included whatever their
 // backoff: call it at startup for what a previous run left; the server also calls it hourly.

@@ -2,6 +2,21 @@
 import type { EndpointName } from './contracts';
 
 const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string }> = {
+  orgCalendars: { method: 'GET', path: '/api/orgcal/calendars' },
+  orgEvents: { method: 'GET', path: '/api/orgcal/events' },
+  orgEventCreate: { method: 'POST', path: '/api/orgcal/events' },
+  orgEventUpdate: { method: 'PATCH', path: '/api/orgcal/events/:id' },
+  orgEventDelete: { method: 'DELETE', path: '/api/orgcal/events/:id' },
+  programTracks: { method: 'GET', path: '/api/program-tracks' },
+  programTrackCreate: { method: 'POST', path: '/api/program-tracks' },
+  programsList: { method: 'GET', path: '/api/programs' },
+  programCreate: { method: 'POST', path: '/api/programs' },
+  programUpdate: { method: 'PATCH', path: '/api/programs/:id' },
+  programDelete: { method: 'DELETE', path: '/api/programs/:id' },
+  programExceptionSave: { method: 'POST', path: '/api/programs/:id/exceptions' },
+  programExceptionDelete: { method: 'DELETE', path: '/api/programs/:id/exceptions' },
+  orgGoogleStatus: { method: 'GET', path: '/api/settings/org-google/status' },
+  orgGoogleDisconnect: { method: 'DELETE', path: '/api/settings/org-google' },
   buildspaceList: { method: 'GET', path: '/api/buildspace-launchpad' },
   buildspaceProjectSave: { method: 'PUT', path: '/api/buildspace-launchpad/projects/:id' },
   buildspacePersonSave: { method: 'PUT', path: '/api/buildspace-launchpad/people/:id' },
