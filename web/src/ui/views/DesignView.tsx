@@ -497,7 +497,7 @@ function DueChip({ item }: { item: DesignRequestItem }) {
 
 /** The event moved earlier than the agreed due date: flag it for the designer and requester. */
 const afterEvent = (item: DesignRequestItem) =>
-  !!item.dueDate && !!item.event && item.event.status !== 'cancelled' && item.dueDate > pacificParts(item.event.startsAt).date;
+  !!item.dueDate && !!item.event?.startsAt && item.event.status !== 'cancelled' && item.dueDate > pacificParts(item.event.startsAt).date;
 
 /**
  * One request card: type icon and title, the event and its date, approval/due/urgency chips,

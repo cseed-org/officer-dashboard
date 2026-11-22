@@ -28,11 +28,13 @@ export function todayPacific(now = new Date()): string {
   return `${p.year}-${p.month}-${p.day}`;
 }
 const toDate = (v: string) => (v.length === 10 ? new Date(`${v}T12:00:00Z`) : new Date(v));
-export const fmtDate = (v: string | null | undefined) => v ? dateTimeFormatter({ month: 'short', day: 'numeric', year: 'numeric' }, v.length === 10).format(toDate(v)) : '—';
-export const fmtShort = (v: string) => dateTimeFormatter({ month: 'short', day: 'numeric' }, v.length === 10).format(toDate(v));
-export const fmtTime = (v: string) => dateTimeFormatter({ hour: 'numeric', minute: '2-digit' }).format(toDate(v));
-export const fmtDateTime = (v: string | null | undefined) => v ? `${fmtDate(v)}, ${fmtTime(v)}` : '—';
-export const fmtWeekday = (v: string) => dateTimeFormatter({ weekday: 'short' }, v.length === 10).format(toDate(v));
+/** False for "" (a tentative event's startsAt) and other unparseable values: they print as "—" or nothing. */
+const valid = (v: string | null | undefined): v is string => !!v && !Number.isNaN(toDate(v).getTime());
+export const fmtDate = (v: string | null | undefined) => valid(v) ? dateTimeFormatter({ month: 'short', day: 'numeric', year: 'numeric' }, v.length === 10).format(toDate(v)) : '—';
+export const fmtShort = (v: string) => !valid(v) ? '—' : dateTimeFormatter({ month: 'short', day: 'numeric' }, v.length === 10).format(toDate(v));
+export const fmtTime = (v: string) => !valid(v) ? '' : dateTimeFormatter({ hour: 'numeric', minute: '2-digit' }).format(toDate(v));
+export const fmtDateTime = (v: string | null | undefined) => valid(v) ? `${fmtDate(v)}, ${fmtTime(v)}` : '—';
+export const fmtWeekday = (v: string) => !valid(v) ? '' : dateTimeFormatter({ weekday: 'short' }, v.length === 10).format(toDate(v));
 
 export function relative(v: string | null | undefined, now = Date.now()): string {
   if (!v) return 'never';

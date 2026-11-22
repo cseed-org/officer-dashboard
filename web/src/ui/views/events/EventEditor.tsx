@@ -18,6 +18,10 @@ const COVER_MAX = 5 * 1024 * 1024;
 
 interface Draft {
   name: string;
+  /** "No set date yet": plan with a tentative date range instead of a start/end. */
+  tentative: boolean;
+  tentativeFrom: string;
+  tentativeTo: string;
   starts: string;
   ends: string;
   location: string;
@@ -30,11 +34,14 @@ interface Draft {
   designNeed: DesignNeed;
 }
 
-const blank: Draft = { name: '', starts: '', ends: '', location: '', hostSubteamId: '', hostUserId: '', description: '', capacity: '', status: 'draft', designNeed: 'unknown' };
+const blank: Draft = { name: '', tentative: false, tentativeFrom: '', tentativeTo: '', starts: '', ends: '', location: '', hostSubteamId: '', hostUserId: '', description: '', capacity: '', status: 'draft', designNeed: 'unknown' };
 
 function fromEvent(e: Detail): Draft {
   return {
     name: e.name,
+    tentative: !!e.tentativeFrom,
+    tentativeFrom: e.tentativeFrom ?? '',
+    tentativeTo: e.tentativeTo ?? '',
     starts: toLocalInput(e.startsAt),
     ends: toLocalInput(e.endsAt),
     location: e.location ?? '',
@@ -145,11 +152,16 @@ function EditorForm({
   function check(): Record<string, string> {
     const e: Record<string, string> = {};
     if (!d.name.trim()) e.name = 'Give the event a name.';
-    const starts = fromLocalInput(d.starts);
-    if (!starts) e.startsAt = 'Pick when it starts.';
-    const ends = d.ends ? fromLocalInput(d.ends) : null;
-    if (d.ends && !ends) e.endsAt = 'Pick a valid end time.';
-    if (starts && ends && new Date(ends) < new Date(starts)) e.endsAt = 'The event ends before it starts.';
+    if (d.tentative) {
+      if (!d.tentativeFrom) e.tentativeFrom = 'Pick the earliest date it could be.';
+      if (d.tentativeFrom && d.tentativeTo && d.tentativeTo < d.tentativeFrom) e.tentativeTo = 'The range ends before it starts.';
+    } else {
+      const starts = fromLocalInput(d.starts);
+      if (!starts) e.startsAt = 'Pick when it starts.';
+      const ends = d.ends ? fromLocalInput(d.ends) : null;
+      if (d.ends && !ends) e.endsAt = 'Pick a valid end time.';
+      if (starts && ends && new Date(ends) < new Date(starts)) e.endsAt = 'The event ends before it starts.';
+    }
     if (d.capacity.trim() && !/^\d+$/.test(d.capacity.trim())) e.capacity = 'Capacity is a whole number.';
     else if (d.capacity.trim() && (Number(d.capacity) < 1 || Number(d.capacity) > 100000)) e.capacity = 'Capacity is between 1 and 100,000.';
     return e;
@@ -163,10 +175,13 @@ function EditorForm({
       setMessage({ tone: 'negative', text: 'Fix the highlighted fields, then save again.' });
       return;
     }
+    // Fixed dates clear any saved range; a range clears the fixed start/end.
     const body: EventUpsertRequest = {
       name: d.name.trim(),
-      startsAt: fromLocalInput(d.starts)!,
-      endsAt: d.ends ? fromLocalInput(d.ends) : null,
+      startsAt: d.tentative ? null : fromLocalInput(d.starts)!,
+      endsAt: d.tentative ? null : d.ends ? fromLocalInput(d.ends) : null,
+      tentativeFrom: d.tentative ? d.tentativeFrom : null,
+      tentativeTo: d.tentative ? d.tentativeTo || d.tentativeFrom : null,
       location: d.location.trim() || null,
       hostSubteamId: d.hostSubteamId || null,
       hostUserId: d.hostUserId || null,
@@ -244,14 +259,42 @@ function EditorForm({
         <Field id="ev-name" label="Event name" error={errors.name}>
           <input class="input" type="text" maxLength={200} value={d.name} onInput={set('name')} {...describe('ev-name', errors.name)} />
         </Field>
-        <div class="grid-fields">
-          <Field id="ev-starts" label={`Starts · ${effectiveTimezone()}`} error={errors.startsAt}>
-            <input class="input" type="datetime-local" value={d.starts} onInput={set('starts')} {...describe('ev-starts', errors.startsAt)} />
-          </Field>
-          <Field id="ev-ends" label={`Ends · ${effectiveTimezone()}`} error={errors.endsAt} optional>
-            <input class="input" type="datetime-local" value={d.ends} onInput={set('ends')} {...describe('ev-ends', errors.endsAt)} />
-          </Field>
+        <div class="field" data-tentative-field>
+          <label class="check">
+            <input
+              type="checkbox"
+              id="ev-tentative"
+              checked={d.tentative}
+              aria-describedby="ev-tentative-hint"
+              onChange={(e) => setD({ ...d, tentative: e.currentTarget.checked })}
+            />
+            <span>No set date yet</span>
+          </label>
+          <p class="field-hint check-sub" id="ev-tentative-hint">
+            {d.tentative
+              ? 'Shown as a tentative date range on the calendar until you pick the real date.'
+              : 'Plan with a date range when the day is not decided yet.'}
+          </p>
         </div>
+        {d.tentative ? (
+          <div class="grid-fields" data-tentative-range-fields>
+            <Field id="ev-tfrom" label="Earliest date" error={errors.tentativeFrom}>
+              <input class="input" type="date" value={d.tentativeFrom} onInput={set('tentativeFrom')} {...describe('ev-tfrom', errors.tentativeFrom)} />
+            </Field>
+            <Field id="ev-tto" label="Latest date" error={errors.tentativeTo} optional hint="Blank means the same as the earliest date.">
+              <input class="input" type="date" value={d.tentativeTo} onInput={set('tentativeTo')} {...describe('ev-tto', errors.tentativeTo, true)} />
+            </Field>
+          </div>
+        ) : (
+          <div class="grid-fields">
+            <Field id="ev-starts" label={`Starts · ${effectiveTimezone()}`} error={errors.startsAt}>
+              <input class="input" type="datetime-local" value={d.starts} onInput={set('starts')} {...describe('ev-starts', errors.startsAt)} />
+            </Field>
+            <Field id="ev-ends" label={`Ends · ${effectiveTimezone()}`} error={errors.endsAt} optional>
+              <input class="input" type="datetime-local" value={d.ends} onInput={set('ends')} {...describe('ev-ends', errors.endsAt)} />
+            </Field>
+          </div>
+        )}
         <Field id="ev-location" label="Location" error={errors.location} optional>
           <input class="input" type="text" maxLength={200} value={d.location} onInput={set('location')} {...describe('ev-location', errors.location)} />
         </Field>
