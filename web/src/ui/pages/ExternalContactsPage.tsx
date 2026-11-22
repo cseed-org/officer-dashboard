@@ -7,7 +7,7 @@ import { useApi } from "../../lib/api/useApi";
 import { usePersonParam, PersonDrawer, PersonFacts, PersonSection, type PersonTab } from "../components/PersonDrawer";
 import { ContactLinks, PeopleCard, PeopleChip, PeopleGroup, PeopleSearch, PersonCell, PersonRow, sortBy, type Sort } from "../components/PeopleTable";
 import type { Hue } from "../../lib/colors";
-import { safeUrl, fmtDate, fmtDateTime } from "../../lib/format";
+import { safeUrl, fmtDate, fmtDateTime, fmtEventDate, eventIsPast } from "../../lib/format";
 import { Drawer } from "../components/Drawer";
 import { Async, ErrorState, errorMessage } from "../components/states";
 import { Gate } from "../shell/Gate";
@@ -74,7 +74,7 @@ function LinkedEvents({ draft, contact, onChange }: { draft: Draft; contact: Con
     {events.status === "ready" ? <>
       {eventOptions.map((ev) => <label class="choice" key={ev.id}>
         <input type="checkbox" checked={draft.eventIds.includes(ev.id)} onChange={(e) => toggle(ev.id, e.currentTarget.checked)} />
-        <span>{ev.name} · {fmtDate(ev.startsAt)}</span>
+        <span>{ev.name} · {fmtEventDate(ev)}</span>
       </label>)}
       {contact?.events.filter((ev) => !eventOptions.some((e) => e.id === ev.id)).map((ev) => <label class="choice" key={ev.id}>
         <input type="checkbox" checked={draft.eventIds.includes(ev.id)} onChange={(e) => toggle(ev.id, e.currentTarget.checked)} />
@@ -346,7 +346,7 @@ function ExternalContacts({ me }: { me: CurrentUser }) {
   };
   const sorted = sortBy(filtered, sort, (c, k) => (k === "name" ? c.name : c.lastOutreach?.date ?? null));
   const linkedin = contact ? safeUrl(contact.linkedin) : null;
-  const pastCount = contact ? contact.events.filter((e) => new Date(e.startsAt).getTime() < Date.now()).length : 0;
+  const pastCount = contact ? contact.events.filter((e) => eventIsPast(e)).length : 0;
   type Tab = "overview" | "activity" | "manage";
   const tabs: PersonTab<Tab>[] = contact
     ? [
@@ -728,15 +728,14 @@ function Reach({ c }: { c: Contact }) {
   );
 }
 function Past({ c }: { c: Contact }) {
-  const past = c.events.filter(
-    (e) => new Date(e.startsAt).getTime() < Date.now(),
-  );
+  const past = c.events.filter((e) => eventIsPast(e));
   return past.length ? (
     <>
       <span class="cell-sub">Has done an event with us</span>
       {past.map((ev) => (
         <span class="cell-sub">
           <a href={`/events?id=${encodeURIComponent(ev.id)}`}>{ev.name}</a>
+          {!ev.startsAt && ev.tentativeFrom && <> · {fmtEventDate(ev)}</>}
         </span>
       ))}
     </>
@@ -751,6 +750,6 @@ function Spoken({ c }: { c: Contact }) {
 
 const TYPE_HUE: Record<Contact["type"], Hue> = { speaker: "blue", mentor: "teal", both: "violet" };
 function PastCount({ c }: { c: Contact }) {
-  const n = c.events.filter((e) => new Date(e.startsAt).getTime() < Date.now()).length;
+  const n = c.events.filter((e) => eventIsPast(e)).length;
   return n ? <span>{n} {n === 1 ? "event" : "events"}</span> : <span class="muted">None yet</span>;
 }

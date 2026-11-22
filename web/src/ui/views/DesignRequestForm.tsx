@@ -14,7 +14,7 @@ import {
   type LookupsResponse,
 } from '../../lib/contracts';
 import { TYPE_LABEL, URGENCY_LABEL } from '../../lib/design';
-import { bytes, fmtDate } from '../../lib/format';
+import { bytes, eventMillis, fmtEventDate } from '../../lib/format';
 import { describe, Field } from '../components/kit';
 import { Async, errorMessage, Loading, Notice } from '../components/states';
 
@@ -151,7 +151,8 @@ function Form({ userId = '', lookups, editing, initial, persist = false, onDone,
     if (persist) writeDraft(userId, f);
   }, [f, persist]);
 
-  const events = lookups.events.slice().sort((a, b) => b.startsAt.localeCompare(a.startsAt));
+  // Newest first; an undated (tentative) event sorts by the first day of its range.
+  const events = lookups.events.slice().sort((a, b) => (eventMillis(b) || 0) - (eventMillis(a) || 0));
   const linkedMissing = f.link && f.link !== PROGRAM && !events.some((e) => e.id === f.link);
 
   const addFiles = (list: FileList | null) => {
@@ -261,7 +262,7 @@ function Form({ userId = '', lookups, editing, initial, persist = false, onDone,
             {linkedMissing && editing?.event && <option value={f.link}>{editing.event.name}</option>}
             {events.map((ev) => (
               <option value={ev.id} key={ev.id}>
-                {ev.name} · {fmtDate(ev.startsAt)}
+                {ev.name} · {fmtEventDate(ev)}
               </option>
             ))}
             <option value={PROGRAM}>A program (not an event)…</option>

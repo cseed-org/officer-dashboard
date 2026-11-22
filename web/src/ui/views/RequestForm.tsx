@@ -13,7 +13,7 @@ import { useApi } from '../../lib/api/useApi';
 import { describe, Field } from '../components/kit';
 import { Async, errorMessage, Loading, Notice } from '../components/states';
 import type { Flash } from './RequestDetail';
-import { bytes, dollarsToCents, fmtDate, formatCents, FUNCTIONAL_LABEL } from '../../lib/format';
+import { bytes, dollarsToCents, fmtEventDate, formatCents, FUNCTIONAL_LABEL } from '../../lib/format';
 import { pacificToday } from '../../lib/calendar';
 
 interface FormState {
@@ -319,7 +319,7 @@ function RequestForm({ lookups, initialEventId, onCreated, onCancel }: { lookups
               <option value="">not for a specific event</option>
               {lookups.events.map((ev) => (
                 <option value={ev.id} key={ev.id}>
-                  {ev.name} — {fmtDate(ev.startsAt)}
+                  {ev.name} — {fmtEventDate(ev)}
                 </option>
               ))}
             </select>

@@ -5,7 +5,7 @@ import type { CsvImportResponse } from '../../lib/contracts';
 import { CSV_MAX_BYTES } from '../../lib/contracts';
 import { api, fieldErrors } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
-import { bytes, fmtDate, pacificIso, pct, plural } from '../../lib/format';
+import { bytes, fmtEventDate, pacificIso, pct, plural } from '../../lib/format';
 import { describe, Field } from './kit';
 import { errorMessage, Notice } from './states';
 
@@ -194,6 +194,6 @@ function ImportResult({ r }: { r: CsvImportResponse }) {
 function EventOptions() {
   const lookups = useApi('lookups');
   return <>{lookups.status === 'ready' && lookups.data.events.map((ev) => (
-    <option value={ev.id} key={ev.id}>{ev.name} — {fmtDate(ev.startsAt)}</option>
+    <option value={ev.id} key={ev.id}>{ev.name} — {fmtEventDate(ev)}</option>
   ))}</>;
 }

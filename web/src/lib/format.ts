@@ -36,6 +36,31 @@ export const fmtTime = (v: string) => !valid(v) ? '' : dateTimeFormatter({ hour:
 export const fmtDateTime = (v: string | null | undefined) => valid(v) ? `${fmtDate(v)}, ${fmtTime(v)}` : '—';
 export const fmtWeekday = (v: string) => !valid(v) ? '' : dateTimeFormatter({ weekday: 'short' }, v.length === 10).format(toDate(v));
 
+/**
+ * Events planned without a date ("No set date yet") carry startsAt "" and an inclusive
+ * tentativeFrom/tentativeTo range. These helpers date, sort and label either kind.
+ */
+type DatedEvent = { startsAt: string; tentativeFrom?: string | null; tentativeTo?: string | null };
+
+/** "Dec 1 – Dec 12, 2026"; one day prints once; a range across years names both years. */
+export function fmtRange(from: string, to?: string | null): string {
+  const end = to || from;
+  if (end === from) return fmtDate(from);
+  return from.slice(0, 4) === end.slice(0, 4) ? `${fmtShort(from)} – ${fmtDate(end)}` : `${fmtDate(from)} – ${fmtDate(end)}`;
+}
+
+/** "Dec 5, 2026", or "Tentative · Dec 1 – Dec 12, 2026" for an undated event. */
+export const fmtEventDate = (e: DatedEvent) =>
+  !e.startsAt && e.tentativeFrom ? `Tentative · ${fmtRange(e.tentativeFrom, e.tentativeTo)}` : fmtDate(e.startsAt);
+
+/** A sort key in milliseconds: the start, or noon UTC on a tentative event's first day; NaN when neither. */
+export const eventMillis = (e: DatedEvent) =>
+  e.startsAt ? Date.parse(e.startsAt) : e.tentativeFrom ? Date.parse(`${e.tentativeFrom}T12:00:00Z`) : Number.NaN;
+
+/** Already happened: a start before now, or a tentative range that ended before today. */
+export const eventIsPast = (e: DatedEvent, now = Date.now()) =>
+  e.startsAt ? Date.parse(e.startsAt) < now : !!e.tentativeFrom && (e.tentativeTo || e.tentativeFrom) < todayPacific(new Date(now));
+
 export function relative(v: string | null | undefined, now = Date.now()): string {
   if (!v) return 'never';
   const diff = toDate(v).getTime() - now;
