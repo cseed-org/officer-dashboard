@@ -210,6 +210,14 @@ const orgMeeting = await call('orgEventCreate', {who: officer, body: {calendarKe
 const orgId = orgMeeting.json.event.id;
 await call('orgEventUpdate', {who: officer,params:{id:orgId},body:{title:'Updated meeting'}});
 await call('orgEvents', {who: officer,query:{from:'2026-11-01',to:'2026-12-01'}});
+// Recurring meetings: occurrences carry the series times; PATCH from an occurrence keeps the series date.
+const series = await call('orgEventCreate', {who: officer, body: {calendarKey:'internal',title:'Contract weekly',startsAt:'2026-11-02T18:00:00Z',endsAt:'2026-11-02T19:00:00Z',rrule:'RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=4'}});
+const occurrences = (await call('orgEvents', {who: officer,query:{from:'2026-11-01',to:'2026-12-31',cal:'internal'}})).json.events.filter((e) => e.id === series.json.event.id);
+must(occurrences.length === 4 && occurrences.every((e) => e.seriesStartsAt === '2026-11-02T18:00:00Z'), 'occurrences carry the series start', occurrences);
+const kept = await call('orgEventUpdate', {who: officer, params:{id:series.json.event.id}, body:{startsAt:'2026-11-30T19:00:00Z',endsAt:'2026-11-30T20:00:00Z'}});
+must(kept.json.event.startsAt.startsWith('2026-11-02T'), 'editing from an occurrence keeps the series date', kept.json.event);
+await call('orgEventUpdate', {who: officer, params:{id:series.json.event.id}, body:{startsAt:'2026-11-16T19:00:00Z',endsAt:'2026-11-16T20:00:00Z',moveSeriesStart:true}});
+await call('orgEventDelete', {who: officer, params:{id:series.json.event.id}});
 await call('orgEventCreate', {who: officer,body:{calendarKey:'events',title:'Locked'},expect:403});
 await call('orgEventDelete', {who: officer,params:{id:orgId}});
 const tracks = await call('programTracks', {who: officer});

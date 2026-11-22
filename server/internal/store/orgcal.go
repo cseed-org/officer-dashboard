@@ -21,33 +21,37 @@ type OrgReminder struct {
 	Minutes int    `json:"minutes"`
 }
 type OrgEvent struct {
-	ID            string        `json:"id"`
-	CalendarKey   string        `json:"calendarKey"`
-	Title         string        `json:"title"`
-	Description   string        `json:"description"`
-	Location      string        `json:"location"`
-	StartsAt      *string       `json:"startsAt"`
-	EndsAt        *string       `json:"endsAt"`
-	AllDay        bool          `json:"allDay"`
-	TentativeFrom *string       `json:"tentativeFrom"`
-	TentativeTo   *string       `json:"tentativeTo"`
-	RRule         *string       `json:"rrule"`
-	Reminders     []OrgReminder `json:"reminders"`
-	SendInvites   bool          `json:"sendInvites"`
-	Invitees      []OrgInvitee  `json:"invitees"`
-	SourceKind    string        `json:"sourceKind"`
-	SourceID      *string       `json:"sourceId"`
-	SourceHref    *string       `json:"sourceHref"`
-	GoogleEventID *string       `json:"googleEventId"`
-	GoogleETag    *string       `json:"googleEtag"`
-	CreatedBy     *string       `json:"createdBy"`
-	UpdatedBy     *string       `json:"updatedBy"`
-	CreatedAt     int64         `json:"createdAt"`
-	UpdatedAt     int64         `json:"updatedAt"`
-	DeletedAt     *int64        `json:"-"`
-	Revision      int64         `json:"-"`
-	Recurrence    []string      `json:"-"`
-	TimeZone      string        `json:"-"`
+	ID            string  `json:"id"`
+	CalendarKey   string  `json:"calendarKey"`
+	Title         string  `json:"title"`
+	Description   string  `json:"description"`
+	Location      string  `json:"location"`
+	StartsAt      *string `json:"startsAt"`
+	EndsAt        *string `json:"endsAt"`
+	AllDay        bool    `json:"allDay"`
+	TentativeFrom *string `json:"tentativeFrom"`
+	TentativeTo   *string `json:"tentativeTo"`
+	RRule         *string `json:"rrule"`
+	// SeriesStartsAt/SeriesEndsAt are the recurring master's DTSTART/DTEND on every listed
+	// occurrence (null when not recurring). Response-only; never stored.
+	SeriesStartsAt *string       `json:"seriesStartsAt"`
+	SeriesEndsAt   *string       `json:"seriesEndsAt"`
+	Reminders      []OrgReminder `json:"reminders"`
+	SendInvites    bool          `json:"sendInvites"`
+	Invitees       []OrgInvitee  `json:"invitees"`
+	SourceKind     string        `json:"sourceKind"`
+	SourceID       *string       `json:"sourceId"`
+	SourceHref     *string       `json:"sourceHref"`
+	GoogleEventID  *string       `json:"googleEventId"`
+	GoogleETag     *string       `json:"googleEtag"`
+	CreatedBy      *string       `json:"createdBy"`
+	UpdatedBy      *string       `json:"updatedBy"`
+	CreatedAt      int64         `json:"createdAt"`
+	UpdatedAt      int64         `json:"updatedAt"`
+	DeletedAt      *int64        `json:"-"`
+	Revision       int64         `json:"-"`
+	Recurrence     []string      `json:"-"`
+	TimeZone       string        `json:"-"`
 }
 
 func (q *Queries) OrgCalendars(ctx context.Context) ([]OrgCalendar, error) {

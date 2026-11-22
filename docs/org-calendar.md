@@ -32,6 +32,13 @@ DST in the meeting timezone (America/Los_Angeles). Other parts return 400. The r
 to Google unchanged. Pulled Google daily/weekly/monthly/yearly rules (including WKST),
 exclusions and instance overrides are retained and expanded locally.
 
+Listed occurrences of a recurring meeting share the series id and carry their own
+`startsAt`/`endsAt` plus the master's `seriesStartsAt`/`seriesEndsAt` (null when not
+recurring); edit against the series times. A PATCH that changes a recurring master's
+`startsAt`/`endsAt` keeps the series on its original date and applies the new times of day and
+duration there, so editing from a later occurrence never drops earlier ones (locally or in
+Google). Send `"moveSeriesStart": true` to move the series' first date deliberately.
+
 Tentative meetings use `startsAt:null` plus inclusive `tentativeFrom`/`tentativeTo` dates.
 Google receives an all-day `[Tentative]` entry, ending the day after tentativeTo. Setting a
 fixed start/end clears the range and replaces the same Google event. Fixed all-day meetings

@@ -212,7 +212,7 @@
     {
       "name": "orgcal_update",
       "title": "Update meeting",
-      "description": "Edit any Internal or External meeting by id. Locked items must be changed through their source workflow. A changed `rrule` follows the same rules as orgcal_create.",
+      "description": "Edit any Internal or External meeting by id. Locked items must be changed through their source workflow. A changed `rrule` follows the same rules as orgcal_create. For a recurring meeting, new startsAt/endsAt times apply on the original series date (orgcal_list gives it as seriesStartsAt/seriesEndsAt); pass moveSeriesStart: true only to move the whole series to a new first date, which drops earlier occurrences.",
       "endpoint": "orgEventUpdate",
       "method": "PATCH",
       "path": "/api/orgcal/events/:id",
@@ -361,6 +361,9 @@
                     "ref"
                   ]
                 }
+              },
+              "moveSeriesStart": {
+                "type": "boolean"
               }
             },
             "description": "The fields to change (only these are updated)."

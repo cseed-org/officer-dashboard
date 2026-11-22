@@ -722,6 +722,8 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
   Internal/External only; locked Programs/Events return 403. Responses are {event} or {ok:true}.
   `rrule` accepts `RRULE:FREQ=DAILY|WEEKLY|MONTHLY` with optional INTERVAL=1..52, BYDAY
   (weekly only) and one of UNTIL/COUNT=1..500; anything else is 400 (see org-calendar.md).
+  OrgCalendarEvent has nullable `seriesStartsAt`/`seriesEndsAt` (master DTSTART/DTEND). PATCH
+  keeps a recurring series on its original date unless `moveSeriesStart: true`.
 - Officer: GET/POST /api/programs; PATCH/DELETE /api/programs/:id;
   POST/DELETE /api/programs/:id/exceptions (DELETE takes onDate query).
 - Officer GET /api/program-tracks; leadership POST /api/program-tracks.

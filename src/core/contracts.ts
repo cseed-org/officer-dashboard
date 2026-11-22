@@ -1555,11 +1555,15 @@ export const OrgEventWriteRequest = z.object({
  reminders: z.array(OrgReminder).max(5).optional(), sendInvites: z.boolean().optional(), invitees: z.array(OrgInvitee).max(200).optional(),
 });
 export type OrgEventWriteRequest = z.infer<typeof OrgEventWriteRequest>;
-export const OrgEventPatchRequest = OrgEventWriteRequest.partial();
+/** PATCH keeps a recurring series on its original date (new times of day apply there) unless moveSeriesStart is true. */
+export const OrgEventPatchRequest = OrgEventWriteRequest.partial().extend({ moveSeriesStart: z.boolean().optional() });
 export const OrgCalendarEvent = z.object({
  id: Id, calendarKey: OrgCalendarKey, title: z.string(), description: z.string(), location: z.string(),
  startsAt: z.string().nullable(), endsAt: z.string().nullable(), allDay: z.boolean(), tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable(),
- rrule: z.string().nullable(), reminders: z.array(OrgReminder), sendInvites: z.boolean(), invitees: z.array(OrgInvitee),
+ rrule: z.string().nullable(),
+ /** The recurring master's DTSTART/DTEND on every occurrence; edit times against these. Null when not recurring. */
+ seriesStartsAt: z.string().nullable(), seriesEndsAt: z.string().nullable(),
+ reminders: z.array(OrgReminder), sendInvites: z.boolean(), invitees: z.array(OrgInvitee),
  sourceKind: z.enum(['manual','event','program']), sourceId: Id.nullable(), sourceHref: z.string().nullable(),
  googleEventId: z.string().nullable(), googleEtag: z.string().nullable(), createdBy: Id.nullable(), updatedBy: Id.nullable(), createdAt: z.number(), updatedAt: z.number(),
 });

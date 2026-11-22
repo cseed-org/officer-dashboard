@@ -84,6 +84,8 @@ func (c *Ctx) orgEvents() error {
 		if len(keys) > 0 && !keys[e.CalendarKey] {
 			continue
 		}
+		// Every occurrence below is a copy of e, so all carry the master's times.
+		e = withSeries(e)
 		if e.SourceKind == "program" && e.SourceID != nil {
 			p, err := c.S.db.Read().Program(c.Context(), *e.SourceID)
 			if err != nil {
@@ -266,12 +268,18 @@ func (c *Ctx) orgEventWrite() error {
 		return badRequest("Expected JSON object")
 	}
 	allowed := map[string]bool{}
-	for _, k := range []string{"calendarKey", "title", "description", "location", "startsAt", "endsAt", "allDay", "tentativeFrom", "tentativeTo", "rrule", "reminders", "sendInvites", "invitees"} {
+	for _, k := range []string{"calendarKey", "title", "description", "location", "startsAt", "endsAt", "allDay", "tentativeFrom", "tentativeTo", "rrule", "reminders", "sendInvites", "invitees", "moveSeriesStart"} {
 		allowed[k] = true
 	}
 	for k := range fields {
 		if !allowed[k] {
 			return badRequest("Unknown field: " + k)
+		}
+	}
+	moveSeries := false
+	if raw := fields["moveSeriesStart"]; raw != nil {
+		if create || json.Unmarshal(raw, &moveSeries) != nil {
+			return badRequest("moveSeriesStart is a boolean for PATCH only")
 		}
 	}
 	var out *store.OrgEvent
@@ -290,7 +298,10 @@ func (c *Ctx) orgEventWrite() error {
 				return forbidden("This calendar is locked; edit the source event or program")
 			}
 		}
+		// Unmarshal writes through existing pointers, so the audit snapshot needs its own copies.
 		before := *e
+		before.StartsAt, before.EndsAt, before.RRule = clonePtr(e.StartsAt), clonePtr(e.EndsAt), clonePtr(e.RRule)
+		before.TentativeFrom, before.TentativeTo = clonePtr(e.TentativeFrom), clonePtr(e.TentativeTo)
 		oldKey := e.CalendarKey
 		oldRule := ""
 		if e.RRule != nil {
@@ -304,6 +315,9 @@ func (c *Ctx) orgEventWrite() error {
 		}
 		if fields["startsAt"] != nil && fields["allDay"] == nil && e.StartsAt != nil {
 			e.AllDay = orgDate(*e.StartsAt)
+		}
+		if !create && !moveSeries && before.RRule != nil && e.RRule != nil && before.StartsAt != nil && (fields["startsAt"] != nil || fields["endsAt"] != nil) {
+			keepSeriesDate(e, before)
 		}
 		if create && fields["sendInvites"] == nil {
 			e.SendInvites = e.CalendarKey == "external"
@@ -338,7 +352,8 @@ func (c *Ctx) orgEventWrite() error {
 		if err := c.audit(ctx, q, "orgcal.saved", "org_cal_event", id, before, e); err != nil {
 			return err
 		}
-		out = e
+		saved := withSeries(*e)
+		out = &saved
 		return nil
 	})
 	if err != nil {
@@ -467,4 +482,65 @@ func orgStartInZone(e store.OrgEvent) (time.Time, error) {
 	}
 	t, err := time.Parse(time.RFC3339Nano, *e.StartsAt)
 	return t.In(loc), err
+}
+
+// withSeries fills the recurring master's DTSTART/DTEND for the response.
+func withSeries(e store.OrgEvent) store.OrgEvent {
+	e.SeriesStartsAt, e.SeriesEndsAt = nil, nil
+	if e.RRule != nil && e.StartsAt != nil {
+		e.SeriesStartsAt, e.SeriesEndsAt = clonePtr(e.StartsAt), clonePtr(e.EndsAt)
+	}
+	return e
+}
+
+func clonePtr(s *string) *string {
+	if s == nil {
+		return nil
+	}
+	v := *s
+	return &v
+}
+
+// keepSeriesDate stops a PATCH sent from a later occurrence from re-anchoring the series
+// (which would drop every earlier occurrence, in Google too). The new times of day and
+// duration apply on the series' original date; moveSeriesStart:true skips this.
+// Unparseable values are left for validateOrgEvent to reject.
+func keepSeriesDate(e *store.OrgEvent, before store.OrgEvent) {
+	if e.StartsAt == nil || e.EndsAt == nil {
+		return
+	}
+	orig, err := orgStartInZone(before)
+	if err != nil {
+		return
+	}
+	y, m, d := orig.Date()
+	loc := orig.Location()
+	if e.AllDay {
+		a, ea := time.Parse("2006-01-02", *e.StartsAt)
+		b, eb := time.Parse("2006-01-02", *e.EndsAt)
+		if ea != nil || eb != nil {
+			return
+		}
+		start := time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+		days := int(b.Sub(a).Hours() / 24)
+		e.StartsAt, e.EndsAt = strPtr(start.Format("2006-01-02")), strPtr(start.AddDate(0, 0, days).Format("2006-01-02"))
+		return
+	}
+	a, ea := time.Parse(time.RFC3339Nano, *e.StartsAt)
+	b, eb := time.Parse(time.RFC3339Nano, *e.EndsAt)
+	if ea != nil || eb != nil || before.AllDay {
+		return
+	}
+	w := a.In(loc)
+	start := time.Date(y, m, d, w.Hour(), w.Minute(), w.Second(), w.Nanosecond(), loc)
+	end := start.Add(b.Sub(a))
+	if a.Equal(orig) && b.After(a.Add(24*time.Hour)) {
+		// Start untouched but endsAt taken from a later occurrence: use its time on the series date.
+		v := b.In(loc)
+		end = time.Date(y, m, d, v.Hour(), v.Minute(), v.Second(), v.Nanosecond(), loc)
+		if !end.After(start) {
+			end = end.AddDate(0, 0, 1)
+		}
+	}
+	e.StartsAt, e.EndsAt = strPtr(start.UTC().Format(time.RFC3339Nano)), strPtr(end.UTC().Format(time.RFC3339Nano))
 }
