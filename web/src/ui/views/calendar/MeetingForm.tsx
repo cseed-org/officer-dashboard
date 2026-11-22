@@ -99,7 +99,7 @@ export function seriesTimes(e: OrgCalendarEvent): { startsAt: string | null; end
 type PatchBody = Partial<OrgEventWriteRequest> & { moveSeriesStart?: boolean };
 
 /** The draft as an API body: the whole meeting on create; on edit only what changed. */
-export function meetingBody(d: Draft, original: OrgCalendarEvent | null, base: Draft | null): OrgEventWriteRequest | PatchBody {
+export function meetingBody(d: Draft, original: OrgCalendarEvent | null, base: Draft | null, moveStart = false): OrgEventWriteRequest | PatchBody {
   const when: Partial<OrgEventWriteRequest> =
     d.mode === 'tentative'
       ? { startsAt: null, endsAt: null, tentativeFrom: d.tentFrom, tentativeTo: d.tentTo, rrule: null }
@@ -121,15 +121,15 @@ export function meetingBody(d: Draft, original: OrgCalendarEvent | null, base: D
   if (!original || !base) return full;
   // Edits send only what changed. The draft holds the series' own date (seriesTimes), and the
   // server keeps a repeating series on its first date unless moveSeriesStart says otherwise, so
-  // a new time from any occurrence moves every occurrence and drops none. Changing the date
-  // itself is the one deliberate move of the series start.
+  // a new time from any occurrence moves every occurrence and drops none. Moving the series'
+  // first date is a separate, explicit action ("Move series start" → moveStart).
   const out: PatchBody = {};
   const changed = <K extends keyof Draft>(...keys: K[]) => keys.some((k) => JSON.stringify(d[k]) !== JSON.stringify(base[k]));
   if (changed('title')) out.title = full.title;
   if (changed('description')) out.description = full.description;
   if (changed('location')) out.location = full.location;
   if (changed('mode', 'allDay', 'date', 'endDate', 'start', 'end', 'tentFrom', 'tentTo')) Object.assign(out, when);
-  if (original.rrule && d.mode === 'fixed' && base.mode === 'fixed' && changed('date')) out.moveSeriesStart = true;
+  if (moveStart && original.rrule && d.mode === 'fixed' && base.mode === 'fixed' && changed('date')) out.moveSeriesStart = true;
   if (changed('repeat', 'until') || (d.mode === 'tentative' && original.rrule)) out.rrule = rrule;
   if (changed('reminders')) out.reminders = full.reminders;
   if (changed('invitees')) out.invitees = full.invitees;
@@ -204,6 +204,17 @@ export function MeetingForm({
     };
   const recurring = event?.rrule != null;
   const seriesDate = recurring && base.mode === 'fixed' ? base.date : null;
+  // A repeating meeting's first date only changes through the explicit Move series start action.
+  const [moveStart, setMoveStart] = useState(false);
+  const dateLocked = !!seriesDate && !moveStart;
+  const dateHint = dateLocked ? (
+    <>
+      The series' first date.{' '}
+      <button type="button" class="linkish" onClick={() => setMoveStart(true)}>
+        Move series start
+      </button>
+    </>
+  ) : undefined;
   const tz = effectiveTimezone();
   const calName = (k: Key) => calendars.find((c) => c.key === k)?.name ?? (k === 'internal' ? 'Internal Meetings' : 'External Meetings');
 
@@ -245,7 +256,7 @@ export function MeetingForm({
       setMessage('Fix the highlighted fields, then save again.');
       return;
     }
-    const body = meetingBody(draft, event, event ? base : null);
+    const body = meetingBody(draft, event, event ? base : null, moveStart);
     setBusy(true);
     setMessage(null);
     try {
@@ -266,7 +277,8 @@ export function MeetingForm({
     <form class="stack orgcal-form" onSubmit={save} noValidate data-meeting-form={event?.id ?? 'new'}>
       {recurring && seriesDate && (
         <Notice tone="info">
-          This meeting repeats. Changes apply to every occurrence (series starts {longDay(seriesDate)}).{d.mode === 'fixed' && d.date !== base.date ? ' Saving moves the first meeting to the new date; occurrences before it are removed.' : ''}
+          This meeting repeats. Changes apply to every occurrence (series starts {longDay(seriesDate)}).
+          {moveStart && ' Moving the series start: the first meeting moves to the new date, and occurrences before it are removed.'}
         </Notice>
       )}
       <div class="grid-fields">
@@ -328,8 +340,8 @@ export function MeetingForm({
             </label>
             {d.allDay ? (
               <div class="grid-fields">
-                <Field id="mt-date" label="First day" error={errors.date}>
-                  <input class="input" type="date" value={d.date} onInput={set('date')} {...describe('mt-date', errors.date)} />
+                <Field id="mt-date" label="First day" error={errors.date} hint={dateHint}>
+                  <input class="input" type="date" value={d.date} onInput={set('date')} disabled={dateLocked} {...describe('mt-date', errors.date, !!dateHint)} />
                 </Field>
                 <Field id="mt-enddate" label="Last day" error={errors.endDate}>
                   <input class="input" type="date" value={d.endDate} onInput={set('endDate')} {...describe('mt-enddate', errors.endDate)} />
@@ -337,8 +349,8 @@ export function MeetingForm({
               </div>
             ) : (
               <div class="grid-fields grid-fields--3">
-                <Field id="mt-date" label="Date" error={errors.date}>
-                  <input class="input" type="date" value={d.date} onInput={set('date')} {...describe('mt-date', errors.date)} />
+                <Field id="mt-date" label="Date" error={errors.date} hint={dateHint}>
+                  <input class="input" type="date" value={d.date} onInput={set('date')} disabled={dateLocked} {...describe('mt-date', errors.date, !!dateHint)} />
                 </Field>
                 <Field id="mt-start" label={`Starts · ${tz}`} error={errors.start}>
                   <input class="input" type="time" step={300} value={d.start} onInput={set('start')} {...describe('mt-start', errors.start)} />

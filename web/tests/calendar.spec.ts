@@ -184,11 +184,13 @@ test('calendar: create, edit and delete an internal meeting with invitees', asyn
     expect((await eventsIn(page, '2027-03-08', '2027-03-15')).find((e) => e.id === saved.id)?.startsAt).toMatch(/^2027-03-10T15:00/);
     expect((await eventsIn(page, '2027-03-22', '2027-03-29')).find((e) => e.id === saved.id)?.startsAt).toMatch(/^2027-03-24T15:00/);
 
-    // Changing the date itself moves the series' first meeting, with a warning first.
+    // The series' first date is locked; moving it takes the explicit Move series start action.
     await renamedLater.click();
     await card.getByRole('button', { name: 'Edit' }).click();
-    await editor.getByLabel('Date', { exact: true }).fill('2027-03-17');
+    await expect(editor.getByLabel('Date', { exact: true })).toBeDisabled();
+    await editor.getByRole('button', { name: 'Move series start' }).click();
     await expect(editor).toContainText('occurrences before it are removed');
+    await editor.getByLabel('Date', { exact: true }).fill('2027-03-17');
     await editor.getByRole('button', { name: 'Save changes' }).click();
     await expect(editor).toBeHidden();
     expect((await eventsIn(page, '2027-03-08', '2027-03-15')).some((e) => e.id === saved.id)).toBe(false);

@@ -127,8 +127,9 @@ viewer's time zone (Settings), weeks starting on Monday.
   meetings offer Edit and Delete (delete asks first). Editing a repeating meeting edits the
   series from any occurrence: the drawer shows the series' own date and times
   (`seriesStartsAt`/`seriesEndsAt`) and says when it starts. Only changed fields are sent; a
-  new time applies to every occurrence on the series' original date, and only changing the
-  date sends `moveSeriesStart` (the drawer warns that earlier occurrences are then removed). Weekly Programs and Events items are read-only and link to their source ("Open
+  new time applies to every occurrence on the series' original date. The date field is locked;
+  **Move series start** unlocks it, warns that earlier occurrences are removed, and only then
+  is `moveSeriesStart` sent. Weekly Programs and Events items are read-only and link to their source ("Open
   program" / "Open event"); `?edit=` on a locked item does not open the editor.
 - **States:** loading and error use the shared states; an empty period offers Create. When the
   organization account isn't connected (leadership: `/api/settings/org-google/status`; others:
