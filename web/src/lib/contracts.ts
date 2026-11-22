@@ -195,7 +195,7 @@ export type MeResponse = z.infer<typeof MeResponse>;
 export const LookupsResponse = z.object({
   expenseAccounts: z.array(AccountOption),
   funds: z.array(FundOption),
-  events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+  events: z.array(z.object({ id: Id, name: z.string(), startsAt: z.union([IsoDateTime, z.literal('')]), tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable() })),
   subteams: z.array(z.object({ id: Id, name: z.string() })),
   /** Active officers, by name: the event host picker. */
   hosts: z.array(UserSummary),
@@ -1053,11 +1053,13 @@ export const PersonActivityItem = z.object({
   kind: z.enum(['event', 'design', 'purchase']),
   id: Id,
   title: z.string(),
-  /** event: hosted | hosting; design: its stage; purchase: its status. */
+  /** event: hosted | hosting | tentative; design: its stage; purchase: its status. */
   status: z.string(),
   /** design only: whether they requested it or are designing it. */
   role: z.enum(['requested', 'designing']).nullable(),
-  at: IsoDateTime,
+  /** "" for a tentative event, which carries its inclusive tentativeFrom/tentativeTo range (as EventListItem). */
+  at: z.union([IsoDateTime, z.literal('')]),
+  tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable(),
   href: z.string().startsWith('/'),
 });
 export type PersonActivityItem = z.infer<typeof PersonActivityItem>;
@@ -1322,7 +1324,7 @@ export const Contact = z.object({
  id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType, hasSpokenForUs: z.boolean(), clubSupport: z.boolean(),
  topics: z.array(z.string()), email: z.string(), linkedin: z.string(), notes: z.string(),
  createdAt: z.number().int(), updatedAt: z.number().int(),
- events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+ events: z.array(z.object({ id: Id, name: z.string(), startsAt: z.union([IsoDateTime, z.literal('')]), tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable() })),
  outreach: z.array(ContactOutreach), lastOutreach: ContactOutreach.nullable(),
 });
 export type Contact = z.infer<typeof Contact>;

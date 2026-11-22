@@ -23,10 +23,15 @@ type Contact struct {
 	Outreach       []ContactOutreach `json:"outreach"`
 	LastOutreach   *ContactOutreach  `json:"lastOutreach"`
 }
+
+// ContactEvent is a linked event; StartsAt is "" for a tentative event, which carries
+// its inclusive TentativeFrom/TentativeTo range instead.
 type ContactEvent struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	StartsAt string `json:"startsAt"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	StartsAt      string  `json:"startsAt"`
+	TentativeFrom *string `json:"tentativeFrom"`
+	TentativeTo   *string `json:"tentativeTo"`
 }
 type ContactOutreach struct {
 	ID          string `json:"id"`
@@ -69,14 +74,14 @@ func (q *Queries) contacts(ctx context.Context, id string) ([]Contact, error) {
 	for i := range out {
 		byID[out[i].ID] = &out[i]
 	}
-	rows, err = q.q.QueryContext(ctx, `SELECT ce.contact_id,e.id,e.name,e.starts_at FROM contact_events ce JOIN events e ON e.id=ce.event_id WHERE (?1='' OR ce.contact_id=?1) ORDER BY e.starts_at DESC,e.id`, id)
+	rows, err = q.q.QueryContext(ctx, `SELECT ce.contact_id,e.id,e.name,coalesce(e.starts_at,''),e.tentative_from,e.tentative_to FROM contact_events ce JOIN events e ON e.id=ce.event_id WHERE (?1='' OR ce.contact_id=?1) ORDER BY e.starts_at_ms DESC,e.id`, id)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var contactID string
 		var e ContactEvent
-		if err := rows.Scan(&contactID, &e.ID, &e.Name, &e.StartsAt); err != nil {
+		if err := rows.Scan(&contactID, &e.ID, &e.Name, &e.StartsAt, &e.TentativeFrom, &e.TentativeTo); err != nil {
 			rows.Close()
 			return nil, err
 		}

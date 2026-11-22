@@ -8,7 +8,7 @@ import (
 
 // SearchHit is one raw search match. Which of A–C hold what depends on Kind:
 //
-//	event:   Primary=name, A=starts_at, B=location
+//	event:   Primary=name, A=starts_at ("" when tentative), B=location, C=tentative "from|to" or ""
 //	request: Primary=title, A=number, B=vendor, C=status
 //	user:    Primary=name, A=title, B=role, C=email
 //	account: Primary=name, A=code, B=type
@@ -54,16 +54,17 @@ func (q *Queries) Search(ctx context.Context, text string, limit int, includeDir
 	}
 	var out []SearchHit
 
-	rows, err := q.q.QueryContext(ctx, `SELECT id, name, starts_at, coalesce(location, ''), created_at FROM events
+	rows, err := q.q.QueryContext(ctx, `SELECT id, name, coalesce(starts_at, ''), coalesce(location, ''),
+		CASE WHEN starts_at IS NULL THEN coalesce(tentative_from || '|' || tentative_to, '') ELSE '' END, created_at FROM events
 		WHERE fold(name) LIKE ?1 ESCAPE '\' OR fold(coalesce(location, '')) LIKE ?1 ESCAPE '\' OR fold(coalesce(luma_id, '')) LIKE ?1 ESCAPE '\'
-		ORDER BY `+rankSQL("name")+`, starts_at DESC LIMIT ?2`, contains, limit, prefix)
+		ORDER BY `+rankSQL("name")+`, starts_at_ms DESC, id LIMIT ?2`, contains, limit, prefix)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var h SearchHit
 		var created Ms
-		if err := rows.Scan(&h.ID, &h.Primary, &h.A, &h.B, &created); err != nil {
+		if err := rows.Scan(&h.ID, &h.Primary, &h.A, &h.B, &h.C, &created); err != nil {
 			rows.Close()
 			return nil, err
 		}

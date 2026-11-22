@@ -31,6 +31,8 @@ func TestEventSummaryIncludesHistoryBeyondPage(t *testing.T) {
 		{ID: "month", Name: "This month", StartsAt: "2026-11-30T23:59:59-08:00"},
 		{ID: "future", Name: "Next month", StartsAt: "2026-12-01T00:00:00-08:00"},
 		{ID: "past", Name: "Before local month", StartsAt: "2026-11-01T06:59:59Z"},
+		// Tentative Events are left out of time-based counts.
+		{ID: "tentative", Name: "Tentative", TentativeFrom: strp("2026-11-24"), TentativeTo: strp("2026-11-30"), Status: "published"},
 	} {
 		if err := q.InsertEvent(ctx, e); err != nil {
 			t.Fatal(err)
@@ -53,3 +55,5 @@ func TestEventSummaryIncludesHistoryBeyondPage(t *testing.T) {
 		t.Fatalf("page changed summary: %+v %v", again, err)
 	}
 }
+
+func strp(s string) *string { return &s }

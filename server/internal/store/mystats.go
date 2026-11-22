@@ -21,8 +21,9 @@ type HostingStats struct {
 }
 
 // hostedWhere defines "hosted": the user is the event's host_user_id, the event is published
-// or completed (not a draft or cancelled) and it has already started.
-const hostedWhere = `e.host_user_id = ? AND e.status IN ('published','completed') AND julianday(e.starts_at) <= julianday(?, 'unixepoch')`
+// or completed (not a draft or cancelled) and it has already started. Tentative events (no
+// fixed start) are left out of every time-based count.
+const hostedWhere = `e.starts_at IS NOT NULL AND e.host_user_id = ? AND e.status IN ('published','completed') AND julianday(e.starts_at) <= julianday(?, 'unixepoch')`
 
 // MyHostingStats returns events hosted, checked-in attendees across them and the most recent
 // one. nowMs is the current time in Unix milliseconds.

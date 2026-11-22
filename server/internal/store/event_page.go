@@ -95,8 +95,8 @@ type EventTotals struct {
 func (q *Queries) EventSummary(ctx context.Context, now, monthStart, monthEnd Ms) (EventTotals, error) {
 	var out EventTotals
 	err := q.q.QueryRowContext(ctx, `SELECT
-		coalesce(sum(status NOT IN ('draft','cancelled') AND starts_at_ms >= ?),0),
-		coalesce(sum(status NOT IN ('draft','cancelled') AND starts_at_ms >= ? AND starts_at_ms < ?),0),
+		coalesce(sum(status NOT IN ('draft','cancelled') AND starts_at IS NOT NULL AND starts_at_ms >= ?),0),
+		coalesce(sum(status NOT IN ('draft','cancelled') AND starts_at IS NOT NULL AND starts_at_ms >= ? AND starts_at_ms < ?),0),
 		(SELECT count(*) FROM event_guests WHERE checked_in_at IS NOT NULL),
 		coalesce(sum(status = 'draft'),0)
 		FROM events`, now, monthStart, monthEnd).Scan(&out.Upcoming, &out.ThisMonth, &out.Attendees, &out.Drafts)

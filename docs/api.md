@@ -729,3 +729,9 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
   DELETE /api/settings/org-google. OAuth callback: /auth/org-google/callback.
 - Event create/update accepts nullable startsAt and inclusive tentativeFrom/tentativeTo dates.
   EventListItem startsAt is an empty string for tentative events and gains nullable range fields.
+  Tentative Events follow the same convention wherever an event start is returned: lookups
+  `events[]` and contact `events[]` have `startsAt:""` plus nullable `tentativeFrom`/`tentativeTo`;
+  officer activity items have `at:""`, status `tentative` and the range. Search shows a
+  "Tentative <from> – <to>" subtitle. Tentative Events sort at tentativeFrom, are left out of the
+  calendar feed (they appear on the org Events calendar) and of time-based stats (hosted counts,
+  last event, events summary).

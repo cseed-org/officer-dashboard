@@ -22,7 +22,10 @@ type ActivityItem struct {
 	Title  string
 	Status string // event: hosted | hosting; design: stage; purchase: status
 	Role   string // design: requested | designing; otherwise empty
-	At     time.Time
+	// At orders the list. A tentative event (Status "tentative") sorts at the start of
+	// TentativeFrom in America/Los_Angeles and carries its inclusive range.
+	At                         time.Time
+	TentativeFrom, TentativeTo *string
 }
 
 // openPurchase matches purchase requests that are submitted and not yet finished (the same
@@ -46,8 +49,8 @@ func (q *Queries) PersonActivity(ctx context.Context, userID string, nowMs int64
 	}
 
 	var items []ActivityItem
-	rows, err := q.q.QueryContext(ctx, `SELECT id, name, starts_at, julianday(starts_at) <= julianday(?, 'unixepoch') FROM events
-		WHERE host_user_id = ? AND status IN ('published','completed') ORDER BY julianday(starts_at) DESC, id LIMIT ?`, nowSec, userID, limit)
+	rows, err := q.q.QueryContext(ctx, `SELECT id, name, coalesce(starts_at, ''), coalesce(julianday(starts_at) <= julianday(?, 'unixepoch'), 0), tentative_from, tentative_to FROM events
+		WHERE host_user_id = ? AND status IN ('published','completed') ORDER BY starts_at_ms DESC, id LIMIT ?`, nowSec, userID, limit)
 	if err != nil {
 		return s, nil, err
 	}
@@ -55,9 +58,17 @@ func (q *Queries) PersonActivity(ctx context.Context, userID string, nowMs int64
 		var it ActivityItem
 		var starts string
 		var past bool
-		if err := rows.Scan(&it.ID, &it.Title, &starts, &past); err != nil {
+		var from, to *string
+		if err := rows.Scan(&it.ID, &it.Title, &starts, &past, &from, &to); err != nil {
 			rows.Close()
 			return s, nil, err
+		}
+		if starts == "" && from != nil && to != nil {
+			if ms := eventSortMillis("", from); ms != nil {
+				it.Kind, it.At, it.Status, it.TentativeFrom, it.TentativeTo = "event", time.UnixMilli(*ms).UTC(), "tentative", from, to
+				items = append(items, it)
+			}
+			continue
 		}
 		at, err := time.Parse(time.RFC3339, starts)
 		if err != nil {

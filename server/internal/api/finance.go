@@ -687,14 +687,17 @@ func (c *Ctx) lookups() error {
 			funds = append(funds, f.Option())
 		}
 	}
+	// Tentative events stay selectable: startsAt is "" and the inclusive range is set.
 	type ev struct {
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		StartsAt string `json:"startsAt"`
+		ID            string  `json:"id"`
+		Name          string  `json:"name"`
+		StartsAt      string  `json:"startsAt"`
+		TentativeFrom *string `json:"tentativeFrom"`
+		TentativeTo   *string `json:"tentativeTo"`
 	}
 	events := make([]ev, len(cat.events))
 	for i, e := range cat.events {
-		events[i] = ev{e.ID, e.Name, e.StartsAt}
+		events[i] = ev{e.ID, e.Name, e.StartsAt, e.TentativeFrom, e.TentativeTo}
 	}
 	teams := make([]SubteamBrief, len(cat.subteams))
 	for i, t := range cat.subteams {

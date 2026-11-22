@@ -397,6 +397,17 @@ await call('eventsImport', { who: officer, form: csv('reflections', 'Name\nAnn\n
 const newEvent = await call('eventCreate', { who: officer, body: { name: 'Contract check social', startsAt: '2026-12-12T19:00:00-08:00', endsAt: '2026-12-12T21:00:00-08:00', location: 'Atrium', url: 'https://example.org/social', hostUserId: 'user-ava' } });
 await call('eventUpdate', { who: officer, params: { id: newEvent.json.event.id }, body: { location: 'Lobby', endsAt: null } });
 await call('eventDetail', { who: officer, params: { id: newEvent.json.event.id } });
+// Tentative Events stay first-class: every read that carries an event start stays contract-valid.
+const tentative = await call('eventCreate', { who: officer, body: { name: 'Contract tentative mixer', startsAt: null, tentativeFrom: '2026-12-01', tentativeTo: '2026-12-05', status: 'published', hostUserId: 'user-priya' } });
+const tentativeId = tentative.json.event.id;
+must((await call('lookups', { who: officer })).json.events.some((e) => e.id === tentativeId && e.startsAt === '' && e.tentativeFrom === '2026-12-01'), 'tentative events are selectable in lookups');
+must((await call('search', { who: officer, query: { q: 'tentative mixer' } })).json.results.some((r) => r.id === tentativeId), 'tentative events are searchable');
+must((await call('officerActivity', { who: officer, params: { id: 'user-priya' } })).json.items.some((i) => i.id === tentativeId && i.at === '' && i.status === 'tentative'), 'tentative events are in person activity');
+await call('meStats', { who: officer });
+await call('calendarFeed', { who: officer, query: { start: '2026-11-01', end: '2026-12-31' } });
+const tentativeContact = await call('contactCreate', { who: officer, body: { name: 'Tentative speaker', type: 'both', eventIds: [tentativeId] } });
+must(tentativeContact.json.contact.events[0]?.tentativeTo === '2026-12-05', 'contact events carry the tentative range', tentativeContact.json.contact);
+await call('contactsList', { who: officer });
 // V0.3: a draft with the handoff fields, a cover, the pasted Luma link, then delete.
 const evDraft = await call('eventCreate', {
   who: officer,
