@@ -402,7 +402,7 @@ test('M-086: multi-day spans and exclusive-midnight ends keep their dates', asyn
 
 const orgEvent = (over: Partial<OrgCalendarEvent>): OrgCalendarEvent => ({
   id: 'm1', calendarKey: 'internal', title: 'Sync', description: '', location: '', startsAt: '2027-03-10T10:00:00-08:00', endsAt: '2027-03-10T11:00:00-08:00',
-  allDay: false, tentativeFrom: null, tentativeTo: null, rrule: null, reminders: [], sendInvites: false, invitees: [], sourceKind: 'manual', sourceId: null, sourceHref: null,
+  allDay: false, tentativeFrom: null, tentativeTo: null, rrule: null, seriesStartsAt: null, seriesEndsAt: null, reminders: [], sendInvites: false, invitees: [], sourceKind: 'manual', sourceId: null, sourceHref: null,
   googleEventId: null, googleEtag: null, createdBy: null, updatedBy: null, createdAt: 0, updatedAt: 0, ...over,
 });
 

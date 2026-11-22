@@ -124,9 +124,11 @@ viewer's time zone (Settings), weeks starting on Monday.
   officers from `/api/lookups`, plus typed emails), **Send invites** (defaults on for External,
   off for Internal until you change it), reminders, location and description.
 - **Open an item:** a card with when, repeat, location, invitees and reminders. Internal/External
-  meetings offer Edit and Delete (delete asks first). Editing a recurring meeting changes the
-  whole series; only changed fields are sent, so renaming from one occurrence never moves the
-  series. Weekly Programs and Events items are read-only and link to their source ("Open
+  meetings offer Edit and Delete (delete asks first). Editing a repeating meeting edits the
+  series from any occurrence: the drawer shows the series' own date and times
+  (`seriesStartsAt`/`seriesEndsAt`) and says when it starts. Only changed fields are sent; a
+  new time applies to every occurrence on the series' original date, and only changing the
+  date sends `moveSeriesStart` (the drawer warns that earlier occurrences are then removed). Weekly Programs and Events items are read-only and link to their source ("Open
   program" / "Open event"); `?edit=` on a locked item does not open the editor.
 - **States:** loading and error use the shared states; an empty period offers Create. When the
   organization account isn't connected (leadership: `/api/settings/org-google/status`; others:

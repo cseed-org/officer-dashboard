@@ -131,9 +131,9 @@ test('calendar: create, edit and delete an internal meeting with invitees', asyn
   await editor.getByLabel('Add an email address').fill('not-an-email');
   await editor.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(editor.getByText('Enter an email address like name@example.org.')).toBeVisible();
+  await expect(editor.locator('.orgcal-invitee')).toHaveCount(2);
+  // An address typed but never added with Add is still invited on save.
   await editor.getByLabel('Add an email address').fill('guest@example.org');
-  await editor.getByRole('button', { name: 'Add', exact: true }).click();
-  await expect(editor.locator('.orgcal-invitee')).toHaveCount(3);
   await editor.getByLabel('Location').fill('Room 250');
   // Every two weeks until the end of April.
   await editor.getByLabel('Repeat').selectOption({ label: 'Every 2 weeks' });
@@ -151,27 +151,53 @@ test('calendar: create, edit and delete an internal meeting with invitees', asyn
   expect((await eventsIn(page, '2027-03-15', '2027-03-22')).some((e) => e.id === saved.id)).toBe(false);
   expect((await eventsIn(page, '2027-03-22', '2027-03-29')).find((e) => e.id === saved.id)?.startsAt).toMatch(/^2027-03-24T14:00/);
   try {
-    // Open → Edit → rename.
-    const block = phone(info.project.name) ? page.locator('.cal-agenda').getByRole('button', { name: title }) : page.locator('.cal-col[data-date="2027-03-10"] .cal-block', { hasText: title });
-    await block.click();
+    // Open the third occurrence (Mar 24) → Edit → rename: the series keeps its Mar 10 start.
+    await page.goto('/calendar?view=week&w=2027-03-22');
+    await settle(page);
+    const later = phone(info.project.name) ? page.locator('.cal-agenda').getByRole('button', { name: title }) : page.locator('.cal-col[data-date="2027-03-24"] .cal-block', { hasText: title });
+    await later.click();
     const card = page.locator('dialog#orgcal-item');
     await expect(card.getByRole('heading', { name: title })).toBeVisible();
     await expect(card).toContainText('guest@example.org');
     await card.getByRole('button', { name: 'Edit' }).click();
     await expect(editor.getByLabel('Title')).toHaveValue(title);
     await expect(editor.getByLabel('Calendar')).toBeDisabled();
-    await expect(editor).toContainText('Changes apply to every occurrence.');
+    await expect(editor).toContainText('Changes apply to every occurrence (series starts March 10, 2027).');
+    // The drawer edits the series' date and time, never this occurrence's.
+    await expect(editor.getByLabel('Date', { exact: true })).toHaveValue('2027-03-10');
     await expect(editor.getByLabel('Repeat')).toHaveValue('biweekly');
     await editor.getByLabel('Title').fill(`${title} v2`);
     await editor.getByRole('button', { name: 'Save changes' }).click();
     await expect(editor).toBeHidden();
     await expect(page.getByText(`“${title} v2” saved.`)).toBeVisible();
-    // Renaming from one occurrence keeps the series where it was.
     expect((await eventsIn(page, '2027-03-22', '2027-03-29')).find((e) => e.id === saved.id)?.title).toBe(`${title} v2`);
     expect((await eventsIn(page, '2027-03-08', '2027-03-15')).find((e) => e.id === saved.id)?.startsAt).toMatch(/^2027-03-10T14:00/);
 
+    // From the same later occurrence, move the time to 3 PM: every occurrence moves, none is dropped.
+    const renamedLater = phone(info.project.name) ? page.locator('.cal-agenda').getByRole('button', { name: `${title} v2` }) : page.locator('.cal-col[data-date="2027-03-24"] .cal-block', { hasText: `${title} v2` });
+    await renamedLater.click();
+    await card.getByRole('button', { name: 'Edit' }).click();
+    await editor.getByLabel(/^Starts/).fill('15:00');
+    await editor.getByLabel('Ends').fill('16:00');
+    await editor.getByRole('button', { name: 'Save changes' }).click();
+    await expect(editor).toBeHidden();
+    expect((await eventsIn(page, '2027-03-08', '2027-03-15')).find((e) => e.id === saved.id)?.startsAt).toMatch(/^2027-03-10T15:00/);
+    expect((await eventsIn(page, '2027-03-22', '2027-03-29')).find((e) => e.id === saved.id)?.startsAt).toMatch(/^2027-03-24T15:00/);
+
+    // Changing the date itself moves the series' first meeting, with a warning first.
+    await renamedLater.click();
+    await card.getByRole('button', { name: 'Edit' }).click();
+    await editor.getByLabel('Date', { exact: true }).fill('2027-03-17');
+    await expect(editor).toContainText('occurrences before it are removed');
+    await editor.getByRole('button', { name: 'Save changes' }).click();
+    await expect(editor).toBeHidden();
+    expect((await eventsIn(page, '2027-03-08', '2027-03-15')).some((e) => e.id === saved.id)).toBe(false);
+    expect((await eventsIn(page, '2027-03-15', '2027-03-22')).find((e) => e.id === saved.id)?.startsAt).toMatch(/^2027-03-17T15:00/);
+    await page.goto('/calendar?view=week&w=2027-03-15');
+    await settle(page);
+
     // Open → Delete → confirm.
-    const renamed = phone(info.project.name) ? page.locator('.cal-agenda').getByRole('button', { name: `${title} v2` }) : page.locator('.cal-block', { hasText: `${title} v2` });
+    const renamed = phone(info.project.name) ? page.locator('.cal-agenda').getByRole('button', { name: `${title} v2` }) : page.locator('.cal-col[data-date="2027-03-17"] .cal-block', { hasText: `${title} v2` });
     await renamed.click();
     await card.getByRole('button', { name: 'Delete' }).click();
     const confirm = page.locator('dialog#orgcal-delete');
@@ -180,7 +206,7 @@ test('calendar: create, edit and delete an internal meeting with invitees', asyn
     await confirm.getByRole('button', { name: 'Delete meeting' }).click();
     await expect(confirm).toBeHidden();
     await expect(renamed).toHaveCount(0);
-    expect((await eventsIn(page, '2027-03-08', '2027-03-15')).some((e) => e.id === saved.id)).toBe(false);
+    expect((await eventsIn(page, '2027-03-08', '2027-04-05')).some((e) => e.id === saved.id)).toBe(false);
   } finally {
     await removeMeeting(page, saved.id);
   }

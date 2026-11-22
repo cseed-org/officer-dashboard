@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import { api } from '../../../lib/api/client';
 import { useApi } from '../../../lib/api/useApi';
-import { addDays, fromLocalInput, pacificParts } from '../../../lib/calendar';
+import { addDays, fromLocalInput, longDay, pacificParts } from '../../../lib/calendar';
 import type { OrgCalendar, OrgCalendarEvent, OrgEventWriteRequest, OrgInvitee } from '../../../lib/contracts';
 import { pacificIso } from '../../../lib/format';
 import { MANUAL_KEYS, REMINDER_MINUTES, REPEAT_LABEL, buildRepeat, parseRepeat, prefill, reminderText, type Repeat } from '../../../lib/orgcal';
@@ -62,11 +62,14 @@ function draftOf(event: OrgCalendarEvent | null, newParam: string, defaultKey: K
       description: '',
     };
   }
-  const { repeat, until } = parseRepeat(event.rrule, event.startsAt);
-  const tentative = event.startsAt === null;
-  const allDay = !tentative && (event.allDay || isDate(event.startsAt!));
-  const date = tentative ? (event.tentativeFrom ?? '') : allDay ? event.startsAt! : pacificParts(event.startsAt!).date;
-  const endDate = allDay && event.endsAt && isDate(event.endsAt) ? addDays(event.endsAt, -1) : date;
+  // A listed occurrence of a repeating meeting carries its own start; the drawer edits the
+  // series, so its date and times come from the master (seriesStartsAt/seriesEndsAt).
+  const { startsAt, endsAt } = seriesTimes(event);
+  const { repeat, until } = parseRepeat(event.rrule, startsAt);
+  const tentative = startsAt === null;
+  const allDay = !tentative && (event.allDay || isDate(startsAt!));
+  const date = tentative ? (event.tentativeFrom ?? '') : allDay ? startsAt! : pacificParts(startsAt!).date;
+  const endDate = allDay && endsAt && isDate(endsAt) ? addDays(endsAt, -1) : date;
   return {
     calendarKey: event.calendarKey === 'external' ? 'external' : 'internal',
     title: event.title,
@@ -74,8 +77,8 @@ function draftOf(event: OrgCalendarEvent | null, newParam: string, defaultKey: K
     allDay,
     date: tentative ? (event.tentativeFrom ?? '') : date,
     endDate,
-    start: !tentative && !allDay ? clockOf(event.startsAt!) : '10:00',
-    end: !tentative && !allDay && event.endsAt ? clockOf(event.endsAt) : '11:00',
+    start: !tentative && !allDay ? clockOf(startsAt!) : '10:00',
+    end: !tentative && !allDay && endsAt ? clockOf(endsAt) : '11:00',
     tentFrom: event.tentativeFrom ?? date,
     tentTo: event.tentativeTo ?? event.tentativeFrom ?? date,
     repeat,
@@ -88,8 +91,15 @@ function draftOf(event: OrgCalendarEvent | null, newParam: string, defaultKey: K
   };
 }
 
+/** The times the drawer edits: the series' for a repeating meeting, else the item's own. */
+export function seriesTimes(e: OrgCalendarEvent): { startsAt: string | null; endsAt: string | null } {
+  return e.rrule && e.seriesStartsAt ? { startsAt: e.seriesStartsAt, endsAt: e.seriesEndsAt } : { startsAt: e.startsAt, endsAt: e.endsAt };
+}
+
+type PatchBody = Partial<OrgEventWriteRequest> & { moveSeriesStart?: boolean };
+
 /** The draft as an API body: the whole meeting on create; on edit only what changed. */
-export function meetingBody(d: Draft, original: OrgCalendarEvent | null, base: Draft | null): OrgEventWriteRequest | Partial<OrgEventWriteRequest> {
+export function meetingBody(d: Draft, original: OrgCalendarEvent | null, base: Draft | null): OrgEventWriteRequest | PatchBody {
   const when: Partial<OrgEventWriteRequest> =
     d.mode === 'tentative'
       ? { startsAt: null, endsAt: null, tentativeFrom: d.tentFrom, tentativeTo: d.tentTo, rrule: null }
@@ -109,14 +119,17 @@ export function meetingBody(d: Draft, original: OrgCalendarEvent | null, base: D
     sendInvites: d.sendInvites,
   };
   if (!original || !base) return full;
-  // A recurring meeting opened from one occurrence: keep the series start unless the time
-  // fields were edited, so saving a title does not move the whole series to this day.
-  const out: Partial<OrgEventWriteRequest> = {};
+  // Edits send only what changed. The draft holds the series' own date (seriesTimes), and the
+  // server keeps a repeating series on its first date unless moveSeriesStart says otherwise, so
+  // a new time from any occurrence moves every occurrence and drops none. Changing the date
+  // itself is the one deliberate move of the series start.
+  const out: PatchBody = {};
   const changed = <K extends keyof Draft>(...keys: K[]) => keys.some((k) => JSON.stringify(d[k]) !== JSON.stringify(base[k]));
   if (changed('title')) out.title = full.title;
   if (changed('description')) out.description = full.description;
   if (changed('location')) out.location = full.location;
   if (changed('mode', 'allDay', 'date', 'endDate', 'start', 'end', 'tentFrom', 'tentTo')) Object.assign(out, when);
+  if (original.rrule && d.mode === 'fixed' && base.mode === 'fixed' && changed('date')) out.moveSeriesStart = true;
   if (changed('repeat', 'until') || (d.mode === 'tentative' && original.rrule)) out.rrule = rrule;
   if (changed('reminders')) out.reminders = full.reminders;
   if (changed('invitees')) out.invitees = full.invitees;
@@ -190,6 +203,7 @@ export function MeetingForm({
       setD((x) => ({ ...x, [k]: v }));
     };
   const recurring = event?.rrule != null;
+  const seriesDate = recurring && base.mode === 'fixed' ? base.date : null;
   const tz = effectiveTimezone();
   const calName = (k: Key) => calendars.find((c) => c.key === k)?.name ?? (k === 'internal' ? 'Internal Meetings' : 'External Meetings');
 
@@ -250,7 +264,11 @@ export function MeetingForm({
 
   return (
     <form class="stack orgcal-form" onSubmit={save} noValidate data-meeting-form={event?.id ?? 'new'}>
-      {recurring && <Notice tone="info">This meeting repeats. Changes apply to every occurrence.</Notice>}
+      {recurring && seriesDate && (
+        <Notice tone="info">
+          This meeting repeats. Changes apply to every occurrence (series starts {longDay(seriesDate)}).{d.mode === 'fixed' && d.date !== base.date ? ' Saving moves the first meeting to the new date; occurrences before it are removed.' : ''}
+        </Notice>
+      )}
       <div class="grid-fields">
         <Field id="mt-cal" label="Calendar" hint={event ? 'A meeting stays in its calendar.' : undefined}>
           <select
