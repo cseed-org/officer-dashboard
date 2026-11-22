@@ -48,7 +48,7 @@ test('tabs slide one indicator and views crossfade without resizing the page', a
   await devLogin(page, 'director');
   await open(page);
   const tabs = page.getByRole('tablist', { name: 'Buildspace + Launchpad directory' });
-  await expect(tabs.getByRole('tab')).toHaveCount(4);
+  await expect(tabs.getByRole('tab')).toHaveCount(5); // People, Projects, Mentors, Programs, Invites
   await expect(tabs.getByRole('tab', { name: /People/ })).toHaveAttribute('aria-selected', 'true');
   const bar = page.locator('.bs-toolbar .tab-indicator');
   const before = await bar.evaluate((el) => getComputedStyle(el).transform);

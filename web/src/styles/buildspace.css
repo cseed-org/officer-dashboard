@@ -432,7 +432,9 @@
 .bs-view-in {min-width: 0;}
 .bs-view-out .async-outgoing {z-index: 1;}
 .bs-view-out .async-outgoing * {animation: none !important;}
-.bs-toolbar .tabs {border-bottom: 0;}
+/* Five tabs are wider than a phone: the toolbar may shrink so the tablist scrolls instead. */
+.bs-toolbar {min-width: 0;}
+.bs-toolbar .tabs {border-bottom: 0; min-width: 0;}
 .bs-detail-panel {display: grid; gap: 24px; min-width: 0;}
 
 /* Check-in schedule popover (same pattern as the calendar Options popover). */
@@ -533,3 +535,14 @@
 @media (prefers-reduced-motion: reduce) {
   .bs-card, .bs-card-actions {transition: none;}
 }
+
+/* Programs tab (V0.15): weekly programs, their sessions and skip/move exceptions. */
+.pg-track {display:grid;gap:8px;min-width:0;}
+.pg-sessions {list-style:none;margin:0;padding:0;display:grid;border-top:1px solid var(--line);}
+.pg-session {display:grid;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);min-width:0;}
+.pg-session[data-session-state="skipped"] .pg-session-when {color:var(--muted);text-decoration:line-through;}
+.pg-session-line {display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;min-width:0;}
+.pg-session-when {min-width:0;overflow-wrap:anywhere;}
+.pg-session-line .action-row {margin-left:auto;gap:12px;}
+.pg-move {grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));align-items:end;padding:10px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--sunken);}
+.pg-tracks {list-style:none;margin:0;padding:0;display:grid;gap:6px;}

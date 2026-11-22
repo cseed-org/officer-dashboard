@@ -42,6 +42,9 @@ export const href = {
   newDesignRequest: (eventId?: string) => `/design${qs({ new: 1, eventId })}`,
 
   admin: (tab?: AdminTab) => `/officers${qs({ tab: !tab || tab === 'users' ? 'access' : tab })}`,
+
+  /** Programs live on a tab of the Buildspace + Launchpad page; the org calendar links here. */
+  program: (id: string) => `/buildspace-launchpad${qs({ tab: 'programs', program: id })}`,
 };
 
 /**

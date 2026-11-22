@@ -23,6 +23,7 @@ import { closeAll, leaveEntry, pushEntry } from "./buildspace/history";
 import { CohortBar } from "./buildspace/Cohorts";
 import { InvitesPanel, type InviteLinks } from "./buildspace/Invites";
 import { AutoAssignDialog, MentorRoster } from "./buildspace/Mentors";
+import { ProgramsPanel } from "./buildspace/Programs";
 import { lifecycleActions } from "./buildspace/lifecycle";
 import { ACCOUNT_HUE, accountLabel, isDirector } from "./buildspace/launchpad";
 import { PeopleChip } from "../components/PeopleTable";
@@ -110,6 +111,7 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
             <BuildspaceContent
               key={b.cohortId}
               b={b}
+              me={me}
               reload={state.reload}
               loadOlder={loadOlder}
               notice={notice}
@@ -128,6 +130,7 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
 }
 function BuildspaceContent({
   b,
+  me,
   reload,
   loadOlder,
   notice,
@@ -138,6 +141,7 @@ function BuildspaceContent({
   addLinks,
 }: {
   b: BuildspaceData;
+  me: CurrentUser;
   reload: () => void;
   loadOlder: (signal: AbortSignal) => Promise<void>;
   notice: string;
@@ -171,7 +175,9 @@ function BuildspaceContent({
         ? "mentors"
         : qs.get("tab") === "invites"
           ? "invites"
-          : "people";
+          : qs.get("tab") === "programs"
+            ? "programs"
+            : "people";
   const view = qs.get("view") || "table",
     group = qs.get("group") || "track";
   // Whole-view swaps (tab, layout, grouping) crossfade; changes within a view use FLIP.
@@ -346,15 +352,17 @@ function BuildspaceContent({
   };
   return (
     <div class="buildspace">
-      <StatRow
-        label="Buildspace + Launchpad summary"
-        tiles={[
-          { label: "Builders", icon: "users", hue: "violet", value: live.length, sub: plural(liveProjects.length, "project") },
-          { label: "Awaiting this week", icon: "clock", hue: "amber", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
-          { label: "Open requests", icon: "inbox", hue: "teal", value: openRequestBuilders, sub: "builders with open requests", href: flagHref("requests"), pressed: flag === "requests" },
-          { label: "Unmentored", icon: "flag", hue: "coral", value: unmentored, sub: "builders without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
-        ]}
-      />
+      {tab !== "programs" && (
+        <StatRow
+          label="Buildspace + Launchpad summary"
+          tiles={[
+            { label: "Builders", icon: "users", hue: "violet", value: live.length, sub: plural(liveProjects.length, "project") },
+            { label: "Awaiting this week", icon: "clock", hue: "amber", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
+            { label: "Open requests", icon: "inbox", hue: "teal", value: openRequestBuilders, sub: "builders with open requests", href: flagHref("requests"), pressed: flag === "requests" },
+            { label: "Unmentored", icon: "flag", hue: "coral", value: unmentored, sub: "builders without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
+          ]}
+        />
+      )}
       {readOnly && (
         <Notice tone="attention">
           {cohort?.name ?? "This cohort"} is archived, so it is read-only. Builders can still sign in and read their portal.
@@ -367,14 +375,14 @@ function BuildspaceContent({
           label="Buildspace + Launchpad directory"
           idPrefix="bs"
           active={tab}
-          onChange={(t) => setParams({ tab: t })}
-          tabs={(["people", "projects", "mentors", "invites"] as const).map((t) => ({
+          onChange={(t) => setParams({ tab: t, program: null, pnew: null })}
+          tabs={(["people", "projects", "mentors", "programs", "invites"] as const).map((t) => ({
             key: t,
             label: t[0]!.toUpperCase() + t.slice(1),
-            count: t === "invites" ? b.accounts.length : t === "people" ? live.length : t === "projects" ? liveProjects.length : b[t].length,
+            count: t === "invites" ? b.accounts.length : t === "people" ? live.length : t === "projects" ? liveProjects.length : t === "programs" ? undefined : b[t].length,
           }))}
         />
-        {tab !== "invites" && <div class="segmented" aria-label="Layout">
+        {tab !== "invites" && tab !== "programs" && <div class="segmented" aria-label="Layout">
           {["table", "cards", "board"].map((v) => (
             <button
               class="segment"
@@ -389,6 +397,10 @@ function BuildspaceContent({
       {tab === "invites" ? (
         <div id="bs-panel" role="tabpanel" aria-labelledby="bs-tab-invites" class="tab-panel">
           <InvitesPanel b={b} canDirector={canDirector} readOnly={readOnly} links={links} addLinks={addLinks} reload={reload} setNotice={setNotice} />
+        </div>
+      ) : tab === "programs" ? (
+        <div id="bs-panel" role="tabpanel" aria-labelledby="bs-tab-programs" class="tab-panel">
+          <ProgramsPanel me={me} />
         </div>
       ) : (<>
       <div class="bs-filters">
