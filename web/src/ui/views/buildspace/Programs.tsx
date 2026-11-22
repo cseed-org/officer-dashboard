@@ -169,7 +169,7 @@ export function ProgramsPanel({ me }: { me: CurrentUser }) {
         return (
           <span class="bs-nowrap">
             {fmtDate(next.on)} · {clock(next.start)}
-            {next.exception?.kind === "move" && <Badge tone="info">Moved</Badge>}
+            {next.exception?.kind === "move" && <> <Badge tone="info">Moved</Badge></>}
           </span>
         );
       },
