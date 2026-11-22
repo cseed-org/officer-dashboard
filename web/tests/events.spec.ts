@@ -20,8 +20,8 @@ test('events: draft, handoff kit, Luma link, request design, delete', async ({ p
   await editor.getByRole('button', { name: 'Save draft' }).click();
   await expect(editor.getByText('Give the event a name.')).toBeVisible();
   await editor.getByLabel('Event name').fill(name);
-  await editor.getByLabel(/^Starts/).fill('2026-11-20T18:00');
-  await editor.getByLabel(/^Ends/).fill('2026-11-20T20:00');
+  await editor.getByLabel(/^Starts/).fill('2027-11-20T18:00');
+  await editor.getByLabel(/^Ends/).fill('2027-11-20T20:00');
   await editor.getByLabel(/^Location/).fill('The Nest · Room 250');
   await editor.getByLabel(/^Host team/).selectOption({ label: 'Events' });
   await editor.getByLabel(/^Description/).fill('An honest conversation with founders.');
@@ -36,7 +36,7 @@ test('events: draft, handoff kit, Luma link, request design, delete', async ({ p
   await editor.getByRole('button', { name: 'Open handoff kit' }).click();
   const kit = page.locator('dialog#handoff');
   await expect(kit).toBeVisible();
-  await expect(kit.locator('[data-copy-field="time"] p')).toHaveText('November 20, 2026 · 6–8 PM · America/Los_Angeles');
+  await expect(kit.locator('[data-copy-field="time"] p')).toHaveText('November 20, 2027 · 6–8 PM · America/Los_Angeles');
   await kit.getByRole('button', { name: 'Copy name' }).click();
   await expect(kit.getByRole('button', { name: 'Copied name ✓' })).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(name);
