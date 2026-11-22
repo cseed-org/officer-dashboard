@@ -11,7 +11,7 @@ import { migrateLayout, moveTo, nearestSize } from '../src/ui/widgets/layout';
 import { defaultWidgetLayout, layoutForChoices } from '../src/ui/widgets/catalog';
 import { mergeActivity } from '../src/ui/components/LoadHistory';
 import { byDay, clipSpan, entryDays, hourRange, overlapLanes, type CalEntry } from '../src/ui/components/calendar/layout';
-import { buildRepeat, occurrenceKey, orgEntry, overlayGroups, overlayTitle, parseRepeat, prefill, readToggles, stepView, viewRange } from '../src/lib/orgcal';
+import { buildRepeat, occurrenceKey, orgEntry, overlayEntry, overlayGroups, overlayTitle, parseRepeat, periodFromParams, periodParams, prefill, readToggles, stepView, viewRange } from '../src/lib/orgcal';
 import type { OrgCalendarEvent } from '../src/lib/contracts';
 
 /** Pure-function tests (no browser); run once, in the desktop project. */
@@ -462,14 +462,23 @@ test('org calendar: recurrence round-trips through RRULE text', () => {
   const custom = 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE';
   expect(parseRepeat(custom).repeat).toBe('custom');
   expect(buildRepeat('custom', '', custom)).toBe(custom);
+  // Google's own weekly rule names the start's weekday (and often WKST): still plain weekly.
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;WKST=SU;BYDAY=WE', '2027-03-10T14:00:00-08:00')).toEqual({ repeat: 'weekly', until: '' });
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;UNTIL=20270501T065959Z', '2027-03-10T14:00:00-08:00')).toEqual({ repeat: 'biweekly', until: '2027-04-30' });
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;BYDAY=TH', '2027-03-10T14:00:00-08:00').repeat).toBe('custom');
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;BYDAY=WE').repeat).toBe('custom');
+  // An all-day series takes a DATE UNTIL, like its DATE start.
+  expect(buildRepeat('weekly', '2027-06-01', null, true)).toBe('RRULE:FREQ=WEEKLY;UNTIL=20270601');
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;UNTIL=20270601')).toEqual({ repeat: 'weekly', until: '2027-06-01' });
 });
 
 test('org calendar: toggles, ranges and create prefill', () => {
   expect(readToggles(null)).toMatchObject({ internal: true, events: true, design: true, buildspace: true });
   expect(readToggles('{"internal":false,"design":false,"bogus":1}')).toMatchObject({ internal: false, external: true, design: false, purchase: true });
   expect(readToggles('not json').internal).toBe(true);
-  expect(viewRange('week', '2027-03', '2027-03-08')).toEqual({ from: '2027-03-08', to: '2027-03-15' });
-  expect(viewRange('month', '2027-03', '2027-03-08')).toEqual({ from: '2027-03-01', to: '2027-04-05' });
+  // A day of margin each side: the server reads dates as Los Angeles midnights (viewer may be elsewhere).
+  expect(viewRange('week', '2027-03', '2027-03-08')).toEqual({ from: '2027-03-07', to: '2027-03-16' });
+  expect(viewRange('month', '2027-03', '2027-03-08')).toEqual({ from: '2027-02-28', to: '2027-04-06' });
   expect(stepView('month', '2027-12', '2027-12-06', 1)).toEqual({ m: '2028-01', w: '2027-12-27' });
   expect(stepView('week', '2027-03', '2027-03-29', 1)).toEqual({ m: '2027-04', w: '2027-04-05' });
   expect(prefill('2027-03-10T14:30')).toEqual({ date: '2027-03-10', start: '14:30', end: '15:30' });
@@ -489,4 +498,34 @@ test('org calendar: same-day overlay items group per source', () => {
   expect(groups.map((g) => g.map((i) => i.id))).toEqual([['1', '2'], ['3'], ['4'], ['5']]);
   expect(overlayTitle(groups[0]!)).toBe('Weekly check-in due (2)');
   expect(overlayTitle(groups[1]!)).toBe('Weekly check-in due · Alex');
+  // Overlays take their toggle's colour (none a calendar uses), not the feed source's.
+  expect(overlayEntry(groups[0]!, { id: 'buildspace-weekly', label: 'x', icon: 'x', hue: 'teal' })).toMatchObject({ hue: 'ink', overlay: true, locked: true });
+  expect(overlayEntry(groups[2]!, undefined).hue).toBe('amber');
+  expect(overlayEntry([item('9', 'buildspace-mentor', '2026-11-16', 'Mentor check-in')], { id: 'buildspace-mentor', label: 'x', icon: 'x', hue: 'violet' }).hue).toBe('ink');
+});
+
+test('org calendar: the URL picks the month and week the page shows (navigation round-trips)', () => {
+  const nav = (view: 'month' | 'week', url: { m: string | null; w: string | null }, today: string, n: number) => {
+    const p = periodFromParams(url.m, url.w, today);
+    return periodParams(stepView(view, p.month, p.monday, n), today);
+  };
+  // Today is Sun Nov 22, 2026; November starts on a Sunday. Month › then ‹ comes back to November.
+  let url: { m: string | null; w: string | null } = { m: null, w: null };
+  url = nav('month', url, '2026-11-22', 1);
+  expect(periodFromParams(url.m, url.w, '2026-11-22').month).toBe('2026-12');
+  url = nav('month', url, '2026-11-22', -1);
+  expect(periodFromParams(url.m, url.w, '2026-11-22').month).toBe('2026-11');
+  // Today is Wed Dec 2: week › from Nov 23 lands on Nov 30 (this week), and ‹ from Dec 7 too.
+  expect(periodFromParams(...(Object.values(nav('week', { m: null, w: '2026-11-23' }, '2026-12-02', 1)) as [string | null, string | null]), '2026-12-02').monday).toBe('2026-11-30');
+  expect(periodFromParams(...(Object.values(nav('week', { m: null, w: '2026-12-07' }, '2026-12-02', -1)) as [string | null, string | null]), '2026-12-02').monday).toBe('2026-11-30');
+  // Picking Nov 1 in the mini month (today Nov 22) shows November, though its week starts Oct 26.
+  const picked = periodParams({ m: '2026-11', w: '2026-10-26' }, '2026-11-22');
+  expect(periodFromParams(picked.m, picked.w, '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-10-26' });
+  // Today's period is the bare URL; hand-written links with one parameter still work.
+  expect(periodParams({ m: '2026-11', w: '2026-11-16' }, '2026-11-22')).toEqual({ m: null, w: null });
+  expect(periodFromParams(null, null, '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-11-16' });
+  expect(periodFromParams('2027-03', null, '2026-11-22')).toEqual({ month: '2027-03', monday: '2027-03-01' });
+  expect(periodFromParams('2026-11', null, '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-11-16' });
+  expect(periodFromParams(null, '2027-03-10', '2026-11-22')).toEqual({ month: '2027-03', monday: '2027-03-08' });
+  expect(periodFromParams('junk', 'junk', '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-11-16' });
 });

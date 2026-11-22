@@ -7,7 +7,7 @@
  * Fixed all-day meetings carry YYYY-MM-DD dates with an exclusive end; tentative items carry an
  * inclusive tentativeFrom/tentativeTo range and no start.
  */
-import { addDays, addMonths, monthGrid, mondayOf, pacificParts, whenShort } from './calendar';
+import { addDays, addMonths, monthGrid, monthOf, mondayOf, pacificParts, weekdayIndex, whenShort } from './calendar';
 import type { CalendarFeedItem, CalendarFeedSource, OrgCalendar, OrgCalendarEvent, OrgCalendarKey } from './contracts';
 import { pacificIso } from './format';
 import type { CalEntry } from '../ui/components/calendar/layout';
@@ -24,12 +24,19 @@ export const FALLBACK_CALENDARS: OrgCalendar[] = [
   { key: 'events', name: 'Events', googleCalendarId: null, hue: 'coral', locked: true },
 ];
 
-/** Dashboard overlays from /api/calendar/feed: one toggle each, several feed sources per toggle. */
+/**
+ * Dashboard overlays from /api/calendar/feed: one toggle each, several feed sources per toggle.
+ * The four calendars use blue, teal, violet and coral, so overlays take the two hues left and
+ * neutral ink (`ink`), and draw as outlined chips so they never read as a calendar.
+ */
 export const OVERLAYS = [
   { key: 'design', label: 'Design deadlines', sources: ['design'], hue: 'amber' },
   { key: 'purchase', label: 'Purchase deadlines', sources: ['purchase-deadlines'], hue: 'green' },
-  { key: 'buildspace', label: 'Buildspace check-ins', sources: ['buildspace-weekly', 'buildspace-mentor'], hue: 'teal' },
+  { key: 'buildspace', label: 'Buildspace check-ins', sources: ['buildspace-weekly', 'buildspace-mentor'], hue: 'ink' },
 ] as const;
+
+/** A hue name → its CSS colour: a tokens.css `--c-<hue>`, or the muted text colour for `ink`. */
+export const hueColor = (hue: string) => (hue === 'ink' ? 'var(--muted)' : `var(--c-${hue})`);
 export type OverlayKey = (typeof OVERLAYS)[number]['key'];
 export const OVERLAY_SOURCES = OVERLAYS.flatMap((o) => o.sources as readonly string[]);
 
@@ -68,21 +75,46 @@ export function saveToggles(t: Toggles) {
 
 // ───────────────────────────── Ranges ─────────────────────────────
 
-/** The [from, to) dates a view reads: the month's whole Monday-first weeks, or one week. */
+/**
+ * The [from, to) dates a view reads: the month's whole Monday-first weeks, or one week, plus a day
+ * on each side. The server reads these dates as Los Angeles midnights while the grid shows the
+ * viewer's own zone, so a viewer east or west of Pacific time still gets items near the edges.
+ * The grid only draws the days it shows.
+ */
 export function viewRange(view: 'month' | 'week', month: string, monday: string): { from: string; to: string } {
-  if (view === 'week') return { from: monday, to: addDays(monday, 7) };
+  if (view === 'week') return { from: addDays(monday, -1), to: addDays(monday, 8) };
   const grid = monthGrid(month);
-  return { from: grid[0]!.date, to: addDays(grid[grid.length - 1]!.date, 1) };
+  return { from: addDays(grid[0]!.date, -1), to: addDays(grid[grid.length - 1]!.date, 2) };
 }
 
-/** ‹ / › for the current view. */
+const isMonthParam = (s: string | null | undefined): s is string => !!s && /^\d{4}-\d{2}$/.test(s);
+const isDateParam = (s: string | null | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+
+/**
+ * `?m=` and `?w=` → the month and the week (its Monday) the page shows. Navigation always writes
+ * both (periodParams), so each view reads its own; a hand-written link with only one derives the
+ * other: a month's week is its first (or today's, for this month), a week's month holds its Thursday.
+ */
+export function periodFromParams(m: string | null | undefined, w: string | null | undefined, today: string): { month: string; monday: string } {
+  const month = isMonthParam(m) ? m : isDateParam(w) ? monthOf(addDays(mondayOf(w), 3)) : monthOf(today);
+  const monday = isDateParam(w) ? mondayOf(w) : isMonthParam(m) && m !== monthOf(today) ? mondayOf(`${m}-01`) : mondayOf(today);
+  return { month, monday };
+}
+
+/** The URL for a period: both parameters, or neither for today's (the page's default). */
+export function periodParams(p: { m: string; w: string }, today: string): { m: string | null; w: string | null } {
+  if (p.m === monthOf(today) && p.w === mondayOf(today)) return { m: null, w: null };
+  return { m: p.m, w: p.w };
+}
+
+/** ‹ / › for the current view. A week's month is the one holding its Thursday. */
 export function stepView(view: 'month' | 'week', month: string, monday: string, n: number): { m: string; w: string } {
   if (view === 'month') {
     const m = addMonths(month, n);
     return { m, w: mondayOf(`${m}-01`) };
   }
   const w = addDays(monday, 7 * n);
-  return { m: w.slice(0, 7), w };
+  return { m: monthOf(addDays(w, 3)), w };
 }
 
 // ───────────────────────────── Entries ─────────────────────────────
@@ -140,9 +172,9 @@ export function overlayTitle(group: CalendarFeedItem[]): string {
 
 export function overlayEntry(group: CalendarFeedItem[], source: CalendarFeedSource | undefined): CalEntry {
   const item = group[0]!;
-  const hue = source?.hue ?? 'amber';
+  const hue = OVERLAYS.find((o) => (o.sources as readonly string[]).includes(item.source))?.hue ?? 'amber';
   const id = group.length === 1 ? `feed~${item.source}~${item.id}` : `feed~${item.source}~${item.date}`;
-  const base = { id, title: overlayTitle(group), hue, locked: true };
+  const base = { id, title: overlayTitle(group), hue, locked: true, overlay: true };
   const suffix = source ? ` · ${source.label}` : '';
   if (item.startsAt) return { ...base, startsAt: item.startsAt, endsAt: item.endsAt, agendaWhen: whenShort(item.startsAt, item.endsAt), agendaSuffix: suffix };
   return { ...base, from: item.date, to: item.date, agendaWhen: `All day · ${rangeText(item.date, item.date)}`, agendaSuffix: suffix };
@@ -166,7 +198,7 @@ export const REPEAT_LABEL: Record<Repeat, string> = {
 };
 
 /** "RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=…" → the drawer's choice and its until date (selected time zone). */
-export function parseRepeat(rule: string | null | undefined): { repeat: Repeat; until: string } {
+export function parseRepeat(rule: string | null | undefined, start?: string | null): { repeat: Repeat; until: string } {
   if (!rule) return { repeat: 'none', until: '' };
   const parts = Object.fromEntries(
     rule
@@ -179,6 +211,14 @@ export function parseRepeat(rule: string | null | undefined): { repeat: Repeat; 
       }),
   ) as Record<string, string>;
   const known = new Set(['FREQ', 'INTERVAL', 'UNTIL']);
+  // Google writes a plain weekly repeat as FREQ=WEEKLY;BYDAY=TU (often with WKST). A single
+  // BYDAY on the start's own weekday adds nothing, and with one day per period WKST can't move
+  // an occurrence, so both read as plain weekly. Saving without touching Repeat keeps the rule.
+  const startDay = start && /^\d{4}-\d{2}-\d{2}/.test(start) ? WEEKDAY_CODES[weekdayIndex(start.slice(0, 10))] : null;
+  if (parts.FREQ === 'WEEKLY' && (!parts.BYDAY || parts.BYDAY === startDay)) {
+    if (parts.BYDAY) known.add('BYDAY');
+    known.add('WKST');
+  }
   const interval = Number(parts.INTERVAL ?? '1');
   let repeat: Repeat = 'custom';
   if (Object.keys(parts).every((k) => known.has(k))) {
@@ -190,6 +230,8 @@ export function parseRepeat(rule: string | null | undefined): { repeat: Repeat; 
   return { repeat, until: parts.UNTIL ? untilDate(parts.UNTIL) : '' };
 }
 
+const WEEKDAY_CODES = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+
 /** 20261231T075959Z (or 20261231) → the selected-zone date it falls on. */
 function untilDate(v: string): string {
   const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z?)?$/.exec(v);
@@ -199,13 +241,16 @@ function untilDate(v: string): string {
 }
 
 /** The drawer's choice → RRULE text (null for no repeat). Until is the last day, inclusive. */
-export function buildRepeat(repeat: Repeat, until: string, previous?: string | null): string | null {
+export function buildRepeat(repeat: Repeat, until: string, previous?: string | null, allDay = false): string | null {
   if (repeat === 'none') return null;
   if (repeat === 'custom') return previous ?? null;
   const freq = { daily: 'DAILY', weekly: 'WEEKLY', biweekly: 'WEEKLY', monthly: 'MONTHLY' }[repeat];
   const parts = [`FREQ=${freq}`];
   if (repeat === 'biweekly') parts.push('INTERVAL=2');
-  if (until) {
+  if (until && allDay) {
+    // An all-day series starts on a DATE, and RFC 5545 wants UNTIL of the same type.
+    parts.push(`UNTIL=${until.replace(/-/g, '')}`);
+  } else if (until) {
     // End of that day on the selected wall clock, in UTC as RFC 5545 asks.
     const end = new Date(pacificIso(until, '23:59')).getTime() + 59_000;
     parts.push(`UNTIL=${new Date(end).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}`);
@@ -214,9 +259,9 @@ export function buildRepeat(repeat: Repeat, until: string, previous?: string | n
 }
 
 /** One line for the detail card: "Weekly until Dec 31". */
-export function repeatText(rule: string | null | undefined): string | null {
+export function repeatText(rule: string | null | undefined, start?: string | null): string | null {
   if (!rule) return null;
-  const { repeat, until } = parseRepeat(rule);
+  const { repeat, until } = parseRepeat(rule, start);
   if (repeat === 'none') return null;
   const label = repeat === 'custom' ? 'Repeats' : REPEAT_LABEL[repeat];
   return until ? `${label} until ${shortOf(until)}` : label;

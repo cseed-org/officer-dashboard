@@ -108,14 +108,17 @@ viewer's time zone (Settings), weeks starting on Monday.
   Weekly Programs and Events are marked locked) and three dashboard overlays from
   `/api/calendar/feed`: design deadlines, purchase deadlines and Buildspace check-ins. All are on
   by default; the choice is kept in this browser (`localStorage` `cseed-orgcal-toggles`).
-  Overlays stay on this page and are never sent to Google. Same-day overlay items from one
-  source collapse into one entry ("Weekly check-in due (10)") whose card lists each with a link.
+  Overlays stay on this page and are never sent to Google. They draw as outlined chips in
+  amber (design), green (purchases) or neutral ink (check-ins), colours no calendar uses.
+  Same-day overlay items from one source collapse into one entry ("Weekly check-in due (10)")
+  whose card lists each with a link.
 - **Month:** up to three chips per day, then "+n more" (opens that week). **Week:** an hour grid
   with overlapping meetings side by side, an all-day band for all-day meetings and tentative
   ranges (dashed, "Tentative ·", spanning their days), and a red now-line. **Phone:** the
   calendar list is folded and both views read as an agenda list.
 - **Create:** click an empty week slot (prefills that day and half hour), a month day, or
-  + Create. The drawer has calendar (Internal/External only), title, date and time or **No set
+  + Create. Slot clicks are mouse and touch only; keyboard users use + Create or a month day's
+  number (a button named "New meeting on <date>"). The drawer has calendar (Internal/External only), title, date and time or **No set
   date yet** (an inclusive earliest/latest range), all day, repeat (daily, weekly, every 2 weeks,
   monthly, optional until date; other pulled rules are kept as "Custom"), invitees (subteams and
   officers from `/api/lookups`, plus typed emails), **Send invites** (defaults on for External,

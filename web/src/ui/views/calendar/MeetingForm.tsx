@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import { api } from '../../../lib/api/client';
 import { useApi } from '../../../lib/api/useApi';
-import { addDays, pacificParts } from '../../../lib/calendar';
+import { addDays, fromLocalInput, pacificParts } from '../../../lib/calendar';
 import type { OrgCalendar, OrgCalendarEvent, OrgEventWriteRequest, OrgInvitee } from '../../../lib/contracts';
 import { pacificIso } from '../../../lib/format';
 import { MANUAL_KEYS, REMINDER_MINUTES, REPEAT_LABEL, buildRepeat, parseRepeat, prefill, reminderText, type Repeat } from '../../../lib/orgcal';
@@ -62,7 +62,7 @@ function draftOf(event: OrgCalendarEvent | null, newParam: string, defaultKey: K
       description: '',
     };
   }
-  const { repeat, until } = parseRepeat(event.rrule);
+  const { repeat, until } = parseRepeat(event.rrule, event.startsAt);
   const tentative = event.startsAt === null;
   const allDay = !tentative && (event.allDay || isDate(event.startsAt!));
   const date = tentative ? (event.tentativeFrom ?? '') : allDay ? event.startsAt! : pacificParts(event.startsAt!).date;
@@ -96,7 +96,7 @@ export function meetingBody(d: Draft, original: OrgCalendarEvent | null, base: D
       : d.allDay
         ? { startsAt: d.date, endsAt: addDays(d.endDate, 1), allDay: true, tentativeFrom: null, tentativeTo: null }
         : { startsAt: pacificIso(d.date, d.start), endsAt: pacificIso(d.date, d.end), allDay: false, tentativeFrom: null, tentativeTo: null };
-  const rrule = d.mode === 'tentative' ? null : buildRepeat(d.repeat, d.until, original?.rrule);
+  const rrule = d.mode === 'tentative' ? null : buildRepeat(d.repeat, d.until, original?.rrule, d.allDay);
   const full: OrgEventWriteRequest = {
     calendarKey: d.calendarKey,
     title: d.title.trim(),
@@ -140,6 +140,9 @@ function check(d: Draft): Record<string, string> {
     if (!isTime(d.start)) e.start = 'Pick a start time.';
     if (!isTime(d.end)) e.end = 'Pick an end time.';
     else if (isTime(d.start) && d.end <= d.start) e.end = 'The meeting ends before it starts.';
+    // The spring-forward hour doesn't exist on the wall clock: refuse it rather than shift it.
+    if (isDate(d.date) && isTime(d.start) && !fromLocalInput(`${d.date}T${d.start}`)) e.start = "That time doesn't exist on this day (clocks spring forward). Pick another.";
+    if (isDate(d.date) && isTime(d.end) && !e.end && !fromLocalInput(`${d.date}T${d.end}`)) e.end = "That time doesn't exist on this day (clocks spring forward). Pick another.";
   }
   if (d.mode === 'fixed' && d.repeat !== 'none' && d.until && isDate(d.date) && d.until < d.date) e.until = 'Repeat until a day after the first meeting.';
   return e;
@@ -208,13 +211,27 @@ export function MeetingForm({
 
   async function save(ev: Event) {
     ev.preventDefault();
-    const found = check(d);
+    // An address typed but not yet added with Add/Enter is added now, or stops the save.
+    let draft = d;
+    const pending = email.trim();
+    if (pending) {
+      if (!EMAIL.test(pending)) {
+        setEmailError('Enter an email address like name@example.org, or clear the field.');
+        setMessage('Fix the highlighted fields, then save again.');
+        return;
+      }
+      setEmailError(null);
+      setEmail('');
+      if (!d.invitees.some((x) => x.kind === 'email' && x.ref.toLowerCase() === pending.toLowerCase())) draft = { ...d, invitees: [...d.invitees, { kind: 'email', ref: pending }] };
+      setD(draft);
+    }
+    const found = check(draft);
     setErrors(found);
     if (Object.keys(found).length) {
       setMessage('Fix the highlighted fields, then save again.');
       return;
     }
-    const body = meetingBody(d, event, event ? base : null);
+    const body = meetingBody(draft, event, event ? base : null);
     setBusy(true);
     setMessage(null);
     try {

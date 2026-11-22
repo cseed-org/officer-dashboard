@@ -2,6 +2,7 @@ import {
   addDays,
   addMonths,
   dayNumber,
+  longDay,
   monthGrid,
   monthLabel,
   monthOf,
@@ -11,12 +12,10 @@ import {
   timeRange,
 } from '../../../lib/calendar';
 import type { CalEntry } from './layout';
-import { byDay } from './layout';
+import { byDay, entryClass, hueStyle } from './layout';
 
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const PER_DAY = 3;
-
-const hueStyle = (hue: string | undefined) => (hue ? ({ '--hue': `var(--c-${hue})` } as Record<string, string>) : undefined);
 
 function Nav({ label, onPrev, onToday, onNext }: { label: string; onPrev: () => void; onToday: () => void; onNext: () => void }) {
   return (
@@ -90,7 +89,7 @@ export function MonthView({
               onClick={onDayClick ? (e) => { if (!(e.target as HTMLElement).closest('button')) onDayClick(date); } : undefined}
             >
               {onDayClick && !outside ? (
-                <button type="button" class="cal-date" onClick={() => onDayClick(date)} aria-label={`New item on ${date}`}>
+                <button type="button" class="cal-date" onClick={() => onDayClick(date)} aria-label={`New meeting on ${longDay(date)}`}>
                   {dayNumber(date)}
                 </button>
               ) : (
@@ -99,7 +98,7 @@ export function MonthView({
               {list.slice(0, PER_DAY).map((e) => (
                 <button
                   type="button"
-                  class={`cal-event${e.draft ? ' is-draft' : ''}${e.tentative ? ' is-tentative' : ''}`}
+                  class={`cal-event${entryClass(e)}`}
                   key={`${e.id}@${date}`}
                   title={e.tentative ? `Tentative: ${e.title}` : undefined}
                   data-cal-event={e.id}
@@ -109,7 +108,10 @@ export function MonthView({
                 >
                   {e.startsAt && <span class="cal-event-time">{timeRange(e.startsAt)}</span>}
                   <span class="cal-event-title">{e.title}</span>
-                  <span class="visually-hidden">{e.note ?? ''}</span>
+                  <span class="visually-hidden">
+                    {e.note ?? ''}
+                    {e.locked ? ' (read-only)' : ''}
+                  </span>
                 </button>
               ))}
               {list.length > PER_DAY && (
@@ -135,7 +137,7 @@ export function MonthView({
               <p class="cal-agenda-day">{e.agendaWhen}</p>
               <button
                 type="button"
-                class={`cal-event${e.draft ? ' is-draft' : ''}${e.tentative ? ' is-tentative' : ''}`}
+                class={`cal-event${entryClass(e)}`}
                 data-cal-event={e.id}
                 data-locked={e.locked || undefined}
                 style={hueStyle(e.hue)}
@@ -143,6 +145,7 @@ export function MonthView({
               >
                 {e.title}
                 {e.agendaSuffix ?? ''}
+                {e.locked && <span class="visually-hidden"> (read-only)</span>}
               </button>
             </li>
           ))}

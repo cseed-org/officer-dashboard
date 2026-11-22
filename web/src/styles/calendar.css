@@ -21,6 +21,10 @@ button.cal-date {cursor:pointer;}
 .cal-event.is-draft {background:transparent;box-shadow:inset 0 0 0 1px var(--line);}
 .cal-event.is-draft .cal-event-title {color:var(--muted);}
 .cal-event.is-tentative {background:transparent;border:1px dashed var(--hue, var(--c-blue));}
+/* Chips and spans hold their own visually-hidden notes ("(read-only)"), so those never widen the page. */
+.cal-event, .cal-span {position:relative;}
+/* Dashboard overlays (org Calendar): outlined in their colour, so they never read as a calendar. */
+.cal-event.is-overlay, .cal-span.is-overlay, .cal-block.is-overlay {background:var(--surface);box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--hue) 55%, var(--line));}
 .cal-more {align-self:flex-start;padding:0 6px;border:0;background:none;font:inherit;font-size:12px;color:var(--muted);cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
 .cal-dots {display:none;}
 /* Week: 30-minute rows; blocks are placed with --start (row from the first hour) and --len (rows). */

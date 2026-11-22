@@ -32,11 +32,17 @@ export interface CalEntry {
   agendaSuffix?: string;
   /** Locked item: opens a read-only panel instead of an editor. */
   locked?: boolean;
-  /** Overlay item: clicking navigates here instead of opening a panel. */
-  href?: string;
+  /** Dashboard overlay (deadline, check-in): an outlined chip, never a calendar's fill. */
+  overlay?: boolean;
 }
 
 export const isSpan = (e: CalEntry) => !e.startsAt;
+
+/** Inline colour for an entry: a tokens.css hue, or neutral ink for `ink`. */
+export const hueStyle = (hue: string | undefined) => (hue ? ({ '--hue': hue === 'ink' ? 'var(--muted)' : `var(--c-${hue})` } as Record<string, string>) : undefined);
+
+/** Modifier classes shared by chips, blocks and spans. */
+export const entryClass = (e: CalEntry) => `${e.draft ? ' is-draft' : ''}${e.tentative ? ' is-tentative' : ''}${e.overlay ? ' is-overlay' : ''}`;
 
 /** Placement of a timed entry in 30-minute rows (see weekSlot in lib/calendar). */
 export interface TimedSlot {

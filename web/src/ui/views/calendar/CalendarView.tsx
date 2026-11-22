@@ -15,6 +15,9 @@ import {
   overlayEntry,
   overlayGroups,
   overlayTitle,
+  hueColor,
+  periodFromParams,
+  periodParams,
   saveToggles,
   stepView,
   viewRange,
@@ -33,8 +36,6 @@ import { MeetingForm } from './MeetingForm';
 import { MiniMonth } from './MiniMonth';
 
 type View = 'month' | 'week';
-const isMonth = (s: string | null): s is string => !!s && /^\d{4}-\d{2}$/.test(s);
-const isDate = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
 /** Every panel parameter; opening one closes the others. */
 const PANELS = { id: null, at: null, edit: null, new: null, delete: null } as const;
 
@@ -46,9 +47,7 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
   const today = pacificToday();
   const wParam = search.get('w');
   const mParam = search.get('m');
-  // The week follows ?w; a month-only link picks its first week. The month follows ?m, else the week.
-  const monday = isDate(wParam) ? mondayOf(wParam) : isMonth(mParam) && mParam !== monthOf(today) ? mondayOf(`${mParam}-01`) : mondayOf(today);
-  const month = isMonth(mParam) ? mParam : isDate(wParam) ? monthOf(addDays(mondayOf(wParam), 3)) : monthOf(today);
+  const { month, monday } = periodFromParams(mParam, wParam, today);
   const openId = search.get('id');
   const openAt = search.get('at');
   const editId = search.get('edit');
@@ -131,7 +130,7 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
     if (it.kind === 'feed') setParams({ ...PANELS, id: en.id });
     else setParams({ ...PANELS, id: it.event.id, at: occurrenceKey(it.event) });
   };
-  const go = (p: { m: string; w: string }) => setParams({ m: p.m === monthOf(today) ? null : p.m, w: p.w === mondayOf(today) ? null : p.w }, { replace: true });
+  const go = (p: { m: string; w: string }) => setParams(periodParams(p, today), { replace: true });
   const reload = () => events.reload();
 
   const label = view === 'month' ? monthLabel(month) : weekLabel(monday);
@@ -200,7 +199,7 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
             <fieldset class="orgcal-toggles">
               <legend class="orgcal-legend">Dashboard overlays</legend>
               {OVERLAYS.map((o) => (
-                <label class="orgcal-toggle" key={o.key} style={{ '--hue': `var(--c-${o.hue})` }} data-overlay={o.key}>
+                <label class="orgcal-toggle" key={o.key} style={{ '--hue': hueColor(o.hue) }} data-overlay={o.key}>
                   <input type="checkbox" checked={toggles[o.key as OverlayKey]} onChange={() => flip(o.key as OverlayKey)} />
                   <span class="orgcal-swatch orgcal-swatch--overlay" aria-hidden="true" />
                   <span class="orgcal-toggle-name">{o.label}</span>
@@ -237,7 +236,7 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
           ) : (
             <>
               {view === 'month' ? (
-                <MonthView month={month} entries={entries} onOpen={open} onWeek={(w) => setParams({ view: 'week', w, m: null }, { replace: true })} onDayClick={(d) => setParams({ ...PANELS, new: d })} />
+                <MonthView month={month} entries={entries} onOpen={open} onWeek={(w) => setParams({ view: 'week', w, m: month }, { replace: true })} onDayClick={(d) => setParams({ ...PANELS, new: d })} />
               ) : (
                 <WeekView monday={monday} entries={entries} onOpen={open} onSlotClick={(d, min) => setParams({ ...PANELS, new: `${d}T${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}` })} nowLine />
               )}

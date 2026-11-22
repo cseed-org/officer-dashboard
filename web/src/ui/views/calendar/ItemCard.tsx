@@ -75,7 +75,7 @@ export function ItemCard({ item, onEdit, onDelete }: { item: Item; onEdit: (e: O
   const e = item.event;
   const locked = e.sourceKind !== 'manual' || item.calendar.locked;
   const source = e.sourceHref ? internalPath(e.sourceHref) : null;
-  const repeat = repeatText(e.rrule);
+  const repeat = repeatText(e.rrule, e.startsAt);
   return (
     <div class="stack orgcal-card" data-item-kind={locked ? 'locked' : 'meeting'}>
       {e.startsAt === null && <span class="orgcal-tentative-tag">Tentative · no set date yet</span>}

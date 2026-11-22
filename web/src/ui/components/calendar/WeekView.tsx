@@ -14,9 +14,7 @@ import {
   weekSlot,
 } from '../../../lib/calendar';
 import type { CalEntry, TimedSlot } from './layout';
-import { clipSpan, hourRange, isSpan, overlapLanes } from './layout';
-
-const hueStyle = (hue: string | undefined) => (hue ? ({ '--hue': `var(--c-${hue})` } as Record<string, string>) : undefined);
+import { clipSpan, entryClass, hourRange, hueStyle, isSpan, overlapLanes } from './layout';
 
 function Nav({ label, onPrev, onToday, onNext }: { label: string; onPrev: () => void; onToday: () => void; onNext: () => void }) {
   return (
@@ -110,7 +108,7 @@ export function WeekView({
               {spans.map(({ e, clip }, i) => (
                 <button
                   type="button"
-                  class={`cal-span${e.tentative ? ' is-tentative' : ''}`}
+                  class={`cal-span${entryClass(e)}`}
                   style={{ ...hueStyle(e.hue), gridColumn: `${clip.start + 1} / span ${clip.len}`, gridRow: band[i]!.lane + 1 }}
                   key={e.id}
                   data-cal-event={e.id}
@@ -119,6 +117,7 @@ export function WeekView({
                 >
                   {e.tentative && <span class="cal-span-tag">Tentative · </span>}
                   {e.title}
+                  {e.locked && <span class="visually-hidden"> (read-only)</span>}
                 </button>
               ))}
             </div>
@@ -159,7 +158,7 @@ export function WeekView({
               {slots.map((s, i) => (
                 <button
                   type="button"
-                  class={`cal-block${s.entry.draft ? ' is-draft' : ''}${s.entry.tentative ? ' is-tentative' : ''}`}
+                  class={`cal-block${entryClass(s.entry)}`}
                   style={{ ...hueStyle(s.entry.hue), '--start': s.start, '--len': s.len, '--lane': lanes[i]!.lane, '--lanes': lanes[i]!.lanes } as Record<string, string | number>}
                   key={s.entry.id}
                   data-cal-event={s.entry.id}
@@ -169,6 +168,7 @@ export function WeekView({
                   <span class="cal-block-title">
                     {s.entry.title}
                     {s.entry.note ?? ''}
+                    {s.entry.locked && <span class="visually-hidden"> (read-only)</span>}
                   </span>
                   <span class="cal-block-time">{timeRange(s.entry.startsAt!, s.entry.endsAt)}</span>
                 </button>
@@ -201,7 +201,7 @@ export function WeekView({
                 </p>
                 <button
                   type="button"
-                  class={`cal-event${e.draft ? ' is-draft' : ''}${e.tentative ? ' is-tentative' : ''}`}
+                  class={`cal-event${entryClass(e)}`}
                   data-cal-event={e.id}
                   data-locked={e.locked || undefined}
                   style={hueStyle(e.hue)}
@@ -209,6 +209,7 @@ export function WeekView({
                 >
                   {e.title}
                   {e.agendaSuffix ?? ''}
+                  {e.locked && <span class="visually-hidden"> (read-only)</span>}
                 </button>
               </li>
             ));
