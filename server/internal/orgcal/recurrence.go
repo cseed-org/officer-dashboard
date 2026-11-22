@@ -7,6 +7,8 @@ import (
 )
 
 // Occurrences expands the calendar's daily/weekly/monthly/yearly RRULE in wall time.
+// Like Google, MONTHLY on the 29th-31st skips months without that day and COUNT
+// counts instances before EXDATEs are removed.
 // Iteration is bounded; ranges from the API are at most a year. Google recurrence
 // timezone is retained so changing UTC offsets does not move weekly meeting hours.
 func Occurrences(start time.Time, rule, from, to string) []time.Time {
@@ -96,16 +98,23 @@ func Occurrences(start time.Time, rule, from, to string) []time.Time {
 	dateDay := func(t time.Time) int64 {
 		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).Unix() / 86400
 	}
-	weekBase := dateDay(start) - int64((int(start.Weekday())+6)%7)
+	// Week periods start on WKST (RFC 5545 default Monday); Google-made rules often say SU.
+	wkst := 1
+	if wd, ok := weekdays[fields["WKST"]]; ok {
+		wkst = int(wd)
+	}
+	weekStart := func(t time.Time) int64 { return dateDay(t) - int64((int(t.Weekday())-wkst+7)%7) }
+	weekBase := weekStart(start)
 	result := []time.Time{}
 	n := 0
-	for t, day := start, 0; day < 366*200 && t.Format("2006-01-02") < to && !t.After(until) && n < count; t, day = t.AddDate(0, 0, 1), day+1 {
+	// Each day is derived from start, so a skipped DST hour cannot shift later instances.
+	for t, day := start, 0; day < 366*200 && t.Format("2006-01-02") < to && !t.After(until) && n < count; t, day = addDays(start, day+1), day+1 {
 		match := false
 		switch fields["FREQ"] {
 		case "DAILY":
 			match = day%interval == 0
 		case "WEEKLY":
-			week := (dateDay(t) - int64((int(t.Weekday())+6)%7) - weekBase) / 7
+			week := (weekStart(t) - weekBase) / 7
 			match = week%int64(interval) == 0 && (fields["BYDAY"] != "" || t.Weekday() == start.Weekday())
 		case "MONTHLY":
 			months := (t.Year()-start.Year())*12 + int(t.Month()-start.Month())
@@ -122,4 +131,16 @@ func Occurrences(start time.Time, rule, from, to string) []time.Time {
 		}
 	}
 	return result
+}
+
+// addDays keeps start's wall time n days later. A wall time skipped by DST is read with
+// the offset before the gap (RFC 5545 3.3.5), so 02:30 becomes 03:30 as in Google.
+func addDays(start time.Time, n int) time.Time {
+	t := start.AddDate(0, 0, n)
+	if t.Hour() == start.Hour() && t.Minute() == start.Minute() {
+		return t
+	}
+	_, off := t.Add(-12 * time.Hour).Zone()
+	y, m, d := t.Date()
+	return time.Date(y, m, d, start.Hour(), start.Minute(), start.Second(), start.Nanosecond(), time.FixedZone("", off)).In(start.Location())
 }

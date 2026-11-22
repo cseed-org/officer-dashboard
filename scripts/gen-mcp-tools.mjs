@@ -33,8 +33,8 @@ const out = join(root, 'server/internal/api/mcp_tools.json');
  */
 const TOOLS = {
   orgEvents: { name: 'orgcal_list', title: 'Organization calendar', hint: 'read', description: 'List meetings, weekly programs and dashboard events. from/to are dates (to exclusive); cal optionally filters calendar keys.' },
-  orgEventCreate: { name: 'orgcal_create', title: 'Create meeting', description: 'Create an Internal or External meeting. Weekly Programs and Events calendars are locked. External meetings send invites by default.' },
-  orgEventUpdate: { name: 'orgcal_update', title: 'Update meeting', hint: 'idempotent', description: 'Edit any Internal or External meeting by id. Locked items must be changed through their source workflow.' },
+  orgEventCreate: { name: 'orgcal_create', title: 'Create meeting', description: 'Create an Internal or External meeting. Weekly Programs and Events calendars are locked. External meetings send invites by default. Optional `rrule`: "RRULE:FREQ=DAILY|WEEKLY|MONTHLY" with optional INTERVAL=1..52, BYDAY (weekly only, e.g. MO,WE, must include the start day) and one of UNTIL=YYYYMMDD or COUNT=1..500; biweekly is FREQ=WEEKLY;INTERVAL=2, monthly repeats on the start day of month.' },
+  orgEventUpdate: { name: 'orgcal_update', title: 'Update meeting', hint: 'idempotent', description: 'Edit any Internal or External meeting by id. Locked items must be changed through their source workflow. A changed `rrule` follows the same rules as orgcal_create.' },
   orgEventDelete: { name: 'orgcal_delete', title: 'Delete meeting', hint: 'destructive', description: 'Delete an Internal or External meeting. Locked calendars cannot be changed here.' },
   programsList: { name: 'programs_list', title: 'List weekly programs', hint: 'read', description: 'Read all weekly programs, tracks, schedules and skip/move exceptions.' },
   // ── context ──

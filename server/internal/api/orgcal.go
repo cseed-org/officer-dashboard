@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -223,7 +224,7 @@ func validateOrgEvent(e *store.OrgEvent, checkRecurrence bool) error {
 		e.AllDay = true
 	}
 	if e.RRule != nil && checkRecurrence {
-		if err := validateOrgRecurrence(*e.RRule); err != nil {
+		if err := validateOrgRecurrence(*e.RRule, e); err != nil {
 			return err
 		}
 	}
@@ -311,6 +312,10 @@ func (c *Ctx) orgEventWrite() error {
 			return badRequest("A meeting cannot change calendars; create it in the other calendar")
 		}
 		checkRule := create || (fields["rrule"] != nil && e.RRule != nil && *e.RRule != oldRule)
+		// A moved start must still fall on a manual rule's BYDAY; pulled rules outside the subset are kept.
+		if !checkRule && fields["startsAt"] != nil && e.RRule != nil && validateOrgRecurrence(*e.RRule, nil) == nil {
+			checkRule = true
+		}
 		if err := validateOrgEvent(e, checkRule); err != nil {
 			return err
 		}
@@ -376,31 +381,90 @@ func (c *Ctx) orgEventDelete() error {
 	return nil
 }
 
-func validateOrgRecurrence(rule string) error {
+// validateOrgRecurrence accepts the manual-meeting subset that Google and the local
+// expander agree on: FREQ=DAILY|WEEKLY|MONTHLY, INTERVAL=1..52, BYDAY (weekly only) and
+// at most one of UNTIL / COUNT=1..500. Monthly repeats on the start's day of month.
+func validateOrgRecurrence(rule string, e *store.OrgEvent) error {
+	const help = "Supported recurrence: RRULE:FREQ=DAILY|WEEKLY|MONTHLY with optional INTERVAL=1..52, BYDAY (weekly only, e.g. MO,WE) and one of UNTIL or COUNT=1..500"
 	if len(rule) > 500 || !strings.HasPrefix(rule, "RRULE:") || strings.ContainsAny(rule, "\r\n") {
-		return badRequest("Use a single RRULE recurrence")
+		return badRequest("Use a single RRULE line. " + help)
 	}
-	// Weekly recurrence is shared with programs and expanded locally for the calendar UI.
+	fields := map[string]string{}
 	for _, part := range strings.Split(strings.TrimPrefix(rule, "RRULE:"), ";") {
 		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 {
-			return badRequest("Invalid recurrence")
+		if len(kv) != 2 || kv[1] == "" {
+			return badRequest("Invalid recurrence part \"" + part + "\". " + help)
 		}
-		switch kv[0] {
+		if _, dup := fields[kv[0]]; dup {
+			return badRequest("Recurrence repeats " + kv[0] + ". " + help)
+		}
+		fields[kv[0]] = kv[1]
+	}
+	for k, v := range fields {
+		switch k {
 		case "FREQ":
-			if kv[1] != "WEEKLY" {
-				return badRequest("Only WEEKLY recurrence is supported")
+			if v != "DAILY" && v != "WEEKLY" && v != "MONTHLY" {
+				return badRequest("Recurrence FREQ must be DAILY, WEEKLY or MONTHLY")
+			}
+		case "INTERVAL":
+			if n, err := strconv.Atoi(v); err != nil || n < 1 || n > 52 || strconv.Itoa(n) != v {
+				return badRequest("Recurrence INTERVAL must be 1 to 52")
+			}
+		case "COUNT":
+			if n, err := strconv.Atoi(v); err != nil || n < 1 || n > 500 || strconv.Itoa(n) != v {
+				return badRequest("Recurrence COUNT must be 1 to 500")
 			}
 		case "UNTIL":
-			if _, err := time.Parse("20060102T150405Z", kv[1]); err != nil {
-				return badRequest("Invalid recurrence UNTIL")
+			if _, err := time.Parse("20060102T150405Z", v); err != nil {
+				if _, err := time.Parse("20060102", v); err != nil || len(v) != 8 {
+					return badRequest("Recurrence UNTIL must be YYYYMMDD or YYYYMMDDTHHMMSSZ")
+				}
+			}
+		case "BYDAY":
+			seen := map[string]bool{}
+			for _, d := range strings.Split(v, ",") {
+				if !strings.Contains(" SU MO TU WE TH FR SA ", " "+d+" ") || len(d) != 2 || seen[d] {
+					return badRequest("Recurrence BYDAY must list distinct weekdays such as MO,WE")
+				}
+				seen[d] = true
 			}
 		default:
-			return badRequest("Supported recurrence fields: FREQ and UNTIL")
+			return badRequest("Unsupported recurrence field " + k + ". " + help)
 		}
 	}
-	if !strings.Contains(rule, "FREQ=WEEKLY") {
-		return badRequest("Weekly recurrence required")
+	freq := fields["FREQ"]
+	if freq == "" {
+		return badRequest("Recurrence FREQ is required. " + help)
+	}
+	if fields["UNTIL"] != "" && fields["COUNT"] != "" {
+		return badRequest("Use UNTIL or COUNT, not both")
+	}
+	if days := fields["BYDAY"]; days != "" {
+		if freq != "WEEKLY" {
+			return badRequest("BYDAY is only supported with FREQ=WEEKLY")
+		}
+		// RFC 5545 always counts the start; Google does not. Require it to match the rule.
+		if e != nil && e.StartsAt != nil {
+			start, err := orgStartInZone(*e)
+			if err == nil && !strings.Contains(days, [...]string{"SU", "MO", "TU", "WE", "TH", "FR", "SA"}[start.Weekday()]) {
+				return badRequest("The start date must fall on one of the BYDAY weekdays")
+			}
+		}
 	}
 	return nil
+}
+
+// orgStartInZone is the meeting start in its own timezone (America/Los_Angeles by default).
+func orgStartInZone(e store.OrgEvent) (time.Time, error) {
+	loc := orgTZ()
+	if e.TimeZone != "" {
+		if z, err := time.LoadLocation(e.TimeZone); err == nil {
+			loc = z
+		}
+	}
+	if e.AllDay {
+		return time.ParseInLocation("2006-01-02", *e.StartsAt, loc)
+	}
+	t, err := time.Parse(time.RFC3339Nano, *e.StartsAt)
+	return t.In(loc), err
 }

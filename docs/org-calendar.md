@@ -21,8 +21,16 @@ Meetings support title, description, location, start/end, all-day, recurrence, r
 invitees and send-invites. Invitees use `{kind,ref}` with kind user/subteam/email. User and
 subteam references expand against active officer emails when sent. External defaults to
 sending invites, Internal defaults off; the flag controls Google sendUpdates all/none,
-including cancellation. No Meet link is created. New manual recurrence uses weekly RRULE;
-pulled Google daily/weekly/monthly/yearly rules, exclusions and instance overrides are retained.
+including cancellation. No Meet link is created.
+
+New manual recurrence is one `rrule` line: `RRULE:FREQ=DAILY|WEEKLY|MONTHLY`, optional
+`INTERVAL=1..52`, optional `BYDAY` (weekly only, e.g. `MO,WE`; the start must fall on one of
+those days) and at most one of `UNTIL=YYYYMMDD[THHMMSSZ]` or `COUNT=1..500`. Biweekly is
+`FREQ=WEEKLY;INTERVAL=2`. Monthly repeats on the start's day of month; like Google, months
+without that day (for example the 31st) are skipped. Occurrences keep their local time across
+DST in the meeting timezone (America/Los_Angeles). Other parts return 400. The rule is pushed
+to Google unchanged. Pulled Google daily/weekly/monthly/yearly rules (including WKST),
+exclusions and instance overrides are retained and expanded locally.
 
 Tentative meetings use `startsAt:null` plus inclusive `tentativeFrom`/`tentativeTo` dates.
 Google receives an all-day `[Tentative]` entry, ending the day after tentativeTo. Setting a

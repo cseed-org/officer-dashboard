@@ -49,7 +49,7 @@
     {
       "name": "orgcal_create",
       "title": "Create meeting",
-      "description": "Create an Internal or External meeting. Weekly Programs and Events calendars are locked. External meetings send invites by default.",
+      "description": "Create an Internal or External meeting. Weekly Programs and Events calendars are locked. External meetings send invites by default. Optional `rrule`: \"RRULE:FREQ=DAILY|WEEKLY|MONTHLY\" with optional INTERVAL=1..52, BYDAY (weekly only, e.g. MO,WE, must include the start day) and one of UNTIL=YYYYMMDD or COUNT=1..500; biweekly is FREQ=WEEKLY;INTERVAL=2, monthly repeats on the start day of month.",
       "endpoint": "orgEventCreate",
       "method": "POST",
       "path": "/api/orgcal/events",
@@ -212,7 +212,7 @@
     {
       "name": "orgcal_update",
       "title": "Update meeting",
-      "description": "Edit any Internal or External meeting by id. Locked items must be changed through their source workflow.",
+      "description": "Edit any Internal or External meeting by id. Locked items must be changed through their source workflow. A changed `rrule` follows the same rules as orgcal_create.",
       "endpoint": "orgEventUpdate",
       "method": "PATCH",
       "path": "/api/orgcal/events/:id",
