@@ -14,7 +14,7 @@ import UserChip from '../ui/shell/UserChip';
 import SidebarResizer from '../ui/shell/SidebarResizer';
 import { EARLY_PAGE, EARLY_SHARED, earlyScript } from '../lib/early';
 
-export type PageKey = 'buildspace' | 'home' | 'events' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'contacts' | 'design';
+export type PageKey = 'buildspace' | 'home' | 'events' | 'calendar' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'contacts' | 'design';
 interface Props {
   title: string;
   customHeader?: boolean;
@@ -33,6 +33,7 @@ const NAV: NavItem[] = [
   { key: 'home', label: 'Home', href: '/', icon: 'home' },
   { key: 'buildspace', label: 'Buildspace + Launchpad', href: '/buildspace-launchpad', icon: 'rocket' },
   { key: 'events', label: 'Events', href: '/events', icon: 'calendar' },
+  { key: 'calendar', label: 'Calendar', href: '/calendar', icon: 'calendarDays' },
   { key: 'finance', label: 'Requests & Finance', href: '/finance', icon: 'wallet' },
   { key: 'design', label: 'Design', href: '/design', icon: 'inbox' },
 ];

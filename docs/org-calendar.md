@@ -96,3 +96,43 @@ Service tokens call orgcal endpoints using calendar:read or calendar:write (incl
 with normal token/user audit attribution. They cannot configure OAuth or modify programs.
 Integration tests fake Google. Live OAuth, sharing and invitation receipt need the org
 account's sign-in during integration QA.
+
+## Calendar page (web)
+
+`/calendar` (sidebar **Calendar**, under Events) shows all four calendars in one view, in the
+viewer's time zone (Settings), weeks starting on Monday.
+
+- **Top bar:** Today, ‹ ›, the period, a Month/Week switch and **+ Create**. The view and period
+  live in the URL (`?view=week&w=2027-03-08`, `?m=2027-03`), so links and Back work.
+- **Left rail:** a small month to jump to a date, then one checkbox per calendar (in its hue;
+  Weekly Programs and Events are marked locked) and three dashboard overlays from
+  `/api/calendar/feed`: design deadlines, purchase deadlines and Buildspace check-ins. All are on
+  by default; the choice is kept in this browser (`localStorage` `cseed-orgcal-toggles`).
+  Overlays stay on this page and are never sent to Google. Same-day overlay items from one
+  source collapse into one entry ("Weekly check-in due (10)") whose card lists each with a link.
+- **Month:** up to three chips per day, then "+n more" (opens that week). **Week:** an hour grid
+  with overlapping meetings side by side, an all-day band for all-day meetings and tentative
+  ranges (dashed, "Tentative ·", spanning their days), and a red now-line. **Phone:** the
+  calendar list is folded and both views read as an agenda list.
+- **Create:** click an empty week slot (prefills that day and half hour), a month day, or
+  + Create. The drawer has calendar (Internal/External only), title, date and time or **No set
+  date yet** (an inclusive earliest/latest range), all day, repeat (daily, weekly, every 2 weeks,
+  monthly, optional until date; other pulled rules are kept as "Custom"), invitees (subteams and
+  officers from `/api/lookups`, plus typed emails), **Send invites** (defaults on for External,
+  off for Internal until you change it), reminders, location and description.
+- **Open an item:** a card with when, repeat, location, invitees and reminders. Internal/External
+  meetings offer Edit and Delete (delete asks first). Editing a recurring meeting changes the
+  whole series; only changed fields are sent, so renaming from one occurrence never moves the
+  series. Weekly Programs and Events items are read-only and link to their source ("Open
+  program" / "Open event"); `?edit=` on a locked item does not open the editor.
+- **States:** loading and error use the shared states; an empty period offers Create. When the
+  organization account isn't connected (leadership: `/api/settings/org-google/status`; others:
+  no calendar has a Google ID yet) a notice says meetings will sync once it is, and leadership
+  gets a **Connect the org Google account** link.
+
+Code: `web/src/pages/calendar.astro` → `ui/pages/CalendarPage.tsx` → `ui/views/calendar/*`
+(`CalendarView`, `MeetingForm`, `ItemCard`, `MiniMonth`); pure helpers in `lib/orgcal.ts`. The
+month and week grids are shared with the Events page in `ui/components/calendar/`
+(`MonthView`, `WeekView`, `layout.ts` for bucketing, overlap columns and span clipping) and
+`styles/calendar.css`. Tests: `web/tests/calendar.spec.ts` (phone, tablet, desktop) and the
+"org calendar" cases in `tests/unit.spec.ts`. Screenshots: `docs/evidence/org-calendar/`.

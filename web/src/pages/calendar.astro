@@ -1,0 +1,10 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+import CalendarPage from '../ui/pages/CalendarPage';
+import '../styles/calendar.css';
+import '../styles/org-calendar.css';
+---
+
+<AppLayout title="Calendar" page="calendar">
+  <CalendarPage client:load />
+</AppLayout>

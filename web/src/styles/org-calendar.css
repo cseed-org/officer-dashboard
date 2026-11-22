@@ -1,0 +1,85 @@
+/* Organization calendar page (V0.15): top bar, left rail, meeting form. The grids are calendar.css. */
+.orgcal {display:grid;gap:16px;min-width:0;}
+.orgcal-bar {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;}
+.orgcal-step {display:inline-flex;gap:2px;}
+.orgcal-step .icon-btn {font-size:20px;line-height:1;}
+.orgcal-period {margin:0;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;}
+.orgcal-period:focus {outline:none;}
+.orgcal-tz {font-size:12px;font-weight:400;color:var(--muted);}
+.orgcal-bar-end {display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto;}
+.orgcal-create {display:inline-flex;align-items:center;gap:6px;}
+
+.orgcal-layout {display:grid;grid-template-columns:220px minmax(0, 1fr);gap:24px;align-items:start;}
+.orgcal-main {display:grid;gap:12px;min-width:0;}
+.orgcal-rail {display:grid;gap:20px;min-width:0;position:sticky;top:16px;}
+
+/* Mini month */
+.orgcal-mini {display:grid;gap:6px;}
+.orgcal-mini-head {display:flex;align-items:center;justify-content:space-between;}
+.orgcal-mini-title {font-size:13px;font-weight:600;}
+.orgcal-mini-nav {display:inline-flex;}
+.orgcal-mini-grid {display:grid;grid-template-columns:repeat(7, minmax(0, 1fr));gap:2px;text-align:center;}
+.orgcal-mini-dow {font-size:11px;color:var(--muted);padding:2px 0;}
+.orgcal-mini-day {display:inline-grid;place-items:center;height:28px;padding:0;border:0;border-radius:999px;background:none;font:inherit;font-size:12px;font-variant-numeric:tabular-nums;color:var(--text);cursor:pointer;}
+.orgcal-mini-day:hover {background:var(--hover);}
+.orgcal-mini-day.is-outside {color:var(--muted);}
+.orgcal-mini-day.is-in-view {background:var(--sunken);}
+.orgcal-mini-day.is-today {background:var(--text);color:var(--bg);font-weight:600;}
+.icon-btn--small {width:28px;height:28px;}
+
+/* Calendar and overlay toggles */
+.orgcal-filters {display:grid;gap:12px;}
+.orgcal-filters-summary {display:none;}
+.orgcal-toggles {display:grid;gap:2px;margin:0;padding:0;border:0;min-width:0;}
+.orgcal-legend {padding:0 0 4px;font-size:12px;font-weight:600;color:var(--muted);}
+.orgcal-toggle {display:flex;align-items:center;gap:8px;min-height:32px;padding:0 4px;border-radius:var(--radius-control);font-size:13px;cursor:pointer;}
+.orgcal-toggle:hover {background:var(--hover);}
+.orgcal-toggle input {flex:none;width:16px;height:16px;margin:0;accent-color:var(--hue, var(--c-blue));}
+.orgcal-toggle-name {min-width:0;overflow-wrap:anywhere;}
+.orgcal-swatch {display:none;}
+.orgcal-swatch--overlay {display:inline-block;flex:none;width:8px;height:8px;border-radius:50%;background:var(--hue);}
+.orgcal-lock {margin-left:auto;font-size:11px;color:var(--muted);}
+.orgcal-rail-note {margin:6px 4px 0;font-size:12px;color:var(--muted);}
+.orgcal-google a {white-space:nowrap;}
+
+/* Grid affordances on this page: empty slots and days start a meeting. */
+.orgcal .cal-col {cursor:copy;}
+.orgcal .cal-col:hover {background-color:color-mix(in srgb, var(--hover) 50%, transparent);}
+.orgcal .cal-day.is-create:hover {background:var(--hover);}
+.orgcal .cal-event[data-locked], .orgcal .cal-block[data-locked], .orgcal .cal-span[data-locked] {cursor:pointer;}
+.orgcal .state--empty {padding:16px;}
+
+/* Item card and meeting form */
+.orgcal-card .facts {grid-template-columns:minmax(0, 1fr);}
+.orgcal-desc {margin:0;white-space:pre-wrap;overflow-wrap:anywhere;}
+.orgcal-tentative-tag {justify-self:start;padding:2px 8px;border:1px dashed var(--line-strong, var(--line));border-radius:var(--radius-control);font-size:12px;color:var(--muted);}
+.orgcal-invitees {display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none;}
+.orgcal-invitee {display:inline-flex;align-items:center;gap:6px;padding:2px 2px 2px 8px;border:1px solid var(--line);border-radius:var(--radius-control);font-size:13px;}
+.orgcal-invitee-kind {font-size:11px;color:var(--muted);}
+.orgcal-email-row {display:flex;gap:8px;}
+.orgcal-email-row .input {flex:1;min-width:0;}
+.orgcal-reminder {display:flex;align-items:center;gap:8px;}
+.orgcal-reminder .select {flex:1;min-width:0;}
+.orgcal-add {justify-self:start;}
+
+@media (max-width: 1023px) {
+  .orgcal-layout {grid-template-columns:minmax(0, 1fr);gap:16px;}
+  .orgcal-rail {position:static;grid-template-columns:auto minmax(0, 1fr);gap:24px;align-items:start;}
+  .orgcal-mini {width:220px;}
+  .orgcal-filters {grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:12px 24px;}
+}
+@media (max-width: 767px) {
+  .orgcal-bar {gap:8px;}
+  .orgcal-period {order:-1;flex-basis:100%;font-size:17px;}
+  .orgcal-bar-end {margin-left:auto;}
+  .orgcal-rail {grid-template-columns:minmax(0, 1fr);}
+  .orgcal-mini {display:none;}
+  .orgcal-filters {display:block;border:1px solid var(--line);border-radius:var(--radius-control);padding:0 12px;}
+  .orgcal-filters-summary {display:list-item;padding:12px 0;font-size:13px;font-weight:600;cursor:pointer;min-height:44px;box-sizing:border-box;}
+  .orgcal-filters[open] {padding-bottom:12px;}
+  .orgcal-filters .orgcal-toggles + .orgcal-toggles {margin-top:12px;}
+  .orgcal-toggle {min-height:44px;}
+  .orgcal-email-row {flex-wrap:wrap;}
+}
+.orgcal-overlay-list {display:grid;gap:6px;margin:0;padding-left:18px;}
+.orgcal .cal-allday {max-height:calc(4 * 26px + 4px);overflow-y:auto;}

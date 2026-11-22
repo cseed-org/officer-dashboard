@@ -5,6 +5,8 @@ const PAGES: { path: string; heading: string | RegExp }[] = [
   // Home's h1 is the greeting since V0.7 ("Home" only when it is not shown).
   { path: '/', heading: /^\S.*\S$|^Home$/ },
   { path: '/events', heading: 'Events' },
+  { path: '/calendar', heading: 'Calendar' },
+  { path: '/calendar?view=week', heading: 'Calendar' },
   { path: '/finance', heading: 'Requests & Finance' },
   { path: '/finance?tab=budgets', heading: 'Requests & Finance' },
   { path: '/finance?tab=reports', heading: 'Requests & Finance' },

@@ -9,7 +9,7 @@ import { devSignIn, settle, watchErrors } from './helpers';
  */
 test.skip(!process.env.WEB_ORIGIN, 'needs the Go server (WEB_ORIGIN); astro dev sends no CSP');
 
-const PAGES = ['/', '/events', '/finance', '/finance?tab=budgets', '/contacts', '/design', '/members', '/officers', '/settings', '/admin', '/onboarding', '/no-such-page'];
+const PAGES = ['/', '/events', '/calendar', '/finance', '/finance?tab=budgets', '/contacts', '/design', '/members', '/officers', '/settings', '/admin', '/onboarding', '/no-such-page'];
 
 /** Collect CSP violations reported to the page (console messages and the DOM event). */
 async function watchCSP(page: Page): Promise<string[]> {

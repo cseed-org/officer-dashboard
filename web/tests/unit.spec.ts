@@ -10,6 +10,9 @@ import { internalPath, internalRoute, safeImageUrl, safeUrl } from '../src/lib/u
 import { migrateLayout, moveTo, nearestSize } from '../src/ui/widgets/layout';
 import { defaultWidgetLayout, layoutForChoices } from '../src/ui/widgets/catalog';
 import { mergeActivity } from '../src/ui/components/LoadHistory';
+import { byDay, clipSpan, entryDays, hourRange, overlapLanes, type CalEntry } from '../src/ui/components/calendar/layout';
+import { buildRepeat, occurrenceKey, orgEntry, overlayGroups, overlayTitle, parseRepeat, prefill, readToggles, stepView, viewRange } from '../src/lib/orgcal';
+import type { OrgCalendarEvent } from '../src/lib/contracts';
 
 /** Pure-function tests (no browser); run once, in the desktop project. */
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'unit tests run once'));
@@ -393,4 +396,97 @@ test('M-086: multi-day spans and exclusive-midnight ends keep their dates', asyn
   expect(dates('midnight')).toEqual(['2026-11-01']);
   expect(dates('after-midnight')).toEqual(['2026-11-01', '2026-11-02']);
   expect(dates('date-only')).toEqual([]); // clipped before the visible range
+});
+
+// ───────────── Org calendar (V0.15): shared calendar layout and /calendar helpers ─────────────
+
+const orgEvent = (over: Partial<OrgCalendarEvent>): OrgCalendarEvent => ({
+  id: 'm1', calendarKey: 'internal', title: 'Sync', description: '', location: '', startsAt: '2027-03-10T10:00:00-08:00', endsAt: '2027-03-10T11:00:00-08:00',
+  allDay: false, tentativeFrom: null, tentativeTo: null, rrule: null, reminders: [], sendInvites: false, invitees: [], sourceKind: 'manual', sourceId: null, sourceHref: null,
+  googleEventId: null, googleEtag: null, createdBy: null, updatedBy: null, createdAt: 0, updatedAt: 0, ...over,
+});
+
+test('calendar layout: overlapping blocks share columns; separate clusters stay full width', () => {
+  // 10:00–11:00 and 10:30–11:30 overlap; 13:00 stands alone.
+  expect(overlapLanes([{ start: 2, len: 2 }, { start: 3, len: 2 }, { start: 8, len: 2 }])).toEqual([{ lane: 0, lanes: 2 }, { lane: 1, lanes: 2 }, { lane: 0, lanes: 1 }]);
+  // A long block with two later ones beside it: three in a chain need only two columns.
+  expect(overlapLanes([{ start: 0, len: 6 }, { start: 1, len: 2 }, { start: 3, len: 2 }])).toEqual([{ lane: 0, lanes: 2 }, { lane: 1, lanes: 2 }, { lane: 1, lanes: 2 }]);
+  // Touching (one ends as the next starts) is not overlapping.
+  expect(overlapLanes([{ start: 0, len: 2 }, { start: 2, len: 2 }])).toEqual([{ lane: 0, lanes: 1 }, { lane: 0, lanes: 1 }]);
+  expect(overlapLanes([])).toEqual([]);
+});
+
+test('calendar layout: spans clip to the week; days bucket spans first, then by start', () => {
+  expect(clipSpan('2027-03-09', '2027-03-12', '2027-03-08')).toEqual({ start: 1, len: 4 });
+  expect(clipSpan('2027-03-01', '2027-03-20', '2027-03-08')).toEqual({ start: 0, len: 7 });
+  expect(clipSpan('2027-03-14', '2027-03-16', '2027-03-08')).toEqual({ start: 6, len: 1 });
+  expect(clipSpan('2027-03-15', '2027-03-16', '2027-03-08')).toBeNull();
+  const span: CalEntry = { id: 's', title: 'Retreat', from: '2027-03-09', to: '2027-03-11', tentative: true };
+  const late: CalEntry = { id: 'b', title: 'Late', startsAt: '2027-03-10T18:00:00-08:00' };
+  const early: CalEntry = { id: 'a', title: 'Early', startsAt: '2027-03-10T09:00:00-08:00' };
+  expect(entryDays(span)).toEqual(['2027-03-09', '2027-03-10', '2027-03-11']);
+  expect(entryDays(late)).toEqual(['2027-03-10']);
+  const days = byDay([late, span, early]);
+  expect([...days.keys()]).toEqual(['2027-03-09', '2027-03-10', '2027-03-11']);
+  expect(days.get('2027-03-10')!.map((e) => e.id)).toEqual(['s', 'a', 'b']);
+  // Hours widen from 9–21 to fit an early start and a late end.
+  expect(hourRange([early, late])).toEqual([9, 21]);
+  expect(hourRange([{ id: 'x', title: 'x', startsAt: '2027-03-10T07:30:00-08:00', endsAt: '2027-03-10T22:15:00-08:00' }])).toEqual([7, 23]);
+});
+
+test('org calendar: items become entries (timed, all-day, tentative, locked)', () => {
+  const timed = orgEntry(orgEvent({}), 'blue', 'Internal Meetings');
+  expect(timed).toMatchObject({ id: 'm1~2027-03-10T10:00:00-08:00', startsAt: '2027-03-10T10:00:00-08:00', hue: 'blue', locked: false });
+  const allDay = orgEntry(orgEvent({ startsAt: '2027-03-12', endsAt: '2027-03-14', allDay: true }), 'teal', 'External Meetings');
+  expect(allDay).toMatchObject({ from: '2027-03-12', to: '2027-03-13' });
+  expect(allDay.startsAt).toBeUndefined();
+  const tentative = orgEntry(orgEvent({ startsAt: null, endsAt: null, allDay: true, tentativeFrom: '2027-03-09', tentativeTo: '2027-03-12' }), 'blue', 'Internal Meetings');
+  expect(tentative).toMatchObject({ from: '2027-03-09', to: '2027-03-12', tentative: true, agendaWhen: 'Tentative · Mar 9 – Mar 12' });
+  const locked = orgEntry(orgEvent({ calendarKey: 'events', sourceKind: 'event', title: '[Draft] Social' }), 'coral', 'Events');
+  expect(locked).toMatchObject({ locked: true, draft: true });
+  // Recurring occurrences share the master id, so they are keyed by start too.
+  expect(occurrenceKey({ id: 'm1', startsAt: null, tentativeFrom: '2027-03-09' })).toBe('m1~2027-03-09');
+});
+
+test('org calendar: recurrence round-trips through RRULE text', () => {
+  expect(buildRepeat('none', '')).toBeNull();
+  expect(buildRepeat('weekly', '')).toBe('RRULE:FREQ=WEEKLY');
+  expect(buildRepeat('biweekly', '')).toBe('RRULE:FREQ=WEEKLY;INTERVAL=2');
+  expect(buildRepeat('daily', '')).toBe('RRULE:FREQ=DAILY');
+  expect(buildRepeat('monthly', '')).toBe('RRULE:FREQ=MONTHLY');
+  // Until is the whole last day on the selected (Los Angeles) clock: 23:59:59 PDT → 06:59:59Z.
+  expect(buildRepeat('weekly', '2027-06-01')).toBe('RRULE:FREQ=WEEKLY;UNTIL=20270602T065959Z');
+  for (const r of ['daily', 'weekly', 'biweekly', 'monthly'] as const) expect(parseRepeat(buildRepeat(r, '2027-06-01'))).toEqual({ repeat: r, until: '2027-06-01' });
+  expect(parseRepeat(null)).toEqual({ repeat: 'none', until: '' });
+  // Rules the drawer can't express are kept untouched.
+  const custom = 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE';
+  expect(parseRepeat(custom).repeat).toBe('custom');
+  expect(buildRepeat('custom', '', custom)).toBe(custom);
+});
+
+test('org calendar: toggles, ranges and create prefill', () => {
+  expect(readToggles(null)).toMatchObject({ internal: true, events: true, design: true, buildspace: true });
+  expect(readToggles('{"internal":false,"design":false,"bogus":1}')).toMatchObject({ internal: false, external: true, design: false, purchase: true });
+  expect(readToggles('not json').internal).toBe(true);
+  expect(viewRange('week', '2027-03', '2027-03-08')).toEqual({ from: '2027-03-08', to: '2027-03-15' });
+  expect(viewRange('month', '2027-03', '2027-03-08')).toEqual({ from: '2027-03-01', to: '2027-04-05' });
+  expect(stepView('month', '2027-12', '2027-12-06', 1)).toEqual({ m: '2028-01', w: '2027-12-27' });
+  expect(stepView('week', '2027-03', '2027-03-29', 1)).toEqual({ m: '2027-04', w: '2027-04-05' });
+  expect(prefill('2027-03-10T14:30')).toEqual({ date: '2027-03-10', start: '14:30', end: '15:30' });
+  expect(prefill('2027-03-10')).toEqual({ date: '2027-03-10', start: '10:00', end: '11:00' });
+  expect(prefill('1', new Date('2027-03-10T17:20:00Z'))).toEqual({ date: '2027-03-10', start: '10:00', end: '11:00' });
+});
+
+test('org calendar: same-day overlay items group per source', () => {
+  const item = (id: string, source: string, date: string, title: string, startsAt: string | null = null) => ({ id, source, type: 'x', title, date, startsAt, endsAt: null, lumaUrl: null, location: null, href: '/x' });
+  const groups = overlayGroups([
+    item('1', 'buildspace-weekly', '2026-11-08', 'Weekly check-in due · Alex'),
+    item('2', 'buildspace-weekly', '2026-11-08', 'Weekly check-in due · Sam'),
+    item('3', 'buildspace-weekly', '2026-11-15', 'Weekly check-in due · Alex'),
+    item('4', 'design', '2026-11-08', 'Poster'),
+    item('5', 'design', '2026-11-08', 'Slides', '2026-11-08T17:00:00Z'),
+  ]);
+  expect(groups.map((g) => g.map((i) => i.id))).toEqual([['1', '2'], ['3'], ['4'], ['5']]);
+  expect(overlayTitle(groups[0]!)).toBe('Weekly check-in due (2)');
+  expect(overlayTitle(groups[1]!)).toBe('Weekly check-in due · Alex');
 });

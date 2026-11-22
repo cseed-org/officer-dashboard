@@ -77,6 +77,7 @@ for anything else (status 404).
 | `/events` | `events/index.html` | `?when=upcoming\|past`, `?q=` filters |
 | `/events?id=<eventId>` | `events/index.html` | event detail slide-over |
 | `/events?import=1` | `events/index.html` | CSV import dialog |
+| `/calendar` | `calendar/index.html` | Organization calendar. `?view=month\|week` (month default), `?m=YYYY-MM`, `?w=<Monday>`, `?id=<item>[&at=<occurrence>]` (item card), `?new=1\|<date>\|<date>T<HH:MM>` (new meeting, prefilled), `?edit=<id>`, `?delete=<id>` |
 | `/finance` | `finance/index.html` | requests tab; `?scope=mine\|all`, `?status=` |
 | `/finance?id=<requestId>` | `finance/index.html` | request detail slide-over (works with any tab) |
 | `/finance?new=1[&eventId=]` | `finance/index.html` | new request drawer |
