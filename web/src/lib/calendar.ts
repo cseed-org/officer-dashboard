@@ -25,6 +25,8 @@ const fromUtc = (ms: number) => {
 };
 
 export const addDays = (date: string, n: number) => fromUtc(toUtc(date) + n * 86_400_000);
+/** Whole days between two YYYY-MM-DD dates (b − a). */
+export const diffDays = (a: string, b: string) => Math.round((toUtc(b) - toUtc(a)) / 86_400_000);
 /** 0 = Monday … 6 = Sunday. */
 export const weekdayIndex = (date: string) => (new Date(toUtc(date)).getUTCDay() + 6) % 7;
 export const mondayOf = (date: string) => addDays(date, -weekdayIndex(date));
