@@ -66,6 +66,14 @@ test('a session that crosses midnight counts until it ends the next day', () => 
   const late = { ...base, startTime: '23:00', durationMin: 120 };
   const s = programSessions(late, at('2026-11-25', '23:30'), 1)[0]!;
   expect(s).toMatchObject({ on: '2026-11-25', start: '23:00', end: '01:00' });
+  // Still running just after midnight (review N-2), over once it ends at 01:00.
+  expect(days(late, at('2026-11-26', '00:30'), 1)).toEqual(['2026-11-25']);
+  expect(nextSession(late, at('2026-11-26', '00:59'))?.on).toBe('2026-11-25');
+  expect(days(late, at('2026-11-26', '01:00'), 1)).toEqual(['2026-12-02']);
+  // A move that ends after midnight behaves the same.
+  const moved = { ...base, exceptions: [{ ...move('2026-11-25', '2026-11-25', '23:00', '00:30'), newEndsAt: laIso('2026-11-26', '00:30') }] };
+  expect(days(moved, at('2026-11-26', '00:15'), 1)).toEqual(['2026-11-25']);
+  expect(days(moved, at('2026-11-26', '00:30'), 1)).toEqual(['2026-12-02']);
 });
 
 test('club wall time round-trips through instants across the DST change', () => {

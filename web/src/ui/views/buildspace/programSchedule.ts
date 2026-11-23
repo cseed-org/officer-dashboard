@@ -98,11 +98,14 @@ function allSessions(p: Program): Session[] {
   return out;
 }
 
-/** True once the session is over: an earlier day, or today after its end (an end at or before its start is tomorrow). */
+/**
+ * True once the session is over. An end at or before its start is the next morning, so a
+ * 23:00–01:00 session is still running at 00:30 the next day (review N-2).
+ */
 const ended = (s: Session, now: ClubNow) => {
-  if (s.on !== now.today) return s.on < now.today;
-  const end = minutesOf(s.end) <= minutesOf(s.start) ? minutesOf(s.end) + 1440 : minutesOf(s.end);
-  return end <= now.minutes;
+  const endDay = minutesOf(s.end) <= minutesOf(s.start) ? addDays(s.on, 1) : s.on;
+  if (endDay !== now.today) return endDay < now.today;
+  return minutesOf(s.end) <= now.minutes;
 };
 
 /**
