@@ -718,6 +718,8 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
 
 - Officer or calendar:read/calendar:write service token: GET /api/orgcal/calendars;
   GET /api/orgcal/events?from&to&cal (date range, to exclusive, maximum 366 days).
+  OrgCalendarsResponse has `googleConnected` (org account connected and not revoked) and
+  `syncProblem` (needs reconnect or last pass failed); no email or error text.
 - Officer or calendar:write token: POST /api/orgcal/events; PATCH/DELETE /api/orgcal/events/:id.
   Internal/External only; locked Programs/Events return 403. Responses are {event} or {ok:true}.
   `rrule` accepts `RRULE:FREQ=DAILY|WEEKLY|MONTHLY` with optional INTERVAL=1..52, BYDAY

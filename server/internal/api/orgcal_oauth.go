@@ -21,24 +21,35 @@ func (s *Server) orgGoogle() *calendar.Google {
 	g.RedirectURL = strings.TrimRight(s.cfg.AppURL, "/") + "/auth/org-google/callback"
 	return &g
 }
-func (c *Ctx) orgGoogleStatus() error {
-	if _, err := c.requireLeadership(); err != nil {
-		return err
-	}
-	var email *string
+
+// orgGoogleState reports the org account (nil email when none is connected), whether
+// Google revoked its access, and the last recorded pass error ("" when none).
+func (c *Ctx) orgGoogleState() (email *string, reconnect bool, lastErr string, err error) {
 	a, err := c.S.db.Read().OrgGoogleAccount(c.Context())
 	if err == nil {
 		email = &a.Email
 	} else if !errors.Is(err, store.ErrNotFound) {
-		return err
+		return nil, false, "", err
+	}
+	if email == nil {
+		return nil, false, "", nil
 	}
 	c.S.orgRunMu.Lock()
-	var lastErr any
-	if c.S.orgLastError != "" && email != nil {
-		lastErr = c.S.orgLastError
+	defer c.S.orgRunMu.Unlock()
+	return email, c.S.orgNeedsReauth, c.S.orgLastError, nil
+}
+func (c *Ctx) orgGoogleStatus() error {
+	if _, err := c.requireLeadership(); err != nil {
+		return err
 	}
-	reconnect := email != nil && c.S.orgNeedsReauth
-	c.S.orgRunMu.Unlock()
+	email, reconnect, last, err := c.orgGoogleState()
+	if err != nil {
+		return err
+	}
+	var lastErr any
+	if last != "" {
+		lastErr = last
+	}
 	writeJSON(c.W, 200, map[string]any{"configured": c.S.cfg.Google != nil, "connected": email != nil, "email": email, "needsReconnect": reconnect, "lastSyncError": lastErr})
 	return nil
 }

@@ -1559,7 +1559,7 @@ export const OrgCalendarEvent = z.object({
  googleEventId: z.string().nullable(), googleEtag: z.string().nullable(), createdBy: Id.nullable(), updatedBy: Id.nullable(), createdAt: z.number(), updatedAt: z.number(),
 });
 export type OrgCalendarEvent = z.infer<typeof OrgCalendarEvent>;
-export const OrgCalendarsResponse = z.object({calendars: z.array(OrgCalendar), timezone: z.literal('America/Los_Angeles')});
+export const OrgCalendarsResponse = z.object({calendars: z.array(OrgCalendar), timezone: z.literal('America/Los_Angeles'), googleConnected: z.boolean(), syncProblem: z.boolean()});
 export const OrgEventsQuery = z.object({from: IsoDate, to: IsoDate, cal: z.string().optional()});
 export const OrgEventsResponse = z.object({events: z.array(OrgCalendarEvent), timezone: z.literal('America/Los_Angeles')});
 export const OrgEventResponse = z.object({event: OrgCalendarEvent});

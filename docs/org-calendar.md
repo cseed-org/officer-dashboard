@@ -16,6 +16,14 @@ The status response adds `needsReconnect` (the org refresh token was revoked: co
 and `lastSyncError` (the last failed sync pass, null when healthy). Connect and disconnect
 cancel a running sync pass instead of waiting for it.
 
+`GET /api/orgcal/calendars` gives every officer (and calendar:read/write tokens) two booleans,
+because calendar IDs stay set after a disconnect and so cannot show whether sync is live:
+`googleConnected` is true while an org account is connected and Google has not revoked it;
+`syncProblem` is true when it needs reconnecting or the last sync pass recorded an error.
+The account email and error text stay on the leadership status endpoint. While
+`googleConnected` is false, meetings save locally and no invites go out until leadership
+connects again. The error flags are kept in memory, so after a restart the next pass sets them again.
+
 All active officers with an account email in People/Officers receive reader access on all
 four calendars. Email/active changes increment a roster generation checked within a minute;
 ACLs also reconcile daily. Non-roster reader access is removed. Owner access is preserved.

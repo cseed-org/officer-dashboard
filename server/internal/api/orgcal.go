@@ -47,7 +47,13 @@ func (c *Ctx) orgCalendars() error {
 	if err != nil {
 		return err
 	}
-	writeJSON(c.W, 200, map[string]any{"calendars": out, "timezone": "America/Los_Angeles"})
+	// Booleans only: the account email and error text stay on the leadership status endpoint.
+	email, reconnect, lastErr, err := c.orgGoogleState()
+	if err != nil {
+		return err
+	}
+	writeJSON(c.W, 200, map[string]any{"calendars": out, "timezone": "America/Los_Angeles",
+		"googleConnected": email != nil && !reconnect, "syncProblem": reconnect || lastErr != ""})
 	return nil
 }
 func orgDate(s string) bool    { _, err := time.Parse("2006-01-02", s); return err == nil }
