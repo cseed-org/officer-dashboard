@@ -88,7 +88,7 @@ for anything else (status 404).
 | `/contacts` | `contacts/index.html` | External Contacts, speaking history and outreach |
 | `/design` | `design/index.html` | Design board; query parameters select views, filters, requests and the new-request form |
 | `/onboarding` | `onboarding/index.html` | Officer welcome and setup flow |
-| `/buildspace-launchpad` | `buildspace-launchpad/index.html` | Builder register, projects, mentors, cohorts and accounts |
+| `/buildspace-launchpad` | `buildspace-launchpad/index.html` | Builder register, projects, mentors, cohorts and accounts; `?tab=programs[&program=<id>]` weekly programs ([programs](programs.md)) |
 | `/launchpad/` | `launchpad/index.html` | Launchpad builder/mentor portal; portal session |
 | `/launchpad/join` | `launchpad/join/index.html` | Public invite acceptance; `?token=` |
 | `/launchpad/login` | `launchpad/login/index.html` | Public Launchpad portal sign-in |

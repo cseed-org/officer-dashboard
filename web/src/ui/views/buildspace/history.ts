@@ -10,8 +10,9 @@ import { setParams } from "../../../lib/nav";
 import { PERSON_MARK } from "../../components/PersonDrawer";
 
 const DEPTH = "cseedBuildspaceDepth";
-const RECORD = ["person", "project", "new", "edit"] as const;
-const CLOSED = { person: null, project: null, new: null, edit: null };
+// program/pnew: the Programs tab's program drawer and new-program form.
+const RECORD = ["person", "project", "new", "edit", "program", "pnew"] as const;
+const CLOSED = { person: null, project: null, new: null, edit: null, program: null, pnew: null };
 
 /** How many entries this page pushed above the list (a person drawer it opened counts as 1). */
 function depth(): number {

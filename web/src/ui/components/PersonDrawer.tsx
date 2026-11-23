@@ -11,7 +11,7 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { personHue } from '../../lib/colors';
-import { fmtDate } from '../../lib/format';
+import { fmtDate, fmtRange } from '../../lib/format';
 import { setParams, useSearch } from '../../lib/nav';
 import type { PersonActivityItem } from '../../lib/contracts';
 import { Drawer } from './Drawer';
@@ -131,7 +131,7 @@ const KIND_HUE = { event: 'green', design: 'violet', purchase: 'amber' } as cons
 const label = (s: string) => s.replaceAll('-', ' ').replaceAll('_', ' ');
 const itemText = (i: PersonActivityItem) =>
   i.kind === 'event'
-    ? `${i.status === 'hosted' ? 'Hosted' : 'Hosting'} event`
+    ? `${i.status === 'hosted' ? 'Hosted' : 'Hosting'} event${i.status === 'tentative' ? ' · date not set' : ''}`
     : i.kind === 'design'
       ? `${i.role === 'designing' ? 'Designing' : 'Requested design'} · ${label(i.status)}`
       : `Purchase request · ${label(i.status)}`;
@@ -148,9 +148,16 @@ export function ActivityList({ items, empty = 'No recent activity.' }: { items: 
             <a href={i.href}>{i.title}</a>
             <span class="muted small">{itemText(i)}</span>
           </span>
-          <time class="muted small" dateTime={i.at}>
-            {fmtDate(i.at)}
-          </time>
+          {/* A tentative event has at "" and an inclusive range instead. */}
+          {!i.at && i.tentativeFrom ? (
+            <span class="muted small" data-tentative-range>
+              <time dateTime={i.tentativeFrom}>{fmtRange(i.tentativeFrom, i.tentativeTo)}</time> · Tentative
+            </span>
+          ) : (
+            <time class="muted small" dateTime={i.at}>
+              {fmtDate(i.at)}
+            </time>
+          )}
         </li>
       ))}
     </ul>

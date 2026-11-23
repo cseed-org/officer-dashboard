@@ -48,7 +48,7 @@ test('tabs slide one indicator and views crossfade without resizing the page', a
   await devLogin(page, 'director');
   await open(page);
   const tabs = page.getByRole('tablist', { name: 'Buildspace + Launchpad directory' });
-  await expect(tabs.getByRole('tab')).toHaveCount(4);
+  await expect(tabs.getByRole('tab')).toHaveCount(5); // People, Projects, Mentors, Programs, Invites
   await expect(tabs.getByRole('tab', { name: /People/ })).toHaveAttribute('aria-selected', 'true');
   const bar = page.locator('.bs-toolbar .tab-indicator');
   const before = await bar.evaluate((el) => getComputedStyle(el).transform);
@@ -72,6 +72,33 @@ test('tabs slide one indicator and views crossfade without resizing the page', a
   await page.getByRole('button', { name: 'Cards' }).click();
   expect(await crossfade(page)).toMatchObject({ added: true, hidden: 'true' });
   await expect(page.locator('.bs-cards.motion-list').first()).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('arrow keys keep focus on the tab strip across the Programs tab', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'keyboard contract');
+  const errors = watchErrors(page);
+  await devLogin(page, 'director');
+  await open(page, '/buildspace-launchpad?tab=mentors');
+  // Programs renders without the cohort register; the tab strip is one instance for every tab
+  // (review N-1), so focus follows the arrow keys onto and off it.
+  await page.locator('#bs-tab-mentors').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page).toHaveURL(/tab=programs/);
+  await expect(page.locator('#bs-tab-programs')).toBeFocused();
+  await expect(page.locator('[data-programs-panel]')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(page).toHaveURL(/tab=invites/);
+  await expect(page.locator('#bs-tab-invites')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('#bs-tab-programs')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page).toHaveURL(/tab=mentors/);
+  await expect(page.locator('#bs-tab-mentors')).toBeFocused();
+  // The summary tiles stay above the tab strip on the register tabs.
+  const tiles = await page.locator('.stat-tiles').first().boundingBox();
+  const strip = await page.locator('.bs-toolbar').boundingBox();
+  expect(tiles!.y).toBeLessThan(strip!.y);
   expect(errors).toEqual([]);
 });
 

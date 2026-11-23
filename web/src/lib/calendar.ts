@@ -9,7 +9,10 @@ import { dateTimeFormatter, effectiveTimezone } from './timezone';
 
 /** selected time zone calendar date and minutes after midnight for an ISO instant. */
 export function pacificParts(iso: string | Date): { date: string; minutes: number } {
-  const p = Object.fromEntries(dateTimeFormatter({ hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(typeof iso === 'string' ? new Date(iso) : iso).map((x) => [x.type, x.value]));
+  const at = typeof iso === 'string' ? new Date(iso) : iso;
+  // An undated (tentative) event has startsAt "": it has no day, rather than throwing.
+  if (Number.isNaN(at.getTime())) return { date: '', minutes: 0 };
+  const p = Object.fromEntries(dateTimeFormatter({ hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(at).map((x) => [x.type, x.value]));
   const hour = Number(p.hour) % 24;
   return { date: `${p.year}-${p.month}-${p.day}`, minutes: hour * 60 + Number(p.minute) };
 }
@@ -58,9 +61,9 @@ const weekdayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone
 const at = (date: string) => new Date(toUtc(date) + 12 * 3_600_000);
 
 export const monthLabel = (ym: string) => monthNameFmt.format(at(`${ym}-01`));
-export const shortDay = (date: string) => shortDayFmt.format(at(date));
-export const longDay = (date: string) => longDayFmt.format(at(date));
-export const weekdayShort = (date: string) => weekdayFmt.format(at(date));
+export const shortDay = (date: string) => (date ? shortDayFmt.format(at(date)) : '—');
+export const longDay = (date: string) => (date ? longDayFmt.format(at(date)) : 'Date not set');
+export const weekdayShort = (date: string) => (date ? weekdayFmt.format(at(date)) : '');
 export const dayNumber = (date: string) => Number(date.slice(8));
 
 /** "November 9–15, 2026", "Nov 30 – Dec 6, 2026", "Dec 28, 2026 – Jan 3, 2027". */
@@ -84,6 +87,7 @@ function clock(minutes: number, meridiem: boolean): string {
 /** "6–8 PM", "10–11:30 AM", "11 AM–1 PM", or "6 PM" with no end (same selected time zone day only). */
 export function timeRange(startsAt: string, endsAt?: string | null): string {
   const s = pacificParts(startsAt);
+  if (!s.date) return 'time not set';
   if (!endsAt) return clock(s.minutes, true);
   const e = pacificParts(endsAt);
   if (e.date !== s.date) return `${clock(s.minutes, true)} – ${shortDay(e.date)}, ${clock(e.minutes, true)}`;

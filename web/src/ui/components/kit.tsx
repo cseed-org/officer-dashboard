@@ -261,7 +261,9 @@ export function Tabs<K extends string>({
     place();
     addEventListener('resize', place);
     return () => removeEventListener('resize', place);
-  }, [active, tabs.length]);
+    // Counts that arrive later (the Buildspace Programs tab draws before the register loads)
+    // change the tabs' widths, so they re-place the underline too.
+  }, [active, tabs.length, tabs.map((t) => t.count ?? '').join()]);
   const onKey = (e: TargetedKeyboardEvent<HTMLButtonElement>) => {
     const i = tabs.findIndex((t) => t.key === active);
     let next = -1;

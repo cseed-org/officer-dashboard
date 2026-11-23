@@ -41,6 +41,9 @@ import {
   fmtDue,
 } from '../../lib/design';
 import { fmtShort, fmtWeekday, plural, todayPacific } from '../../lib/format';
+
+/** A linked event's short date; a tentative (undated) event says so instead of "—". */
+const eventDay = (e: { startsAt: string }) => (e.startsAt ? fmtShort(e.startsAt) : 'date not set');
 import { pacificParts } from '../../lib/calendar';
 import { setParams, useSearch } from '../../lib/nav';
 import { href } from '../../lib/routes';
@@ -497,7 +500,7 @@ function DueChip({ item }: { item: DesignRequestItem }) {
 
 /** The event moved earlier than the agreed due date: flag it for the designer and requester. */
 const afterEvent = (item: DesignRequestItem) =>
-  !!item.dueDate && !!item.event && item.event.status !== 'cancelled' && item.dueDate > pacificParts(item.event.startsAt).date;
+  !!item.dueDate && !!item.event?.startsAt && item.event.status !== 'cancelled' && item.dueDate > pacificParts(item.event.startsAt).date;
 
 /**
  * One request card: type icon and title, the event and its date, approval/due/urgency chips,
@@ -520,7 +523,7 @@ function CardBody({ item, menu, grip }: { item: DesignRequestItem; menu: MenuIte
         <p class="kanban-event">
           <Icon name="calendar" size={13} />
           <a href={href.event(item.event.id)} draggable={false}>{item.event.name}</a>
-          <span class="kanban-event-when">· {fmtShort(item.event.startsAt)}</span>
+          <span class="kanban-event-when">· {eventDay(item.event)}</span>
           {item.event.status === 'cancelled' && <span class="kanban-event-when" data-event-cancelled> · event cancelled</span>}
         </p>
       ) : (
@@ -1030,7 +1033,7 @@ function List({ data, items, menu }: { data: DesignRequestsListResponse; items: 
           </a>
           <span class="cell-sub">
             {TYPE_LABEL[i.type]}
-            {i.event ? ` · ${i.event.name} · ${fmtShort(i.event.startsAt)}` : i.program ? ` · ${i.program}` : ''}
+            {i.event ? ` · ${i.event.name} · ${eventDay(i.event)}` : i.program ? ` · ${i.program}` : ''}
           </span>
         </>
       ),

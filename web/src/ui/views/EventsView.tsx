@@ -2,7 +2,7 @@ import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
-import { addDays, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, weekLabel, whenShort } from '../../lib/calendar';
+import { addDays, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, weekLabel } from '../../lib/calendar';
 import type { EventListItem } from '../../lib/contracts';
 import { dollars, fmtDate, fmtTime, fmtWeekday, lumaManageUrl, pct, plural, safeUrl } from '../../lib/format';
 import { setParams, useSearch } from '../../lib/nav';
@@ -12,14 +12,14 @@ import { CsvImportForm } from '../components/CsvImportForm';
 import { Drawer } from '../components/Drawer';
 import { StatRow } from '../components/StatRow';
 import { Icon } from '../components/Icon';
-import { type Column, DataTable, Kpi, Section } from '../components/kit';
+import { Badge, type Column, DataTable, Kpi, Section } from '../components/kit';
 import { Async, Empty, ErrorState, Loading, Notice } from '../components/states';
 import { requestColumns } from './columns';
 import { MonthView, WeekView } from './events/EventCalendar';
 import { EventEditor } from './events/EventEditor';
 import { HandoffKit } from './events/HandoffKit';
 import { DeleteEvent } from './events/DeleteEvent';
-import { designRequestHref, EventStatusBadge, hostLabel, listOrder, openPatch } from './events/shared';
+import { designRequestHref, EventStatusBadge, EventWhen, hostLabel, isTentative, isUpcoming, listOrder, openPatch, tentativeEnd, tentativeIn } from './events/shared';
 
 type View = 'list' | 'month' | 'week';
 const VIEWS: { key: View; label: string }[] = [
@@ -59,7 +59,7 @@ function listColumns(now: number): Column<EventListItem>[] {
         </>
       ),
     },
-    { key: 'when', label: `When · ${effectiveTimezone()}`, cardLabel: 'When', render: (e) => <span class="bs-nowrap">{whenShort(e.startsAt, e.endsAt)}</span> },
+    { key: 'when', label: `When · ${effectiveTimezone()}`, cardLabel: 'When', render: (e) => <EventWhen e={e} /> },
     { key: 'host', label: 'Host', render: (e) => hostLabel(e) ?? <span class="muted">—</span> },
     { key: 'status', label: 'Status', render: (e) => <EventStatusBadge event={e} now={now} /> },
     {
@@ -97,7 +97,7 @@ function listColumns(now: number): Column<EventListItem>[] {
 /** The most recent past event with turnout figures. */
 function healthEvent(items: EventListItem[], now: number) {
   return items
-    .filter((e) => new Date(e.startsAt).getTime() < now && e.metrics.registered > 0)
+    .filter((e) => !isTentative(e) && new Date(e.startsAt).getTime() < now && e.metrics.registered > 0)
     .sort((a, b) => Date.parse(b.startsAt) - Date.parse(a.startsAt))[0];
 }
 
@@ -188,10 +188,15 @@ export default function EventsView() {
 
   const now = Date.now();
   const ready = state.status === 'ready' ? state.data : null;
+  /** Month/week entries: the range query's dated events plus tentative ones overlapping from–to (drawn as "Tentative" spans). */
+  const gridEvents = (from: string, to: string) => [
+    ...ready!.items.filter((e) => !isTentative(e)),
+    ...tentativeIn(all.status === 'ready' ? all.data.items : ready!.items, from, to),
+  ];
   const total = all.status === 'ready' ? all.data.items.length : null;
   // Drafts and cancelled events are not on the calendar: count them as the Upcoming tile does.
   const live = (e: EventListItem) => e.status !== 'draft' && e.status !== 'cancelled';
-  const upcoming = all.status === 'ready' ? all.data.items.filter((e) => live(e) && new Date(e.startsAt).getTime() >= now).length : 0;
+  const upcoming = all.status === 'ready' ? all.data.items.filter((e) => live(e) && isUpcoming(e, now)).length : 0;
   const period =
     state.status === 'loading'
       ? 'Loading events…'
@@ -210,8 +215,11 @@ export default function EventsView() {
   const summaryReady = !!first && summary?.first === first && !summary.error;
   const items = summaryReady ? summary!.items : [];
   const stats = summaryReady && {
-    upcoming: items.filter((e) => live(e) && new Date(e.startsAt).getTime() >= now).length,
-    thisMonth: items.filter((e) => live(e) && monthOf(pacificParts(e.startsAt).date) === monthOf(today)).length,
+    upcoming: items.filter((e) => live(e) && isUpcoming(e, now)).length,
+    // A tentative event counts for this month when its range touches it.
+    thisMonth: items.filter((e) =>
+      live(e) && (isTentative(e) ? monthOf(e.tentativeFrom!) <= monthOf(today) && monthOf(tentativeEnd(e)) >= monthOf(today) : monthOf(pacificParts(e.startsAt).date) === monthOf(today)),
+    ).length,
     attendees: items.reduce((n, e) => n + e.metrics.checkedIn, 0),
     drafts: items.filter((e) => e.status === 'draft').length,
   };
@@ -310,7 +318,7 @@ export default function EventsView() {
         <div data-state="ready">
           <MonthView
             month={month}
-            events={ready!.items}
+            events={gridEvents(grid[0]!.date, grid[grid.length - 1]!.date)}
             onOpen={openEvent}
             onMonth={(m) => setParams({ m: m === monthOf(today) ? null : m }, { replace: true })}
             onWeek={(w) => setParams({ view: 'week', w }, { replace: true })}
@@ -318,7 +326,7 @@ export default function EventsView() {
         </div>
       ) : view === 'week' ? (
         <div data-state="ready">
-          <WeekView monday={monday} events={ready!.items} onOpen={openEvent} onWeek={(w) => setParams({ w: w === mondayOf(today) ? null : w }, { replace: true })} />
+          <WeekView monday={monday} events={gridEvents(monday, addDays(monday, 6))} onOpen={openEvent} onWeek={(w) => setParams({ w: w === mondayOf(today) ? null : w }, { replace: true })} />
         </div>
       ) : ready!.items.length === 0 ? (
         <Empty
@@ -407,7 +415,7 @@ export function EventDetail({ id, onChanged, onTitle }: { id: string; onChanged?
 
   const { event: e, requests, spentCents } = detail.data;
   const m = e.metrics;
-  const upcoming = new Date(e.startsAt).getTime() > Date.now();
+  const upcoming = isUpcoming(e);
   const luma = safeUrl(e.lumaUrl) ?? safeUrl(e.url) ?? lumaManageUrl(e.lumaId);
   const sub = [e.location, e.host ? `hosted by ${e.host.name}` : null].filter(Boolean).join(' · ');
 
@@ -415,7 +423,16 @@ export function EventDetail({ id, onChanged, onTitle }: { id: string; onChanged?
     <div class="stack" data-state="ready" data-event-detail={e.id}>
       <div class="detail-meta">
         <p class="page-sub">
-          <EventStatusBadge event={e} /> · {fmtWeekday(e.startsAt)} {fmtDate(e.startsAt)}, {fmtTime(e.startsAt)}
+          <EventStatusBadge event={e} /> ·{' '}
+          {e.tentativeFrom ? (
+            <>
+              {e.tentativeFrom === tentativeEnd(e) ? fmtDate(e.tentativeFrom) : `${fmtDate(e.tentativeFrom)} – ${fmtDate(tentativeEnd(e))}`} <Badge tone="attention">Tentative</Badge>
+            </>
+          ) : (
+            <>
+              {fmtWeekday(e.startsAt)} {fmtDate(e.startsAt)}, {fmtTime(e.startsAt)}
+            </>
+          )}
           {sub ? ` · ${sub}` : ''}
         </p>
         <div class="action-row">
