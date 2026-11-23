@@ -61,10 +61,14 @@ screenshots to `docs/evidence/programs/`.
 ## Tentative Events (web, V0.15)
 
 The Event editor has a **No set date yet** checkbox. Checked, it asks for an earliest and
-latest date (a blank latest date means one day) instead of a start and end, and saving sends
+latest date (a blank latest date means a single day) instead of a start and end, and saving sends
 `startsAt: null` with `tentativeFrom`/`tentativeTo`. Unchecking it and saving a start clears the
 range. The Events list and detail show the range with a **Tentative** badge; the month and
 week views list tentative events whose range overlaps the visible days in a **No set date yet**
 strip above the grid, since they have no day or time to sit on. Drafts stay visible there,
 outlined like draft chips. Shared date formatters print a placeholder for an empty `startsAt`
 instead of throwing.
+Event pickers (purchase and design requests, CSV import, contact links) label an undated Event
+"Tentative · Dec 1 – Dec 12, 2026" and sort it by the first day of its range. A contact's
+tentative Event counts as past once its range ends, and the person drawer's activity shows the
+range and "date not set" for an item whose `at` is empty.
