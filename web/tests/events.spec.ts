@@ -169,23 +169,27 @@ test('events: a tentative date range stands in for the date until it is set', as
     await expect(row.locator('[data-tentative-range]')).toContainText('Tentative');
     expect(await overflow(page)).toEqual([]);
 
-    // The month and week calendars list it once above the grid, as a draft, not on a day.
+    // The month and week calendars draw it as a dashed "Tentative" entry across its range
+    // (day cells on wider screens, the agenda on phones; an all-day span in week view).
+    const onGrid = () => page.locator(`[data-cal-event="${id}"]`).filter({ visible: true });
     await page.goto(`/events?view=month&m=${next.ym}`);
     await settle(page);
-    const strip = page.locator('[data-tentative-strip]');
-    await expect(strip.locator(`[data-tentative-event="${id}"]`)).toContainText(`${next.mon} 1 – ${next.mon} 12`);
-    await expect(strip.locator(`[data-tentative-event="${id}"]`)).toContainText('Draft');
-    await expect(page.locator(`.cal-month [data-cal-event="${id}"]`)).toHaveCount(0);
+    await expect(onGrid().first()).toHaveClass(/is-tentative/);
+    await expect(onGrid().first()).toHaveClass(/is-draft/);
+    if (info.project.name !== 'phone') {
+      await expect(page.locator(`.cal-day[data-date="${next.ym}-12"] [data-cal-event="${id}"]`)).toHaveCount(1);
+      await expect(page.locator(`.cal-day[data-date="${next.ym}-13"] [data-cal-event="${id}"]`)).toHaveCount(0);
+    }
     expect(await overflow(page)).toEqual([]);
     await page.goto(`/events?view=week&w=${next.week5}`);
     await settle(page);
-    await expect(page.locator(`[data-tentative-strip] [data-tentative-event="${id}"]`)).toBeVisible();
+    await expect(onGrid().first()).toHaveClass(/is-tentative/);
     await page.goto(`/events?view=week&w=${next.week20}`);
     await settle(page);
-    await expect(page.locator(`[data-tentative-event="${id}"]`)).toHaveCount(0);
+    await expect(onGrid()).toHaveCount(0);
     await page.goto(`/events?view=month&m=${next.ym}`);
     await settle(page);
-    await page.locator(`[data-tentative-event="${id}"]`).click();
+    await onGrid().first().click();
     await expect(openDialog(page).getByLabel('No set date yet')).toBeChecked();
 
     // Setting the real date clears the range.

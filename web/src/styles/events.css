@@ -6,11 +6,3 @@
 .event-copy .btn {flex:none;}
 .event-cover {display:block;width:100%;max-height:240px;object-fit:cover;border-radius:var(--radius-control);}
 @media(max-width:767px) {.event-copy {flex-direction:column;gap:8px;} }
-
-/* Tentative events (V0.15): no day to sit on, so one strip above the month/week grid. */
-.cal-tentative {display:grid;gap:6px;min-width:0;}
-.cal-tentative .subhead {margin:0;}
-.cal-tentative-list {list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px;min-width:0;}
-.cal-tentative-list > li {min-width:0;max-width:100%;}
-.cal-tentative-chip {flex-wrap:wrap;max-width:100%;padding:4px 8px;--hue:var(--c-amber);}
-.cal-tentative-chip .bs-nowrap {color:var(--muted);}

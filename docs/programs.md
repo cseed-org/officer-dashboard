@@ -76,11 +76,12 @@ Programs are deleted in `finally`. `SHOTS=1` writes light and dark screenshots t
 The Event editor has a **No set date yet** checkbox. Checked, it asks for an earliest and
 latest date (a blank latest date means a single day) instead of a start and end, and saving sends
 `startsAt: null` with `tentativeFrom`/`tentativeTo`. Unchecking it and saving a start clears the
-range. The Events list and detail show the range with a **Tentative** badge; the month and
-week views list tentative events whose range overlaps the visible days in a **No set date yet**
-strip above the grid, since they have no day or time to sit on. Drafts stay visible there,
-outlined like draft chips. Shared date formatters print a placeholder for an empty `startsAt`
-instead of throwing.
+range. The Events list and detail show the range with a **Tentative** badge. The month and
+week views draw a tentative event with the shared calendar grids (`ui/components/calendar/`) as a
+dashed **Tentative** entry on each day of its range (an all-day span in week view, the agenda on
+phones). The page adds every tentative event that overlaps the visible days, since the range query
+only returns one whose first day falls inside it. Drafts stay visible, outlined like other draft
+chips. Shared date formatters print a placeholder for an empty `startsAt` instead of throwing.
 Event pickers (purchase and design requests, CSV import, contact links) label an undated Event
 "Tentative · Dec 1 – Dec 12, 2026" and sort it by the first day of its range. A contact's
 tentative Event counts as past once its range ends, and the person drawer's activity shows the

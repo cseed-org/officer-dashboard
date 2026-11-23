@@ -2,7 +2,7 @@ import { effectiveTimezone } from '../../lib/timezone';
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
-import { addDays, addMonths, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, weekLabel } from '../../lib/calendar';
+import { addDays, monthGrid, monthLabel, monthOf, mondayOf, pacificParts, pacificToday, weekLabel } from '../../lib/calendar';
 import type { EventListItem } from '../../lib/contracts';
 import { dollars, fmtDate, fmtTime, fmtWeekday, lumaManageUrl, pct, plural, safeUrl } from '../../lib/format';
 import { setParams, useSearch } from '../../lib/nav';
@@ -35,34 +35,6 @@ const isDate = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 function openEvent(e: EventListItem) {
   setParams({ ...PANELS, ...openPatch(e) });
-}
-
-/**
- * Undated events above the month/week grid: a tentative range has no day or time to sit on, so
- * it is listed once for the visible days, with its range and a Tentative badge. Drafts are
- * shown too (they sync to the Events calendar), outlined like draft chips on the grid.
- */
-function TentativeStrip({ items, from, to }: { items: EventListItem[]; from: string; to: string }) {
-  const shown = tentativeIn(items, from, to).sort((a, b) => a.tentativeFrom!.localeCompare(b.tentativeFrom!));
-  if (!shown.length) return null;
-  return (
-    <section class="cal-tentative" aria-labelledby="cal-tentative-title" data-tentative-strip>
-      <h3 class="subhead" id="cal-tentative-title">
-        No set date yet
-      </h3>
-      <ul class="cal-tentative-list">
-        {shown.map((e) => (
-          <li key={e.id}>
-            <button type="button" class={`cal-event cal-tentative-chip${e.status === 'draft' ? ' is-draft' : ''}`} data-cal-event={e.id} data-tentative-event={e.id} onClick={() => openEvent(e)}>
-              <span class="cal-event-title">{e.name}</span>
-              <EventWhen e={e} />
-              {e.status === 'draft' && <span class="cal-event-time">Draft</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
 }
 
 function listColumns(now: number): Column<EventListItem>[] {
@@ -216,6 +188,11 @@ export default function EventsView() {
 
   const now = Date.now();
   const ready = state.status === 'ready' ? state.data : null;
+  /** Month/week entries: the range query's dated events plus tentative ones overlapping from–to (drawn as "Tentative" spans). */
+  const gridEvents = (from: string, to: string) => [
+    ...ready!.items.filter((e) => !isTentative(e)),
+    ...tentativeIn(all.status === 'ready' ? all.data.items : ready!.items, from, to),
+  ];
   const total = all.status === 'ready' ? all.data.items.length : null;
   // Drafts and cancelled events are not on the calendar: count them as the Upcoming tile does.
   const live = (e: EventListItem) => e.status !== 'draft' && e.status !== 'cancelled';
@@ -338,20 +315,18 @@ export default function EventsView() {
           </div>
         </div>
       ) : view === 'month' ? (
-        <div data-state="ready" class="stack">
-          <TentativeStrip items={all.status === 'ready' ? all.data.items : ready!.items} from={`${month}-01`} to={addDays(`${addMonths(month, 1)}-01`, -1)} />
+        <div data-state="ready">
           <MonthView
             month={month}
-            events={ready!.items.filter((e) => !isTentative(e))}
+            events={gridEvents(grid[0]!.date, grid[grid.length - 1]!.date)}
             onOpen={openEvent}
             onMonth={(m) => setParams({ m: m === monthOf(today) ? null : m }, { replace: true })}
             onWeek={(w) => setParams({ view: 'week', w }, { replace: true })}
           />
         </div>
       ) : view === 'week' ? (
-        <div data-state="ready" class="stack">
-          <TentativeStrip items={all.status === 'ready' ? all.data.items : ready!.items} from={monday} to={addDays(monday, 6)} />
-          <WeekView monday={monday} events={ready!.items.filter((e) => !isTentative(e))} onOpen={openEvent} onWeek={(w) => setParams({ w: w === mondayOf(today) ? null : w }, { replace: true })} />
+        <div data-state="ready">
+          <WeekView monday={monday} events={gridEvents(monday, addDays(monday, 6))} onOpen={openEvent} onWeek={(w) => setParams({ w: w === mondayOf(today) ? null : w }, { replace: true })} />
         </div>
       ) : ready!.items.length === 0 ? (
         <Empty
