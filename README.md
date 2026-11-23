@@ -82,7 +82,7 @@ flowchart LR
   API --> Receipts[Google Drive / local receipts]
 ```
 
-The Go server serves the static front end and JSON API from one origin. SQLite is the primary database; D1 supplies the membership mirror. Run on a Raspberry Pi or a single container with durable replication. See [architecture](docs/architecture.md) and [deployment](docs/deployment.md).
+The Go server serves the static front end and JSON API from one origin. SQLite is the primary database; D1 supplies the membership mirror. Run on a Raspberry Pi or a single container with durable replication. See [architecture](docs/architecture.md), [deployment](docs/deployment.md) and the step-by-step [deployment runbooks](docs/deploy/README.md).
 
 [Back to top](#top)
 

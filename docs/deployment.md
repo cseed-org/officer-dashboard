@@ -1,5 +1,9 @@
 # Deployment
 
+> Step-by-step runbooks: [fresh install](deploy/fresh-install.md), [upgrade an existing
+> install](deploy/upgrade-existing.md) and [org calendar setup](deploy/org-calendar-setup.md)
+> ([which one?](deploy/README.md)). This page is the reference they link to.
+
 ## Raspberry Pi 5 (systemd)
 
 Run Go build commands from `server/`.
