@@ -39,8 +39,36 @@ import {
   trackShort,
 } from "./buildspace/model";
 
+/** The directory tabs. Programs aren't cohort data, so that tab has no count. */
+const DIRECTORY_TABS = ["people", "projects", "mentors", "programs", "invites"] as const;
+type DirectoryTab = (typeof DIRECTORY_TABS)[number];
+function DirectoryTabs({ active, b }: { active: DirectoryTab; b: BuildspaceData | null }) {
+  const count = (t: DirectoryTab) =>
+    !b || b.cohortId === null || t === "programs"
+      ? undefined
+      : t === "invites"
+        ? b.accounts.length
+        : t === "people"
+          ? b.people.filter((p) => p.archivedAt === null).length
+          : t === "projects"
+            ? b.projects.filter((p) => p.archivedAt === null).length
+            : b.mentors.length;
+  return (
+    <Tabs
+      label="Buildspace + Launchpad directory"
+      idPrefix="bs"
+      active={active}
+      onChange={(t) => setParams({ tab: t, program: null, pnew: null })}
+      tabs={DIRECTORY_TABS.map((t) => ({ key: t, label: t[0]!.toUpperCase() + t.slice(1), count: count(t) }))}
+    />
+  );
+}
+
 export default function BuildspaceView({ me }: { me: CurrentUser }) {
   const params = useSearch();
+  // Programs (weekly sessions, any track) aren't cohort data: that tab never waits for the
+  // register or needs a cohort, and shows none of the cohort controls (review F-3).
+  const onPrograms = params.get("tab") === "programs";
   // The register is one cohort at a time (default: the newest active one); archived projects and
   // builders load only when asked for (docs/launchpad-cohorts.md).
   const query = {
@@ -65,7 +93,7 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
   // paint as soon as sign-in resolves instead of waiting for /api/buildspace.
   return (
     <div class="buildspace">
-      <div class="bs-intro">
+      {!onPrograms && <div class="bs-intro">
         {data && (
           <CohortBar
             cohorts={data.cohorts}
@@ -98,8 +126,17 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
             New project
           </button>
         </div>
-      </div>
-      <Async state={state}>
+      </div>}
+      {onPrograms ? (
+        <>
+          <div class="bs-toolbar">
+            <DirectoryTabs active="programs" b={data} />
+          </div>
+          <div id="bs-panel" role="tabpanel" aria-labelledby="bs-tab-programs" class="tab-panel">
+            <ProgramsPanel me={me} />
+          </div>
+        </>
+      ) : <Async state={state}>
         {(b) => (
           b.cohortId === null ? (
             <Empty title="No cohort yet">
@@ -111,7 +148,6 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
             <BuildspaceContent
               key={b.cohortId}
               b={b}
-              me={me}
               reload={state.reload}
               loadOlder={loadOlder}
               notice={notice}
@@ -123,14 +159,13 @@ export default function BuildspaceView({ me }: { me: CurrentUser }) {
             />
           )
         )}
-      </Async>
-      {state.status === "ready" && state.data.activityNextCursor && <LoadHistory key={`${state.data.cohortId}|${state.data.activityNextCursor}`} load={loadOlder} />}
+      </Async>}
+      {!onPrograms && state.status === "ready" && state.data.activityNextCursor && <LoadHistory key={`${state.data.cohortId}|${state.data.activityNextCursor}`} load={loadOlder} />}
     </div>
   );
 }
 function BuildspaceContent({
   b,
-  me,
   reload,
   loadOlder,
   notice,
@@ -141,7 +176,6 @@ function BuildspaceContent({
   addLinks,
 }: {
   b: BuildspaceData;
-  me: CurrentUser;
   reload: () => void;
   loadOlder: (signal: AbortSignal) => Promise<void>;
   notice: string;
@@ -175,9 +209,7 @@ function BuildspaceContent({
         ? "mentors"
         : qs.get("tab") === "invites"
           ? "invites"
-          : qs.get("tab") === "programs"
-            ? "programs"
-            : "people";
+          : "people";
   const view = qs.get("view") || "table",
     group = qs.get("group") || "track";
   // Whole-view swaps (tab, layout, grouping) crossfade; changes within a view use FLIP.
@@ -352,17 +384,15 @@ function BuildspaceContent({
   };
   return (
     <div class="buildspace">
-      {tab !== "programs" && (
-        <StatRow
-          label="Buildspace + Launchpad summary"
-          tiles={[
-            { label: "Builders", icon: "users", hue: "violet", value: live.length, sub: plural(liveProjects.length, "project") },
-            { label: "Awaiting this week", icon: "clock", hue: "amber", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
-            { label: "Open requests", icon: "inbox", hue: "teal", value: openRequestBuilders, sub: "builders with open requests", href: flagHref("requests"), pressed: flag === "requests" },
-            { label: "Unmentored", icon: "flag", hue: "coral", value: unmentored, sub: "builders without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
-          ]}
-        />
-      )}
+      <StatRow
+        label="Buildspace + Launchpad summary"
+        tiles={[
+          { label: "Builders", icon: "users", hue: "violet", value: live.length, sub: plural(liveProjects.length, "project") },
+          { label: "Awaiting this week", icon: "clock", hue: "amber", value: awaiting, sub: "no check-in yet", alert: awaiting > 0, href: flagHref("missed"), pressed: flag === "missed" },
+          { label: "Open requests", icon: "inbox", hue: "teal", value: openRequestBuilders, sub: "builders with open requests", href: flagHref("requests"), pressed: flag === "requests" },
+          { label: "Unmentored", icon: "flag", hue: "coral", value: unmentored, sub: "builders without a mentor", alert: unmentored > 0, href: flagHref("unmentored"), pressed: flag === "unmentored" },
+        ]}
+      />
       {readOnly && (
         <Notice tone="attention">
           {cohort?.name ?? "This cohort"} is archived, so it is read-only. Builders can still sign in and read their portal.
@@ -371,18 +401,8 @@ function BuildspaceContent({
       {notice && <Notice tone="positive">{notice}</Notice>}
       {lifecycleError && <Notice tone="negative">{lifecycleError}</Notice>}
       <div class="bs-toolbar">
-        <Tabs
-          label="Buildspace + Launchpad directory"
-          idPrefix="bs"
-          active={tab}
-          onChange={(t) => setParams({ tab: t, program: null, pnew: null })}
-          tabs={(["people", "projects", "mentors", "programs", "invites"] as const).map((t) => ({
-            key: t,
-            label: t[0]!.toUpperCase() + t.slice(1),
-            count: t === "invites" ? b.accounts.length : t === "people" ? live.length : t === "projects" ? liveProjects.length : t === "programs" ? undefined : b[t].length,
-          }))}
-        />
-        {tab !== "invites" && tab !== "programs" && <div class="segmented" aria-label="Layout">
+        <DirectoryTabs active={tab} b={b} />
+        {tab !== "invites" && <div class="segmented" aria-label="Layout">
           {["table", "cards", "board"].map((v) => (
             <button
               class="segment"
@@ -397,10 +417,6 @@ function BuildspaceContent({
       {tab === "invites" ? (
         <div id="bs-panel" role="tabpanel" aria-labelledby="bs-tab-invites" class="tab-panel">
           <InvitesPanel b={b} canDirector={canDirector} readOnly={readOnly} links={links} addLinks={addLinks} reload={reload} setNotice={setNotice} />
-        </div>
-      ) : tab === "programs" ? (
-        <div id="bs-panel" role="tabpanel" aria-labelledby="bs-tab-programs" class="tab-panel">
-          <ProgramsPanel me={me} />
         </div>
       ) : (<>
       <div class="bs-filters">
