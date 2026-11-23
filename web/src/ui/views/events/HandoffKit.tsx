@@ -3,7 +3,7 @@ import { api } from '../../../lib/api/client';
 import { useApi } from '../../../lib/api/useApi';
 import { whenLong } from '../../../lib/calendar';
 import { type EventDetailResponse, lumaEventUrlProblem } from '../../../lib/contracts';
-import { safeUrl } from '../../../lib/format';
+import { fmtEventDate, safeUrl } from '../../../lib/format';
 import { errorMessage, ErrorState, Loading } from '../../components/states';
 import { hostLabel } from './shared';
 
@@ -95,7 +95,8 @@ function Kit({ event: e, onSaved }: { event: Detail; onSaved: () => void }) {
       <p class="notice notice--info">Publish manually in Luma. Copy each field, upload the cover, then paste the published URL below. No automatic sync.</p>
       <div>
         <CopyRow label="Name" value={e.name} onCopied={setCopyStatus} />
-        <CopyRow label="Time" value={whenLong(e.startsAt, e.endsAt)} onCopied={setCopyStatus} />
+        {/* A tentative event has no time to copy yet: show its range so nobody publishes a guess. */}
+        <CopyRow label="Time" value={e.startsAt ? whenLong(e.startsAt, e.endsAt) : `${fmtEventDate(e)} · set the date before publishing`} onCopied={setCopyStatus} />
         {e.location && <CopyRow label="Location" value={e.location} onCopied={setCopyStatus} />}
         {host && <CopyRow label="Host" value={host} onCopied={setCopyStatus} />}
         {e.description && <CopyRow label="Description" value={e.description} onCopied={setCopyStatus} />}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError } from '../../lib/api/client';
 import type { SearchResult } from '../../lib/contracts';
-import { fmtDate, formatCents, STATUS_LABEL } from '../../lib/format';
+import { fmtEventDate, formatCents, STATUS_LABEL } from '../../lib/format';
 import { navigate } from '../../lib/nav';
 import { href } from '../../lib/routes';
 import { sanitizeResults } from '../../lib/search';
@@ -46,7 +46,7 @@ async function searchApi(q: string, signal: AbortSignal): Promise<Item[]> {
   const [reqs, evs] = await Promise.all([api('requestsList', { query: { scope: 'all', q, limit: 8 }, signal }), api('eventsList', { query: { q, limit: 8 }, signal })]);
   return [
     ...reqs.items.map((r) => ({ kind: 'request' as const, id: r.id, title: r.title, subtitle: `#${r.number} · ${r.requester.name} · ${formatCents(r.totalCents)} · ${STATUS_LABEL[r.status]}`, href: href.request(r.id) })),
-    ...evs.items.map((e) => ({ kind: 'event' as const, id: e.id, title: e.name, subtitle: [fmtDate(e.startsAt), e.location].filter(Boolean).join(' · '), href: href.event(e.id) })),
+    ...evs.items.map((e) => ({ kind: 'event' as const, id: e.id, title: e.name, subtitle: [fmtEventDate(e), e.location].filter(Boolean).join(' · '), href: href.event(e.id) })),
   ];
 }
 

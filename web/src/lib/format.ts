@@ -49,9 +49,9 @@ export function fmtRange(from: string, to?: string | null): string {
   return from.slice(0, 4) === end.slice(0, 4) ? `${fmtShort(from)} – ${fmtDate(end)}` : `${fmtDate(from)} – ${fmtDate(end)}`;
 }
 
-/** "Dec 5, 2026", or "Tentative · Dec 1 – Dec 12, 2026" for an undated event. */
+/** "Dec 5, 2026", "Tentative · Dec 1 – Dec 12, 2026" for an undated event, or "Date not set" when it carries no range. */
 export const fmtEventDate = (e: DatedEvent) =>
-  !e.startsAt && e.tentativeFrom ? `Tentative · ${fmtRange(e.tentativeFrom, e.tentativeTo)}` : fmtDate(e.startsAt);
+  e.startsAt ? fmtDate(e.startsAt) : e.tentativeFrom ? `Tentative · ${fmtRange(e.tentativeFrom, e.tentativeTo)}` : 'Date not set';
 
 /** A sort key in milliseconds: the start, or noon UTC on a tentative event's first day; NaN when neither. */
 export const eventMillis = (e: DatedEvent) =>
