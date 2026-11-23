@@ -133,8 +133,32 @@ viewer's time zone (Settings), weeks starting on Monday.
   program" / "Open event"); `?edit=` on a locked item does not open the editor.
 - **States:** loading and error use the shared states; an empty period offers Create. When the
   organization account isn't connected (leadership: `/api/settings/org-google/status`; others:
-  no calendar has a Google ID yet) a notice says meetings will sync once it is, and leadership
-  gets a **Connect the org Google account** link.
+  no calendar has a Google ID yet) a notice says meetings will sync once it is. Leadership gets
+  a link to the Settings card below; everyone else reads "Ask leadership to connect Google
+  Calendar". When leadership's status shows `needsReconnect` or `lastSyncError`, the calendar
+  says so and links to the card as well.
+
+### Settings › org Google Calendar (leadership)
+
+Leadership connects the dedicated org Gmail once, from a card on `/settings` (`#org-google`,
+`ui/views/OrgGooglePanel.tsx`; officers and directors don't see it). It reads
+`GET /api/settings/org-google/status` and shows one of:
+
+- **Not configured** (`configured:false`): an owner must set `GOOGLE_OAUTH_CLIENT_ID` and
+  `GOOGLE_OAUTH_CLIENT_SECRET` and register `APP_URL/auth/org-google/callback` as a redirect
+  URI ([configuration](configuration.md)). No Connect button.
+- **Not connected:** **Connect org Google account**, a plain link (navigation, not a fetch) to
+  `GET /api/settings/org-google/connect`. Google consent returns to
+  `/settings?orgGoogle=connected|failed|scope_required|not_configured`, and the card says what
+  happened.
+- **Connected:** the account email and **Disconnect**, behind a confirmation dialog
+  (`DELETE /api/settings/org-google`; local meetings and the Google calendars are kept).
+- **Needs attention** (`needsReconnect` or `lastSyncError`): a warning with the error text and
+  **Reconnect Google** (the same consent link), with Disconnect still available.
+
+Tests: `web/tests/settings-org-google.spec.ts` mocks the status for each state (a dev server has
+no org account) and checks the real status loads. Screenshots:
+`docs/evidence/org-calendar/settings-org-google-*.png`.
 
 Code: `web/src/pages/calendar.astro` → `ui/pages/CalendarPage.tsx` → `ui/views/calendar/*`
 (`CalendarView`, `MeetingForm`, `ItemCard`, `MiniMonth`); pure helpers in `lib/orgcal.ts`. The

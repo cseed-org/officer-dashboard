@@ -213,15 +213,20 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
         <div class="orgcal-main">
           {notConnected && (
             <div class="notice notice--attention orgcal-google" role="status" data-google="not-connected">
-              Google Calendar isn't connected yet. Meetings are saved here and sync to the organization's Google calendars once leadership connects the org account.
-              {leadership && (
-                <>
-                  {' '}
-                  <a href="/api/settings/org-google/connect" data-reload>
-                    Connect the org Google account →
-                  </a>
-                </>
+              Google Calendar isn't connected yet. Meetings are saved here and sync to the organization's Google calendars once it is.{' '}
+              {leadership ? (
+                <a href="/settings#org-google" data-google-settings>
+                  Connect it in Settings →
+                </a>
+              ) : (
+                'Ask leadership to connect Google Calendar.'
               )}
+            </div>
+          )}
+          {leadership && google.status === 'ready' && google.data.connected && (google.data.needsReconnect || google.data.lastSyncError) && (
+            <div class="notice notice--attention orgcal-google" role="status" data-google="needs-attention">
+              {google.data.needsReconnect ? 'Google revoked access to the org account, so meetings aren’t syncing.' : 'The last sync with Google Calendar failed.'}{' '}
+              <a href="/settings#org-google">Check it in Settings →</a>
             </div>
           )}
           {flash && <Notice tone="positive">{flash}</Notice>}

@@ -275,6 +275,21 @@ test('calendar: Events items are locked and link to their event', async ({ page 
   } finally {
     await page.request.delete(`/api/events/${event.id}`);
   }
+  // Weekly Programs sessions are locked too, and link to the Buildspace Programs tab.
+  const pr = await page.request.post('/api/programs', { data: { trackId: 'buildspace', name: `E2E locked program ${stamp()}`, weekday: 2, startTime: '12:00', durationMin: 60, startsOn: '2027-03-01', endsOn: '2027-03-31' } });
+  expect(pr.ok(), `create program → ${pr.status()}`).toBe(true);
+  const { program } = await pr.json();
+  try {
+    await page.goto(`/calendar?view=week&w=${WEEK}`);
+    await settle(page);
+    const session = phone(info.project.name) ? page.locator('.cal-agenda').getByRole('button', { name: new RegExp(program.name) }) : page.locator('.cal-col[data-date="2027-03-09"] .cal-block', { hasText: program.name });
+    await session.click();
+    const card = page.locator('dialog#orgcal-item');
+    await expect(card.getByRole('button', { name: 'Edit' })).toHaveCount(0);
+    await expect(card.getByRole('link', { name: 'Open program →' })).toHaveAttribute('href', `/buildspace-launchpad?tab=programs&program=${program.id}`);
+  } finally {
+    await page.request.delete(`/api/programs/${program.id}`);
+  }
   expect(errors).toEqual([]);
 });
 
