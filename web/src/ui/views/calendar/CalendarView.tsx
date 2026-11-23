@@ -69,11 +69,12 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
   const events = useApi('orgEvents', { query: { from: range.from, to: range.to } }, range);
   const feed = useApi('calendarFeed', { query: { start: range.from, end: range.to, sources: OVERLAY_SOURCES.join(',') } }, range);
   const leadership = me.role === 'leadership';
-  const google = useApi('orgGoogleStatus', {}, null, leadership);
 
   const calendars = cals.status === 'ready' ? cals.data.calendars : FALLBACK_CALENDARS;
   const calOf = (k: OrgCalendarKey) => calendars.find((c) => c.key === k) ?? FALLBACK_CALENDARS.find((c) => c.key === k)!;
-  const notConnected = leadership ? google.status === 'ready' && !google.data.connected : cals.status === 'ready' && cals.data.calendars.every((c) => !c.googleCalendarId);
+  // Every role learns whether Google sync is live (the calendars response carries booleans only;
+  // the account and error text stay on leadership's Settings card).
+  const sync = cals.status === 'ready' ? { connected: cals.data.googleConnected, problem: cals.data.syncProblem } : null;
 
   const [flash, setFlash] = useState<string | null>(null);
   useEffect(() => {
@@ -213,22 +214,22 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
         </aside>
 
         <div class="orgcal-main">
-          {notConnected && (
-            <div class="notice notice--attention orgcal-google" role="status" data-google="not-connected">
-              Google Calendar isn't connected yet. Meetings are saved here and sync to the organization's Google calendars once it is.{' '}
+          {sync && (!sync.connected || sync.problem) && (
+            <div class="notice notice--attention orgcal-google" role="status" data-google={!sync.connected ? (sync.problem ? 'revoked' : 'not-connected') : 'sync-problem'}>
+              {!sync.connected
+                ? sync.problem
+                  ? 'Google Calendar sync has stopped: the org account needs reconnecting. Meetings are saved here, but nothing reaches Google and no invites go out until it is reconnected.'
+                  : 'Google Calendar isn’t connected. Meetings are saved here, but nothing reaches Google and no invites go out until it is.'
+                : 'The last sync with Google Calendar failed, so recent changes may not have reached Google or invitees yet.'}{' '}
               {leadership ? (
                 <a href="/settings#org-google" data-google-settings>
-                  Connect it in Settings →
+                  {sync.connected ? 'Check it in Settings →' : 'Connect it in Settings →'}
                 </a>
+              ) : sync.connected ? (
+                'If it keeps happening, tell leadership.'
               ) : (
                 'Ask leadership to connect Google Calendar.'
               )}
-            </div>
-          )}
-          {leadership && google.status === 'ready' && google.data.connected && (google.data.needsReconnect || google.data.lastSyncError) && (
-            <div class="notice notice--attention orgcal-google" role="status" data-google="needs-attention">
-              {google.data.needsReconnect ? 'Google revoked access to the org account, so meetings aren’t syncing.' : 'The last sync with Google Calendar failed.'}{' '}
-              <a href="/settings#org-google">Check it in Settings →</a>
             </div>
           )}
           {flash && <Notice tone="positive">{flash}</Notice>}

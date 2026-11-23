@@ -131,12 +131,12 @@ viewer's time zone (Settings), weeks starting on Monday.
   **Move series start** unlocks it, warns that earlier occurrences are removed, and only then
   is `moveSeriesStart` sent. Weekly Programs and Events items are read-only and link to their source ("Open
   program" / "Open event"); `?edit=` on a locked item does not open the editor.
-- **States:** loading and error use the shared states; an empty period offers Create. When the
-  organization account isn't connected (leadership: `/api/settings/org-google/status`; others:
-  no calendar has a Google ID yet) a notice says meetings will sync once it is. Leadership gets
-  a link to the Settings card below; everyone else reads "Ask leadership to connect Google
-  Calendar". When leadership's status shows `needsReconnect` or `lastSyncError`, the calendar
-  says so and links to the card as well.
+- **States:** loading and error use the shared states; an empty period (counting only the days
+  on screen) offers Create. Every role gets a notice from the calendars response's
+  `googleConnected`/`syncProblem` flags: not connected or revoked (meetings save here, but
+  nothing reaches Google and no invites go out), or connected with a failed last sync.
+  Leadership's notice links to the Settings card below; everyone else reads "Ask leadership to
+  connect Google Calendar" (or "tell leadership" for a failing sync).
 
 ### Settings › org Google Calendar (leadership)
 

@@ -138,37 +138,73 @@ test('org Google card: the real status loads without errors', async ({ page }) =
   expect(errors).toEqual([]);
 });
 
-test('org Google card: officers do not see it; /calendar tells each role what to do', async ({ page }) => {
+/** Serve the real /api/orgcal/calendars with the sync flags overridden. */
+async function mockSync(page: Page, googleConnected: boolean, syncProblem: boolean) {
+  await page.unroute('**/api/orgcal/calendars');
+  await page.route('**/api/orgcal/calendars', async (route) => {
+    const real = await (await route.fetch()).json();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...real, googleConnected, syncProblem }) });
+  });
+}
+
+test('org Google card: officers do not see it; /calendar tells every role when sync is off', async ({ page }) => {
   const errors = watchErrors(page);
-  // The calendar notice shows while no calendar has a Google ID (a fresh dev database).
-  const cals = async () => (await (await page.request.get('/api/orgcal/calendars')).json()).calendars as { googleCalendarId: string | null }[];
   await devLogin(page, 'officer');
-  test.skip((await cals()).some((c) => c.googleCalendarId), 'this database already has Google calendars');
   await page.goto('/settings');
   await settle(page);
   await expect(page.locator('h2#org-google')).toHaveCount(0);
   await expect(card(page)).toHaveCount(0);
+
+  // A dev server has no org account: the real flags say not connected, for officers too.
   await page.goto('/calendar');
   await settle(page);
-  await expect(page.locator('[data-google="not-connected"]')).toContainText('Ask leadership to connect Google Calendar.');
+  const notice = page.locator('.orgcal-google');
+  await expect(notice).toHaveAttribute('data-google', 'not-connected');
+  await expect(notice).toContainText('no invites go out');
+  await expect(notice).toContainText('Ask leadership to connect Google Calendar.');
   await expect(page.locator('[data-google-settings]')).toHaveCount(0);
 
+  // Leadership disconnected after a first connect (calendar IDs still set): still not connected.
+  await mockSync(page, false, false);
+  await page.reload();
+  await settle(page);
+  await expect(notice).toHaveAttribute('data-google', 'not-connected');
+  // Access revoked.
+  await mockSync(page, false, true);
+  await page.reload();
+  await settle(page);
+  await expect(notice).toHaveAttribute('data-google', 'revoked');
+  await expect(notice).toContainText('needs reconnecting');
+  // Connected, but the last pass failed.
+  await mockSync(page, true, true);
+  await page.reload();
+  await settle(page);
+  await expect(notice).toHaveAttribute('data-google', 'sync-problem');
+  await expect(notice).toContainText('tell leadership');
+  // Healthy: no notice.
+  await mockSync(page, true, false);
+  await page.reload();
+  await settle(page);
+  await expect(notice).toHaveCount(0);
+
+  // Leadership gets a link to the Settings card instead.
+  await page.unroute('**/api/orgcal/calendars');
   await devLogin(page, 'leadership');
   await mockStatus(page, STATES['not-connected']!);
+  await mockSync(page, false, false);
   await page.goto('/calendar');
   await settle(page);
   const link = page.locator('[data-google-settings]');
+  await expect(link).toHaveText('Connect it in Settings →');
   await expect(link).toHaveAttribute('href', '/settings#org-google');
   await link.click();
   await expect(page).toHaveURL(/\/settings#org-google$/);
   await settle(page);
   await expect(card(page).locator('[data-org-google="not-connected"]')).toBeVisible();
-
-  // Connected but failing: leadership is sent to the card from the calendar too.
-  await page.unroute('**/api/settings/org-google/status');
-  await mockStatus(page, STATES['needs-reconnect']!);
+  await mockSync(page, true, true);
   await page.goto('/calendar');
   await settle(page);
-  await expect(page.locator('[data-google="needs-attention"]')).toContainText('revoked');
+  await expect(notice).toHaveAttribute('data-google', 'sync-problem');
+  await expect(link).toHaveText('Check it in Settings →');
   expect(errors).toEqual([]);
 });
