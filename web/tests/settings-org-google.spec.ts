@@ -14,6 +14,7 @@ const STATES: Record<string, Status> = {
   'not-connected': { configured: true, connected: false, email: null, needsReconnect: false, lastSyncError: null },
   connected: { configured: true, connected: true, email: 'calendar@cseed.example.org', needsReconnect: false, lastSyncError: null },
   'needs-reconnect': { configured: true, connected: true, email: 'calendar@cseed.example.org', needsReconnect: true, lastSyncError: 'oauth2: "invalid_grant" "Token has been expired or revoked."' },
+  'not-configured-connected': { configured: false, connected: true, email: 'calendar@cseed.example.org', needsReconnect: false, lastSyncError: null },
   'sync-error': { configured: true, connected: true, email: 'calendar@cseed.example.org', needsReconnect: false, lastSyncError: 'googleapi: Error 403: Rate Limit Exceeded' },
 };
 
@@ -104,10 +105,25 @@ test('org Google card: every state, as leadership', async ({ page }, info) => {
     await evidence(page, name, info.project.name);
   }
 
-  // The result Google consent returns with.
+  // OAuth settings removed after connecting: the account and Disconnect stay reachable.
+  await page.unroute('**/api/settings/org-google/status');
+  await mockStatus(page, STATES['not-configured-connected']!);
+  await page.reload();
+  await settle(page);
+  await expect(card(page).locator('[data-org-google="not-configured"]')).toContainText('no longer configured');
+  await expect(card(page).locator('[data-org-google-email]')).toHaveText('calendar@cseed.example.org');
+  await expect(card(page).locator('[data-org-google-disconnect]')).toBeVisible();
+  await expect(card(page).locator('[data-org-google-connect]')).toHaveCount(0);
+
+  // The result Google consent returns with is shown once: the parameter leaves the URL.
   await page.goto('/settings?orgGoogle=scope_required#org-google');
   await settle(page);
   await expect(card(page).locator('[data-org-google-note]')).toContainText('did not grant calendar access');
+  await expect(page).toHaveURL(/\/settings#org-google$/);
+  await page.reload();
+  await settle(page);
+  await expect(card(page).locator('[data-org-google]')).toBeVisible();
+  await expect(card(page).locator('[data-org-google-note]')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

@@ -214,7 +214,7 @@ export function parseRepeat(rule: string | null | undefined, start?: string | nu
   // Google writes a plain weekly repeat as FREQ=WEEKLY;BYDAY=TU (often with WKST). A single
   // BYDAY on the start's own weekday adds nothing, and with one day per period WKST can't move
   // an occurrence, so both read as plain weekly. Saving without touching Repeat keeps the rule.
-  const startDay = start && /^\d{4}-\d{2}-\d{2}/.test(start) ? WEEKDAY_CODES[weekdayIndex(start.slice(0, 10))] : null;
+  const startDay = start ? WEEKDAY_CODES[weekdayIndex(orgDateOf(start))] : null;
   if (parts.FREQ === 'WEEKLY' && (!parts.BYDAY || parts.BYDAY === startDay)) {
     if (parts.BYDAY) known.add('BYDAY');
     known.add('WKST');
@@ -231,6 +231,16 @@ export function parseRepeat(rule: string | null | undefined, start?: string | nu
 }
 
 const WEEKDAY_CODES = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+const orgDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' });
+/**
+ * The organization's (Los Angeles) calendar date of a start: a date stays as is, an instant is
+ * read on the org clock, whatever its offset ("…T02:00:00Z" on Thursday UTC is Wednesday 6 PM
+ * PT). Google reads BYDAY in the event's zone, which is the org's.
+ */
+export function orgDateOf(start: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(start)) return start;
+  return orgDayFmt.format(new Date(start));
+}
 
 /** 20261231T075959Z (or 20261231) → the selected-zone date it falls on. */
 function untilDate(v: string): string {

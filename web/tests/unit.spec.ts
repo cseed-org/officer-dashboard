@@ -13,6 +13,8 @@ import { mergeActivity } from '../src/ui/components/LoadHistory';
 import { byDay, clipSpan, entryDays, hourRange, overlapLanes, type CalEntry } from '../src/ui/components/calendar/layout';
 import { buildRepeat, occurrenceKey, orgEntry, overlayEntry, overlayGroups, overlayTitle, parseRepeat, periodFromParams, periodParams, prefill, readToggles, stepView, viewRange } from '../src/lib/orgcal';
 import type { OrgCalendarEvent } from '../src/lib/contracts';
+import { orgDateOf } from '../src/lib/orgcal';
+import { draftOf, meetingBody } from '../src/ui/views/calendar/meeting';
 
 /** Pure-function tests (no browser); run once, in the desktop project. */
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'unit tests run once'));
@@ -528,4 +530,41 @@ test('org calendar: the URL picks the month and week the page shows (navigation 
   expect(periodFromParams('2026-11', null, '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-11-16' });
   expect(periodFromParams(null, '2027-03-10', '2026-11-22')).toEqual({ month: '2027-03', monday: '2027-03-08' });
   expect(periodFromParams('junk', 'junk', '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-11-16' });
+});
+
+test('org calendar: BYDAY reads the weekday on the Los Angeles clock (N-2)', () => {
+  // Wednesday 6 PM PT is Thursday 02:00 UTC; the server returns series times in UTC.
+  expect(orgDateOf('2027-03-11T02:00:00Z')).toBe('2027-03-10');
+  expect(orgDateOf('2027-03-10T18:00:00-08:00')).toBe('2027-03-10');
+  expect(orgDateOf('2027-03-10')).toBe('2027-03-10');
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;BYDAY=WE', '2027-03-11T02:00:00Z')).toEqual({ repeat: 'weekly', until: '' });
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;BYDAY=TH', '2027-03-11T02:00:00Z').repeat).toBe('custom');
+});
+
+test('org calendar: moving a series to another weekday or toggling all day resends its rule (N-3)', () => {
+  // A Google-made "weekly on Wednesday at 6 PM", opened from a later occurrence.
+  const google = orgEvent({
+    startsAt: '2027-03-25T01:00:00Z', endsAt: '2027-03-25T02:00:00Z', rrule: 'RRULE:FREQ=WEEKLY;WKST=SU;BYDAY=WE',
+    seriesStartsAt: '2027-03-11T02:00:00Z', seriesEndsAt: '2027-03-11T03:00:00Z',
+  });
+  const base = draftOf(google, '1', 'internal');
+  expect(base).toMatchObject({ date: '2027-03-10', start: '18:00', end: '19:00', repeat: 'weekly' });
+  // A time change keeps the Google rule as it is.
+  expect(meetingBody({ ...base, start: '19:00', end: '20:00' }, google, base)).not.toHaveProperty('rrule');
+  // Move series start to a Thursday: the rule is rebuilt without the stale BYDAY=WE.
+  const moved = meetingBody({ ...base, date: '2027-03-11' }, google, base, true);
+  expect(moved).toMatchObject({ moveSeriesStart: true, rrule: 'RRULE:FREQ=WEEKLY' });
+  // Same weekday a week later: the rule may stay.
+  expect(meetingBody({ ...base, date: '2027-03-17' }, google, base, true)).not.toHaveProperty('rrule');
+  // A date change without the explicit action never moves the series.
+  expect(meetingBody({ ...base, date: '2027-03-11' }, google, base, false)).not.toHaveProperty('moveSeriesStart');
+  // Custom rules are left alone even when the start moves.
+  const custom = orgEvent({ rrule: 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE', seriesStartsAt: '2027-03-10T18:00:00-08:00', seriesEndsAt: '2027-03-10T19:00:00-08:00' });
+  const cb = draftOf(custom, '1', 'internal');
+  expect(meetingBody({ ...cb, date: '2027-03-11' }, custom, cb, true)).not.toHaveProperty('rrule');
+  // Switching to all day rewrites UNTIL as a DATE.
+  const until = orgEvent({ rrule: 'RRULE:FREQ=WEEKLY;UNTIL=20270602T065959Z', seriesStartsAt: '2027-03-10T18:00:00-08:00', seriesEndsAt: '2027-03-10T19:00:00-08:00' });
+  const ub = draftOf(until, '1', 'internal');
+  expect(ub.until).toBe('2027-06-01');
+  expect(meetingBody({ ...ub, allDay: true, endDate: ub.date }, until, ub)).toMatchObject({ allDay: true, rrule: 'RRULE:FREQ=WEEKLY;UNTIL=20270601' });
 });

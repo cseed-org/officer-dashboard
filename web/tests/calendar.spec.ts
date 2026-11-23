@@ -216,6 +216,27 @@ test('calendar: create, edit and delete an internal meeting with invitees', asyn
   expect(errors).toEqual([]);
 });
 
+test('calendar: the empty state counts only the days on screen', async ({ page }) => {
+  const errors = watchErrors(page);
+  // The page reads a day of margin on each side; an item there must not hide "Nothing on the calendar".
+  const m = await meeting(page, { title: `E2E margin ${stamp()}`, startsAt: '2027-05-17T09:30:00-07:00', endsAt: '2027-05-17T10:00:00-07:00' });
+  try {
+    await page.evaluate(() => localStorage.setItem('cseed-orgcal-toggles', JSON.stringify({ design: false, purchase: false, buildspace: false })));
+    await page.goto('/calendar?view=week&w=2027-05-10');
+    await settle(page);
+    expect((await eventsIn(page, '2027-05-09', '2027-05-18')).some((e) => e.id === m.id)).toBe(true);
+    await expect(page.locator('[data-state="empty"]')).toContainText('Nothing on the calendar');
+    await expect(page.locator('[data-cal-event]')).toHaveCount(0);
+    // Its own week shows it, without the empty state.
+    await page.goto('/calendar?view=week&w=2027-05-17');
+    await settle(page);
+    await expect(page.locator('[data-state="empty"]')).toHaveCount(0);
+  } finally {
+    await removeMeeting(page, m.id);
+  }
+  expect(errors).toEqual([]);
+});
+
 test('calendar: a tentative range spans days in the all-day band', async ({ page }, info) => {
   const errors = watchErrors(page);
   const m = await meeting(page, { title: `E2E retreat ${stamp()}`, tentativeFrom: '2027-03-09', tentativeTo: '2027-03-12' });

@@ -24,8 +24,13 @@ export function OrgGooglePanel() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'positive' | 'negative' | 'info'; text: string } | null>(() => {
     if (typeof location === 'undefined') return null;
-    const r = new URLSearchParams(location.search).get('orgGoogle');
-    return r ? (RESULT[r] ?? RESULT.failed!) : null;
+    const url = new URL(location.href);
+    const r = url.searchParams.get('orgGoogle');
+    if (!r) return null;
+    // Report it once: a reload or a shared link must not repeat "connected" or "failed".
+    url.searchParams.delete('orgGoogle');
+    history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+    return RESULT[r] ?? RESULT.failed!;
   });
   const load = () => {
     setError(null);
@@ -69,7 +74,21 @@ export function OrgGooglePanel() {
   } else if (!st.configured) {
     body = (
       <div class="stack stack--tight" data-org-google="not-configured">
-        <p class="notice notice--attention">Google Calendar OAuth isn’t configured on this dashboard, so the org account can’t be connected yet.</p>
+        {st.connected ? (
+          <>
+            <p class="notice notice--attention">
+              Connected as <strong data-org-google-email>{st.email}</strong>, but Google Calendar OAuth is no longer configured on this dashboard, so nothing
+              syncs until it is.
+            </p>
+            <div class="action-row">
+              <button type="button" class="btn" onClick={() => setConfirming(true)} disabled={busy} data-org-google-disconnect>
+                Disconnect
+              </button>
+            </div>
+          </>
+        ) : (
+          <p class="notice notice--attention">Google Calendar OAuth isn’t configured on this dashboard, so the org account can’t be connected yet.</p>
+        )}
         <p class="field-hint" style={{ overflowWrap: 'anywhere' }}>
           An owner sets <code>GOOGLE_OAUTH_CLIENT_ID</code> and <code>GOOGLE_OAUTH_CLIENT_SECRET</code> (the same Google OAuth client as officers’ calendar sync) and adds{' '}
           <code>{callback}</code> as an authorized redirect URI in that client. See <code>docs/configuration.md</code>.

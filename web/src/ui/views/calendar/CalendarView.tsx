@@ -25,7 +25,7 @@ import {
   type Toggles,
 } from '../../../lib/orgcal';
 import { effectiveTimezone } from '../../../lib/timezone';
-import type { CalEntry } from '../../components/calendar/layout';
+import { entryDays, type CalEntry } from '../../components/calendar/layout';
 import { MonthView } from '../../components/calendar/MonthView';
 import { WeekView } from '../../components/calendar/WeekView';
 import { Drawer } from '../../components/Drawer';
@@ -135,6 +135,8 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
 
   const label = view === 'month' ? monthLabel(month) : weekLabel(monday);
   const inView = (d: string) => view === 'week' && d >= monday && d < addDays(monday, 7);
+  // The days the grid draws: the month's own days, or the week. The read has a day of margin.
+  const inPeriod = (d: string) => (view === 'week' ? d >= monday && d < addDays(monday, 7) : monthOf(d) === month);
   const defaultKey = toggles.internal || !toggles.external ? 'internal' : 'external';
 
   return (
@@ -245,7 +247,7 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
               ) : (
                 <WeekView monday={monday} entries={entries} onOpen={open} onSlotClick={(d, min) => setParams({ ...PANELS, new: `${d}T${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}` })} nowLine />
               )}
-              {entries.length === 0 && (
+              {!entries.some((en) => entryDays(en).some(inPeriod)) && (
                 <Empty title={`Nothing on the calendar for ${label}`} action={<button type="button" class="btn" onClick={() => setParams({ ...PANELS, new: 1 })}>Create a meeting</button>}>
                   {CAL_KEYS.some((k) => !toggles[k]) ? 'Some calendars are hidden. Turn them on in the list of calendars to see more.' : 'Create a meeting, or pick another period.'}
                 </Empty>
