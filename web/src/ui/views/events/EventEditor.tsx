@@ -272,7 +272,7 @@ function EditorForm({
           </label>
           <p class="field-hint check-sub" id="ev-tentative-hint">
             {d.tentative
-              ? 'Shown as a tentative date range on the calendar until you pick the real date.'
+              ? 'Shown as a tentative date range on the calendar until you pick the real date. Leave the latest date blank for a single day.'
               : 'Plan with a date range when the day is not decided yet.'}
           </p>
         </div>
@@ -281,8 +281,8 @@ function EditorForm({
             <Field id="ev-tfrom" label="Earliest date" error={errors.tentativeFrom}>
               <input class="input" type="date" value={d.tentativeFrom} onInput={set('tentativeFrom')} {...describe('ev-tfrom', errors.tentativeFrom)} />
             </Field>
-            <Field id="ev-tto" label="Latest date" error={errors.tentativeTo} optional hint="Blank means the same as the earliest date.">
-              <input class="input" type="date" value={d.tentativeTo} onInput={set('tentativeTo')} {...describe('ev-tto', errors.tentativeTo, true)} />
+            <Field id="ev-tto" label="Latest date" error={errors.tentativeTo} optional>
+              <input class="input" type="date" value={d.tentativeTo} onInput={set('tentativeTo')} {...describe('ev-tto', errors.tentativeTo)} />
             </Field>
           </div>
         ) : (
