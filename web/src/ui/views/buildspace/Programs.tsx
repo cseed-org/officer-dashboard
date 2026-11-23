@@ -1,108 +1,45 @@
 import { useState } from "preact/hooks";
 import { api, fieldErrors } from "../../../lib/api/client";
 import { useApi } from "../../../lib/api/useApi";
-import { addDays } from "../../../lib/calendar";
 import { HUES, type Hue } from "../../../lib/colors";
-import type { CurrentUser, Program, ProgramException, ProgramTrack } from "../../../lib/contracts";
-import { fmtDate, fmtShort, todayPacific } from "../../../lib/format";
+import type { CurrentUser, Program, ProgramTrack } from "../../../lib/contracts";
+import { fmtDate, fmtShort } from "../../../lib/format";
 import { setParams, useSearch } from "../../../lib/nav";
 import { Drawer } from "../../components/Drawer";
 import { Badge, DataTable, Field, describe, type Column } from "../../components/kit";
 import { PeopleChip } from "../../components/PeopleTable";
 import { Empty, ErrorState, Loading, Notice, errorMessage } from "../../components/states";
+import { leaveEntry, pushEntry } from "./history";
+import {
+  WEEKDAYS,
+  addDays,
+  addMinutes,
+  clock,
+  laIso,
+  laNow,
+  minutesOf,
+  nextSession,
+  programSessions,
+  strandedExceptions,
+  type ClubNow,
+  type Session,
+} from "./programSchedule";
 
 /**
  * The Programs tab of Buildspace + Launchpad: weekly programs (buildspace, buildHER, future
  * tracks) with per-session skip/move exceptions. Programs are projected to the Weekly Programs
- * Google calendar by the server; here officers manage the source records.
+ * Google calendar by the server; here officers manage the source records. Programs are not
+ * cohort data: BuildspaceView renders this tab without the cohort register.
  */
 
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
 const asHue = (hue: string): Hue => ((HUES as readonly string[]).includes(hue) ? (hue as Hue) : "blue");
-
-/** "18:00" → "6 PM", "18:30" → "6:30 PM". Program times are club wall time (America/Los_Angeles). */
-const clock = (hhmm: string) => {
-  const [h, m] = hhmm.split(":").map(Number) as [number, number];
-  return `${h % 12 === 0 ? 12 : h % 12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 ? "AM" : "PM"}`;
-};
-const addMinutes = (hhmm: string, minutes: number) => {
-  const [h, m] = hhmm.split(":").map(Number) as [number, number];
-  const total = h * 60 + m + minutes;
-  return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-};
-
-/** Fixed America/Los_Angeles formatter: exception times are club wall time, not the viewer's zone. */
-const laFormatter = new Intl.DateTimeFormat("en-US", {
-  hourCycle: "h23",
-  timeZone: "America/Los_Angeles",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-/** A club wall time ("2026-11-25", "18:00") as an ISO datetime with the LA offset. */
-export function laIso(date: string, time: string): string {
-  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-  const [hh, mm] = time.split(":").map(Number) as [number, number];
-  const wall = Date.UTC(y, m - 1, d, hh, mm);
-  const offsetAt = (instant: number) => {
-    const p = Object.fromEntries(laFormatter.formatToParts(new Date(instant)).map((x) => [x.type, x.value]));
-    return Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour!, +p.minute!) - instant;
-  };
-  let offset = offsetAt(wall);
-  offset = offsetAt(wall - offset); // settle around DST changes
-  const mins = Math.round(offset / 60_000);
-  const sign = mins < 0 ? "-" : "+";
-  const pad = (n: number) => String(Math.abs(n)).padStart(2, "0");
-  return `${date}T${pad(hh)}:${pad(mm)}:00${sign}${pad(Math.trunc(Math.abs(mins) / 60))}:${pad(Math.abs(mins) % 60)}`;
-}
-
-/** An instant as club wall time: "2026-11-26T02:00:00Z" → { date: "2026-11-25", time: "18:00" }. */
-export function laParts(iso: string): { date: string; time: string } {
-  const p = Object.fromEntries(laFormatter.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
-  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}` };
-}
-
-export type Session = {
-  /** The original occurrence date (the exception key). */
-  date: string;
-  /** The date it actually happens on: the original date, or a moved session's new date. */
-  on: string;
-  start: string;
-  end: string;
-  location: string;
-  exception: ProgramException | null;
-};
-
-/** Upcoming occurrences of a weekly program, oldest first, with exceptions applied. */
-export function programSessions(p: Program, from: string, limit = 12): Session[] {
-  const out: Session[] = [];
-  const exceptions = new Map(p.exceptions.map((e) => [e.onDate, e]));
-  for (let date = p.startsOn > from ? p.startsOn : from; date <= p.endsOn && out.length < limit; date = addDays(date, 1)) {
-    if (new Date(`${date}T12:00:00Z`).getUTCDay() !== p.weekday) continue;
-    const exception = exceptions.get(date) ?? null;
-    if (exception?.kind === "move" && exception.newStartsAt && exception.newEndsAt) {
-      const start = laParts(exception.newStartsAt);
-      out.push({ date, on: start.date, start: start.time, end: laParts(exception.newEndsAt).time, location: exception.newLocation || p.location, exception });
-    } else {
-      const skip = exception?.kind === "skip" ? exception : null;
-      out.push({ date, on: date, start: p.startTime, end: addMinutes(p.startTime, p.durationMin), location: p.location, exception: skip });
-    }
-  }
-  return out;
-}
-
-/** The next session that still happens (skips don't count), for the list's "next session" column. */
-const nextSession = (p: Program, today: string) => programSessions(p, today, 8).find((s) => s.exception?.kind !== "skip") ?? null;
+const CLOSED = { program: null, pnew: null };
 
 export function ProgramsPanel({ me }: { me: CurrentUser }) {
   const qs = useSearch();
   const programs = useApi("programsList");
   const tracks = useApi("programTracks");
   const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
   const [managing, setManaging] = useState(false);
   const leadership = me.role === "leadership" || me.isOwner;
   if (programs.status === "loading" || tracks.status === "loading") return <Loading rows={6} label="Loading programs" />;
@@ -122,11 +59,13 @@ export function ProgramsPanel({ me }: { me: CurrentUser }) {
   const groups = trackList
     .map((t) => ({ track: t, programs: shown.filter((p) => p.trackId === t.id) }))
     .filter((g) => g.programs.length > 0);
-  const today = todayPacific();
+  const now = laNow();
   const openId = qs.get("program");
   const openProgram = all.find((p) => p.id === openId) ?? null;
   const creating = qs.get("pnew") === "1";
-  const close = () => setParams({ program: null, pnew: null });
+  // Buildspace's history convention (buildspace/history.ts): opening pushes one entry and
+  // closing steps back over it, so Back never reopens a closed drawer.
+  const close = () => leaveEntry(CLOSED);
   const columns: Column<Program>[] = [
     {
       key: "name",
@@ -134,7 +73,7 @@ export function ProgramsPanel({ me }: { me: CurrentUser }) {
       primary: true,
       render: (p) => (
         <>
-          <button class="cell-title bs-title" data-program-open={p.id} onClick={() => setParams({ program: p.id })}>
+          <button class="cell-title bs-title" data-program-open={p.id} onClick={() => pushEntry({ program: p.id })}>
             {p.name}
           </button>
           {p.description && <span class="cell-sub">{p.description}</span>}
@@ -164,10 +103,10 @@ export function ProgramsPanel({ me }: { me: CurrentUser }) {
       key: "next",
       label: "Next session",
       render: (p) => {
-        const next = nextSession(p, today);
+        const next = nextSession(p, now);
         if (!next) return <span class="muted">—</span>;
         return (
-          <span class="bs-nowrap">
+          <span class="bs-nowrap" data-next-session={next.on}>
             {fmtDate(next.on)} · {clock(next.start)}
             {next.exception?.kind === "move" && <> <Badge tone="info">Moved</Badge></>}
           </span>
@@ -178,7 +117,6 @@ export function ProgramsPanel({ me }: { me: CurrentUser }) {
   return (
     <div class="stack" data-programs-panel>
       {notice && <Notice tone="positive">{notice}</Notice>}
-      {error && <Notice tone="negative">{error}</Notice>}
       <Notice tone="info">
         Programs sync to the Weekly Programs Google calendar automatically; that calendar is read-only — make changes here.
       </Notice>
@@ -198,7 +136,7 @@ export function ProgramsPanel({ me }: { me: CurrentUser }) {
               Manage tracks
             </button>
           )}
-          <button type="button" class="btn btn--primary" data-new-program onClick={() => setParams({ pnew: "1" })}>
+          <button type="button" class="btn btn--primary" data-new-program onClick={() => pushEntry({ pnew: "1" })}>
             New program
           </button>
         </div>
@@ -236,34 +174,29 @@ export function ProgramsPanel({ me }: { me: CurrentUser }) {
             program={openProgram}
             tracks={trackList}
             track={trackById.get(openProgram.trackId) ?? null}
-            today={today}
+            now={now}
             reload={reload}
             apply={apply}
             close={close}
             setNotice={setNotice}
-            setError={setError}
           />
         )}
       </Drawer>
       <Drawer id="track-manager" kind="dialog" open={managing} onClose={() => setManaging(false)} title="Program tracks">
-        {managing && (
-          <TrackManager
-            tracks={trackList}
-            saved={() => {
-              tracks.reload();
-              setNotice("Track added.");
-            }}
-          />
-        )}
+        {managing && <TrackManager tracks={trackList} saved={() => tracks.reload()} />}
       </Drawer>
     </div>
   );
 }
 
-function ProgramForm({ tracks, program, saved }: { tracks: ProgramTrack[]; program?: Program; saved: () => void }) {
+function ProgramForm({ tracks, program, saved, cancel }: { tracks: ProgramTrack[]; program?: Program; saved: () => void; cancel?: () => void }) {
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  // Changing the weekday or shortening the dates drops skips and moves that no longer fall on a
+  // session (the server prunes them on save), so say so before saving.
+  const [schedule, setSchedule] = useState({ weekday: program?.weekday ?? 3, startsOn: program?.startsOn ?? "", endsOn: program?.endsOn ?? "" });
+  const stranded = program && schedule.startsOn && schedule.endsOn ? strandedExceptions(program, schedule) : [];
   return (
     <form
       class="stack"
@@ -315,7 +248,13 @@ function ProgramForm({ tracks, program, saved }: { tracks: ProgramTrack[]; progr
           </select>
         </Field>
         <Field id="pg-weekday" label="Weekday" error={fields.weekday}>
-          <select class="select" name="weekday" defaultValue={String(program?.weekday ?? 3)} {...describe("pg-weekday", fields.weekday)}>
+          <select
+            class="select"
+            name="weekday"
+            defaultValue={String(schedule.weekday)}
+            onChange={(e) => setSchedule((s) => ({ ...s, weekday: Number(e.currentTarget.value) }))}
+            {...describe("pg-weekday", fields.weekday)}
+          >
             {WEEKDAYS.map((w, i) => (
               <option value={i}>{w}</option>
             ))}
@@ -335,19 +274,50 @@ function ProgramForm({ tracks, program, saved }: { tracks: ProgramTrack[]; progr
       </Field>
       <div class="grid-fields">
         <Field id="pg-starts" label="First date" error={fields.startsOn}>
-          <input class="input" type="date" name="startsOn" required defaultValue={program?.startsOn} {...describe("pg-starts", fields.startsOn)} />
+          <input
+            class="input"
+            type="date"
+            name="startsOn"
+            required
+            defaultValue={program?.startsOn}
+            onInput={(e) => setSchedule((s) => ({ ...s, startsOn: e.currentTarget.value }))}
+            {...describe("pg-starts", fields.startsOn)}
+          />
         </Field>
         <Field id="pg-ends" label="Last date" error={fields.endsOn}>
-          <input class="input" type="date" name="endsOn" required defaultValue={program?.endsOn} {...describe("pg-ends", fields.endsOn)} />
+          <input
+            class="input"
+            type="date"
+            name="endsOn"
+            required
+            defaultValue={program?.endsOn}
+            onInput={(e) => setSchedule((s) => ({ ...s, endsOn: e.currentTarget.value }))}
+            {...describe("pg-ends", fields.endsOn)}
+          />
         </Field>
       </div>
       <Field id="pg-description" label="Description" error={fields.description} optional>
         <textarea class="textarea" name="description" rows={3} maxLength={10000} defaultValue={program?.description} {...describe("pg-description", fields.description, true)} />
       </Field>
+      {stranded.length > 0 && (
+        <Notice tone="attention">
+          <span data-stranded-exceptions={stranded.length}>
+            Saving removes {stranded.length === 1 ? "1 skipped or moved session" : `${stranded.length} skipped or moved sessions`} no longer on the
+            schedule ({stranded.map((x) => fmtShort(x.onDate)).join(", ")}).
+          </span>
+        </Notice>
+      )}
       {error && <Notice tone="negative">{error}</Notice>}
-      <button class="btn btn--primary" disabled={busy || !tracks.length}>
-        {busy ? "Saving…" : "Save program"}
-      </button>
+      <div class="action-row">
+        <button class="btn btn--primary" disabled={busy || !tracks.length}>
+          {busy ? "Saving…" : "Save program"}
+        </button>
+        {cancel && (
+          <button type="button" class="btn" onClick={cancel}>
+            Cancel
+          </button>
+        )}
+      </div>
     </form>
   );
 }
@@ -356,32 +326,33 @@ function ProgramDetail({
   program,
   tracks,
   track,
-  today,
+  now,
   reload,
   apply,
   close,
   setNotice,
-  setError,
 }: {
   program: Program;
   tracks: ProgramTrack[];
   track: ProgramTrack | null;
-  today: string;
+  now: ClubNow;
   reload: () => void;
   apply: (p: Program) => void;
   close: () => void;
   setNotice: (s: string) => void;
-  setError: (s: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const sessions = programSessions(program, today);
+  // Errors show inside the drawer: it is a modal, so a page-level notice would sit behind it.
+  const [error, setError] = useState("");
+  const sessions = programSessions(program, now);
   if (editing) {
     return (
       <ProgramForm
         tracks={tracks}
         program={program}
+        cancel={() => setEditing(false)}
         saved={() => {
           reload();
           close();
@@ -393,6 +364,7 @@ function ProgramDetail({
   const remove = async () => {
     if (busy) return;
     setBusy(true);
+    setError("");
     try {
       await api("programDelete", { params: { id: program.id } });
       reload();
@@ -432,14 +404,19 @@ function ProgramDetail({
       {confirming && (
         <Notice tone="attention">Delete {program.name}? Its sessions leave the Weekly Programs calendar. This cannot be undone.</Notice>
       )}
+      {error && (
+        <div data-program-error>
+          <Notice tone="negative">{error}</Notice>
+        </div>
+      )}
       <section aria-label="Upcoming sessions">
         <h3 class="subhead">Upcoming sessions</h3>
         {sessions.length === 0 ? (
-          <Empty title="No upcoming sessions">The program's dates have passed, or it has not started yet.</Empty>
+          <Empty title="No upcoming sessions">The program's dates have passed.</Empty>
         ) : (
           <ul class="pg-sessions motion-list">
             {sessions.map((s) => (
-              <SessionRow key={s.date} program={program} session={s} apply={apply} setError={setError} />
+              <SessionRow key={s.date} program={program} session={s} today={now.today} apply={apply} setError={setError} />
             ))}
           </ul>
         )}
@@ -448,11 +425,25 @@ function ProgramDetail({
   );
 }
 
-function SessionRow({ program, session, apply, setError }: { program: Program; session: Session; apply: (p: Program) => void; setError: (s: string) => void }) {
+function SessionRow({
+  program,
+  session,
+  today,
+  apply,
+  setError,
+}: {
+  program: Program;
+  session: Session;
+  today: string;
+  apply: (p: Program) => void;
+  setError: (s: string) => void;
+}) {
   const [moving, setMoving] = useState(false);
   const [busy, setBusy] = useState(false);
   const skipped = session.exception?.kind === "skip";
   const moved = session.exception?.kind === "move";
+  const when = fmtDate(session.on);
+  const formId = `mv-${session.date}`;
   /** Runs one exception write; true when it saved. */
   const act = async (fn: () => Promise<{ program: Program }>) => {
     if (busy) return false;
@@ -471,10 +462,10 @@ function SessionRow({ program, session, apply, setError }: { program: Program; s
   const skip = () => act(() => api("programExceptionSave", { params: { id: program.id }, body: { onDate: session.date, kind: "skip" } }));
   const undo = () => act(() => api("programExceptionDelete", { params: { id: program.id }, query: { onDate: session.date } }));
   return (
-    <li class="pg-session" data-session={session.date} data-session-state={skipped ? "skipped" : moved ? "moved" : "scheduled"}>
+    <li class="pg-session" data-session={session.date} data-session-on={session.on} data-session-state={skipped ? "skipped" : moved ? "moved" : "scheduled"}>
       <div class="pg-session-line">
         <span class="pg-session-when">
-          <time dateTime={session.on}>{fmtDate(session.on)}</time> · {clock(session.start)}–{clock(session.end)}
+          <time dateTime={session.on}>{when}</time> · {clock(session.start)}–{clock(session.end)}
           {session.location ? ` · ${session.location}` : ""}
         </span>
         {moved && session.on !== session.date && <span class="muted small">was {fmtShort(session.date)}</span>}
@@ -482,15 +473,24 @@ function SessionRow({ program, session, apply, setError }: { program: Program; s
         {moved && <Badge tone="info">Moved</Badge>}
         <span class="action-row">
           {session.exception ? (
-            <button type="button" class="linkish" data-undo-exception disabled={busy} onClick={undo}>
+            <button type="button" class="linkish" data-undo-exception disabled={busy} aria-label={`Undo the ${skipped ? "skip" : "move"} of the ${fmtDate(session.date)} session`} onClick={undo}>
               Undo
             </button>
           ) : (
             <>
-              <button type="button" class="linkish" data-skip-session disabled={busy} onClick={skip}>
+              <button type="button" class="linkish" data-skip-session disabled={busy} aria-label={`Skip the ${when} session`} onClick={skip}>
                 Skip
               </button>
-              <button type="button" class="linkish" data-move-session disabled={busy} onClick={() => setMoving((m) => !m)}>
+              <button
+                type="button"
+                class="linkish"
+                data-move-session
+                disabled={busy}
+                aria-label={`Move the ${when} session`}
+                aria-expanded={moving}
+                aria-controls={formId}
+                onClick={() => setMoving((m) => !m)}
+              >
                 Move
               </button>
             </>
@@ -499,8 +499,10 @@ function SessionRow({ program, session, apply, setError }: { program: Program; s
       </div>
       {moving && !session.exception && (
         <MoveForm
+          id={formId}
           program={program}
           session={session}
+          today={today}
           busy={busy}
           save={async (fn) => (await act(fn)) && setMoving(false)}
           cancel={() => setMoving(false)}
@@ -511,14 +513,18 @@ function SessionRow({ program, session, apply, setError }: { program: Program; s
 }
 
 function MoveForm({
+  id,
   program,
   session,
+  today,
   busy,
   save,
   cancel,
 }: {
+  id: string;
   program: Program;
   session: Session;
+  today: string;
   busy: boolean;
   save: (fn: () => Promise<{ program: Program }>) => Promise<unknown>;
   cancel: () => void;
@@ -527,6 +533,8 @@ function MoveForm({
   return (
     <form
       class="pg-move grid-fields"
+      id={id}
+      aria-label={`Move the ${fmtDate(session.on)} session`}
       data-move-form
       onSubmit={(e) => {
         e.preventDefault();
@@ -535,11 +543,17 @@ function MoveForm({
         const start = String(f.get("start"));
         const end = String(f.get("end"));
         const location = String(f.get("location")).trim();
-        if (end <= start) {
-          setError("The session ends before it starts.");
+        if (date < today) {
+          setError("Pick today or a later date.");
+          return;
+        }
+        if (end === start) {
+          setError("The session needs an end time after its start.");
           return;
         }
         setError("");
+        // An end at or before the start is the next morning (a session that crosses midnight).
+        const endDate = minutesOf(end) < minutesOf(start) ? addDays(date, 1) : date;
         void save(() =>
           api("programExceptionSave", {
             params: { id: program.id },
@@ -547,24 +561,24 @@ function MoveForm({
               onDate: session.date,
               kind: "move",
               newStartsAt: laIso(date, start),
-              newEndsAt: laIso(date, end),
+              newEndsAt: laIso(endDate, end),
               newLocation: location || null,
             },
           }),
         );
       }}
     >
-      <Field id={`mv-date-${session.date}`} label="New date">
-        <input class="input" type="date" name="date" required defaultValue={session.on} id={`mv-date-${session.date}`} />
+      <Field id={`${id}-date`} label="New date" error={error}>
+        <input class="input" type="date" name="date" required min={today} defaultValue={session.on < today ? today : session.on} {...describe(`${id}-date`, error)} />
       </Field>
-      <Field id={`mv-start-${session.date}`} label="Start · PT">
-        <input class="input" type="time" name="start" required defaultValue={session.start} id={`mv-start-${session.date}`} />
+      <Field id={`${id}-start`} label="Start · PT">
+        <input class="input" type="time" name="start" required defaultValue={session.start} id={`${id}-start`} />
       </Field>
-      <Field id={`mv-end-${session.date}`} label="End · PT" error={error}>
-        <input class="input" type="time" name="end" required defaultValue={session.end} {...describe(`mv-end-${session.date}`, error)} />
+      <Field id={`${id}-end`} label="End · PT" hint="Before the start means the next morning.">
+        <input class="input" type="time" name="end" required defaultValue={session.end} {...describe(`${id}-end`, undefined, true)} />
       </Field>
-      <Field id={`mv-location-${session.date}`} label="Location" optional>
-        <input class="input" name="location" maxLength={500} defaultValue={session.location} id={`mv-location-${session.date}`} />
+      <Field id={`${id}-location`} label="Location" optional>
+        <input class="input" name="location" maxLength={500} defaultValue={session.location} id={`${id}-location`} />
       </Field>
       <div class="action-row">
         <button class="btn btn--small btn--primary" disabled={busy}>
@@ -580,6 +594,7 @@ function MoveForm({
 
 function TrackManager({ tracks, saved }: { tracks: ProgramTrack[]; saved: () => void }) {
   const [error, setError] = useState("");
+  const [added, setAdded] = useState("");
   const [busy, setBusy] = useState(false);
   return (
     <div class="stack">
@@ -596,15 +611,18 @@ function TrackManager({ tracks, saved }: { tracks: ProgramTrack[]; saved: () => 
         onSubmit={async (e) => {
           e.preventDefault();
           if (busy) return;
-          const f = new FormData(e.currentTarget);
+          // currentTarget is null once the event finishes dispatching: keep the form before awaiting.
+          const form = e.currentTarget;
+          const f = new FormData(form);
+          const name = String(f.get("name")).trim();
           setBusy(true);
           setError("");
+          setAdded("");
           try {
-            await api("programTrackCreate", {
-              body: { key: String(f.get("key")).trim(), name: String(f.get("name")).trim(), hue: String(f.get("hue")) },
-            });
+            await api("programTrackCreate", { body: { key: String(f.get("key")).trim(), name, hue: String(f.get("hue")) } });
+            form.reset();
+            setAdded(`${name} added.`);
             saved();
-            e.currentTarget.reset();
           } catch (err) {
             setError(errorMessage(err));
           } finally {
@@ -627,6 +645,7 @@ function TrackManager({ tracks, saved }: { tracks: ProgramTrack[]; saved: () => 
             ))}
           </select>
         </Field>
+        {added && <Notice tone="positive">{added}</Notice>}
         {error && <Notice tone="negative">{error}</Notice>}
         <button class="btn btn--primary" disabled={busy}>
           {busy ? "Adding…" : "Add track"}
