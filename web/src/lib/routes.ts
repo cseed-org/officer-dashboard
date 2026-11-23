@@ -27,6 +27,10 @@ export const href = {
   eventKit: (id: string) => `/events?kit=${enc(id)}`,
   eventDelete: (id: string) => `/events?delete=${enc(id)}`,
 
+  calendar: (o: { view?: 'month' | 'week'; m?: string; w?: string } = {}) => `/calendar${qs({ ...o, view: o.view === 'month' ? null : o.view })}`,
+  calendarItem: (id: string) => `/calendar?id=${enc(id)}`,
+  newMeeting: (when?: string) => `/calendar${qs({ new: when ?? 1 })}`,
+
   finance: (tab?: FinanceTab, extra: Record<string, string | number | null | undefined> = {}) => `/finance${qs({ tab: tab === 'requests' ? null : tab, ...extra })}`,
   requests: (o: { scope?: 'mine' | 'all'; status?: string } = {}) => `/finance${qs(o)}`,
   request: (id: string) => `/finance?id=${enc(id)}`,

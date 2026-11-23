@@ -10,6 +10,11 @@ import { internalPath, internalRoute, safeImageUrl, safeUrl } from '../src/lib/u
 import { migrateLayout, moveTo, nearestSize } from '../src/ui/widgets/layout';
 import { defaultWidgetLayout, layoutForChoices } from '../src/ui/widgets/catalog';
 import { mergeActivity } from '../src/ui/components/LoadHistory';
+import { byDay, clipSpan, entryDays, hourRange, overlapLanes, type CalEntry } from '../src/ui/components/calendar/layout';
+import { buildRepeat, occurrenceKey, orgEntry, overlayEntry, overlayGroups, overlayTitle, parseRepeat, periodFromParams, periodParams, prefill, readToggles, stepView, viewRange } from '../src/lib/orgcal';
+import type { OrgCalendarEvent } from '../src/lib/contracts';
+import { orgDateOf } from '../src/lib/orgcal';
+import { draftOf, meetingBody } from '../src/ui/views/calendar/meeting';
 
 /** Pure-function tests (no browser); run once, in the desktop project. */
 test.beforeEach(({}, info) => test.skip(info.project.name !== 'desktop', 'unit tests run once'));
@@ -393,4 +398,173 @@ test('M-086: multi-day spans and exclusive-midnight ends keep their dates', asyn
   expect(dates('midnight')).toEqual(['2026-11-01']);
   expect(dates('after-midnight')).toEqual(['2026-11-01', '2026-11-02']);
   expect(dates('date-only')).toEqual([]); // clipped before the visible range
+});
+
+// ───────────── Org calendar (V0.15): shared calendar layout and /calendar helpers ─────────────
+
+const orgEvent = (over: Partial<OrgCalendarEvent>): OrgCalendarEvent => ({
+  id: 'm1', calendarKey: 'internal', title: 'Sync', description: '', location: '', startsAt: '2027-03-10T10:00:00-08:00', endsAt: '2027-03-10T11:00:00-08:00',
+  allDay: false, tentativeFrom: null, tentativeTo: null, rrule: null, seriesStartsAt: null, seriesEndsAt: null, reminders: [], sendInvites: false, invitees: [], sourceKind: 'manual', sourceId: null, sourceHref: null,
+  googleEventId: null, googleEtag: null, createdBy: null, updatedBy: null, createdAt: 0, updatedAt: 0, ...over,
+});
+
+test('calendar layout: overlapping blocks share columns; separate clusters stay full width', () => {
+  // 10:00–11:00 and 10:30–11:30 overlap; 13:00 stands alone.
+  expect(overlapLanes([{ start: 2, len: 2 }, { start: 3, len: 2 }, { start: 8, len: 2 }])).toEqual([{ lane: 0, lanes: 2 }, { lane: 1, lanes: 2 }, { lane: 0, lanes: 1 }]);
+  // A long block with two later ones beside it: three in a chain need only two columns.
+  expect(overlapLanes([{ start: 0, len: 6 }, { start: 1, len: 2 }, { start: 3, len: 2 }])).toEqual([{ lane: 0, lanes: 2 }, { lane: 1, lanes: 2 }, { lane: 1, lanes: 2 }]);
+  // Touching (one ends as the next starts) is not overlapping.
+  expect(overlapLanes([{ start: 0, len: 2 }, { start: 2, len: 2 }])).toEqual([{ lane: 0, lanes: 1 }, { lane: 0, lanes: 1 }]);
+  expect(overlapLanes([])).toEqual([]);
+});
+
+test('calendar layout: spans clip to the week; days bucket spans first, then by start', () => {
+  expect(clipSpan('2027-03-09', '2027-03-12', '2027-03-08')).toEqual({ start: 1, len: 4 });
+  expect(clipSpan('2027-03-01', '2027-03-20', '2027-03-08')).toEqual({ start: 0, len: 7 });
+  expect(clipSpan('2027-03-14', '2027-03-16', '2027-03-08')).toEqual({ start: 6, len: 1 });
+  expect(clipSpan('2027-03-15', '2027-03-16', '2027-03-08')).toBeNull();
+  const span: CalEntry = { id: 's', title: 'Retreat', from: '2027-03-09', to: '2027-03-11', tentative: true };
+  const late: CalEntry = { id: 'b', title: 'Late', startsAt: '2027-03-10T18:00:00-08:00' };
+  const early: CalEntry = { id: 'a', title: 'Early', startsAt: '2027-03-10T09:00:00-08:00' };
+  expect(entryDays(span)).toEqual(['2027-03-09', '2027-03-10', '2027-03-11']);
+  expect(entryDays(late)).toEqual(['2027-03-10']);
+  const days = byDay([late, span, early]);
+  expect([...days.keys()]).toEqual(['2027-03-09', '2027-03-10', '2027-03-11']);
+  expect(days.get('2027-03-10')!.map((e) => e.id)).toEqual(['s', 'a', 'b']);
+  // Hours widen from 9–21 to fit an early start and a late end.
+  expect(hourRange([early, late])).toEqual([9, 21]);
+  expect(hourRange([{ id: 'x', title: 'x', startsAt: '2027-03-10T07:30:00-08:00', endsAt: '2027-03-10T22:15:00-08:00' }])).toEqual([7, 23]);
+});
+
+test('org calendar: items become entries (timed, all-day, tentative, locked)', () => {
+  const timed = orgEntry(orgEvent({}), 'blue', 'Internal Meetings');
+  expect(timed).toMatchObject({ id: 'm1~2027-03-10T10:00:00-08:00', startsAt: '2027-03-10T10:00:00-08:00', hue: 'blue', locked: false });
+  const allDay = orgEntry(orgEvent({ startsAt: '2027-03-12', endsAt: '2027-03-14', allDay: true }), 'teal', 'External Meetings');
+  expect(allDay).toMatchObject({ from: '2027-03-12', to: '2027-03-13' });
+  expect(allDay.startsAt).toBeUndefined();
+  const tentative = orgEntry(orgEvent({ startsAt: null, endsAt: null, allDay: true, tentativeFrom: '2027-03-09', tentativeTo: '2027-03-12' }), 'blue', 'Internal Meetings');
+  expect(tentative).toMatchObject({ from: '2027-03-09', to: '2027-03-12', tentative: true, agendaWhen: 'Tentative · Mar 9 – Mar 12' });
+  const locked = orgEntry(orgEvent({ calendarKey: 'events', sourceKind: 'event', title: '[Draft] Social' }), 'coral', 'Events');
+  expect(locked).toMatchObject({ locked: true, draft: true });
+  // Recurring occurrences share the master id, so they are keyed by start too.
+  expect(occurrenceKey({ id: 'm1', startsAt: null, tentativeFrom: '2027-03-09' })).toBe('m1~2027-03-09');
+});
+
+test('org calendar: recurrence round-trips through RRULE text', () => {
+  expect(buildRepeat('none', '')).toBeNull();
+  expect(buildRepeat('weekly', '')).toBe('RRULE:FREQ=WEEKLY');
+  expect(buildRepeat('biweekly', '')).toBe('RRULE:FREQ=WEEKLY;INTERVAL=2');
+  expect(buildRepeat('daily', '')).toBe('RRULE:FREQ=DAILY');
+  expect(buildRepeat('monthly', '')).toBe('RRULE:FREQ=MONTHLY');
+  // Until is the whole last day on the selected (Los Angeles) clock: 23:59:59 PDT → 06:59:59Z.
+  expect(buildRepeat('weekly', '2027-06-01')).toBe('RRULE:FREQ=WEEKLY;UNTIL=20270602T065959Z');
+  for (const r of ['daily', 'weekly', 'biweekly', 'monthly'] as const) expect(parseRepeat(buildRepeat(r, '2027-06-01'))).toEqual({ repeat: r, until: '2027-06-01' });
+  expect(parseRepeat(null)).toEqual({ repeat: 'none', until: '' });
+  // Rules the drawer can't express are kept untouched.
+  const custom = 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE';
+  expect(parseRepeat(custom).repeat).toBe('custom');
+  expect(buildRepeat('custom', '', custom)).toBe(custom);
+  // Google's own weekly rule names the start's weekday (and often WKST): still plain weekly.
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;WKST=SU;BYDAY=WE', '2027-03-10T14:00:00-08:00')).toEqual({ repeat: 'weekly', until: '' });
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;UNTIL=20270501T065959Z', '2027-03-10T14:00:00-08:00')).toEqual({ repeat: 'biweekly', until: '2027-04-30' });
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;BYDAY=TH', '2027-03-10T14:00:00-08:00').repeat).toBe('custom');
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;BYDAY=WE').repeat).toBe('custom');
+  // An all-day series takes a DATE UNTIL, like its DATE start.
+  expect(buildRepeat('weekly', '2027-06-01', null, true)).toBe('RRULE:FREQ=WEEKLY;UNTIL=20270601');
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;UNTIL=20270601')).toEqual({ repeat: 'weekly', until: '2027-06-01' });
+});
+
+test('org calendar: toggles, ranges and create prefill', () => {
+  expect(readToggles(null)).toMatchObject({ internal: true, events: true, design: true, buildspace: true });
+  expect(readToggles('{"internal":false,"design":false,"bogus":1}')).toMatchObject({ internal: false, external: true, design: false, purchase: true });
+  expect(readToggles('not json').internal).toBe(true);
+  // A day of margin each side: the server reads dates as Los Angeles midnights (viewer may be elsewhere).
+  expect(viewRange('week', '2027-03', '2027-03-08')).toEqual({ from: '2027-03-07', to: '2027-03-16' });
+  expect(viewRange('month', '2027-03', '2027-03-08')).toEqual({ from: '2027-02-28', to: '2027-04-06' });
+  expect(stepView('month', '2027-12', '2027-12-06', 1)).toEqual({ m: '2028-01', w: '2027-12-27' });
+  expect(stepView('week', '2027-03', '2027-03-29', 1)).toEqual({ m: '2027-04', w: '2027-04-05' });
+  expect(prefill('2027-03-10T14:30')).toEqual({ date: '2027-03-10', start: '14:30', end: '15:30' });
+  expect(prefill('2027-03-10')).toEqual({ date: '2027-03-10', start: '10:00', end: '11:00' });
+  expect(prefill('1', new Date('2027-03-10T17:20:00Z'))).toEqual({ date: '2027-03-10', start: '10:00', end: '11:00' });
+});
+
+test('org calendar: same-day overlay items group per source', () => {
+  const item = (id: string, source: string, date: string, title: string, startsAt: string | null = null) => ({ id, source, type: 'x', title, date, startsAt, endsAt: null, lumaUrl: null, location: null, href: '/x' });
+  const groups = overlayGroups([
+    item('1', 'buildspace-weekly', '2026-11-08', 'Weekly check-in due · Alex'),
+    item('2', 'buildspace-weekly', '2026-11-08', 'Weekly check-in due · Sam'),
+    item('3', 'buildspace-weekly', '2026-11-15', 'Weekly check-in due · Alex'),
+    item('4', 'design', '2026-11-08', 'Poster'),
+    item('5', 'design', '2026-11-08', 'Slides', '2026-11-08T17:00:00Z'),
+  ]);
+  expect(groups.map((g) => g.map((i) => i.id))).toEqual([['1', '2'], ['3'], ['4'], ['5']]);
+  expect(overlayTitle(groups[0]!)).toBe('Weekly check-in due (2)');
+  expect(overlayTitle(groups[1]!)).toBe('Weekly check-in due · Alex');
+  // Overlays take their toggle's colour (none a calendar uses), not the feed source's.
+  expect(overlayEntry(groups[0]!, { id: 'buildspace-weekly', label: 'x', icon: 'x', hue: 'teal' })).toMatchObject({ hue: 'ink', overlay: true, locked: true });
+  expect(overlayEntry(groups[2]!, undefined).hue).toBe('amber');
+  expect(overlayEntry([item('9', 'buildspace-mentor', '2026-11-16', 'Mentor check-in')], { id: 'buildspace-mentor', label: 'x', icon: 'x', hue: 'violet' }).hue).toBe('ink');
+});
+
+test('org calendar: the URL picks the month and week the page shows (navigation round-trips)', () => {
+  const nav = (view: 'month' | 'week', url: { m: string | null; w: string | null }, today: string, n: number) => {
+    const p = periodFromParams(url.m, url.w, today);
+    return periodParams(stepView(view, p.month, p.monday, n), today);
+  };
+  // Today is Sun Nov 22, 2026; November starts on a Sunday. Month › then ‹ comes back to November.
+  let url: { m: string | null; w: string | null } = { m: null, w: null };
+  url = nav('month', url, '2026-11-22', 1);
+  expect(periodFromParams(url.m, url.w, '2026-11-22').month).toBe('2026-12');
+  url = nav('month', url, '2026-11-22', -1);
+  expect(periodFromParams(url.m, url.w, '2026-11-22').month).toBe('2026-11');
+  // Today is Wed Dec 2: week › from Nov 23 lands on Nov 30 (this week), and ‹ from Dec 7 too.
+  expect(periodFromParams(...(Object.values(nav('week', { m: null, w: '2026-11-23' }, '2026-12-02', 1)) as [string | null, string | null]), '2026-12-02').monday).toBe('2026-11-30');
+  expect(periodFromParams(...(Object.values(nav('week', { m: null, w: '2026-12-07' }, '2026-12-02', -1)) as [string | null, string | null]), '2026-12-02').monday).toBe('2026-11-30');
+  // Picking Nov 1 in the mini month (today Nov 22) shows November, though its week starts Oct 26.
+  const picked = periodParams({ m: '2026-11', w: '2026-10-26' }, '2026-11-22');
+  expect(periodFromParams(picked.m, picked.w, '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-10-26' });
+  // Today's period is the bare URL; hand-written links with one parameter still work.
+  expect(periodParams({ m: '2026-11', w: '2026-11-16' }, '2026-11-22')).toEqual({ m: null, w: null });
+  expect(periodFromParams(null, null, '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-11-16' });
+  expect(periodFromParams('2027-03', null, '2026-11-22')).toEqual({ month: '2027-03', monday: '2027-03-01' });
+  expect(periodFromParams('2026-11', null, '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-11-16' });
+  expect(periodFromParams(null, '2027-03-10', '2026-11-22')).toEqual({ month: '2027-03', monday: '2027-03-08' });
+  expect(periodFromParams('junk', 'junk', '2026-11-22')).toEqual({ month: '2026-11', monday: '2026-11-16' });
+});
+
+test('org calendar: BYDAY reads the weekday on the Los Angeles clock (N-2)', () => {
+  // Wednesday 6 PM PT is Thursday 02:00 UTC; the server returns series times in UTC.
+  expect(orgDateOf('2027-03-11T02:00:00Z')).toBe('2027-03-10');
+  expect(orgDateOf('2027-03-10T18:00:00-08:00')).toBe('2027-03-10');
+  expect(orgDateOf('2027-03-10')).toBe('2027-03-10');
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;BYDAY=WE', '2027-03-11T02:00:00Z')).toEqual({ repeat: 'weekly', until: '' });
+  expect(parseRepeat('RRULE:FREQ=WEEKLY;BYDAY=TH', '2027-03-11T02:00:00Z').repeat).toBe('custom');
+});
+
+test('org calendar: moving a series to another weekday or toggling all day resends its rule (N-3)', () => {
+  // A Google-made "weekly on Wednesday at 6 PM", opened from a later occurrence.
+  const google = orgEvent({
+    startsAt: '2027-03-25T01:00:00Z', endsAt: '2027-03-25T02:00:00Z', rrule: 'RRULE:FREQ=WEEKLY;WKST=SU;BYDAY=WE',
+    seriesStartsAt: '2027-03-11T02:00:00Z', seriesEndsAt: '2027-03-11T03:00:00Z',
+  });
+  const base = draftOf(google, '1', 'internal');
+  expect(base).toMatchObject({ date: '2027-03-10', start: '18:00', end: '19:00', repeat: 'weekly' });
+  // A time change keeps the Google rule as it is.
+  expect(meetingBody({ ...base, start: '19:00', end: '20:00' }, google, base)).not.toHaveProperty('rrule');
+  // Move series start to a Thursday: the rule is rebuilt without the stale BYDAY=WE.
+  const moved = meetingBody({ ...base, date: '2027-03-11' }, google, base, true);
+  expect(moved).toMatchObject({ moveSeriesStart: true, rrule: 'RRULE:FREQ=WEEKLY' });
+  // Same weekday a week later: the rule may stay.
+  expect(meetingBody({ ...base, date: '2027-03-17' }, google, base, true)).not.toHaveProperty('rrule');
+  // A date change without the explicit action never moves the series.
+  expect(meetingBody({ ...base, date: '2027-03-11' }, google, base, false)).not.toHaveProperty('moveSeriesStart');
+  // Custom rules are left alone even when the start moves.
+  const custom = orgEvent({ rrule: 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE', seriesStartsAt: '2027-03-10T18:00:00-08:00', seriesEndsAt: '2027-03-10T19:00:00-08:00' });
+  const cb = draftOf(custom, '1', 'internal');
+  expect(meetingBody({ ...cb, date: '2027-03-11' }, custom, cb, true)).not.toHaveProperty('rrule');
+  // Switching to all day rewrites UNTIL as a DATE.
+  const until = orgEvent({ rrule: 'RRULE:FREQ=WEEKLY;UNTIL=20270602T065959Z', seriesStartsAt: '2027-03-10T18:00:00-08:00', seriesEndsAt: '2027-03-10T19:00:00-08:00' });
+  const ub = draftOf(until, '1', 'internal');
+  expect(ub.until).toBe('2027-06-01');
+  expect(meetingBody({ ...ub, allDay: true, endDate: ub.date }, until, ub)).toMatchObject({ allDay: true, rrule: 'RRULE:FREQ=WEEKLY;UNTIL=20270601' });
 });

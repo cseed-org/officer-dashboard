@@ -22,6 +22,8 @@ const pages = (director: boolean): Item[] => [
   { kind: 'page', id: 'home', title: 'Home', subtitle: 'overview', href: href.home },
   { kind: 'page', id: 'buildspace', title: 'Buildspace + Launchpad', subtitle: 'builders, projects and mentors', href: '/buildspace-launchpad' },
   { kind: 'page', id: 'events', title: 'Events', subtitle: 'turnout and guests', href: href.events() },
+  { kind: 'page', id: 'calendar', title: 'Calendar', subtitle: 'meetings, programs and events', href: href.calendar() },
+  { kind: 'page', id: 'new-meeting', title: 'New meeting', subtitle: 'calendar', href: href.newMeeting() },
   { kind: 'page', id: 'import', title: 'Import a Luma CSV', subtitle: 'events', href: href.eventImport() },
   { kind: 'page', id: 'finance', title: 'Requests & finance', subtitle: 'requests, budgets, reports', href: href.finance() },
   { kind: 'page', id: 'reports', title: 'Finance reports', subtitle: 'statements and CSV export', href: href.finance('reports') },

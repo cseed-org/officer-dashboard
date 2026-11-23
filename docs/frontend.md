@@ -77,6 +77,7 @@ for anything else (status 404).
 | `/events` | `events/index.html` | `?when=upcoming\|past`, `?q=` filters |
 | `/events?id=<eventId>` | `events/index.html` | event detail slide-over |
 | `/events?import=1` | `events/index.html` | CSV import dialog |
+| `/calendar` | `calendar/index.html` | Organization calendar. `?view=month\|week` (month default), `?m=YYYY-MM`, `?w=<Monday>`, `?id=<item>[&at=<occurrence>]` (item card), `?new=1\|<date>\|<date>T<HH:MM>` (new meeting, prefilled), `?edit=<id>`, `?delete=<id>` |
 | `/finance` | `finance/index.html` | requests tab; `?scope=mine\|all`, `?status=` |
 | `/finance?id=<requestId>` | `finance/index.html` | request detail slide-over (works with any tab) |
 | `/finance?new=1[&eventId=]` | `finance/index.html` | new request drawer |
@@ -92,7 +93,7 @@ for anything else (status 404).
 | `/launchpad/join` | `launchpad/join/index.html` | Public invite acceptance; `?token=` |
 | `/launchpad/login` | `launchpad/login/index.html` | Public Launchpad portal sign-in |
 | `/admin` | `admin/index.html` | Redirects to Officers Access; query/hash tabs and legacy subpaths are mapped |
-| `/settings` | `settings/index.html` | theme, density, profile, time zone, calendar delivery, connected agents, Replay intro, sign out |
+| `/settings` | `settings/index.html` | theme, density, profile, time zone, calendar delivery, org Google Calendar (leadership; `#org-google`, `?orgGoogle=` result after consent), connected agents, Replay intro, sign out |
 | `/login` | `login/index.html` | `?next=`, `?error=not_allowlisted\|inactive\|state\|discord\|invite_unavailable` |
 | `/speakers` | Go redirect | 308 to `/contacts`, preserving the query string |
 | `/buildspace` | Go redirect | 301 to `/buildspace-launchpad`, preserving the query string |

@@ -96,3 +96,73 @@ Service tokens call orgcal endpoints using calendar:read or calendar:write (incl
 with normal token/user audit attribution. They cannot configure OAuth or modify programs.
 Integration tests fake Google. Live OAuth, sharing and invitation receipt need the org
 account's sign-in during integration QA.
+
+## Calendar page (web)
+
+`/calendar` (sidebar **Calendar**, under Events) shows all four calendars in one view, in the
+viewer's time zone (Settings), weeks starting on Monday.
+
+- **Top bar:** Today, ‹ ›, the period, a Month/Week switch and **+ Create**. The view and period
+  live in the URL (`?view=week&w=2027-03-08`, `?m=2027-03`), so links and Back work.
+- **Left rail:** a small month to jump to a date, then one checkbox per calendar (in its hue;
+  Weekly Programs and Events are marked locked) and three dashboard overlays from
+  `/api/calendar/feed`: design deadlines, purchase deadlines and Buildspace check-ins. All are on
+  by default; the choice is kept in this browser (`localStorage` `cseed-orgcal-toggles`).
+  Overlays stay on this page and are never sent to Google. They draw as outlined chips in
+  amber (design), green (purchases) or neutral ink (check-ins), colours no calendar uses.
+  Same-day overlay items from one source collapse into one entry ("Weekly check-in due (10)")
+  whose card lists each with a link.
+- **Month:** up to three chips per day, then "+n more" (opens that week). **Week:** an hour grid
+  with overlapping meetings side by side, an all-day band for all-day meetings and tentative
+  ranges (dashed, "Tentative ·", spanning their days), and a red now-line. **Phone:** the
+  calendar list is folded and both views read as an agenda list.
+- **Create:** click an empty week slot (prefills that day and half hour), a month day, or
+  + Create. Slot clicks are mouse and touch only; keyboard users use + Create or a month day's
+  number (a button named "New meeting on <date>"). The drawer has calendar (Internal/External only), title, date and time or **No set
+  date yet** (an inclusive earliest/latest range), all day, repeat (daily, weekly, every 2 weeks,
+  monthly, optional until date; other pulled rules are kept as "Custom"), invitees (subteams and
+  officers from `/api/lookups`, plus typed emails), **Send invites** (defaults on for External,
+  off for Internal until you change it), reminders, location and description.
+- **Open an item:** a card with when, repeat, location, invitees and reminders. Internal/External
+  meetings offer Edit and Delete (delete asks first). Editing a repeating meeting edits the
+  series from any occurrence: the drawer shows the series' own date and times
+  (`seriesStartsAt`/`seriesEndsAt`) and says when it starts. Only changed fields are sent; a
+  new time applies to every occurrence on the series' original date. The date field is locked;
+  **Move series start** unlocks it, warns that earlier occurrences are removed, and only then
+  is `moveSeriesStart` sent. Weekly Programs and Events items are read-only and link to their source ("Open
+  program" / "Open event"); `?edit=` on a locked item does not open the editor.
+- **States:** loading and error use the shared states; an empty period (counting only the days
+  on screen) offers Create. Every role gets a notice from the calendars response's
+  `googleConnected`/`syncProblem` flags: not connected or revoked (meetings save here, but
+  nothing reaches Google and no invites go out), or connected with a failed last sync.
+  Leadership's notice links to the Settings card below; everyone else reads "Ask leadership to
+  connect Google Calendar" (or "tell leadership" for a failing sync).
+
+### Settings › org Google Calendar (leadership)
+
+Leadership connects the dedicated org Gmail once, from a card on `/settings` (`#org-google`,
+`ui/views/OrgGooglePanel.tsx`; officers and directors don't see it). It reads
+`GET /api/settings/org-google/status` and shows one of:
+
+- **Not configured** (`configured:false`): an owner must set `GOOGLE_OAUTH_CLIENT_ID` and
+  `GOOGLE_OAUTH_CLIENT_SECRET` and register `APP_URL/auth/org-google/callback` as a redirect
+  URI ([configuration](configuration.md)). No Connect button.
+- **Not connected:** **Connect org Google account**, a plain link (navigation, not a fetch) to
+  `GET /api/settings/org-google/connect`. Google consent returns to
+  `/settings?orgGoogle=connected|failed|scope_required|not_configured`, and the card says what
+  happened.
+- **Connected:** the account email and **Disconnect**, behind a confirmation dialog
+  (`DELETE /api/settings/org-google`; local meetings and the Google calendars are kept).
+- **Needs attention** (`needsReconnect` or `lastSyncError`): a warning with the error text and
+  **Reconnect Google** (the same consent link), with Disconnect still available.
+
+Tests: `web/tests/settings-org-google.spec.ts` mocks the status for each state (a dev server has
+no org account) and checks the real status loads. Screenshots:
+`docs/evidence/org-calendar/settings-org-google-*.png`.
+
+Code: `web/src/pages/calendar.astro` → `ui/pages/CalendarPage.tsx` → `ui/views/calendar/*`
+(`CalendarView`, `MeetingForm`, `ItemCard`, `MiniMonth`); pure helpers in `lib/orgcal.ts`. The
+month and week grids are shared with the Events page in `ui/components/calendar/`
+(`MonthView`, `WeekView`, `layout.ts` for bucketing, overlap columns and span clipping) and
+`styles/calendar.css`. Tests: `web/tests/calendar.spec.ts` (phone, tablet, desktop) and the
+"org calendar" cases in `tests/unit.spec.ts`. Screenshots: `docs/evidence/org-calendar/`.

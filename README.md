@@ -32,6 +32,7 @@ Discord sign-in with leadership, director, and officer roles, plus explicit owne
 | Officers / onboarding | Invite via Discord DM, complete profiles, manage subteams, choose calendar delivery. |
 | Members | Search the local D1 mirror, edit member records, export CSV, and sync. |
 | Events | Plan events, generate a Luma handoff kit, import registrations/check-ins and reflections, track metrics. |
+| Calendar | One organization calendar (month, week, phone agenda) for Internal and External meetings, Weekly Programs and Events, with design/purchase deadlines and Buildspace check-ins as overlays; create meetings with invitees, recurrence, reminders or a tentative date range. See [organization calendar](docs/org-calendar.md). |
 | Finance | Submit and review purchase requests, attach receipts, track budgets, and view double-entry financial reports. |
 | External Contacts | Maintain contacts, track who has spoken for CSEED, and log outreach. |
 | Design | See which upcoming events still need design, and track requests on a Kanban board (filters, My work) with assignments, comments, files, and approval. |
