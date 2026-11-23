@@ -224,6 +224,10 @@ func validateOrgEvent(e *store.OrgEvent, checkRecurrence bool) error {
 		}
 		e.EndsAt = nil
 		e.AllDay = true
+		// A tentative entry is one all-day range in Google; a recurring range has no meaning.
+		if e.RRule != nil {
+			return badRequest("A tentative meeting cannot recur; send rrule:null with the tentative range")
+		}
 	}
 	if e.RRule != nil && checkRecurrence {
 		if err := validateOrgRecurrence(*e.RRule, e); err != nil {
@@ -319,8 +323,14 @@ func (c *Ctx) orgEventWrite() error {
 		if !create && !moveSeries && before.RRule != nil && e.RRule != nil && before.StartsAt != nil && (fields["startsAt"] != nil || fields["endsAt"] != nil) {
 			keepSeriesDate(e, before)
 		}
-		if create && fields["sendInvites"] == nil {
-			e.SendInvites = e.CalendarKey == "external"
+		// External meetings invite by default for people. Service tokens and MCP agents
+		// (D-6) send invites only when the request sets sendInvites itself.
+		if agent := c.Token != nil || c.Agent != ""; fields["sendInvites"] == nil {
+			if create {
+				e.SendInvites = e.CalendarKey == "external" && !agent
+			} else if agent {
+				e.SendInvites = false
+			}
 		}
 		if !create && oldKey != e.CalendarKey {
 			return badRequest("A meeting cannot change calendars; create it in the other calendar")

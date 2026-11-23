@@ -7,6 +7,7 @@ import (
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/orgcal"
 	"officerdashboard/internal/store"
+	"sort"
 	"strings"
 	"time"
 )
@@ -76,7 +77,8 @@ func (s *Server) orgPull(ctx context.Context, client orgcal.Client, token string
 				continue
 			}
 			if e == nil || err != nil {
-				e = &store.OrgEvent{ID: auth.UUID(), CalendarKey: cal.Key, SourceKind: "manual", CreatedAt: s.nowMs(), SendInvites: cal.Key == "external"}
+				// Imported events never start sending invites: a person turns them on (F-6).
+				e = &store.OrgEvent{ID: auth.UUID(), CalendarKey: cal.Key, SourceKind: "manual", CreatedAt: s.nowMs()}
 			}
 			if g.RecurringEventID != "" {
 				continue
@@ -131,9 +133,14 @@ func (s *Server) orgPull(ctx context.Context, client orgcal.Client, token string
 			for _, r := range g.Reminders.Overrides {
 				e.Reminders = append(e.Reminders, store.OrgReminder{Method: r.Method, Minutes: r.Minutes})
 			}
-			e.Invitees = []store.OrgInvitee{}
+			if e.Invitees, err = mergePulledInvitees(ctx, q, e, g.Attendees); err != nil {
+				return err
+			}
+			e.AttendeeStatus = map[string]string{}
 			for _, a := range g.Attendees {
-				e.Invitees = append(e.Invitees, store.OrgInvitee{Kind: "email", Ref: a.Email})
+				if a.ResponseStatus != "" {
+					e.AttendeeStatus[strings.ToLower(strings.TrimSpace(a.Email))] = a.ResponseStatus
+				}
 			}
 			if err = q.SaveOrgEvent(ctx, *e, false); err != nil {
 				return err
@@ -207,4 +214,58 @@ func (s *Server) orgPullLocked(ctx context.Context, client orgcal.Client, token 
 		}
 		return q.SetOrgSyncToken(ctx, cal.Key, next)
 	})
+}
+
+// mergePulledInvitees reconciles Google's attendee list with the local invitees instead of
+// flattening subteam/user rows into emails (F-2). A group or user row stays while every
+// address it expands to is still attending; email rows stay while attending; Google-side
+// additions become email rows. An RSVP-only change therefore leaves invitees untouched.
+func mergePulledInvitees(ctx context.Context, q *store.Queries, e *store.OrgEvent, attendees []orgcal.Attendee) ([]store.OrgInvitee, error) {
+	remote := map[string]bool{}
+	for _, a := range attendees {
+		if email := strings.ToLower(strings.TrimSpace(a.Email)); email != "" {
+			remote[email] = true
+		}
+	}
+	expansion := map[string][]string{}
+	if e.ID != "" && len(e.Invitees) > 0 {
+		var err error
+		if expansion, err = q.OrgInviteeExpansion(ctx, e.ID); err != nil {
+			return nil, err
+		}
+	}
+	out := []store.OrgInvitee{}
+	covered := map[string]bool{}
+	for _, v := range e.Invitees {
+		if v.Kind == "email" {
+			email := strings.ToLower(strings.TrimSpace(v.Ref))
+			if remote[email] {
+				out = append(out, v)
+				covered[email] = true
+			}
+			continue
+		}
+		emails := expansion[v.Kind+":"+v.Ref]
+		present := true
+		for _, email := range emails {
+			present = present && remote[email]
+		}
+		if present {
+			out = append(out, v)
+			for _, email := range emails {
+				covered[email] = true
+			}
+		}
+	}
+	extra := []string{}
+	for email := range remote {
+		if !covered[email] {
+			extra = append(extra, email)
+		}
+	}
+	sort.Strings(extra)
+	for _, email := range extra {
+		out = append(out, store.OrgInvitee{Kind: "email", Ref: email})
+	}
+	return out, nil
 }

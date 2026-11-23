@@ -166,3 +166,26 @@ func (q *Queries) OrgFullResync(ctx context.Context, key string, ids []string, n
 	_, err := q.q.ExecContext(ctx, `UPDATE org_cal_events SET deleted_at=?,updated_at=? WHERE calendar_key=? AND source_kind='manual' AND google_event_id IS NOT NULL AND google_event_id NOT IN (SELECT value FROM json_each(?)) AND id NOT IN (SELECT event_id FROM org_cal_outbox)`, now, now, key, string(raw))
 	return err
 }
+
+// OrgInviteeExpansion maps each user/subteam invitee ("kind:ref") to the active officer
+// emails it expands to at push time. Groups with no active members are absent.
+func (q *Queries) OrgInviteeExpansion(ctx context.Context, id string) (map[string][]string, error) {
+	rows, err := q.q.QueryContext(ctx, `SELECT i.kind, i.ref, lower(trim(u.email)) FROM org_cal_invitees i JOIN users u
+ ON (i.kind='user' AND i.ref=u.id) OR (i.kind='subteam' AND EXISTS(SELECT 1 FROM officer_profiles p WHERE p.user_id=u.id AND p.subteam_id=i.ref))
+ WHERE i.event_id=? AND u.active=1 AND u.email IS NOT NULL`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var kind, ref, email string
+		if err = rows.Scan(&kind, &ref, &email); err != nil {
+			return nil, err
+		}
+		if strings.Contains(email, "@") {
+			out[kind+":"+ref] = append(out[kind+":"+ref], email)
+		}
+	}
+	return out, rows.Err()
+}

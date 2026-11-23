@@ -1586,7 +1586,8 @@ export type Program = z.infer<typeof Program>;
 export const ProgramsResponse = z.object({programs: z.array(Program)});
 export const ProgramResponse = z.object({program: Program});
 export const ProgramTracksResponse = z.object({tracks: z.array(ProgramTrack)});
-export const OrgGoogleStatus = z.object({configured: z.boolean(), connected: z.boolean(), email: z.string().nullable()});
+/** needsReconnect: the org refresh token was revoked. lastSyncError: the last failed pass (null when healthy). */
+export const OrgGoogleStatus = z.object({configured: z.boolean(), connected: z.boolean(), email: z.string().nullable(), needsReconnect: z.boolean(), lastSyncError: z.string().nullable()});
 export type OrgGoogleStatus = z.infer<typeof OrgGoogleStatus>;
 
 export const ENDPOINTS = {

@@ -729,6 +729,8 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
 - Officer GET /api/program-tracks; leadership POST /api/program-tracks.
 - Leadership: GET /api/settings/org-google/status, navigation GET /api/settings/org-google/connect,
   DELETE /api/settings/org-google. OAuth callback: /auth/org-google/callback.
+  OrgGoogleStatus adds `needsReconnect` (revoked refresh token) and nullable `lastSyncError`.
+- Token/MCP agent meeting writes default to sendInvites:false unless the request sets it.
 - Event create/update accepts nullable startsAt and inclusive tentativeFrom/tentativeTo dates.
   EventListItem startsAt is an empty string for tentative events and gains nullable range fields.
   Tentative Events follow the same convention wherever an event start is returned: lookups

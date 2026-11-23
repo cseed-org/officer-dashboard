@@ -26,6 +26,8 @@ type orgFake struct {
 	requests                 []orgRequest
 	events                   map[string][]orgcal.Event
 	failWrites               bool
+	failACLInsert            bool
+	revoked                  bool
 	gone                     bool
 	instances                []orgcal.Event
 	pauseWrite, enteredWrite chan struct{}
@@ -52,6 +54,11 @@ func (f *orgFake) serve(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&b)
 	f.requests = append(f.requests, orgRequest{r.Method, r.URL.Path, r.URL.RawQuery, b})
 	w.Header().Set("Content-Type", "application/json")
+	if r.URL.Path == "/token" && f.revoked {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
+		return
+	}
 	if r.URL.Path == "/token" {
 		claims := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"org-sub","email":"org@example.org"}`))
 		_, _ = fmt.Fprintf(w, `{"access_token":"access","refresh_token":"refresh","expires_in":3600,"id_token":"x.%s.x","scope":"openid email https://www.googleapis.com/auth/calendar"}`, claims)
@@ -65,6 +72,11 @@ func (f *orgFake) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(r.URL.Path, "/acl") && r.Method == "GET" {
 		_, _ = w.Write([]byte(`{"items":[{"id":"stale","role":"reader","scope":{"type":"user","value":"former@example.org"}}]}`))
+		return
+	}
+	if strings.Contains(r.URL.Path, "/acl") && r.Method == "POST" && f.failACLInsert {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(`{"error":{"code":400,"message":"Invalid scope value"}}`))
 		return
 	}
 	if strings.Contains(r.URL.Path, "/acl") {

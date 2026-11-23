@@ -102,6 +102,12 @@ type Server struct {
 	orgCtx                  context.Context
 	orgNextPull, orgNextACL time.Time
 	orgACLGeneration        int64
+	orgACLFailures          int
+	// Guarded by orgRunMu: the running pass's cancel (account changes pre-empt it) and the
+	// last sync outcome shown on the Settings status.
+	orgPassCancel  context.CancelFunc
+	orgLastError   string
+	orgNeedsReauth bool
 	orgFailures             int
 	orgRetryAt              time.Time
 }

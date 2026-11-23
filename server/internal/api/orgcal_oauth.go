@@ -32,7 +32,14 @@ func (c *Ctx) orgGoogleStatus() error {
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
-	writeJSON(c.W, 200, map[string]any{"configured": c.S.cfg.Google != nil, "connected": email != nil, "email": email})
+	c.S.orgRunMu.Lock()
+	var lastErr any
+	if c.S.orgLastError != "" && email != nil {
+		lastErr = c.S.orgLastError
+	}
+	reconnect := email != nil && c.S.orgNeedsReauth
+	c.S.orgRunMu.Unlock()
+	writeJSON(c.W, 200, map[string]any{"configured": c.S.cfg.Google != nil, "connected": email != nil, "email": email, "needsReconnect": reconnect, "lastSyncError": lastErr})
 	return nil
 }
 func (c *Ctx) orgGoogleConnect() error {
@@ -91,6 +98,7 @@ func (c *Ctx) orgGoogleCallback() error {
 	if !hasScope {
 		return back("scope_required")
 	}
+	c.S.cancelOrgPass()
 	c.S.orgMu.Lock()
 	a := store.OrgGoogleAccount{Subject: account.Sub, Email: account.Email, SealedRefresh: c.S.sealer.Seal(tok.RefreshToken), SealedAccess: c.S.sealer.Seal(tok.AccessToken), ExpiresAt: c.S.nowMs() + tok.ExpiresIn*1000, ConnectedBy: &c.User.ID}
 	err = c.S.db.Write(c.Context(), func(q *store.Queries) error {
@@ -119,6 +127,7 @@ func (c *Ctx) orgGoogleCallback() error {
 	c.S.orgNextPull = time.Time{}
 	c.S.orgRetryAt = time.Time{}
 	c.S.orgMu.Unlock()
+	c.S.recordOrgSync(nil)
 	c.S.kickOrgCalendar()
 	return back("connected")
 }
@@ -126,6 +135,7 @@ func (c *Ctx) orgGoogleDisconnect() error {
 	if _, err := c.requireLeadership(); err != nil {
 		return err
 	}
+	c.S.cancelOrgPass()
 	c.S.orgMu.Lock()
 	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
 		if _, err := c.requireLeadershipIn(q); err != nil {
@@ -140,6 +150,7 @@ func (c *Ctx) orgGoogleDisconnect() error {
 	if err != nil {
 		return err
 	}
+	c.S.recordOrgSync(nil)
 	return c.orgGoogleStatus()
 }
 

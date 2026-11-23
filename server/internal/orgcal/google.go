@@ -73,7 +73,8 @@ type Time struct {
 	TimeZone string `json:"timeZone,omitempty"`
 }
 type Attendee struct {
-	Email string `json:"email"`
+	Email          string `json:"email"`
+	ResponseStatus string `json:"responseStatus,omitempty"`
 }
 type Reminder struct {
 	Method  string `json:"method"`

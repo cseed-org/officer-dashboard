@@ -69,8 +69,14 @@ func (s *Server) kickOrgCalendar() {
 			s.orgKicked = false
 			s.orgRunMu.Unlock()
 			pass, cancel := context.WithTimeout(ctx, 4*time.Minute)
+			s.orgRunMu.Lock()
+			s.orgPassCancel = cancel
+			s.orgRunMu.Unlock()
 			err := s.syncOrgCalendar(pass)
 			cancel()
+			s.orgRunMu.Lock()
+			s.orgPassCancel = nil
+			s.orgRunMu.Unlock()
 			if err != nil && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, context.Canceled) {
 				s.log.Warn("org calendar sync failed; retained for retry", "error", err)
 			}
@@ -100,7 +106,31 @@ func (s *Server) syncOrgCalendar(ctx context.Context) error {
 		s.orgFailures = 0
 		s.orgRetryAt = time.Time{}
 	}
+	if ctx.Err() == nil { // a cancelled pass (account change, shutdown) says nothing about Google
+		s.recordOrgSync(err)
+	}
 	return err
+}
+
+// recordOrgSync keeps the last pass outcome for GET /api/settings/org-google/status.
+func (s *Server) recordOrgSync(err error) {
+	s.orgRunMu.Lock()
+	defer s.orgRunMu.Unlock()
+	if err == nil || errors.Is(err, store.ErrNotFound) {
+		s.orgLastError, s.orgNeedsReauth = "", false
+		return
+	}
+	s.orgLastError = err.Error()
+	s.orgNeedsReauth = errors.Is(err, calendar.ErrGoogleRevoked)
+}
+
+// cancelOrgPass stops a running sync pass so connect/disconnect need not wait for it.
+func (s *Server) cancelOrgPass() {
+	s.orgRunMu.Lock()
+	defer s.orgRunMu.Unlock()
+	if s.orgPassCancel != nil {
+		s.orgPassCancel()
+	}
 }
 func (s *Server) syncOrgLocked(ctx context.Context) error {
 	token, err := s.orgAccess(ctx)
@@ -135,12 +165,21 @@ func (s *Server) syncOrgLocked(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// ACL sync is best effort with its own backoff: a roster address Google rejects
+	// must never stop meeting, Event and program delivery or the pull.
 	if generation != s.orgACLGeneration || !s.now().Before(s.orgNextACL) {
-		if err = s.orgSyncACL(ctx, client, token, cals); err != nil {
-			return err
-		}
 		s.orgACLGeneration = generation
-		s.orgNextACL = s.now().Add(24 * time.Hour)
+		if err := s.orgSyncACL(ctx, client, token, cals); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			s.orgACLFailures++
+			s.orgNextACL = s.now().Add(calendarBackoff(s.orgACLFailures))
+			s.log.Warn("org calendar ACL sync incomplete; retrying with backoff", "error", err, "failures", s.orgACLFailures)
+		} else {
+			s.orgACLFailures = 0
+			s.orgNextACL = s.now().Add(24 * time.Hour)
+		}
 	}
 	if err = s.orgDrain(ctx, client, token, cals); err != nil {
 		return err
@@ -167,10 +206,20 @@ func (s *Server) orgSyncACL(ctx context.Context, client orgcal.Client, token str
 			want[strings.ToLower(strings.TrimSpace(*u.Email))] = true
 		}
 	}
+	// Each failing entry is logged with its address and skipped; the rest still apply.
+	var failed []error
+	skip := func(c store.OrgCalendar, email, action string, err error) {
+		s.log.Warn("org calendar ACL entry failed", "calendar", c.Key, "email", email, "action", action, "error", err)
+		failed = append(failed, err)
+	}
 	for _, c := range cals {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		acl, err := client.ACLs(ctx, token, *c.GoogleCalendarID)
 		if err != nil {
-			return err
+			skip(c, "", "list", err)
+			continue
 		}
 		left := map[string]bool{}
 		for e := range want {
@@ -190,23 +239,23 @@ func (s *Server) orgSyncACL(ctx context.Context, client orgcal.Client, token str
 				delete(left, email)
 				if a.Role != "reader" {
 					if err = client.Request(ctx, token, "PATCH", base+"/"+url.PathEscape(a.ID), map[string]string{"role": "reader"}, nil); err != nil {
-						return err
+						skip(c, email, "set reader", err)
 					}
 				}
 			} else {
 				if err = client.Request(ctx, token, "DELETE", base+"/"+url.PathEscape(a.ID), nil, nil); err != nil && !orgcal.IsStatus(err, 404) {
-					return err
+					skip(c, email, "remove", err)
 				}
 			}
 		}
 		for email := range left {
 			body := map[string]any{"role": "reader", "scope": map[string]string{"type": "user", "value": email}}
 			if err = client.Request(ctx, token, "POST", base+"?sendNotifications=false", body, nil); err != nil {
-				return err
+				skip(c, email, "add reader", err)
 			}
 		}
 	}
-	return nil
+	return errors.Join(failed...)
 }
 func (s *Server) orgDrain(ctx context.Context, client orgcal.Client, token string, cals []store.OrgCalendar) error {
 	ids := map[string]string{}
@@ -317,7 +366,8 @@ func (s *Server) orgGoogleEvent(ctx context.Context, e store.OrgEvent) (orgcal.E
 		return body, err
 	}
 	for _, email := range emails {
-		body.Attendees = append(body.Attendees, orgcal.Attendee{Email: email})
+		// Carry the last pulled RSVP so a PATCH (which replaces attendees) keeps responses.
+		body.Attendees = append(body.Attendees, orgcal.Attendee{Email: email, ResponseStatus: e.AttendeeStatus[email]})
 	}
 	for _, r := range e.Reminders {
 		body.Reminders.Overrides = append(body.Reminders.Overrides, orgcal.Reminder{Method: r.Method, Minutes: r.Minutes})
@@ -373,7 +423,7 @@ func (s *Server) orgPushExceptions(ctx context.Context, client orgcal.Client, to
 					loc = *ex.NewLocation
 				}
 			}
-			if instance.Start.DateTime == start.Format(time.RFC3339) && instance.End.DateTime == end.Format(time.RFC3339) && instance.Location == loc && instance.Status != "cancelled" && instance.Summary == p.Name && instance.Description == p.Description && len(instance.Attendees) == 0 && len(instance.Reminders.Overrides) == 0 && !instance.Reminders.UseDefault {
+			if sameInstant(instance.Start.DateTime, start) && sameInstant(instance.End.DateTime, end) && instance.Location == loc && instance.Status != "cancelled" && instance.Summary == p.Name && instance.Description == p.Description && len(instance.Attendees) == 0 && len(instance.Reminders.Overrides) == 0 && !instance.Reminders.UseDefault {
 				continue
 			}
 			patch := map[string]any{"status": "confirmed", "summary": p.Name, "description": p.Description, "attendees": []orgcal.Attendee{}, "reminders": orgcal.Reminders{Overrides: []orgcal.Reminder{}}, "start": orgcal.Time{DateTime: start.Format(time.RFC3339), TimeZone: "America/Los_Angeles"}, "end": orgcal.Time{DateTime: end.Format(time.RFC3339), TimeZone: "America/Los_Angeles"}, "location": loc}
@@ -386,4 +436,10 @@ func (s *Server) orgPushExceptions(ctx context.Context, client orgcal.Client, to
 		}
 		page = out.NextPageToken
 	}
+}
+
+// sameInstant compares a Google dateTime with t as instants, whatever offset form either uses.
+func sameInstant(raw string, t time.Time) bool {
+	v, err := time.Parse(time.RFC3339Nano, raw)
+	return err == nil && v.Equal(t)
 }

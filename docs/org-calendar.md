@@ -12,16 +12,35 @@ separate user-bound state cookies and the full Calendar scope. Register
 `APP_URL/auth/org-google/callback` as an additional Google redirect URI. Leadership-only
 status/disconnect retain local data and calendar IDs. Reconnecting the same account reuses
 its calendars; changing accounts creates four new calendars without deleting the old ones.
+The status response adds `needsReconnect` (the org refresh token was revoked: connect again)
+and `lastSyncError` (the last failed sync pass, null when healthy). Connect and disconnect
+cancel a running sync pass instead of waiting for it.
 
 All active officers with an account email in People/Officers receive reader access on all
 four calendars. Email/active changes increment a roster generation checked within a minute;
 ACLs also reconcile daily. Non-roster reader access is removed. Owner access is preserved.
+ACL sync is best effort with its own backoff: an address Google rejects is logged with the
+address and skipped, and meeting/Event/program delivery and pulls continue.
 
 Meetings support title, description, location, start/end, all-day, recurrence, reminders,
 invitees and send-invites. Invitees use `{kind,ref}` with kind user/subteam/email. User and
-subteam references expand against active officer emails when sent. External defaults to
-sending invites, Internal defaults off; the flag controls Google sendUpdates all/none,
-including cancellation. No Meet link is created.
+subteam references expand against active officer emails when sent. For people, External
+defaults to sending invites and Internal to off; the flag controls Google sendUpdates all/none,
+including cancellation. Requests from a calendar:write service token or an MCP agent default
+to sendInvites:false on create, and an agent update that omits sendInvites turns it off; set
+`sendInvites:true` explicitly to email guests. Events created directly in Google import with
+sendInvites:false. No Meet link is created.
+
+Pulls merge Google's attendees into the local invitees: a subteam/user row stays while all of
+its addresses still attend, Google-side additions become email rows and removed addresses are
+dropped, so RSVP-only changes leave invitees unchanged. The last pulled responseStatus per
+attendee is sent back on push, so a dashboard edit keeps guests' RSVPs.
+
+A tentative meeting cannot recur: `rrule` with a tentative range is a 400 on POST and PATCH;
+send `rrule:null` to make a recurring meeting tentative.
+
+Locked items link to their source: `/events?id=<id>` for Events and
+`/buildspace-launchpad?tab=programs&program=<id>` for programs.
 
 New manual recurrence is one `rrule` line: `RRULE:FREQ=DAILY|WEEKLY|MONTHLY`, optional
 `INTERVAL=1..52`, optional `BYDAY` (weekly only, e.g. `MO,WE`; the start must fall on one of

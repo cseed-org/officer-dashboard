@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 )
 
 type OrgCalendar struct {
@@ -52,6 +53,9 @@ type OrgEvent struct {
 	Revision       int64         `json:"-"`
 	Recurrence     []string      `json:"-"`
 	TimeZone       string        `json:"-"`
+	// AttendeeStatus is the last pulled responseStatus by lower-case email. nil on save
+	// keeps the stored value (projections and UI writes do not know it).
+	AttendeeStatus map[string]string `json:"-"`
 }
 
 func (q *Queries) OrgCalendars(ctx context.Context) ([]OrgCalendar, error) {
@@ -91,10 +95,10 @@ func scanOrgEvent(s interface{ Scan(...any) error }) (*OrgEvent, error) {
 	if e.SourceID != nil {
 		href := ""
 		if e.SourceKind == "event" {
-			href = "/events?id=" + *e.SourceID
+			href = "/events?id=" + url.QueryEscape(*e.SourceID) // web href.event
 		}
 		if e.SourceKind == "program" {
-			href = "/buildspace?tab=programs&program=" + *e.SourceID
+			href = "/buildspace-launchpad?tab=programs&program=" + url.QueryEscape(*e.SourceID) // web href.program
 		}
 		if href != "" {
 			e.SourceHref = &href
@@ -119,7 +123,16 @@ func (q *Queries) OrgEvent(ctx context.Context, id string) (*OrgEvent, error) {
 		}
 		e.Invitees = append(e.Invitees, v)
 	}
-	return e, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	var status string
+	if err = q.q.QueryRowContext(ctx, `SELECT attendee_status FROM org_cal_events WHERE id=?`, id).Scan(&status); err != nil {
+		return nil, err
+	}
+	e.AttendeeStatus = map[string]string{}
+	_ = json.Unmarshal([]byte(status), &e.AttendeeStatus)
+	return e, nil
 }
 func (q *Queries) OrgEvents(ctx context.Context) ([]OrgEvent, error) {
 	rows, err := q.q.QueryContext(ctx, `SELECT id FROM org_cal_events WHERE deleted_at IS NULL ORDER BY coalesce(starts_at,tentative_from),id`)
@@ -174,6 +187,12 @@ func (q *Queries) SaveOrgEvent(ctx context.Context, e OrgEvent, enqueue bool) er
 	}
 	for _, v := range e.Invitees {
 		if _, err = q.q.ExecContext(ctx, `INSERT OR IGNORE INTO org_cal_invitees VALUES(?,?,?)`, e.ID, v.Kind, v.Ref); err != nil {
+			return err
+		}
+	}
+	if e.AttendeeStatus != nil {
+		raw, _ := json.Marshal(e.AttendeeStatus)
+		if _, err = q.q.ExecContext(ctx, `UPDATE org_cal_events SET attendee_status=? WHERE id=?`, string(raw), e.ID); err != nil {
 			return err
 		}
 	}
