@@ -75,6 +75,33 @@ test('tabs slide one indicator and views crossfade without resizing the page', a
   expect(errors).toEqual([]);
 });
 
+test('arrow keys keep focus on the tab strip across the Programs tab', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'keyboard contract');
+  const errors = watchErrors(page);
+  await devLogin(page, 'director');
+  await open(page, '/buildspace-launchpad?tab=mentors');
+  // Programs renders without the cohort register; the tab strip is one instance for every tab
+  // (review N-1), so focus follows the arrow keys onto and off it.
+  await page.locator('#bs-tab-mentors').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page).toHaveURL(/tab=programs/);
+  await expect(page.locator('#bs-tab-programs')).toBeFocused();
+  await expect(page.locator('[data-programs-panel]')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(page).toHaveURL(/tab=invites/);
+  await expect(page.locator('#bs-tab-invites')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('#bs-tab-programs')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page).toHaveURL(/tab=mentors/);
+  await expect(page.locator('#bs-tab-mentors')).toBeFocused();
+  // The summary tiles stay above the tab strip on the register tabs.
+  const tiles = await page.locator('.stat-tiles').first().boundingBox();
+  const strip = await page.locator('.bs-toolbar').boundingBox();
+  expect(tiles!.y).toBeLessThan(strip!.y);
+  expect(errors).toEqual([]);
+});
+
 test('first frame is paintable and only the first eight rows stagger', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'shared CSS contract');
   await devLogin(page, 'director');
