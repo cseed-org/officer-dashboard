@@ -5,10 +5,13 @@
 | [Development](development.md) | Quick start, live development, seed data, tests, contract checks, Playwright. |
 | [Configuration](configuration.md) | Server environment variables, club location/time zone, aliases, container and tooling settings. |
 | [Deployment](deployment.md) | Raspberry Pi/systemd, HTTPS proxy, containers, replication, backups. |
+| [Deployment runbooks](deploy/README.md) | Step by step: fresh install (R2 bucket, tunnel, first boot, owner), upgrading to the org-calendar release (backup, migrations 0031–0036, rollback), and the one-time org Google setup. |
 | [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
 | [Buildspace + Launchpad](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
 | [Launchpad cohorts](launchpad-cohorts.md) | Cohorts, email invites, builder/mentor portals, identity and security model, auto-assign. |
 | [Home calendar](calendar-widget.md) | Calendar widget views, feed API, adding a source. |
+| [Organization calendar](org-calendar.md) | Shared Google calendars, meetings, OAuth, ACLs and two-way sync. |
+| [Weekly programs](programs.md) | Tracks, recurring sessions and skip/move exceptions. |
 | [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
 | [Roles and permissions](roles-and-permissions.md) | Officers management tabs, role matrix, owner provisioning, transfer and recovery. |
 | [Purchase deadlines](purchase-deadlines.md) | Optional “needed by” dates on purchase requests, due hints, deadline sort and the Home calendar source. |

@@ -96,7 +96,7 @@ func (q *Queries) CalendarItems(ctx context.Context, window CalendarRange, selec
 }
 func loadCalendarEvents(ctx context.Context, q *Queries, window CalendarRange) ([]CalendarItem, error) {
 	rows, err := q.q.QueryContext(ctx, `SELECT id,name,starts_at,ends_at,luma_url,status,location FROM events
- WHERE julianday(starts_at)<julianday(?) AND
+ WHERE starts_at IS NOT NULL AND julianday(starts_at)<julianday(?) AND
  (julianday(starts_at)>=julianday(?) OR julianday(ends_at)>julianday(?))
  ORDER BY julianday(starts_at),id`, window.End, window.Start, window.Start)
 	if err != nil {

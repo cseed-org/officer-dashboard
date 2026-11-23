@@ -66,7 +66,11 @@ func (c *Ctx) search() error {
 			r.Subtitle = joinNonEmpty(" · ", h.A, h.B, h.C)
 		case "event":
 			r.Title, r.Href = h.Primary, "/events?id="+h.ID
-			r.Subtitle = joinNonEmpty(" · ", eventDay(h.A, zone()), h.B)
+			day := eventDay(h.A, zone())
+			if from, to, ok := strings.Cut(h.C, "|"); ok && h.A == "" {
+				day = "Tentative " + from + " – " + to
+			}
+			r.Subtitle = joinNonEmpty(" · ", day, h.B)
 		case "request":
 			r.Title, r.Href = h.Primary, "/finance?id="+h.ID
 			r.Subtitle = joinNonEmpty(" · ", h.A, h.B, h.C)

@@ -31,7 +31,7 @@ func under(path, prefix string) bool { return path == prefix || strings.HasPrefi
 
 var (
 	publicPrefixes       = []string{"/login", "/auth", "/api/health"}
-	serviceTokenPrefixes = []string{"/api/ingest", "/api/agent"}
+	serviceTokenPrefixes = []string{"/api/ingest", "/api/agent", "/api/orgcal"}
 	// The builder/mentor portal authenticates its own cookie in the handlers; it never
 	// accepts or needs an officer session (docs/launchpad-cohorts.md).
 	portalPrefixes = []string{"/api/portal"}
@@ -90,7 +90,7 @@ func DecideLogin(user *KnownUser) Decision {
 }
 
 // RedirectSections are the top-level page sections a post-login redirect may land in (besides "/").
-var RedirectSections = []string{"buildspace", "buildspace-launchpad", "launchpad", "events", "requests", "finance", "admin", "settings", "officers", "members", "speakers", "contacts", "design", "onboarding", "oauth"}
+var RedirectSections = []string{"calendar", "buildspace", "buildspace-launchpad", "launchpad", "events", "requests", "finance", "admin", "settings", "officers", "members", "speakers", "contacts", "design", "onboarding", "oauth"}
 
 // SafeNext returns the post-login redirect target, or "/" unless it is one of the app's own
 // pages. Layers, each enough on its own for the cases it covers:

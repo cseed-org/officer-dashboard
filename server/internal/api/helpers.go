@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"officerdashboard/internal/accounting"
 	"officerdashboard/internal/auth"
@@ -180,6 +181,12 @@ func readBody(c *Ctx, max int64) ([]byte, error) {
 
 // eventsByStart orders events newest first by start instant.
 func eventKey(e store.Event) string {
+	if e.StartsAt == "" && e.TentativeFrom != nil {
+		t, err := time.ParseInLocation("2006-01-02", *e.TentativeFrom, orgTZ())
+		if err == nil {
+			return isoMs(t.UnixMilli()) + "|" + e.ID
+		}
+	}
 	t, err := luma.ParseInstant(e.StartsAt)
 	if err != nil {
 		return e.StartsAt + "|" + e.ID
@@ -200,7 +207,7 @@ func (s *Server) eventItems(ctx context.Context, q *store.Queries, cat *catalog,
 }
 
 func eventItem(cat *catalog, e store.Event, counts *store.Counts) EventListItem {
-	item := EventListItem{ID: e.ID, LumaID: e.LumaID, Name: e.Name, StartsAt: e.StartsAt, EndsAt: e.EndsAt, Location: e.Location, Status: e.Status,
+	item := EventListItem{TentativeFrom: e.TentativeFrom, TentativeTo: e.TentativeTo, ID: e.ID, LumaID: e.LumaID, Name: e.Name, StartsAt: e.StartsAt, EndsAt: e.EndsAt, Location: e.Location, Status: e.Status,
 		Capacity: e.Capacity, LumaURL: e.LumaURL, Metrics: eventCounts(counts), DesignNeed: e.DesignNeed}
 	if e.HostUserID != nil {
 		if u := cat.users[*e.HostUserID]; u != nil {
@@ -396,6 +403,7 @@ func eventSnapshot(e *store.Event) map[string]any {
 		"id": e.ID, "lumaId": e.LumaID, "name": e.Name, "startsAt": e.StartsAt, "endsAt": e.EndsAt, "location": e.Location, "url": e.URL,
 		"hostUserId": e.HostUserID, "status": e.Status, "description": e.Description, "capacity": e.Capacity, "hostSubteamId": e.HostSubteamID,
 		"lumaUrl": e.LumaURL, "notionUrl": e.NotionURL, "designNeed": e.DesignNeed, "hasCover": e.CoverUpdatedAt != nil,
+		"tentativeFrom": e.TentativeFrom, "tentativeTo": e.TentativeTo,
 		"createdAt": isoMs(int64(e.CreatedAt)), "updatedAt": isoMs(int64(e.UpdatedAt)),
 	}
 }

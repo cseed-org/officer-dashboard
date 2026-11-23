@@ -30,6 +30,12 @@ type googleDeliveryRequest struct {
 }
 
 func (f *googleDeliveryFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Local development tools may probe listening ports; only Calendar API traffic
+	// belongs in delivery assertions.
+	if r.Method == http.MethodHead && r.URL.Path == "/" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")

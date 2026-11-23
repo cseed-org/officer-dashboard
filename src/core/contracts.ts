@@ -192,7 +192,7 @@ export type MeResponse = z.infer<typeof MeResponse>;
 export const LookupsResponse = z.object({
   expenseAccounts: z.array(AccountOption),
   funds: z.array(FundOption),
-  events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+  events: z.array(z.object({ id: Id, name: z.string(), startsAt: z.union([IsoDateTime, z.literal('')]), tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable() })),
   subteams: z.array(z.object({ id: Id, name: z.string() })),
   /** Active officers, by name: the event host picker. */
   hosts: z.array(UserSummary),
@@ -277,7 +277,8 @@ export const EventListItem = z.object({
   id: Id,
   lumaId: z.string().nullable(),
   name: z.string(),
-  startsAt: IsoDateTime,
+  startsAt: z.union([IsoDateTime,z.literal('')]),
+  tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable(),
   endsAt: IsoDateTime.nullable(),
   location: z.string().nullable(),
   host: UserSummary.nullable(),
@@ -360,7 +361,8 @@ export const HttpUrl = z.url({ protocol: /^https?$/ });
 /** POST /api/events (create manually) and PATCH /api/events/:id (all fields optional). */
 export const EventUpsertRequest = z.object({
   name: z.string().trim().min(1).max(200),
-  startsAt: IsoDateTime,
+  startsAt: IsoDateTime.nullable().optional(),
+  tentativeFrom: IsoDate.nullable().optional(), tentativeTo: IsoDate.nullable().optional(),
   endsAt: IsoDateTime.nullable().optional(),
   location: z.string().max(200).nullable().optional(),
   url: HttpUrl.nullable().optional(),
@@ -1059,11 +1061,13 @@ export const PersonActivityItem = z.object({
   kind: z.enum(['event', 'design', 'purchase']),
   id: Id,
   title: z.string(),
-  /** event: hosted | hosting; design: its stage; purchase: its status. */
+  /** event: hosted | hosting | tentative; design: its stage; purchase: its status. */
   status: z.string(),
   /** design only: whether they requested it or are designing it. */
   role: z.enum(['requested', 'designing']).nullable(),
-  at: IsoDateTime,
+  /** "" for a tentative event, which carries its inclusive tentativeFrom/tentativeTo range (as EventListItem). */
+  at: z.union([IsoDateTime, z.literal('')]),
+  tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable(),
   href: z.string().startsWith('/'),
 });
 export type PersonActivityItem = z.infer<typeof PersonActivityItem>;
@@ -1329,7 +1333,7 @@ export const Contact = z.object({
  id: Id, name: z.string(), org: z.string(), role: z.string(), type: ContactType, hasSpokenForUs: z.boolean(), clubSupport: z.boolean(),
  topics: z.array(z.string()), email: z.string(), linkedin: z.string(), notes: z.string(),
  createdAt: z.number().int(), updatedAt: z.number().int(),
- events: z.array(z.object({ id: Id, name: z.string(), startsAt: IsoDateTime })),
+ events: z.array(z.object({ id: Id, name: z.string(), startsAt: z.union([IsoDateTime, z.literal('')]), tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable() })),
  outreach: z.array(ContactOutreach), lastOutreach: ContactOutreach.nullable(),
 });
 export type Contact = z.infer<typeof Contact>;
@@ -1536,7 +1540,75 @@ export const BuildspaceIngest = z.object({
  body: z.string().trim().min(1).max(10000), status: z.enum(['open','resolved','on-track','needs-help']),
 });
 
+// Org-wide Google-backed calendar. Date ranges are inclusive for tentative items.
+export const OrgCalendarKey = z.enum(['internal', 'external', 'programs', 'events']);
+export type OrgCalendarKey = z.infer<typeof OrgCalendarKey>;
+export const OrgCalendar = z.object({ key: OrgCalendarKey, name: z.string(), googleCalendarId: z.string().nullable(), hue: z.string(), locked: z.boolean() });
+export type OrgCalendar = z.infer<typeof OrgCalendar>;
+export const OrgInvitee = z.object({ kind: z.enum(['subteam','user','email']), ref: z.string().min(1).max(254) });
+export type OrgInvitee = z.infer<typeof OrgInvitee>;
+export const OrgReminder = z.object({ method: z.enum(['email','popup']), minutes: z.number().int().min(0).max(40320) });
+export const OrgEventWriteRequest = z.object({
+ calendarKey: OrgCalendarKey, title: z.string().trim().min(1).max(200), description: z.string().max(10000).optional(), location: z.string().max(500).optional(),
+ startsAt: z.string().nullable().optional(), endsAt: z.string().nullable().optional(), allDay: z.boolean().optional(),
+ tentativeFrom: IsoDate.nullable().optional(), tentativeTo: IsoDate.nullable().optional(), rrule: z.string().max(500).nullable().optional(),
+ reminders: z.array(OrgReminder).max(5).optional(), sendInvites: z.boolean().optional(), invitees: z.array(OrgInvitee).max(200).optional(),
+});
+export type OrgEventWriteRequest = z.infer<typeof OrgEventWriteRequest>;
+/** PATCH keeps a recurring series on its original date (new times of day apply there) unless moveSeriesStart is true. */
+export const OrgEventPatchRequest = OrgEventWriteRequest.partial().extend({ moveSeriesStart: z.boolean().optional() });
+export const OrgCalendarEvent = z.object({
+ id: Id, calendarKey: OrgCalendarKey, title: z.string(), description: z.string(), location: z.string(),
+ startsAt: z.string().nullable(), endsAt: z.string().nullable(), allDay: z.boolean(), tentativeFrom: IsoDate.nullable(), tentativeTo: IsoDate.nullable(),
+ rrule: z.string().nullable(),
+ /** The recurring master's DTSTART/DTEND on every occurrence; edit times against these. Null when not recurring. */
+ seriesStartsAt: z.string().nullable(), seriesEndsAt: z.string().nullable(),
+ reminders: z.array(OrgReminder), sendInvites: z.boolean(), invitees: z.array(OrgInvitee),
+ sourceKind: z.enum(['manual','event','program']), sourceId: Id.nullable(), sourceHref: z.string().nullable(),
+ googleEventId: z.string().nullable(), googleEtag: z.string().nullable(), createdBy: Id.nullable(), updatedBy: Id.nullable(), createdAt: z.number(), updatedAt: z.number(),
+});
+export type OrgCalendarEvent = z.infer<typeof OrgCalendarEvent>;
+export const OrgCalendarsResponse = z.object({calendars: z.array(OrgCalendar), timezone: z.literal('America/Los_Angeles'), googleConnected: z.boolean(), syncProblem: z.boolean()});
+export const OrgEventsQuery = z.object({from: IsoDate, to: IsoDate, cal: z.string().optional()});
+export const OrgEventsResponse = z.object({events: z.array(OrgCalendarEvent), timezone: z.literal('America/Los_Angeles')});
+export const OrgEventResponse = z.object({event: OrgCalendarEvent});
+export const ProgramTrack = z.object({id: Id, key: z.string(), name: z.string(), hue: z.string()});
+export type ProgramTrack = z.infer<typeof ProgramTrack>;
+export const ProgramTrackCreateRequest = z.object({key: z.string().min(1).max(64), name: z.string().min(1).max(200), hue: z.string().min(1).max(30)});
+export const ProgramExceptionWriteRequest = z.object({onDate: IsoDate, kind: z.enum(['skip','move']), newStartsAt: IsoDateTime.nullable().optional(), newEndsAt: IsoDateTime.nullable().optional(), newLocation: z.string().nullable().optional()});
+export const ProgramException = z.object({programId: Id, onDate: IsoDate, kind: z.enum(['skip','move']), newStartsAt: IsoDateTime.nullable(), newEndsAt: IsoDateTime.nullable(), newLocation: z.string().nullable()});
+export type ProgramException = z.infer<typeof ProgramException>;
+export const ProgramWriteRequest = z.object({trackId: Id, name: z.string().trim().min(1).max(200), weekday: z.number().int().min(0).max(6), startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), durationMin: z.number().int().min(1).max(1440), location: z.string().max(500).optional(), startsOn: IsoDate, endsOn: IsoDate, description: z.string().max(10000).optional()});
+export type ProgramWriteRequest = z.infer<typeof ProgramWriteRequest>;
+export const ProgramPatchRequest = ProgramWriteRequest.partial();
+export const Program = ProgramWriteRequest.extend({id: Id, location: z.string(), description: z.string(), createdAt: z.number(), updatedAt: z.number(), exceptions: z.array(ProgramException)});
+export type Program = z.infer<typeof Program>;
+export const ProgramsResponse = z.object({programs: z.array(Program)});
+export const ProgramResponse = z.object({program: Program});
+export const ProgramTracksResponse = z.object({tracks: z.array(ProgramTrack)});
+/** needsReconnect: the org refresh token was revoked. lastSyncError: the last failed pass (null when healthy). */
+export const OrgGoogleStatus = z.object({configured: z.boolean(), connected: z.boolean(), email: z.string().nullable(), needsReconnect: z.boolean(), lastSyncError: z.string().nullable()});
+export type OrgGoogleStatus = z.infer<typeof OrgGoogleStatus>;
+
 export const ENDPOINTS = {
+  orgCalendars: {method:'GET', path:'/api/orgcal/calendars', auth:'officer', response:OrgCalendarsResponse},
+  orgEvents: {method:'GET', path:'/api/orgcal/events', auth:'officer', query:OrgEventsQuery, response:OrgEventsResponse},
+  orgEventCreate: {method:'POST', path:'/api/orgcal/events', auth:'officer', body:OrgEventWriteRequest, response:OrgEventResponse},
+  orgEventUpdate: {method:'PATCH', path:'/api/orgcal/events/:id', auth:'officer', body:OrgEventPatchRequest, response:OrgEventResponse},
+  orgEventDelete: {method:'DELETE', path:'/api/orgcal/events/:id', auth:'officer', response:OkResponse},
+  programTracks: {method:'GET', path:'/api/program-tracks', auth:'officer', response:ProgramTracksResponse},
+  programTrackCreate: {method:'POST', path:'/api/program-tracks', auth:'leadership', body:ProgramTrackCreateRequest, response:z.object({track:ProgramTrack})},
+  programsList: {method:'GET', path:'/api/programs', auth:'officer', response:ProgramsResponse},
+  programCreate: {method:'POST', path:'/api/programs', auth:'officer', body:ProgramWriteRequest, response:ProgramResponse},
+  programUpdate: {method:'PATCH', path:'/api/programs/:id', auth:'officer', body:ProgramPatchRequest, response:ProgramResponse},
+  programDelete: {method:'DELETE', path:'/api/programs/:id', auth:'officer', response:OkResponse},
+  programExceptionSave: {method:'POST', path:'/api/programs/:id/exceptions', auth:'officer', body:ProgramExceptionWriteRequest, response:ProgramResponse},
+  programExceptionDelete: {method:'DELETE', path:'/api/programs/:id/exceptions', auth:'officer', query:z.object({onDate:IsoDate}), response:ProgramResponse},
+  orgGoogleStatus: {method:'GET', path:'/api/settings/org-google/status', auth:'leadership', response:OrgGoogleStatus},
+  orgGoogleConnect: {method:'GET', path:'/api/settings/org-google/connect', auth:'leadership', response:'redirect'},
+  orgGoogleCallback: {method:'GET', path:'/auth/org-google/callback', auth:'leadership', response:'redirect'},
+  orgGoogleDisconnect: {method:'DELETE', path:'/api/settings/org-google', auth:'leadership', response:OrgGoogleStatus},
+
  buildspaceList: {method: 'GET', path: '/api/buildspace-launchpad', auth: 'officer', query: LaunchpadQuery, response: BuildspaceResponse},
  buildspaceProjectSave: {method: 'PUT', path: '/api/buildspace-launchpad/projects/:id', auth: 'officer', body: BuildspaceProjectBody, response: z.object({project: BuildspaceProject})},
  buildspacePersonSave: {method: 'PUT', path: '/api/buildspace-launchpad/people/:id', auth: 'officer', body: BuildspacePersonBody, response: z.object({person: BuildspacePerson})},

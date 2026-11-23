@@ -291,6 +291,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	go sessionJanitor(ctx, db, log)
 	// Deliver calendar jobs a previous run left in the outbox, and retry failed
 	// ones hourly.
+	srv.StartOrgCalendar(ctx)
 	srv.ResumeCalendar()
 	go calendarRetry(ctx, srv)
 	go srv.CloudflareDaily(ctx)

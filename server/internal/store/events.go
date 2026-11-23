@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"officerdashboard/internal/luma"
 )
@@ -13,7 +14,9 @@ type Event struct {
 	ID            string
 	LumaID        *string
 	Name          string
-	StartsAt      string // ISO with offset, as supplied
+	StartsAt      string // Empty for tentative events; SQL stores NULL
+	TentativeFrom *string
+	TentativeTo   *string
 	EndsAt        *string
 	Location      *string
 	URL           *string
@@ -37,16 +40,16 @@ var EventStatuses = []string{"draft", "published", "completed", "cancelled"}
 // DesignNeeds are the values events.design_need accepts. Unknown counts as needed.
 var DesignNeeds = []string{"unknown", "needed", "not_needed"}
 
-const eventCols = `id, luma_id, name, starts_at, ends_at, location, url, host_user_id, status, description, capacity, host_subteam_id, luma_url, notion_url, design_need, created_at, updated_at`
+const eventCols = `id, luma_id, name, starts_at, ends_at, location, url, host_user_id, status, description, capacity, host_subteam_id, luma_url, notion_url, design_need, created_at, updated_at, tentative_from, tentative_to`
 
-const eventSelect = `SELECT e.id, e.luma_id, e.name, e.starts_at, e.ends_at, e.location, e.url, e.host_user_id, e.status, e.description, e.capacity,
-	e.host_subteam_id, e.luma_url, e.notion_url, e.design_need, e.created_at, e.updated_at, c.updated_at
+const eventSelect = `SELECT e.id, e.luma_id, e.name, coalesce(e.starts_at,''), e.ends_at, e.location, e.url, e.host_user_id, e.status, e.description, e.capacity,
+	e.host_subteam_id, e.luma_url, e.notion_url, e.design_need, e.created_at, e.updated_at, c.updated_at, e.tentative_from, e.tentative_to
 	FROM events e LEFT JOIN event_covers c ON c.event_id = e.id`
 
 func scanEvent(s interface{ Scan(...any) error }) (*Event, error) {
 	var e Event
 	if err := s.Scan(&e.ID, &e.LumaID, &e.Name, &e.StartsAt, &e.EndsAt, &e.Location, &e.URL, &e.HostUserID, &e.Status, &e.Description, &e.Capacity,
-		&e.HostSubteamID, &e.LumaURL, &e.NotionURL, &e.DesignNeed, &e.CreatedAt, &e.UpdatedAt, &e.CoverUpdatedAt); err != nil {
+		&e.HostSubteamID, &e.LumaURL, &e.NotionURL, &e.DesignNeed, &e.CreatedAt, &e.UpdatedAt, &e.CoverUpdatedAt, &e.TentativeFrom, &e.TentativeTo); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -98,6 +101,22 @@ func eventStartMillis(raw string) *int64 {
 	return &ms
 }
 
+func eventSortMillis(raw string, tentative *string) *int64 {
+	if raw != "" {
+		return eventStartMillis(raw)
+	}
+	if tentative == nil {
+		return nil
+	}
+	loc, _ := time.LoadLocation("America/Los_Angeles")
+	t, err := time.ParseInLocation("2006-01-02", *tentative, loc)
+	if err != nil {
+		return nil
+	}
+	ms := t.UnixMilli()
+	return &ms
+}
+
 // InsertEvent adds an event. An empty Status stores "published" (imports come from Luma).
 func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	if e.Status == "" {
@@ -106,14 +125,23 @@ func (q *Queries) InsertEvent(ctx context.Context, e Event) error {
 	if e.DesignNeed == "" {
 		e.DesignNeed = "unknown"
 	}
-	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`, starts_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		e.ID, e.LumaID, e.Name, e.StartsAt, e.EndsAt, e.Location, e.URL, e.HostUserID, e.Status, e.Description, e.Capacity, e.HostSubteamID,
-		e.LumaURL, e.NotionURL, e.DesignNeed, int64(e.CreatedAt), int64(e.UpdatedAt), eventStartMillis(e.StartsAt))
+	_, err := q.q.ExecContext(ctx, `INSERT INTO events (`+eventCols+`, starts_at_ms) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		e.ID, e.LumaID, e.Name, nullableEventStart(e.StartsAt), e.EndsAt, e.Location, e.URL, e.HostUserID, e.Status, e.Description, e.Capacity, e.HostSubteamID,
+		e.LumaURL, e.NotionURL, e.DesignNeed, int64(e.CreatedAt), int64(e.UpdatedAt), e.TentativeFrom, e.TentativeTo, eventSortMillis(e.StartsAt, e.TentativeFrom))
 	return err
 }
 
 // EventPatch lists the event fields that can change.
+func nullableEventStart(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
 type EventPatch struct {
+	TentativeFrom Opt[string]
+	TentativeTo   Opt[string]
 	Name          Opt[string]
 	StartsAt      Opt[string]
 	EndsAt        Opt[string]
@@ -143,8 +171,25 @@ func (q *Queries) UpdateEvent(ctx context.Context, id string, p EventPatch, now 
 	str := func(col string, o Opt[string]) { add(col, o.Set, o.val()) }
 	str("name", p.Name)
 	str("starts_at", p.StartsAt)
-	if p.StartsAt.Set {
-		add("starts_at_ms", true, eventStartMillis(p.StartsAt.V))
+	str("tentative_from", p.TentativeFrom)
+	str("tentative_to", p.TentativeTo)
+	if p.StartsAt.Set || p.TentativeFrom.Set {
+		cur, err := q.EventByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		start, tf := cur.StartsAt, cur.TentativeFrom
+		if p.StartsAt.Set {
+			start = p.StartsAt.V
+		}
+		if p.TentativeFrom.Set {
+			if p.TentativeFrom.Null {
+				tf = nil
+			} else {
+				tf = &p.TentativeFrom.V
+			}
+		}
+		add("starts_at_ms", true, eventSortMillis(start, tf))
 	}
 	str("ends_at", p.EndsAt)
 	str("location", p.Location)

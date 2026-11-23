@@ -32,6 +32,11 @@ const out = join(root, 'server/internal/api/mcp_tools.json');
  * club settings, preferences/widget layout and Cloudflare sync.
  */
 const TOOLS = {
+  orgEvents: { name: 'orgcal_list', title: 'Organization calendar', hint: 'read', description: 'List meetings, weekly programs and dashboard events. from/to are dates (to exclusive); cal optionally filters calendar keys.' },
+  orgEventCreate: { name: 'orgcal_create', title: 'Create meeting', description: 'Create an Internal or External meeting. Weekly Programs and Events calendars are locked. Agents send no invitation emails unless body.sendInvites is true. Optional `rrule`: "RRULE:FREQ=DAILY|WEEKLY|MONTHLY" with optional INTERVAL=1..52, BYDAY (weekly only, e.g. MO,WE, must include the start day) and one of UNTIL=YYYYMMDD or COUNT=1..500; biweekly is FREQ=WEEKLY;INTERVAL=2, monthly repeats on the start day of month.' },
+  orgEventUpdate: { name: 'orgcal_update', title: 'Update meeting', hint: 'idempotent', description: 'Edit any Internal or External meeting by id. Locked items must be changed through their source workflow. A changed `rrule` follows the same rules as orgcal_create; tentative meetings cannot recur. An update that omits sendInvites turns invitation emails off. For a recurring meeting, new startsAt/endsAt times apply on the original series date (orgcal_list gives it as seriesStartsAt/seriesEndsAt); pass moveSeriesStart: true only to move the whole series to a new first date, which drops earlier occurrences.' },
+  orgEventDelete: { name: 'orgcal_delete', title: 'Delete meeting', hint: 'destructive', description: 'Delete an Internal or External meeting. Locked calendars cannot be changed here.' },
+  programsList: { name: 'programs_list', title: 'List weekly programs', hint: 'read', description: 'Read all weekly programs, tracks, schedules and skip/move exceptions.' },
   // ── context ──
   me: { name: 'whoami', title: 'Who am I', hint: 'read', description: 'The signed-in officer this agent acts as: id, name, role (officer < director < leadership), owner flag, subteam and time zone. Call first: role decides which other tools will succeed.' },
   meStats: { name: 'my_stats', title: 'My hosting stats', hint: 'read', description: "The officer's own hosting stats: events hosted, attendees, last event." },

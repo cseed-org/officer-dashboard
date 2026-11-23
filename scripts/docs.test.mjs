@@ -59,7 +59,7 @@ test("architecture lists every internal package and current command set", () => 
   assert.deepEqual(packages.filter((name) => !architecture.includes(`internal/${name}`)), []);
   const main = read("server/cmd/dashboard/main.go");
   const usage = /usage: dashboard \[([^\]]+)\]/.exec(main)?.[1];
-  const documentedUsage = /cmd\/dashboard\s+main: ([^\n]+)/.exec(architecture)?.[1].replaceAll(" ", "");
+  const documentedUsage = /cmd\/dashboard\s+main: ([^\n]+)/.exec(architecture)?.[1].replaceAll(" ", "").trim();
   assert.equal(documentedUsage, usage, "architecture command list should match main.go usage");
 });
 

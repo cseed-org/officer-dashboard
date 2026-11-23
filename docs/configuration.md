@@ -109,3 +109,13 @@ Automatic zone changes are saved immediately. If a form has unsaved edits, a not
 appears and display times update after the form is saved or closed. Guest and reflection
 CSV imports interpret offset-less timestamps in the club default zone, with a Pacific
 fallback; personal display preferences do not affect imports.
+
+## Organization Google calendars
+
+Reuse GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET. No additional credentials or
+polling environment variables are required. Register APP_URL/auth/org-google/callback as
+an additional authorized Google OAuth redirect URI; retain APP_URL/auth/google/callback
+for per-officer sync. Enable Google Calendar API and grant full calendar scope in org consent.
+Leadership connects the dedicated org Gmail through /api/settings/org-google/connect.
+The same client secret seals the independent org token; keep it stable across restarts.
+See [Organization calendar](org-calendar.md) for sharing, intervals and disconnect behavior.

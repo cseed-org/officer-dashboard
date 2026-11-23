@@ -2,6 +2,440 @@
   "generatedFrom": "src/core/contracts.ts ENDPOINTS via scripts/gen-mcp-tools.mjs; do not edit",
   "tools": [
     {
+      "name": "orgcal_list",
+      "title": "Organization calendar",
+      "description": "List meetings, weekly programs and dashboard events. from/to are dates (to exclusive); cal optionally filters calendar keys.",
+      "endpoint": "orgEvents",
+      "method": "GET",
+      "path": "/api/orgcal/events",
+      "minRole": "officer",
+      "queryKeys": [
+        "from",
+        "to",
+        "cal"
+      ],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Organization calendar",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "cal": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orgcal_create",
+      "title": "Create meeting",
+      "description": "Create an Internal or External meeting. Weekly Programs and Events calendars are locked. Agents send no invitation emails unless body.sendInvites is true. Optional `rrule`: \"RRULE:FREQ=DAILY|WEEKLY|MONTHLY\" with optional INTERVAL=1..52, BYDAY (weekly only, e.g. MO,WE, must include the start day) and one of UNTIL=YYYYMMDD or COUNT=1..500; biweekly is FREQ=WEEKLY;INTERVAL=2, monthly repeats on the start day of month.",
+      "endpoint": "orgEventCreate",
+      "method": "POST",
+      "path": "/api/orgcal/events",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Create meeting",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "object",
+            "properties": {
+              "calendarKey": {
+                "type": "string",
+                "enum": [
+                  "internal",
+                  "external",
+                  "programs",
+                  "events"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "location": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "startsAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "endsAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "tentativeFrom": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeTo": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rrule": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reminders": {
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "email",
+                        "popup"
+                      ]
+                    },
+                    "minutes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 40320
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "minutes"
+                  ]
+                }
+              },
+              "sendInvites": {
+                "type": "boolean"
+              },
+              "invitees": {
+                "maxItems": 200,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "subteam",
+                        "user",
+                        "email"
+                      ]
+                    },
+                    "ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 254
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "ref"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "calendarKey",
+              "title"
+            ],
+            "description": "The JSON request body."
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orgcal_update",
+      "title": "Update meeting",
+      "description": "Edit any Internal or External meeting by id. Locked items must be changed through their source workflow. A changed `rrule` follows the same rules as orgcal_create; tentative meetings cannot recur. An update that omits sendInvites turns invitation emails off. For a recurring meeting, new startsAt/endsAt times apply on the original series date (orgcal_list gives it as seriesStartsAt/seriesEndsAt); pass moveSeriesStart: true only to move the whole series to a new first date, which drops earlier occurrences.",
+      "endpoint": "orgEventUpdate",
+      "method": "PATCH",
+      "path": "/api/orgcal/events/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Update meeting",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          },
+          "body": {
+            "type": "object",
+            "properties": {
+              "calendarKey": {
+                "type": "string",
+                "enum": [
+                  "internal",
+                  "external",
+                  "programs",
+                  "events"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 10000
+              },
+              "location": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "startsAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "endsAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "tentativeFrom": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeTo": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rrule": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reminders": {
+                "maxItems": 5,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "email",
+                        "popup"
+                      ]
+                    },
+                    "minutes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 40320
+                    }
+                  },
+                  "required": [
+                    "method",
+                    "minutes"
+                  ]
+                }
+              },
+              "sendInvites": {
+                "type": "boolean"
+              },
+              "invitees": {
+                "maxItems": 200,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "subteam",
+                        "user",
+                        "email"
+                      ]
+                    },
+                    "ref": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 254
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "ref"
+                  ]
+                }
+              },
+              "moveSeriesStart": {
+                "type": "boolean"
+              }
+            },
+            "description": "The fields to change (only these are updated)."
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "orgcal_delete",
+      "title": "Delete meeting",
+      "description": "Delete an Internal or External meeting. Locked calendars cannot be changed here.",
+      "endpoint": "orgEventDelete",
+      "method": "DELETE",
+      "path": "/api/orgcal/events/:id",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "Delete meeting",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The record id (from a list_* or search result)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "programs_list",
+      "title": "List weekly programs",
+      "description": "Read all weekly programs, tracks, schedules and skip/move exceptions.",
+      "endpoint": "programsList",
+      "method": "GET",
+      "path": "/api/programs",
+      "minRole": "officer",
+      "queryKeys": [],
+      "fieldKeys": [],
+      "multipart": "",
+      "response": "json",
+      "annotations": {
+        "title": "List weekly programs",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "whoami",
       "title": "Who am I",
       "description": "The signed-in officer this agent acts as: id, name, role (officer < director < leadership), owner flag, subteam and time zone. Call first: role decides which other tools will succeed.",
@@ -345,8 +779,37 @@
                 "maxLength": 200
               },
               "startsAt": {
-                "type": "string",
-                "format": "date-time"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeFrom": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeTo": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "endsAt": {
                 "anyOf": [
@@ -469,8 +932,7 @@
               }
             },
             "required": [
-              "name",
-              "startsAt"
+              "name"
             ],
             "description": "The JSON request body."
           }
@@ -516,8 +978,37 @@
                 "maxLength": 200
               },
               "startsAt": {
-                "type": "string",
-                "format": "date-time"
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeFrom": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "tentativeTo": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "endsAt": {
                 "anyOf": [

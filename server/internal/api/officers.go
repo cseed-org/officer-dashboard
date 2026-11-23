@@ -738,7 +738,12 @@ func (c *Ctx) officerActivity() error {
 		if it.Role != "" {
 			role = it.Role
 		}
-		out = append(out, map[string]any{"kind": it.Kind, "id": it.ID, "title": it.Title, "status": it.Status, "role": role, "at": it.At.UTC().Format(time.RFC3339), "href": href})
+		// A tentative event follows EventListItem: "at" is "" and the range is set.
+		at := it.At.UTC().Format(time.RFC3339)
+		if it.TentativeFrom != nil {
+			at = ""
+		}
+		out = append(out, map[string]any{"kind": it.Kind, "id": it.ID, "title": it.Title, "status": it.Status, "role": role, "at": at, "tentativeFrom": it.TentativeFrom, "tentativeTo": it.TentativeTo, "href": href})
 	}
 	writeJSON(c.W, 200, map[string]any{
 		"stats": map[string]any{"eventsHosted": s.EventsHosted, "openDesign": s.OpenDesign, "openPurchases": s.OpenPurchases},

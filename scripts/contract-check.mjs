@@ -202,6 +202,33 @@ const money = (c) => `${c < 0 ? '-' : ''}$${(Math.abs(c) / 100).toLocaleString('
 
 // ───────────── 1. every GET endpoint, on the freshly seeded books ─────────────
 await call('health');
+// Org calendar and programs: all published JSON endpoints, including locks.
+await call('orgCalendars', {who: officer});
+await call('orgGoogleStatus', {who: leadership});
+await call('orgGoogleDisconnect', {who: leadership});
+const orgMeeting = await call('orgEventCreate', {who: officer, body: {calendarKey:'internal',title:'Contract meeting',startsAt:'2026-11-24T18:00:00Z',endsAt:'2026-11-24T19:00:00Z'}});
+const orgId = orgMeeting.json.event.id;
+await call('orgEventUpdate', {who: officer,params:{id:orgId},body:{title:'Updated meeting'}});
+await call('orgEvents', {who: officer,query:{from:'2026-11-01',to:'2026-12-01'}});
+// Recurring meetings: occurrences carry the series times; PATCH from an occurrence keeps the series date.
+const series = await call('orgEventCreate', {who: officer, body: {calendarKey:'internal',title:'Contract weekly',startsAt:'2026-11-02T18:00:00Z',endsAt:'2026-11-02T19:00:00Z',rrule:'RRULE:FREQ=WEEKLY;INTERVAL=2;COUNT=4'}});
+const occurrences = (await call('orgEvents', {who: officer,query:{from:'2026-11-01',to:'2026-12-31',cal:'internal'}})).json.events.filter((e) => e.id === series.json.event.id);
+must(occurrences.length === 4 && occurrences.every((e) => e.seriesStartsAt === '2026-11-02T18:00:00Z'), 'occurrences carry the series start', occurrences);
+const kept = await call('orgEventUpdate', {who: officer, params:{id:series.json.event.id}, body:{startsAt:'2026-11-30T19:00:00Z',endsAt:'2026-11-30T20:00:00Z'}});
+must(kept.json.event.startsAt.startsWith('2026-11-02T'), 'editing from an occurrence keeps the series date', kept.json.event);
+await call('orgEventUpdate', {who: officer, params:{id:series.json.event.id}, body:{startsAt:'2026-11-16T19:00:00Z',endsAt:'2026-11-16T20:00:00Z',moveSeriesStart:true}});
+await call('orgEventDelete', {who: officer, params:{id:series.json.event.id}});
+await call('orgEventCreate', {who: officer,body:{calendarKey:'events',title:'Locked'},expect:403});
+await call('orgEventDelete', {who: officer,params:{id:orgId}});
+const tracks = await call('programTracks', {who: officer});
+await call('programTrackCreate', {who: leadership,body:{key:'contract-track',name:'Contract track',hue:'blue'}});
+const program = await call('programCreate', {who: officer,body:{trackId:tracks.json.tracks[0].id,name:'Contract program',weekday:2,startTime:'10:00',durationMin:60,startsOn:'2026-11-01',endsOn:'2026-11-30'}});
+const programId = program.json.program.id;
+await call('programUpdate', {who: officer,params:{id:programId},body:{name:'Updated program'}});
+await call('programExceptionSave', {who: officer,params:{id:programId},body:{onDate:'2026-11-03',kind:'skip'}});
+await call('programExceptionDelete', {who: officer,params:{id:programId},query:{onDate:'2026-11-03'}});
+await call('programsList', {who: officer});
+await call('programDelete', {who: officer,params:{id:programId}});
 const me = await call('me', { who: officer });
 must(me.json?.user?.id === 'user-priya', 'me returns the signed-in user');
 const lookups = await call('lookups', { who: officer });
@@ -378,6 +405,17 @@ await call('eventsImport', { who: officer, form: csv('reflections', 'Name\nAnn\n
 const newEvent = await call('eventCreate', { who: officer, body: { name: 'Contract check social', startsAt: '2026-12-12T19:00:00-08:00', endsAt: '2026-12-12T21:00:00-08:00', location: 'Atrium', url: 'https://example.org/social', hostUserId: 'user-ava' } });
 await call('eventUpdate', { who: officer, params: { id: newEvent.json.event.id }, body: { location: 'Lobby', endsAt: null } });
 await call('eventDetail', { who: officer, params: { id: newEvent.json.event.id } });
+// Tentative Events stay first-class: every read that carries an event start stays contract-valid.
+const tentative = await call('eventCreate', { who: officer, body: { name: 'Contract tentative mixer', startsAt: null, tentativeFrom: '2026-12-01', tentativeTo: '2026-12-05', status: 'published', hostUserId: 'user-priya' } });
+const tentativeId = tentative.json.event.id;
+must((await call('lookups', { who: officer })).json.events.some((e) => e.id === tentativeId && e.startsAt === '' && e.tentativeFrom === '2026-12-01'), 'tentative events are selectable in lookups');
+must((await call('search', { who: officer, query: { q: 'tentative mixer' } })).json.results.some((r) => r.id === tentativeId), 'tentative events are searchable');
+must((await call('officerActivity', { who: officer, params: { id: 'user-priya' } })).json.items.some((i) => i.id === tentativeId && i.at === '' && i.status === 'tentative'), 'tentative events are in person activity');
+await call('meStats', { who: officer });
+await call('calendarFeed', { who: officer, query: { start: '2026-11-01', end: '2026-12-31' } });
+const tentativeContact = await call('contactCreate', { who: officer, body: { name: 'Tentative speaker', type: 'both', eventIds: [tentativeId] } });
+must(tentativeContact.json.contact.events[0]?.tentativeTo === '2026-12-05', 'contact events carry the tentative range', tentativeContact.json.contact);
+await call('contactsList', { who: officer });
 // V0.3: a draft with the handoff fields, a cover, the pasted Luma link, then delete.
 const evDraft = await call('eventCreate', {
   who: officer,
@@ -722,7 +760,7 @@ for (let i = 0; i < 31; i++) {
 }
 
 // Everything with a zod response schema must have been exercised.
-const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback']); // redirects, and dev-build-only routes: covered by the Go tests
+const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback', 'orgGoogleConnect', 'orgGoogleCallback']); // redirects, and dev-build-only routes: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);
 if (missed.length) fail('coverage', `endpoints never called: ${missed.join(', ')}`);
 

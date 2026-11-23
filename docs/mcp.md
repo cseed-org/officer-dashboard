@@ -86,7 +86,7 @@ agent ── POST /mcp  Authorization: Bearer … ─▶ tools
 
 ## Tools
 
-85 tools, one per API endpoint: context (`whoami`, `search`, `lookups`,
+90 tools, one per API endpoint: context (`whoami`, `search`, `lookups`,
 `calendar_feed`…), events, purchase requests (including `attach_receipt` with base64
 files, 10 MB max), finance reports and budgets, the design board, external contacts, members,
 officers, Buildspace Launchpad (cohorts, builder and mentor invites, mentor roster and
@@ -158,3 +158,7 @@ The consent flow uses the normal login page, so the dev sign-in panel works ther
 - `scripts/contract-check.mjs` runs the OAuth → MCP → Connected agents → audit flow.
 - `web/tests/mcp-agents.spec.ts` runs everything end to end against a live server: the browser connect flow, every tool for every role, protocol edge cases and the real clients. It also runs each Go test.
 - With `MCP_SHOTS=1`, every test saves a screenshot to [docs/evidence/mcp-agents](evidence/mcp-agents/README.md).
+
+Org calendar tools are orgcal_list, orgcal_create, orgcal_update, orgcal_delete and
+programs_list. Calendar writes are confined to Internal/External meetings; locked source
+items are read-only here. See [Organization calendar](org-calendar.md).
