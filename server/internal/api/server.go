@@ -108,8 +108,8 @@ type Server struct {
 	orgPassCancel  context.CancelFunc
 	orgLastError   string
 	orgNeedsReauth bool
-	orgFailures             int
-	orgRetryAt              time.Time
+	orgFailures    int
+	orgRetryAt     time.Time
 }
 
 // New builds a server from its config.
