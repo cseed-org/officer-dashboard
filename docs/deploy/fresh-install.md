@@ -24,11 +24,13 @@ The Pi target builds its binary on the Pi.
 ## 0. What you need
 
 - A domain on Cloudflare, and a Zero Trust account (the free plan is fine).
-- **Docker target:** Docker with Compose v2, and `git` (the checkout supplies the compose and
-  env files). The release to run: an image tag such as `0.15.0`. Releases are git tags
-  `v0.15.0`; the repository's **Tags** page lists them. Before the first release tag exists,
-  use `main` (the newest commit on `main`). If the package is private: a GitHub account that
-  can read it, for a token with the `read:packages` scope (section 4D).
+- **Docker target:** Docker with Compose v2 on a 64-bit system (amd64 or arm64), and `git`
+  (the checkout supplies the compose and env files). The image tag to run, a fixed one:
+  `0.15.0` for the release tagged `v0.15.0`, or, before the first release tag exists,
+  `sha-<commit>` for a `main` commit whose CI passed (the first 7 characters of the commit).
+  The [package page](https://github.com/cseed-org/officer-dashboard/pkgs/container/officer-dashboard)
+  lists the published tags ([what each means](../deployment.md#the-published-image)). If the
+  package is private: a GitHub account that can read it, for a token (section 4D).
 - **Pi target:** Debian / Raspberry Pi OS with `sudo apt install git build-essential sqlite3`
   (gcc and make), Go 1.27.4 from [go.dev/dl](https://go.dev/dl/) (`linux-arm64`; the module
   pins `toolchain go1.27.4`, and Debian's packaged Go is older), and Node ≥ 22.23.4 (not in
@@ -46,11 +48,13 @@ Clone the repository on the server. If it is private, authenticate first (for ex
 ```sh
 git clone https://github.com/cseed-org/officer-dashboard.git
 cd officer-dashboard
-git checkout main      # Pi: the release you build; note it with: git rev-parse --short HEAD
+git checkout v0.15.0   # the release; before the first release tag: git checkout <commit>
+git rev-parse --short=7 HEAD   # Pi: what `dashboard version` will report. Docker: sha-<this> is the image tag
 ```
 
-Docker: the image tag picks what runs, and the checkout only needs compose files at least as
-new as it. Check out the release's tag (`git checkout v0.15.0`) or stay on `main`.
+**Docker:** the image tag, not the checkout, decides what runs. Check out the same release
+anyway: a release can change the compose files along with the image, and the release's own
+checkout has the matching ones.
 
 ## 1. Create the R2 bucket for Litestream (Docker only)
 
@@ -101,11 +105,12 @@ In `.env` (read by compose, not by the app):
 ```sh
 APP_URL=https://officers.example.org
 TUNNEL_TOKEN=<the tunnel token from section 2>
-DASHBOARD_TAG=0.15.0      # the release to run; `main` until the first release tag exists
+DASHBOARD_TAG=0.15.0      # required: the fixed image tag from section 0 (or sha-<commit>)
 ```
 
-Pin a release (`0.15.0`) rather than `latest`: the tag then changes only when you change it,
-and the [upgrade runbook](upgrade-existing.md) takes a backup first.
+Use a fixed tag, never `latest`, `0.15` or `main`: those move, and any later `pull` would
+upgrade the dashboard and migrate its database without the backup the
+[upgrade runbook](upgrade-existing.md) takes first.
 
 In `dashboard.env`: the [settings below](#the-apps-settings), plus Litestream (uncomment and set
 all six; set `PATH` and `REGION` even though the entrypoint has defaults, because maintenance
@@ -168,9 +173,11 @@ Same on both targets ([Configuration](../configuration.md) has every variable).
 
 The server creates the database and applies every migration before it listens.
 
-If the package is private, sign in to GHCR once on this machine, as the user that runs
-`docker compose` ([how to create the token](../deployment.md#the-published-image): a
-**classic** token with only `read:packages`):
+If the package is private (open the package page signed out: you see it only if it is
+public), sign in to GHCR once on this machine. Use a **classic** token with only the
+`read:packages` scope, from an account that can read the package
+([how to create it](../deployment.md#the-published-image)). Run the login as the user that runs
+`docker compose` (with `sudo docker compose`, use `sudo docker login`):
 
 ```sh
 read -rs GHCR_TOKEN                  # paste the token; it stays out of the shell history
@@ -188,11 +195,16 @@ docker compose -f compose.cloudflare.yml logs dashboard | grep listening
 docker compose -f compose.cloudflare.yml logs cloudflared | grep "Registered tunnel connection"
 ```
 
-If `pull` ends with `denied`, the login is missing or the account cannot read the package;
-`manifest unknown` means no image has that tag (check `DASHBOARD_TAG`). Do not run `up -d`
-until `pull` succeeds: without the image, `up` builds one from this checkout instead (slow on a
-Pi, and not the release you chose). On the first boot the bucket is empty, so the entrypoint's `litestream restore -if-db-not-exists -if-replica-exists`
-does nothing; the server creates the file and Litestream starts replicating it.
+If `pull` fails, `up -d` fails too (compose never builds this image itself):
+
+- `denied`: the login is missing or expired, the account cannot read the package, or the image
+  name is wrong.
+- `manifest unknown` or `not found`: no image has that tag. Check `DASHBOARD_TAG` against the
+  package page; a tag that CI has not finished publishing appears there once it has.
+
+On the first boot the bucket is empty, so the entrypoint's
+`litestream restore -if-db-not-exists -if-replica-exists` does nothing; the server creates the
+file and Litestream starts replicating it.
 
 **Do not run `dashboard seed` on a production database.** It loads fictional sample data
 (users, events, FY2027 journal entries). It refuses a database with real users or journal
@@ -263,7 +275,7 @@ promote an account that already exists, see
 | --- | --- | --- |
 | Health | `docker compose -f compose.cloudflare.yml ps` → `(healthy)` | `curl -s http://127.0.0.1:8090/api/health` → `{"db":true,"ok":true}` |
 | Migration count | `docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard migrate` → `/data/dashboard.db: 37 migrations applied` | `sudo -u dashboard env DB_PATH=/var/lib/officer-dashboard/dashboard.db /opt/officer-dashboard/dashboard migrate` → `… 37 migrations applied` |
-| Version | `docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard version` → the release tag (`v0.15.0`), or the commit for `main` | `/opt/officer-dashboard/dashboard version` |
+| Version | `docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard version` → the release tag (`v0.15.0`), or the 7-character commit of a `sha-` tag | `/opt/officer-dashboard/dashboard version` |
 | Replica / backup | `docker compose -f compose.cloudflare.yml exec dashboard litestream generations -config /etc/litestream.yml /data/dashboard.db` → one row, updated moments ago; R2 shows objects under `dashboard/generations/` | `sudo ls -l /var/lib/officer-dashboard/backups` → a `.db.gz` |
 | From outside | [Deployment step 9](../deployment.md#9-check-it-from-outside): `mcp-check` ends `0 failed` (its `read -rs` line needs bash) | same, from any machine with Docker or the binary |
 | Sign-in | PIN, then Discord, as the owner (section 5) | same |

@@ -40,13 +40,13 @@ Then:
   directory: Docker commands run in `server/deploy`, Pi commands in `server/`.
 - **Docker installs pull the published image** `ghcr.io/cseed-org/officer-dashboard` (CI
   builds it for amd64 and arm64); the checkout only supplies the compose and env files.
-  `DASHBOARD_TAG` in `server/deploy/.env` picks the release, for example `0.15.0`. Releases
-  are git tags `v0.15.0` → image tag `0.15.0`; every push to `main` is also published as
-  `main` and `sha-<commit>` ([the tags](../deployment.md#the-published-image)). The Pi target
-  still builds its binary on the Pi.
+  `DASHBOARD_TAG` in `server/deploy/.env` (required) picks a fixed tag: `0.15.0` for the
+  release tagged `v0.15.0`, or `sha-<commit>` for one `main` commit
+  ([the tags](../deployment.md#the-published-image)). The Pi target still builds its binary
+  on the Pi.
 - **Rollback needs a restore.** Migrations are forward-only: an older image cannot run on a
   database a newer one has migrated. Going back means restoring the backup taken before the
-  upgrade, then starting the older tag. Both runbooks take that backup.
+  upgrade, then starting the older tag. The upgrade runbook takes that backup first.
 - Placeholders are in angle brackets: `<account-id>`. Replace the brackets too.
 - **One writer.** Never run two dashboard servers against one database or one Litestream
   replica. Both runbooks say where this bites.

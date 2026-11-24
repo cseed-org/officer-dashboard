@@ -5,7 +5,7 @@
 # docs/deployment.md, "Rehearse on a quick tunnel".
 #
 #   cd server/deploy
-#   export DEV_AUTH_KEY=$(openssl rand -hex 24) TUNNEL_TOKEN=unused
+#   export DEV_AUTH_KEY=$(openssl rand -hex 24) TUNNEL_TOKEN=unused DASHBOARD_TAG=unused
 #   qt="docker compose -p od-quicktunnel -f compose.cloudflare.yml -f compose.quicktunnel.yml"
 #   APP_URL=https://pending.invalid $qt up -d --build
 #   url=$($qt logs cloudflared | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | head -1)

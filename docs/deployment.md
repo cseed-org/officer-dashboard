@@ -26,49 +26,63 @@ not in the database: Google Drive holds them (or `RECEIPTS_DIR`, which you must 
 
 ### The published image
 
-CI builds `server/Dockerfile` for linux/amd64 and linux/arm64 and pushes it to
-**`ghcr.io/cseed-org/officer-dashboard`** (`.github/workflows/ci.yml`, job `publish`, after
-every other check has passed). A deploy pulls it; nothing is built on the server.
+CI builds `server/Dockerfile` for linux/amd64 and linux/arm64 (a Pi 5 on 64-bit Raspberry Pi
+OS is arm64; 32-bit systems have no image) and pushes it to
+**`ghcr.io/cseed-org/officer-dashboard`** (`.github/workflows/ci.yml`, job `publish`). A deploy
+pulls it; nothing is built on the server. The published tags are listed on the
+[package page](https://github.com/cseed-org/officer-dashboard/pkgs/container/officer-dashboard).
 
-| Tag | Published when | Use |
+| Tag | Published when | Fixed? |
 | --- | --- | --- |
-| `0.15.0` | a git tag `v0.15.0` is pushed | production: pin one release |
-| `0.15` | the same, moved by each `v0.15.x` | the newest patch of one release |
-| `latest` | the same, moved by each release tag (not by pre-releases such as `v0.16.0-rc.1`) | the newest release |
-| `main` | every push to `main` | testing what is about to be released |
-| `sha-<commit>` | every push to `main`, 7 characters (`git rev-parse --short HEAD`) | one exact `main` build |
+| `0.15.0` | a git tag `v0.15.0` is pushed | **yes**: pin this in production |
+| `sha-<commit>` | every push to `main`; the commit's first 7 characters (`git rev-parse --short=7 <commit>`) | **yes**: one exact `main` build, for before the first release tag |
+| `0.15` | each `v0.15.x` tag moves it (pre-releases such as `v0.15.1-rc.1` do not) | no |
+| `latest` | each release tag moves it (pre-releases do not) | no |
+| `main` | each push to `main` moves it | no |
 
-Pull requests build the image for both platforms but never push it. `dashboard version` in the
-container prints the git tag (`v0.15.0`) or, for `main`, the commit. `latest` exists only once
-the first release tag has been pushed; before that, use `main` or `sha-<commit>`.
+`server/deploy/.env` must set `DASHBOARD_TAG`; use a fixed tag. With a moving one, any later
+`docker compose pull` (for example, to update `cloudflared`) silently upgrades the dashboard,
+and its next start migrates the database without the backup the upgrade runbook takes.
 
-**Cutting a release** (a maintainer, after the commit is on `main`): `git tag v0.15.0 <commit> &&
-git push origin v0.15.0`. CI runs every check on the tag, then publishes `0.15.0`, `0.15` and
-`latest`. A tag is never moved or reused; a fix is a new patch tag.
+An image exists only once CI has passed on that commit or tag: the `publish` job runs after
+every other CI job (about 15 minutes; the **Actions** tab shows it), and a tag or push whose
+checks fail publishes nothing. Pull requests build the image for both platforms and never push
+it. `dashboard version` in the container prints the git tag (`v0.15.0`) or, for `main`, the
+7-character commit.
 
-**Signing in to GHCR.** A new GHCR package starts **private**, and a private package needs a
-login on every machine that pulls it. Making it
-public (organisation → **Packages** → `officer-dashboard` → **Package settings** → **Change
-visibility**) is the organisation owners' decision; this repository does not change it. With
-a private package, on the server, once:
+**Cutting a release** (a maintainer, after the commit is on `main` and its CI is green):
+`git tag v0.15.0 <commit> && git push origin v0.15.0`. CI runs every check on the tag, then
+publishes `0.15.0` and moves `0.15` and `latest`. A tag is never moved or reused; a fix is a
+new patch tag. There are no release notes yet: what a release changes is in the merged pull
+requests since the previous tag (`git log --oneline v0.15.0..v0.16.0`).
 
-1. On GitHub, as an account that can read the repository: **Settings** → **Developer
-   settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token
-   (classic)**. Scope: only **`read:packages`**. GHCR does not accept fine-grained tokens.
-2. On the server, as the user that runs `docker compose`:
+**Signing in to GHCR.** A new GHCR package starts **private**. A private package needs a login
+on every machine that pulls it, and `pull` then ends with `denied` (as it does for a misspelled
+image name). Whether it is private: open the package page above signed out. Making it public
+(organisation → **Packages** → `officer-dashboard` → **Package settings** → **Change
+visibility**) is the organisation owners' decision; this repository does not change it. With a
+private package, on the server, once:
+
+1. On GitHub, as an account that can read the package (a package that CI publishes inherits
+   the repository's access list; **Package settings** → **Manage access** shows it):
+   **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)** →
+   **Generate new token (classic)**. Scope: only **`read:packages`**. GHCR does not accept
+   fine-grained tokens. Note the expiry date you choose: the running dashboard is not affected
+   when it passes, but the next `pull` fails with `denied` until you log in with a new token.
+   The token is that person's: if they leave, log in again with someone else's.
+2. On the server, as the user that runs `docker compose` (if you run `sudo docker compose`, run
+   `sudo docker login` too: the login is per user):
    ```sh
    read -rs GHCR_TOKEN                  # paste the token; it stays out of the shell history
    printf %s "$GHCR_TOKEN" | docker login ghcr.io -u <github-username> --password-stdin
    unset GHCR_TOKEN
    ```
    `Login Succeeded`. Docker keeps the token in `~/.docker/config.json` (base64, not
-   encrypted), which is why it should carry only `read:packages`. A `denied` from `docker
-   compose pull` means this login is missing, expired, or the account cannot read the package.
+   encrypted), which is why it should carry only `read:packages`.
 
-**Upgrade** (details, backup and checks: [the upgrade runbook](deploy/upgrade-existing.md)):
-back up, set `DASHBOARD_TAG` in `server/deploy/.env` to the new release, then
-`docker compose -f compose.cloudflare.yml pull` and `up -d`. The new container applies any new
-migrations before it listens.
+**Upgrade:** take a backup, set `DASHBOARD_TAG` to the new release, `pull`, then `up -d`; the new
+container applies new migrations before it listens. [The upgrade runbook](deploy/upgrade-existing.md)
+has the commands, the backup, a dry run of the migrations on a copy, and the checks.
 
 > [!WARNING]
 > **Rollback is not "choose the older tag".** Migrations are forward-only: once a newer image
@@ -79,17 +93,28 @@ migrations before it listens.
 
 ### Building the image yourself
 
-From the repository root, with nothing built first (the image builds the front end too):
+From the repository root, with nothing built first (the image builds the front end too). Add
+`--build-arg VERSION=$(git describe --always --dirty)` to any of these, or `dashboard version`
+prints `dev`:
 
 ```sh
-docker build -f server/Dockerfile -t officer-dashboard:local .
-docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile -t officer-dashboard .
+docker build -f server/Dockerfile -t officer-dashboard:local .     # this machine's platform
+docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile   -t <registry>/officer-dashboard:<tag> --push .                    # both platforms, to a registry
 ```
 
-With compose, `docker compose -f compose.cloudflare.yml build` builds the checkout and tags it
-with the compose image name: set `DASHBOARD_IMAGE=officer-dashboard:local` in `.env` first, so a
-later `pull` cannot replace it with the published image. Add `--build-arg VERSION=$(git describe
---always --dirty)`, or `dashboard version` prints `dev`.
+A two-platform result cannot be loaded into Docker's default image store, so the second form
+pushes it (or use `--output type=oci,dest=image.tar`). Neither needs emulation.
+
+With compose, in `server/deploy`, [`compose.build.yml`](../server/deploy/compose.build.yml)
+adds the build. Set `DASHBOARD_IMAGE=officer-dashboard:local` in `.env` first: a local name is
+never pulled, and never mistaken for a release. Then
+`docker compose -f compose.cloudflare.yml -f compose.build.yml build dashboard` and
+`docker compose -f compose.cloudflare.yml up -d`. To upgrade such an install, update the
+checkout and build again instead of pulling (backup and dry run as in the runbook). The build
+compiles Litestream and runs its tests: about 3 minutes on a fast amd64 machine from cold;
+longer on a Pi (not measured).
+
+### The image at runtime
 
 Multi-stage: Node builds `web/dist`, Go cross-compiles the server (cgo, with an installed
 cross-gcc) and embeds it, and every one of those stages runs on the build machine, so a
@@ -201,7 +226,7 @@ name is still common, it is given in brackets.
 4. On the server:
    ```sh
    cd server/deploy
-   cp .env.example .env                    # APP_URL=https://officers.example.org, TUNNEL_TOKEN=<token>
+   cp .env.example .env                    # APP_URL=https://officers.example.org, TUNNEL_TOKEN=<token>, DASHBOARD_TAG=<fixed image tag>
    cp dashboard.env.example dashboard.env  # Discord, Drive, SMTP, LITESTREAM_* (see configuration.md)
    chmod 600 .env dashboard.env
    docker compose -f compose.cloudflare.yml pull   # the published image; a private package needs `docker login ghcr.io` first

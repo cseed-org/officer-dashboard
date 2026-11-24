@@ -19,15 +19,21 @@ the final backup; start the new version; smoke-check. Downtime is the stop-to-he
 
 ## What you deploy
 
-The release is `main` once PR #97 (server) and the org-calendar front-end PRs are merged. CI
-publishes every push to `main` as the image tags `main` and `sha-<commit>`, and a release tag
-`v0.15.0`, once a maintainer pushes it, as `0.15.0` ([the tags](../deployment.md#the-published-image)).
-Docker installs deploy that image tag: use `0.15.0` if it exists (the repository's **Tags**
-page), otherwise `sha-<commit>` for the `main` commit you tested, never the moving `main`.
-`dashboard version` then reports `v0.15.0` or the commit. On a Pi, note the commit you build
-(`git rev-parse --short HEAD`): that is what `dashboard version` reports. The Calendar page
-and the Settings card for the org account come from the front-end PRs; without them the server
-works, but the [setup](org-calendar-setup.md) needs the API instead of buttons.
+The org-calendar release is on `main` (server #97, Calendar page #98, Programs tab and
+tentative dates #99). Its git tag is `v0.15.0` once a maintainer pushes it; CI then publishes
+the image tag `0.15.0` ([the tags](../deployment.md#the-published-image)).
+
+- **Docker:** set the fixed image tag `0.15.0`. If the
+  [package page](https://github.com/cseed-org/officer-dashboard/pkgs/container/officer-dashboard)
+  does not list it yet, use `sha-<commit>` for a `main` commit at or after #99 whose CI passed
+  (the commit's first 7 characters, `git rev-parse --short=7 <commit>`). Never a moving tag
+  (`latest`, `0.15`, `main`). `dashboard version` then reports `v0.15.0`, or that commit.
+- **Pi:** build that tag or commit. Note `git rev-parse --short HEAD`: that is what
+  `dashboard version` reports.
+
+The counts in this runbook (31 before, 37 after) are for this release. For a later upgrade, the
+steps are the same with other tags; the dry run (step 3) prints the new count, and
+`git log --oneline v0.15.0..<new tag>` lists what changed.
 
 ## Before you start
 
@@ -88,10 +94,14 @@ this does not happen in production.
 
 ## Docker
 
-Every command runs in `server/deploy`. In short: back up, set the new tag, pull, start. Every
-later upgrade (any release to a newer one) is the same steps with other tag names.
+Every command runs in `server/deploy`. In short: keep the old image, set the new tag, pull, dry
+run, stop, back up, start.
 
 ### 1. Keep the old image
+
+Give the running image a local name, so the rollback can start exactly it again. Do this
+whatever the image is (built here, or a published tag: a moving tag such as `latest` would by
+then point at the new release):
 
 ```sh
 cd server/deploy
@@ -99,29 +109,36 @@ docker compose -f compose.cloudflare.yml images dashboard     # REPOSITORY and T
 docker tag officer-dashboard:latest officer-dashboard:pre-v0.15   # use the REPOSITORY:TAG shown
 ```
 
-An install that already runs a published image (`ghcr.io/cseed-org/officer-dashboard:<tag>`)
-can skip the `docker tag`: that tag stays pullable, and the rollback uses it instead.
-
 ### 2. Pull the new version (the old one keeps serving)
 
-Update the compose files, then point `.env` at the new image. In `server/deploy/.env`, delete
-any `DASHBOARD_IMAGE=` line (it names a locally built image and wins over the tag), and set:
+First the checkout, so the compose files match the release:
+
+```sh
+git fetch origin --tags && git checkout v0.15.0   # or the commit of your sha- tag
+```
+
+Then, in `server/deploy/.env`, delete any `DASHBOARD_IMAGE=` line (it names a locally built
+image and wins over the tag) and set the new tag:
 
 ```sh
 DASHBOARD_TAG=0.15.0          # or sha-<commit>: see "What you deploy"
 ```
 
 ```sh
-git fetch origin && git checkout main && git pull --ff-only   # or: git checkout v0.15.0
 docker compose -f compose.cloudflare.yml config --images      # ghcr.io/cseed-org/officer-dashboard:0.15.0 and cloudflared
 docker compose -f compose.cloudflare.yml pull dashboard
 ```
 
 If the package is private, `pull` needs a GHCR login on this machine first: `denied` means
 there is none (or it expired). Do the `docker login ghcr.io` in
-[fresh install, 4D](fresh-install.md#4d-docker-first-boot), then pull again. Continue only once
-`pull` has succeeded: without the image, the `run` and `up` below would build one from the
-checkout instead. `pull` does not touch the running container.
+[fresh install, 4D](fresh-install.md#4d-docker-first-boot), then pull again. The steps below
+need the pulled image: without it, `run` and `up` stop with an error. `pull` does not touch
+the running container.
+
+**An image you build yourself** (`DASHBOARD_IMAGE=officer-dashboard:local`, see
+[Building the image yourself](../deployment.md#building-the-image-yourself)): keep that line,
+and instead of `pull`, build the new checkout under the same name:
+`docker compose -f compose.cloudflare.yml -f compose.build.yml build --build-arg VERSION=$(git describe --always --dirty) dashboard`.
 
 ### 3. Prove the replica restores, and dry-run the migrations on it
 
@@ -217,11 +234,14 @@ docker run --rm -v officer-dashboard_dashboard-data:/data -v ~/dashboard-backups
 
 (`10001` is the image's `dashboard` user. `.dashboard.db-litestream` is Litestream's local
 state; removing it makes Litestream start a fresh generation.) Then set
-`LITESTREAM_PATH=dashboard-rollback-<today>` in `dashboard.env`, and the old image in `.env`:
-`DASHBOARD_IMAGE=officer-dashboard:pre-v0.15` (the tag from step 1), or, if the old version was
-a published image, `DASHBOARD_TAG=<its tag>` with no `DASHBOARD_IMAGE` line. Then start it:
+`LITESTREAM_PATH=dashboard-rollback-<today>` in `dashboard.env` (keep it from then on: later
+upgrades and checks use this prefix instead of `dashboard/`), and the old image from step 1 in
+`.env`: `DASHBOARD_IMAGE=officer-dashboard:pre-v0.15`. The compose files can stay as they are.
+Check that compose names that image and that it exists, then start it:
 
 ```sh
+docker compose -f compose.cloudflare.yml config --images | grep pre-v0.15   # officer-dashboard:pre-v0.15
+docker image inspect officer-dashboard:pre-v0.15 --format '{{.Id}}'          # an id, not "No such image"
 docker compose -f compose.cloudflare.yml up -d
 docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard migrate   # 31 migrations applied
 ```
@@ -233,7 +253,7 @@ Every command runs in `server/` of the checkout.
 ### 1. Build the new binary (the old one keeps serving)
 
 ```sh
-git fetch origin && git checkout main && git pull --ff-only
+git fetch origin --tags && git checkout v0.15.0   # or the commit (see "What you deploy")
 (cd ../web && npm ci && npm run build)
 make build-release                            # server/bin/dashboard
 ./bin/dashboard version                       # the commit you are deploying
@@ -325,7 +345,7 @@ here): the new image's first boot restores the replica and migrates it at once. 
 keep a copy of the replica as it is now. On the new machine, after
 [fresh install 3D](fresh-install.md#3d-docker-env-files) (same bucket and `LITESTREAM_*`; if you
 lost the R2 secret, create a new token for the bucket) and the image pull
-(`docker compose -f compose.cloudflare.yml pull`, [4D](fresh-install.md#4d-docker-first-boot)):
+(`docker compose -f compose.cloudflare.yml pull`, as in [4D](fresh-install.md#4d-docker-first-boot)):
 
 ```sh
 mkdir -p ~/dashboard-backups

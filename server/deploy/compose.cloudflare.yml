@@ -5,8 +5,9 @@
 #   cd server/deploy
 #   cp .env.example .env                    # TUNNEL_TOKEN, APP_URL, DASHBOARD_TAG (compose settings)
 #   cp dashboard.env.example dashboard.env  # Discord, Drive, Litestream… (the app's settings)
-#   docker compose -f compose.cloudflare.yml pull      # the published image (ghcr.io); or `build`
+#   docker compose -f compose.cloudflare.yml pull      # the published image (ghcr.io)
 #   docker compose -f compose.cloudflare.yml up -d
+#   (to run an image built from this checkout instead: compose.build.yml)
 #   docker compose -f compose.cloudflare.yml run --rm --no-deps -e CF_ACCESS_CLIENT_ID -e CF_ACCESS_CLIENT_SECRET \
 #     --entrypoint /app/dashboard dashboard mcp-check https://<APP_URL host>
 #   (the two Access variables are optional, from your shell: they also check the service-token path)
@@ -22,15 +23,11 @@ name: officer-dashboard
 services:
   dashboard:
     # The image CI publishes for each release tag and each push to main. DASHBOARD_TAG in .env
-    # picks the version (0.15.0, 0.15, latest, main, sha-<commit>); upgrading is `pull` then
-    # `up -d`. DASHBOARD_IMAGE replaces the whole name, for an image you build yourself.
-    image: ${DASHBOARD_IMAGE:-ghcr.io/cseed-org/officer-dashboard:${DASHBOARD_TAG:-latest}}
-    # `docker compose build` builds this checkout instead (nothing to build first: the image
-    # builds the front end too) and tags it with the name above. Set DASHBOARD_IMAGE to a local
-    # name such as officer-dashboard:local first, so a later `pull` cannot replace it.
-    build:
-      context: ../..
-      dockerfile: server/Dockerfile
+    # picks the version: pin a fixed one (0.15.0, or sha-<commit>), then upgrading is backup,
+    # new tag, `pull`, `up -d`. DASHBOARD_IMAGE replaces the whole name, for an image you built
+    # (compose.build.yml). There is deliberately no `build:` here: if a pull fails, compose
+    # stops instead of quietly building this checkout under the release's name.
+    image: ${DASHBOARD_IMAGE:-ghcr.io/cseed-org/officer-dashboard:${DASHBOARD_TAG:?set DASHBOARD_TAG in server/deploy/.env to the image tag to run, e.g. 0.15.0 (see .env.example)}}
     restart: unless-stopped
     # The app's settings (Discord, Drive, SMTP, LITESTREAM_*…): copy dashboard.env.example.
     env_file: dashboard.env
