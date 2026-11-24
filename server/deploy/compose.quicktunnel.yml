@@ -2,7 +2,7 @@
 # network, but cloudflared opens a temporary trycloudflare.com quick tunnel (no Cloudflare
 # account, no Access, no WAF settings) and the dashboard is the seeded dev build with
 # developer sign-in, locked by DEV_AUTH_KEY. Sample data only; stop it when done.
-# docs/deployment.md, "Rehearse on a quick tunnel".
+# docs/deploy/other-setups.md, "Practice run on a quick tunnel".
 #
 #   cd server/deploy
 #   export DEV_AUTH_KEY=$(openssl rand -hex 24) TUNNEL_TOKEN=unused DASHBOARD_TAG=unused

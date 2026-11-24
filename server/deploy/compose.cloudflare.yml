@@ -1,6 +1,6 @@
 # The dashboard behind a Cloudflare Tunnel, with cloudflared in its own container.
-# Step by step (tunnel, Access, bypass, bot settings, mcp-check): docs/deployment.md,
-# "Cloudflare Tunnel + Access".
+# Step by step: docs/deploy/README.md (Cloudflare tunnel, Access, bypass, bot settings and
+# mcp-check: docs/deploy/cloudflare.md).
 #
 #   cd server/deploy
 #   cp .env.example .env                    # TUNNEL_TOKEN, APP_URL, DASHBOARD_TAG (compose settings)

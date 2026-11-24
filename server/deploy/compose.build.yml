@@ -6,8 +6,8 @@
 #   docker compose -f compose.cloudflare.yml -f compose.build.yml build --build-arg VERSION=$(git describe --always --dirty) dashboard
 #   docker compose -f compose.cloudflare.yml up -d
 #
-# Without --build-arg VERSION, `dashboard version` prints `dev`. docs/deployment.md, "Building
-# the image yourself".
+# Without --build-arg VERSION, `dashboard version` prints `dev`. docs/deploy/other-setups.md,
+# "Build the image yourself".
 services:
   dashboard:
     build:
