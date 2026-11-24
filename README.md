@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/github/go-mod/go-version/cseed-org/officer-dashboard?filename=server%2Fgo.mod)](server/go.mod)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.23.4-339933?logo=node.js)](package.json)
-[![Astro](https://img.shields.io/badge/Astro-7.4.12-BC52EE?logo=astro)](web/package.json)
+[![Astro](https://img.shields.io/badge/Astro-7.4.13-BC52EE?logo=astro)](web/package.json)
 [![Last commit](https://img.shields.io/github/last-commit/cseed-org/officer-dashboard)](https://github.com/cseed-org/officer-dashboard/commits/main)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
