@@ -6,7 +6,7 @@ From this directory, `make dev` builds the dev-login binary, resets `data/dev.db
 
 - [Development and checks](../docs/development.md)
 - [Configuration](../docs/configuration.md)
-- [Deployment and backups](../docs/deployment.md)
+- [Deploy the dashboard, step by step](../docs/deploy/README.md) (deployment, backups, upgrades)
 - [Architecture](../docs/architecture.md) and [historical performance measurements](../docs/performance.md)
 - [Accounting](../docs/accounting.md), [integrations](../docs/integrations.md), [roles and ownership recovery](../docs/roles-and-permissions.md)
 - [API reference](../docs/api.md) · [All docs](../docs/README.md)

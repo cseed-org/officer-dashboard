@@ -1,11 +1,13 @@
 # Documentation
 
+**Deploying?** Start at **[Deploy the dashboard, step by step](deploy/README.md)** and follow it top to bottom.
+
 | Guide | Contents |
 | --- | --- |
 | [Development](development.md) | Quick start, live development, seed data, tests, contract checks, Playwright. |
-| [Configuration](configuration.md) | Server environment variables, club location/time zone, aliases, container and tooling settings. |
-| [Deployment](deployment.md) | Raspberry Pi/systemd, HTTPS proxy, containers, replication, backups. |
-| [Deployment runbooks](deploy/README.md) | Step by step: fresh install (R2 bucket, tunnel, first boot, owner), upgrading to the org-calendar release (backup, migrations 0031–0036, rollback), and the one-time org Google setup. |
+| [Configuration](configuration.md) | Every setting: required or optional, defaults, compose and backup settings, club location/time zone. |
+| [Deploy the dashboard, step by step](deploy/README.md) | **Start here to deploy.** Docker on a Pi 5 or Linux box, Cloudflare Tunnel and Access, R2 backups, owner account, checks. Hands off to [Cloudflare setup](deploy/cloudflare.md) and [Google calendar setup](deploy/google-calendar.md); also [Upgrade](deploy/upgrade.md), [Troubleshooting](deploy/troubleshooting.md) and [Other setups](deploy/other-setups.md) (systemd, self-built image, quick tunnel). |
+| [Deployment](deployment.md) | Old address of the deploy docs: a map to where each part moved. |
 | [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
 | [Buildspace + Launchpad](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
 | [Launchpad cohorts](launchpad-cohorts.md) | Cohorts, email invites, builder/mentor portals, identity and security model, auto-assign. |

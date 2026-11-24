@@ -20,7 +20,7 @@
 
 ## Table of contents
 
-[Features](#features) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Quick start](#quick-start) · [Configuration](#configuration) · [Testing and checks](#testing-and-checks) · [Project layout](#project-layout) · [Documentation](#documentation) · [Contributing](#contributing) · [Security](#security) · [License](#license)
+[Features](#features) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Quick start](#quick-start) · [Deploy](#deploy) · [Configuration](#configuration) · [Testing and checks](#testing-and-checks) · [Project layout](#project-layout) · [Documentation](#documentation) · [Contributing](#contributing) · [Security](#security) · [License](#license)
 
 ## Features
 
@@ -83,7 +83,7 @@ flowchart LR
   API --> Receipts[Google Drive / local receipts]
 ```
 
-The Go server serves the static front end and JSON API from one origin. SQLite is the primary database; D1 supplies the membership mirror. Run on a Raspberry Pi or a single container with durable replication. See [architecture](docs/architecture.md), [deployment](docs/deployment.md) and the step-by-step [deployment runbooks](docs/deploy/README.md).
+The Go server serves the static front end and JSON API from one origin. SQLite is the primary database; D1 supplies the membership mirror. Run on a Raspberry Pi or a single container with durable replication. See [architecture](docs/architecture.md). To deploy, follow [Deploy the dashboard, step by step](docs/deploy/README.md).
 
 [Back to top](#top)
 
@@ -103,6 +103,12 @@ Open <http://localhost:8090/auth/dev?as=director> or <http://localhost:8090/auth
 > `make dev` resets the sample database at `server/data/dev.db`. The dev login requires both a `-tags dev` build and `DEV_AUTH=1`; production builds have no `/auth/dev` route. Test deployments can share keyed links instead: see `DEV_AUTH_KEY` in [docs/development.md](docs/development.md#developer-mode-on-a-test-deployment).
 
 See [development](docs/development.md) for live front-end development, seeding, and Playwright.
+
+[Back to top](#top)
+
+## Deploy
+
+To run the dashboard for real, follow **[Deploy the dashboard, step by step](docs/deploy/README.md)**. It takes you from an empty Raspberry Pi 5 (or any 64-bit Linux machine) to a running dashboard: Docker with the published image, a Cloudflare Tunnel and Access sign-in, backups to Cloudflare R2, and the org Google calendar.
 
 [Back to top](#top)
 

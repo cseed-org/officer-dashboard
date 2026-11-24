@@ -39,7 +39,7 @@ service token they created in the same transaction (`token.revoked_with_user` in
 tokens also answer 401 whenever their creator is inactive or below director.
 
 **Behind Cloudflare Access.** `/api/ingest/*` and `/api/agent/*` sit behind an Access application
-with a Service Auth policy ([deployment, step 5](deployment.md#5-a-service-token-for-the-bot-the-luma-ingest-and-the-purchasing-agent)).
+with a Service Auth policy ([Cloudflare setup, step 5](deploy/cloudflare.md#5-create-a-service-token-for-bots)).
 Every caller sends the Access service token as `CF-Access-Client-Id` and `CF-Access-Client-Secret`,
 plus its dashboard service token as `Authorization: Bearer …`. The Discord check-in bot's
 adapter (`scripts/buildspace-discord-stub.mjs`) adds them from `CF_ACCESS_CLIENT_ID` /

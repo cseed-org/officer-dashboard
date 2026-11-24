@@ -1,12 +1,13 @@
 # The dashboard behind a Cloudflare Tunnel, with cloudflared in its own container.
-# Step by step (tunnel, Access, bypass, bot settings, mcp-check): docs/deployment.md,
-# "Cloudflare Tunnel + Access".
+# Step by step: docs/deploy/README.md (Cloudflare tunnel, Access, bypass, bot settings and
+# mcp-check: docs/deploy/cloudflare.md).
 #
 #   cd server/deploy
-#   cp .env.example .env                    # TUNNEL_TOKEN, APP_URL (compose settings)
+#   cp .env.example .env                    # TUNNEL_TOKEN, APP_URL, DASHBOARD_TAG (compose settings)
 #   cp dashboard.env.example dashboard.env  # Discord, Drive, Litestream… (the app's settings)
-#   (cd ../../web && npm ci && npm run build)   # the image embeds web/dist
-#   docker compose -f compose.cloudflare.yml up -d --build
+#   docker compose -f compose.cloudflare.yml pull      # the published image (ghcr.io)
+#   docker compose -f compose.cloudflare.yml up -d
+#   (to run an image built from this checkout instead: compose.build.yml)
 #   docker compose -f compose.cloudflare.yml run --rm --no-deps -e CF_ACCESS_CLIENT_ID -e CF_ACCESS_CLIENT_SECRET \
 #     --entrypoint /app/dashboard dashboard mcp-check https://<APP_URL host>
 #   (the two Access variables are optional, from your shell: they also check the service-token path)
@@ -21,12 +22,12 @@ name: officer-dashboard
 
 services:
   dashboard:
-    build:
-      context: ../..
-      dockerfile: server/Dockerfile
-    # The tag of the image built here. To run a prebuilt image instead, set DASHBOARD_IMAGE
-    # to it and start without --build (with --build, compose rebuilds and overwrites that tag).
-    image: ${DASHBOARD_IMAGE:-officer-dashboard:latest}
+    # The image CI publishes for each release tag and each push to main. DASHBOARD_TAG in .env
+    # picks the version: pin a fixed one (0.15.0, or sha-<commit>), then upgrading is backup,
+    # new tag, `pull`, `up -d`. DASHBOARD_IMAGE replaces the whole name, for an image you built
+    # (compose.build.yml). There is deliberately no `build:` here: if a pull fails, compose
+    # stops instead of quietly building this checkout under the release's name.
+    image: ${DASHBOARD_IMAGE:-ghcr.io/cseed-org/officer-dashboard:${DASHBOARD_TAG:?set DASHBOARD_TAG in server/deploy/.env to the image tag to run, e.g. 0.15.0 (see .env.example)}}
     restart: unless-stopped
     # The app's settings (Discord, Drive, SMTP, LITESTREAM_*…): copy dashboard.env.example.
     env_file: dashboard.env

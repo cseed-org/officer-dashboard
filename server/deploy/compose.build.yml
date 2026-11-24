@@ -1,0 +1,15 @@
+# Build the dashboard image from this checkout instead of pulling the published one. Only the
+# build needs this file; nothing has to be built first (the image builds the front end too).
+#
+#   cd server/deploy
+#   echo DASHBOARD_IMAGE=officer-dashboard:local >> .env   # a local name: never pulled, never a release's
+#   docker compose -f compose.cloudflare.yml -f compose.build.yml build --build-arg VERSION=$(git describe --always --dirty) dashboard
+#   docker compose -f compose.cloudflare.yml up -d
+#
+# Without --build-arg VERSION, `dashboard version` prints `dev`. docs/deploy/other-setups.md,
+# "Build the image yourself".
+services:
+  dashboard:
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile

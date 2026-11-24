@@ -126,7 +126,7 @@ MCP lives on the dashboard's own host, at `${APP_URL}/mcp`. Set `APP_URL` to the
 origin: the discovery documents and the `WWW-Authenticate` challenge are built from it, whatever
 Host a proxy forwards. Every answer on the agent paths is `Cache-Control: no-store`.
 
-Behind Cloudflare, follow [Cloudflare Tunnel + Access](deployment.md#cloudflare-tunnel--access):
+Behind Cloudflare, follow [Cloudflare setup](deploy/cloudflare.md):
 `cloudflared` runs in its own container, and Access protects the dashboard. Only `/mcp`,
 `/oauth/register`, `/oauth/token` and the `/.well-known/oauth-*` documents bypass it, with no
 challenge and no cache. `/oauth/authorize`, which the officer's browser opens, stays behind

@@ -9,7 +9,7 @@ Needs Go 1.24+ with a C compiler (cgo, for SQLite) and Node ≥ 22.23.4.
 cd server && make dev                 # seeds ./data/dev.db, serves with the dev login
 ```
 
-See [deployment guide](deployment.md) for configuration, secrets and deployment, and
+See [Deploy the dashboard, step by step](deploy/README.md) and [configuration](configuration.md) for deployment and settings, and
 [front-end guide](frontend.md) for the front-end dev server.
 
 ## Run it in Docker

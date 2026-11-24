@@ -1,32 +1,131 @@
 # Configuration
 
-Environment variables (flags override where shown):
+Every setting the dashboard reads, with whether you need it and its default. To deploy, start with
+[Deploy the dashboard, step by step](deploy/README.md); it tells you which of these to set and
+when. A Docker deployment only needs the rows marked **required**, the Litestream backup settings,
+and the Google ones; everything else turns on an optional feature or is for developers.
+
+**Where settings go.** With Docker, the dashboard's settings go in `server/deploy/dashboard.env`
+(copy [`dashboard.env.example`](../server/deploy/dashboard.env.example)), and compose's own
+settings in `server/deploy/.env` (copy [`.env.example`](../server/deploy/.env.example)). Under
+systemd, the dashboard's settings go in `/etc/officer-dashboard/env`. Command-line flags, where
+shown, override the variable.
+
+## Compose settings (`server/deploy/.env`)
+
+Read by `compose.cloudflare.yml`, not by the dashboard.
+
+| Variable | Needed? | Default | Meaning |
+| --- | --- | --- | --- |
+| `APP_URL` | **required** | – | the public `https` address, no slash at the end. Passed to the dashboard; wins over `dashboard.env` |
+| `TUNNEL_TOKEN` | **required** | – | the Cloudflare Tunnel's token ([Cloudflare step 1](deploy/cloudflare.md#1-create-the-tunnel)) |
+| `DASHBOARD_TAG` | **required** | – | which published `ghcr.io/cseed-org/officer-dashboard` image to run. A fixed tag: `0.15.0`, or `sha-<7 characters>` before a release exists. Never `latest`, `0.15` or `main`: they move, and a later `pull` would upgrade and migrate without a backup |
+| `DASHBOARD_IMAGE` | optional | – | the whole image name instead, for an image you build (`officer-dashboard:local`) or the copy an upgrade keeps. Wins over `DASHBOARD_TAG` |
+| `TUNNEL_NET` | optional | `10.250.89` | first three numbers of the private network between the two containers: subnet `.0/28`, containers `.8/29` (also the dashboard's `TRUSTED_PROXIES`), gateway `.1`. Change it if compose says the pool overlaps |
+| `CLOUDFLARED_VERSION` | optional | `2026.10.0` | the `cloudflared` image version |
+
+Compose also sets the dashboard's `APP_URL`, `ADDR` (`:8090`) and `TRUSTED_PROXIES`
+(`${TUNNEL_NET}.8/29`) itself; values for them in `dashboard.env` are ignored.
+
+## Dashboard settings
+
+### Core
+
+| Variable (flag) | Needed? | Default | Meaning |
+| --- | --- | --- | --- |
+| `APP_URL` (`-app-url`) | **required** in production | `http://localhost:<port>` | public origin, used for OAuth redirects, links and cookies. Must be `https` (plain `http` only for localhost), or the server refuses to start. Listening beyond loopback without it also refuses to start |
+| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | **required** to sign in | – | the Discord app; redirect URI `${APP_URL}/auth/callback`. Without them the server starts but nobody can sign in |
+| `BOOTSTRAP_OWNER_DISCORD_ID` | **required** on first start | – | the first owner's Discord user ID, 17 to 20 digits (anything else stops startup). Applied only while the dashboard has no owner |
+| `BOOTSTRAP_OWNER_NAME` | optional | “Dashboard owner” | the first owner's display name; an existing name is kept if blank |
+| `BOOTSTRAP_DIRECTOR_DISCORD_ID` | deprecated | – | old name for `BOOTSTRAP_OWNER_DISCORD_ID`, which wins |
+| `ADDR` (`-addr`) | set for you | `127.0.0.1:8090` | listen address. The container sets `:8090`, the systemd unit `127.0.0.1:8090` |
+| `DB_PATH` (`-db`) | set for you | `./data/dashboard.db` | the SQLite file (its folder is created). The container sets `/data/dashboard.db`, the systemd unit `/var/lib/officer-dashboard/dashboard.db` |
+| `TRUSTED_PROXIES` | set for you in compose | loopback (`127.0.0.0/8`, `::1`) | comma-separated addresses or ranges of reverse proxies whose `X-Forwarded-For` names the visitor, for per-visitor rate limits. Read right to left, skipping trusted hops, so a visitor can't fake it. A malformed entry stops startup. Set it when your proxy is not on the same machine's loopback (a Docker network, for example `172.16.0.0/12`). A request a trusted proxy forwards with a host other than `APP_URL`'s is logged once as a warning |
+
+### Optional features
+
+Each is off until set; the log says "not configured" at startup for each one that is off.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `ADDR` (`-addr`) | `127.0.0.1:8090` | listen address. Listening beyond loopback (e.g. `:8090` in a container) requires `APP_URL`; the server refuses to start without it. A dev build with `DEV_AUTH=1` also needs `DEV_AUTH_KEY` (≥ 16 characters) when listening beyond loopback, even with a localhost `APP_URL` |
-| `DB_PATH` (`-db`) | `./data/dashboard.db` | SQLite file (WAL mode; directory is created) |
-| `APP_URL` (`-app-url`) | `http://localhost:<port>` | public origin: OAuth redirect URI, links in notifications; `https://` turns on `Secure` cookies, the `__Host-` cookie prefix and HSTS |
-| `STATIC_DIR` (`-static`) | embedded build | serve the front end from this directory instead |
-| `STATIC_FALLBACK` (`-static-fallback`), `STATIC_FALLBACK_STATUS` (`-static-fallback-status`) | `404.html`, `404` | page for unknown non-API paths. An alternative SPA front end can set a shell (`200.html`, `200`) |
-| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | – | Discord OAuth2 app; redirect URI `${APP_URL}/auth/callback` |
-| `BOOTSTRAP_OWNER_DISCORD_ID` | – | initial owner Discord ID; provisioned on server startup only when no owner exists |
-| `BOOTSTRAP_OWNER_NAME` | – | initial owner display name; existing name retained if blank, otherwise “Dashboard owner” for a new user |
-| `BOOTSTRAP_DIRECTOR_DISCORD_ID` | – | deprecated ID alias; `BOOTSTRAP_OWNER_DISCORD_ID` takes precedence |
-| `DISCORD_WEBHOOK_URL` | – | notifications; with none they are logged |
-| `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID` | – | receipts in a Google shared drive |
-| `RECEIPTS_DIR` | – | receipts on local disk (single box, no Drive). With neither set, uploads answer 503 |
-| `AGENT_SETTLEMENT_TOLERANCE_PERCENT`, `_CENTS` | `10`, `2500` | agent hold ceiling: max(estimate × 1.10, estimate + $25) |
-| `TRUSTED_PROXIES` | loopback (`127.0.0.0/8`, `::1`) | comma-separated CIDRs or IPs of reverse proxies whose `X-Forwarded-For` names the client, for the per-IP rate limits. Read right to left, skipping trusted hops; a client cannot spoof it. Set it when the proxy is not on loopback (Docker network: e.g. `172.16.0.0/12`); a malformed entry stops startup. `compose.cloudflare.yml` sets it to the address range its tunnel network gives containers (`${TUNNEL_NET}.8/29`), which leaves out the Docker gateway. A request a trusted proxy forwards with a Host other than `APP_URL`'s is logged once as a warning (usually a misrouted tunnel hostname) |
-| `DEV_AUTH` | – | `1` enables `/auth/dev` in a `-tags dev` build only |
-| `DEV_AUTH_KEY` | – | `-tags dev` builds only (ignored otherwise). When set, every dev sign-in (`POST /auth/dev`), the confirmation page and the login page's Developer mode panel need `key=<DEV_AUTH_KEY>`; nothing remembers it. A wrong or missing key gets the site's 404. Shareable link (opens a confirmation page): `https://<host>/auth/dev?as=leadership\|director\|officer\|builder\|mentor&key=<KEY>[&next=/events]` (`builder` and `mentor` sign in to the Launchpad portal). **Required, at least 16 characters, whenever `APP_URL` is not loopback**: the server refuses to start otherwise. **Test deployments only**: the key signs anyone in as any non-owner role, leadership included. `as=owner` works only without this key on a loopback-only local server. Use `openssl rand -hex 24`; see [development](development.md#developer-mode-on-a-test-deployment) |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | – | Google sign-in for calendars: per-officer sync (callback `${APP_URL}/auth/google/callback`) and the org calendar (callback `${APP_URL}/auth/org-google/callback`), set up in [Google calendar setup](deploy/google-calendar.md). The secret also seals stored Google tokens: changing it means every Google connection must be made again |
+| `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID` | – | receipts in a Google shared drive. The JSON variable takes the key file's **contents** on one line (`jq -c . key.json`), not a path. Set both: the JSON without the folder turns receipts off. See [Integrations](integrations.md#receipts-and-google-service-accounts) |
+| `GOOGLE_DRIVE_FOLDER_ID` | – | old name for `DRIVE_ROOT_FOLDER_ID`, which wins |
+| `RECEIPTS_DIR` | – | receipts on local disk instead of Drive, for a single machine (not in a container: the files would be lost). Back the folder up yourself. With no receipt storage, uploads answer 503 |
+| `DISCORD_WEBHOOK_URL` | – | purchase and other notifications to a Discord channel; without it they only go to the log |
+| `DISCORD_BOT_TOKEN` | – | officer invitation DMs; without it, invites are links you copy |
+| `SMTP_HOST`, `SMTP_FROM` | – | email delivery of `.ics` calendar invites and Launchpad invites. Both are needed; without them invites are copyable links. The org calendar doesn't need SMTP: Google sends its invites |
+| `SMTP_PORT` | `587` | SMTP port (STARTTLS) |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | – | SMTP sign-in |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | – | the membership mirror and analytics widgets, from Cloudflare's API. Only for these widgets: backups don't use them |
+| `CLOUDFLARE_ZONE_ID` | – | limits analytics to one domain |
+| `D1_DATABASE_ID` | – | the existing membership D1 database to mirror (read only; the dashboard never creates or changes it, and it is not the backup) |
+| `AGENT_SETTLEMENT_TOLERANCE_PERCENT`, `AGENT_SETTLEMENT_TOLERANCE_CENTS` | `10`, `2500` | the purchasing agent's hold ceiling: the larger of estimate × 1.10 and estimate + $25 |
+| `STATIC_DIR` (`-static`) | the built-in front end | serve the front end from this folder instead. Only release builds (`embedweb`, as in the image) have one built in |
+| `STATIC_FALLBACK` (`-static-fallback`), `STATIC_FALLBACK_STATUS` (`-static-fallback-status`) | `404.html`, `404` | page for unknown non-API paths. An alternative single-page front end can set `200.html`, `200` |
+
+Receipt storage is chosen in this order: Drive (both variables), then `RECEIPTS_DIR`, then, in a
+development build with `DEV_AUTH=1`, a `receipts/` folder beside the database. Otherwise uploads
+answer 503.
+
+### Backups (Litestream, in the container)
+
+Read by the image's entrypoint and `litestream.yml`, not by the dashboard. Without
+`LITESTREAM_BUCKET` the database exists only in the container's volume.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LITESTREAM_BUCKET` | – | turns on restore-at-start and continuous copying to this bucket |
+| `LITESTREAM_ENDPOINT` | empty | the bucket's address: `https://<account ID>.r2.cloudflarestorage.com` for R2; empty for AWS S3 |
+| `LITESTREAM_REGION` | `auto` | `auto` for R2, for example `us-west-2` for S3 |
+| `LITESTREAM_PATH` | `dashboard` | folder inside the bucket |
+| `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | – | a key for this bucket only |
+
+Set `LITESTREAM_REGION` and `LITESTREAM_PATH` explicitly even though the entrypoint has defaults:
+the restore checks in the deploy docs run Litestream without the entrypoint.
+
+### Backups (systemd)
+
+Read by `scripts/backup` and its timer.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `BACKUP_DIR` | `./backups` | where backups are written (the unit sets `/var/lib/officer-dashboard/backups`) |
+| `KEEP` | `30` | how many backups to keep |
+| `BACKUP_REMOTE` | – | a command that copies each backup off the machine; `{}` is replaced by the file's path |
+
+### For callers of the dashboard
+
+`CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` are a Cloudflare Access service token
+([Cloudflare step 5](deploy/cloudflare.md#5-create-a-service-token-for-bots)) for programs that
+*call* the dashboard: the Discord bot adapter, and `dashboard mcp-check`, which then also checks
+that service calls pass Access. Set both or neither. The dashboard server never reads them, so they
+don't belong in `dashboard.env`.
+
+### Development and test deployments
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DEV_AUTH` | – | `1` turns on the developer sign-in `/auth/dev`, in a `-tags dev` build only (a release build logs that it ignores it) |
+| `DEV_AUTH_KEY` | – | `-tags dev` builds only. When set, every developer sign-in (`POST /auth/dev`), its confirmation page and the login page's Developer mode panel need `key=<DEV_AUTH_KEY>`; a wrong or missing key gets the site's 404. Shareable link: `https://<host>/auth/dev?as=leadership\|director\|officer\|builder\|mentor&key=<KEY>[&next=/events]` (`builder` and `mentor` open the Launchpad portal). **Required, at least 16 characters, whenever `APP_URL` or the listen address is not loopback**: the server refuses to start otherwise. **Test deployments only**: the key signs anyone in as any role except owner, leadership included. `as=owner` works only without a key on a loopback-only local server. Use `openssl rand -hex 24`; see [development](development.md#developer-mode-on-a-test-deployment) |
+| `API_ORIGIN` | `http://127.0.0.1:4330` | the web dev server's API backend; `http://127.0.0.1:8090` for the Go server |
+| `WEB_PORT` | `4340` | Playwright's dev-server port |
+| `WEB_ORIGIN` | `http://localhost:${WEB_PORT}` | an existing UI for Playwright; setting it skips starting a dev server |
+| `SHOTS` | – | turns on screenshot capture in the shots tests |
+| `BENCH_LATENCY` | – | turns on the Go latency-report test |
+
+`GO` and `VERSION` are Make overrides (defaults `go` and `git describe --always --dirty`);
+`CGO_ENABLED=1` is required to build SQLite support.
+
+## Sessions and security headers
 
 Sessions live in the database (`sessions`, keyed by sha256 of the cookie token). Every session
 ends 30 days after sign-in however active the person is: the cookie and stored expiry never pass
 `created_at` + 30 days, and the server refuses (and deletes) any older session. Before V0.7 the
 cap was 90 days, so deploying V0.7 signs out anyone whose session is more than 30 days old; they
-sign in again with Discord. Signing in again replaces the browser's previous session. Service tokens are stored as sha256 hashes. Writes that arrive with a session cookie
-and a foreign `Origin` header are refused (403), on top of `SameSite=Lax`.
+sign in again with Discord. Signing in again replaces the browser's previous session. Service
+tokens are stored as sha256 hashes. Writes that arrive with a session cookie and a foreign
+`Origin` header are refused (403), on top of `SameSite=Lax`.
 
 Every response carries `X-Content-Type-Options: nosniff`, a `Content-Type`, `Permissions-Policy`
 and a `Content-Security-Policy`. HTML pages get a policy that allows same-origin scripts plus
@@ -44,59 +143,6 @@ Static files are served for every path outside `/api/` and `/auth/`, **without**
 the pages are shells and the data behind them is API-protected. (v1 redirected unauthenticated
 page requests to `/login`; the new front end does that client-side from `GET /api/me`.)
 
-## Optional services
-
-All values default to unset unless specified. Source: `server/cmd/dashboard/main.go` and `server/internal/cloudflare/client.go`.
-
-| Variable | Meaning |
-| --- | --- |
-| `GOOGLE_DRIVE_FOLDER_ID` | Legacy receipt-root alias; `DRIVE_ROOT_FOLDER_ID` takes precedence. |
-| `DISCORD_BOT_TOKEN` | Bot token for invitation DMs; separate from OAuth and webhook credentials. |
-| `SMTP_HOST` | SMTP server for calendar email delivery and Launchpad builder/mentor invites. Without it, invites return copyable links. |
-| `SMTP_PORT` | SMTP port, default `587`. |
-| `SMTP_USERNAME`, `SMTP_PASSWORD` | SMTP authentication credentials. |
-| `SMTP_FROM` | Sender of calendar invitations and Launchpad invites. |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Per-officer Calendar OAuth; callback `${APP_URL}/auth/google/callback`. Separate from the Drive service account. |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API bearer token. |
-| `CLOUDFLARE_ACCOUNT_ID` | Account for D1 and GraphQL analytics. |
-| `CLOUDFLARE_ZONE_ID` | Optional zone analytics scope. |
-| `D1_DATABASE_ID` | Membership database to mirror. |
-
-The settlement variables are spelled `AGENT_SETTLEMENT_TOLERANCE_PERCENT` and `AGENT_SETTLEMENT_TOLERANCE_CENTS` (defaults `10` and `2500`). Drive credentials take precedence over local storage. Setting the service-account JSON without a root folder disables receipts (503), even when `RECEIPTS_DIR` is set. Otherwise `RECEIPTS_DIR` selects local storage; enabled dev auth falls back to a `receipts/` directory beside the database. With none configured, storage is unavailable (503). `STATIC_DIR` defaults to the embedded site only in an `embedweb` release build; API-only builds do not embed it.
-
-## Containers and backups
-
-These are consumed by deployment scripts, rather than Go settings:
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `LITESTREAM_BUCKET` | unset | Enables restore and continuous replication to this bucket. |
-| `LITESTREAM_ENDPOINT` | empty | S3-compatible endpoint, e.g. R2. |
-| `LITESTREAM_REGION` | `auto` | Replica region. |
-| `LITESTREAM_PATH` | `dashboard` | Object key prefix. |
-| `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | unset | Replica bucket credentials. |
-| `BACKUP_DIR` | `./backups` | Local backup output. |
-| `KEEP` | `30` | Number of backups retained. |
-| `BACKUP_REMOTE` | unset | Off-box copy command; `{}` is replaced by the backup path. |
-
-`compose.cloudflare.yml` reads its own settings from `server/deploy/.env` ([`.env.example`](../server/deploy/.env.example)): `APP_URL`, `TUNNEL_TOKEN` (the remotely managed tunnel's token), `TUNNEL_NET` (the network's first three octets, default `10.250.89`: subnet `.0/28`, containers and `TRUSTED_PROXIES` `.8/29`, gateway `.1`), `CLOUDFLARED_VERSION` and `DASHBOARD_IMAGE` (the tag of the image compose builds; to run a prebuilt one, set it and start without `--build`). The app's settings go in `server/deploy/dashboard.env`. See [Cloudflare Tunnel + Access](deployment.md#cloudflare-tunnel--access).
-
-`CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` are a Cloudflare Access service token for the callers *of* the dashboard: the Discord bot adapter, and `dashboard mcp-check` (which then also checks that service calls pass Access). Set both or neither. The dashboard server never reads them, so they do not belong in `dashboard.env`. See [deployment, step 5](deployment.md#5-a-service-token-for-the-bot-the-luma-ingest-and-the-purchasing-agent).
-
-The container sets `DB_PATH=/data/dashboard.db` and `ADDR=:8090`; systemd sets `DB_PATH=/var/lib/officer-dashboard/dashboard.db` and `ADDR=127.0.0.1:8090`. See [deployment](deployment.md).
-
-## Development and diagnostics
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `API_ORIGIN` | `http://127.0.0.1:4330` | Web dev proxy backend; set to `http://127.0.0.1:8090` for Go. |
-| `WEB_PORT` | `4340` | Playwright's dev-server port. |
-| `WEB_ORIGIN` | `http://localhost:${WEB_PORT}` | Existing UI origin for Playwright; setting it disables automatic dev-server startup. |
-| `SHOTS` | unset | Enables screenshot capture in the shots tests. |
-| `BENCH_LATENCY` | unset | Enables the Go latency-report test. |
-
-`GO`, `VERSION` are Make overrides (default `go` and `git describe --always --dirty`); `CGO_ENABLED=1` is required to build SQLite support. These are build/tooling settings, not application secrets.
-
 ## Club location and time zones
 
 In Settings, leadership and owners set the club location label and IANA default time zone. These live in SQLite (`club_settings`, migration 0012), not environment variables. The initial location is University of Washington, Seattle and the zone is `America/Los_Angeles`. Directors and officers see the values read-only; every club change is audited.
@@ -112,10 +158,6 @@ fallback; personal display preferences do not affect imports.
 
 ## Organization Google calendars
 
-Reuse GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET. No additional credentials or
-polling environment variables are required. Register APP_URL/auth/org-google/callback as
-an additional authorized Google OAuth redirect URI; retain APP_URL/auth/google/callback
-for per-officer sync. Enable Google Calendar API and grant full calendar scope in org consent.
-Leadership connects the dedicated org Gmail through /api/settings/org-google/connect.
-The same client secret seals the independent org token; keep it stable across restarts.
-See [Organization calendar](org-calendar.md) for sharing, intervals and disconnect behavior.
+The org calendar reuses `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` and needs no
+other settings. Setup: [Google calendar setup](deploy/google-calendar.md). How it syncs:
+[Organization calendar](org-calendar.md).
