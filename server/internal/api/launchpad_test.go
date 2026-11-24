@@ -103,8 +103,8 @@ func TestLaunchpadInvitesEmailLinksAndAccounts(t *testing.T) {
 	r := e.mustOK(e.post(path, map[string]any{"invites": []any{
 		map[string]any{"email": "New.Person@UW.edu", "name": "New Person"},
 		map[string]any{"email": "new.person@uw.edu"},
-		map[string]any{"email": "alex.kim@uw.edu"},
-		map[string]any{"email": "sky.morales@uw.edu"},
+		map[string]any{"email": "alex.kim@example.org"},
+		map[string]any{"email": "sky.morales@example.org"},
 	}}, officer))
 	if len(r.list("accounts")) != 2 || len(r.list("links")) != 0 || r.at("emailConfigured") != true {
 		t.Fatalf("invite result %s", r.Raw)
@@ -114,7 +114,7 @@ func TestLaunchpadInvitesEmailLinksAndAccounts(t *testing.T) {
 		v := s.(map[string]any)
 		reasons[v["email"].(string)] = v["reason"].(string)
 	}
-	if reasons["new.person@uw.edu"] != "duplicate" || reasons["alex.kim@uw.edu"] != "already_active" {
+	if reasons["new.person@uw.edu"] != "duplicate" || reasons["alex.kim@example.org"] != "already_active" {
 		t.Fatalf("skips %v", reasons)
 	}
 	e.srv.WaitBackground()
@@ -386,8 +386,13 @@ func TestLaunchpadPortalScopingAndVisibility(t *testing.T) {
 		strings.Contains(raw, "Mentor-only") || strings.Contains(raw, "Officer-only") || strings.Contains(raw, "Other project") || strings.Contains(raw, "purchase") {
 		t.Fatalf("builder scope: %s", raw)
 	}
-	if b.str("mentors", 0, "name") != "Maya Chen" || strings.Contains(raw, "@example.org") {
+	if b.str("mentors", 0, "name") != "Maya Chen" {
 		t.Fatal("builders see mentor names, not emails")
+	}
+	for _, mentor := range b.list("mentors") {
+		if _, exposed := mentor.(map[string]any)["email"]; exposed {
+			t.Fatal("builders must not see mentor email fields")
+		}
 	}
 	expectStatus(t, "builder on mentor API", e.get("/api/portal/mentor", builder), 403)
 	expectStatus(t, "builder on officer API", e.get("/api/buildspace-launchpad", builder), 401)
@@ -432,7 +437,7 @@ func TestLaunchpadPortalScopingAndVisibility(t *testing.T) {
 
 func TestLaunchpadOnboardingProfileProjectAndReadOnly(t *testing.T) {
 	e := newEnv(t)
-	e.exec(`INSERT INTO members_mirror(person_id,first_name,last_name,uw_email,join_date,has_been_officer,record_json) VALUES('member-sky','Sky','Morales','Sky.Morales@uw.edu','2026-09-01',0,'{}')`)
+	e.exec(`INSERT INTO members_mirror(person_id,first_name,last_name,uw_email,join_date,has_been_officer,record_json) VALUES('member-sky','Sky','Morales','Sky.Morales@example.org','2026-09-01',0,'{}')`)
 	sky := e.activate("lp-invite-sky", "300000000000000010")
 	b := e.mustOK(e.get("/api/portal/builder", sky))
 	if b.at("onboarded") != false || len(b.list("joinable")) != 6 || b.at("me") != nil {
@@ -447,7 +452,7 @@ func TestLaunchpadOnboardingProfileProjectAndReadOnly(t *testing.T) {
 	row := func(col string) any {
 		return e.scalar(`SELECT b.` + col + ` FROM buildspace_launchpad_people b JOIN buildspace_launchpad_accounts a ON a.person_id=b.id WHERE a.id='lp-invite-sky'`)
 	}
-	if row("project_id") != "bs-sprout" || row("member_id") != "member-sky" || row("discord_id") != "300000000000000010" || row("email") != "sky.morales@uw.edu" || row("joined_on") != "2026-10-31" {
+	if row("project_id") != "bs-sprout" || row("member_id") != "member-sky" || row("discord_id") != "300000000000000010" || row("email") != "sky.morales@example.org" || row("joined_on") != "2026-10-31" {
 		t.Fatalf("person %v %v %v %v %v", row("project_id"), row("member_id"), row("discord_id"), row("email"), row("joined_on"))
 	}
 	b = e.mustOK(e.get("/api/portal/builder", sky))

@@ -117,19 +117,19 @@ func seedLaunchpad(ctx context.Context, q *store.Queries) error {
 	if err := q.Exec(ctx, `UPDATE buildspace_launchpad_cohorts SET status='archived' WHERE id='cohort-spring-2026'`); err != nil {
 		return err
 	}
-	if err := q.Exec(ctx, `UPDATE buildspace_launchpad_people SET email='alex.kim@uw.edu', pronouns='they/them', bio='Building calmer study tools.' WHERE id='bs-person-01'`); err != nil {
+	if err := q.Exec(ctx, `UPDATE buildspace_launchpad_people SET email='alex.kim@example.org', pronouns='they/them', bio='Building calmer study tools.' WHERE id='bs-person-01'`); err != nil {
 		return err
 	}
 	fall := "cohort-fall-2026"
 	expires := now + 365*24*3600*1000 // demo invites stay usable for local development
 	accounts := []store.LaunchpadAccount{
-		{ID: "lp-account-alex", Kind: "builder", Email: "alex.kim@uw.edu", Name: "Alex Kim", Status: "active", CohortID: &fall, PersonID: ptr("bs-person-01"),
+		{ID: "lp-account-alex", Kind: "builder", Email: "alex.kim@example.org", Name: "Alex Kim", Status: "active", CohortID: &fall, PersonID: ptr("bs-person-01"),
 			DiscordID: ptr("100000000000000001"), AcceptedAt: &now, OnboardedAt: &now, CreatedAt: now, UpdatedAt: now},
 		{ID: "lp-account-maya", Kind: "mentor", Email: "maya.chen@example.org", Name: "Maya Chen", Status: "active", ContactID: ptr("bs-mentor-maya"),
 			DiscordID: ptr("200000000000000001"), AcceptedAt: &now, CreatedAt: now, UpdatedAt: now},
-		{ID: "lp-invite-sky", Kind: "builder", Email: "sky.morales@uw.edu", Name: "Sky Morales", Status: "invited", CohortID: &fall,
+		{ID: "lp-invite-sky", Kind: "builder", Email: "sky.morales@example.org", Name: "Sky Morales", Status: "invited", CohortID: &fall,
 			InviteTokenHash: ptr(auth.SHA256Hex(SeededInviteToken)), InviteExpiresAt: &expires, CreatedAt: now, UpdatedAt: now},
-		{ID: "lp-invite-dev", Kind: "builder", Email: "dev.patel@uw.edu", Name: "", Status: "invited", CohortID: &fall,
+		{ID: "lp-invite-dev", Kind: "builder", Email: "dev.patel@example.org", Name: "", Status: "invited", CohortID: &fall,
 			InviteTokenHash: ptr(auth.SHA256Hex("demo-launchpad-invite-dev")), InviteExpiresAt: &expires, InviteError: ptr("SMTP is not configured"), CreatedAt: now, UpdatedAt: now},
 	}
 	for _, a := range accounts {
