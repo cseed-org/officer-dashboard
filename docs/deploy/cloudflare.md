@@ -37,8 +37,9 @@ domain) Cloudflare runs. That is why the domain's nameservers move to Cloudflare
 2. **Point the domain at Cloudflare.** Cloudflare shows two nameservers. At your registrar (where
    you bought the domain), replace the domain's nameservers with those two. If DNSSEC is on at the
    registrar, turn it off first. Cloudflare emails you when the domain is active; this can take
-   from minutes to a day. Wait for **Active** before step 1. Meanwhile you can do item 3 and
-   step 9 here, and steps 1 and 3 of the deploy guide.
+   from minutes to a day. Steps 1 and 3 to 8 need the domain **Active**: they use its name or
+   its settings. Meanwhile you can do item 3, step 2 and step 9 here, and steps 1 and 3 of the
+   deploy guide.
 3. **Open Zero Trust** ([docs](https://developers.cloudflare.com/cloudflare-one/setup/)). In the
    Cloudflare dashboard, select **Zero Trust** in the left menu. On first use it asks for a
    **team name**. Pick something short, like your club's name: your sign-in page will be
@@ -53,10 +54,15 @@ You should see the domain as **Active** under **Domains**, and the Zero Trust ho
 
 1. **Zero Trust** → **Networking** → **Tunnels** → **Create a tunnel**. If asked for a type,
    pick **Cloudflared**. Name it `officer-dashboard` → **Create Tunnel**.
-2. Cloudflare shows install commands for several systems. Pick **Docker**. **Don't run the
-   command.** Copy only the long value after `--token` (it starts with `eyJ`) and save it as the
-   **tunnel token**. It is a secret: anyone who has it can run your tunnel.
-3. Continue to the routes. A route tells Cloudflare where to send visitors: here, to
+2. Cloudflare shows install commands for several systems. Pick **Docker**. Don't run the
+   command. It looks like this:
+   ```
+   docker run cloudflare/cloudflared:latest tunnel --no-autoupdate run --token eyJhIjoi…
+   ```
+   Copy only the long value after `--token` (it starts with `eyJ`) and save it as the **tunnel
+   token**. It is a secret: anyone who has it can run your tunnel.
+3. Select **Next** to reach the routes. (If the wizard ends without a routes page, open the tunnel
+   from the **Tunnels** list; the same form is on its **Routes** tab.) A route tells Cloudflare where to send visitors: here, to
    `http://dashboard:8090`, the dashboard container's name and port on the private network Docker
    creates between the two containers. On the tunnel's **Routes** tab → **Add route** →
    **Published application**:

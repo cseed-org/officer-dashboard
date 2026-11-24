@@ -73,10 +73,10 @@ You should have a Client ID ending in `.apps.googleusercontent.com` and a Client
    ```
 3. Check, after about 30 seconds:
    ```sh
-   docker compose -f compose.cloudflare.yml logs --since 2m dashboard | grep "Google Calendar sync"
+   docker compose -f compose.cloudflare.yml logs --since 2m dashboard | grep -E "listening|Google Calendar sync"
    ```
-   You should see nothing. `Google Calendar sync is not configured` means one of the two lines
-   is still empty or commented out.
+   You should see one line with `msg=listening` and none with `Google Calendar sync is not
+   configured`. If that warning appears, one of the two lines is still empty or commented out.
 
 Keep this secret the same from now on: it also locks the stored Google connections. Changing
 it means connecting the org account, and every officer's Google, again.

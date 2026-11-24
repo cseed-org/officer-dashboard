@@ -59,16 +59,17 @@ You need:
 - [ ] **A password manager** to keep the secrets you collect. Several are shown only once.
 
 **Time:** about 2 to 3 hours the first time. If your domain is new to Cloudflare, its nameserver
-change can take from a few minutes up to a day. While you wait, you can do step 1, step 3 and
-[Cloudflare step 9](cloudflare.md#9-create-the-r2-bucket-for-backups) (R2), which don't need the
-domain.
+change can take from a few minutes up to a day. While you wait, you can do step 1, step 3, and
+Cloudflare steps 2 and 9, which don't need the domain ([Cloudflare step 0](cloudflare.md#0-put-your-domain-on-cloudflare-and-open-zero-trust)
+says which steps do).
 
 **Cloudflare's Free plan** covers this setup. Its Zero Trust part allows up to 50 people to sign
 in; check Cloudflare's current plans if officers, builders and mentors together are more.
 
 **Pick your hostname now.** It is the address officers will type, a subdomain of your domain,
 for example `officers.example.org`. This guide writes it as `<your-hostname>`. Replace it (and
-the angle brackets) everywhere.
+the angle brackets) everywhere. Cloudflare's forms ask for it in two parts: the **subdomain**
+(`officers`) and the **domain** (`example.org`).
 
 ### Values to save as you go
 
@@ -128,8 +129,9 @@ Run these on the server.
    sudo usermod -aG docker $USER
    ```
    Log out and log back in, then run `docker run --rm hello-world`. You should see
-   `Hello from Docker!`. (Membership of the `docker` group is as powerful as `sudo`, so only add
-   people who run the server.)
+   `Hello from Docker!` (`permission denied` means the new group isn't active yet: log out fully,
+   or reboot). Membership of the `docker` group is as powerful as `sudo`, so only add people who
+   run the server.
 
 4. **Download the deploy files.** The server only needs this repository for its settings files;
    the dashboard itself comes as a ready-made image. The repository is public, so no sign-in is
@@ -146,13 +148,16 @@ Run these on the server.
 5. **Check whether the image is private.** The image is the packaged dashboard. GitHub builds it
    automatically and lists its versions on the
    [package page](https://github.com/cseed-org/officer-dashboard/pkgs/container/officer-dashboard).
-   Open that page in a private browser window, where you are not signed in to GitHub:
+   The image has its own visibility setting, separate from the repository's, so check it. Open
+   that page in a private browser window, where you are not signed in to GitHub:
    - You see the page: the image is **public**. Skip to item 7.
-   - You get a 404: either it is **private** or nothing has been published yet. Do item 6.
+   - You get a 404: either it is **private** or nothing has been published yet. Do item 6, then
+     item 7 tells the two apart.
 
-6. **Sign in to GitHub's image registry** (private image only). You need a GitHub account that can
-   see the package page while signed in. Members of the `cseed-org` organisation with access to
-   this repository can; if yours can't, ask an organisation owner to add you.
+6. **Sign in to GitHub's image registry** (private image only). `cseed-org` is the club's GitHub
+   organisation. You need a GitHub account in it that can see the package page while signed in;
+   if yours can't, ask one of the organisation's owners (on GitHub: `cseed-org` → **People**) to
+   add you.
    1. On GitHub, signed in as that account: your picture → **Settings** → **Developer settings** →
       **Personal access tokens** → **Tokens (classic)** → **Generate new token (classic)**. Tick
       only **`read:packages`**. Choose an expiry and note the date. **Generate token** and copy it.
@@ -172,14 +177,16 @@ Run these on the server.
    who made it: if they leave the club, log in again with someone else's. Making the package
    public removes this step; that is a decision for the GitHub organisation's owners.
 
-7. **Choose the image tag.** Open the package page again (signed in, if it is private) and look
-   at the tags:
-   - If **`0.15.0`** is listed, use it. That is the V0.15 release.
-   - If not (the release tag `v0.15.0` has not been pushed yet), find the image tagged **`main`**.
-     The same image also has a tag like **`sha-1a2b3c4`**. Use that `sha-` tag: it never changes.
-   - If even signed in you get a 404, no image has been published yet. Ask a maintainer to merge to
-     `main` or push the `v0.15.0` tag ([how](upgrade.md#for-maintainers-publish-a-release)), and
-     wait about 15 minutes for GitHub to build it.
+7. **Choose the image tag.** Open the package page again (signed in, if it is private). It lists
+   the image's versions, newest first, and each version shows its tags side by side:
+   - If a version has the tag **`0.15.0`**, use it. That is the V0.15 release.
+   - If not (the release tag `v0.15.0` has not been pushed yet), find the version tagged
+     **`main`**. The same version also has a tag `sha-` followed by 7 letters and digits. Use that
+     `sha-` tag: it never changes. (This guide writes it as `sha-1a2b3c4`; yours differs.)
+   - If even signed in you get a 404, no image has been published yet. Ask someone who maintains
+     the repository (anyone with write access) to merge to `main` or push the `v0.15.0` tag
+     ([how](upgrade.md#for-maintainers-publish-a-release)), and wait about 15 minutes for GitHub to
+     build it.
 
    Write the tag down. Don't use `latest`, `0.15` or `main`: those move to newer versions on
    their own, and a later download would then upgrade the dashboard and change its database
@@ -192,8 +199,10 @@ Run these on the server.
    git checkout 1a2b3c4          # for sha-1a2b3c4: the 7 characters after "sha-"
    ```
    You should see `HEAD is now at …`. Git also prints a note about a "detached HEAD": that is
-   normal, it means you are on a fixed version rather than a branch. Then check that
-   `ls server/deploy` lists `compose.cloudflare.yml` and `compose.build.yml`.
+   normal, it means you are on a fixed version rather than a branch. `pathspec … did not match`
+   means a typo, or a version newer than your copy: run `git fetch origin --tags` and try again.
+   Then check that `ls -a server/deploy` lists `compose.cloudflare.yml`, `.env.example` and
+   `dashboard.env.example`.
 
 ## 2. Set up Cloudflare
 
@@ -340,14 +349,19 @@ Because you set `BOOTSTRAP_OWNER_DISCORD_ID`, your Discord account became the da
 5. Add the other officers. For each one, **first** add their email to the `Officers` group in
    Cloudflare ([how](cloudflare.md#adding-someone-later)): they can't reach the dashboard before
    that. Then either:
-   - **Officers → Access** → add an officer, with their Discord user ID (they find it as in
-     step 3, item 4), name and role. They can sign in right away at `https://<your-hostname>`.
+   - **Officers → Access** → add an officer, with their Discord user ID (send them the
+     instructions in step 3, item 4), name and role. Roles rank `officer`, then `director`, then
+     `leadership`; pick `officer` unless they run a team or the club
+     ([what each can do](../roles-and-permissions.md#permission-matrix)). You should see them in
+     the list, and they can sign in right away at `https://<your-hostname>`.
    - Or **Officers → Invites** → **Invite officer**. The dashboard sends the invite as a Discord DM
      (needs `DISCORD_BOT_TOKEN`) or gives you a link to send yourself. Invites expire after 7
      days, and only the matching Discord account can accept.
 
    Each new officer then sets up their profile at first sign-in. Set their **account email** in
-   **Officers → Access** too (see the table below).
+   **Officers → Access** too (see the table below); without it they get no shared calendars.
+   Launchpad builders and mentors are invited separately, from **Buildspace + Launchpad**, after
+   their email is in the `Launchpad` group ([Launchpad invites](../launchpad-cohorts.md#invite--bind--session)).
 
 **Three emails, one person.** Discord gives the dashboard no email, so up to three addresses are
 involved. Using the same one for all three is simplest.
