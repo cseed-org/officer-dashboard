@@ -29,7 +29,7 @@ Then:
 | Runbook | When |
 | --- | --- |
 | [Fresh install](fresh-install.md) | First deployment: R2 bucket and token, Tunnel and Access, env files, first boot, owner account, smoke checks. Pi (systemd) and Docker (`compose.cloudflare.yml`). |
-| [Upgrade an existing install](upgrade-existing.md) | Upgrading to the org-calendar release: backup and a tested restore, new image or binary, migrations 0031 to 0036, smoke checks, rollback. |
+| [Upgrade an existing install](upgrade-existing.md) | Upgrading to the org-calendar release: backup and a tested restore, new image tag (pulled) or binary, migrations 0031 to 0036, smoke checks, rollback. |
 | [Org calendar setup](org-calendar-setup.md) | Once, after either path: Google OAuth redirect and scope, connecting the org Gmail, sharing, service tokens and MCP, live checks, troubleshooting. |
 
 ## Conventions
@@ -38,6 +38,15 @@ Then:
   `https://officers.example.org`. Replace both everywhere.
 - Commands run in a checkout of this repository on the server. Each section says its
   directory: Docker commands run in `server/deploy`, Pi commands in `server/`.
+- **Docker installs pull the published image** `ghcr.io/cseed-org/officer-dashboard` (CI
+  builds it for amd64 and arm64); the checkout only supplies the compose and env files.
+  `DASHBOARD_TAG` in `server/deploy/.env` picks the release, for example `0.15.0`. Releases
+  are git tags `v0.15.0` → image tag `0.15.0`; every push to `main` is also published as
+  `main` and `sha-<commit>` ([the tags](../deployment.md#the-published-image)). The Pi target
+  still builds its binary on the Pi.
+- **Rollback needs a restore.** Migrations are forward-only: an older image cannot run on a
+  database a newer one has migrated. Going back means restoring the backup taken before the
+  upgrade, then starting the older tag. Both runbooks take that backup.
 - Placeholders are in angle brackets: `<account-id>`. Replace the brackets too.
 - **One writer.** Never run two dashboard servers against one database or one Litestream
   replica. Both runbooks say where this bites.

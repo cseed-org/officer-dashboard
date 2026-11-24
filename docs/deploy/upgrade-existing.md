@@ -6,9 +6,9 @@ upgrades to the org-calendar release (V0.15: migrations 0031 to 0036). Afterward
 one-time [org calendar setup](org-calendar-setup.md). Installs run another way (plain
 `docker run`, Cloudflare Containers) are not covered; adapt the Docker steps.
 
-**The order:** build the new version while the old one serves; prove your backup restores and
-dry-run the migrations on that copy; stop; take the final backup; start the new version;
-smoke-check. Downtime is the stop-to-healthy window, usually under a minute.
+**The order:** get the new version (Docker: pull the image; Pi: build the binary) while the
+old one serves; prove your backup restores and dry-run the migrations on that copy; stop; take
+the final backup; start the new version; smoke-check. Downtime is the stop-to-healthy window, usually under a minute.
 
 > [!WARNING]
 > **One writer, always.** Never run two dashboard servers against one database or one
@@ -19,11 +19,15 @@ smoke-check. Downtime is the stop-to-healthy window, usually under a minute.
 
 ## What you deploy
 
-The release is `main` once PR #97 (server) and the org-calendar front-end PRs are merged; the
-repository has no release tags. Note the commit you deploy (`git rev-parse --short HEAD`): that
-is what `dashboard version` reports after this upgrade. The Calendar page and the Settings card
-for the org account come from the front-end PRs; without them the server works, but the
-[setup](org-calendar-setup.md) needs the API instead of buttons.
+The release is `main` once PR #97 (server) and the org-calendar front-end PRs are merged. CI
+publishes every push to `main` as the image tags `main` and `sha-<commit>`, and a release tag
+`v0.15.0`, once a maintainer pushes it, as `0.15.0` ([the tags](../deployment.md#the-published-image)).
+Docker installs deploy that image tag: use `0.15.0` if it exists (the repository's **Tags**
+page), otherwise `sha-<commit>` for the `main` commit you tested, never the moving `main`.
+`dashboard version` then reports `v0.15.0` or the commit. On a Pi, note the commit you build
+(`git rev-parse --short HEAD`): that is what `dashboard version` reports. The Calendar page
+and the Settings card for the org account come from the front-end PRs; without them the server
+works, but the [setup](org-calendar-setup.md) needs the API instead of buttons.
 
 ## Before you start
 
@@ -44,8 +48,8 @@ so count the migrations:
 explicitly (older installs relied on the entrypoint's defaults, `dashboard` and `auto`). Add
 them with those values if missing: the checks below call Litestream without the entrypoint.
 
-Have ready: about 30 minutes plus the build time, and somewhere off this machine to copy the
-backup (your laptop: `scp`). Tell officers about the short outage.
+Have ready: about 30 minutes (plus the build time on a Pi), and somewhere off this machine to
+copy the backup (your laptop: `scp`). Tell officers about the short outage.
 
 ## What the migrations do
 
@@ -53,6 +57,8 @@ backup (your laptop: `scp`). Tell officers about the short outage.
 step. Each file runs in its own transaction, then a foreign-key check, then commit. **They are
 forward-only**: no down migrations, and the old binary is not supported on a migrated database.
 **Rollback means restoring the backup** you take below, losing any writes made after it.
+For Docker that means: choosing the older image tag is never enough on its own. Start the older
+image only on the restored backup ([Rollback](#rollback-docker)).
 
 **Only 0033 is slow or risky.** It rebuilds the `events` table (copies every row, drops the old
 table, renames, recreates five indexes) so that an Event can be tentative, without a start
@@ -82,7 +88,8 @@ this does not happen in production.
 
 ## Docker
 
-Every command runs in `server/deploy`.
+Every command runs in `server/deploy`. In short: back up, set the new tag, pull, start. Every
+later upgrade (any release to a newer one) is the same steps with other tag names.
 
 ### 1. Keep the old image
 
@@ -92,18 +99,29 @@ docker compose -f compose.cloudflare.yml images dashboard     # REPOSITORY and T
 docker tag officer-dashboard:latest officer-dashboard:pre-v0.15   # use the REPOSITORY:TAG shown
 ```
 
-Then set the new tag in `.env`: `DASHBOARD_IMAGE=officer-dashboard:v0.15`, so the build below
-does not overwrite the old tag.
+An install that already runs a published image (`ghcr.io/cseed-org/officer-dashboard:<tag>`)
+can skip the `docker tag`: that tag stays pullable, and the rollback uses it instead.
 
-### 2. Build the new version (the old one keeps serving)
+### 2. Pull the new version (the old one keeps serving)
+
+Update the compose files, then point `.env` at the new image. In `server/deploy/.env`, delete
+any `DASHBOARD_IMAGE=` line (it names a locally built image and wins over the tag), and set:
 
 ```sh
-git fetch origin && git checkout main && git pull --ff-only
-(cd ../../web && npm ci && npm run build)    # the image embeds web/dist
-docker compose -f compose.cloudflare.yml build --build-arg VERSION=$(git describe --always --dirty) dashboard
+DASHBOARD_TAG=0.15.0          # or sha-<commit>: see "What you deploy"
 ```
 
-`build` does not touch the running container.
+```sh
+git fetch origin && git checkout main && git pull --ff-only   # or: git checkout v0.15.0
+docker compose -f compose.cloudflare.yml config --images      # ghcr.io/cseed-org/officer-dashboard:0.15.0 and cloudflared
+docker compose -f compose.cloudflare.yml pull dashboard
+```
+
+If the package is private, `pull` needs a GHCR login on this machine first: `denied` means
+there is none (or it expired). Do the `docker login ghcr.io` in
+[fresh install, 4D](fresh-install.md#4d-docker-first-boot), then pull again. Continue only once
+`pull` has succeeded: without the image, the `run` and `up` below would build one from the
+checkout instead. `pull` does not touch the running container.
 
 ### 3. Prove the replica restores, and dry-run the migrations on it
 
@@ -160,7 +178,7 @@ Keep `$b` in this shell: the rollback names it. If you open a new shell, `ls ~/d
 
 ```sh
 docker compose -f compose.cloudflare.yml up -d
-docker compose -f compose.cloudflare.yml logs -f dashboard   # until "msg=listening … version=<commit>"; Ctrl-C
+docker compose -f compose.cloudflare.yml logs -f dashboard   # until "msg=listening … version=v0.15.0" (or the commit); Ctrl-C
 docker compose -f compose.cloudflare.yml ps                  # dashboard: (healthy)
 ```
 
@@ -176,6 +194,12 @@ docker compose -f compose.cloudflare.yml up -d
 Then the [smoke checks](#smoke-checks).
 
 ### Rollback (Docker)
+
+> [!WARNING]
+> **Restore first, then the older tag.** Migrations are forward-only: the new image has already
+> migrated the database (and its replica), and the old image does not support that schema.
+> Pointing `.env` back at the old tag without restoring the backup leaves the old server on a
+> database it does not understand. The steps below restore, then start the old image.
 
 **Not verified here** (needs a live replica). Roll back only soon after the upgrade: every write
 since the backup is lost. If the org account was already connected, see
@@ -193,8 +217,9 @@ docker run --rm -v officer-dashboard_dashboard-data:/data -v ~/dashboard-backups
 
 (`10001` is the image's `dashboard` user. `.dashboard.db-litestream` is Litestream's local
 state; removing it makes Litestream start a fresh generation.) Then set
-`LITESTREAM_PATH=dashboard-rollback-<today>` in `dashboard.env` and
-`DASHBOARD_IMAGE=officer-dashboard:pre-v0.15` in `.env`, and start without building:
+`LITESTREAM_PATH=dashboard-rollback-<today>` in `dashboard.env`, and the old image in `.env`:
+`DASHBOARD_IMAGE=officer-dashboard:pre-v0.15` (the tag from step 1), or, if the old version was
+a published image, `DASHBOARD_TAG=<its tag>` with no `DASHBOARD_IMAGE` line. Then start it:
 
 ```sh
 docker compose -f compose.cloudflare.yml up -d
@@ -283,7 +308,7 @@ each calendar → **Settings and sharing** → **Delete**).
 | --- | --- | --- |
 | Healthy | Docker: `docker compose -f compose.cloudflare.yml ps`. Pi: `curl -s http://127.0.0.1:8090/api/health` | `(healthy)`; `{"db":true,"ok":true}` |
 | Migrated | `dashboard migrate`, as in [Before you start](#before-you-start) | `37 migrations applied` |
-| Version | `dashboard version` (Docker: `docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard version`) | the commit you noted |
+| Version | `dashboard version` (Docker: `docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard version`) | Docker: `v0.15.0`, or the commit of the `sha-` tag. Pi: the commit you noted |
 | Errors | Docker: `docker compose -f compose.cloudflare.yml logs dashboard \| grep -v level=INFO`. Pi: `sudo journalctl -u dashboard -n 100 --no-pager \| grep -v level=INFO` | Only "not configured" warnings for integrations you do not use |
 | Replica (Docker) | `docker compose -f compose.cloudflare.yml exec dashboard litestream generations -config /etc/litestream.yml /data/dashboard.db` | a row whose end time is a moment ago |
 | From outside | [Deployment step 9](../deployment.md#9-check-it-from-outside), `mcp-check` | `0 failed` |
@@ -299,7 +324,8 @@ For a new machine with an existing bucket (the [index](README.md#which-path-am-i
 here): the new image's first boot restores the replica and migrates it at once. Before that,
 keep a copy of the replica as it is now. On the new machine, after
 [fresh install 3D](fresh-install.md#3d-docker-env-files) (same bucket and `LITESTREAM_*`; if you
-lost the R2 secret, create a new token for the bucket) and the image build:
+lost the R2 secret, create a new token for the bucket) and the image pull
+(`docker compose -f compose.cloudflare.yml pull`, [4D](fresh-install.md#4d-docker-first-boot)):
 
 ```sh
 mkdir -p ~/dashboard-backups

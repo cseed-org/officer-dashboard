@@ -24,14 +24,77 @@ not in the database: Google Drive holds them (or `RECEIPTS_DIR`, which you must 
 
 ## Cloudflare Containers / Docker
 
-Run the following from the repository root. The multi-platform build needs a builder capable of running both target architectures (native nodes or QEMU/binfmt); cgo compilation uses cross-gcc, but runtime package installation executes target binaries.
+### The published image
+
+CI builds `server/Dockerfile` for linux/amd64 and linux/arm64 and pushes it to
+**`ghcr.io/cseed-org/officer-dashboard`** (`.github/workflows/ci.yml`, job `publish`, after
+every other check has passed). A deploy pulls it; nothing is built on the server.
+
+| Tag | Published when | Use |
+| --- | --- | --- |
+| `0.15.0` | a git tag `v0.15.0` is pushed | production: pin one release |
+| `0.15` | the same, moved by each `v0.15.x` | the newest patch of one release |
+| `latest` | the same, moved by each release tag (not by pre-releases such as `v0.16.0-rc.1`) | the newest release |
+| `main` | every push to `main` | testing what is about to be released |
+| `sha-<commit>` | every push to `main`, 7 characters (`git rev-parse --short HEAD`) | one exact `main` build |
+
+Pull requests build the image for both platforms but never push it. `dashboard version` in the
+container prints the git tag (`v0.15.0`) or, for `main`, the commit. `latest` exists only once
+the first release tag has been pushed; before that, use `main` or `sha-<commit>`.
+
+**Cutting a release** (a maintainer, after the commit is on `main`): `git tag v0.15.0 <commit> &&
+git push origin v0.15.0`. CI runs every check on the tag, then publishes `0.15.0`, `0.15` and
+`latest`. A tag is never moved or reused; a fix is a new patch tag.
+
+**Signing in to GHCR.** A new GHCR package starts **private**, and a private package needs a
+login on every machine that pulls it. Making it
+public (organisation → **Packages** → `officer-dashboard` → **Package settings** → **Change
+visibility**) is the organisation owners' decision; this repository does not change it. With
+a private package, on the server, once:
+
+1. On GitHub, as an account that can read the repository: **Settings** → **Developer
+   settings** → **Personal access tokens** → **Tokens (classic)** → **Generate new token
+   (classic)**. Scope: only **`read:packages`**. GHCR does not accept fine-grained tokens.
+2. On the server, as the user that runs `docker compose`:
+   ```sh
+   read -rs GHCR_TOKEN                  # paste the token; it stays out of the shell history
+   printf %s "$GHCR_TOKEN" | docker login ghcr.io -u <github-username> --password-stdin
+   unset GHCR_TOKEN
+   ```
+   `Login Succeeded`. Docker keeps the token in `~/.docker/config.json` (base64, not
+   encrypted), which is why it should carry only `read:packages`. A `denied` from `docker
+   compose pull` means this login is missing, expired, or the account cannot read the package.
+
+**Upgrade** (details, backup and checks: [the upgrade runbook](deploy/upgrade-existing.md)):
+back up, set `DASHBOARD_TAG` in `server/deploy/.env` to the new release, then
+`docker compose -f compose.cloudflare.yml pull` and `up -d`. The new container applies any new
+migrations before it listens.
+
+> [!WARNING]
+> **Rollback is not "choose the older tag".** Migrations are forward-only: once a newer image
+> has started, the database has its schema, and an older image does not support it. To go back,
+> stop the dashboard, **restore the backup taken before the upgrade**, and only then start the
+> older tag. Every write since that backup is lost. Choosing an older tag without a restore is
+> safe only when the newer image added no migrations (compare `dashboard migrate`'s count).
+
+### Building the image yourself
+
+From the repository root, with nothing built first (the image builds the front end too):
 
 ```sh
-(cd web && npm ci && npm run build)
+docker build -f server/Dockerfile -t officer-dashboard:local .
 docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile -t officer-dashboard .
 ```
-Multi-stage; cross-compiles cgo with an installed cross-gcc; the runtime is
-`debian:bookworm-slim` plus the `litestream` binary, running as a non-root user with a
+
+With compose, `docker compose -f compose.cloudflare.yml build` builds the checkout and tags it
+with the compose image name: set `DASHBOARD_IMAGE=officer-dashboard:local` in `.env` first, so a
+later `pull` cannot replace it with the published image. Add `--build-arg VERSION=$(git describe
+--always --dirty)`, or `dashboard version` prints `dev`.
+
+Multi-stage: Node builds `web/dist`, Go cross-compiles the server (cgo, with an installed
+cross-gcc) and embeds it, and every one of those stages runs on the build machine, so a
+multi-platform build needs no emulation. The runtime is `debian:bookworm-slim` plus the
+`litestream` binary, running as a non-root user with a
 `HEALTHCHECK` (`dashboard healthcheck`). The image listens on `:8090`, so it **refuses to start
 without `APP_URL`** (the public https origin). When the TLS proxy (Caddy, cloudflared) reaches the
 container over the Docker network rather than loopback, set `TRUSTED_PROXIES` to that network
@@ -70,7 +133,7 @@ replica, take a fresh snapshot with the new binary under a new bucket prefix, ve
 restore, then switch `LITESTREAM_PATH`. Do not point a 0.5 binary at the existing 0.3 prefix.
 
 > [!NOTE]
-> The original Go-port branch did not build the image because `web/dist` did not yet exist. During this documentation update, the multi-platform command reached runtime setup but failed with `exec format error` on the amd64 stage of this ARM host. Configure a multi-platform builder before using that command. Live Litestream restore/replication still needs deployment credentials and verification.
+> Live Litestream restore and replication still need deployment credentials and verification.
 
 ## Cloudflare Tunnel + Access
 
@@ -141,8 +204,8 @@ name is still common, it is given in brackets.
    cp .env.example .env                    # APP_URL=https://officers.example.org, TUNNEL_TOKEN=<token>
    cp dashboard.env.example dashboard.env  # Discord, Drive, SMTP, LITESTREAM_* (see configuration.md)
    chmod 600 .env dashboard.env
-   (cd ../../web && npm ci && npm run build)   # the image embeds web/dist
-   docker compose -f compose.cloudflare.yml up -d --build
+   docker compose -f compose.cloudflare.yml pull   # the published image; a private package needs `docker login ghcr.io` first
+   docker compose -f compose.cloudflare.yml up -d
    docker compose -f compose.cloudflare.yml logs cloudflared | grep "Registered tunnel connection"
    ```
    The tunnel shows **Healthy** in the dashboard. Compose sets `APP_URL`, `ADDR` and

@@ -1,12 +1,15 @@
 # Build context of server/Dockerfile (the repository root). BuildKit reads this file in place
 # of a root .dockerignore. Secrets never enter the context: server/deploy/.env holds the
 # tunnel token and dashboard.env the app's secrets.
+# The image builds the front end itself (the Dockerfile's web stage), so no local build output
+# or dependencies are sent: a stale web/dist or server/internal/web/dist can never ship.
 .git
 .pane
 worktrees
 tmp
 **/node_modules
 **/.astro
+**/dist
 **/test-results
 **/playwright-report
 docs/evidence

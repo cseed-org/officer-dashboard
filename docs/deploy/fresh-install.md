@@ -7,7 +7,7 @@ The repository supports two targets. Pick one and follow only its sections, star
 
 | | **Docker** (`compose.cloudflare.yml`) | **Pi 5** (systemd) |
 | --- | --- | --- |
-| Runs | the dashboard image plus a `cloudflared` container | the `dashboard` binary under `deploy/dashboard.service` |
+| Runs | the published dashboard image (pulled from `ghcr.io`) plus a `cloudflared` container | the `dashboard` binary, built on the Pi, under `deploy/dashboard.service` |
 | Database | `/data/dashboard.db` in the `dashboard-data` volume | `/var/lib/officer-dashboard/dashboard.db` |
 | Off-box copy | **Litestream** to R2, continuous (needs the bucket below) | nightly `scripts/backup` via `deploy/dashboard-backup.timer`; off-box only if you set `BACKUP_REMOTE` |
 | Reached by | `cloudflared` container → `http://dashboard:8090` | `cloudflared` installed on the Pi → `http://127.0.0.1:8090` |
@@ -16,17 +16,19 @@ The repository supports two targets. Pick one and follow only its sections, star
 Litestream runs only inside the container (`server/deploy/entrypoint.sh`); the systemd unit does
 not run it. Docker on a Pi is fine too: that is the Docker column.
 
-**Build on the server itself.** On a Pi, both targets build natively for arm64. Building on
-another machine and shipping the image or binary is not covered here (see
-[Deployment](../deployment.md#cloudflare-containers--docker) for the multi-platform build,
-which its own note says was not working when written). The first image build compiles
-Litestream and runs its tests; on a Pi expect it to take a while (not measured here).
+**Docker pulls; the Pi target builds.** CI publishes the Docker image for amd64 and arm64
+(a Pi 5 is arm64) as `ghcr.io/cseed-org/officer-dashboard`, so the Docker target builds
+nothing: it pulls the release you choose ([the tags](../deployment.md#the-published-image)).
+The Pi target builds its binary on the Pi.
 
 ## 0. What you need
 
 - A domain on Cloudflare, and a Zero Trust account (the free plan is fine).
-- **Docker target:** Docker with Compose v2, Node ≥ 22.23.4 and npm (the image embeds
-  `web/dist`, built on the host), and `git`.
+- **Docker target:** Docker with Compose v2, and `git` (the checkout supplies the compose and
+  env files). The release to run: an image tag such as `0.15.0`. Releases are git tags
+  `v0.15.0`; the repository's **Tags** page lists them. Before the first release tag exists,
+  use `main` (the newest commit on `main`). If the package is private: a GitHub account that
+  can read it, for a token with the `read:packages` scope (section 4D).
 - **Pi target:** Debian / Raspberry Pi OS with `sudo apt install git build-essential sqlite3`
   (gcc and make), Go 1.27.4 from [go.dev/dl](https://go.dev/dl/) (`linux-arm64`; the module
   pins `toolchain go1.27.4`, and Debian's packaged Go is older), and Node ≥ 22.23.4 (not in
@@ -44,8 +46,11 @@ Clone the repository on the server. If it is private, authenticate first (for ex
 ```sh
 git clone https://github.com/cseed-org/officer-dashboard.git
 cd officer-dashboard
-git checkout main      # the release you deploy; note it with: git rev-parse --short HEAD
+git checkout main      # Pi: the release you build; note it with: git rev-parse --short HEAD
 ```
+
+Docker: the image tag picks what runs, and the checkout only needs compose files at least as
+new as it. Check out the release's tag (`git checkout v0.15.0`) or stay on `main`.
 
 ## 1. Create the R2 bucket for Litestream (Docker only)
 
@@ -96,8 +101,11 @@ In `.env` (read by compose, not by the app):
 ```sh
 APP_URL=https://officers.example.org
 TUNNEL_TOKEN=<the tunnel token from section 2>
-DASHBOARD_IMAGE=officer-dashboard:v0.15   # a named tag, so a later upgrade can keep this one
+DASHBOARD_TAG=0.15.0      # the release to run; `main` until the first release tag exists
 ```
+
+Pin a release (`0.15.0`) rather than `latest`: the tag then changes only when you change it,
+and the [upgrade runbook](upgrade-existing.md) takes a backup first.
 
 In `dashboard.env`: the [settings below](#the-apps-settings), plus Litestream (uncomment and set
 all six; set `PATH` and `REGION` even though the entrypoint has defaults, because maintenance
@@ -160,17 +168,30 @@ Same on both targets ([Configuration](../configuration.md) has every variable).
 
 The server creates the database and applies every migration before it listens.
 
+If the package is private, sign in to GHCR once on this machine, as the user that runs
+`docker compose` ([how to create the token](../deployment.md#the-published-image): a
+**classic** token with only `read:packages`):
+
 ```sh
-(cd ../../web && npm ci && npm run build)    # the image embeds web/dist
-docker compose -f compose.cloudflare.yml build --build-arg VERSION=$(git describe --always --dirty) dashboard
+read -rs GHCR_TOKEN                  # paste the token; it stays out of the shell history
+printf %s "$GHCR_TOKEN" | docker login ghcr.io -u <github-username> --password-stdin   # Login Succeeded
+unset GHCR_TOKEN
+```
+
+Then pull and start:
+
+```sh
+docker compose -f compose.cloudflare.yml pull                 # the dashboard image and cloudflared
 docker compose -f compose.cloudflare.yml up -d
 docker compose -f compose.cloudflare.yml ps                   # dashboard: (healthy)
 docker compose -f compose.cloudflare.yml logs dashboard | grep listening
 docker compose -f compose.cloudflare.yml logs cloudflared | grep "Registered tunnel connection"
 ```
 
-Without `--build-arg VERSION=…` the image reports its version as `dev`. On the first boot the
-bucket is empty, so the entrypoint's `litestream restore -if-db-not-exists -if-replica-exists`
+If `pull` ends with `denied`, the login is missing or the account cannot read the package;
+`manifest unknown` means no image has that tag (check `DASHBOARD_TAG`). Do not run `up -d`
+until `pull` succeeds: without the image, `up` builds one from this checkout instead (slow on a
+Pi, and not the release you chose). On the first boot the bucket is empty, so the entrypoint's `litestream restore -if-db-not-exists -if-replica-exists`
 does nothing; the server creates the file and Litestream starts replicating it.
 
 **Do not run `dashboard seed` on a production database.** It loads fictional sample data
@@ -242,7 +263,7 @@ promote an account that already exists, see
 | --- | --- | --- |
 | Health | `docker compose -f compose.cloudflare.yml ps` → `(healthy)` | `curl -s http://127.0.0.1:8090/api/health` → `{"db":true,"ok":true}` |
 | Migration count | `docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard migrate` → `/data/dashboard.db: 37 migrations applied` | `sudo -u dashboard env DB_PATH=/var/lib/officer-dashboard/dashboard.db /opt/officer-dashboard/dashboard migrate` → `… 37 migrations applied` |
-| Version | `docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard version` → the commit | `/opt/officer-dashboard/dashboard version` |
+| Version | `docker compose -f compose.cloudflare.yml exec dashboard /app/dashboard version` → the release tag (`v0.15.0`), or the commit for `main` | `/opt/officer-dashboard/dashboard version` |
 | Replica / backup | `docker compose -f compose.cloudflare.yml exec dashboard litestream generations -config /etc/litestream.yml /data/dashboard.db` → one row, updated moments ago; R2 shows objects under `dashboard/generations/` | `sudo ls -l /var/lib/officer-dashboard/backups` → a `.db.gz` |
 | From outside | [Deployment step 9](../deployment.md#9-check-it-from-outside): `mcp-check` ends `0 failed` (its `read -rs` line needs bash) | same, from any machine with Docker or the binary |
 | Sign-in | PIN, then Discord, as the owner (section 5) | same |
