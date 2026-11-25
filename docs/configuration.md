@@ -19,7 +19,7 @@ Read by `compose.cloudflare.yml`, not by the dashboard.
 | --- | --- | --- | --- |
 | `APP_URL` | **required** | – | the public `https` address, no slash at the end. Passed to the dashboard; wins over `dashboard.env` |
 | `TUNNEL_TOKEN` | **required** | – | the Cloudflare Tunnel's token ([Cloudflare step 1](deploy/cloudflare.md#1-create-the-tunnel)) |
-| `DASHBOARD_IMAGE` | optional | – | the whole image name instead, for an image you build (`officer-dashboard:local`) or the copy an upgrade keeps. Wins over `DASHBOARD_TAG` |
+| `DASHBOARD_IMAGE` | **required** | empty | approved immutable image reference in `prod-image.env`; local tags are for self-built rehearsals only |
 | `TUNNEL_NET` | optional | `10.250.89` | first three numbers of the private network between the two containers: subnet `.0/28`, containers `.8/29` (also the dashboard's `TRUSTED_PROXIES`), gateway `.1`. Change it if compose says the pool overlaps |
 
 Compose also sets the dashboard's `APP_URL`, `ADDR` (`:8090`) and `TRUSTED_PROXIES`

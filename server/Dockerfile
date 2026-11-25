@@ -7,10 +7,8 @@
 #   docker build -f server/Dockerfile -t officer-dashboard .
 #   docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile -t officer-dashboard .
 #
-# Every stage that compiles or installs runs on the build machine: the front end is built with
-# Node there (its output is the same for every platform), the C compiler for go-sqlite3 is
-# cross-installed, and the runtime's system files are prepared there too. The target-platform
-# stage only copies files, so a multi-platform build needs no emulation (no QEMU).
+# The front end and Go/C cross compilation run on the build machine. Runtime Python/age
+# packages install for the target platform, so multi-platform CI enables QEMU for that step.
 
 # The front end (web/dist): static files, embedded into the server binary below. Node 24, as in
 # CI's web job; a literal tag (no ARG) so Dependabot's docker updates see it.
