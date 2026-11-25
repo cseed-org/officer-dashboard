@@ -21,7 +21,7 @@ export function internalPath(raw: string | null | undefined, origin = currentOri
   } catch {
     return null;
   }
-  if (u.origin !== new URL(origin).origin) return null;
+  if (u.origin !== new URL(origin).origin || u.pathname.startsWith('//')) return null;
   return `${u.pathname}${u.search}${u.hash}`;
 }
 
