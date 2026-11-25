@@ -39,7 +39,7 @@ func TestSystemdServeResolvesFileSecrets(t *testing.T) {
 func TestAllApplicationFileCredentials(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "secret")
 	os.WriteFile(path, []byte("test-value\n"), 0600)
-	for _, key := range []string{"DISCORD_CLIENT_SECRET", "DISCORD_WEBHOOK_URL", "DISCORD_BOT_TOKEN", "SMTP_USERNAME", "SMTP_PASSWORD", "GOOGLE_OAUTH_CLIENT_SECRET", "CLOUDFLARE_API_TOKEN", "GOOGLE_SERVICE_ACCOUNT_JSON", "DEV_AUTH_KEY"} {
+	for _, key := range []string{"R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "DISCORD_CLIENT_SECRET", "DISCORD_WEBHOOK_URL", "DISCORD_BOT_TOKEN", "SMTP_USERNAME", "SMTP_PASSWORD", "GOOGLE_OAUTH_CLIENT_SECRET", "CLOUDFLARE_API_TOKEN", "GOOGLE_SERVICE_ACCOUNT_JSON", "DEV_AUTH_KEY"} {
 		get, err := fileSettings(env(map[string]string{key + "_FILE": path}))
 		if err != nil || get(key) != "test-value" {
 			t.Fatalf("%s: %v", key, err)

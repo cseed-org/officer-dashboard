@@ -338,3 +338,10 @@ func (c *Ctx) requireLeadershipIn(q *store.Queries) (*store.User, error) {
 
 // CloudflareDaily runs the daily job until shutdown.
 func (s *Server) CloudflareDaily(ctx context.Context) { s.cfg.Cloudflare.Daily(ctx) }
+
+// FileStorageDaily refreshes the private R2 inventory; stale inventories close uploads.
+func (s *Server) FileStorageDaily(ctx context.Context) {
+	if r, ok := s.cfg.Files.(*files.R2); ok {
+		r.Daily(ctx, func(err error) { s.log.Error("R2 reconciliation failed", "error", err) })
+	}
+}

@@ -203,3 +203,34 @@ moving tags and require `image@sha256:<64 lowercase hex characters>`. Bootstrap 
 reviewed immutable digest, and use the protected production promotion workflow afterward.
 
 Cloudflared uses its documented [`TUNNEL_TOKEN_FILE`](https://developers.cloudflare.com/tunnel/reference/run-parameters/#token-file) support. Runtime restrictions use the [Compose service controls](https://docs.docker.com/reference/compose-file/services/).
+
+## Private R2 files
+
+`FILE_STORAGE` selects `r2`, `drive`, or `local`. Unset preserves legacy automatic
+selection. Explicit Drive requires its credentials/folder; explicit local requires
+`RECEIPTS_DIR`. Invalid/incomplete selections stop startup.
+
+| Variable | Value |
+| --- | --- |
+| `R2_ACCOUNT_ID` | 32-character Cloudflare account ID, default jurisdiction |
+| `R2_BUCKET` | Dedicated private Standard bucket |
+| `R2_ACCESS_KEY_ID` | Bucket-scoped S3 access key ID; prefer `R2_ACCESS_KEY_ID_FILE` |
+| `R2_SECRET_ACCESS_KEY` | Direct environment value rejected; use `R2_SECRET_ACCESS_KEY_FILE` |
+
+Both `_FILE` settings use the existing bounded in-memory secret loader, with no
+simultaneous direct value. Put the two files in `secrets/app/` on the host; the app
+already mounts that directory read-only. The backup container receives neither.
+`DISCORD_WEBHOOK_URL` (prefer its `_FILE` form) is mandatory for R2 alerts. There is
+no public endpoint, public domain, configurable remote endpoint, or presigning.
+The endpoint is derived from the account ID. No new Go dependencies.
+
+Limits are fixed in code: 10 MiB/file, 20 attempted uploads/user/UTC day,
+7 GB/700k Class A/7M Class B warning, and 9 GB/900k Class A/9M Class B refusal. Operation ceilings apply both to
+calendar-month counters and to a rolling 32-UTC-day window; the stricter wins.
+HTTP 507 explains that the safety budget was reached. Counters survive restarts
+in SQLite. A successful deletion releases known bytes; failed requests retain
+reservations. See [R2 setup and budget constraints](deployment.md#private-r2-file-storage)
+before enabling it. Existing files keep their backend label: migrate or retain
+access to the old backend before switching; use the optional `dashboard files-migrate-r2` command (dry-run by default)
+before switching. D1 remains the encrypted database backup target; no R2 backup copy is
+enabled or implemented in this change.

@@ -28,6 +28,7 @@ import (
 
 	"filippo.io/age"
 	sqlite "github.com/mattn/go-sqlite3"
+	"officerdashboard/internal/store"
 )
 
 const chunkSize = 1900000
@@ -618,6 +619,9 @@ func run(args []string) error {
 		}
 		return copyDatabase(dbPath(), filepath.Join(filepath.Dir(dbPath()), ".migration-check.db"))
 	case "rollback":
+		if err := store.MergeR2BeforeRollback(context.Background(), dbPath(), filepath.Join(filepath.Dir(dbPath()), ".update-before.db")); err != nil {
+			return err
+		}
 		for _, suffix := range []string{"-wal", "-shm"} {
 			if err := os.Remove(dbPath() + suffix); err != nil && !os.IsNotExist(err) {
 				return err

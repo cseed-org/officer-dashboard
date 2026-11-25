@@ -148,6 +148,14 @@ def backup(kind='hourly'):
         return result
 
 
+def lock_restored_r2(path):
+    # Restoring SQLite cannot recover operations spent after the snapshot.
+    # Lock billable R2 requests for 32 days; unrelated app features still work.
+    with closing(sqlite3.connect(path)) as db, db:
+        db.execute('CREATE TABLE IF NOT EXISTS r2_restore_lock(id INTEGER PRIMARY KEY CHECK(id=1), until_utc TEXT NOT NULL)')
+        db.execute("INSERT INTO r2_restore_lock VALUES(1,strftime('%Y-%m-%dT%H:%M:%SZ','now','+32 days')) ON CONFLICT(id) DO UPDATE SET until_utc=max(until_utc,excluded.until_utc)")
+
+
 def restore(snapshot_id, target, identity, encrypted_only=False):
     sink = Sink()
     snapshots = [s for s in sink.list() if s['kind'] != 'd1-weekly' and (snapshot_id == 'latest' or s['id'] == snapshot_id)]
@@ -168,8 +176,10 @@ def restore(snapshot_id, target, identity, encrypted_only=False):
         with gzip.open(work / 'snapshot.gz', 'rb') as src, (work / 'snapshot.db').open('wb') as dst:
             shutil.copyfileobj(src, dst)
         integrity(work / 'snapshot.db')
+        lock_restored_r2(work / 'snapshot.db')
         os.link(work / 'snapshot.db', target)
     print('sha256 verified; integrity ok')
+    print('R2 billable file operations locked for 32 days to preserve the free-tier budget; do not remove r2_restore_lock.')
 
 
 def membership():

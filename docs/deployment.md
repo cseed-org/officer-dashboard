@@ -132,3 +132,173 @@ step N". The step numbers are unchanged in [Cloudflare setup](deploy/cloudflare.
 | 7 | [Cache rule](deploy/cloudflare.md#7-never-cache-the-agent-paths) |
 | 8 | [Rocket Loader and Email Obfuscation](deploy/cloudflare.md#8-turn-off-rocket-loader-and-email-obfuscation) |
 | 9 (check from outside) | [Check it from outside](deploy/cloudflare.md#10-check-it-from-outside), now step 10 |
+
+
+## Private R2 file storage
+
+R2 is optional file storage, enabled with `FILE_STORAGE=r2`. D1 remains the database
+backup target. The app proxies private file bytes after the existing requester/director
+receipt check. Each authorized download costs one Class B request; a leaked presigned
+URL could produce unlimited unmetered reads, so this implementation issues none.
+At the read ceiling it returns HTTP 507. Files use server-generated `files/<uuid>`
+keys, Standard storage, MIME and magic-byte checks. SVG and HTML are refused.
+
+### Verified allowance and accounting
+
+Verified 2026-11-25 against [Cloudflare R2 pricing](https://developers.cloudflare.com/r2/pricing/):
+Standard includes 10 GB-month storage, 1 million Class A operations and 10 million
+Class B operations each month, with free egress. Infrequent Access has no free tier.
+Storage is based on daily peaks averaged over the billing period. PutObject and
+ListObjects/ListMultipartUploads are Class A; GetObject is Class B. DeleteObject
+and AbortMultipartUpload are free. Authenticated failures can still count.
+
+The SQLite ledger reserves before sending. Limits are 9,000,000,000 live bytes,
+900,000 A and 9,000,000 B per UTC calendar month, leaving 10% margin. A second
+guard applies the same ceilings over the current UTC day plus the preceding 31
+days, covering billing periods up to 31 days with an extra day for in-flight
+requests at midnight. Calendar rollover never grants a second allowance within
+a billing cycle. A 10 MiB
+upload requires all 10,485,760 bytes of headroom. At most 858 such files fit in
+9 GB; 20/user/day permits at most 200 MiB/user/day. A Discord warning is emitted
+at 70%; its durable pending flag retries failed Discord delivery until accepted.
+After acceptance, that metric does not repeat its warning that month. Failed
+delivery is retried no more than once per 15 minutes, including concurrent calls. Refused calls make no R2 request.
+Deletes are tracked separately at zero billable operations. The client performs
+no redirects or application retries, disables connection reuse to avoid transport
+replay, uses a 20-second timeout, and retains a day of rolling-window margin at month boundaries.
+
+The app scans every object page and checks for multipart uploads at startup and
+every 24 hours, retrying a failed scan every five minutes. For 858 objects, that costs two Class A requests per scan (one
+object page and one multipart check), about 62/month plus starts. No analytics
+or account token is needed: the same bucket-scoped Object Read & Write S3 token
+can list. Uploads close if inventory is older than 25 hours or a scan fails.
+Inventory can raise the byte reservation, never lower it; only a confirmed delete
+of a known key releases bytes. Ambiguous transport failures and crashes retain reservations. Completed failed
+PUT responses trigger a free DELETE; confirmed deletion releases their bytes.
+Transport timeouts retain space deliberately because a remote write may finish
+late. If these accumulate, stop the app, confirm no writes remain in flight,
+use the operator S3 credentials to delete the affected `r2_objects` keys, verify
+each is absent, then remove only those confirmed reservations and subtract their
+recorded bytes in one SQLite transaction. Never reset operation counters or
+lower bytes solely because an inventory is smaller.
+SQLite writer connections use FULL synchronous commits. This trades some space
+and write throughput for conservative accounting.
+
+[Incomplete multipart parts consume storage until completed or aborted](https://developers.cloudflare.com/r2/objects/upload-objects/).
+The app only uses single-part uploads. Any incomplete upload or non-Standard
+object in its inventory fails the scan and closes uploads. Configure the
+[one-day abort lifecycle](https://developers.cloudflare.com/r2/buckets/object-lifecycles/)
+even though the app never initiates multipart uploads. The default is seven days.
+
+### Conditions for staying at $0
+
+R2 allowances are shared across an account. This ledger limits this app's requests;
+it cannot impose an account-wide Cloudflare spending cap. Enable only for an
+otherwise unused R2 account and a new empty bucket, with no other writer, public
+access, Worker bindings, Sippy, Super Slurper, or storage-class transitions. Keep
+setup activity below 100 operations (well inside the reserved margin). Do not
+reuse an account that already spent its monthly free allowance. Use one dashboard
+process and one durable ledger, keep the host clock synchronized, and retain that
+ledger across redeploys. Billing notifications are informational, not hard caps.
+These operating conditions are required for the $0 budget; the app cannot protect
+against a separate client or administrator spending outside its ledger.
+
+Never reset budget tables. The official off-box restore command stamps the restored
+DB with a 32-day R2 lock, because inventory cannot reconstruct already-spent
+operations. R2 receipt and design-file downloads also return 507 throughout this lock;
+other dashboard functions remain available. The response includes the unlock date.
+Do not remove that lock. Routine image rollback instead merges the candidate
+image's R2 counters into the checkpoint before restoring it, so it preserves
+spent operations without imposing a new lock.
+For a manual restore (including manually decrypting an encrypted-only download),
+apply this conservative lock before starting the app, even if the old snapshot
+predates R2's tables:
+
+```sql
+CREATE TABLE IF NOT EXISTS r2_restore_lock(id INTEGER PRIMARY KEY CHECK(id=1),until_utc TEXT NOT NULL);
+INSERT INTO r2_restore_lock VALUES(1,strftime('%Y-%m-%dT%H:%M:%SZ','now','+32 days'))
+ON CONFLICT(id) DO UPDATE SET until_utc=max(until_utc,excluded.until_utc);
+```
+
+Keep the original DB/ledger when rolling back an application image. Stored backend
+labels are preserved; a local receipt is never looked up as an R2 key. Existing
+Drive links retain their authorization check. The optional second R2 backup copy is omitted; no migration or production upload
+was run. The operator-only migration command below retains source files.
+
+### Person-only setup
+
+Run these steps yourself after the change is reviewed; agents must not change
+Cloudflare settings or deploy it.
+
+1. In R2, create a new default-jurisdiction bucket, e.g. `officer-private-files`,
+   with **Standard** as its default storage class. Confirm the account conditions
+   above and that this bucket is empty.
+2. In the bucket Settings, leave **Public Development URL (r2.dev) disabled** and
+   **Custom Domains empty**. Do not add public access or CORS.
+3. R2 Overview > Manage API Tokens > Create Account API Token > **Object Read & Write**
+   > **Apply to specific buckets only** > select only this bucket. Save Access Key ID
+   and Secret Access Key once. See [token scopes](https://developers.cloudflare.com/r2/api/tokens/).
+   These are app credentials, separate from D1, backup, Tunnel, Access and membership tokens.
+4. Apply the one-day abort rule yourself. Create `r2-lifecycle.json` with the following
+   complete lifecycle configuration (new bucket only; it replaces existing rules):
+
+   ```json
+   {"rules":[{"id":"abort-incomplete-after-one-day","enabled":true,"conditions":{"prefix":""},"abortMultipartUploadsTransition":{"condition":{"type":"Age","maxAge":86400}}}]}
+   ```
+
+   ```sh
+   npx wrangler r2 bucket lifecycle set officer-private-files --file r2-lifecycle.json
+   npx wrangler r2 bucket lifecycle list officer-private-files
+   ```
+
+   Use your interactive administrator login for setup; lifecycle management requires
+   Workers R2 Storage Write. Never mount that administrator token in the app. Verify
+   the rule covers the whole bucket and has no transition to Infrequent Access.
+5. In Cloudflare account **Notifications > Add > Billable Usage**, set R2 usage alerts
+   if offered by your plan. Otherwise open **Manage Account > Billing > Billable Usage > Create budget alert**, create an
+   account budget alert at the **lowest amount the UI allows**, and confirm delivery
+   to the billing email. See [billing notifications](https://developers.cloudflare.com/billing/understand/usage-based-billing/).
+   An alert is a backstop, not a provider-side $0 cap; do not enable paid monitoring.
+6. Save credentials as host files `secrets/app/r2-access-key-id` and
+   `secrets/app/r2-secret-access-key`, owned/readable by the container UID 10001,
+   mode 0400. Do not put values into shell history or tracked files. In `dashboard.env`:
+
+   ```dotenv
+   FILE_STORAGE=r2
+   R2_ACCOUNT_ID=<account-id>
+   R2_BUCKET=officer-private-files
+   R2_ACCESS_KEY_ID_FILE=/run/secrets/app/r2-access-key-id
+   R2_SECRET_ACCESS_KEY_FILE=/run/secrets/app/r2-secret-access-key
+   ```
+
+   Keep the existing Discord webhook `_FILE` setting. The hardened compose already
+   mounts `secrets/app` read-only only into the app. No backup credentials change.
+   Follow the approved image/update steps; startup validates credentials with a full
+   private inventory before accepting uploads. Configuration and rejected credentials fail startup;
+network/inventory/budget failures keep the dashboard running with uploads closed. Never paste credentials into a PR.
+
+
+### Optional one-shot file migration
+
+Stop the app first and preserve its DB and original file storage. With the R2
+settings above and the old `RECEIPTS_DIR` or Google Drive credential/folder
+settings still present, run from the container's `/app` directory:
+
+```sh
+./dashboard files-migrate-r2 -source local
+# Or -source drive. Default is a read-only plan; it makes no R2 requests.
+./dashboard files-migrate-r2 -source local -apply
+```
+
+The dry run opens SQLite read-only and prints candidate count, recorded bytes,
+and the minimum Class A upload count (inventory requests cost extra). Apply
+copies receipts and design files, checks their allowlisted MIME and content,
+and updates their existing rows without changing ownership or authorization.
+It never deletes a source file. Reruns skip rows already migrated; a durable
+journal records server-generated keys before uploading, so an interrupted copy
+reuses its reserved key and space. Retried HTTP requests still consume Class A.
+The same guard applies, including 20 uploads per UTC day for the migration
+operator identity; a large migration pauses safely and can be resumed on the
+next day. No migration has been run on real files. Test the isolated fake with
+`scripts/test-r2.ps1` (Docker Desktop); it builds pinned MinIO source, uses
+synthetic credentials, and verifies private upload/download/authz/delete.

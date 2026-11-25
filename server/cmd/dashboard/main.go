@@ -67,6 +67,8 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		err = seedCmd(args, getenv, stdout, log)
 	case "migrate":
 		err = migrateCmd(args, getenv, stdout)
+	case "files-migrate-r2":
+		err = filesMigrateCmd(args, getenv, stdout)
 	case "provision-leadership":
 		err = leadershipCmd(args, getenv, stdout)
 	case "healthcheck":
@@ -76,7 +78,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	case "version":
 		fmt.Fprintln(stdout, version)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|healthcheck|mcp-check|version]\n", cmd)
+		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|files-migrate-r2|provision-leadership|healthcheck|mcp-check|version]\n", cmd)
 		return 2
 	}
 	if err != nil {
@@ -88,27 +90,28 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 
 // settings is the process configuration: environment variables, overridable by flags.
 type settings struct {
-	Cloudflare                       cloudflare.Config
-	Addr, DBPath, AppURL, StaticDir  string
-	AppURLSet                        bool // APP_URL came from the environment or a flag
-	StaticFallback                   string
-	StaticFallbackStatus             int
-	DiscordClientID, DiscordSecret   string
-	BootstrapDirector                string
-	BootstrapOwnerName               string
-	WebhookURL                       string
-	DiscordBotToken                  string
-	SMTPHost, SMTPPort, SMTPUser     string
-	SMTPPassword, SMTPFrom           string
-	GoogleClientID, GoogleSecret     string
-	ServiceAccountJSON, DriveRoot    string
-	ReceiptsDir                      string
-	DevAuth                          bool
-	DevAuthKey                       string
-	TolerancePercent, ToleranceCents string
-	AccessTeam, AccessAudience       string
-	AccessServiceAudience            string
-	TrustedProxies                   string // TRUSTED_PROXIES: CIDRs/IPs whose X-Forwarded-For is believed
+	Cloudflare                                           cloudflare.Config
+	Addr, DBPath, AppURL, StaticDir                      string
+	AppURLSet                                            bool // APP_URL came from the environment or a flag
+	StaticFallback                                       string
+	StaticFallbackStatus                                 int
+	DiscordClientID, DiscordSecret                       string
+	BootstrapDirector                                    string
+	BootstrapOwnerName                                   string
+	WebhookURL                                           string
+	DiscordBotToken                                      string
+	SMTPHost, SMTPPort, SMTPUser                         string
+	SMTPPassword, SMTPFrom                               string
+	GoogleClientID, GoogleSecret                         string
+	ServiceAccountJSON, DriveRoot                        string
+	ReceiptsDir                                          string
+	FileStorage, R2Account, R2Bucket, R2Access, R2Secret string
+	DevAuth                                              bool
+	DevAuthKey                                           string
+	TolerancePercent, ToleranceCents                     string
+	AccessTeam, AccessAudience                           string
+	AccessServiceAudience                                string
+	TrustedProxies                                       string // TRUSTED_PROXIES: CIDRs/IPs whose X-Forwarded-For is believed
 }
 
 func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (settings, error) {
@@ -139,6 +142,23 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	s.ServiceAccountJSON = env("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 	s.DriveRoot = env("DRIVE_ROOT_FOLDER_ID", env("GOOGLE_DRIVE_FOLDER_ID", ""))
 	s.ReceiptsDir = env("RECEIPTS_DIR", "")
+	s.FileStorage = env("FILE_STORAGE", "")
+	s.R2Account = env("R2_ACCOUNT_ID", "")
+	s.R2Bucket = env("R2_BUCKET", "")
+	s.R2Access = env("R2_ACCESS_KEY_ID", "")
+	s.R2Secret = env("R2_SECRET_ACCESS_KEY", "")
+	if s.FileStorage != "" && s.FileStorage != "r2" && s.FileStorage != "drive" && s.FileStorage != "local" {
+		return s, errors.New("FILE_STORAGE must be r2, drive or local")
+	}
+	if s.FileStorage == "drive" && (s.ServiceAccountJSON == "" || s.DriveRoot == "") {
+		return s, errors.New("FILE_STORAGE=drive requires credentials and folder")
+	}
+	if s.FileStorage == "local" && s.ReceiptsDir == "" {
+		return s, errors.New("FILE_STORAGE=local requires RECEIPTS_DIR")
+	}
+	if s.FileStorage != "r2" && (s.R2Account != "" || s.R2Bucket != "" || s.R2Access != "" || s.R2Secret != "") {
+		return s, errors.New("R2 settings require FILE_STORAGE=r2")
+	}
 	s.DevAuth = env("DEV_AUTH", "") == "1"
 	s.DevAuthKey = env("DEV_AUTH_KEY", "")
 	s.AccessTeam, s.AccessAudience = env("CLOUDFLARE_ACCESS_TEAM_DOMAIN", ""), env("CLOUDFLARE_ACCESS_AUD", "")
@@ -239,6 +259,29 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		log.Warn("Google Calendar sync is not configured (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET)")
 	}
 	switch {
+	case s.FileStorage == "r2":
+		if s.WebhookURL == "" {
+			return nil, errors.New("R2 requires DISCORD_WEBHOOK_URL for budget alerts")
+		}
+		r, err := files.NewR2(db, s.R2Account, s.R2Bucket, s.R2Access, s.R2Secret)
+		if err != nil {
+			return nil, err
+		}
+		r.Alert = func(ctx context.Context) bool {
+			return cfg.Notifier.(*notify.Discord).Deliver(ctx, notify.Event{Number: "R2", Type: "storage.budget", Title: "Storage budget or inventory needs attention", Reason: "Warning at 70%; uploads/reads stop at 90%. Inspect R2 usage and inventory."}, s.AppURL)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		err = r.Reconcile(ctx)
+		cancel()
+		if err != nil {
+			if errors.Is(err, files.ErrR2Credentials) {
+				return nil, err
+			}
+			log.Warn("R2 inventory unavailable; uploads disabled until reconciliation succeeds", "error", err)
+		}
+		cfg.Files = r
+	case s.FileStorage == "local":
+		cfg.Files = files.Local{Root: s.ReceiptsDir}
 	case s.ServiceAccountJSON != "" && s.DriveRoot != "":
 		d, err := files.NewDrive(s.ServiceAccountJSON, s.DriveRoot, nil)
 		if err != nil {
@@ -309,6 +352,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	srv.ResumeCalendar()
 	go calendarRetry(ctx, srv)
 	go srv.CloudflareDaily(ctx)
+	go srv.FileStorageDaily(ctx)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
 	log.Info("listening", "addr", s.Addr, "db", s.DBPath, "app_url", s.AppURL, "version", version, "dev_build", api.DevBuild, "startup_ms", time.Since(started).Milliseconds())

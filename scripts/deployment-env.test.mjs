@@ -81,3 +81,16 @@ test("self-build production recipe publishes and pins before startup", () => {
   for (const command of productionCommands) assert.ok(command.includes('--env-file .env --env-file prod-image.env'));
   assert.ok(!read('server/deploy/compose.build.yml').includes('officer-dashboard:local'));
 });
+
+
+test("R2 storage selection and file credentials stay documented and isolated", () => {
+  for (const key of ["FILE_STORAGE", "R2_ACCOUNT_ID", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]) {
+    assert.ok(configuration.includes(`\`${key}\``));
+    assert.ok(hasEntry(template, key));
+  }
+  const secrets = read('server/cmd/dashboard/secret_files.go');
+  assert.ok(secrets.includes('"R2_ACCESS_KEY_ID"'));
+  assert.ok(secrets.includes('"R2_SECRET_ACCESS_KEY"'));
+  assert.ok(!backupTemplate.includes('R2_SECRET_ACCESS_KEY'));
+  assert.ok(read('server/deploy/compose.cloudflare.yml').includes('target: /run/secrets/app'));
+});

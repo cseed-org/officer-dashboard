@@ -27,7 +27,8 @@ these schemas; `gen-mcp-tools --check` and `TestMCPToolsMatchRoutes` fail if `EN
 - Every JSON API error is an `ApiError` body: `{ error: { code, message, details? } }`, with status
   400 `bad_request` (zod `flatten()` in `details`), 401 `unauthenticated`, 403 `forbidden`,
   404 `not_found`, 409 `conflict` / `invalid_transition` / `over_tolerance`, 422 `import_failed`,
-  429 `rate_limited` (with `Retry-After`). Rate-limited `/auth/*` and `/oauth/*` responses are
+  429 `rate_limited` (with `Retry-After`), and 507 `storage_budget` when private R2
+  file storage reaches its safety allowance or daily upload quota. Rate-limited `/auth/*` and `/oauth/*` responses are
   plain text; `/mcp` rate-limit errors use JSON-RPC.
 - Every response to a signed-in session carries `X-Perm-Version`, a 16-hex fingerprint of the
   user's role, owner flag and subteam, computed on each request. The web client compares it with

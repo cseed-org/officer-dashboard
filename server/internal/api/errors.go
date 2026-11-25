@@ -81,6 +81,8 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 	case errors.Is(err, context.DeadlineExceeded):
 		log.Debug("request timed out")
 		return fail(504, "internal", "Request timed out")
+	case errors.Is(err, files.ErrBudget):
+		return fail(507, "storage_budget", err.Error())
 	case errors.Is(err, files.ErrUnavailable):
 		return fail(503, "internal", err.Error())
 	case errors.Is(err, files.ErrInvalidUpload):

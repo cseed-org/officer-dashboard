@@ -828,7 +828,7 @@ func (c *Ctx) designUpload() error {
 	if name == "" || len(name) > 255 {
 		return badRequest("File name must be 1 to 255 characters")
 	}
-	stored, err := c.S.cfg.Files.Put(ctx, files.PutInput{Folder: []string{"Design requests", id}, Filename: name, MimeType: mime, Body: body})
+	stored, err := c.S.cfg.Files.Put(ctx, files.PutInput{UserID: u.ID, Folder: []string{"Design requests", id}, Filename: name, MimeType: mime, Body: body})
 	if err != nil {
 		return err
 	}
@@ -888,6 +888,9 @@ func (c *Ctx) designFileDownload() error {
 		}
 		http.Redirect(c.W, c.R, *f.WebViewLink, http.StatusFound)
 		return nil
+	}
+	if f.Storage != storageKind(c.S.cfg.Files) {
+		return files.ErrUnavailable
 	}
 	file, err := c.S.cfg.Files.Get(ctx, f.StorageKey)
 	if err != nil {
@@ -1006,6 +1009,8 @@ func storageKind(s files.Store) string {
 	switch s.(type) {
 	case files.Local, *files.Local:
 		return "local"
+	case *files.R2:
+		return "r2"
 	case *files.Drive:
 		return "drive"
 	}

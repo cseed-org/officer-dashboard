@@ -1,4 +1,4 @@
-// Package files stores receipts: Google Drive (shared drive) in production, local disk in dev.
+// Package files stores private receipts and design files in R2, Google Drive or local disk.
 package files
 
 import (
@@ -19,14 +19,14 @@ const MaxBytes = 10 * 1024 * 1024
 var AllowedMIME = []string{"application/pdf", "image/png", "image/jpeg", "image/heic", "image/webp"}
 
 // ErrUnavailable means no receipt storage is configured (the API answers 503).
-var ErrUnavailable = errors.New("Receipt storage requires Google Drive credentials and DRIVE_ROOT_FOLDER_ID")
+var ErrUnavailable = errors.New("File storage is unavailable; check FILE_STORAGE and its credentials")
 
 // ErrInvalidUpload is returned by ValidateUpload; the API answers 400.
 var ErrInvalidUpload = errors.New("invalid upload")
 
 // ValidateUpload checks size and MIME type.
 func ValidateUpload(mimeType string, size int64) error {
-	if size > MaxBytes || size == 0 {
+	if size > MaxBytes || size <= 0 {
 		return wrap("File must be 1 byte to 10 MB")
 	}
 	ok := false
@@ -50,15 +50,17 @@ func (e uploadError) Is(target error) bool { return target == ErrInvalidUpload }
 
 // PutInput is one file to store under a logical folder path, e.g. ["FY2027", "<request id>"].
 type PutInput struct {
-	Folder   []string
-	Filename string
-	MimeType string
-	Body     []byte
+	UserID      string // authenticated uploader, required by R2 daily quota
+	MigrationID string // internal CLI journal identity; never an object key
+	Folder      []string
+	Filename    string
+	MimeType    string
+	Body        []byte
 }
 
 // Stored describes a stored file.
 type Stored struct {
-	Storage     string // "drive" | "local"
+	Storage     string // "drive" | "local" | "r2"
 	Key         string
 	WebViewLink string // "" when there is none
 	SizeBytes   int64

@@ -97,7 +97,7 @@ func Open(path string) (*DB, error) {
 	}
 	wp := common(url.Values{})
 	wp.Set("_journal_mode", "WAL")
-	wp.Set("_synchronous", "NORMAL")
+	wp.Set("_synchronous", "FULL") // budget reservations must survive power loss before network I/O
 	wp.Set("_txlock", "immediate")
 	w, err := sql.Open(driverName, dsn(path, wp))
 	if err != nil {

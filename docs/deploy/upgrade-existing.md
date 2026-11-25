@@ -89,3 +89,22 @@ failures are rejected after successful rollback.
 
 Complete the [live Free-plan CPU and usage rehearsal](../deployment.md#live-free-plan-rehearsal)
 before enabling unattended backups and updates.
+
+
+## Optional private R2 file storage (person-only)
+
+Complete every step in [Private R2 file storage](../deployment.md#private-r2-file-storage)
+before selecting `FILE_STORAGE=r2`: create an empty Standard bucket, disable r2.dev
+and public domains, issue an Object Read & Write token scoped to that bucket only,
+apply the one-day abort lifecycle with the documented Wrangler command, and set a
+Cloudflare Billable Usage notification or the lowest available billing budget
+alert. Save separate app credential files, then use the documented `dashboard.env`
+entries and the existing read-only `secrets/app` mount. Review the exclusive-account
+budget and restored-ledger constraints there. These are person-only settings and
+startup actions; no agent should run the setup or migration against production.
+
+Switching backends does not copy old local files. Keep the old deployment/storage
+available until an explicitly planned migration is complete. Drive receipt links
+keep the existing requester/director check. D1 database backups are unchanged;
+the optional R2 backup copy is not included. For existing local/Drive files,
+review the `files-migrate-r2` dry-run and explicit `-apply` steps in that guide.

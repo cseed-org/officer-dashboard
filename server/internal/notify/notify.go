@@ -104,6 +104,11 @@ func Fields(e Event) []embedField {
 }
 
 func (d *Discord) Notify(ctx context.Context, e Event, link string) {
+	d.Deliver(ctx, e, link)
+}
+
+// Deliver reports acceptance so durable budget warnings can retry failed delivery.
+func (d *Discord) Deliver(ctx context.Context, e Event, link string) bool {
 	log := d.Log
 	if log == nil {
 		log = slog.Default()
@@ -126,7 +131,7 @@ func (d *Discord) Notify(ctx context.Context, e Event, link string) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.URL, bytes.NewReader(payload))
 	if err != nil {
 		log.Error("Discord notification delivery failed")
-		return
+		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := d.HTTP
@@ -136,10 +141,12 @@ func (d *Discord) Notify(ctx context.Context, e Event, link string) {
 	res, err := client.Do(req)
 	if err != nil {
 		log.Error("Discord notification delivery failed")
-		return
+		return false
 	}
 	defer res.Body.Close()
 	if res.StatusCode/100 != 2 {
 		log.Error("Discord notification failed", "status", res.StatusCode)
+		return false
 	}
+	return true
 }

@@ -10,7 +10,7 @@ in a Cloudflare Container.
 
 ```
 server/
-  cmd/dashboard        main: serve | seed | migrate | provision-leadership | healthcheck | mcp-check | version
+  cmd/dashboard        main: serve | seed | migrate | files-migrate-r2 | provision-leadership | healthcheck | mcp-check | version
   internal/api         HTTP handlers, middleware, sessions, routes
   internal/store       every SQL statement; embedded migrations 0000 onward
   internal/accounting  posting engine, journal validation, financial reports, CSV export
@@ -22,7 +22,7 @@ server/
   internal/cfsync      membership D1 mirror and synchronization jobs
   internal/cloudflare  Cloudflare D1 and GraphQL analytics client
   internal/mcpcheck    the mcp-check deployment reachability checks
-  internal/files       receipts: Google Drive (shared drive) and local disk
+  internal/files       private R2 files with SQLite budget guard, Google Drive, local disk
   internal/notify      Discord webhook, invitation bot DMs, console fallback
   internal/notion      placeholder Notion event-link sync
   internal/fiscal      fiscal years, monthly periods, Pacific dates

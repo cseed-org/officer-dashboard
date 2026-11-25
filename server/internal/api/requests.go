@@ -490,7 +490,7 @@ func (c *Ctx) requestAttach() error {
 		at = *r.SubmittedAt
 	}
 	fy, _ := fiscal.YearFor(fiscal.PacificDate(time.UnixMilli(at)), fiscal.DefaultStartMonth)
-	stored, err := c.S.cfg.Files.Put(ctx, files.PutInput{Folder: []string{fmt.Sprintf("FY%d", fy), r.ID}, Filename: fh.Filename, MimeType: mime, Body: body})
+	stored, err := c.S.cfg.Files.Put(ctx, files.PutInput{UserID: u.ID, Folder: []string{fmt.Sprintf("FY%d", fy), r.ID}, Filename: fh.Filename, MimeType: mime, Body: body})
 	if err != nil {
 		return err
 	}
@@ -561,6 +561,9 @@ func (c *Ctx) attachmentDownload() error {
 		}
 		http.Redirect(c.W, c.R, *a.WebViewLink, http.StatusFound)
 		return nil
+	}
+	if a.Storage != storageKind(c.S.cfg.Files) {
+		return files.ErrUnavailable
 	}
 	file, err := c.S.cfg.Files.Get(ctx, a.StorageKey)
 	if err != nil {

@@ -49,7 +49,7 @@ export type ApprovalDecision = (typeof APPROVAL_DECISIONS)[number];
 export const ATTACHMENT_KINDS = ['receipt', 'invoice', 'quote', 'other'] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 
-export const STORAGE_BACKENDS = ['drive', 'local'] as const;
+export const STORAGE_BACKENDS = ['drive', 'local', 'r2'] as const;
 export type StorageBackend = (typeof STORAGE_BACKENDS)[number];
 
 /** `held`: the agent reported an over-tolerance settlement; terminal for the agent, a director settles the request. */
