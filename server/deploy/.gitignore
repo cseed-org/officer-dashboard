@@ -1,0 +1,3 @@
+# Container-scoped credentials; P1 owns repository-wide ignore rules.
+secrets/
+backup.env
