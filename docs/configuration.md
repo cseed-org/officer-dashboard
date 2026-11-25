@@ -22,7 +22,6 @@ Read by `compose.cloudflare.yml`, not by the dashboard.
 | `DASHBOARD_TAG` | **required** | – | which published `ghcr.io/cseed-org/officer-dashboard` image to run. A fixed tag: `0.15.0`, or `sha-<7 characters>` before a release exists. Never `latest`, `0.15` or `main`: they move, and a later `pull` would upgrade and migrate without a backup |
 | `DASHBOARD_IMAGE` | optional | – | the whole image name instead, for an image you build (`officer-dashboard:local`) or the copy an upgrade keeps. Wins over `DASHBOARD_TAG` |
 | `TUNNEL_NET` | optional | `10.250.89` | first three numbers of the private network between the two containers: subnet `.0/28`, containers `.8/29` (also the dashboard's `TRUSTED_PROXIES`), gateway `.1`. Change it if compose says the pool overlaps |
-| `CLOUDFLARED_VERSION` | optional | `2026.10.0` | the `cloudflared` image version |
 
 Compose also sets the dashboard's `APP_URL`, `ADDR` (`:8090`) and `TRUSTED_PROXIES`
 (`${TUNNEL_NET}.8/29`) itself; values for them in `dashboard.env` are ignored.
@@ -90,7 +89,7 @@ Read by `scripts/backup` and its timer.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `BACKUP_DIR` | `./backups` | where backups are written (the unit sets `/var/lib/officer-dashboard/backups`) |
+| `BACKUP_DIR` | required (no default) | where backups are written (the unit sets `/var/lib/officer-dashboard/backups`) |
 | `KEEP` | `30` | how many backups to keep |
 | `BACKUP_REMOTE` | – | a command that copies each backup off the machine; `{}` is replaced by the file's path |
 
@@ -161,3 +160,7 @@ fallback; personal display preferences do not affect imports.
 The org calendar reuses `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` and needs no
 other settings. Setup: [Google calendar setup](deploy/google-calendar.md). How it syncs:
 [Organization calendar](org-calendar.md).
+
+Cloudflared and build base images are pinned to multi-platform manifest digests in Compose and the Dockerfiles. Update the tag and digest together; `CLOUDFLARED_VERSION` is no longer an override. Application release selection remains separate.
+
+Notion and Google Drive links default to empty. Leadership configures them in Settings → Club links; these values are stored in `club_settings`. Clearing either removes the link. The public club website retains its default.

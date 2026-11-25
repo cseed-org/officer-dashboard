@@ -1,0 +1,28 @@
+title = "Officer dashboard secret scanning"
+
+[extend]
+useDefault = true
+
+# Match only the literal fake values, not whole test files or directories.
+[[allowlists]]
+description = "Synthetic Discord IDs used by seed data, tests and design mockups"
+regexTarget = "secret"
+regexes = ['''^(?:123456789012345678|123456789012345679|123456789012345680|123456789012345699|[123]0{15}\d{2})$''']
+
+[[allowlists]]
+description = "Mock Cloudflare Access secret; no external account"
+regexTarget = "secret"
+regexes = ['''^c0ffee5ecret0123456789abcdef0123456789abcdef0123456789abcdef0123$''']
+
+[[allowlists]]
+description = "Historical test constructs a PEM from a runtime-generated key"
+regexTarget = "match"
+regexes = ['''-----BEGIN PRIVATE KEY-----\\n\$\{btoa\(String\.fromCharCode\(\.\.\.new Uint8Array\(exported\)\)\)\}\\n-----END PRIVATE KEY-----''']
+
+# Random numeric examples belong to the mock directory, whose email/phone data is synthetic.
+[[allowlists]]
+description = "Legacy mockup sample Discord IDs, restricted to their two fixture files"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^web/design/(?:build-people\.py|mockups/officers-v03\.html)$''']
+regexes = ['''^(?:512903385174016001|655390114283765760|688120455907131392|701442918263390208|722615309911605248|742800619335114752|760018233467617280|790011246518550528|798432005512937472|815204771960897536)$''']

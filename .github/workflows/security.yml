@@ -11,6 +11,11 @@ permissions:
   contents: read
 
 jobs:
+  # PR/main scans run inside CI so publication depends on their result.
+  gitleaks-scheduled:
+    if: github.event_name == 'schedule'
+    uses: ./.github/workflows/gitleaks.yml
+
   litestream:
     runs-on: ubuntu-latest
     timeout-minutes: 15

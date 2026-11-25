@@ -10,8 +10,8 @@ import (
 const DefaultTimezone = "America/Los_Angeles"
 
 const DefaultWebsiteURL = "https://cseed.co"
-const DefaultNotionURL = "https://app.notion.com/p/cseed/cseed-8c884a7f9dbe4bffa58718820e00cc10"
-const DefaultDriveURL = "https://drive.google.com/drive/folders/0ABwfOblCw9EvUk9PVA?dmr=1&ec=wgc-drive-hero-goto"
+const DefaultNotionURL = ""
+const DefaultDriveURL = ""
 
 type ClubSettings struct {
 	WebsiteURL   string `json:"websiteUrl"`
@@ -21,7 +21,8 @@ type ClubSettings struct {
 	Location     string `json:"location"`
 }
 
-// Blank settings use the club-supplied defaults; leadership can replace each URL.
+// Private workspace links are configured in club_settings by leadership, never in source.
+// Blank Notion/Drive settings stay empty; only the public website has a default.
 func (s ClubSettings) WithDefaultLinks() ClubSettings {
 	if s.WebsiteURL == "" {
 		s.WebsiteURL = DefaultWebsiteURL

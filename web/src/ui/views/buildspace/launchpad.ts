@@ -46,7 +46,7 @@ export function parseInvites(text: string, accounts: LaunchpadAccount[] = []): P
     } else if (cells.length >= 1 && emails.length === cells.length) {
       rows = cells.flatMap((c) => c.split(/\s+/)).filter(Boolean).map((email) => ({ email }));
     } else {
-      // "Ada Lovelace <ada@uw.edu>" or anything else: take an address if there is exactly one.
+      // "Ada Lovelace <ada@uw.example>" or anything else: take an address if there is exactly one.
       const found = raw.match(/[^\s@,;<>"]+@[^\s@,;<>"]+/g) ?? [];
       rows = found.length === 1 ? [{ email: found[0]!, name: raw.replace(found[0]!, "").replace(/[<>",;]/g, " ").trim() || undefined }] : [{ email: raw }];
     }

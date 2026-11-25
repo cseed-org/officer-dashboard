@@ -16,6 +16,12 @@ docs/evidence
 web/design
 server/bin
 server/data
+**/data
+**/backups
+**/*.db*
+**/*.sqlite*
+**/*.age
+**/.local
 **/.env
 **/.env.*
 !**/.env.example

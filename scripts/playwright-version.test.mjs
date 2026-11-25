@@ -8,7 +8,7 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 test("compose Playwright image matches @playwright/test", () => {
   const compose = read("compose.dev.yaml");
   const webPackage = JSON.parse(read("web/package.json"));
-  const image = compose.match(/^\s*image:\s*mcr\.microsoft\.com\/playwright:([^\s]+)\s*$/m);
+  const image = compose.match(/^\s*image:\s*mcr\.microsoft\.com\/playwright:([^@\s]+)@sha256:[a-f0-9]{64}\s*$/m);
 
   assert.ok(image, "compose.dev.yaml should define the Playwright e2e image");
   assert.equal(

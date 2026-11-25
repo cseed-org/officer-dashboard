@@ -12,19 +12,18 @@
 # cross-installed, and the runtime's system files are prepared there too. The target-platform
 # stage only copies files, so a multi-platform build needs no emulation (no QEMU).
 
-ARG GO_VERSION=1.27.4
 ARG LITESTREAM_VERSION=0.3.14
 
 # The front end (web/dist): static files, embedded into the server binary below. Node 24, as in
 # CI's web job; a literal tag (no ARG) so Dependabot's docker updates see it.
-FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS web
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS toolchain
+FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm@sha256:ce59b41415e2524ae99926fe1f37ce48ba8c194dcbd2a56a65436cdcefa2bd34 AS toolchain
 RUN apt-get update \
  && apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu libc6-dev-arm64-cross libc6-dev-amd64-cross \
  && rm -rf /var/lib/apt/lists/*
@@ -82,14 +81,14 @@ RUN case "$TARGETARCH" in \
 
 # The runtime's system files: CA certificates and the dashboard user (uid 10001, home /data).
 # Both are the same on every architecture, so they are prepared on the build machine.
-FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS rootfs
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e AS rootfs
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin dashboard \
  && mkdir -p /data && chown dashboard:dashboard /data
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e
 COPY --from=rootfs /etc/passwd /etc/group /etc/shadow /etc/gshadow /etc/
 COPY --from=rootfs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=rootfs --chown=dashboard:dashboard /data /data

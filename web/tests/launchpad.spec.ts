@@ -18,24 +18,24 @@ test.beforeEach(async ({ page }) => {
 
 test('invite parser: emails, name,email CSV, duplicates, invalid rows and existing accounts', () => {
   const rows = parseInvites(
-    ['name,email', 'ada@uw.edu', 'Grace Hopper, GRACE@uw.edu', 'grace@uw.edu', 'not-an-email', 'a@uw.edu; b@uw.edu', 'joined@uw.edu', 'pending@uw.edu'].join('\n'),
+    ['name,email', 'ada@uw.example', 'Grace Hopper, GRACE@uw.example', 'grace@uw.example', 'not-an-email', 'a@uw.example; b@uw.example', 'joined@uw.example', 'pending@uw.example'].join('\n'),
     [
-      { email: 'joined@uw.edu', status: 'active' },
-      { email: 'pending@uw.edu', status: 'invited' },
+      { email: 'joined@uw.example', status: 'active' },
+      { email: 'pending@uw.example', status: 'invited' },
     ] as never,
   );
   expect(rows.map((r) => [r.email, r.state])).toEqual([
-    ['ada@uw.edu', 'valid'],
-    ['grace@uw.edu', 'valid'],
-    ['grace@uw.edu', 'duplicate'],
+    ['ada@uw.example', 'valid'],
+    ['grace@uw.example', 'valid'],
+    ['grace@uw.example', 'duplicate'],
     ['not-an-email', 'invalid'],
-    ['a@uw.edu', 'valid'],
-    ['b@uw.edu', 'valid'],
-    ['joined@uw.edu', 'active'],
-    ['pending@uw.edu', 'pending'],
+    ['a@uw.example', 'valid'],
+    ['b@uw.example', 'valid'],
+    ['joined@uw.example', 'active'],
+    ['pending@uw.example', 'pending'],
   ]);
   expect(rows[1]!.name).toBe('Grace Hopper');
-  expect(sendable(rows).map((r) => r.email)).toEqual(['ada@uw.edu', 'grace@uw.edu', 'a@uw.edu', 'b@uw.edu', 'pending@uw.edu']);
+  expect(sendable(rows).map((r) => r.email)).toEqual(['ada@uw.example', 'grace@uw.example', 'a@uw.example', 'b@uw.example', 'pending@uw.example']);
 });
 
 test('cohort switcher drives the register and keeps the URL', async ({ page }, info) => {
@@ -77,7 +77,7 @@ test('invite dialog previews pasted rows before sending', async ({ page }, info)
   await page.locator('[data-invite-builders]').first().click();
   const input = page.locator('[data-invite-input]');
   const run = `${info.project.name}-${Date.now()}`;
-  await input.fill(`ada.${run}@uw.edu\nGrace Hopper, grace.${run}@uw.edu\nada.${run}@uw.edu\nnope`);
+  await input.fill(`ada.${run}@uw.example\nGrace Hopper, grace.${run}@uw.example\nada.${run}@uw.example\nnope`);
   const preview = page.locator('[data-invite-preview]');
   await expect(preview.locator('li[data-state="valid"]')).toHaveCount(2);
   await expect(preview.locator('li[data-state="duplicate"]')).toHaveCount(1);

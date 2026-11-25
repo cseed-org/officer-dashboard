@@ -10,6 +10,8 @@ Environment=DB_PATH=/var/lib/officer-dashboard/dashboard.db
 Environment=BACKUP_DIR=/var/lib/officer-dashboard/backups
 ExecStart=/opt/officer-dashboard/backup
 StateDirectory=officer-dashboard
+StateDirectoryMode=0750
+UMask=0077
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true

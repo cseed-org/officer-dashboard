@@ -60,7 +60,7 @@ services:
   cloudflared:
     # Official image. Pin a release and bump it deliberately
     # (https://github.com/cloudflare/cloudflared/releases).
-    image: cloudflare/cloudflared:${CLOUDFLARED_VERSION:-2026.10.0}
+    image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
     restart: unless-stopped
     # A remotely managed tunnel: its published route (hostname → http://dashboard:8090) is
     # set in the Cloudflare dashboard, so this container only needs the token.

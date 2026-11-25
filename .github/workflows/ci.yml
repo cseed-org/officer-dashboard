@@ -3,8 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    # Releases: pushing a tag such as v0.15.0 publishes the image as 0.15.0, 0.15 and latest.
-    tags: ['v[0-9]*']
   pull_request:
 
 permissions:
@@ -15,6 +13,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  gitleaks:
+    uses: ./.github/workflows/gitleaks.yml
+
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -142,7 +143,7 @@ jobs:
         run: docker compose -p ci-e2e -f compose.dev.yaml down -v
 
   # The release image (server/Dockerfile) for both platforms. Pull requests only build it; the
-  # publish job below pushes it, from main and from release tags, once every check has passed.
+  # publish job below pushes it, only from main, once every check has passed.
   image:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -164,8 +165,10 @@ jobs:
           cache-to: type=gha,scope=image,mode=max
 
   publish:
-    if: github.event_name == 'push'
-    needs: [web, go, contract, release]
+    # Tag revisions never authorize publication. Production promotion is a separate,
+    # main-controlled workflow behind the protected production environment (PR #104).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [web, go, contract, release, gitleaks]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -180,22 +183,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Version stamped into the binary (dashboard version)
         id: version
-        run: |
-          if [ "$GITHUB_REF_TYPE" = tag ]; then v="$GITHUB_REF_NAME"; else v="${GITHUB_SHA::7}"; fi
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-      # Tag v1.2.3: 1.2.3, 1.2 and latest (a pre-release such as v1.2.3-rc.1: only 1.2.3-rc.1).
-      # Push to main: main and sha-<7-character commit>.
+        run: echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      # CI publishes main and sha-<7-character commit>; PR #104 promotes a checked SHA to prod.
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           flavor: latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
             type=raw,value=main,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
           labels: |
@@ -217,9 +215,11 @@ jobs:
           file: server/Dockerfile
           platforms: linux/amd64,linux/arm64
           build-args: VERSION=${{ steps.version.outputs.version }}
+          sbom: true
+          provenance: mode=max
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          cache-from: type=gha,scope=image
-          cache-to: type=gha,scope=image,mode=max
+          # Registry publication never imports or exports the PR build cache.
+          no-cache: true

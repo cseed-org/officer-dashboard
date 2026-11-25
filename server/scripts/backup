@@ -9,7 +9,7 @@
 #
 # Settings (environment):
 #   DB_PATH       database file                      (default ./data/dashboard.db)
-#   BACKUP_DIR    where backups go                   (default ./backups)
+#   BACKUP_DIR    explicit destination for backups   (required)
 #   KEEP          how many backups to keep           (default 30)
 #   BACKUP_REMOTE optional destination for an off-box copy, a command that receives the file:
 #                   BACKUP_REMOTE='rclone copyto {} r2:cseed-backups/$(basename {})'
@@ -21,9 +21,10 @@
 # Receipts are not in the database: they are in Google Drive (or RECEIPTS_DIR, back that up too).
 # In a container with Litestream, use `litestream restore` instead (see server/README.md).
 set -eu
+umask 077
 
 DB_PATH="${DB_PATH:-./data/dashboard.db}"
-BACKUP_DIR="${BACKUP_DIR:-./backups}"
+: "${BACKUP_DIR:?set BACKUP_DIR to an explicit backup destination}"
 KEEP="${KEEP:-30}"
 
 command -v sqlite3 >/dev/null 2>&1 || { echo "sqlite3 is required (apt install sqlite3)" >&2; exit 1; }

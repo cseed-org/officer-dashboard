@@ -882,7 +882,7 @@ func TestMCPLaunchpadTools(t *testing.T) {
 
 	// Invites through an agent go by email only; a sign-up link never reaches the agent.
 	inv := func(method string) (string, bool) {
-		return toolCall(e, officer, "invite_launchpad_builders", map[string]any{"id": "cohort-fall-2026", "body": map[string]any{"invites": []any{map[string]any{"email": "agent.invite@uw.edu"}}, "method": method}})
+		return toolCall(e, officer, "invite_launchpad_builders", map[string]any{"id": "cohort-fall-2026", "body": map[string]any{"invites": []any{map[string]any{"email": "agent.invite@uw.example"}}, "method": method}})
 	}
 	for _, method := range []string{"link", "both"} {
 		if text, isErr := inv(method); !isErr || !strings.Contains(text, "email only") {
@@ -898,7 +898,7 @@ func TestMCPLaunchpadTools(t *testing.T) {
 		t.Fatalf("invite mails: %d", len(m.all()))
 	}
 	var accountID string
-	if err := e.db.R.QueryRow(`SELECT id FROM buildspace_launchpad_accounts WHERE email='agent.invite@uw.edu'`).Scan(&accountID); err != nil {
+	if err := e.db.R.QueryRow(`SELECT id FROM buildspace_launchpad_accounts WHERE email='agent.invite@uw.example'`).Scan(&accountID); err != nil {
 		t.Fatal(err)
 	}
 	if text, isErr := toolCall(e, officer, "resend_launchpad_invite", map[string]any{"id": accountID}); isErr || strings.Contains(text, "/launchpad/join") || !strings.Contains(text, `"link":null`) {
@@ -931,11 +931,11 @@ func TestMCPLaunchpadTools(t *testing.T) {
 func TestMCPLaunchpadInviteNeedsMailer(t *testing.T) {
 	e := newEnv(t)
 	_, tok := connectAgent(t, e, "user-priya", "Claude Code")
-	text, isErr := toolCall(e, tok.str("access_token"), "invite_launchpad_builders", map[string]any{"id": "cohort-fall-2026", "body": map[string]any{"invites": []any{map[string]any{"email": "x.y@uw.edu"}}}})
+	text, isErr := toolCall(e, tok.str("access_token"), "invite_launchpad_builders", map[string]any{"id": "cohort-fall-2026", "body": map[string]any{"invites": []any{map[string]any{"email": "x.y@uw.example"}}}})
 	if !isErr || !strings.Contains(text, "not configured") || strings.Contains(text, "/launchpad/join") {
 		t.Fatalf("%v %s", isErr, text)
 	}
-	if e.scalar(`SELECT count(*) FROM buildspace_launchpad_accounts WHERE email='x.y@uw.edu'`).(int64) != 0 {
+	if e.scalar(`SELECT count(*) FROM buildspace_launchpad_accounts WHERE email='x.y@uw.example'`).(int64) != 0 {
 		t.Fatal("an account was created anyway")
 	}
 }

@@ -46,7 +46,7 @@ func TestMemberOfficersAllocationBudget(t *testing.T) {
 	ctx := context.Background()
 	if err := e.db.Write(ctx, func(q *store.Queries) error {
 		for i := 0; i < 5000; i++ {
-			email := fmt.Sprintf("budget-%d@uw.edu", i)
+			email := fmt.Sprintf("budget-%d@uw.example", i)
 			if err := q.SaveMember(ctx, cloudflare.Person{ID: fmt.Sprint(i), FirstName: "Member", UWEmail: &email, JoinDate: "2026-01-01"}); err != nil {
 				return err
 			}
