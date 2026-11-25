@@ -18,8 +18,8 @@ Read by `compose.cloudflare.yml`, not by the dashboard.
 | Variable | Needed? | Default | Meaning |
 | --- | --- | --- | --- |
 | `APP_URL` | **required** | – | the public `https` address, no slash at the end. Passed to the dashboard; wins over `dashboard.env` |
-| `TUNNEL_TOKEN` | **required** | – | the Cloudflare Tunnel's token ([Cloudflare step 1](deploy/cloudflare.md#1-create-the-tunnel)) |
-| `DASHBOARD_IMAGE` | **required** | empty | approved immutable image reference in `prod-image.env`; local tags are for self-built rehearsals only |
+| `TUNNEL_TOKEN_FILE` | **required** | – | host file containing the Cloudflare Tunnel's token ([Cloudflare step 1](deploy/cloudflare.md#1-create-the-tunnel)) |
+| `DASHBOARD_IMAGE` | **required** | empty | approved immutable image reference in `prod-image.env`; local tags belong in the separate development stack |
 | `TUNNEL_NET` | optional | `10.250.89` | first three numbers of the private network between the two containers: subnet `.0/28`, containers `.8/29` (also the dashboard's `TRUSTED_PROXIES`), gateway `.1`. Change it if compose says the pool overlaps |
 
 Compose also sets the dashboard's `APP_URL`, `ADDR` (`:8090`) and `TRUSTED_PROXIES`
@@ -69,7 +69,7 @@ answer 503.
 
 ### Backups (encrypted D1 snapshots)
 
-Read by the image entrypoint and the static `dashboard-backup` command. `backup.py` is an off-box restore client only. Without `BACKUP_SINK_URL`, only the
+Read by the separate backup container and the static `dashboard-backup` command, from `backup.env`. The app does not receive these credentials. `backup.py` is an off-box restore client only. Without `BACKUP_SINK_URL`, only the
 local data volume stores the database. Set all backup credentials before enabling.
 
 | Variable | Default | Meaning |
@@ -93,9 +93,9 @@ Read by `scripts/backup` and its timer.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `BACKUP_DIR` | required (no default) | where backups are written (the unit sets `/var/lib/officer-dashboard/backups`) |
+| `BACKUP_DIR` | required absolute path | where backups are written (the unit sets `/var/lib/officer-dashboard/backups`) |
 | `KEEP` | `30` | how many backups to keep |
-| `BACKUP_REMOTE` | – | a command that copies each backup off the machine; `{}` is replaced by the file's path |
+| `BACKUP_REMOTE` | – | an executable hook receiving the encrypted `.age` path as its single argument |
 
 ### For callers of the dashboard
 
@@ -168,3 +168,36 @@ other settings. Setup: [Google calendar setup](deploy/google-calendar.md). How i
 Cloudflared and build base images are pinned to multi-platform manifest digests in Compose and the Dockerfiles. Update the tag and digest together; `CLOUDFLARED_VERSION` is no longer an override. Application release selection remains separate.
 
 Notion and Google Drive links default to empty. Leadership configures them in Settings → Club links; these values are stored in `club_settings`. Clearing either removes the link. The public club website retains its default.
+
+## Container secret files and isolation
+
+Keep app credentials in `server/deploy/secrets/app`, backup credentials in `secrets/backup`,
+and the tunnel token in the host file selected by `TUNNEL_TOKEN_FILE`. These are read-only
+mounts in different containers. They are excluded from Git and the Docker build context.
+Files must be readable by the consumer UID: 10001 for app/backup, 65532 for cloudflared.
+Use mode 0400 on files and 0700 on their host directories with the corresponding owner.
+The read-only filesystem still permits SQLite and temporary snapshot work in `/data`,
+and bounded scratch work in tmpfs `/tmp`. Limits: app 512 MB/128 PIDs, backup 256 MB/64
+PIDs, cloudflared 128 MB/64 PIDs. Adjust deliberately if workload measurements justify it.
+
+Use file paths in env files, not secret values. Supported app entrypoint keys are
+`DISCORD_CLIENT_SECRET_FILE`, `DISCORD_WEBHOOK_URL_FILE`, `DISCORD_BOT_TOKEN_FILE`,
+`SMTP_USERNAME_FILE`, `SMTP_PASSWORD_FILE`, `GOOGLE_OAUTH_CLIENT_SECRET_FILE`,
+`GOOGLE_SERVICE_ACCOUNT_JSON_FILE`, `CLOUDFLARE_API_TOKEN_FILE` and `DEV_AUTH_KEY_FILE`.
+The app reads its own values at startup; backup values and their paths are stripped before
+app execution. The backup helper reads `BACKUP_BEARER_SECRET_FILE`,
+`BACKUP_ACCESS_CLIENT_ID_FILE`, `BACKUP_ACCESS_CLIENT_SECRET_FILE`,
+`BACKUP_MEMBERSHIP_API_TOKEN_FILE` and `DISCORD_WEBHOOK_URL_FILE` into process memory,
+without exporting their values. Off-box restore accepts the same sink `_FILE` keys.
+A missing/empty/unreadable file, or a direct credential plus `_FILE`, fails closed.
+Direct values remain compatible for isolated tests and non-container configurations;
+the production templates use files. App files are resolved by the entrypoint, so commands
+that bypass it must use their normal non-secret CLI settings directly.
+
+Compose sets `BACKUP_REQUIRED=1`: the app refuses to create a missing production DB.
+The backup service stages its encrypted recovery snapshot for off-box decryption.
+Compose also sets `DEPLOY_IMAGE` for both processes; startup and the host updater reject
+moving tags and require `image@sha256:<64 lowercase hex characters>`. Bootstrap with a
+reviewed immutable digest, and use the protected production promotion workflow afterward.
+
+Cloudflared uses its documented [`TUNNEL_TOKEN_FILE`](https://developers.cloudflare.com/tunnel/reference/run-parameters/#token-file) support. Runtime restrictions use the [Compose service controls](https://docs.docker.com/reference/compose-file/services/).

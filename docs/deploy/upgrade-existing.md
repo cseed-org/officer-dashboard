@@ -9,18 +9,18 @@ its encrypted offline DB backup until this transition has passed a restore drill
    recovery workstation. Retain its key off-box. Do not delete the former replica yet.
 2. Stop the dashboard, retain the data volume, pull the reviewed new immutable image,
    and initialize `prod-image.env` with that digest. Replace Litestream settings with
-   the documented `BACKUP_*` settings. Keep the existing remote tunnel token, routes
+   the documented `BACKUP_*` settings in the separate `backup.env`. Move credentials to the app/backup/tunnel secret files and remove plaintext and backup credentials from `dashboard.env`. Keep the existing remote tunnel token, routes
    and Access policies. Follow the [fresh install](fresh-install.md) compose commands
    with **both** env files; do not initialize a new DB.
 3. Start the dashboard, check `/api/health`, run `/app/dashboard-backup backup` with
-   `docker compose … exec -T dashboard`, and do an off-box restore. Then enable the timer.
+   `docker compose ... run --rm --no-deps backup backup`, and do an off-box restore. Then enable the timer.
 
 Every five minutes `scripts/update` compares `:prod` to `prod-image.env`. On change it
-pulls the candidate by digest, stops the app to freeze writes, and requires a fresh
+pulls the candidate by digest, stops the app and backup service to freeze writes, and requires a fresh
 encrypted D1 snapshot plus download verification. Snapshot failure restarts the old app.
 It keeps a temporary local SQLite checkpoint, applies candidate migrations to a second
 copy, starts the candidate, and checks the real `/api/health` via `dashboard healthcheck`.
-The persistent image pin changes only after health succeeds. Neither the tunnel nor
+The backup service starts on the candidate only after app health succeeds, then the persistent image pin changes. Neither the tunnel nor
 cloudflared is replaced by this command.
 
 If startup or health fails after migrations could run, it stops the candidate, removes
@@ -60,3 +60,10 @@ Use an isolated dashboard instance with no production integrations to check repr
 records. Record snapshot ID/date, hash/integrity result and elapsed recovery time; delete
 the drill's plaintext copy and unmount the offline identity. Separately decrypt a weekly
 membership SQL export and import it into a local D1 database, never into the live mirror.
+
+The legacy systemd backup script now requires an absolute `BACKUP_DIR`, a public
+`BACKUP_AGE_RECIPIENT` and the age CLI. It sets umask 0077, verifies a private temporary
+SQLite snapshot, and keeps/transmits only `.db.gz.age` artifacts. `BACKUP_REMOTE` is an
+executable hook receiving the ciphertext filename as one argument. Migrate pre-existing
+plaintext backups off-box; the script neither sends nor silently deletes them. P1 owns
+the systemd unit's UMask hardening; this change does not edit that unit.

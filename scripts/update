@@ -20,6 +20,12 @@ def run(args, env=None):
 def notify(message, settings):
     print(message)
     url = settings.get('DISCORD_WEBHOOK_URL')
+    if settings.get('DISCORD_WEBHOOK_URL_FILE'):
+        try:
+            name = Path(settings['DISCORD_WEBHOOK_URL_FILE']).name
+            url = (Path.cwd() / 'secrets/app' / name).read_text().strip()
+        except OSError:
+            print('Cannot read host Discord webhook file', file=sys.stderr)
     if url:
         try:
             req = urllib.request.Request(url, json.dumps({'content': message}).encode(),
@@ -55,6 +61,8 @@ def main():
     if not state.exists():
         raise ValueError('initialize prod-image.env with the currently running immutable image')
     previous = dotenv(state)['DASHBOARD_IMAGE']
+    if not re.fullmatch(r'[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}', previous):
+        raise ValueError('previous image must be pinned by digest')
     image_name = 'ghcr.io/cseed-org/officer-dashboard'
     if args.image:
         candidate = args.image
@@ -73,7 +81,7 @@ def main():
         env = dict(os.environ, DASHBOARD_IMAGE=image or previous)
         return run(base + list(arguments), env)
     def backup_tool(command, image=None):
-        return compose('run', '--rm', '--no-deps', '--entrypoint', '/app/dashboard-backup', 'dashboard', command, image=image)
+        return compose('run', '--rm', '--no-deps', '--entrypoint', '/app/dashboard-backup', 'backup', command, image=image)
     def health(image):
         for _ in range(30):
             try:
@@ -87,7 +95,7 @@ def main():
     snapshot = ''
     try:
         compose('pull', 'dashboard', image=candidate)
-        compose('stop', 'dashboard')
+        compose('stop', 'dashboard', 'backup')
         stopped = True
         snapshot = backup_tool('backup')
         # Preserve the stopped original until success. Temporary copies stay in the data
@@ -98,6 +106,7 @@ def main():
         swapped = True  # app startup can migrate even when compose up fails
         compose('up', '-d', '--no-deps', 'dashboard', image=candidate)
         health(candidate)
+        compose('up', '-d', '--no-deps', 'backup', image=candidate)
         temporary = state.with_suffix('.next')
         temporary.write_text('DASHBOARD_IMAGE=' + candidate + '\n')
         os.replace(temporary, state)
@@ -112,10 +121,10 @@ def main():
     except Exception:
         if stopped:
             try:
-                compose('stop', 'dashboard', image=candidate)
+                compose('stop', 'dashboard', 'backup', image=candidate)
                 if checkpoint and swapped:
                     backup_tool('rollback')
-                compose('up', '-d', '--no-deps', 'dashboard')
+                compose('up', '-d', '--no-deps', 'dashboard', 'backup')
                 health(previous)
                 state.write_text('DASHBOARD_IMAGE=' + previous + '\n')
                 rejected.write_text(candidate + '\n')

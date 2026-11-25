@@ -68,6 +68,7 @@ COPY --from=rootfs --chown=dashboard:dashboard /data /data
 COPY --from=build /out/dashboard /app/dashboard
 COPY --from=build /out/dashboard-backup /app/dashboard-backup
 COPY server/deploy/entrypoint.sh /app/entrypoint.sh
+COPY server/deploy/load-secrets.sh /app/load-secrets.sh
 USER dashboard
 # Listening on all interfaces, the server refuses to start without APP_URL (the public https
 # origin). Behind a proxy on the Docker network, set TRUSTED_PROXIES (e.g. 172.16.0.0/12) so

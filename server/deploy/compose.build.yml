@@ -1,3 +1,5 @@
+# Build-only override. Production startup requires an immutable registry digest; local tags
+# belong in the development stack. Publish/resolve a self-built image before production use.
 # Build the dashboard image from this checkout instead of pulling the published one. Only the
 # build needs this file; nothing has to be built first (the image builds the front end too).
 #

@@ -24,7 +24,7 @@ try {
  }
  assert.ok(ready,'Wrangler must start');
  // The offline recovery driver is a test-only image, never a release layer.
- writeFileSync(resolve(work,'Dockerfile.offbox'),'FROM python:3.14-alpine\nRUN apk add --no-cache age\n');
+ writeFileSync(resolve(work,'Dockerfile.offbox'),'FROM python:3.14-alpine\nRUN apk add --no-cache age sqlite\n');
  execFileSync('docker',['build','-f',resolve(work,'Dockerfile.offbox'),'-t','dashboard-offbox-test',work],{stdio:'pipe'});
  const keygen=execFileSync('docker',['run','--rm','--user','10001:10001','--entrypoint','sh','-v',`${volume}:/data`,'dashboard-offbox-test','-c','age-keygen -o /data/test.agekey 2>/dev/null && age-keygen -y /data/test.agekey'],{encoding:'utf8'}).trim();
  const env=['-e',`BACKUP_SINK_URL=http://host.docker.internal:${port}`,'-e','BACKUP_BEARER_SECRET=roundtrip-test-only','-e','DB_PATH=/data/source.db'];
@@ -32,18 +32,35 @@ try {
   '--entrypoint','/app/backup-test','-v',`${volume}:/data`,...env,'-e','BACKUP_REHEARSAL_MODE=roundtrip','-e',`BACKUP_AGE_RECIPIENT=${keygen}`,
   'dashboard-backup-test','-test.run=^TestLocalSinkRoundTrip$','-test.v'],{encoding:'utf8',timeout:180000});
  assert.match(backup,/PASS/);
- const proof=`import sys,hashlib
+ const proof=`import sys,hashlib,subprocess,os,gzip,sqlite3,stat
 from pathlib import Path
 sys.path.insert(0,'/app')
 from backup import restore,Sink
 restore('latest','/data/restored.db','/data/test.agekey')
 assert hashlib.sha256(Path('/data/restored.db').read_bytes()).hexdigest()==hashlib.sha256(Path('/data/reference.db').read_bytes()).hexdigest()
+legacy=Path('/data/legacy');legacy.mkdir()
+recipient=subprocess.check_output(['age-keygen','-y','/data/test.agekey'],text=True).strip()
+hook=Path('/data/copy-hook');hook.write_text('#!/bin/sh\\ncp "$1" /data/remote.age\\n');hook.chmod(0o700)
+env=dict(os.environ,DB_PATH='/data/source.db',BACKUP_DIR=str(legacy),BACKUP_AGE_RECIPIENT=recipient,BACKUP_REMOTE=str(hook))
+subprocess.run(['sh','/legacy-backup'],env=env,check=True,capture_output=True)
+artifacts=list(legacy.iterdir());assert len(artifacts)==1 and artifacts[0].name.endswith('.db.gz.age')
+assert stat.S_IMODE(artifacts[0].stat().st_mode)==0o600
+assert Path('/data/remote.age').read_bytes()==artifacts[0].read_bytes()
+missing=dict(env,BACKUP_DIR='/data/missing-key',BACKUP_AGE_RECIPIENT='')
+assert subprocess.run(['sh','/legacy-backup'],env=missing,capture_output=True).returncode!=0
+assert not Path('/data/missing-key').exists()
+compressed=subprocess.check_output(['age','-d','-i','/data/test.agekey',str(artifacts[0])])
+Path('/data/legacy-restored.db').write_bytes(gzip.decompress(compressed))
+with sqlite3.connect('/data/legacy-restored.db') as db:
+ assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
+ assert db.execute('SELECT length(value) FROM records').fetchone()[0]==2100000
 Path('/data/test.agekey').unlink()
+print('legacy backup: ciphertext only, mode 0600, independent age decrypt and integrity ok')
 print('static Go backup -> off-box age restore: two chunks, matching plaintext SHA-256, integrity ok, prune ok')
 `;
  writeFileSync(resolve(work,'proof.py'),proof);
  const output=execFileSync('docker',['run','--rm','--user','10001:10001','--add-host','host.docker.internal:host-gateway','--entrypoint','python3',
-  '-v',`${volume}:/data`,'-v',`${resolve(work,'proof.py')}:/proof.py:ro`,'-v',`${resolve(root,'server/deploy/backup.py')}:/app/backup.py:ro`,
+  '-v',`${volume}:/data`,'-v',`${resolve(work,'proof.py')}:/proof.py:ro`,'-v',`${resolve(root,'server/deploy/backup.py')}:/app/backup.py:ro`,'-v',`${resolve(root,'server/scripts/backup')}:/legacy-backup:ro`,
   ...env,'dashboard-offbox-test','/proof.py'],{encoding:'utf8',timeout:180000});
  console.log(output.trim());
 } finally {

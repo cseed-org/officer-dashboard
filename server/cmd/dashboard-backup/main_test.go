@@ -7,13 +7,60 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"filippo.io/age"
 	"officerdashboard/internal/store"
 )
+
+func TestDownloadReadsSecretFileWithoutExportingIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bearer")
+	if err := os.WriteFile(path, []byte("synthetic-file-token\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BACKUP_BEARER_SECRET", "")
+	t.Setenv("BACKUP_BEARER_SECRET_FILE", path)
+	t.Setenv("DB_PATH", filepath.Join(t.TempDir(), "dashboard.db"))
+	var seen atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.Store(r.Header.Get("Authorization") == "Bearer synthetic-file-token")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "[]")
+	}))
+	defer server.Close()
+	t.Setenv("BACKUP_SINK_URL", server.URL)
+	if err := run([]string{"download", "--output", filepath.Join(t.TempDir(), "snapshot.age")}); err == nil {
+		t.Fatal("empty sink must fail restore")
+	}
+	if !seen.Load() {
+		t.Fatal("secret-file credential did not authenticate request")
+	}
+	if os.Getenv("BACKUP_BEARER_SECRET") != "" {
+		t.Fatal("credential was exported into process environment")
+	}
+}
+
+func TestConflictingSecretSourcesFailBeforeDatabaseAccess(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bearer")
+	if err := os.WriteFile(path, []byte("file-value"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BACKUP_BEARER_SECRET", "direct-value")
+	t.Setenv("BACKUP_BEARER_SECRET_FILE", path)
+	db := filepath.Join(t.TempDir(), "missing.db")
+	t.Setenv("DB_PATH", db)
+	if err := run([]string{"checkpoint"}); err == nil {
+		t.Fatal("conflicting sources accepted")
+	}
+	if _, err := os.Stat(db); !os.IsNotExist(err) {
+		t.Fatal("database touched before secret validation")
+	}
+}
 
 // This helper is compiled only into the isolated rehearsal image, never the release.
 func TestRehearsalHelper(t *testing.T) {

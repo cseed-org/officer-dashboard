@@ -51,12 +51,12 @@ type sink struct {
 }
 
 func newSink() (*sink, error) {
-	origin := strings.TrimRight(os.Getenv("BACKUP_SINK_URL"), "/")
+	origin := strings.TrimRight(setting("BACKUP_SINK_URL"), "/")
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" || (u.Scheme != "https" && !(u.Scheme == "http" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "localhost" || u.Hostname() == "host.docker.internal"))) {
 		return nil, errors.New("sink requires HTTPS")
 	}
-	if os.Getenv("BACKUP_BEARER_SECRET") == "" {
+	if setting("BACKUP_BEARER_SECRET") == "" {
 		return nil, errors.New("missing backup bearer")
 	}
 	return &sink{origin, &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
@@ -76,9 +76,9 @@ func (s *sink) request(path, method string, body any, result any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+os.Getenv("BACKUP_BEARER_SECRET"))
-	req.Header.Set("CF-Access-Client-Id", os.Getenv("BACKUP_ACCESS_CLIENT_ID"))
-	req.Header.Set("CF-Access-Client-Secret", os.Getenv("BACKUP_ACCESS_CLIENT_SECRET"))
+	req.Header.Set("Authorization", "Bearer "+setting("BACKUP_BEARER_SECRET"))
+	req.Header.Set("CF-Access-Client-Id", setting("BACKUP_ACCESS_CLIENT_ID"))
+	req.Header.Set("CF-Access-Client-Secret", setting("BACKUP_ACCESS_CLIENT_SECRET"))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -107,7 +107,7 @@ func (s *sink) list() ([]snapshot, error) {
 }
 func notify(message string) {
 	fmt.Fprintln(os.Stderr, message)
-	if endpoint := os.Getenv("DISCORD_WEBHOOK_URL"); endpoint != "" {
+	if endpoint := setting("DISCORD_WEBHOOK_URL"); endpoint != "" {
 		body, _ := json.Marshal(map[string]string{"content": message})
 		client := &http.Client{Timeout: 20 * time.Second}
 		resp, err := client.Post(endpoint, "application/json", bytes.NewReader(body))
@@ -222,7 +222,7 @@ func (s *sink) upload(path, kind string) (snapshot, error) {
 	return m, s.download(m, verify)
 }
 func dbPath() string {
-	if p := os.Getenv("DB_PATH"); p != "" {
+	if p := setting("DB_PATH"); p != "" {
 		return p
 	}
 	return "/data/dashboard.db"
@@ -302,7 +302,7 @@ func copyDatabase(source, target string) error {
 	return integrity(target)
 }
 func encrypt(source, target string) error {
-	recipient, err := age.ParseX25519Recipient(os.Getenv("BACKUP_AGE_RECIPIENT"))
+	recipient, err := age.ParseX25519Recipient(setting("BACKUP_AGE_RECIPIENT"))
 	if err != nil {
 		return errors.New("invalid public age recipient")
 	}
@@ -352,7 +352,7 @@ func backup() (snapshot, error) {
 	return s.upload(encrypted, "hourly")
 }
 func membership() error {
-	account, database := os.Getenv("BACKUP_MEMBERSHIP_ACCOUNT_ID"), os.Getenv("BACKUP_MEMBERSHIP_DATABASE_ID")
+	account, database := setting("BACKUP_MEMBERSHIP_ACCOUNT_ID"), setting("BACKUP_MEMBERSHIP_DATABASE_ID")
 	endpoint := "https://api.cloudflare.com/client/v4/accounts/" + url.PathEscape(account) + "/d1/database/" + url.PathEscape(database) + "/export"
 	client := &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	bookmark := ""
@@ -363,7 +363,7 @@ func membership() error {
 		}
 		body, _ := json.Marshal(payload)
 		req, _ := http.NewRequest("POST", endpoint, bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+os.Getenv("BACKUP_MEMBERSHIP_API_TOKEN"))
+		req.Header.Set("Authorization", "Bearer "+setting("BACKUP_MEMBERSHIP_API_TOKEN"))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
 		if err != nil {
@@ -432,6 +432,26 @@ func membership() error {
 	return errors.New("membership export timed out")
 }
 func scheduled() error {
+	if _, err := os.Stat(dbPath()); os.IsNotExist(err) {
+		output := dbPath() + ".recovery.age"
+		if _, err := os.Stat(output); err == nil {
+			return nil
+		}
+		s, err := newSink()
+		if err != nil {
+			return err
+		}
+		all, err := s.list()
+		if err != nil {
+			return err
+		}
+		for _, m := range all {
+			if m.Kind != "d1-weekly" {
+				return s.download(m, output)
+			}
+		}
+		return errors.New("no recovery snapshot available")
+	}
 	m, err := backup()
 	if err != nil {
 		return err
@@ -462,7 +482,7 @@ func scheduled() error {
 			return err
 		}
 	}
-	if !weekly && os.Getenv("BACKUP_MEMBERSHIP_API_TOKEN") != "" {
+	if !weekly && setting("BACKUP_MEMBERSHIP_API_TOKEN") != "" {
 		return membership()
 	}
 	return nil
@@ -479,6 +499,9 @@ func locked(fn func() error) error {
 	return fn()
 }
 func run(args []string) error {
+	if err := loadSecretFiles(); err != nil {
+		return err
+	}
 	if len(args) == 0 {
 		return errors.New("usage: dashboard-backup backup|loop|download|checkpoint|rollback|cleanup|membership")
 	}

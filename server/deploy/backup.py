@@ -20,6 +20,19 @@ import uuid
 CHUNK = 1_900_000
 
 
+def setting(key):
+    direct, path = os.environ.get(key), os.environ.get(key + '_FILE')
+    if not path:
+        return direct or ''
+    if direct:
+        raise ValueError('set a credential or its _FILE, not both')
+    with open(path, encoding='utf8') as source:
+        value = source.read(262145)
+    if not value.strip() or len(value) > 262144:
+        raise ValueError('empty or oversized secret file')
+    return value.strip()
+
+
 def alert(message):
     print(message, file=sys.stderr)
     if os.environ.get('DISCORD_WEBHOOK_URL'):
@@ -36,9 +49,9 @@ class Sink:
         self.url = os.environ['BACKUP_SINK_URL'].rstrip('/')
         if not self.url.startswith(('https://', 'http://127.0.0.1:', 'http://localhost:', 'http://host.docker.internal:')):
             raise ValueError('sink requires HTTPS')
-        self.headers = {'Authorization': 'Bearer ' + os.environ['BACKUP_BEARER_SECRET'],
-                       'CF-Access-Client-Id': os.environ.get('BACKUP_ACCESS_CLIENT_ID', ''),
-                       'CF-Access-Client-Secret': os.environ.get('BACKUP_ACCESS_CLIENT_SECRET', '')}
+        self.headers = {'Authorization': 'Bearer ' + setting('BACKUP_BEARER_SECRET'),
+                       'CF-Access-Client-Id': setting('BACKUP_ACCESS_CLIENT_ID'),
+                       'CF-Access-Client-Secret': setting('BACKUP_ACCESS_CLIENT_SECRET')}
 
     def request(self, path, method='GET', data=None, raw=False):
         headers = dict(self.headers)

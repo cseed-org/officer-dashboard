@@ -16,7 +16,9 @@ assert.ok(keys.size >= 25, "the server environment inventory should be extracted
 
 const configuration = read("docs/configuration.md");
 const template = read("server/deploy/dashboard.env.example");
-const hasEntry = (source, key) => new RegExp(`(?:^|\\n)#?${key}=`).test(source);
+const backupTemplate = read("server/deploy/backup.env.example");
+const allTemplates = template + "\n" + backupTemplate;
+const hasEntry = (source, key) => new RegExp(`(?:^|\\n)#?${key}(?:_FILE)?=`).test(source);
 
 // ADDR and DB_PATH are set by the systemd unit/container. Dev auth belongs only on
 // disposable test deployments. New deployments use DRIVE_ROOT_FOLDER_ID, not its alias.
@@ -45,7 +47,7 @@ test("container and backup settings have template entries", () => {
     "KEEP",
     "BACKUP_REMOTE",
   ];
-  assert.deepEqual(expected.filter((key) => !hasEntry(template, key)), []);
+  assert.deepEqual(expected.filter((key) => !hasEntry(allTemplates, key)), []);
 });
 
 test("backup client environment keys are documented and templated", () => {
@@ -53,16 +55,16 @@ test("backup client environment keys are documented and templated", () => {
   const inventory = [...source.matchAll(/os\.environ(?:\[|\.get\()'([A-Z_]+)'/g)].map(m => m[1]);
   assert.ok(inventory.length >= 8);
   assert.deepEqual(inventory.filter(key => !configuration.includes(`\`${key}\``)), []);
-  assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(template, key)), []);
+  assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(allTemplates, key)), []);
   assert.ok(!source.includes('LITESTREAM_'));
 });
 
 test("static container backup settings are documented without an interpreter runtime", () => {
   const source = read('server/cmd/dashboard-backup/main.go');
-  const inventory = [...source.matchAll(/os\.Getenv\("([A-Z_]+)"\)/g)].map(m => m[1]);
+  const inventory = [...source.matchAll(/setting\("([A-Z_]+)"\)/g)].map(m => m[1]);
   assert.ok(inventory.length >= 8);
   assert.deepEqual(inventory.filter(key => !configuration.includes(`\`${key}\``)), []);
-  assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(template, key)), []);
+  assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(allTemplates, key)), []);
   assert.ok(read('server/Dockerfile').includes('FROM busybox:stable-musl AS runtime'));
   assert.ok(!read('server/deploy/entrypoint.sh').includes('python3'));
 });

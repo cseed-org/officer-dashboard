@@ -47,26 +47,48 @@ LABEL rehearsal="${version}"
  docker('build','-f',resolve(work,'Dockerfile.driver'),'-t',id+'-driver',work);
  save('.env','');
  save('prod-image.env','DASHBOARD_IMAGE='+images.A+'\n');
- save('dashboard.env',`APP_URL=https://rehearsal.example.org
-DB_PATH=/data/dashboard.db
-BACKUP_SINK_URL=http://host.docker.internal:8791
-BACKUP_BEARER_SECRET=local-test-only
+ save('dashboard.env',`DISCORD_CLIENT_SECRET_FILE=/run/secrets/app/discord-client-secret
+`);
+ save('backup.env',`BACKUP_SINK_URL=http://host.docker.internal:8791
+BACKUP_BEARER_SECRET_FILE=/run/secrets/backup/bearer
 BACKUP_AGE_RECIPIENT=${recipient}
 `);
- save('compose.cloudflare.yml',`name: ${id}
-services:
-  dashboard:
-    image: \${DASHBOARD_IMAGE}
-    env_file: dashboard.env
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    volumes: ["data:/data"]
-volumes:
-  data:
+ const appSecrets=id+'-app-secrets', backupSecrets=id+'-backup-secrets';
+ for(const [volume,name,value] of [[appSecrets,'discord-client-secret','synthetic-app-secret'],[backupSecrets,'bearer','local-test-only']]) {
+  docker('volume','create',volume);
+  docker('run','--rm','--user','0','--entrypoint','sh','-v',`${volume}:/secret`, 'dashboard-backup-qa','-c',`printf '%s' '${value}' > /secret/${name}; chown 10001:10001 /secret/${name}; chmod 400 /secret/${name}`);
+ }
+ let config=readFileSync(resolve(root,'server/deploy/compose.cloudflare.yml'),'utf8');
+ config=config.replace('name: officer-dashboard',`name: ${id}`);
+ config=config.replace(/type: bind\n        source: \.\/secrets\/app/g,'type: volume\n        source: app-secrets');
+ config=config.replace(/type: bind\n        source: \.\/secrets\/backup/g,'type: volume\n        source: backup-secrets');
+ config=config.replaceAll('        bind: {create_host_path: false}\n','');
+ config=config.replace('    env_file: dashboard.env','    extra_hosts: ["host.docker.internal:host-gateway"]\n    env_file: dashboard.env');
+ config=config.replace('    env_file: backup.env','    extra_hosts: ["host.docker.internal:host-gateway"]\n    env_file: backup.env');
+ config+=`  app-secrets:
+    external: true
+    name: ${appSecrets}
+  backup-secrets:
+    external: true
+    name: ${backupSecrets}
+`;
+ save('compose.cloudflare.yml',config);
+ save('.env',`APP_URL=https://rehearsal.example.org
+TUNNEL_TOKEN_FILE=/not-used-in-local-test
+TUNNEL_NET=10.251.243
 `);
  copyFileSync(resolve(root,'scripts/update'),resolve(work,'update.py'));
- const compose=(...args)=>docker('compose','--env-file',resolve(work,'prod-image.env'),'-f',resolve(work,'compose.cloudflare.yml'),...args);
+ const compose=(...args)=>docker('compose','--env-file',resolve(work,'.env'),'--env-file',resolve(work,'prod-image.env'),'-f',resolve(work,'compose.cloudflare.yml'),...args);
  compose('run','--rm','--no-deps','-e','BACKUP_REHEARSAL_MODE=prepare','-e','BACKUP_REHEARSAL_VERSION=A','--entrypoint','/app/backup-test','dashboard','-test.run=^TestRehearsalHelper$');
- compose('up','-d','dashboard');
+ const rendered=JSON.parse(compose('config','--format','json'));
+ for(const name of ['dashboard','backup','cloudflared']) {
+  assert.equal(rendered.services[name].read_only,true);
+  assert.ok(rendered.services[name].cap_drop.includes('ALL'));
+  assert.ok(rendered.services[name].mem_limit>0 && rendered.services[name].pids_limit>0);
+ }
+ assert.ok(!('TUNNEL_TOKEN' in rendered.services.cloudflared.environment));
+ assert.equal(rendered.services.cloudflared.environment.TUNNEL_TOKEN_FILE,'/run/secrets/tunnel-token');
+ compose('up','-d','--no-deps','dashboard');
  const update=(image)=>new Promise(resolveResult=>{
   const child=spawn('docker',['run','--rm','-v','/var/run/docker.sock:/var/run/docker.sock','-v',`${work}:/rehearsal`,id+'-driver','python3','/rehearsal/update.py','--deploy-dir','/rehearsal','--image',image],{stdio:['ignore','pipe','pipe']});
   let output=''; child.stdout.on('data',v=>output+=v); child.stderr.on('data',v=>output+=v);
@@ -77,7 +99,15 @@ volumes:
  assert.match(readFileSync(resolve(work,'prod-image.env'),'utf8'),new RegExp(images.B.split('@')[1]));
  const probe=()=>compose('exec','-T','-e','BACKUP_REHEARSAL_MODE=probe','dashboard','/app/backup-test','-test.run=^TestRehearsalHelper$').split('\n')[0];
  assert.equal(probe(),'B');
- console.log('A -> B: healthy, data B, digest persisted');
+ const appId=compose('ps','-q','dashboard');
+ const inspect=JSON.parse(docker('inspect',appId))[0];
+ assert.equal(inspect.HostConfig.ReadonlyRootfs,true);
+ assert.ok(inspect.HostConfig.CapDrop.includes('ALL'));
+ assert.equal(inspect.HostConfig.Memory,512*1024*1024);
+ assert.equal(inspect.HostConfig.PidsLimit,128);
+ assert.ok(!inspect.Config.Env.some(value=>value.startsWith('BACKUP_BEARER_SECRET')));
+ compose('exec','-T','dashboard','sh','-c','test ! -e /run/secrets/backup && test ! -w /app && test -w /data && test -w /tmp');
+ console.log('A -> B: healthy, data B, digest persisted; hardening and secret isolation verified');
  result=await update(images.C);
  assert.equal(result.code,1,result.output);
  assert.match(result.output,/previous image and pre-update database restored/);
@@ -90,7 +120,8 @@ volumes:
  console.log('rejected C is skipped on subsequent polls');
 } finally {
  if(started) {
-  try { docker('compose','--env-file',resolve(work,'prod-image.env'),'-f',resolve(work,'compose.cloudflare.yml'),'down','-v'); } catch {}
+  try { docker('compose','--env-file',resolve(work,'.env'),'--env-file',resolve(work,'prod-image.env'),'-f',resolve(work,'compose.cloudflare.yml'),'down','-v'); } catch {}
   docker('rm','-f',registry);
+  for(const name of [id+'-app-secrets',id+'-backup-secrets']) {try {docker('volume','rm',name);} catch {}}
  }
 }
