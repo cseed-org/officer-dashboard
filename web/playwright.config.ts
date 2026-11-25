@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 /**
  * Runs against the web/ dev server on :4340, which proxies /api and /auth to API_ORIGIN
- * (v1 app on :4330 by default, the Go server on :8090 later). Seed data must be loaded
+ * (the Go server on http://localhost:8090 by default). Seed data must be loaded
  * there. Phone, tablet and desktop; light and dark are covered inside the tests.
  */
 const PORT = Number(process.env.WEB_PORT ?? 4340);

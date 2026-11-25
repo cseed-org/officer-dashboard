@@ -25,22 +25,22 @@ var accessDomain = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*\.cloudflareaccess\.co
 // AccessVerifier verifies only RS256 JWTs issued by the configured Access team.
 // Signing keys come from a fixed HTTPS endpoint, never from a token's jku/x5u.
 type AccessVerifier struct {
-	issuer, audience string
-	client           *http.Client
-	mu               sync.Mutex
-	keys             map[string]*rsa.PublicKey
-	fetched          time.Time
-	attempted        time.Time
+	issuer, audience, serviceAudience string
+	client                            *http.Client
+	mu                                sync.Mutex
+	keys                              map[string]*rsa.PublicKey
+	fetched                           time.Time
+	attempted                         time.Time
 }
 
-func NewAccessVerifier(domain, audience string) (*AccessVerifier, error) {
-	if domain == "" && audience == "" {
+func NewAccessVerifier(domain, audience, serviceAudience string) (*AccessVerifier, error) {
+	if domain == "" && audience == "" && serviceAudience == "" {
 		return nil, nil
 	}
-	if !accessDomain.MatchString(domain) || audience == "" {
-		return nil, fmt.Errorf("CLOUDFLARE_ACCESS_TEAM_DOMAIN must be a team.cloudflareaccess.com hostname and CLOUDFLARE_ACCESS_AUD must be set together")
+	if !accessDomain.MatchString(domain) || audience == "" || serviceAudience == "" {
+		return nil, fmt.Errorf("CLOUDFLARE_ACCESS_TEAM_DOMAIN must be a team.cloudflareaccess.com hostname; CLOUDFLARE_ACCESS_AUD and CLOUDFLARE_ACCESS_SERVICE_AUD must both be set")
 	}
-	return &AccessVerifier{issuer: "https://" + domain, audience: audience,
+	return &AccessVerifier{issuer: "https://" + domain, audience: audience, serviceAudience: serviceAudience,
 		client: &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 
@@ -97,7 +97,7 @@ func (v *AccessVerifier) key(ctx context.Context, kid string, now time.Time) *rs
 	return keys[kid]
 }
 
-func (v *AccessVerifier) verify(ctx context.Context, token string, now time.Time) error {
+func (v *AccessVerifier) verify(ctx context.Context, token, audience string, now time.Time) error {
 	invalid := errors.New("invalid Access assertion")
 	if len(token) > 16<<10 {
 		return invalid
@@ -140,7 +140,7 @@ func (v *AccessVerifier) verify(ctx context.Context, token string, now time.Time
 	}
 	match := false
 	for _, aud := range audiences {
-		if aud == v.audience {
+		if aud == audience {
 			match = true
 		}
 	}
@@ -172,10 +172,21 @@ func accessBypass(path string) bool {
 	}
 	return false
 }
+
+// Match the two service application path roots and their children, not lookalikes.
+func (v *AccessVerifier) audienceForPath(path string) string {
+	for _, root := range []string{"/api/ingest", "/api/agent"} {
+		if path == root || strings.HasPrefix(path, root+"/") {
+			return v.serviceAudience
+		}
+	}
+	return v.audience
+}
+
 func (s *Server) withAccess(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if v := s.cfg.Access; v != nil && !accessBypass(r.URL.Path) {
-			if err := v.verify(r.Context(), r.Header.Get("Cf-Access-Jwt-Assertion"), s.now()); err != nil {
+			if err := v.verify(r.Context(), r.Header.Get("Cf-Access-Jwt-Assertion"), v.audienceForPath(r.URL.Path), s.now()); err != nil {
 				w.Header().Set("Cache-Control", "no-store")
 				writeError(w, fail(401, "unauthenticated", "Cloudflare Access authentication required"))
 				return

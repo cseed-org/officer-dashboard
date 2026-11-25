@@ -76,7 +76,7 @@ the development database, dependencies and cache.
 | Go vet + tests | `cd server && go vet ./... && go test ./...` |
 | API contract | `npm ci && npm run contract-check` (builds and runs the Go server itself) |
 | Front end build + types | `cd web && npm ci && npm run build && npx astro check` |
-| Front end e2e (local only) | `cd web && API_ORIGIN=http://127.0.0.1:8090 npm run test:e2e` (Playwright; not run in CI) |
+| Front end e2e (local only) | `cd web && API_ORIGIN=http://localhost:8090 npm run test:e2e` (Playwright; not run in CI) |
 
 CI (`.github/workflows/ci.yml`) runs the `go`, `contract` and `web` jobs on every push to
 `main` and every pull request.
@@ -176,17 +176,17 @@ Keep the seeded backend from `make dev` running. In a second terminal, from the 
 
 ```sh
 cd web
-API_ORIGIN=http://127.0.0.1:8090 npm run dev
+API_ORIGIN=http://localhost:8090 npm run dev
 ```
 
-Open <http://127.0.0.1:4340/login>. The dev proxy forwards `/api` and `/auth`, rewrites Origin and redirects, and strips cookie Domain so dev sign-in works. Its unconfigured default `:4330` belongs to the removed v1 application. See [front-end reference](frontend.md).
+Open <http://127.0.0.1:4340/login>. The dev proxy forwards `/api` and `/auth`, rewrites Origin and redirects, and strips cookie Domain so dev sign-in works. Its default backend is `http://localhost:8090`, matching `APP_URL`. See [front-end reference](frontend.md).
 
 ## Browser checks
 
 From `web/`, with a seeded backend:
 
 ```sh
-API_ORIGIN=http://127.0.0.1:8090 npm run test:e2e
+API_ORIGIN=http://localhost:8090 npm run test:e2e
 ```
 
 Playwright uses Chromium at phone 390×844, tablet 820×1180, desktop 1440×900, and covers light/dark themes. It reuses the server on :4340 or starts one. `WEB_ORIGIN` targets an existing server instead; `WEB_PORT` changes the test dev port. Lifecycle tests create `agent-e2e-…` purchases. Install Chromium with Playwright if it is absent. Screenshot instructions and source layout are in [front-end reference](frontend.md).

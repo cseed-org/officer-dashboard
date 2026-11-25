@@ -31,23 +31,22 @@ copy synchronized with the canonical root schemas and preserve web-specific addi
 
 ## Develop
 
-The default proxy origin is a historical v1 setting; the v1 application has been removed. Use `API_ORIGIN=http://127.0.0.1:8090` for this repository.
+The default proxy origin is `http://localhost:8090`, matching the Go server's default `APP_URL`. If you override `API_ORIGIN`, set the backend's `APP_URL` to the same origin.
 
 ```sh
 cd web
 npm ci
-API_ORIGIN=http://127.0.0.1:8090 npm run dev            # http://127.0.0.1:4340
+API_ORIGIN=http://localhost:8090 npm run dev            # http://127.0.0.1:4340
 ```
 
 The Vite dev server proxies `/api` and `/auth` to `API_ORIGIN`:
 
 | Backend | `API_ORIGIN` |
 | --- | --- |
-| Historical v1 default (removed) | `http://127.0.0.1:4330` |
-| Go server | `http://127.0.0.1:8090` |
+| Go server (default; matches `APP_URL`) | `http://localhost:8090` |
 
 ```sh
-API_ORIGIN=http://127.0.0.1:8090 npm run dev
+API_ORIGIN=http://localhost:8090 npm run dev
 ```
 
 The proxy rewrites `Origin` to the backend (its CSRF check), strips any cookie `Domain`

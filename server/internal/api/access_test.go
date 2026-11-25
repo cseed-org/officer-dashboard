@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ func TestAccessAssertionGatesPrivateRoutesWithoutReplacingAppAuth(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	verifier, err := NewAccessVerifier("test-team.cloudflareaccess.com", "expected-aud")
+	verifier, err := NewAccessVerifier("test-team.cloudflareaccess.com", "expected-aud", "service-aud")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +70,38 @@ func TestAccessAssertionGatesPrivateRoutesWithoutReplacingAppAuth(t *testing.T) 
 	who.headers = map[string]string{"Cf-Access-Jwt-Assertion": valid}
 	expectStatus(t, "valid edge and session", e.get("/api/me", who), 200)
 	expectStatus(t, "edge is not a session", e.get("/api/me", actor{headers: who.headers}), 401)
+	serviceAssertion := token(issuer, []string{"service-aud"}, now+3600, 0, "RS256", "key")
+	// Exercise the real middleware separately from application routing: unknown
+	// descendants and the application roots still require the correct Access app.
+	gated := e.srv.withAccess(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) }))
+	for _, path := range []string{"/api/me", "/oauth/authorize", "/api/agentish/jobs", "/api/ingestion", "/api/agent", "/api/agent/jobs", "/api/ingest", "/api/ingest/buildspace/checkins"} {
+		servicePath := path == "/api/agent" || strings.HasPrefix(path, "/api/agent/") || path == "/api/ingest" || strings.HasPrefix(path, "/api/ingest/")
+		for name, assertion := range map[string]string{"browser": valid, "service": serviceAssertion, "missing": ""} {
+			t.Run(path+"/"+name, func(t *testing.T) {
+				r := httptest.NewRequest("GET", path, nil)
+				r.Header.Set("Cf-Access-Jwt-Assertion", assertion)
+				w := httptest.NewRecorder()
+				gated.ServeHTTP(w, r)
+				want := 401
+				if (servicePath && name == "service") || (!servicePath && name == "browser") {
+					want = 204
+				}
+				if w.Code != want {
+					t.Fatalf("status = %d, want %d", w.Code, want)
+				}
+			})
+		}
+	}
+	// A valid service assertion still needs the dashboard's own service token.
+	expectStatus(t, "edge is not a service token", e.get("/api/agent/jobs", actor{headers: map[string]string{"Cf-Access-Jwt-Assertion": serviceAssertion}}), 401)
+	admin := e.director()
+	admin.headers = who.headers
+	plaintext := e.mustOK(e.post("/api/admin/tokens", map[string]any{"name": "access-test", "scopes": []string{"agent:jobs"}}, admin)).str("plaintext")
+	service := bearer(plaintext)
+	service.headers = map[string]string{"Cf-Access-Jwt-Assertion": serviceAssertion}
+	expectStatus(t, "both service credentials", e.get("/api/agent/jobs", service), 200)
+	service.headers["Cf-Access-Jwt-Assertion"] = valid
+	expectStatus(t, "browser assertion cannot authorize service route", e.get("/api/agent/jobs", service), 401)
 	for _, path := range []string{"/mcp", "/oauth/register", "/oauth/token", "/.well-known/oauth-authorization-server", "/.well-known/oauth-protected-resource/mcp", "/api/health"} {
 		r := e.get(path, anon)
 		if strings.Contains(string(r.Raw), "Cloudflare Access authentication required") {
@@ -90,12 +123,12 @@ func TestAccessAssertionGatesPrivateRoutesWithoutReplacingAppAuth(t *testing.T) 
 }
 
 func TestAccessConfigRejectsPartialAndUntrustedKeyOrigins(t *testing.T) {
-	for _, pair := range [][2]string{{"", "aud"}, {"team.cloudflareaccess.com", ""}, {"https://team.cloudflareaccess.com", "aud"}, {"evil.example", "aud"}, {"team.cloudflareaccess.com.evil.example", "aud"}} {
-		if _, err := NewAccessVerifier(pair[0], pair[1]); err == nil {
+	for _, config := range [][3]string{{"", "aud", "service"}, {"team.cloudflareaccess.com", "", "service"}, {"team.cloudflareaccess.com", "aud", ""}, {"", "", "service"}, {"https://team.cloudflareaccess.com", "aud", "service"}, {"evil.example", "aud", "service"}, {"team.cloudflareaccess.com.evil.example", "aud", "service"}} {
+		if _, err := NewAccessVerifier(config[0], config[1], config[2]); err == nil {
 			t.Fatal("invalid Access config accepted")
 		}
 	}
-	if v, err := NewAccessVerifier("", ""); v != nil || err != nil {
+	if v, err := NewAccessVerifier("", "", ""); v != nil || err != nil {
 		t.Fatal("opt out failed")
 	}
 }

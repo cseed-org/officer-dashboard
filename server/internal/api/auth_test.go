@@ -223,6 +223,20 @@ func TestCrossOriginWritesWithASessionAreRefused(t *testing.T) {
 	expectStatus(t, "token with foreign Origin", e.get("/api/agent/jobs", agent), 200)
 }
 
+// The Astro proxy's proxyReq callback rewrites Origin to its API_ORIGIN.
+// astro-config.test.mjs also verifies that callback and its agreement with compose.
+func TestDevelopmentProxyRewrittenOriginCanWrite(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.AppURL = "http://localhost:8090" })
+	who := e.officer()
+	who.headers = map[string]string{"Origin": "http://localhost:8090", "Sec-Fetch-Site": "same-origin"}
+	expectStatus(t, "proxied save", e.do("PUT", "/api/me/prefs", map[string]any{"sidebarWidth": 101}, who), 200)
+	_, challenge := pkcePair()
+	expectStatus(t, "proxied consent", e.post("/oauth/authorize", authorizeForm(registerClient(t, e, "Development proxy"), challenge, "allow"), who), 302)
+	expectStatus(t, "proxied logout", e.post("/auth/logout", nil, who), 303)
+	who.headers["Origin"] = "http://127.0.0.1:8090"
+	expectStatus(t, "noncanonical origin remains refused", e.post("/auth/logout", nil, who), 403)
+}
+
 func TestSessionsSlideWhenHalfExpired(t *testing.T) {
 	e := newEnv(t)
 	token := auth.RandomToken(32)

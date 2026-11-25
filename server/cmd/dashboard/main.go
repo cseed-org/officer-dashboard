@@ -101,6 +101,7 @@ type settings struct {
 	DevAuthKey                       string
 	TolerancePercent, ToleranceCents string
 	AccessTeam, AccessAudience       string
+	AccessServiceAudience            string
 	TrustedProxies                   string // TRUSTED_PROXIES: CIDRs/IPs whose X-Forwarded-For is believed
 }
 
@@ -135,6 +136,7 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	s.DevAuth = env("DEV_AUTH", "") == "1"
 	s.DevAuthKey = env("DEV_AUTH_KEY", "")
 	s.AccessTeam, s.AccessAudience = env("CLOUDFLARE_ACCESS_TEAM_DOMAIN", ""), env("CLOUDFLARE_ACCESS_AUD", "")
+	s.AccessServiceAudience = env("CLOUDFLARE_ACCESS_SERVICE_AUD", "")
 	s.TrustedProxies = env("TRUSTED_PROXIES", "")
 	s.TolerancePercent, s.ToleranceCents = env("AGENT_SETTLEMENT_TOLERANCE_PERCENT", ""), env("AGENT_SETTLEMENT_TOLERANCE_CENTS", "")
 	s.AppURLSet = s.AppURL != ""
@@ -183,7 +185,7 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 			return nil, err
 		}
 	}
-	access, err := api.NewAccessVerifier(s.AccessTeam, s.AccessAudience)
+	access, err := api.NewAccessVerifier(s.AccessTeam, s.AccessAudience, s.AccessServiceAudience)
 	if err != nil {
 		return nil, err
 	}

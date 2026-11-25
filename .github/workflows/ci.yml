@@ -39,7 +39,7 @@ jobs:
       - name: Browser-independent unit tests
         run: |
           npm ci --prefix ..
-          WEB_ORIGIN=http://127.0.0.1:4340 npx playwright test tests/unit.spec.ts --project=desktop
+          WEB_ORIGIN=http://127.0.0.1:4340 npx playwright test tests/unit.spec.ts tests/security-links.spec.ts --project=desktop
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-dist

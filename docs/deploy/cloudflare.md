@@ -204,6 +204,16 @@ values they send as headers.
 
 You should see three applications now.
 
+**Optional origin assertion verification:** after creating both protected applications, copy
+their Application Audience (AUD) values into `dashboard.env`. Set
+`CLOUDFLARE_ACCESS_TEAM_DOMAIN=<team>.cloudflareaccess.com`,
+`CLOUDFLARE_ACCESS_AUD=<Officer Dashboard browser application AUD>` and
+`CLOUDFLARE_ACCESS_SERVICE_AUD=<Officer Dashboard services application AUD>` together.
+The service AUD is accepted only for `/api/ingest` and `/api/agent` and their descendants;
+all other protected paths require the browser AUD. These are separate from the service
+Client ID/Secret below. Leave all three unset until both Access applications work;
+partial configuration refuses dashboard startup.
+
 **Two kinds of token.** Each bot needs this Cloudflare service token, to get past Access, and its
 own **dashboard token**, so the dashboard lets it in. A director or leadership member creates the
 dashboard tokens later, in the dashboard at **Officers → Service tokens**, one per bot
