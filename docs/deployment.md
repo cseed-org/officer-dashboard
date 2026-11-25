@@ -1,6 +1,6 @@
 # Deployment
 
-For the current no-card deployment, start with **[Fresh install](deploy/fresh-install.md)**
+For the current $0 Free-plan deployment, start with **[Fresh install](deploy/fresh-install.md)**
 or **[Upgrade an existing host](deploy/upgrade-existing.md)**. The original guide's R2 and
 Litestream sections describe the previous image. The current image uses encrypted D1 snapshots.
 

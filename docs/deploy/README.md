@@ -1,6 +1,6 @@
 # Deploy the dashboard, step by step
 
-> Current no-card image: use [Fresh install](fresh-install.md) and
+> Current Free-plan image: use [Fresh install](fresh-install.md) and
 > [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
 > to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
 
