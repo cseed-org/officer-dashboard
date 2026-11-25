@@ -16,8 +16,8 @@ let started=false;
 try {
  docker('run','-d','--name',registry,'-p','127.0.0.1:5003:5000','registry:2');
  started=true;
- const recipient=docker('run','--rm','--entrypoint','sh','dashboard-backup-qa','-c','age-keygen 2>/dev/null | age-keygen -y');
- copyFileSync(resolve(root,'server/deploy/backup.py'),resolve(work,'backup.py'));
+ const recipient=docker('run','--rm','--entrypoint','/app/backup-test','-e','BACKUP_REHEARSAL_MODE=recipient','dashboard-backup-test','-test.run=^TestRehearsalHelper$').split('\n')[0];
+
  const images={};
  for(const version of ['A','B','C']) {
   save('dashboard-wrapper',`#!/bin/sh
@@ -25,7 +25,7 @@ set -eu
 if [ "$1" = healthcheck ] && [ "${version}" = C ]; then exit 1; fi
 if [ "$1" = serve ] || [ "$1" = migrate ]; then
   /app/dashboard-real migrate
-  python3 -c "import sqlite3,os; d=sqlite3.connect(os.environ['DB_PATH']); d.execute('CREATE TABLE IF NOT EXISTS rollback_probe(value TEXT)'); d.execute('DELETE FROM rollback_probe'); d.execute('INSERT INTO rollback_probe VALUES(?)',('${version}',)); d.commit()"
+  BACKUP_REHEARSAL_MODE=set BACKUP_REHEARSAL_VERSION=${version} /app/backup-test -test.run=^TestRehearsalHelper$
 fi
 exec /app/dashboard-real "$@"
 `);
@@ -33,7 +33,7 @@ exec /app/dashboard-real "$@"
 USER root
 RUN cp /app/dashboard /app/dashboard-real
 COPY dashboard-wrapper /app/dashboard
-COPY backup.py /app/backup.py
+COPY --from=dashboard-backup-test /app/backup-test /app/backup-test
 RUN chmod 755 /app/dashboard
 USER dashboard
 LABEL rehearsal="${version}"
@@ -65,7 +65,7 @@ volumes:
 `);
  copyFileSync(resolve(root,'scripts/update'),resolve(work,'update.py'));
  const compose=(...args)=>docker('compose','--env-file',resolve(work,'prod-image.env'),'-f',resolve(work,'compose.cloudflare.yml'),...args);
- compose('run','--rm','--no-deps','-e','BACKUP_SINK_URL=','--entrypoint','/app/dashboard-real','dashboard','seed','-reset');
+ compose('run','--rm','--no-deps','-e','BACKUP_REHEARSAL_MODE=prepare','-e','BACKUP_REHEARSAL_VERSION=A','--entrypoint','/app/backup-test','dashboard','-test.run=^TestRehearsalHelper$');
  compose('up','-d','dashboard');
  const update=(image)=>new Promise(resolveResult=>{
   const child=spawn('docker',['run','--rm','-v','/var/run/docker.sock:/var/run/docker.sock','-v',`${work}:/rehearsal`,id+'-driver','python3','/rehearsal/update.py','--deploy-dir','/rehearsal','--image',image],{stdio:['ignore','pipe','pipe']});
@@ -75,7 +75,7 @@ volumes:
  let result=await update(images.B);
  assert.equal(result.code,0,result.output);
  assert.match(readFileSync(resolve(work,'prod-image.env'),'utf8'),new RegExp(images.B.split('@')[1]));
- const probe=()=>compose('exec','-T','dashboard','python3','-c',"import sqlite3; print(sqlite3.connect('/data/dashboard.db').execute('SELECT value FROM rollback_probe').fetchone()[0])");
+ const probe=()=>compose('exec','-T','-e','BACKUP_REHEARSAL_MODE=probe','dashboard','/app/backup-test','-test.run=^TestRehearsalHelper$').split('\n')[0];
  assert.equal(probe(),'B');
  console.log('A -> B: healthy, data B, digest persisted');
  result=await update(images.C);

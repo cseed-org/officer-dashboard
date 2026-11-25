@@ -7,8 +7,8 @@
 #   docker build -f server/Dockerfile -t officer-dashboard .
 #   docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile -t officer-dashboard .
 #
-# The front end and Go/C cross compilation run on the build machine. Runtime Python/age
-# packages install for the target platform, so multi-platform CI enables QEMU for that step.
+# The front end and static Go/C cross compilation run on the build machine. The final
+# musl BusyBox runtime has /bin/sh, CA certificates and static app/backup binaries only.
 
 # The front end (web/dist): static files, embedded into the server binary below. Node 24, as in
 # CI's web job; a literal tag (no ARG) so Dependabot's docker updates see it.
@@ -40,7 +40,15 @@ RUN case "$TARGETARCH" in \
     esac \
  && CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH \
     go build -trimpath -tags embedweb,release,osusergo,netgo,sqlite_omit_load_extension \
-    -ldflags "-s -w -X main.version=${VERSION} -extldflags '-static'" -o /out/dashboard ./cmd/dashboard
+    -ldflags "-s -w -X main.version=${VERSION} -extldflags '-static'" -o /out/dashboard ./cmd/dashboard \
+ && CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH \
+    go build -trimpath -tags release,osusergo,netgo,sqlite_omit_load_extension \
+    -ldflags "-s -w -extldflags '-static'" -o /out/dashboard-backup ./cmd/dashboard-backup
+
+# Test binary belongs only to the isolated rehearsal target, never the release image.
+FROM build AS backup-test
+RUN CGO_ENABLED=1 go test -c -tags osusergo,netgo,sqlite_omit_load_extension \
+    -ldflags "-s -w -extldflags '-static'" -o /out/backup-test ./cmd/dashboard-backup
 
 # The runtime's system files: CA certificates and the dashboard user (uid 10001, home /data).
 # Both are the same on every architecture, so they are prepared on the build machine.
@@ -51,15 +59,14 @@ RUN apt-get update \
  && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin dashboard \
  && mkdir -p /data && chown dashboard:dashboard /data
 
-FROM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e AS release
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 age \
- && rm -rf /var/lib/apt/lists/*
+# Minimal static musl BusyBox supports the entrypoint without Debian runtime
+# packages or dynamic system libraries. Pin its multi-architecture manifest.
+FROM busybox:stable-musl@sha256:3c6ae8008e2c2eedd141725c30b20d9c36b026eb796688f88205845ef17aa213 AS runtime
 COPY --from=rootfs /etc/passwd /etc/group /etc/
 COPY --from=rootfs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=rootfs --chown=dashboard:dashboard /data /data
 COPY --from=build /out/dashboard /app/dashboard
-COPY server/deploy/backup.py /app/backup.py
+COPY --from=build /out/dashboard-backup /app/dashboard-backup
 COPY server/deploy/entrypoint.sh /app/entrypoint.sh
 USER dashboard
 # Listening on all interfaces, the server refuses to start without APP_URL (the public https
@@ -70,3 +77,8 @@ EXPOSE 8090
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD ["/app/dashboard", "healthcheck"]
 ENTRYPOINT ["/app/entrypoint.sh"]
+
+FROM runtime AS backup-test-image
+COPY --from=backup-test /out/backup-test /app/backup-test
+
+FROM runtime AS release

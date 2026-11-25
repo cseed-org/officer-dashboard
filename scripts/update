@@ -72,8 +72,8 @@ def main():
     def compose(*arguments, image=None):
         env = dict(os.environ, DASHBOARD_IMAGE=image or previous)
         return run(base + list(arguments), env)
-    def python(code, image=None):
-        return compose('run', '--rm', '--no-deps', '--entrypoint', 'python3', 'dashboard', '-c', code, image=image)
+    def backup_tool(command, image=None):
+        return compose('run', '--rm', '--no-deps', '--entrypoint', '/app/dashboard-backup', 'dashboard', command, image=image)
     def health(image):
         for _ in range(30):
             try:
@@ -89,10 +89,10 @@ def main():
         compose('pull', 'dashboard', image=candidate)
         compose('stop', 'dashboard')
         stopped = True
-        snapshot = compose('run', '--rm', '--no-deps', '--entrypoint', 'python3', 'dashboard', '/app/backup.py', 'backup')
+        snapshot = backup_tool('backup')
         # Preserve the stopped original until success. Temporary copies stay in the data
         # volume, with its normal SQLite access controls; no decryption key is on the host.
-        python("import sys; sys.path.insert(0,'/app'); from backup import copy_database; from pathlib import Path; import os; p=Path(os.environ['DB_PATH']); copy_database(p,p.parent/'.update-before.db'); copy_database(p,p.parent/'.migration-check.db')")
+        backup_tool('checkpoint')
         checkpoint = True
         compose('run', '--rm', '--no-deps', '-e', 'DB_PATH=/data/.migration-check.db', '--entrypoint', '/app/dashboard', 'dashboard', 'migrate', image=candidate)
         swapped = True  # app startup can migrate even when compose up fails
@@ -105,7 +105,7 @@ def main():
         # its checkpoint may already have been removed.
         try:
             rejected.unlink(missing_ok=True)
-            python("from pathlib import Path; [(Path('/data')/n).unlink(missing_ok=True) for n in ['.update-before.db','.migration-check.db','.migration-check.db-wal','.migration-check.db-shm']]", image=candidate)
+            backup_tool('cleanup', image=candidate)
         except Exception:
             notify('Production is healthy; temporary update file cleanup needs attention.', settings)
         notify('Production update succeeded: ' + candidate, settings)
@@ -114,7 +114,7 @@ def main():
             try:
                 compose('stop', 'dashboard', image=candidate)
                 if checkpoint and swapped:
-                    python("from pathlib import Path; import os; p=Path(os.environ['DB_PATH']); [Path(str(p)+s).unlink(missing_ok=True) for s in ['-wal','-shm']]; os.replace(p.parent/'.update-before.db',p)")
+                    backup_tool('rollback')
                 compose('up', '-d', '--no-deps', 'dashboard')
                 health(previous)
                 state.write_text('DASHBOARD_IMAGE=' + previous + '\n')

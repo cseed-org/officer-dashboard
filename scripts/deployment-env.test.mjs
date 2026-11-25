@@ -56,3 +56,13 @@ test("backup client environment keys are documented and templated", () => {
   assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(template, key)), []);
   assert.ok(!source.includes('LITESTREAM_'));
 });
+
+test("static container backup settings are documented without an interpreter runtime", () => {
+  const source = read('server/cmd/dashboard-backup/main.go');
+  const inventory = [...source.matchAll(/os\.Getenv\("([A-Z_]+)"\)/g)].map(m => m[1]);
+  assert.ok(inventory.length >= 8);
+  assert.deepEqual(inventory.filter(key => !configuration.includes(`\`${key}\``)), []);
+  assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(template, key)), []);
+  assert.ok(read('server/Dockerfile').includes('FROM busybox:stable-musl AS runtime'));
+  assert.ok(!read('server/deploy/entrypoint.sh').includes('python3'));
+});

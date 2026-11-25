@@ -69,7 +69,7 @@ answer 503.
 
 ### Backups (encrypted D1 snapshots)
 
-Read by the image entrypoint and `backup.py`. Without `BACKUP_SINK_URL`, only the
+Read by the image entrypoint and the static `dashboard-backup` command. `backup.py` is an off-box restore client only. Without `BACKUP_SINK_URL`, only the
 local data volume stores the database. Set all backup credentials before enabling.
 
 | Variable | Default | Meaning |
@@ -81,7 +81,7 @@ local data volume stores the database. Set all backup credentials before enablin
 | `BACKUP_MEMBERSHIP_ACCOUNT_ID`, `BACKUP_MEMBERSHIP_DATABASE_ID` | empty | account and membership D1 database for weekly SQL export |
 | `BACKUP_MEMBERSHIP_API_TOKEN` | empty | account-scoped D1 Edit token; can modify all account D1 databases, never given to the sink |
 
-The image includes Python 3 and age; Litestream and its `LITESTREAM_*` settings are removed.
+The image uses BusyBox musl with static dashboard and backup binaries. SQLite, gzip and age encryption are compiled into `dashboard-backup`; Python, an age executable and Debian packages are not shipped. The off-box restore workstation still needs Python 3 and age. Litestream and its `LITESTREAM_*` settings are removed.
 See [fresh install](deploy/fresh-install.md) and [upgrade/restore](deploy/upgrade-existing.md).
 Missing DB with backups enabled stops startup after downloading ciphertext for off-box recovery.
 `DB_PATH` defaults to `/data/dashboard.db`. Restore refuses to overwrite an existing output.

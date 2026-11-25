@@ -4,12 +4,12 @@ if [ -n "${BACKUP_SINK_URL:-}" ]; then
   if [ ! -f "$DB_PATH" ]; then
     # D5 forbids keeping the decryption key here. Never replace a lost DB with an empty one.
     if [ ! -f "${DB_PATH}.recovery.age" ]; then
-      python3 /app/backup.py download --output "${DB_PATH}.recovery.age"
+      /app/dashboard-backup download --output "${DB_PATH}.recovery.age"
     fi
     echo 'Restore off-box with scripts/restore-from-d1, install the DB, then restart.' >&2
     exit 1
   fi
-  python3 /app/backup.py loop &
+  /app/dashboard-backup loop &
   backup_pid=$!
   /app/dashboard serve &
   app_pid=$!

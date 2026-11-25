@@ -23,35 +23,28 @@ try {
   await new Promise(r=>setTimeout(r,500));
  }
  assert.ok(ready,'Wrangler must start');
- const proof=`import sys,os,sqlite3,hashlib,subprocess
+ // The offline recovery driver is a test-only image, never a release layer.
+ writeFileSync(resolve(work,'Dockerfile.offbox'),'FROM python:3.14-alpine\nRUN apk add --no-cache age\n');
+ execFileSync('docker',['build','-f',resolve(work,'Dockerfile.offbox'),'-t','dashboard-offbox-test',work],{stdio:'pipe'});
+ const keygen=execFileSync('docker',['run','--rm','--user','10001:10001','--entrypoint','sh','-v',`${volume}:/data`,'dashboard-offbox-test','-c','age-keygen -o /data/test.agekey 2>/dev/null && age-keygen -y /data/test.agekey'],{encoding:'utf8'}).trim();
+ const env=['-e',`BACKUP_SINK_URL=http://host.docker.internal:${port}`,'-e','BACKUP_BEARER_SECRET=roundtrip-test-only','-e','DB_PATH=/data/source.db'];
+ const backup=execFileSync('docker',['run','--rm','--user','10001:10001','--add-host','host.docker.internal:host-gateway',
+  '--entrypoint','/app/backup-test','-v',`${volume}:/data`,...env,'-e','BACKUP_REHEARSAL_MODE=roundtrip','-e',`BACKUP_AGE_RECIPIENT=${keygen}`,
+  'dashboard-backup-test','-test.run=^TestLocalSinkRoundTrip$','-test.v'],{encoding:'utf8',timeout:180000});
+ assert.match(backup,/PASS/);
+ const proof=`import sys,hashlib
 from pathlib import Path
 sys.path.insert(0,'/app')
-from backup import copy_database,encrypt,Sink,restore
-os.umask(0o077)
-key=Path('/data/test.agekey')
-subprocess.run(['age-keygen','-o',str(key)],check=True,capture_output=True)
-os.environ['BACKUP_AGE_RECIPIENT']=subprocess.check_output(['age-keygen','-y',str(key)],text=True).strip()
-source=Path('/data/source.db')
-with sqlite3.connect(source) as db:
- db.execute('CREATE TABLE records(id INTEGER PRIMARY KEY,value BLOB)')
- db.execute('INSERT INTO records(value) VALUES(?)',(os.urandom(2100000),))
-copy_database(source,Path('/data/snapshot.db'))
-expected=hashlib.sha256(Path('/data/snapshot.db').read_bytes()).hexdigest()
-encrypt(Path('/data/snapshot.db'),Path('/data/snapshot.age'))
-snapshot=Sink().upload(Path('/data/snapshot.age'))
-assert snapshot['chunks']==2
-restore(snapshot['id'],'/data/restored.db',str(key))
-assert hashlib.sha256(Path('/data/restored.db').read_bytes()).hexdigest()==expected
-Sink().request('/prune','POST',{'hourly':24})
-assert any(s['id']==snapshot['id'] for s in Sink().list())
-key.unlink()
-print('two-chunk encrypted round trip: matching plaintext SHA-256; integrity ok; prune ok')
+from backup import restore,Sink
+restore('latest','/data/restored.db','/data/test.agekey')
+assert hashlib.sha256(Path('/data/restored.db').read_bytes()).hexdigest()==hashlib.sha256(Path('/data/reference.db').read_bytes()).hexdigest()
+Path('/data/test.agekey').unlink()
+print('static Go backup -> off-box age restore: two chunks, matching plaintext SHA-256, integrity ok, prune ok')
 `;
  writeFileSync(resolve(work,'proof.py'),proof);
  const output=execFileSync('docker',['run','--rm','--user','10001:10001','--add-host','host.docker.internal:host-gateway','--entrypoint','python3',
   '-v',`${volume}:/data`,'-v',`${resolve(work,'proof.py')}:/proof.py:ro`,'-v',`${resolve(root,'server/deploy/backup.py')}:/app/backup.py:ro`,
-  '-e',`BACKUP_SINK_URL=http://host.docker.internal:${port}`,'-e','BACKUP_BEARER_SECRET=roundtrip-test-only','-e','DB_PATH=/data/source.db',
-  'dashboard-backup-qa','/proof.py'],{encoding:'utf8',timeout:180000});
+  ...env,'dashboard-offbox-test','/proof.py'],{encoding:'utf8',timeout:180000});
  console.log(output.trim());
 } finally {
  execFileSync('docker',['volume','rm',volume],{stdio:'ignore'});

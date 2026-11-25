@@ -35,6 +35,7 @@ jobs:
       - name: Build and exercise the encrypted backup client
         run: |
           docker build -f server/Dockerfile -t dashboard-backup-qa .
+          docker build -f server/Dockerfile --target backup-test-image -t dashboard-backup-test .
           node scripts/backup-roundtrip.mjs
   govulncheck:
     runs-on: ubuntu-latest

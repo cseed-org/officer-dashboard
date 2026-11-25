@@ -1,6 +1,6 @@
 # Upgrade an existing deployment
 
-First migrate from the previous Litestream image manually; it lacks `/app/backup.py`,
+First migrate from the previous Litestream image manually; it lacks `/app/dashboard-backup`,
 so the automatic updater cannot safely bootstrap itself. Keep the old image digest and
 its encrypted offline DB backup until this transition has passed a restore drill.
 
@@ -12,7 +12,7 @@ its encrypted offline DB backup until this transition has passed a restore drill
    the documented `BACKUP_*` settings. Keep the existing remote tunnel token, routes
    and Access policies. Follow the [fresh install](fresh-install.md) compose commands
    with **both** env files; do not initialize a new DB.
-3. Start the dashboard, check `/api/health`, run `python3 /app/backup.py backup` with
+3. Start the dashboard, check `/api/health`, run `/app/dashboard-backup backup` with
    `docker compose … exec -T dashboard`, and do an off-box restore. Then enable the timer.
 
 Every five minutes `scripts/update` compares `:prod` to `prod-image.env`. On change it

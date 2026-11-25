@@ -9,7 +9,9 @@ Litestream sections describe the previous image. The current image uses encrypte
 Measured locally on 2026-11-24 using the release image's `dashboard seed -reset` in an
 isolated data directory: **72 tables, 1,060,864 bytes SQLite, 67,507 bytes gzip**. Seed:
 6 users, 6 events, 6 purchase requests, 18 journal lines, plus the full schema/indexes.
-The age envelope adds roughly 1 KB here; plan at **70,000 ciphertext bytes per seed copy**.
+The original gzip measurement used Python's level 9. The static Go backup helper's
+gzip plus age stream measured **72,059 ciphertext bytes** on this seed; plan at
+**75,000 ciphertext bytes per seed copy**.
 No production database was available to measure. WAL is captured consistently with
 SQLite's online backup API, the same API used by `.backup`; integrity is checked first.
 Receipts remain outside SQLite (Drive); this backs up their metadata, not Drive contents.
@@ -35,7 +37,7 @@ promotion reclassifies one hourly snapshot rather than copying its BLOBs. Conser
 reserved storage per copy is `2 * (ceil(size/4096)*4096 + chunks*8192 + 16384)`:
 page rounding, metadata and twofold overhead. The hard logical reservation ceiling and
 physical append preflight are 450,000,000 bytes, leaving 50 MB below the D1 cap.
-At 70,000 bytes this reserves 196,608 bytes/copy, or **16,121,856 bytes for 82**.
+At 75,000 bytes this reserves 204,800 bytes/copy, or **16,793,600 bytes for 82**.
 
 Growth assumption: 100 officers, 1,000 members, 200 events/year, 20,000 activity/audit
 rows/year at 1 KB per row plus 100% index/schema allowance gives roughly 40 MB raw/year.
@@ -75,6 +77,14 @@ assume only the supplied trusted client, not an attacker who holds both credenti
 For setup, reviewer settings, off-box recovery and the monthly drill, use the linked
 runbooks above. Automatic boot restore stages ciphertext and stops for off-box decryption,
 preserving D5. Automatic migration rollback uses a temporary stopped local checkpoint.
+
+The release runtime is `busybox:stable-musl`. Both dashboard and backup helper are
+statically linked with `release,osusergo,netgo,sqlite_omit_load_extension` (plus `embedweb`
+for the dashboard). SQLite's backup API, gzip and age encryption are compiled into the
+backup helper; no Python, Debian runtime packages, Litestream or external age executable
+are shipped. Python and the age CLI are needed only on the host/recovery workstation.
+Re-scan the combined final image after merging the application security changes: a clean
+scan of this branch is not proof for the merged artifact.
 
 | You want | Go to |
 | --- | --- |
