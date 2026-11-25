@@ -66,3 +66,4 @@ web/design/shots/**/*.png
 !web/design/shots/design-v04-1440-dark.png
 !web/design/shots/design-v04-390-light.png
 !web/design/shots/design-v04-390-dark.png
+__pycache__/

@@ -267,18 +267,14 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		if err != nil {
 			return nil, err
 		}
-		r.Alert = func(ctx context.Context) bool {
-			return cfg.Notifier.(*notify.Discord).Deliver(ctx, notify.Event{Number: "R2", Type: "storage.budget", Title: "Storage budget or inventory needs attention", Reason: "Warning at 70%; uploads/reads stop at 90%. Inspect R2 usage and inventory."}, s.AppURL)
+		r.Alert = func(ctx context.Context, reason string) bool {
+			return cfg.Notifier.(*notify.Discord).Deliver(ctx, notify.Event{Number: "R2", Type: "storage.budget", Title: "Storage budget or inventory needs attention", Reason: reason}, s.AppURL)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		err = r.Reconcile(ctx)
-		cancel()
-		if err != nil {
-			if errors.Is(err, files.ErrR2Credentials) {
-				return nil, err
-			}
-			log.Warn("R2 inventory unavailable; uploads disabled until reconciliation succeeds", "error", err)
-		}
+		// Inventory runs in FileStorageDaily, never on the startup path: an R2
+		// outage, exhausted budget, rejected token or restore lock must not stop
+		// the dashboard or fail an update's health check. If a scan fails,
+		// uploads stay closed (a scan invalidates freshness before listing) and
+		// the failure is alerted.
 		cfg.Files = r
 	case s.FileStorage == "local":
 		cfg.Files = files.Local{Root: s.ReceiptsDir}

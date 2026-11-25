@@ -228,8 +228,9 @@ Limits are fixed in code: 10 MiB/file, 20 attempted uploads/user/UTC day,
 7 GB/700k Class A/7M Class B warning, and 9 GB/900k Class A/9M Class B refusal. Operation ceilings apply both to
 calendar-month counters and to a rolling 32-UTC-day window; the stricter wins.
 HTTP 507 explains that the safety budget was reached. Counters survive restarts
-in SQLite. A successful deletion releases known bytes; failed requests retain
-reservations. See [R2 setup and budget constraints](deployment.md#private-r2-file-storage)
+in SQLite. A successful deletion releases known bytes. An upload with an unknown
+outcome keeps its reservation until a scan at least an hour later shows the object
+absent. R2 problems never stop startup: they close uploads and alert. See [R2 setup and budget constraints](deployment.md#private-r2-file-storage)
 before enabling it. Existing files keep their backend label: migrate or retain
 access to the old backend before switching; use the optional `dashboard files-migrate-r2` command (dry-run by default)
 before switching. D1 remains the encrypted database backup target; no R2 backup copy is

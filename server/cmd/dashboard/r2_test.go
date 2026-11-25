@@ -32,20 +32,35 @@ func TestStorageSelectionFailsClosed(t *testing.T) {
 	}
 }
 
+// Review #1: no R2 state (exhausted budget, restore lock, unreachable or
+// rejecting R2: startup makes no R2 request) may stop the dashboard.
 func TestExhaustedR2DoesNotStopDashboard(t *testing.T) {
-	db, err := openDB(filepath.Join(t.TempDir(), "db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	account := strings.Repeat("a", 32)
-	if err := db.BindR2(context.Background(), account+"/receipts"); err != nil {
-		t.Fatal(err)
-	}
-	db.W.Exec(`INSERT INTO r2_day VALUES(?,900000,9000000)`, time.Now().UTC().Format("2006-01-02"))
-	_, err = buildServer(settings{AppURL: "https://example.test", FileStorage: "r2", R2Account: account, R2Bucket: "receipts", R2Access: "test", R2Secret: "test", WebhookURL: "https://example.test/webhook"}, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatal("exhausted file budget stopped unrelated app routes", err)
+	for name, state := range map[string]string{
+		"exhausted":    `INSERT INTO r2_day VALUES(strftime('%Y-%m-%d','now'),900000,9000000)`,
+		"restore-lock": `INSERT INTO r2_restore_lock VALUES(1,strftime('%Y-%m-%dT%H:%M:%SZ','now','+32 days'))`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			db, err := openDB(filepath.Join(t.TempDir(), "db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			account := strings.Repeat("a", 32)
+			if err := db.BindR2(context.Background(), account+"/receipts"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.W.Exec(state); err != nil {
+				t.Fatal(err)
+			}
+			started := time.Now()
+			_, err = buildServer(settings{AppURL: "https://example.test", FileStorage: "r2", R2Account: account, R2Bucket: "receipts", R2Access: "test", R2Secret: "test", WebhookURL: "https://example.test/webhook"}, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if err != nil {
+				t.Fatal("R2 state stopped unrelated app routes", err)
+			}
+			if time.Since(started) > 10*time.Second {
+				t.Fatal("startup waited on R2")
+			}
+		})
 	}
 }
 

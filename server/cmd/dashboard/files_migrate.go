@@ -65,8 +65,8 @@ func filesMigrateCmd(args []string, getenv func(string) string, out io.Writer) e
 		return err
 	}
 	notifier := notify.NewDiscord(s.WebhookURL)
-	target.Alert = func(ctx context.Context) bool {
-		return notifier.Deliver(ctx, notify.Event{Number: "R2", Type: "storage.budget", Title: "R2 migration budget reached 70%"}, s.AppURL)
+	target.Alert = func(ctx context.Context, reason string) bool {
+		return notifier.Deliver(ctx, notify.Event{Number: "R2", Type: "storage.budget", Title: "R2 budget alert during file migration", Reason: reason}, s.AppURL)
 	}
 	scan, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	err = target.Reconcile(scan)

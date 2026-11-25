@@ -32,8 +32,40 @@ type R2 struct {
 	Endpoint, Bucket, AccessKey, Secret string
 	HTTP                                *http.Client
 	Now                                 func() time.Time
-	Alert                               func(context.Context) bool
-	mu                                  sync.RWMutex
+	// Alert delivers an operator warning and reports whether it was accepted.
+	Alert func(ctx context.Context, reason string) bool
+	mu    sync.RWMutex
+}
+
+// AlertReason describes the thresholds named by a store.R2Alert* mask.
+func AlertReason(mask int) string {
+	var refused, warned []string
+	for _, m := range []struct {
+		warn, refuse int
+		name         string
+	}{
+		{store.R2AlertStorageWarn, store.R2AlertStorageRefused, "storage"},
+		{store.R2AlertClassAWarn, store.R2AlertClassARefused, "Class A operations"},
+		{store.R2AlertClassBWarn, store.R2AlertClassBRefused, "Class B operations"},
+	} {
+		switch {
+		case mask&m.refuse != 0:
+			refused = append(refused, m.name)
+		case mask&m.warn != 0:
+			warned = append(warned, m.name)
+		}
+	}
+	var parts []string
+	if len(refused) > 0 {
+		parts = append(parts, "R2 reached 90% of "+strings.Join(refused, ", ")+": those requests are now refused.")
+	}
+	if len(warned) > 0 {
+		parts = append(parts, "R2 reached 70% of "+strings.Join(warned, ", ")+"; requests stop at 90%.")
+	}
+	if len(parts) == 0 {
+		return "R2 usage needs attention."
+	}
+	return strings.Join(parts, " ") + " Inspect R2 usage and inventory."
 }
 
 func NewR2(db *store.DB, account, bucket, access, secret string) (*R2, error) {
@@ -96,7 +128,11 @@ func (r *R2) reserve(ctx context.Context, class, key, user string, size int64) e
 	alert, err := r.DB.ReserveR2(ctx, now, class, key, user, size)
 	if alert && r.Alert != nil {
 		warning, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		delivered := r.Alert(warning)
+		mask, claimErr := r.DB.R2AlertClaim(warning, now)
+		if claimErr != nil {
+			mask = 0
+		}
+		delivered := r.Alert(warning, AlertReason(mask))
 		cancel()
 		if delivered {
 			_ = r.DB.AckR2Alert(context.WithoutCancel(ctx), now)
@@ -169,7 +205,8 @@ func (r *R2) Put(ctx context.Context, in PutInput) (Stored, error) {
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		// A completed failure response can be cleaned up safely. Transport
-		// timeouts stay reserved: a late remote PUT must not gain headroom.
+		// timeouts stay reserved until an inventory taken after
+		// store.R2PendingWindow proves the key absent (see ReconcileR2).
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
 		_ = r.deleteLocked(cleanup, key)
 		cancel()
@@ -252,6 +289,7 @@ func (r *R2) Reconcile(ctx context.Context) error {
 		return err
 	}
 	var total int64
+	listed := map[string]bool{}
 	query := url.Values{"list-type": {"2"}, "max-keys": {"1000"}}
 	for {
 		if err := r.reserve(ctx, "list", "", "", 0); err != nil {
@@ -263,6 +301,7 @@ func (r *R2) Reconcile(ctx context.Context) error {
 		}
 		var page struct {
 			Contents []struct {
+				Key          string
 				Size         int64
 				StorageClass string
 			}
@@ -279,6 +318,7 @@ func (r *R2) Reconcile(ctx context.Context) error {
 				return errors.New("R2 inventory contains invalid or non-Standard objects")
 			}
 			total += o.Size
+			listed[o.Key] = true
 			if total > store.R2StorageLimit {
 				return ErrBudget
 			}
@@ -307,17 +347,20 @@ func (r *R2) Reconcile(ctx context.Context) error {
 	if res.StatusCode != 200 || err != nil || len(multipart.Upload) > 0 || multipart.IsTruncated {
 		return errors.New("R2 unfinished multipart upload or inventory failure; uploads disabled")
 	}
-	if err := r.DB.ReconcileR2(ctx, r.Now(), total); err != nil {
+	if err := r.DB.ReconcileR2(ctx, r.Now(), total, listed); err != nil {
 		return err
 	}
 	// Check the reconciled bytes immediately, including the 70% notification.
 	return r.reserve(ctx, "check", "", "", 0)
 }
 
+// Daily runs the first inventory immediately, so startup never waits on R2,
+// then every 24 hours. A failure keeps uploads closed, retries every five
+// minutes, and alerts once per failure streak (re-sent until Discord accepts).
 func (r *R2) Daily(ctx context.Context, onError func(error)) {
-	t := time.NewTimer(5 * time.Minute)
+	t := time.NewTimer(0)
 	defer t.Stop()
-	failed := false
+	alerted := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -327,15 +370,23 @@ func (r *R2) Daily(ctx context.Context, onError func(error)) {
 				t.Reset(until.Sub(r.Now()) + time.Second)
 				continue
 			}
-			if err := r.Reconcile(ctx); err != nil {
+			scan, cancel := context.WithTimeout(ctx, 2*time.Minute)
+			err := r.Reconcile(scan)
+			cancel()
+			if err != nil {
 				onError(err)
-				if !failed && r.Alert != nil {
-					r.Alert(ctx)
+				if !alerted && r.Alert != nil && ctx.Err() == nil {
+					reason := "R2 inventory scan failed; uploads stay closed until it succeeds (retrying every 5 minutes)."
+					if errors.Is(err, ErrR2Credentials) {
+						reason = "R2 rejected the configured access key; uploads stay closed and downloads fail until the R2 token is fixed."
+					}
+					warning, stop := context.WithTimeout(ctx, 5*time.Second)
+					alerted = r.Alert(warning, reason)
+					stop()
 				}
-				failed = true
 				t.Reset(5 * time.Minute)
 			} else {
-				failed = false
+				alerted = false
 				t.Reset(24 * time.Hour)
 			}
 		}

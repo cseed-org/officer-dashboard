@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS r2_day(day TEXT PRIMARY KEY, class_a INTEGER NOT NULL
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS r2_restore_lock(id INTEGER PRIMARY KEY CHECK(id=1), until_utc TEXT NOT NULL);
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS r2_objects (key TEXT PRIMARY KEY, bytes INTEGER NOT NULL CHECK(bytes>0));
+CREATE TABLE IF NOT EXISTS r2_objects (key TEXT PRIMARY KEY, bytes INTEGER NOT NULL CHECK(bytes>0), reserved_at INTEGER NOT NULL DEFAULT 0);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS r2_user_day (user_id TEXT NOT NULL, day TEXT NOT NULL, uploads INTEGER NOT NULL, PRIMARY KEY(user_id,day));
 --> statement-breakpoint

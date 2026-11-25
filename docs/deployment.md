@@ -162,25 +162,32 @@ upload requires all 10,485,760 bytes of headroom. At most 858 such files fit in
 9 GB; 20/user/day permits at most 200 MiB/user/day. A Discord warning is emitted
 at 70%; its durable pending flag retries failed Discord delivery until accepted.
 After acceptance, that metric does not repeat its warning that month. Failed
-delivery is retried no more than once per 15 minutes, including concurrent calls. Refused calls make no R2 request.
+delivery is retried no more than once per 15 minutes, including concurrent calls.
+The first refusal at 90% of a metric sends its own warning, once per month, even
+if the 70% warning was already delivered. Refused calls make no R2 request and
+move no counter. A failed inventory scan also sends a warning.
 Deletes are tracked separately at zero billable operations. The client performs
 no redirects or application retries, disables connection reuse to avoid transport
 replay, uses a 20-second timeout, and retains a day of rolling-window margin at month boundaries.
 
-The app scans every object page and checks for multipart uploads at startup and
-every 24 hours, retrying a failed scan every five minutes. For 858 objects, that costs two Class A requests per scan (one
+The app scans every object page and checks for multipart uploads in the background
+right after startup and every 24 hours, retrying a failed scan every five minutes.
+Startup never waits on R2: an outage, a rejected token, an exhausted budget or a
+restore lock leaves the rest of the dashboard running, keeps uploads closed and
+sends a Discord warning. Only configuration errors (account or bucket format,
+missing secret or webhook, ledger bound to another bucket) stop startup. For 858 objects, that costs two Class A requests per scan (one
 object page and one multipart check), about 62/month plus starts. No analytics
 or account token is needed: the same bucket-scoped Object Read & Write S3 token
 can list. Uploads close if inventory is older than 25 hours or a scan fails.
-Inventory can raise the byte reservation, never lower it; only a confirmed delete
-of a known key releases bytes. Ambiguous transport failures and crashes retain reservations. Completed failed
-PUT responses trigger a free DELETE; confirmed deletion releases their bytes.
-Transport timeouts retain space deliberately because a remote write may finish
-late. If these accumulate, stop the app, confirm no writes remain in flight,
-use the operator S3 credentials to delete the affected `r2_objects` keys, verify
-each is absent, then remove only those confirmed reservations and subtract their
-recorded bytes in one SQLite transaction. Never reset operation counters or
-lower bytes solely because an inventory is smaller.
+Each scan sets the byte total to the listed bytes plus reservations that are
+unlisted but less than one hour old. Those may still be a PUT in flight from
+another process; the client timeout is 20 seconds and it never retries. An unlisted
+reservation older than one hour is released. A timed-out or abandoned upload
+(for example, the uploader closed the tab) therefore holds its bytes until the
+first scan after one hour, normally the next daily scan. Completed failed PUT
+responses trigger a free DELETE and release immediately; rejected credentials
+release immediately. Never reset operation counters: listing cannot recover
+operations already spent.
 SQLite writer connections use FULL synchronous commits. This trades some space
 and write throughput for conservative accounting.
 
@@ -273,9 +280,12 @@ Cloudflare settings or deploy it.
 
    Keep the existing Discord webhook `_FILE` setting. The hardened compose already
    mounts `secrets/app` read-only only into the app. No backup credentials change.
-   Follow the approved image/update steps; startup validates credentials with a full
-   private inventory before accepting uploads. Configuration and rejected credentials fail startup;
-network/inventory/budget failures keep the dashboard running with uploads closed. Never paste credentials into a PR.
+   Follow the approved image/update steps. Uploads stay closed until the background
+   scan right after startup validates the credentials with a full private inventory.
+   Only configuration errors fail startup. A rejected token, a network or inventory
+   failure, or an exhausted budget keeps the dashboard running with uploads closed
+   and sends a Discord warning; check the app log for `R2 reconciliation failed`.
+   Never paste credentials into a PR.
 
 
 ### Optional one-shot file migration
