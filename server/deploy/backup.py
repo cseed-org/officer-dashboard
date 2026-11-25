@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Encrypted D1 snapshot client. Backup uses only the public age recipient."""
 import argparse
+from contextlib import closing
 import datetime as dt
 import fcntl
 import gzip
@@ -75,17 +76,18 @@ class Sink:
             raise ValueError('snapshot exceeds 24.7 MB; skipped')
         chunks = (size + CHUNK - 1) // CHUNK
         allocation = 2 * (((size + 4095) // 4096) * 4096 + chunks * 8192 + 16384)
-        self.request('/prune', 'POST', {'hourly': 48})
+        self.request('/prune', 'POST', {'hourly': 48, 'reserve': allocation})
         usage = self.request('/usage')
         if usage['bytes'] + allocation > 350_000_000 or allocation * 82 > 450_000_000:
             alert('Backup storage pressure: falling back to 24 hourly snapshots')
-            usage = self.request('/prune', 'POST', {'hourly': 24})
+            usage = self.request('/prune', 'POST', {'hourly': 24, 'reserve': allocation})
         writes = 100 + 20 * chunks
         if usage['bytes'] + allocation >= 350_000_000 or usage['writes'] + writes + 50_000 >= 70_000:
             alert('Backup usage reached 70% of a free-tier limit')
         # Each bounded client upload costs <100 requests and <3000 scanned rows,
         # including prune, usage, verification and scheduling. Leave shared-account headroom.
         if usage['bytes'] + allocation > usage['byte_limit'] or usage['writes'] + writes > usage['write_limit'] or usage['uploads'] >= 200:
+            alert('BACKUP BLOCKED: reservation or daily budget exhausted; operator action required if storage remains full')
             raise ValueError('backup budget exhausted; skipped')
         with path.open('rb') as source:
             digest = hashlib.file_digest(source, 'sha256').hexdigest()
@@ -115,14 +117,14 @@ class Sink:
 
 
 def integrity(path):
-    with sqlite3.connect(f'file:{path}?mode=ro', uri=True) as db:
+    with closing(sqlite3.connect(Path(path).resolve().as_uri() + '?mode=ro', uri=True)) as db:
         if db.execute('PRAGMA integrity_check').fetchall() != [('ok',)]:
             raise ValueError('SQLite integrity check failed')
 
 
 def copy_database(source, target):
     # Same sqlite3_backup API as the sqlite3 CLI's .backup, consistent with live WAL.
-    with sqlite3.connect(f'file:{source}?mode=ro', uri=True) as src, sqlite3.connect(target) as dst:
+    with closing(sqlite3.connect(Path(source).resolve().as_uri() + '?mode=ro', uri=True)) as src, closing(sqlite3.connect(target)) as dst:
         src.backup(dst)
     integrity(target)
 
@@ -158,7 +160,7 @@ def restore(snapshot_id, target, identity, encrypted_only=False):
         work = Path(work)
         sink.download(snapshots[0], work / 'snapshot.age')
         if encrypted_only:
-            os.rename(work / 'snapshot.age', target)
+            os.link(work / 'snapshot.age', target)
             return
         if not identity:
             raise ValueError('restore needs the off-box age identity')
@@ -166,7 +168,7 @@ def restore(snapshot_id, target, identity, encrypted_only=False):
         with gzip.open(work / 'snapshot.gz', 'rb') as src, (work / 'snapshot.db').open('wb') as dst:
             shutil.copyfileobj(src, dst)
         integrity(work / 'snapshot.db')
-        os.rename(work / 'snapshot.db', target)
+        os.link(work / 'snapshot.db', target)
     print('sha256 verified; integrity ok')
 
 

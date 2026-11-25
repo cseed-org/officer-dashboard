@@ -15,7 +15,7 @@ const port=8792;
 const volume='dashboard-backup-roundtrip-'+Date.now();
 execFileSync('docker',['volume','create',volume],{stdio:'ignore'});
 execFileSync('docker',['run','--rm','--user','0','--entrypoint','chown','-v',`${volume}:/data`,'dashboard-backup-qa','10001:10001','/data'],{stdio:'ignore'});
-const worker=spawn(process.execPath,[wrangler,'dev','--local','--ip','0.0.0.0','--port',String(port),'--persist-to',persist,'--var','BACKUP_BEARER_SECRET:roundtrip-test-only'],{cwd:sink,stdio:['ignore',openSync(resolve(work,'wrangler.log'),'w'),'ignore']});
+const worker=spawn(process.execPath,[wrangler,'dev','--local','--ip','0.0.0.0','--port',String(port),'--persist-to',persist,'--var','BACKUP_BEARER_SECRET:roundtrip-test-secret-at-least-32-bytes'],{cwd:sink,stdio:['ignore',openSync(resolve(work,'wrangler.log'),'w'),'ignore']});
 try {
  let ready=false;
  for(let n=0;n<60;n++) {
@@ -27,7 +27,7 @@ try {
  writeFileSync(resolve(work,'Dockerfile.offbox'),'FROM python:3.14-alpine\nRUN apk add --no-cache age sqlite\n');
  execFileSync('docker',['build','-f',resolve(work,'Dockerfile.offbox'),'-t','dashboard-offbox-test',work],{stdio:'pipe'});
  const keygen=execFileSync('docker',['run','--rm','--user','10001:10001','--entrypoint','sh','-v',`${volume}:/data`,'dashboard-offbox-test','-c','age-keygen -o /data/test.agekey 2>/dev/null && age-keygen -y /data/test.agekey'],{encoding:'utf8'}).trim();
- const env=['-e',`BACKUP_SINK_URL=http://host.docker.internal:${port}`,'-e','BACKUP_BEARER_SECRET=roundtrip-test-only','-e','DB_PATH=/data/source.db'];
+ const env=['-e',`BACKUP_SINK_URL=http://host.docker.internal:${port}`,'-e','BACKUP_BEARER_SECRET=roundtrip-test-secret-at-least-32-bytes','-e','DB_PATH=/data/source.db'];
  const backup=execFileSync('docker',['run','--rm','--user','10001:10001','--add-host','host.docker.internal:host-gateway',
   '--entrypoint','/app/backup-test','-v',`${volume}:/data`,...env,'-e','BACKUP_REHEARSAL_MODE=roundtrip','-e',`BACKUP_AGE_RECIPIENT=${keygen}`,
   'dashboard-backup-test','-test.run=^TestLocalSinkRoundTrip$','-test.v'],{encoding:'utf8',timeout:180000});

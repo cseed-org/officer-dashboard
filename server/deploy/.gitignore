@@ -1,3 +1,7 @@
 # Container-scoped credentials; P1 owns repository-wide ignore rules.
 secrets/
 backup.env
+
+# Local update transaction state; retain during recovery.
+update-recovery-required.json
+update-recovery-required.json.next

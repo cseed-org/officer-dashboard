@@ -5,7 +5,8 @@ compatibility_flags = ["nodejs_compat"]
 workers_dev = false
 preview_urls = false
 
-# Set a custom domain protected by Access before deployment. No membership binding/token.
+# Custom domain only; Access remains additional protection pending Q-3.
+# Bearer authentication is enforced independently. No membership binding/token.
 [[d1_databases]]
 binding = "BACKUPS"
 database_name = "dashboard-backups"

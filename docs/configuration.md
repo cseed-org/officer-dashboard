@@ -75,7 +75,7 @@ local data volume stores the database. Set all backup credentials before enablin
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BACKUP_SINK_URL` | empty | HTTPS URL of the dedicated D1 backup Worker; enables hourly encrypted backups |
-| `BACKUP_BEARER_SECRET` | empty | same bearer secret configured on the sink Worker |
+| `BACKUP_BEARER_SECRET` | empty | same bearer secret configured on the sink Worker; at least 32 bytes |
 | `BACKUP_ACCESS_CLIENT_ID`, `BACKUP_ACCESS_CLIENT_SECRET` | empty | Access service token for the backup hostname, separate from dashboard callers |
 | `BACKUP_AGE_RECIPIENT` | empty | public age recipient; private identity remains offline |
 | `BACKUP_MEMBERSHIP_ACCOUNT_ID`, `BACKUP_MEMBERSHIP_DATABASE_ID` | empty | account and membership D1 database for weekly SQL export |
@@ -180,7 +180,9 @@ The read-only filesystem still permits SQLite and temporary snapshot work in `/d
 and bounded scratch work in tmpfs `/tmp`. Limits: app 512 MB/128 PIDs, backup 256 MB/64
 PIDs, cloudflared 128 MB/64 PIDs. Adjust deliberately if workload measurements justify it.
 
-Use file paths in env files, not secret values. Supported app entrypoint keys are
+Use file paths in env files, not secret values. The binary resolves app file credentials
+in memory under both systemd and Docker,
+without exporting their contents. Supported app entrypoint keys are
 `DISCORD_CLIENT_SECRET_FILE`, `DISCORD_WEBHOOK_URL_FILE`, `DISCORD_BOT_TOKEN_FILE`,
 `SMTP_USERNAME_FILE`, `SMTP_PASSWORD_FILE`, `GOOGLE_OAUTH_CLIENT_SECRET_FILE`,
 `GOOGLE_SERVICE_ACCOUNT_JSON_FILE`, `CLOUDFLARE_API_TOKEN_FILE` and `DEV_AUTH_KEY_FILE`.

@@ -1,5 +1,5 @@
 // Isolated local registry/compose rehearsal: A -> B succeeds; unhealthy C restores B/data.
-// Start local Wrangler on port 8791 with BACKUP_BEARER_SECRET=local-test-only first.
+// Start local Wrangler on port 8791 with BACKUP_BEARER_SECRET=local-rehearsal-test-secret-32-bytes-long first.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
@@ -54,7 +54,7 @@ BACKUP_BEARER_SECRET_FILE=/run/secrets/backup/bearer
 BACKUP_AGE_RECIPIENT=${recipient}
 `);
  const appSecrets=id+'-app-secrets', backupSecrets=id+'-backup-secrets';
- for(const [volume,name,value] of [[appSecrets,'discord-client-secret','synthetic-app-secret'],[backupSecrets,'bearer','local-test-only']]) {
+ for(const [volume,name,value] of [[appSecrets,'discord-client-secret','synthetic-app-secret'],[backupSecrets,'bearer','local-rehearsal-test-secret-32-bytes-long']]) {
   docker('volume','create',volume);
   docker('run','--rm','--user','0','--entrypoint','sh','-v',`${volume}:/secret`, 'dashboard-backup-qa','-c',`printf '%s' '${value}' > /secret/${name}; chown 10001:10001 /secret/${name}; chmod 400 /secret/${name}`);
  }

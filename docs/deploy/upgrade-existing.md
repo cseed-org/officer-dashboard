@@ -67,3 +67,25 @@ SQLite snapshot, and keeps/transmits only `.db.gz.age` artifacts. `BACKUP_REMOTE
 executable hook receiving the ciphertext filename as one argument. Migrate pre-existing
 plaintext backups off-box; the script neither sends nor silently deletes them. P1 owns
 the systemd unit's UMask hardening; this change does not edit that unit.
+
+## Interrupted update recovery
+
+`scripts/update` durably writes `update-recovery-required.json` before attempting a stop.
+If the host or rollback fails, every later poll refuses to update, including `--retry`.
+Keep this marker and `/data/.update-before.db`; checkpoint refuses to overwrite an
+existing checkpoint and rollback preserves it until successful recovery or commit.
+
+Disable the update timer and stop both dashboard and backup services. Read the marker's
+previous/candidate pins and the actual `prod-image.env`. If the candidate pin was committed,
+verify its DB and health before deciding to retain it. Otherwise restore the original
+checkpoint using the previous image's `dashboard-backup rollback` with both services
+stopped, or restore the verified D1 ciphertext off-box if the checkpoint is unavailable.
+Start the chosen pinned services, check health and data, and persist the matching
+`prod-image.env`. Only after recovery is verified, run `dashboard-backup cleanup` against
+the stopped maintenance files, remove `update-recovery-required.json`, then re-enable
+the timer. Never delete the marker just to make another poll proceed. A pre-swap sink
+outage that recovers normally is retried automatically; candidate migration/startup
+failures are rejected after successful rollback.
+
+Complete the [live Free-plan CPU and usage rehearsal](../deployment.md#live-free-plan-rehearsal)
+before enabling unattended backups and updates.

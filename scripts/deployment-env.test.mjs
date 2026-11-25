@@ -68,3 +68,16 @@ test("static container backup settings are documented without an interpreter run
   assert.ok(read('server/Dockerfile').includes('FROM busybox:stable-musl AS runtime'));
   assert.ok(!read('server/deploy/entrypoint.sh').includes('python3'));
 });
+
+
+test("self-build production recipe publishes and pins before startup", () => {
+  const docs = read('docs/deploy/other-setups.md');
+  const recipe = docs.slice(docs.indexOf('## Build the image yourself'), docs.indexOf('## Practice run'));
+  assert.ok(recipe.includes('--push'));
+  assert.ok(recipe.includes('imagetools inspect'));
+  assert.ok(recipe.includes('server/deploy/prod-image.env'));
+  const productionCommands = recipe.split('\n').filter(line => line.startsWith('docker compose') && line.includes('compose.cloudflare.yml'));
+  assert.equal(productionCommands.length, 2);
+  for (const command of productionCommands) assert.ok(command.includes('--env-file .env --env-file prod-image.env'));
+  assert.ok(!read('server/deploy/compose.build.yml').includes('officer-dashboard:local'));
+});

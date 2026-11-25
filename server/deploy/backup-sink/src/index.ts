@@ -32,7 +32,7 @@ async function usage(db: D1Database) {
 export default {
  async fetch(request: Request, env: Env): Promise<Response> {
   const authorization = request.headers.get('Authorization') || '';
-  if (!env.BACKUP_BEARER_SECRET || !timingSafeEqual(sha(authorization),sha('Bearer '+env.BACKUP_BEARER_SECRET))) return json({error:'unauthorized'},401);
+  if (!env.BACKUP_BEARER_SECRET || new TextEncoder().encode(env.BACKUP_BEARER_SECRET).length < 32 || !timingSafeEqual(sha(authorization),sha('Bearer '+env.BACKUP_BEARER_SECRET))) return json({error:'unauthorized'},401);
   try {
    const db = env.BACKUPS, path = new URL(request.url).pathname, method=request.method;
    if (method==='GET' && path==='/usage') return json(await usage(db));
@@ -42,9 +42,10 @@ export default {
     if (!/^[a-zA-Z0-9_-]{1,80}$/.test(m.id) || !['hourly','daily','d1-weekly'].includes(m.kind) || !/^[a-f0-9]{64}$/.test(m.sha256)
       || !Number.isInteger(m.size) || m.size<1 || m.size>13*CHUNK || m.chunks!==Math.ceil(m.size/CHUNK)) fail(400,'invalid manifest');
     const allocation=2*(Math.ceil(m.size/4096)*4096 + m.chunks*8192 + 16384);
-    // Never append beyond a conservative physical-size ceiling, even with deleted pages.
+    // Check current physical usage without treating reusable deleted pages as a new allocation.
+    // Logical lifetime reservations still enforce headroom atomically in the insert trigger.
     const u=await usage(db);
-    if (Number(u.physical_bytes || 0)+allocation>450000000) fail(409,'physical storage budget exhausted');
+    if (Number(u.physical_bytes || 0)>450000000) fail(409,'physical storage budget exhausted');
     try {
      await db.prepare('INSERT INTO snapshots(id,kind,sha256,size,chunks,allocation,write_cost) VALUES(?,?,?,?,?,?,?)').bind(m.id,m.kind,m.sha256,m.size,m.chunks,allocation,100+20*m.chunks).run();
     } catch { fail(409,'snapshot exists or budget exhausted'); }
@@ -52,10 +53,22 @@ export default {
    }
    if (method==='POST' && path==='/prune') {
     const m=await manifest(request), hourly=m.hourly===24?24:48;
-    // Exactly one bounded delete; all cleanup writes were reserved at creation.
+    const reserve=m.reserve ?? 0;
+    if (!Number.isSafeInteger(reserve) || reserve<0 || reserve>50000000) fail(400,'invalid reservation');
+    // Bounded count/expiry cleanup; all deletion writes were reserved at creation.
     await db.prepare(`DELETE FROM snapshots WHERE (committed=0 AND created_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 hours'))
      OR id IN (SELECT id FROM (SELECT id,row_number() OVER(PARTITION BY kind ORDER BY created_at DESC,id DESC) AS rn,kind FROM snapshots WHERE committed=1)
        WHERE rn > CASE kind WHEN 'hourly' THEN ? WHEN 'daily' THEN 30 ELSE 4 END)`).bind(hourly).run();
+    // Preserve the newest copy of each kind; evict older committed copies by
+    // reservation as well as count so a growing database can keep backing up.
+    if (reserve>0) await db.prepare(`WITH ranked AS (
+      SELECT id,allocation,created_at,row_number() OVER(PARTITION BY kind ORDER BY created_at DESC,id DESC) AS rn
+      FROM snapshots WHERE committed=1
+    ), fitted AS (
+      SELECT id,rn,sum(allocation) OVER(ORDER BY CASE WHEN rn=1 THEN 0 ELSE 1 END,created_at DESC,id DESC) AS used
+      FROM ranked
+    ) DELETE FROM snapshots WHERE id IN (SELECT id FROM fitted WHERE rn>1 AND used >
+      450000000 - ? - COALESCE((SELECT sum(allocation) FROM snapshots WHERE committed=0),0))`).bind(reserve).run();
     return json(await usage(db));
    }
    const match=path.match(/^\/snapshots\/([a-zA-Z0-9_-]{1,80})(?:\/(commit|promote|chunks\/(\d{1,2})))?$/);

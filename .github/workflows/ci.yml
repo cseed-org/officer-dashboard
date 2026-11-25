@@ -90,6 +90,8 @@ jobs:
       - run: npm ci
       - name: MCP tool list matches the contract
         run: node scripts/gen-mcp-tools.mjs --check
+      - name: Updater and offline restore fault regression tests
+        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
       - name: Script regression tests
         run: npm run test:scripts
       - name: Canonical and browser contract parity

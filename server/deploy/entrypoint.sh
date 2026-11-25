@@ -9,7 +9,7 @@ for key in BACKUP_SINK_URL BACKUP_BEARER_SECRET BACKUP_ACCESS_CLIENT_ID BACKUP_A
   unset "$key" "${key}_FILE"
 done
 unset key
-. /app/load-secrets.sh
+# The binary resolves application _FILE credentials in memory.
 if [ "${BACKUP_REQUIRED:-}" = 1 ] && [ ! -f "$DB_PATH" ]; then
   echo 'Database missing. The backup service stages ciphertext; restore off-box before restarting.' >&2
   exit 1

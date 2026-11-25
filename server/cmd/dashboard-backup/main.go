@@ -19,7 +19,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -29,6 +31,8 @@ import (
 )
 
 const chunkSize = 1900000
+
+var operationContext = context.Background()
 
 type snapshot struct {
 	ID        string `json:"id"`
@@ -72,7 +76,7 @@ func (s *sink) request(path, method string, body any, result any) error {
 			return err
 		}
 	}
-	req, err := http.NewRequest(method, s.origin+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(operationContext, method, s.origin+path, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
@@ -127,10 +131,12 @@ func digest(path string) (string, int64, error) {
 	return hex.EncodeToString(hash.Sum(nil)), size, err
 }
 func (s *sink) download(m snapshot, path string) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	f, err := os.CreateTemp(filepath.Dir(path), ".dashboard-download-*")
 	if err != nil {
 		return err
 	}
+	temporary := f.Name()
+	defer os.Remove(temporary)
 	hash := sha256.New()
 	var total int64
 	for n := 0; n < m.Chunks; n++ {
@@ -146,6 +152,9 @@ func (s *sink) download(m snapshot, path string) error {
 			break
 		}
 	}
+	if err == nil {
+		err = f.Sync()
+	}
 	closeErr := f.Close()
 	if err == nil {
 		err = closeErr
@@ -154,9 +163,10 @@ func (s *sink) download(m snapshot, path string) error {
 		err = errors.New("ciphertext checksum mismatch")
 	}
 	if err != nil {
-		os.Remove(path)
+		return err
 	}
-	return err
+	// A hard link publishes the verified inode atomically without replacing a destination.
+	return os.Link(temporary, path)
 }
 func (s *sink) upload(path, kind string) (snapshot, error) {
 	sha, size, err := digest(path)
@@ -169,7 +179,7 @@ func (s *sink) upload(path, kind string) (snapshot, error) {
 	chunks := int((size + chunkSize - 1) / chunkSize)
 	allocation := 2 * ((size+4095)/4096*4096 + int64(chunks)*8192 + 16384)
 	var u usage
-	if err = s.request("/prune", "POST", map[string]int{"hourly": 48}, nil); err != nil {
+	if err = s.request("/prune", "POST", map[string]int64{"hourly": 48, "reserve": allocation}, nil); err != nil {
 		return snapshot{}, err
 	}
 	if err = s.request("/usage", "GET", nil, &u); err != nil {
@@ -177,7 +187,7 @@ func (s *sink) upload(path, kind string) (snapshot, error) {
 	}
 	if u.Bytes+allocation > 350000000 || allocation*82 > 450000000 {
 		notify("Backup storage pressure: falling back to 24 hourly snapshots")
-		if err = s.request("/prune", "POST", map[string]int{"hourly": 24}, &u); err != nil {
+		if err = s.request("/prune", "POST", map[string]int64{"hourly": 24, "reserve": allocation}, &u); err != nil {
 			return snapshot{}, err
 		}
 	}
@@ -186,6 +196,7 @@ func (s *sink) upload(path, kind string) (snapshot, error) {
 		notify("Backup usage reached 70% of a free-tier limit")
 	}
 	if u.Bytes+allocation > u.ByteLimit || u.Writes+writes > u.WriteLimit || u.Uploads >= 200 {
+		notify("BACKUP BLOCKED: reservation or daily budget exhausted; operator action required if storage remains full")
 		return snapshot{}, errors.New("backup budget exhausted; upload skipped")
 	}
 	id := make([]byte, 16)
@@ -228,7 +239,11 @@ func dbPath() string {
 	return "/data/dashboard.db"
 }
 func openDB(path string, readOnly bool) (*sql.DB, error) {
-	u := url.URL{Scheme: "file", Path: path}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	u := url.URL{Scheme: "file", Path: absolute}
 	q := url.Values{"_busy_timeout": {"5000"}}
 	if readOnly {
 		q.Set("mode", "ro")
@@ -262,7 +277,7 @@ func copyDatabase(source, target string) error {
 		return err
 	}
 	defer dst.Close()
-	ctx := context.Background()
+	ctx := operationContext
 	sc, err := src.Conn(ctx)
 	if err != nil {
 		return err
@@ -280,6 +295,10 @@ func copyDatabase(source, target string) error {
 				return err
 			}
 			for {
+				if err := ctx.Err(); err != nil {
+					backup.Finish()
+					return err
+				}
 				done, stepErr := backup.Step(256)
 				if stepErr != nil {
 					backup.Finish()
@@ -301,6 +320,16 @@ func copyDatabase(source, target string) error {
 	}
 	return integrity(target)
 }
+
+type cancelReader struct{ io.Reader }
+
+func (r cancelReader) Read(p []byte) (int, error) {
+	if err := operationContext.Err(); err != nil {
+		return 0, err
+	}
+	return r.Reader.Read(p)
+}
+
 func encrypt(source, target string) error {
 	recipient, err := age.ParseX25519Recipient(setting("BACKUP_AGE_RECIPIENT"))
 	if err != nil {
@@ -321,7 +350,7 @@ func encrypt(source, target string) error {
 		return err
 	}
 	zipped := gzip.NewWriter(sealed)
-	if _, err = io.Copy(zipped, src); err != nil {
+	if _, err = io.Copy(zipped, cancelReader{src}); err != nil {
 		return err
 	}
 	if err = zipped.Close(); err != nil {
@@ -362,7 +391,7 @@ func membership() error {
 			payload["current_bookmark"] = bookmark
 		}
 		body, _ := json.Marshal(payload)
-		req, _ := http.NewRequest("POST", endpoint, bytes.NewReader(body))
+		req, _ := http.NewRequestWithContext(operationContext, "POST", endpoint, bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+setting("BACKUP_MEMBERSHIP_API_TOKEN"))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
@@ -394,7 +423,11 @@ func membership() error {
 				return err
 			}
 			defer os.RemoveAll(work)
-			resp, err = client.Get(u.String())
+			downloadRequest, err := http.NewRequestWithContext(operationContext, "GET", u.String(), nil)
+			if err != nil {
+				return err
+			}
+			resp, err = client.Do(downloadRequest)
 			if err != nil {
 				return errors.New("membership download failed")
 			}
@@ -427,22 +460,32 @@ func membership() error {
 			return err
 		}
 		bookmark = r.Result.Bookmark
-		time.Sleep(5 * time.Second)
+		if err := pause(5 * time.Second); err != nil {
+			return err
+		}
 	}
 	return errors.New("membership export timed out")
 }
 func scheduled() error {
 	if _, err := os.Stat(dbPath()); os.IsNotExist(err) {
 		output := dbPath() + ".recovery.age"
-		if _, err := os.Stat(output); err == nil {
-			return nil
-		}
 		s, err := newSink()
 		if err != nil {
 			return err
 		}
 		all, err := s.list()
 		if err != nil {
+			return err
+		}
+		// A staged file is trusted only if it still matches a committed manifest.
+		if sha, size, err := digest(output); err == nil {
+			for _, m := range all {
+				if m.Kind != "d1-weekly" && m.Size == size && m.SHA256 == sha {
+					return nil
+				}
+			}
+		}
+		if err := os.Remove(output); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		for _, m := range all {
@@ -493,7 +536,20 @@ func locked(fn func() error) error {
 		return err
 	}
 	defer f.Close()
-	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	for {
+		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		if err == nil {
+			break
+		}
+		if err != syscall.EWOULDBLOCK {
+			return err
+		}
+		if err = pause(100 * time.Millisecond); err != nil {
+			return err
+		}
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	if err = reclaimWork(); err != nil {
 		return err
 	}
 	return fn()
@@ -511,7 +567,9 @@ func run(args []string) error {
 			if err := locked(scheduled); err != nil {
 				notify("Backup failed or skipped; inspect sink usage and configuration")
 			}
-			time.Sleep(time.Until(time.Now().Truncate(time.Hour).Add(time.Hour)))
+			if err := pause(time.Until(time.Now().Truncate(time.Hour).Add(time.Hour))); err != nil {
+				return err
+			}
 		}
 	case "backup":
 		return locked(func() error {
@@ -549,7 +607,13 @@ func run(args []string) error {
 			return errors.New("no committed SQLite snapshot")
 		})
 	case "checkpoint":
-		if err := copyDatabase(dbPath(), filepath.Join(filepath.Dir(dbPath()), ".update-before.db")); err != nil {
+		checkpoint := filepath.Join(filepath.Dir(dbPath()), ".update-before.db")
+		guard, err := os.OpenFile(checkpoint, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			return err
+		}
+		guard.Close()
+		if err := copyDatabase(dbPath(), checkpoint); err != nil {
 			return err
 		}
 		return copyDatabase(dbPath(), filepath.Join(filepath.Dir(dbPath()), ".migration-check.db"))
@@ -559,7 +623,7 @@ func run(args []string) error {
 				return err
 			}
 		}
-		return os.Rename(filepath.Join(filepath.Dir(dbPath()), ".update-before.db"), dbPath())
+		return copyDatabase(filepath.Join(filepath.Dir(dbPath()), ".update-before.db"), dbPath())
 	case "cleanup":
 		for _, name := range []string{".update-before.db", ".migration-check.db", ".migration-check.db-wal", ".migration-check.db-shm"} {
 			if err := os.Remove(filepath.Join(filepath.Dir(dbPath()), name)); err != nil && !os.IsNotExist(err) {
@@ -570,8 +634,47 @@ func run(args []string) error {
 	}
 	return errors.New("unknown backup command")
 }
+func pause(duration time.Duration) error {
+	select {
+	case <-operationContext.Done():
+		return operationContext.Err()
+	case <-time.After(duration):
+		return nil
+	}
+}
+
+// Called only while holding the backup lock. MkdirTemp uses numeric suffixes;
+// never follow symlinks or remove unrelated directories in the application volume.
+func reclaimWork() error {
+	entries, err := os.ReadDir(filepath.Dir(dbPath()))
+	if err != nil {
+		return err
+	}
+	owned := regexp.MustCompile(`^(backup-|membership-|\.dashboard-download-)[0-9]+$`)
+	for _, entry := range entries {
+		if !owned.MatchString(entry.Name()) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || stat.Uid != uint32(os.Getuid()) || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(filepath.Dir(dbPath()), entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func main() {
 	syscall.Umask(0077)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	operationContext = ctx
 	if err := run(os.Args[1:]); err != nil {
 		notify("Backup operation failed; check configuration, budget and snapshot availability")
 		os.Exit(1)

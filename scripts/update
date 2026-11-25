@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import shlex
 import sys
 import time
 import urllib.request
@@ -38,8 +39,47 @@ def notify(message, settings):
 def dotenv(path):
     if not path.exists():
         return {}
-    return dict(line.split('=', 1) for line in path.read_text().splitlines()
-                if line and not line.startswith('#') and '=' in line)
+    result = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line.startswith('export '):
+            line = line[7:].lstrip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        value = value.strip()
+        if value.startswith(('"', "'")):
+            parts = shlex.split(value, comments=True)
+            if len(parts) != 1:
+                raise ValueError('invalid quoted dotenv value')
+            value = parts[0]
+        else:
+            value = re.split(r'\s+#', value, maxsplit=1)[0].rstrip()
+        result[key.strip()] = value
+    return result
+
+
+def persist(path, value):
+    temporary = path.with_name(path.name + '.next')
+    with temporary.open('w') as output:
+        output.write(value)
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(temporary, path)
+    sync_directory(path.parent)
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def clear_transaction(marker):
+    marker.unlink()
+    sync_directory(marker.parent)
 
 
 def main():
@@ -52,90 +92,104 @@ def main():
     os.chdir(deploy)
     os.umask(0o077)
     settings = dotenv(deploy / 'dashboard.env')
-    lock = open(deploy / '.update.lock', 'a')
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        return
-    state = deploy / 'prod-image.env'
-    if not state.exists():
-        raise ValueError('initialize prod-image.env with the currently running immutable image')
-    previous = dotenv(state)['DASHBOARD_IMAGE']
-    if not re.fullmatch(r'[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}', previous):
-        raise ValueError('previous image must be pinned by digest')
-    image_name = 'ghcr.io/cseed-org/officer-dashboard'
-    if args.image:
-        candidate = args.image
-    else:
-        inspection = json.loads(run(['docker', 'buildx', 'imagetools', 'inspect', image_name + ':prod', '--format', '{{json .Manifest}}']))
-        candidate = image_name + '@' + inspection['digest']
-    if not re.fullmatch(r'[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}', candidate):
-        raise ValueError('candidate must be pinned by digest')
-    if candidate == previous:
-        return
-    rejected = deploy / 'rejected-prod-image'
-    if not args.retry and rejected.exists() and rejected.read_text().strip() == candidate:
-        return
-    base = ['docker', 'compose', '--env-file', str(deploy / '.env'), '--env-file', str(state), '-f', str(deploy / 'compose.cloudflare.yml')]
-    def compose(*arguments, image=None):
-        env = dict(os.environ, DASHBOARD_IMAGE=image or previous)
-        return run(base + list(arguments), env)
-    def backup_tool(command, image=None):
-        return compose('run', '--rm', '--no-deps', '--entrypoint', '/app/dashboard-backup', 'backup', command, image=image)
-    def health(image):
-        for _ in range(30):
-            try:
-                compose('exec', '-T', 'dashboard', '/app/dashboard', 'healthcheck', image=image)
-                return
-            except subprocess.CalledProcessError:
-                time.sleep(2)
-        raise RuntimeError('health check failed')
-    # The previous image must include the backup client; bootstrap upgrades are manual.
-    stopped = swapped = checkpoint = False
-    snapshot = ''
-    try:
-        compose('pull', 'dashboard', image=candidate)
-        compose('stop', 'dashboard', 'backup')
-        stopped = True
-        snapshot = backup_tool('backup')
-        # Preserve the stopped original until success. Temporary copies stay in the data
-        # volume, with its normal SQLite access controls; no decryption key is on the host.
-        backup_tool('checkpoint')
-        checkpoint = True
-        compose('run', '--rm', '--no-deps', '-e', 'DB_PATH=/data/.migration-check.db', '--entrypoint', '/app/dashboard', 'dashboard', 'migrate', image=candidate)
-        swapped = True  # app startup can migrate even when compose up fails
-        compose('up', '-d', '--no-deps', 'dashboard', image=candidate)
-        health(candidate)
-        compose('up', '-d', '--no-deps', 'backup', image=candidate)
-        temporary = state.with_suffix('.next')
-        temporary.write_text('DASHBOARD_IMAGE=' + candidate + '\n')
-        os.replace(temporary, state)
-        # The update is committed. Cleanup failure must not initiate a rollback after
-        # its checkpoint may already have been removed.
+    with open(deploy / '.update.lock', 'a') as lock:
         try:
-            rejected.unlink(missing_ok=True)
-            backup_tool('cleanup', image=candidate)
-        except Exception:
-            notify('Production is healthy; temporary update file cleanup needs attention.', settings)
-        notify('Production update succeeded: ' + candidate, settings)
-    except Exception:
-        if stopped:
-            try:
-                compose('stop', 'dashboard', 'backup', image=candidate)
-                if checkpoint and swapped:
-                    backup_tool('rollback')
-                compose('up', '-d', '--no-deps', 'dashboard', 'backup')
-                health(previous)
-                state.write_text('DASHBOARD_IMAGE=' + previous + '\n')
-                rejected.write_text(candidate + '\n')
-                notify('Production update failed; previous image and pre-update database restored. Snapshot: ' + snapshot, settings)
-            except Exception:
-                notify('Production rollback FAILED; operator recovery required. Retain /data/.update-before.db and the D1 snapshot.', settings)
-                raise
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        marker = deploy / 'update-recovery-required.json'
+        if marker.exists():
+            notify('Production update blocked: recovery required. Preserve /data/.update-before.db; follow the update recovery runbook.', settings)
+            raise RuntimeError('incomplete update requires operator recovery')
+        state = deploy / 'prod-image.env'
+        if not state.exists():
+            raise ValueError('initialize prod-image.env with the currently running immutable image')
+        previous = dotenv(state)['DASHBOARD_IMAGE']
+        if not re.fullmatch(r'[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}', previous):
+            raise ValueError('previous image must be pinned by digest')
+        image_name = 'ghcr.io/cseed-org/officer-dashboard'
+        if args.image:
+            candidate = args.image
         else:
-            notify('Production update failed before stopping the application.', settings)
-        raise
-
+            inspection = json.loads(run(['docker', 'buildx', 'imagetools', 'inspect', image_name + ':prod', '--format', '{{json .Manifest}}']))
+            candidate = image_name + '@' + inspection['digest']
+        if not re.fullmatch(r'[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}', candidate):
+            raise ValueError('candidate must be pinned by digest')
+        if candidate == previous:
+            return
+        rejected = deploy / 'rejected-prod-image'
+        if not args.retry and rejected.exists() and rejected.read_text().strip() == candidate:
+            return
+        base = ['docker', 'compose', '--env-file', str(deploy / '.env'), '--env-file', str(state), '-f', str(deploy / 'compose.cloudflare.yml')]
+        def compose(*arguments, image=None):
+            env = dict(os.environ, DASHBOARD_IMAGE=image or previous)
+            return run(base + list(arguments), env)
+        def backup_tool(command, image=None):
+            return compose('run', '--rm', '--no-deps', '--entrypoint', '/app/dashboard-backup', 'backup', command, image=image)
+        def health(image):
+            for _ in range(30):
+                try:
+                    compose('exec', '-T', 'dashboard', '/app/dashboard', 'healthcheck', image=image)
+                    return
+                except subprocess.CalledProcessError:
+                    time.sleep(2)
+            raise RuntimeError('health check failed')
+        # The previous image must include the backup client; bootstrap upgrades are manual.
+        stopped = swapped = checkpoint = candidate_owned = False
+        snapshot = ''
+        try:
+            compose('pull', 'dashboard', image=candidate)
+            persist(marker, json.dumps({'previous': previous, 'candidate': candidate}) + '\n')
+            stopped = True  # stop can partially succeed before reporting failure
+            compose('stop', 'dashboard', 'backup')
+            snapshot = backup_tool('backup')
+            # Preserve the stopped original until success. Temporary copies stay in the data
+            # volume, with its normal SQLite access controls; no decryption key is on the host.
+            backup_tool('checkpoint')
+            checkpoint = True
+            try:
+                compose('run', '--rm', '--no-deps', '-e', 'DB_PATH=/data/.migration-check.db', '--entrypoint', '/app/dashboard', 'dashboard', 'migrate', image=candidate)
+            except Exception:
+                candidate_owned = True
+                raise
+            swapped = True  # app startup can migrate even when compose up fails
+            try:
+                compose('up', '-d', '--no-deps', 'dashboard', image=candidate)
+                health(candidate)
+            except Exception:
+                candidate_owned = True
+                raise
+            compose('up', '-d', '--no-deps', 'backup', image=candidate)
+            persist(state, 'DASHBOARD_IMAGE=' + candidate + '\n')
+            # The update is committed. Cleanup failure must not initiate a rollback after
+            # its checkpoint may already have been removed.
+            try:
+                clear_transaction(marker)
+                rejected.unlink(missing_ok=True)
+                backup_tool('cleanup', image=candidate)
+            except Exception:
+                notify('Production is healthy; temporary update file cleanup needs attention.', settings)
+            notify('Production update succeeded: ' + candidate, settings)
+        except Exception:
+            if stopped:
+                try:
+                    compose('stop', 'dashboard', 'backup', image=candidate)
+                    if checkpoint and swapped:
+                        backup_tool('rollback')
+                    compose('up', '-d', '--no-deps', 'dashboard', 'backup')
+                    health(previous)
+                    persist(state, 'DASHBOARD_IMAGE=' + previous + '\n')
+                    if candidate_owned:
+                        persist(rejected, candidate + '\n')
+                    backup_tool('cleanup')
+                    clear_transaction(marker)
+                    notify('Production update failed; previous image and pre-update database restored. Snapshot: ' + snapshot, settings)
+                except Exception:
+                    notify('Production rollback FAILED; operator recovery required. Retain /data/.update-before.db and the D1 snapshot.', settings)
+                    raise
+            else:
+                notify('Production update failed before stopping the application.', settings)
+            raise
 
 if __name__ == '__main__':
     try:

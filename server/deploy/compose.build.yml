@@ -1,15 +1,9 @@
-# Build-only override. Production startup requires an immutable registry digest; local tags
-# belong in the development stack. Publish/resolve a self-built image before production use.
-# Build the dashboard image from this checkout instead of pulling the published one. Only the
-# build needs this file; nothing has to be built first (the image builds the front end too).
-#
-#   cd server/deploy
-#   echo DASHBOARD_IMAGE=officer-dashboard:local >> .env   # a local name: never pulled, never a release's
-#   docker compose -f compose.cloudflare.yml -f compose.build.yml build --build-arg VERSION=$(git describe --always --dirty) dashboard
-#   docker compose -f compose.cloudflare.yml up -d
-#
-# Without --build-arg VERSION, `dashboard version` prints `dev`. docs/deploy/other-setups.md,
-# "Build the image yourself".
+# Build-only override; startup requires a published immutable digest.
+# For executable publish/resolve/pin/start commands, see
+# docs/deploy/other-setups.md, "Build the image yourself".
+# For local development without a registry, use compose.dev.yaml at the repo root:
+#   docker compose -f compose.dev.yaml up -d --build
+# Do not use a local tag with compose.cloudflare.yml.
 services:
   dashboard:
     build:

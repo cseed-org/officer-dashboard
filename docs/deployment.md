@@ -36,7 +36,9 @@ Retention is 48 hourly + 30 daily + 4 weekly membership exports: 82 copies. Dail
 promotion reclassifies one hourly snapshot rather than copying its BLOBs. Conservative
 reserved storage per copy is `2 * (ceil(size/4096)*4096 + chunks*8192 + 16384)`:
 page rounding, metadata and twofold overhead. The hard logical reservation ceiling and
-physical append preflight are 450,000,000 bytes, leaving 50 MB below the D1 cap.
+current physical-usage guard are 450,000,000 bytes, leaving 50 MB below the D1 cap.
+The physical check does not add the new reservation to the file high-water size: deleted
+pages can be reused. Actual D1 storage errors still stop and alert for operator recovery.
 At 75,000 bytes this reserves 204,800 bytes/copy, or **16,793,600 bytes for 82**.
 
 Growth assumption: 100 officers, 1,000 members, 200 events/year, 20,000 activity/audit
@@ -45,9 +47,12 @@ At an illustrative 10:1 gzip ratio that is 4 MB/copy: full retention reserves ab
 663 MB and cannot fit; 24 hourly + 30 daily + 4 weekly still needs about 469 MB.
 At 3 MB/copy, those figures are about 498 MB and 352 MB respectively. These are
 planning scenarios, not measured compression guarantees. The client automatically prunes
-to 24 hourly when the full-retention estimate or projected usage is too large. It keeps
-daily/weekly retention, skips when the remaining budget cannot fit the next copy, and
-alerts through `DISCORD_WEBHOOK_URL`. It cannot promise all requested copies as data grows.
+to 24 hourly when the full-retention estimate or projected usage is too large. It also
+prunes older committed copies by reservation space needed for the next upload,
+while preserving the newest committed copy of each kind. Daily/weekly count targets can
+therefore shrink under pressure. If protected copies, pending uploads, physical storage
+or daily budgets still block an upload, it alerts loudly through `DISCORD_WEBHOOK_URL`.
+It cannot promise all requested copies as data grows.
 
 Before every upload the client prunes, checks logical bytes, reserved writes, and upload
 count, then obtains an atomic server reservation. Each snapshot reserves `100+20*chunks`
@@ -95,6 +100,21 @@ scan of this branch is not proof for the merged artifact.
 | a fix for an error | [Troubleshooting](deploy/troubleshooting.md) |
 | a Pi under systemd, a self-built image, a quick-tunnel practice run, or what's in the image | [Other setups](deploy/other-setups.md) |
 | every setting and its default | [Configuration](configuration.md) |
+
+## Live Free-plan rehearsal
+
+Before enabling the production timer, rehearse against the authenticated custom-domain
+Worker on the actual Workers Free account. Local Wrangler does not enforce edge CPU.
+Upload the largest expected ciphertext, including a full 1,900,000-byte chunk and a
+13-chunk snapshot if that maximum is intended for use. Exercise reservation/prune,
+chunk PUT, commit (which reads and hashes every chunk), download and daily promotion.
+In the Cloudflare Worker observability metrics/logs, record CPU time for each route,
+including cold and repeated requests, and inspect CPU-limit errors. **Workers Free allows
+10 ms CPU per invocation.** Record the maximum and distribution with the ciphertext size,
+chunk count, date and Worker version; verify headroom below 10 ms before accepting that
+snapshot size. Reduce the supported workload and repeat if it fails; do not assume a
+paid plan or infer CPU compatibility from a local round trip. Continue the 24-hour
+rehearsal while checking account-wide requests, D1 reads/writes/storage and backup alerts.
 
 ## Cloudflare Tunnel + Access
 

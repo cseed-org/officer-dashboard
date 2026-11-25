@@ -144,32 +144,37 @@ sudo systemctl daemon-reload && sudo systemctl start dashboard
 
 ## Build the image yourself
 
-Use this to run a version that has no published image, or if you can't use GitHub's registry.
-Nothing needs building first: the image build also builds the web front end. It takes about 3
-minutes on a fast x86 machine; longer on a Pi (not measured).
-
-**With compose**, in `server/deploy`:
-
-```sh
-echo DASHBOARD_IMAGE=officer-dashboard:local >> .env
-docker compose -f compose.cloudflare.yml -f compose.build.yml build --build-arg VERSION=$(git describe --always --dirty) dashboard
-docker compose -f compose.cloudflare.yml up -d
-```
-
-`officer-dashboard:local` is a local name: compose never downloads it and it can't be mistaken for
-a release. To upgrade, check out the new version, build again the same way, and follow
-[Upgrade](upgrade.md) from step 4. Without `--build-arg VERSION`, `dashboard version` prints `dev`.
-
-**Without compose**, from the repository root:
+Production requires a registry digest even when you build the image yourself. Configure
+`.env`, `dashboard.env`, `backup.env` and the separate secret directories using
+[Fresh install](fresh-install.md) first. From the repository root, choose a registry
+and tag you can push, then publish and resolve that exact build:
 
 ```sh
-docker build -f server/Dockerfile --build-arg VERSION=$(git describe --always --dirty) -t officer-dashboard:local .
-docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile -t <registry>/officer-dashboard:<tag> --push .
+IMAGE=registry.example.org/your-org/officer-dashboard:reviewed-build
+docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile \
+  --build-arg VERSION="$(git describe --always --dirty)" -t "$IMAGE" --push .
+DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+printf 'DASHBOARD_IMAGE=%s@%s\n' "${IMAGE%:*}" "$DIGEST" > server/deploy/prod-image.env
+cd server/deploy
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
 ```
 
-The first builds for this machine. The second builds both platforms and pushes them to a
-registry, because Docker can't load a two-platform image locally (or use
-`--output type=oci,dest=image.tar`). Neither needs emulation.
+Use the explicit database initialization in [Fresh install](fresh-install.md) before
+`up` on a new host. On an existing host, take the verified backup and follow
+[Upgrade an existing host](upgrade-existing.md) before changing its pin. The approved
+`:prod` updater applies only to the project's published GHCR images; keep it disabled
+for a separately managed registry. Both platforms build without emulation.
+
+For a local build without publishing, use the development stack from the repository root:
+
+```sh
+docker compose -f compose.dev.yaml up -d --build
+```
+
+This stack is for development with sample data and developer sign-in. The optional
+`compose.build.yml` override is build-only and cannot turn a local tag into a production pin.
 
 ## Practice run on a quick tunnel
 

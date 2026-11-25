@@ -48,12 +48,18 @@ var version = "dev"
 func main() { os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)) }
 
 func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
+	resolved, err := fileSettings(getenv)
+	if err != nil {
+		fmt.Fprintln(stderr, "invalid application secret file configuration")
+		return 1
+	}
+	getenv = resolved
 	cmd := "serve"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd, args = args[0], args[1:]
 	}
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	var err error
+	err = nil
 	switch cmd {
 	case "serve":
 		err = serve(args, getenv, log)

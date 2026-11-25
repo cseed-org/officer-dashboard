@@ -1,6 +1,9 @@
 # Fresh install: Docker, D1 snapshots and approved updates
 
-This is the current no-card path. The older R2/Litestream sections in the original
+This targets a no-card deployment. Access onboarding currently asks for payment details;
+the decision on that dependency is pending Q-3. Keep existing Access configured and do not
+enter payment details or remove Access as part of this runbook until that decision.
+The older R2/Litestream sections in the original
 deployment guide describe the previous image and must not be used with this image.
 Keep the existing remote-managed Tunnel and Access configuration from
 [Cloudflare setup](cloudflare.md), steps 1–8 and 10. The backup sink is a separate hostname.
@@ -107,3 +110,10 @@ umask 0077 and removes any legacy backup environment keys before executing the a
 The backup helper reads file secrets without exporting their contents. Restart the relevant
 container after changing a file. Docker-host administrators can still read mounted files;
 these controls isolate the app from backup credentials, not the Docker administrator.
+
+Before enabling timers, complete the [live Free-plan CPU and usage rehearsal](../deployment.md#live-free-plan-rehearsal).
+The backup Worker bearer secret must contain at least 32 bytes (generate 32 random bytes
+and encode them, for example with `openssl rand -hex 32`). It authenticates independently
+of Access using a constant-time comparison; short secrets fail closed. Keep `workers_dev`
+and `preview_urls` disabled and use only the custom domain. Access stays configured
+pending Q-3; it provides an additional authentication boundary.
