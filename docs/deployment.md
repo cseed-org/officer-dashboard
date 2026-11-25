@@ -217,6 +217,20 @@ other dashboard functions remain available. The response includes the unlock dat
 Do not remove that lock. Routine image rollback instead merges the candidate
 image's R2 counters into the checkpoint before restoring it, so it preserves
 spent operations without imposing a new lock.
+
+Rollback can also run through an older image whose `dashboard-backup` predates R2
+and cannot merge, for example the first update to an R2 image, interrupted-update
+recovery, or a manual copy of `.update-before.db`. For that case the app keeps
+`/data/r2-usage-ledger.json` beside the database. It holds operation counts for the
+last 40 days and this and last month, plus the restore lock. The app rewrites and
+fsyncs it inside the same SQLite transaction as every billable reservation, before
+the request is sent. At startup the app takes the maximum of the file and the
+database, so spending erased from `dashboard.db` is restored; any recovery also
+forces a fresh inventory before uploads reopen. The file is never part of a checkpoint or
+backup. **Never delete, edit or replace it**, and keep it with the data volume.
+If it is unreadable, the app keeps running but refuses billable R2 requests until
+an operator restores a valid copy. Losing it together with the volume is the
+off-box restore case, which the 32-day lock covers.
 For a manual restore (including manually decrypting an encrypted-only download),
 apply this conservative lock before starting the app, even if the old snapshot
 predates R2's tables:

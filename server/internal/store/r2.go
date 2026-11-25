@@ -36,7 +36,19 @@ func (d *DB) BindR2(ctx context.Context, bucket string) error {
 		if existing != bucket {
 			return errors.New("R2 bucket differs from budget ledger")
 		}
-		return nil
+		// Recover spending a rollback or restore erased from dashboard.db. If
+		// any was missing, the inventory is stale too: close uploads until a scan.
+		gained, err := syncR2Mirror(ctx, q, d.r2MirrorPath(), time.Now())
+		if errors.Is(err, errR2Mirror) {
+			return nil // startup continues; every billable reservation refuses
+		}
+		if err != nil {
+			return err
+		}
+		if gained {
+			_, err = q.q.ExecContext(ctx, `UPDATE r2_budget SET reconciled_at=0 WHERE id=1`)
+		}
+		return err
 	})
 }
 
@@ -148,6 +160,12 @@ func (d *DB) ReserveR2(ctx context.Context, now time.Time, class, key, user stri
 		}
 		if _, err := q.q.ExecContext(ctx, `UPDATE r2_month SET class_a=?,class_b=?,deletes=deletes+? WHERE month=?`, u.ClassA, u.ClassB, boolInt(class == "delete"), month); err != nil {
 			return err
+		}
+		if a+b > 0 {
+			// Durable outside dashboard.db before the request can be sent.
+			if _, err := syncR2Mirror(ctx, q, d.r2MirrorPath(), now); err != nil {
+				return err
+			}
 		}
 		mask := 0
 		if u.Bytes >= R2StorageLimit*7/10 {

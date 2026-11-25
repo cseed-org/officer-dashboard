@@ -80,6 +80,9 @@ previous/candidate pins and the actual `prod-image.env`. If the candidate pin wa
 verify its DB and health before deciding to retain it. Otherwise restore the original
 checkpoint using the previous image's `dashboard-backup rollback` with both services
 stopped, or restore the verified D1 ciphertext off-box if the checkpoint is unavailable.
+Leave `/data/r2-usage-ledger.json` in place. Even a pre-R2 image's rollback erases
+R2 spending only from the database, and the next R2-aware start restores it from that
+file ([details](../deployment.md#conditions-for-staying-at-0)).
 Start the chosen pinned services, check health and data, and persist the matching
 `prod-image.env`. Only after recovery is verified, run `dashboard-backup cleanup` against
 the stopped maintenance files, remove `update-recovery-required.json`, then re-enable
