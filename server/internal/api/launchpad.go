@@ -50,6 +50,9 @@ func (c *Ctx) launchpadCohortCreate() error {
 	}
 	var out store.LaunchpadCohort
 	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
+		if _, err := c.directorIn(q); err != nil {
+			return err
+		}
 		if taken, err := q.LaunchpadCohortNameTaken(c.Context(), co.Name, ""); err != nil || taken {
 			if err != nil {
 				return err
@@ -86,6 +89,9 @@ func (c *Ctx) launchpadCohortUpdate() error {
 	id := c.R.PathValue("id")
 	var out store.LaunchpadCohort
 	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
+		if _, err := c.directorIn(q); err != nil {
+			return err
+		}
 		before, err := q.LaunchpadCohort(c.Context(), id)
 		if errors.Is(err, store.ErrNotFound) {
 			return notFoundErr("Cohort not found")
@@ -140,8 +146,12 @@ func (c *Ctx) launchpadCohortDelete() error {
 	if _, err := c.director(); err != nil {
 		return err
 	}
+	directorWriteHook()
 	id := c.R.PathValue("id")
 	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
+		if _, err := c.directorIn(q); err != nil {
+			return err
+		}
 		before, err := q.LaunchpadCohort(c.Context(), id)
 		if errors.Is(err, store.ErrNotFound) {
 			return notFoundErr("Cohort not found")
@@ -253,7 +263,7 @@ func (c *Ctx) deliver(list []issued, method string) []launchpadLink {
 					e = e[:300]
 				}
 				msgErr = &e
-				s.log.Warn("launchpad invite email failed", "account", m.id, "error", err)
+				s.log.Warn("launchpad invite email failed", "account", m.id)
 			} else {
 				now := s.nowMs()
 				sent = &now
@@ -382,10 +392,11 @@ func (c *Ctx) launchpadInvite() error {
 // accountAction loads an account in a write transaction and checks who may manage it:
 // directors for mentor accounts (and for the director-only actions), officers otherwise.
 func (c *Ctx) accountAction(directorOnly bool, fn func(q *store.Queries, a *store.LaunchpadAccount) error) error {
-	u, err := c.officer()
+	_, err := c.officer()
 	if err != nil {
 		return err
 	}
+	directorWriteHook()
 	return c.S.db.Write(c.Context(), func(q *store.Queries) error {
 		a, err := q.LaunchpadAccount(c.Context(), c.R.PathValue("id"))
 		if errors.Is(err, store.ErrNotFound) {
@@ -393,8 +404,10 @@ func (c *Ctx) accountAction(directorOnly bool, fn func(q *store.Queries, a *stor
 		} else if err != nil {
 			return err
 		}
-		if (directorOnly || a.Kind == "mentor") && !auth.HasRole(u.Role, auth.RoleDirector) {
-			return forbidden("Requires director role")
+		if directorOnly || a.Kind == "mentor" {
+			if _, err := c.directorIn(q); err != nil {
+				return err
+			}
 		}
 		return fn(q, &a)
 	})
@@ -532,6 +545,10 @@ func (c *Ctx) launchpadMentorInvite() error {
 	contactID := c.R.PathValue("contactId")
 	var it issued
 	err = c.S.db.Write(c.Context(), func(q *store.Queries) error {
+		u, err = c.directorIn(q)
+		if err != nil {
+			return err
+		}
 		b, err := q.Buildspace(c.Context())
 		if err != nil {
 			return err
@@ -837,7 +854,15 @@ func (c *Ctx) registerWrite(directorOnly bool, fn func(q *store.Queries, b *stor
 	if err != nil {
 		return err
 	}
+	if directorOnly {
+		directorWriteHook()
+	}
 	err = c.S.db.Write(c.Context(), func(q *store.Queries) error {
+		if directorOnly {
+			if _, err := c.directorIn(q); err != nil {
+				return err
+			}
+		}
 		b, err := q.Buildspace(c.Context())
 		if err != nil {
 			return err

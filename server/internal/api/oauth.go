@@ -21,6 +21,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -123,14 +124,14 @@ func validRedirectURI(raw string) bool {
 		return false
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme == "" || u.Fragment != "" {
+	if err != nil || u.Scheme == "" || u.Fragment != "" || u.User != nil || strings.Contains(raw, "#") {
 		return false
 	}
 	switch strings.ToLower(u.Scheme) {
 	case "https":
-		return u.Host != ""
+		return u.Hostname() != "" && u.Opaque == ""
 	case "http":
-		return isLoopbackHost(u.Hostname())
+		return isLoopbackHost(u.Hostname()) && u.Opaque == ""
 	case "javascript", "data", "file", "vbscript", "blob", "about", "ftp", "ws", "wss":
 		return false
 	}
@@ -154,6 +155,9 @@ func isLoopbackHost(h string) bool {
 // redirectMatches compares a requested redirect URI with a registered one. Exact match,
 // except that a loopback http URI may use any port (RFC 8252 §7.3).
 func redirectMatches(registered, requested string) bool {
+	if !validRedirectURI(requested) {
+		return false
+	}
 	if registered == requested {
 		return true
 	}
@@ -162,11 +166,18 @@ func redirectMatches(registered, requested string) bool {
 	if err1 != nil || err2 != nil || a.Scheme != "http" || b.Scheme != "http" || !isLoopbackHost(a.Hostname()) {
 		return false
 	}
-	return a.Hostname() == b.Hostname() && a.Path == b.Path && a.RawQuery == b.RawQuery
+	// Only the port may vary, not escaped path bytes, userinfo or any other component.
+	b.Host = net.JoinHostPort(b.Hostname(), a.Port())
+	a.Host = net.JoinHostPort(a.Hostname(), a.Port())
+	return a.String() == b.String()
 }
 
 // oauthRegister is RFC 7591 dynamic client registration for public clients.
 func (c *Ctx) oauthRegister() error {
+	if ok, wait := c.S.registerLimit.allow("global"); !ok {
+		c.W.Header().Set("Retry-After", strconv.Itoa(retryAfter(wait)))
+		return c.oauthError(429, "temporarily_unavailable", "Registration is busy; try again later")
+	}
 	var body struct {
 		ClientName   string   `json:"client_name"`
 		RedirectURIs []string `json:"redirect_uris"`
@@ -190,6 +201,10 @@ func (c *Ctx) oauthRegister() error {
 	name := cleanClientName(body.ClientName)
 	cl := store.OAuthClient{ID: "mcp_" + auth.RandomToken(16), Name: name, RedirectURIs: body.RedirectURIs, CreatedAt: store.Ms(c.S.nowMs())}
 	if err := c.S.db.Write(c.Context(), func(w *store.Queries) error { return w.InsertOAuthClient(c.Context(), cl) }); err != nil {
+		if errors.Is(err, store.ErrOAuthClientCapacity) {
+			c.W.Header().Set("Retry-After", "3600")
+			return c.oauthError(429, "temporarily_unavailable", "Registration is full; try again later")
+		}
 		return err
 	}
 	allowCORS(c.W)
@@ -340,14 +355,15 @@ code{font-size:.85em;word-break:break-all;text-transform:none;letter-spacing:0}
 </style></head><body><main>
 <p class="eyebrow">CSEED Officer Dashboard</p>
 {{if .Error}}<h1>Cannot connect this app</h1><p>{{.Error}}</p><div class="row"><a class="btn" href="/">Open the dashboard</a></div>
-{{else}}<h1>Allow <strong>{{.Client}}</strong> to work in the dashboard as you?</h1>
+{{else}}<p>App name (self-declared, unverified): <strong>{{.Client}}</strong></p>
+<h1>Allow <strong>{{.Client}}</strong> to work in the dashboard as you?</h1>
 <div class="who"><div><strong>{{.User}}</strong><small>signed in as {{.Role}}</small></div></div>
 <ul>
 <li>It can read and change anything you can in the dashboard: events, purchases, design requests, contacts and more.</li>
 <li>Everything it does is recorded in the audit log as you, via {{.Client}}.</li>
 <li>Disconnect it any time from Settings → Connected agents.</li>
 </ul>
-<p class="eyebrow">Returns to <code>{{.Redirect}}</code></p>
+<p><strong>Authorization destination (unverified): <code>{{.Redirect}}</code></strong></p><p>Check this destination belongs to the app you intend to connect. Anyone can register an app name.</p>
 <form method="post" action="/oauth/authorize">
 {{range .Fields}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">
 {{end}}<div class="row"><button type="submit" name="decision" value="deny">Cancel</button><button class="primary" type="submit" name="decision" value="allow" autofocus>Allow</button></div>
@@ -474,18 +490,7 @@ func (c *Ctx) oauthAuthorizePost() error {
 // sameOriginForm refuses a form post another site submitted: a cross-site Sec-Fetch-Site,
 // or an Origin naming another host.
 func (c *Ctx) sameOriginForm() bool {
-	if c.R.Header.Get("Sec-Fetch-Site") == "cross-site" {
-		return false
-	}
-	origin := c.R.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	u, err := url.Parse(origin)
-	if err != nil {
-		return false
-	}
-	return strings.EqualFold(u.Host, c.R.Host) || (c.S.host != "" && strings.EqualFold(u.Host, c.S.host))
+	return c.S.originOK(c.R)
 }
 
 // pkceOK checks code_verifier against an S256 code_challenge (RFC 7636).
@@ -527,10 +532,19 @@ var oauthCodeConsumedHook = func() {}
 // oauthToken redeems an authorization code or rotates a refresh token.
 func (c *Ctx) oauthToken() error {
 	c.R.Body = http.MaxBytesReader(c.W, c.R.Body, 16<<10)
-	if err := c.R.ParseForm(); err != nil {
+	parseErr := c.R.ParseForm()
+	f := c.R.PostForm
+	kind := "auth"
+	if f.Get("grant_type") == "refresh_token" {
+		kind = "refresh"
+	}
+	if ok, wait := c.S.allowRoute(kind, c.R); !ok {
+		c.W.Header().Set("Retry-After", strconv.Itoa(retryAfter(wait)))
+		return c.oauthError(429, "slow_down", "Too many token requests; try again later")
+	}
+	if parseErr != nil {
 		return c.oauthError(400, "invalid_request", "Body must be application/x-www-form-urlencoded")
 	}
-	f := c.R.PostForm
 	ctx := c.Context()
 	now := c.S.nowMs()
 	tokens, accessHash, refreshHash := c.S.newTokenPair()

@@ -884,11 +884,7 @@ func cellString(c cell) string {
 	case bool:
 		return fmt.Sprint(t)
 	case string:
-		s := t
-		if s != "" && strings.ContainsRune("=+@\t\r-", rune(s[0])) {
-			s = "'" + s
-		}
-		return s
+		return CSVCell(t)
 	}
 	return fmt.Sprint(c.v)
 }
@@ -978,4 +974,13 @@ func hasKey(obj []kv, k string) bool {
 		}
 	}
 	return false
+}
+
+// CSVCell neutralizes spreadsheet formulas, including whitespace-prefixed values.
+func CSVCell(s string) string {
+	trimmed := strings.TrimLeft(s, " \t\r\n")
+	if (len(trimmed) > 0 && strings.ContainsRune("=+-@", rune(trimmed[0]))) || strings.HasPrefix(s, "\t") || strings.HasPrefix(s, "\r") {
+		return "'" + s
+	}
+	return s
 }

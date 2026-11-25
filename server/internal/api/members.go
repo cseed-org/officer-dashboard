@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"officerdashboard/internal/accounting"
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
@@ -367,13 +368,7 @@ func (c *Ctx) memberUpdate() error {
 }
 
 // Spreadsheet formulas are neutralized in every text cell.
-func csvCell(s string) string {
-	trimmed := strings.TrimLeft(s, " \t\r\n")
-	if (len(trimmed) > 0 && strings.ContainsRune("=+-@", rune(trimmed[0]))) || strings.HasPrefix(s, "\t") || strings.HasPrefix(s, "\r") {
-		return "'" + s
-	}
-	return s
-}
+func csvCell(s string) string { return accounting.CSVCell(s) }
 
 func (c *Ctx) membersExport() error {
 	if _, err := c.director(); err != nil {

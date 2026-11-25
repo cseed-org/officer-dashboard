@@ -471,6 +471,9 @@ func (c *Ctx) budgetsPut() error {
 	}
 	ctx := c.Context()
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
+		if _, err := c.directorIn(w); err != nil {
+			return err
+		}
 		cat, err := loadCatalog(ctx, w, false)
 		if err != nil {
 			return err
@@ -566,6 +569,9 @@ func (c *Ctx) periodsCreate() error {
 	}
 	ctx := c.Context()
 	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		if _, err := c.directorIn(w); err != nil {
+			return err
+		}
 		n, err := w.CountPeriodsForYear(ctx, fy)
 		if err != nil {
 			return err
@@ -608,6 +614,10 @@ func (c *Ctx) periodClose() error {
 	ctx := c.Context()
 	id := c.R.PathValue("id")
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
+		user, err = c.directorIn(w)
+		if err != nil {
+			return err
+		}
 		p, err := w.FiscalPeriodByID(ctx, id)
 		if err != nil {
 			return notFoundErr("Fiscal period not found")

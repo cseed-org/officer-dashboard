@@ -435,15 +435,15 @@ func TestRateLimitTrustsConfiguredProxies(t *testing.T) {
 	expectStatus(t, "loopback not in TRUSTED_PROXIES", e.get("/auth/login", via("127.0.0.1", "203.0.113.61")), 429)
 }
 
-// IPv6 clients are limited per /64 (one host usually owns the whole prefix), and the
+// IPv6 clients are limited per /48 (one host usually owns the whole prefix), and the
 // bucket map never grows past its cap however many addresses an attacker rotates through.
-func TestRateLimiterKeysIPv6By64AndCapsItsMemory(t *testing.T) {
+func TestRateLimiterKeysIPv6By48AndCapsItsMemory(t *testing.T) {
 	e := newEnv(t, func(c *Config) { c.AuthRateLimit = 2 })
 	for i, addr := range []string{"[2001:db8:1:2::1]:1", "[2001:db8:1:2::ffff]:1"} {
 		expectStatus(t, fmt.Sprintf("v6 %d", i), e.get("/auth/login", actor{remote: addr}), 503)
 	}
-	expectStatus(t, "same /64", e.get("/auth/login", actor{remote: "[2001:db8:1:2:dead::beef]:1"}), 429)
-	expectStatus(t, "another /64", e.get("/auth/login", actor{remote: "[2001:db8:1:3::1]:1"}), 503)
+	expectStatus(t, "same /48", e.get("/auth/login", actor{remote: "[2001:db8:1:2:dead::beef]:1"}), 429)
+	expectStatus(t, "another /48", e.get("/auth/login", actor{remote: "[2001:db8:2:3::1]:1"}), 503)
 
 	l := newRateLimiter(5, time.Now)
 	l.maxKeys = 100

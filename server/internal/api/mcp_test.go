@@ -166,6 +166,8 @@ func TestOAuthRegistrationStorageIsGloballyBounded(t *testing.T) {
 	}
 	register := func(name string, n int) string {
 		t.Helper()
+		// Respect the global registration rate while exercising storage reclamation.
+		e.clock = e.clock.Add(time.Minute)
 		a := anon
 		a.remote = fmt.Sprintf("203.0.113.%d:40000", n%250+1)
 		r := e.do("POST", "/oauth/register", map[string]any{"client_name": name, "redirect_uris": uris}, a)

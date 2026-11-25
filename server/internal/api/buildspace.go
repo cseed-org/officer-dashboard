@@ -431,6 +431,11 @@ func (c *Ctx) buildspaceActivitySave(ingest bool) error {
 	// (club time zone). The response tells the caller (and the Discord bot) which week.
 	var week store.BuildspaceWeek
 	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
+		if ingest {
+			if _, err := c.serviceTokenIn(q, "ingest:buildspace"); err != nil {
+				return err
+			}
+		}
 		b, err := q.Buildspace(c.Context())
 		if err != nil {
 			return err

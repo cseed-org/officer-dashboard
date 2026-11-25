@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/store"
@@ -202,13 +203,29 @@ func (c *Ctx) authCallback() error {
 // A form field next=/login?invite=<token> returns there afterwards (an invite link opened in a browser
 // where someone else was signed in); anything else lands on /login.
 func (c *Ctx) authLogout() error {
+	if !c.S.originOK(c.R) {
+		return forbidden("Cross-origin request blocked")
+	}
+	c.R.Body = http.MaxBytesReader(c.W, c.R.Body, 8<<10)
+	var formErr error
+	if strings.HasPrefix(c.R.Header.Get("Content-Type"), "multipart/form-data") {
+		formErr = c.R.ParseMultipartForm(8 << 10)
+		if c.R.MultipartForm != nil {
+			defer c.R.MultipartForm.RemoveAll()
+		}
+	} else {
+		formErr = c.R.ParseForm()
+	}
+	if formErr != nil {
+		return badRequest("Invalid logout form")
+	}
 	if c.SessionID != "" {
 		ctx := context.WithoutCancel(c.Context())
 		_ = c.S.db.Write(ctx, func(w *store.Queries) error { return w.DeleteSession(ctx, c.SessionID) })
 	}
 	c.S.clearCookie(c.W, c.S.sessionCookieName())
 	target := "/login"
-	if next := c.R.PostFormValue("next"); inviteLoginRE.MatchString(next) {
+	if next := c.R.PostForm.Get("next"); inviteLoginRE.MatchString(next) {
 		target = next
 	}
 	http.Redirect(c.W, c.R, target, http.StatusSeeOther)

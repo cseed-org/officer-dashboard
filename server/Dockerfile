@@ -47,6 +47,7 @@ RUN go get golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2 \
       google.golang.org/grpc@v1.83.2 \
       filippo.io/age@v1.2.1 \
       go.opentelemetry.io/otel/sdk@v1.45.0 \
+      github.com/go-jose/go-jose/v4@v4.1.6 \
  && go mod tidy
 # Run the upstream SQLite, S3 and CLI tests on the builder's native architecture.
 # TARGETARCH is introduced afterwards so this layer is shared by both release targets.
@@ -77,7 +78,8 @@ RUN case "$TARGETARCH" in \
       *) echo "unsupported TARGETARCH $TARGETARCH" >&2; exit 1 ;; \
     esac \
  && CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH \
-    go build -trimpath -tags embedweb -ldflags "-s -w -X main.version=${VERSION}" -o /out/dashboard ./cmd/dashboard
+    go build -trimpath -tags embedweb,release,osusergo,netgo,sqlite_omit_load_extension \
+    -ldflags "-s -w -X main.version=${VERSION} -extldflags '-static'" -o /out/dashboard ./cmd/dashboard
 
 # The runtime's system files: CA certificates and the dashboard user (uid 10001, home /data).
 # Both are the same on every architecture, so they are prepared on the build machine.
@@ -88,8 +90,10 @@ RUN apt-get update \
  && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin dashboard \
  && mkdir -p /data && chown dashboard:dashboard /data
 
-FROM debian:bookworm-slim@sha256:e67eeead736ff7bbe258ef088bff683635c561b1fcfefad0806c1df4ab49ce0e
-COPY --from=rootfs /etc/passwd /etc/group /etc/shadow /etc/gshadow /etc/
+# Minimal static musl BusyBox supports the entrypoint without Debian runtime
+# packages or dynamic system libraries. Pin its multi-architecture manifest.
+FROM busybox:stable-musl@sha256:3c6ae8008e2c2eedd141725c30b20d9c36b026eb796688f88205845ef17aa213 AS release
+COPY --from=rootfs /etc/passwd /etc/group /etc/
 COPY --from=rootfs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=rootfs --chown=dashboard:dashboard /data /data
 COPY --from=litestream /out/litestream /usr/local/bin/litestream

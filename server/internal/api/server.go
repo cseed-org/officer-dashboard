@@ -59,6 +59,8 @@ type Config struct {
 	// TrustedProxies are the peers whose X-Forwarded-For names the client (TRUSTED_PROXIES).
 	// nil means loopback only.
 	TrustedProxies []*net.IPNet
+	// Access is optional verification of the Cloudflare edge assertion.
+	Access *AccessVerifier
 	// Static serves the front end for every non-API path; nil answers 404 JSON.
 	Static  http.Handler
 	Version string
@@ -78,12 +80,13 @@ type Server struct {
 	// inner is the routed handler behind withAuth; MCP tool calls run through it in-process.
 	inner http.Handler
 
-	authLimit, uploadLimit *rateLimiter
-	mcpLimit               *rateLimiter  // keyed by OAuth grant id
-	mcpInFlight            chan struct{} // global upload/body memory budget
-	mcpGrantMu             sync.Mutex
-	mcpGrantInFlight       map[string]int // per-grant fairness within the global budget
-	trustedProxies         []*net.IPNet
+	authLimit, uploadLimit      *rateLimiter
+	refreshLimit, registerLimit *rateLimiter
+	mcpLimit                    *rateLimiter  // keyed by OAuth grant id
+	mcpInFlight                 chan struct{} // global upload/body memory budget
+	mcpGrantMu                  sync.Mutex
+	mcpGrantInFlight            map[string]int // per-grant fairness within the global budget
+	trustedProxies              []*net.IPNet
 
 	memberMu         sync.Mutex
 	memberEmails     map[string]string
@@ -141,6 +144,8 @@ func New(cfg Config) *Server {
 		s.trustedProxies = DefaultTrustedProxies()
 	}
 	s.authLimit = newRateLimiter(orDefault(cfg.AuthRateLimit, defaultAuthRateLimit), cfg.Now)
+	s.refreshLimit = newRateLimiter(120, cfg.Now)
+	s.registerLimit = newRateLimiter(60, cfg.Now)
 	s.uploadLimit = newRateLimiter(orDefault(cfg.UploadRateLimit, defaultUploadRateLimit), cfg.Now)
 	s.mcpLimit = newRateLimiter(orDefault(cfg.MCPRateLimit, defaultMCPRateLimit), cfg.Now)
 	if cfg.Google != nil {
@@ -238,6 +243,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.withAuth(h)
 	s.inner = h
 	h = s.withRateLimit(h)
+	h = s.withAccess(h)
 	h = s.withAPIHygiene(h)
 	h = s.withForwardedHostCheck(h)
 	h = s.withRecover(h)

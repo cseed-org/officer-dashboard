@@ -48,7 +48,7 @@ func (c *Ctx) orgGoogleStatus() error {
 	}
 	var lastErr any
 	if last != "" {
-		lastErr = last
+		lastErr = "Calendar sync failed. Retry or reconnect the calendar account."
 	}
 	writeJSON(c.W, 200, map[string]any{"configured": c.S.cfg.Google != nil, "connected": email != nil, "email": email, "needsReconnect": reconnect, "lastSyncError": lastErr})
 	return nil

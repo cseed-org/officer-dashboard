@@ -14,8 +14,14 @@ import (
 // Calendar service tokens are deliberately confined to these endpoints.
 func (c *Ctx) orgOfficer(write bool) error {
 	if c.User != nil {
-		_, err := c.officer()
-		return err
+		u, err := c.officer()
+		if err != nil {
+			return err
+		}
+		if !auth.HasRole(u.Role, auth.RoleOfficer) {
+			return forbidden("Requires officer role")
+		}
+		return nil
 	}
 	scope := "calendar:read"
 	if write {
@@ -358,6 +364,9 @@ func (c *Ctx) orgEventWrite() error {
 		e.UpdatedBy = &c.User.ID
 		e.UpdatedAt = c.S.nowMs()
 		if c.Token != nil {
+			if _, err := c.serviceTokenIn(q, "calendar:write"); err != nil {
+				return err
+			}
 			if err := q.TouchToken(ctx, c.Token.ID, c.S.nowMs()); err != nil {
 				return err
 			}
@@ -385,6 +394,14 @@ func (c *Ctx) orgEventDelete() error {
 	}
 	id := c.R.PathValue("id")
 	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
+		if c.Token != nil {
+			if _, err := c.serviceTokenIn(q, "calendar:write"); err != nil {
+				return err
+			}
+			if err := q.TouchToken(c.Context(), c.Token.ID, c.S.nowMs()); err != nil {
+				return err
+			}
+		}
 		e, err := q.OrgEvent(c.Context(), id)
 		if err != nil {
 			return err

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -67,7 +68,7 @@ func TestOAuthUnusedClientRowCap(t *testing.T) {
 	ctx := context.Background()
 	if err := db.Write(ctx, func(q *Queries) error {
 		for i := 0; i < oauthUnusedClientMaxRows+3; i++ {
-			if err := q.InsertOAuthClient(ctx, OAuthClient{ID: fmt.Sprintf("client-%04d", i), Name: "Client", RedirectURIs: []string{"https://example.com/cb"}, CreatedAt: Ms(i + 1)}); err != nil {
+			if err := q.InsertOAuthClient(ctx, OAuthClient{ID: fmt.Sprintf("client-%04d", i), Name: "Client", RedirectURIs: []string{"https://example.com/cb"}, CreatedAt: Ms((i + 1) * 3_600_001)}); err != nil {
 				return err
 			}
 		}
@@ -84,5 +85,34 @@ func TestOAuthUnusedClientRowCap(t *testing.T) {
 	}
 	if _, err := db.Read().OAuthClientByID(ctx, fmt.Sprintf("client-%04d", oauthUnusedClientMaxRows+2)); err != nil {
 		t.Fatalf("newest client missing: %v", err)
+	}
+}
+
+func TestRegistrationRetainsYoungClientsWhenFull(t *testing.T) {
+	db, err := Open(t.TempDir() + "/cap.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	err = db.Write(ctx, func(q *Queries) error {
+		for i := 0; i < oauthUnusedClientMaxRows; i++ {
+			if err := q.InsertOAuthClient(ctx, OAuthClient{ID: fmt.Sprint(i), Name: "Client", RedirectURIs: []string{"https://client.example/cb"}, CreatedAt: 1}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Write(ctx, func(q *Queries) error {
+		return q.InsertOAuthClient(ctx, OAuthClient{ID: "attacker", Name: "New", RedirectURIs: []string{"https://client.example/cb"}, CreatedAt: 2})
+	})
+	if !errors.Is(err, ErrOAuthClientCapacity) {
+		t.Fatalf("young registration evicted: %v", err)
+	}
+	if _, err := db.Read().OAuthClientByID(ctx, "0"); err != nil {
+		t.Fatal("original client evicted")
 	}
 }

@@ -865,6 +865,14 @@ func (c *Ctx) lifecycle(action string) error {
 	var detail RequestDetail
 	var after *store.Request
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
+		// Body reads may block across a demotion or deactivation. Financial writes,
+		// including leadership-only tolerance overrides, use authority at commit.
+		if action != "submit" {
+			u, err = c.directorIn(w)
+			if err != nil {
+				return err
+			}
+		}
 		r, err := w.RequestByID(ctx, c.R.PathValue("id"))
 		if err != nil {
 			return notFoundErr("Record not found")

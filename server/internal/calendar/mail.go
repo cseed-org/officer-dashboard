@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strings"
 	"time"
 
@@ -83,7 +84,15 @@ func buildText(from string, m Message, now time.Time) []byte {
 	return []byte(b.String())
 }
 
-func (s *SMTP) Send(ctx context.Context, m Message) error {
+func (s *SMTP) Send(ctx context.Context, m Message) (err error) {
+	// SMTP replies often echo recipient addresses or provider-specific personal
+	// details. Callers persist/log failures, so expose the status, not reply text.
+	defer func() {
+		var reply *textproto.Error
+		if errors.As(err, &reply) {
+			err = fmt.Errorf("smtp delivery rejected (code %d)", reply.Code)
+		}
+	}()
 	if strings.ContainsAny(m.To, "\r\n") {
 		return errors.New("invalid recipient")
 	}
@@ -92,7 +101,6 @@ func (s *SMTP) Send(ctx context.Context, m Message) error {
 	addr := net.JoinHostPort(s.Host, s.Port)
 	d := net.Dialer{}
 	var conn net.Conn
-	var err error
 	tlsCfg := &tls.Config{ServerName: s.Host, MinVersion: tls.VersionTLS12}
 	if s.Port == "465" {
 		conn, err = (&tls.Dialer{NetDialer: &d, Config: tlsCfg}).DialContext(ctx, "tcp", addr)
