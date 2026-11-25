@@ -82,12 +82,12 @@ test('M-126: week slots cover both rows at partial half-hour boundaries and clip
   expect(slot('09:00', '10:00')).toEqual({ start: 0, len: 2 });
 });
 test('M-115: address-book lists preserve display names and quoted commas', () => {
-  expect(parseInvites('Ada Lovelace <ada@uw.edu>\nA <a@uw.edu>; B <b@uw.edu>\n"Lovelace, Ada" <other@uw.edu>').map((r) => [r.email, r.name, r.state])).toEqual([
-    ['ada@uw.edu', 'Ada Lovelace', 'valid'], ['a@uw.edu', 'A', 'valid'], ['b@uw.edu', 'B', 'valid'], ['other@uw.edu', 'Lovelace, Ada', 'valid'],
+  expect(parseInvites('Ada Lovelace <ada@uw.example>\nA <a@uw.example>; B <b@uw.example>\n"Lovelace, Ada" <other@uw.example>').map((r) => [r.email, r.name, r.state])).toEqual([
+    ['ada@uw.example', 'Ada Lovelace', 'valid'], ['a@uw.example', 'A', 'valid'], ['b@uw.example', 'B', 'valid'], ['other@uw.example', 'Lovelace, Ada', 'valid'],
   ]);
 });
 test('M-120: profile email validation mirrors the Go email vocabulary', () => {
-  for (const email of ['ada@uw.edu', 'first.last+tag@sub.uni.ac.uk', "o'neil@x.org", 'a_b@x.org']) expect(profileRules.isEmail(email), email).toBe(true);
+  for (const email of ['ada@uw.example', 'first.last+tag@sub.uni.ac.uk', "o'neil@x.org", 'a_b@x.org']) expect(profileRules.isEmail(email), email).toBe(true);
   for (const email of ['jo!e@x.com', 'ana@uni.ac.k1', 'é@x.org', '.a@x.org', 'a..b@x.org', "a'@x.org"]) expect(profileRules.isEmail(email), email).toBe(false);
 });
 test('M-072: audit links distinguish purchase, design and child records', () => {

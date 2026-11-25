@@ -11,7 +11,7 @@ func TestMemberEmailCacheTracksCorrectionsReplacementsAndRollback(t *testing.T) 
 	e := newEnv(t)
 	ctx := context.Background()
 	c := &Ctx{S: e.srv}
-	email := "PRiYA@uw.edu"
+	email := "PRiYA@uw.example"
 	p := cloudflare.Person{ID: "cache-test", FirstName: "Priya", UWEmail: &email, JoinDate: "2026-01-01"}
 	save := func() {
 		t.Helper()
@@ -21,17 +21,17 @@ func TestMemberEmailCacheTracksCorrectionsReplacementsAndRollback(t *testing.T) 
 	}
 	save()
 	first, err := c.cachedMemberEmails(ctx, e.db.Read())
-	if err != nil || first["priya@uw.edu"] != p.ID {
+	if err != nil || first["priya@uw.example"] != p.ID {
 		t.Fatal(first, err)
 	}
 	counted := &countQueries{Q: e.db.R}
 	if _, err := c.cachedMemberEmails(ctx, store.On(counted)); err != nil || counted.calls != 1 {
 		t.Fatalf("cache miss: calls=%d %v", counted.calls, err)
 	}
-	email = "new@uw.edu"
+	email = "new@uw.example"
 	save()
 	second, err := c.cachedMemberEmails(ctx, e.db.Read())
-	if err != nil || second[email] != p.ID || second["priya@uw.edu"] != "" {
+	if err != nil || second[email] != p.ID || second["priya@uw.example"] != "" {
 		t.Fatal(second, err)
 	}
 	if _, err := e.db.W.Exec(`DELETE FROM members_mirror`); err != nil {

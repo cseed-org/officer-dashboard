@@ -589,7 +589,7 @@ const skipped = await call('eventDesignNeed', { who: directorA, params: { id: ev
 must(skipped.json.event.designNeed === 'not_needed', 'a director marks an event as not needing design', skipped.json.event);
 
 // Membership mirror and disconnected Cloudflare. Remote writes are fake-server tested in Go.
-const member = {person_id:'contract-member',first_name:'Ada',last_name:'Member',preferred_name:null,uw_email:'ada@uw.edu',cs_email:null,personal_email:null,major:'CS',grad_year:'2028',campus:'Seattle',pronouns:null,demographics:null,join_date:'2026-10-31',agreed_to_membership_agreement:1,has_been_cseed_officer:0};
+const member = {person_id:'contract-member',first_name:'Ada',last_name:'Member',preferred_name:null,uw_email:'ada@uw.example',cs_email:null,personal_email:null,major:'CS',grad_year:'2028',campus:'Seattle',pronouns:null,demographics:null,join_date:'2026-10-31',agreed_to_membership_agreement:1,has_been_cseed_officer:0};
 db.prepare('INSERT INTO members_mirror(person_id,first_name,last_name,uw_email,major,grad_year,campus,join_date,has_been_officer,record_json) VALUES(?,?,?,?,?,?,?,?,?,?)').run(member.person_id,member.first_name,member.last_name,member.uw_email,member.major,member.grad_year,member.campus,member.join_date,0,JSON.stringify(member));
 await call('membersList',{who:officer,query:{q:'Ada',limit:'50',offset:'0'}});
 await call('memberDetail',{who:officer,params:{id:member.person_id}});
@@ -666,9 +666,9 @@ const lpCohort = await call('launchpadCohortCreate', {who: directorA, body: {nam
 const lpCohortId = lpCohort.json.cohort.id;
 await call('launchpadCohortCreate', {who: directorA, body: {name: 'Contract cohort', startsOn: '2027-01-04'}, expect: 409});
 await call('launchpadCohortUpdate', {who: directorA, params: {id: lpCohortId}, body: {name: 'Contract cohort (winter)', endsOn: null}});
-const lpInvites = await call('launchpadInvite', {who: officer, params: {id: lpCohortId}, body: {invites: [{email: 'one@uw.edu', name: 'One'}, {email: 'ONE@uw.edu'}, {email: 'two@uw.edu'}], method: 'link'}});
+const lpInvites = await call('launchpadInvite', {who: officer, params: {id: lpCohortId}, body: {invites: [{email: 'one@uw.example', name: 'One'}, {email: 'ONE@uw.example'}, {email: 'two@uw.example'}], method: 'link'}});
 must(lpInvites.json.accounts.length === 2 && lpInvites.json.links.length === 2 && lpInvites.json.skipped[0]?.reason === 'duplicate', 'bulk invites dedupe and return links');
-const lpTwo = lpInvites.json.accounts.find(a => a.email === 'two@uw.edu');
+const lpTwo = lpInvites.json.accounts.find(a => a.email === 'two@uw.example');
 await call('launchpadInvite', {who: officer, params: {id: lpCohortId}, body: {invites: [{email: 'bad'}]}, expect: 400});
 const lpToken = new URL(lpInvites.json.links[0].url).searchParams.get('token');
 const lpPreview = await call('portalInvitePreview', {query: {token: lpToken}});
@@ -682,7 +682,7 @@ await call('launchpadAccountDisable', {who: directorA, params: {id: lpTwo.id}});
 await call('launchpadAccountEnable', {who: directorA, params: {id: lpTwo.id}});
 await call('launchpadAccountRevoke', {who: officer, params: {id: lpTwo.id}});
 await call('launchpadCohortDelete', {who: directorA, params: {id: lpCohortId}, expect: 409});
-const lpOne = lpInvites.json.accounts.find(a => a.email === 'one@uw.edu');
+const lpOne = lpInvites.json.accounts.find(a => a.email === 'one@uw.example');
 await call('launchpadAccountRevoke', {who: officer, params: {id: lpOne.id}});
 await call('launchpadCohortDelete', {who: directorA, params: {id: lpCohortId}});
 const lpMentorInvite = await call('launchpadMentorInvite', {who: directorA, params: {contactId: 'bs-mentor-jordan'}, body: {method: 'both'}});
@@ -699,7 +699,7 @@ await call('launchpadProjectArchive', {who: officer, params: {id: 'contract-empt
 await call('launchpadProjectRestore', {who: officer, params: {id: 'contract-empty'}});
 await call('launchpadProjectDelete', {who: officer, params: {id: 'contract-empty'}, expect: 403});
 await call('launchpadProjectDelete', {who: directorA, params: {id: 'contract-empty'}});
-await call('buildspacePersonSave', {who: officer, params: {id: 'contract-temp'}, body: {name: 'Temp', projectId: 'bs-common', joinedOn: today, designation: 'Founder', pronouns: '', bio: '', email: 'temp@uw.edu'}});
+await call('buildspacePersonSave', {who: officer, params: {id: 'contract-temp'}, body: {name: 'Temp', projectId: 'bs-common', joinedOn: today, designation: 'Founder', pronouns: '', bio: '', email: 'temp@uw.example'}});
 await call('launchpadPersonArchive', {who: officer, params: {id: 'contract-temp'}});
 await call('launchpadPersonRestore', {who: officer, params: {id: 'contract-temp'}});
 await call('launchpadPersonDelete', {who: directorA, params: {id: 'contract-temp'}});

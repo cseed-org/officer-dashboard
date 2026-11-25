@@ -7,7 +7,7 @@ const makeMember = (n: number) => ({
   first_name: `Member ${String(n).padStart(4, "0")}`,
   last_name: "Seed",
   preferred_name: null,
-  uw_email: `member${n}@uw.edu`,
+  uw_email: `member${n}@uw.example`,
   cs_email: null,
   personal_email: null,
   major: n % 2 ? "Computer Science" : "Design",
@@ -97,7 +97,7 @@ for (const theme of THEMES) {
     ).toBeVisible();
     await expect(next).toBeFocused();
     await page.getByRole("button", { name: "Previous", exact: true }).click();
-    await page.getByLabel("Search members").fill("member1000@uw.edu");
+    await page.getByLabel("Search members").fill("member1000@uw.example");
     await expect(page.locator("tbody tr")).toHaveCount(1);
     await page.getByRole("button", { name: "Member 1000 Seed" }).click();
     const drawer = page.locator("#member-detail[open]");
@@ -194,10 +194,10 @@ for (const theme of THEMES) {
       return route.fulfill({
         json: {
           officers: [
-            { id: "u-1", name: "Priya Shah", title: "Treasurer", subteam: "Finance", email: "priya@uw.edu", memberId: matched.person_id },
-            { id: "u-2", name: "Sam Rivera", title: null, subteam: null, email: "sam@uw.edu", memberId: null },
+            { id: "u-1", name: "Priya Shah", title: "Treasurer", subteam: "Finance", email: "priya@uw.example", memberId: matched.person_id },
+            { id: "u-2", name: "Sam Rivera", title: null, subteam: null, email: "sam@uw.example", memberId: null },
           ],
-          officerRows: filtered ? [] : [{ id: "u-2", name: "Sam Rivera", title: null, subteam: null, email: "sam@uw.edu", memberId: null }],
+          officerRows: filtered ? [] : [{ id: "u-2", name: "Sam Rivera", title: null, subteam: null, email: "sam@uw.example", memberId: null }],
           items: [matched, other],
           total: filtered ? 2 : 3,
           limit: 25,

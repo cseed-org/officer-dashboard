@@ -1,4 +1,9 @@
 .git
+**/backups
+**/*.db*
+**/*.sqlite*
+**/*.age
+**/.local
 .pane
 **/node_modules
 **/dist

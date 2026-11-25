@@ -57,7 +57,7 @@ func TestMembersRolesValidationAndAudit(t *testing.T) {
 	expectStatus(t, "officer write", e.do("PATCH", "/api/members/p1", map[string]any{"major": "CS", "auditNote": "Correction"}, officer), 403)
 	expectStatus(t, "officer sync", e.do("POST", "/api/cloudflare/sync", nil, officer), 403)
 	expectStatus(t, "officer export", e.do("GET", "/api/members/export", nil, officer), 403)
-	for _, b := range []map[string]any{{"major": "CS"}, {"auditNote": "why", "uw_email": "a@example.com"}, {"auditNote": "why", "cs_email": "a@uw.edu"}, {"auditNote": "why", "join_date": "2026-02-01"}, {"auditNote": "why", "has_been_cseed_officer": 0}} {
+	for _, b := range []map[string]any{{"major": "CS"}, {"auditNote": "why", "uw_email": "a@example.com"}, {"auditNote": "why", "cs_email": "a@uw.example"}, {"auditNote": "why", "join_date": "2026-02-01"}, {"auditNote": "why", "has_been_cseed_officer": 0}} {
 		expectStatus(t, "validation", e.do("PATCH", "/api/members/p1", b, director), 400)
 	}
 	if calls != 0 {
@@ -107,11 +107,11 @@ func TestMembersNotConnectedAndCSV(t *testing.T) {
 func TestMembersListIncludesActiveOfficersDedupedByEmail(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.edu' WHERE id='user-priya'`); err != nil {
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.example' WHERE id='user-priya'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.db.Write(ctx, func(q *store.Queries) error {
-		return q.SaveMember(ctx, cloudflare.Person{ID: "m-priya", FirstName: "Priya", LastName: "Member", JoinDate: "2026-01-01", UWEmail: strp("PRIYA@uw.edu")})
+		return q.SaveMember(ctx, cloudflare.Person{ID: "m-priya", FirstName: "Priya", LastName: "Member", JoinDate: "2026-01-01", UWEmail: strp("PRIYA@uw.example")})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func strp(s string) *string { return &s }
 func TestMembersOfficerFilterAndPagingCountOfficerRows(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.edu' WHERE id='user-priya'`); err != nil {
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.example' WHERE id='user-priya'`); err != nil {
 		t.Fatal(err)
 	}
 	var active int
@@ -169,7 +169,7 @@ func TestMembersOfficerFilterAndPagingCountOfficerRows(t *testing.T) {
 		for i, id := range []string{"m-priya", "m-a", "m-b", "m-c"} {
 			p := cloudflare.Person{ID: id, FirstName: id, LastName: "X", JoinDate: "2026-01-0" + string(rune('1'+i))}
 			if id == "m-priya" {
-				p.UWEmail = strp("priya@uw.edu")
+				p.UWEmail = strp("priya@uw.example")
 			}
 			if err := q.SaveMember(ctx, p); err != nil {
 				return err
@@ -218,14 +218,14 @@ func TestMembersOfficerFilterAndPagingCountOfficerRows(t *testing.T) {
 func TestMembersExportUsesTheDirectoryOfficerFilter(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
-	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.edu' WHERE id='user-priya'`); err != nil {
+	if _, err := e.db.W.ExecContext(ctx, `UPDATE users SET email='priya@uw.example' WHERE id='user-priya'`); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.db.Write(ctx, func(q *store.Queries) error {
 		for _, id := range []string{"m-priya", "m-plain"} {
 			p := cloudflare.Person{ID: id, FirstName: id, LastName: "X", JoinDate: "2026-01-01"}
 			if id == "m-priya" {
-				p.UWEmail = strp("priya@uw.edu")
+				p.UWEmail = strp("priya@uw.example")
 			}
 			if err := q.SaveMember(ctx, p); err != nil {
 				return err

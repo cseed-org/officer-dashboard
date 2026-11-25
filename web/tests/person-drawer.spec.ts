@@ -83,7 +83,7 @@ test('Board Members: a deep link opens the drawer and closing keeps you on the p
 
 test('Members: a row opens the drawer and old ?id= links land on ?person=', async ({ page }) => {
   const member = {
-    person_id: 'person-7', first_name: 'Rowan', last_name: 'Ito', preferred_name: 'Ro', uw_email: 'rowan@uw.edu', cs_email: null, personal_email: null,
+    person_id: 'person-7', first_name: 'Rowan', last_name: 'Ito', preferred_name: 'Ro', uw_email: 'rowan@uw.example', cs_email: null, personal_email: null,
     major: 'Design', grad_year: '2028', campus: 'Seattle', pronouns: 'they/them', demographics: null, join_date: '2026-09-30', agreed_to_membership_agreement: 1, has_been_cseed_officer: 0,
   };
   await page.route('**/api/members?*', (route) =>
@@ -109,7 +109,7 @@ test('Members: a row opens the drawer and old ?id= links land on ?person=', asyn
 });
 
 test('Members: an officer with no membership record opens in the drawer, not on another page', async ({ page }) => {
-  const officer = { id: 'user-solo', name: 'Sol Okafor', title: 'VP Outreach', subteam: 'Outreach', email: 'sol@uw.edu', memberId: null };
+  const officer = { id: 'user-solo', name: 'Sol Okafor', title: 'VP Outreach', subteam: 'Outreach', email: 'sol@uw.example', memberId: null };
   await page.route('**/api/members?*', (route) =>
     route.fulfill({ json: { officers: [officer], officerRows: [officer], items: [], total: 1, offset: 0, limit: 25, connected: true, lastSync: Date.now(), syncError: '', facets: { campus: [], grad_year: [] } } }),
   );

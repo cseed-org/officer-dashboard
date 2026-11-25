@@ -41,6 +41,7 @@ playwright-report/
 
 # Local databases, encrypted dumps and backups must never be published.
 *.db
+*.db*
 *.db-*
 *.sqlite*
 *.db.gz

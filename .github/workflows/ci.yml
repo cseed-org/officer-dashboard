@@ -180,6 +180,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Require release tags to point into main
+        if: github.ref_type == 'tag'
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          sh scripts/check-release-source.sh
       - name: Version stamped into the binary (dashboard version)
         id: version
         run: |
@@ -217,9 +223,11 @@ jobs:
           file: server/Dockerfile
           platforms: linux/amd64,linux/arm64
           build-args: VERSION=${{ steps.version.outputs.version }}
+          sbom: true
+          provenance: mode=max
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          cache-from: type=gha,scope=image
-          cache-to: type=gha,scope=image,mode=max
+          # Registry publication never imports or exports the PR build cache.
+          no-cache: true

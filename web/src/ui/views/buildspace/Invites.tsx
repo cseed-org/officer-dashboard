@@ -254,7 +254,7 @@ function InviteForm({ accounts, cohortId, done }: { accounts: LaunchpadAccount[]
           data-invite-input
           value={text}
           onInput={(e) => setText(e.currentTarget.value)}
-          placeholder={"ada@uw.edu\nGrace Hopper, grace@uw.edu"}
+          placeholder={"ada@uw.example\nGrace Hopper, grace@uw.example"}
         />
       </label>
       {rows.length > 0 && (

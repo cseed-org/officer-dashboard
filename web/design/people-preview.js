@@ -349,7 +349,7 @@ if (byId('officer-data')) {
   const savedEmails = {};
   function emailsFor(p) {
     const f = p.pref.toLowerCase();
-    return savedEmails[p.id] ??= {list: [p.school, p.personal, `${f}@cseed.co`, `${f}.work@example.com`, `${f}.calendar@example.com`], chosen: p.school};
+    return savedEmails[p.id] ??= {list: [p.school, p.personal, `${f}@cseed.example`, `${f}.work@example.com`, `${f}.calendar@example.com`], chosen: p.school};
   }
   function renderCalendar() {
     const p = me(), store = emailsFor(p), full = store.list.length >= 5;

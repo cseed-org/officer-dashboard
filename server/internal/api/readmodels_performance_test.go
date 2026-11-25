@@ -176,8 +176,8 @@ func TestMemberOfficersAllEmailKinds(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			e := newEnv(t)
 			ctx := context.Background()
-			email := "PRIYA@uw.edu"
-			if _, err := e.db.W.Exec(`UPDATE users SET email='priya@uw.edu' WHERE id='user-priya'`); err != nil {
+			email := "PRIYA@uw.example"
+			if _, err := e.db.W.Exec(`UPDATE users SET email='priya@uw.example' WHERE id='user-priya'`); err != nil {
 				t.Fatal(err)
 			}
 			p := cloudflare.Person{ID: "perf-member", FirstName: "Priya", JoinDate: "2026-01-01"}
@@ -215,7 +215,7 @@ func BenchmarkMemberOfficers(b *testing.B) {
 	ctx := context.Background()
 	if err := e.db.Write(ctx, func(q *store.Queries) error {
 		for i := 0; i < 5000; i++ {
-			email := fmt.Sprintf("member-%d@uw.edu", i)
+			email := fmt.Sprintf("member-%d@uw.example", i)
 			if err := q.SaveMember(ctx, cloudflare.Person{ID: fmt.Sprint(i), FirstName: "Member", UWEmail: &email, JoinDate: "2026-01-01"}); err != nil {
 				return err
 			}

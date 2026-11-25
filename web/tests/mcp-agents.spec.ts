@@ -587,7 +587,7 @@ async function sweep(api: APIRequestContext, token: string, role: string) {
   const cohort = await call('create_launchpad_cohort', { body: { name: `Sweep ${role} ${stamp}`, startsOn: '2027-01-05' } }, 2);
   const cohortId = cohort.json?.cohort?.id ?? 'no-such-cohort';
   await call('update_launchpad_cohort', { id: cohortId, body: { endsOn: '2027-03-20' } }, 2);
-  await call('invite_launchpad_builders', { id: 'cohort-fall-2026', body: { invites: [{ email: `sweep.${role}@uw.edu` }] } }, 1, /not configured/);
+  await call('invite_launchpad_builders', { id: 'cohort-fall-2026', body: { invites: [{ email: `sweep.${role}@uw.example` }] } }, 1, /not configured/);
   await call('resend_launchpad_invite', { id: 'lp-invite-sky' }, 1, /not configured/);
   await call('revoke_launchpad_invite', { id: 'lp-invite-dev' }, 1, /not found/i);
   await call('disable_launchpad_account', { id: 'lp-account-maya' }, 2);

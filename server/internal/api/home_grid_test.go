@@ -75,6 +75,27 @@ func TestDashboardTutorialAndLinks(t *testing.T) {
 	}
 }
 
+func TestPrivateClubLinksAreExplicitSettings(t *testing.T) {
+	e := newEnv(t)
+	initial := e.mustOK(e.get("/api/club/settings", e.officer()))
+	if initial.str("notionUrl") != "" || initial.str("driveUrl") != "" {
+		t.Fatal("private workspace links must start empty")
+	}
+	body := map[string]any{"clubTimezone": "UTC", "location": "Club", "notionUrl": "https://notion.example/club", "driveUrl": "https://drive.example/club"}
+	e.mustOK(e.do("PUT", "/api/club/settings", body, e.as("user-leadership")))
+	e.mustOK(e.do("PUT", "/api/club/settings", map[string]any{"clubTimezone": "UTC", "location": "Updated club"}, e.as("user-leadership")))
+	stored := e.mustOK(e.get("/api/club/settings", e.officer()))
+	if stored.str("notionUrl") != body["notionUrl"] || stored.str("driveUrl") != body["driveUrl"] {
+		t.Fatal("configured private links must survive unrelated updates")
+	}
+	body["notionUrl"], body["driveUrl"] = "", ""
+	e.mustOK(e.do("PUT", "/api/club/settings", body, e.as("user-leadership")))
+	cleared := e.mustOK(e.get("/api/club/settings", e.officer()))
+	if cleared.str("notionUrl") != "" || cleared.str("driveUrl") != "" {
+		t.Fatal("clearing private links must not restore workspace IDs")
+	}
+}
+
 func TestSidebarWidthPref(t *testing.T) {
 	e := newEnv(t)
 	if got := e.mustOK(e.get("/api/me/prefs", e.officer())); !strings.Contains(string(got.Raw), `"sidebarWidth":0`) {

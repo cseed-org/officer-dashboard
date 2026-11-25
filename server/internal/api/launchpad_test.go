@@ -84,7 +84,7 @@ func TestLaunchpadCohortLifecycle(t *testing.T) {
 	e.mustOK(e.do("PATCH", "/api/buildspace-launchpad/cohorts/"+id, map[string]any{"status": "archived"}, director))
 	expectStatus(t, "archived cohort is read-only", e.do("PUT", "/api/buildspace-launchpad/projects/winter-p", project, officer), 409)
 	expectStatus(t, "no new projects in archived cohort", e.do("PUT", "/api/buildspace-launchpad/projects/winter-q", with(project, "cohortId", id), officer), 409)
-	expectStatus(t, "no invites to archived cohort", e.post("/api/buildspace-launchpad/cohorts/"+id+"/invites", map[string]any{"invites": []any{map[string]any{"email": "a@uw.edu"}}}, officer), 409)
+	expectStatus(t, "no invites to archived cohort", e.post("/api/buildspace-launchpad/cohorts/"+id+"/invites", map[string]any{"invites": []any{map[string]any{"email": "a@uw.example"}}}, officer), 409)
 	e.mustOK(e.do("PATCH", "/api/buildspace-launchpad/cohorts/"+id, map[string]any{"status": "active", "name": "Winter 2027 cohort", "endsOn": nil}, director))
 	expectStatus(t, "non-empty cohort", e.do("DELETE", "/api/buildspace-launchpad/cohorts/"+id, nil, director), 409)
 	e.mustOK(e.do("DELETE", "/api/buildspace-launchpad/projects/winter-p", nil, director))
@@ -101,8 +101,8 @@ func TestLaunchpadInvitesEmailLinksAndAccounts(t *testing.T) {
 	path := "/api/buildspace-launchpad/cohorts/cohort-fall-2026/invites"
 	expectStatus(t, "invalid email", e.post(path, map[string]any{"invites": []any{map[string]any{"email": "not-an-email"}}}, officer), 400)
 	r := e.mustOK(e.post(path, map[string]any{"invites": []any{
-		map[string]any{"email": "New.Person@UW.edu", "name": "New Person"},
-		map[string]any{"email": "new.person@uw.edu"},
+		map[string]any{"email": "New.Person@uw.example", "name": "New Person"},
+		map[string]any{"email": "new.person@uw.example"},
 		map[string]any{"email": "alex.kim@example.org"},
 		map[string]any{"email": "sky.morales@example.org"},
 	}}, officer))
@@ -114,7 +114,7 @@ func TestLaunchpadInvitesEmailLinksAndAccounts(t *testing.T) {
 		v := s.(map[string]any)
 		reasons[v["email"].(string)] = v["reason"].(string)
 	}
-	if reasons["new.person@uw.edu"] != "duplicate" || reasons["alex.kim@example.org"] != "already_active" {
+	if reasons["new.person@uw.example"] != "duplicate" || reasons["alex.kim@example.org"] != "already_active" {
 		t.Fatalf("skips %v", reasons)
 	}
 	e.srv.WaitBackground()
@@ -130,14 +130,14 @@ func TestLaunchpadInvitesEmailLinksAndAccounts(t *testing.T) {
 	if old.at("valid") != false || old.str("reason") != "not_found" {
 		t.Fatalf("old token %s", old.Raw)
 	}
-	links := e.mustOK(e.post(path, map[string]any{"invites": []any{map[string]any{"email": "link.only@uw.edu"}}, "method": "link"}, officer))
+	links := e.mustOK(e.post(path, map[string]any{"invites": []any{map[string]any{"email": "link.only@uw.example"}}, "method": "link"}, officer))
 	token := inviteToken(t, links)
 	e.srv.WaitBackground()
 	if len(m.all()) != 2 {
 		t.Fatal("link method must not email")
 	}
 	prev := e.mustOK(e.get("/api/portal/invite?token="+token, anon))
-	if prev.at("valid") != true || prev.str("kind") != "builder" || prev.str("cohortName") != "Fall 2026" || prev.str("emailHint") != "l•••@uw.edu" {
+	if prev.at("valid") != true || prev.str("kind") != "builder" || prev.str("cohortName") != "Fall 2026" || prev.str("emailHint") != "l•••@uw.example" {
 		t.Fatalf("preview %s", prev.Raw)
 	}
 	accID := links.str("accounts", 0, "id")
@@ -179,7 +179,7 @@ func TestLaunchpadInvitesEmailLinksAndAccounts(t *testing.T) {
 
 func TestLaunchpadInvitesWithoutMailerReturnLinks(t *testing.T) {
 	e := newEnv(t)
-	r := e.mustOK(e.post("/api/buildspace-launchpad/cohorts/cohort-fall-2026/invites", map[string]any{"invites": []any{map[string]any{"email": "a@uw.edu"}}}, e.officer()))
+	r := e.mustOK(e.post("/api/buildspace-launchpad/cohorts/cohort-fall-2026/invites", map[string]any{"invites": []any{map[string]any{"email": "a@uw.example"}}}, e.officer()))
 	if r.at("emailConfigured") != false || len(r.list("links")) != 1 {
 		t.Fatalf("%s", r.Raw)
 	}
@@ -204,7 +204,7 @@ func linkInvite(t *testing.T, e *testEnv, cohort, email string) string {
 
 func TestLaunchpadInviteBindsDiscordAndRefusals(t *testing.T) {
 	e := discordEnv(t, `{"id":"300000000000000001","username":"newbie"}`, nil)
-	token := linkInvite(t, e, "cohort-fall-2026", "newbie@uw.edu")
+	token := linkInvite(t, e, "cohort-fall-2026", "newbie@uw.example")
 	cb := oauthPortal(t, e, "launchpad="+token)
 	if cb.Status != 302 || cb.Header.Get("Location") != "/launchpad" {
 		t.Fatalf("accept → %d %s", cb.Status, cb.Header.Get("Location"))
@@ -224,11 +224,11 @@ func TestLaunchpadInviteBindsDiscordAndRefusals(t *testing.T) {
 		t.Fatalf("reopen → %s", again.Header.Get("Location"))
 	}
 	// A second invite in an active cohort cannot take the same Discord account.
-	second := linkInvite(t, e, "cohort-fall-2026", "newbie.two@uw.edu")
+	second := linkInvite(t, e, "cohort-fall-2026", "newbie.two@uw.example")
 	if r := oauthPortal(t, e, "launchpad="+second); r.Header.Get("Location") != "/launchpad/join?error=discord_taken" {
 		t.Fatalf("taken → %s", r.Header.Get("Location"))
 	}
-	expired := linkInvite(t, e, "cohort-fall-2026", "late@uw.edu")
+	expired := linkInvite(t, e, "cohort-fall-2026", "late@uw.example")
 	e.clock = e.clock.Add(15 * 24 * time.Hour)
 	if r := oauthPortal(t, e, "launchpad="+expired); r.Header.Get("Location") != "/launchpad/join?error=expired" {
 		t.Fatalf("expired → %s", r.Header.Get("Location"))
@@ -250,8 +250,8 @@ func TestLaunchpadInviteBindsDiscordAndRefusals(t *testing.T) {
 
 func TestLaunchpadReturningBuilderMovesFromArchivedCohort(t *testing.T) {
 	e := discordEnv(t, `{"id":"300000000000000002","username":"returning"}`, nil)
-	e.exec(`INSERT INTO buildspace_launchpad_accounts(id,kind,email,name,status,cohort_id,person_id,discord_id,created_at,updated_at) VALUES('old','builder','rowan@uw.edu','Rowan','active','cohort-spring-2026','bs-person-13','300000000000000002',1,1)`)
-	token := linkInvite(t, e, "cohort-fall-2026", "rowan@uw.edu")
+	e.exec(`INSERT INTO buildspace_launchpad_accounts(id,kind,email,name,status,cohort_id,person_id,discord_id,created_at,updated_at) VALUES('old','builder','rowan@uw.example','Rowan','active','cohort-spring-2026','bs-person-13','300000000000000002',1,1)`)
+	token := linkInvite(t, e, "cohort-fall-2026", "rowan@uw.example")
 	if r := oauthPortal(t, e, "launchpad="+token); r.Header.Get("Location") != "/launchpad" {
 		t.Fatalf("→ %s", r.Header.Get("Location"))
 	}
@@ -265,8 +265,8 @@ func TestLaunchpadReturningBuilderMovesFromArchivedCohort(t *testing.T) {
 func TestLaunchpadReturningBuilderOnboardsWithSameDiscord(t *testing.T) {
 	e := discordEnv(t, `{"id":"300000000000000002","username":"returning"}`, nil)
 	e.exec(`UPDATE buildspace_launchpad_people SET discord_id='300000000000000002' WHERE id='bs-person-13'`)
-	e.exec(`INSERT INTO buildspace_launchpad_accounts(id,kind,email,name,status,cohort_id,person_id,discord_id,created_at,updated_at) VALUES('old','builder','rowan@uw.edu','Rowan','active','cohort-spring-2026','bs-person-13','300000000000000002',1,1)`)
-	token := linkInvite(t, e, "cohort-fall-2026", "rowan@uw.edu")
+	e.exec(`INSERT INTO buildspace_launchpad_accounts(id,kind,email,name,status,cohort_id,person_id,discord_id,created_at,updated_at) VALUES('old','builder','rowan@uw.example','Rowan','active','cohort-spring-2026','bs-person-13','300000000000000002',1,1)`)
+	token := linkInvite(t, e, "cohort-fall-2026", "rowan@uw.example")
 	cb := oauthPortal(t, e, "launchpad="+token)
 	ck := cookieNamed(setCookies(cb), e.srv.portalCookieName())
 	if cb.Header.Get("Location") != "/launchpad" || ck == nil {
@@ -277,7 +277,7 @@ func TestLaunchpadReturningBuilderOnboardsWithSameDiscord(t *testing.T) {
 	if e.scalar(`SELECT discord_id FROM buildspace_launchpad_people WHERE id='bs-person-13'`) != nil {
 		t.Fatal("old record keeps the Discord ID")
 	}
-	if e.scalar(`SELECT b.cohort_id||'|'||b.discord_id FROM buildspace_launchpad_people b JOIN buildspace_launchpad_accounts a ON a.person_id=b.id WHERE a.email='rowan@uw.edu' AND a.status='active'`) != "cohort-fall-2026|300000000000000002" {
+	if e.scalar(`SELECT b.cohort_id||'|'||b.discord_id FROM buildspace_launchpad_people b JOIN buildspace_launchpad_accounts a ON a.person_id=b.id WHERE a.email='rowan@uw.example' AND a.status='active'`) != "cohort-fall-2026|300000000000000002" {
 		t.Fatal("new record not created in the new cohort")
 	}
 }
@@ -321,11 +321,11 @@ func TestLaunchpadOnboardingLinksExistingBuilder(t *testing.T) {
 // Reopening an accepted invite signs in through the same checks as any returning sign-in.
 func TestLaunchpadReopenedInviteRefusesArchivedBuilder(t *testing.T) {
 	e := discordEnv(t, `{"id":"300000000000000003","username":"paused"}`, nil)
-	token := linkInvite(t, e, "cohort-fall-2026", "paused@uw.edu")
+	token := linkInvite(t, e, "cohort-fall-2026", "paused@uw.example")
 	if r := oauthPortal(t, e, "launchpad="+token); r.Header.Get("Location") != "/launchpad" {
 		t.Fatalf("accept → %s", r.Header.Get("Location"))
 	}
-	e.exec(`UPDATE buildspace_launchpad_accounts SET person_id='bs-person-02' WHERE email='paused@uw.edu'`)
+	e.exec(`UPDATE buildspace_launchpad_accounts SET person_id='bs-person-02' WHERE email='paused@uw.example'`)
 	e.exec(`UPDATE buildspace_launchpad_people SET archived_at=1 WHERE id='bs-person-02'`)
 	r := oauthPortal(t, e, "launchpad="+token)
 	if r.Header.Get("Location") != "/launchpad/login?error=archived" || cookieNamed(setCookies(r), e.srv.portalCookieName()) != nil {
@@ -353,7 +353,7 @@ func TestLaunchpadOfficerAndPortalSessionsCoexist(t *testing.T) {
 	if r := oauthPortal(t, e, "portal=1"); r.Header.Get("Location") != "/launchpad/login?error=not_found" {
 		t.Fatalf("no portal account → %s", r.Header.Get("Location"))
 	}
-	token := linkInvite(t, e, "cohort-fall-2026", "priya.builder@uw.edu")
+	token := linkInvite(t, e, "cohort-fall-2026", "priya.builder@uw.example")
 	cb := oauthPortal(t, e, "launchpad="+token)
 	portalCk := cookieNamed(setCookies(cb), e.srv.portalCookieName())
 	if cb.Header.Get("Location") != "/launchpad" || portalCk == nil {

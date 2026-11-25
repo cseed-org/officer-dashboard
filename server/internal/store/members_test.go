@@ -15,7 +15,7 @@ func TestMemberSignupISOCountsAndSearch(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	personal := "ada@example.org"
-	cs := "ada@cs.washington.edu"
+	cs := "ada@cs.washington.example"
 	err = db.Write(ctx, func(q *Queries) error {
 		for _, p := range []cloudflare.Person{{ID: "today", FirstName: "Áda", LastName: "Member", JoinDate: "2026-11-01T10:00:00Z", CSEmail: &cs, PersonalEmail: &personal}, {ID: "future", FirstName: "Future", LastName: "Member", JoinDate: "2026-11-02T10:00:00Z"}, {ID: "old", FirstName: "Old", LastName: "Member", JoinDate: "2026-01-01T10:00:00Z"}} {
 			if e := q.SaveMember(ctx, p); e != nil {
@@ -32,7 +32,7 @@ func TestMemberSignupISOCountsAndSearch(t *testing.T) {
 	if err != nil || counts["today"] != 1 || counts["last7Days"] != 1 || counts["last30Days"] != 1 || counts["members"] != 3 {
 		t.Fatalf("counts %v %v", counts, err)
 	}
-	for _, needle := range []string{"ÁDA", "ada@example.org", "ada@cs.washington.edu"} {
+	for _, needle := range []string{"ÁDA", "ada@example.org", "ada@cs.washington.example"} {
 		_, n, e := db.Read().Members(ctx, MemberFilter{Search: needle, Limit: 25})
 		if e != nil || n != 1 {
 			t.Errorf("search %q total=%d err=%v", needle, n, e)

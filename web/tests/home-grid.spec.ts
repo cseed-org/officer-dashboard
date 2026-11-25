@@ -114,9 +114,8 @@ test('Links defaults to a compact card with accessible edit controls', async ({ 
   await openHome(page);
   const links = widget(page, 'links');
   await expect(links).toHaveAttribute('data-size', '2x1');
-  for (const name of ['Club website', 'Notion', 'Google Drive']) {
-    await expect(links.getByRole('link', { name: new RegExp(name) })).toBeVisible();
-  }
+  await expect(links.getByRole('link', { name: /Club website/ })).toBeVisible();
+  await expect(links.getByRole('link', { name: /Notion|Google Drive/ })).toHaveCount(0);
   await page.getByRole('button', { name: 'Edit home' }).click();
   await expect(links.locator('.wc-head')).toBeVisible();
   await links.locator('.blk-handle').focus();
@@ -363,11 +362,11 @@ test('Coachmarks spotlight real controls and discard their temporary edit previe
   expect(await savedLayout(page)).toEqual(before);
 });
 
-test('Leadership overrides club defaults; blank values restore the supplied URLs', async ({ page }) => {
+test('Leadership configures private club links; blank values remove them', async ({ page }) => {
   await devLogin(page, 'leadership');
   const settings = await (await page.request.get('/api/club/settings')).json();
   try {
-    await page.request.put('/api/club/settings', { data: { ...settings, websiteUrl: 'https://example.org/club', notionUrl: '', driveUrl: '' } });
+    await page.request.put('/api/club/settings', { data: { ...settings, websiteUrl: 'https://example.org/club', notionUrl: 'https://notion.example/club', driveUrl: 'https://drive.example/club' } });
     await openHome(page);
     const links = widget(page, 'links');
     const site = links.getByRole('link', { name: /Club website/ });
@@ -381,8 +380,12 @@ test('Leadership overrides club defaults; blank values restore the supplied URLs
     await expect(destination.getByRole('heading', { name: 'Club destination' })).toBeVisible();
     await destination.close();
     await expect(links.getByRole('link', { name: /Add link/ })).toHaveCount(0);
-    await expect(links.getByRole('link', { name: /Notion/ })).toHaveAttribute('href', 'https://app.notion.com/p/cseed/cseed-8c884a7f9dbe4bffa58718820e00cc10');
-    await expect(links.getByRole('link', { name: /Google Drive/ })).toHaveAttribute('href', 'https://drive.google.com/drive/folders/0ABwfOblCw9EvUk9PVA?dmr=1&ec=wgc-drive-hero-goto');
+    await expect(links.getByRole('link', { name: /Notion/ })).toHaveAttribute('href', 'https://notion.example/club');
+    await expect(links.getByRole('link', { name: /Google Drive/ })).toHaveAttribute('href', 'https://drive.example/club');
+    await page.request.put('/api/club/settings', { data: { ...settings, notionUrl: '', driveUrl: '' } });
+    await openHome(page);
+    await expect(links.getByRole('link', { name: /Notion/ })).toHaveAttribute('href', '/settings#club-links');
+    await expect(links.getByRole('link', { name: /Google Drive/ })).toHaveAttribute('href', '/settings#club-links');
   } finally { await page.request.put('/api/club/settings', { data: settings }); }
 });
 
