@@ -7,7 +7,7 @@ import endpoints from './integrations/endpoints.mjs';
  * Static build (web/dist) served by the Go backend. All data comes from /api/* at runtime.
  * In dev, Vite on :4340 proxies /api and /auth to API_ORIGIN (the Go server on :8090).
  */
-const API_ORIGIN = process.env.API_ORIGIN ?? 'http://127.0.0.1:8090';
+const API_ORIGIN = process.env.API_ORIGIN ?? 'http://localhost:8090';
 
 /** @type {import('vite').ProxyOptions} */
 const proxy = {
@@ -18,7 +18,7 @@ const proxy = {
   cookieDomainRewrite: '',
   // Redirects (e.g. /auth/dev → /) must stay on the dev server, not jump to the API origin.
   autoRewrite: true,
-  // The backend's CSRF check compares Origin with its own host; present the request as
+  // API_ORIGIN must match the backend's APP_URL for its CSRF check; present the request as
   // same-origin (the browser already enforced that against :4340).
   configure: (p) => {
     p.on('proxyReq', (req) => {

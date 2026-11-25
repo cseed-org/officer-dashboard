@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/orgcal"
@@ -120,7 +121,7 @@ func (s *Server) recordOrgSync(err error) {
 		s.orgLastError, s.orgNeedsReauth = "", false
 		return
 	}
-	s.orgLastError = err.Error()
+	s.orgLastError = "Calendar sync failed. Retry or reconnect the calendar account."
 	s.orgNeedsReauth = errors.Is(err, calendar.ErrGoogleRevoked)
 }
 
@@ -206,11 +207,16 @@ func (s *Server) orgSyncACL(ctx context.Context, client orgcal.Client, token str
 			want[strings.ToLower(strings.TrimSpace(*u.Email))] = true
 		}
 	}
-	// Each failing entry is logged with its address and skipped; the rest still apply.
-	var failed []error
-	skip := func(c store.OrgCalendar, email, action string, err error) {
-		s.log.Warn("org calendar ACL entry failed", "calendar", c.Key, "email", email, "action", action, "error", err)
-		failed = append(failed, err)
+	// Keep diagnostics, not roster addresses or URL-bearing transport errors.
+	failed := 0
+	skip := func(c store.OrgCalendar, action string, err error) {
+		var upstream *orgcal.HTTPError
+		status := 0
+		if errors.As(err, &upstream) {
+			status = upstream.Status
+		}
+		s.log.Warn("org calendar ACL entry failed", "calendar", c.Key, "action", action, "http_status", status)
+		failed++
 	}
 	for _, c := range cals {
 		if ctx.Err() != nil {
@@ -218,7 +224,7 @@ func (s *Server) orgSyncACL(ctx context.Context, client orgcal.Client, token str
 		}
 		acl, err := client.ACLs(ctx, token, *c.GoogleCalendarID)
 		if err != nil {
-			skip(c, "", "list", err)
+			skip(c, "list", err)
 			continue
 		}
 		left := map[string]bool{}
@@ -239,23 +245,26 @@ func (s *Server) orgSyncACL(ctx context.Context, client orgcal.Client, token str
 				delete(left, email)
 				if a.Role != "reader" {
 					if err = client.Request(ctx, token, "PATCH", base+"/"+url.PathEscape(a.ID), map[string]string{"role": "reader"}, nil); err != nil {
-						skip(c, email, "set reader", err)
+						skip(c, "set reader", err)
 					}
 				}
 			} else {
 				if err = client.Request(ctx, token, "DELETE", base+"/"+url.PathEscape(a.ID), nil, nil); err != nil && !orgcal.IsStatus(err, 404) {
-					skip(c, email, "remove", err)
+					skip(c, "remove", err)
 				}
 			}
 		}
 		for email := range left {
 			body := map[string]any{"role": "reader", "scope": map[string]string{"type": "user", "value": email}}
 			if err = client.Request(ctx, token, "POST", base+"?sendNotifications=false", body, nil); err != nil {
-				skip(c, email, "add reader", err)
+				skip(c, "add reader", err)
 			}
 		}
 	}
-	return errors.Join(failed...)
+	if failed > 0 {
+		return fmt.Errorf("%d org calendar ACL entries failed", failed)
+	}
+	return nil
 }
 func (s *Server) orgDrain(ctx context.Context, client orgcal.Client, token string, cals []store.OrgCalendar) error {
 	ids := map[string]string{}

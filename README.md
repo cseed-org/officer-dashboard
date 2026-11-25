@@ -138,7 +138,7 @@ Run from the repository root:
 | Go vet and tests, including dev login | `cd server && make vet && make test` |
 | API contracts | `npm ci && npm run contract-check` |
 | Web build and types | `cd web && npm ci && npm run build && npm run check` |
-| Playwright (local, seeded backend required) | `cd web && API_ORIGIN=http://127.0.0.1:8090 npm run test:e2e` |
+| Playwright (local, seeded backend required) | `cd web && API_ORIGIN=http://localhost:8090 npm run test:e2e` |
 
 [CI](.github/workflows/ci.yml) runs Go, contract, and web jobs on PRs and pushes to `main`. Playwright runs locally. [Test details](docs/development.md).
 

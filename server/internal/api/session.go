@@ -205,7 +205,7 @@ func permVersion(s *store.Session) string {
 }
 
 // originOK blocks cross-site writes that ride a session cookie: an unsafe request whose
-// Origin names another host is refused. SameSite=Lax already stops most of these; this is
+// Origin names another origin is refused. SameSite=Lax already stops most of these; this is
 // the belt to that braces. Requests without an Origin header (curl, server-to-server) pass.
 func (s *Server) originOK(r *http.Request) bool {
 	switch r.Method {
@@ -220,10 +220,33 @@ func (s *Server) originOK(r *http.Request) bool {
 		return true
 	}
 	u, err := url.Parse(origin)
-	if err != nil {
+	if err != nil || u.User != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
 		return false
 	}
-	return strings.EqualFold(u.Host, r.Host) || (s.host != "" && strings.EqualFold(u.Host, s.host))
+	// The public origin is authoritative behind a tunnel. Neither a caller-controlled
+	// Host nor an http origin on the https host grants cookie authority.
+	base := s.cfg.AppURL
+	if base == "" {
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		base = scheme + "://" + r.Host
+	}
+	want, err := url.Parse(base)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Scheme != want.Scheme {
+		return false
+	}
+	port := func(v *url.URL) string {
+		if p := v.Port(); p != "" {
+			return p
+		}
+		if v.Scheme == "https" {
+			return "443"
+		}
+		return "80"
+	}
+	return strings.EqualFold(u.Hostname(), want.Hostname()) && port(u) == port(want)
 }
 
 // cleanPath collapses repeated slashes and resolves dot segments, keeping a rooted path.

@@ -39,7 +39,7 @@ func TestOrgCalendarsGoogleConnected(t *testing.T) {
 	if c, p, r := orgCalendarFlags(t, e); c != true || p != true {
 		t.Fatal(string(r.Raw))
 	}
-	if r := e.mustOK(e.get("/api/settings/org-google/status", e.as("user-leadership"))); !strings.Contains(r.str("lastSyncError"), "backend error") {
+	if r := e.mustOK(e.get("/api/settings/org-google/status", e.as("user-leadership"))); r.str("lastSyncError") != "Calendar sync failed. Retry or reconnect the calendar account." {
 		t.Fatal(string(r.Raw))
 	}
 }

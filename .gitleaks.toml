@@ -26,3 +26,10 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['''^web/design/(?:build-people\.py|mockups/officers-v03\.html)$''']
 regexes = ['''^(?:512903385174016001|655390114283765760|688120455907131392|701442918263390208|722615309911605248|742800619335114752|760018233467617280|790011246518550528|798432005512937472|815204771960897536)$''']
+
+[[allowlists]]
+description = "Local-only backup rehearsal credential, restricted to its fixture script"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^scripts/backup-roundtrip\.mjs$''']
+regexes = ['''^roundtrip-test-secret-at-least-32-bytes$''']

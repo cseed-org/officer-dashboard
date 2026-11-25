@@ -45,11 +45,13 @@ func TestSeedMigrateAndServeWiring(t *testing.T) {
 	dir := t.TempDir()
 	e := env(map[string]string{"DB_PATH": filepath.Join(dir, "d", "dash.db"), "RECEIPTS_DIR": filepath.Join(dir, "r")})
 	var out, errb bytes.Buffer
-	if code := run([]string{"seed", "-reset"}, e, &out, &errb); code != 0 {
-		t.Fatalf("seed → %d %s", code, errb.String())
-	}
-	if !strings.Contains(out.String(), "6 users, 6 events, 6 requests, 18 journal lines (FY2027)") {
-		t.Errorf("seed output %q", out.String())
+	if testDBCommand == "seed" {
+		if code := run([]string{"seed", "-reset"}, e, &out, &errb); code != 0 {
+			t.Fatalf("seed → %d %s", code, errb.String())
+		}
+		if !strings.Contains(out.String(), "6 users, 6 events, 6 requests, 18 journal lines (FY2027)") {
+			t.Errorf("seed output %q", out.String())
+		}
 	}
 	out.Reset()
 	if code := run([]string{"migrate"}, e, &out, &errb); code != 0 || !strings.Contains(out.String(), fmt.Sprintf("%d migrations applied", store.MigrationCount())) {
@@ -93,7 +95,7 @@ func TestColdStartIsFast(t *testing.T) {
 	dir := t.TempDir()
 	e := env(map[string]string{"DB_PATH": filepath.Join(dir, "dash.db")})
 	var out, errb bytes.Buffer
-	if run([]string{"seed"}, e, &out, &errb) != 0 {
+	if run([]string{testDBCommand}, e, &out, &errb) != 0 {
 		t.Fatal(errb.String())
 	}
 	start := time.Now()
@@ -116,7 +118,7 @@ func TestHealthcheckCommand(t *testing.T) {
 	dir := t.TempDir()
 	e := env(map[string]string{"DB_PATH": filepath.Join(dir, "dash.db"), "RECEIPTS_DIR": filepath.Join(dir, "r")})
 	var out, errb bytes.Buffer
-	if run([]string{"seed"}, e, &out, &errb) != 0 {
+	if run([]string{testDBCommand}, e, &out, &errb) != 0 {
 		t.Fatal(errb.String())
 	}
 	fs := flag.NewFlagSet("t", flag.ContinueOnError)
@@ -331,14 +333,14 @@ func TestSeedRefusesALiveDatabase(t *testing.T) {
 	errb.Reset()
 	code := run([]string{"seed", "-reset"}, e, &out, &errb)
 	_, statErr := os.Stat(path)
-	if api.DevBuild {
+	if api.DevBuild && testDBCommand == "seed" {
 		if code != 0 {
 			t.Fatalf("dev build seed -reset → %d %s", code, errb.String())
 		}
 	} else if code == 0 || statErr != nil {
 		t.Fatalf("release build seed -reset → %d (file kept: %v)", code, statErr == nil)
 	}
-	if code := run([]string{"seed", "-reset", "-force"}, e, &out, &errb); code != 0 {
-		t.Fatalf("seed -reset -force → %d %s", code, errb.String())
+	if code := run([]string{"seed", "-reset", "-force"}, e, &out, &errb); (code == 0) != (testDBCommand == "seed") {
+		t.Fatalf("seed -reset -force has wrong availability → %d %s", code, errb.String())
 	}
 }

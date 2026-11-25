@@ -23,6 +23,10 @@ const (
 	oauthUnusedClientMaxBytes = 4 << 20
 )
 
+var ErrOAuthClientCapacity = errors.New("OAuth registration capacity reached")
+
+const oauthClientMinLifetimeMs = 60 * 60 * 1000
+
 const unusedOAuthClient = `NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = oauth_clients.id)
 	AND NOT EXISTS (SELECT 1 FROM oauth_codes c WHERE c.client_id = oauth_clients.id)`
 
@@ -52,9 +56,9 @@ func (q *Queries) InsertOAuthClient(ctx context.Context, c OAuthClient) error {
 			break
 		}
 		var rowID int64
-		err := q.q.QueryRowContext(ctx, `SELECT rowid FROM oauth_clients WHERE `+unusedOAuthClient+` ORDER BY created_at, rowid LIMIT 1`).Scan(&rowID)
+		err := q.q.QueryRowContext(ctx, `SELECT rowid FROM oauth_clients WHERE `+unusedOAuthClient+` AND created_at <= ? ORDER BY created_at, rowid LIMIT 1`, int64(c.CreatedAt)-oauthClientMinLifetimeMs).Scan(&rowID)
 		if errors.Is(err, sql.ErrNoRows) {
-			break
+			return ErrOAuthClientCapacity
 		}
 		if err != nil {
 			return err

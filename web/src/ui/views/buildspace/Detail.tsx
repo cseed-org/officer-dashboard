@@ -1,3 +1,4 @@
+import { safeUrl } from "../../../lib/url";
 import { LoadHistory } from "../../components/LoadHistory";
 import { DueDate } from "../../components/DueDate";
 import type { PurchaseStatus } from "../../../lib/domain";
@@ -187,7 +188,7 @@ export function BuildspaceDetail({
               <p>{project.description || "No description yet."}</p>
               {project.links.map((l) => (
                 <p>
-                  <a href={l} target="_blank" rel="noreferrer">
+                  <a href={safeUrl(l) ?? undefined} target="_blank" rel="noreferrer">
                     {l}
                   </a>
                 </p>

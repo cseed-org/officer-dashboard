@@ -49,8 +49,8 @@ func (c Console) Notify(_ context.Context, e Event, link string) {
 	if l == nil {
 		l = slog.Default()
 	}
-	raw, _ := json.Marshal(e)
-	l.Info("notify", "type", e.Type, "event", string(raw), "link", link)
+	// Logs are operational evidence, not another store of names, comments or receipts.
+	l.Info("notify", "type", e.Type, "request_id", e.RequestID)
 }
 
 // Discord posts an embed to a webhook.

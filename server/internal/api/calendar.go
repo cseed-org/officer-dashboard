@@ -383,7 +383,7 @@ func (s *Server) deliverOne(ctx context.Context, r recipient, ev calendar.Event,
 		err := s.cfg.Mailer.Send(ctx, calendar.Message{To: *r.Email, Subject: subject, Text: text, Method: method,
 			ICS: calendar.ICS(ev, s.cfg.Mailer.From(), *r.Email, s.now())})
 		if err != nil {
-			s.log.Warn("calendar email failed", "user", r.UserID, "error", err)
+			s.log.Warn("calendar email failed", "user", r.UserID)
 			return res("failed", "The invite email couldn't be sent.")
 		}
 		return res("sent", "Invite sent to "+*r.Email+".")

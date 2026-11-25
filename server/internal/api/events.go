@@ -446,7 +446,8 @@ func (c *Ctx) eventDelete() error {
 }
 
 func (c *Ctx) eventDetail() error {
-	if _, err := c.officer(); err != nil {
+	u, err := c.officer()
+	if err != nil {
 		return err
 	}
 	ctx := c.Context()
@@ -463,7 +464,11 @@ func (c *Ctx) eventDetail() error {
 	if err != nil {
 		return err
 	}
-	reqs, err := q.RequestsByEvent(ctx, e.ID)
+	filter := store.RequestFilter{EventID: e.ID}
+	if !auth.HasRole(u.Role, auth.RoleDirector) {
+		filter.DraftsOf = u.ID
+	}
+	reqs, err := q.Requests(ctx, filter)
 	if err != nil {
 		return err
 	}
@@ -1033,6 +1038,10 @@ func (c *Ctx) ingestLuma() error {
 	ctx := c.Context()
 	var result importResult
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
+		tok, err = c.serviceTokenIn(w, "ingest:luma")
+		if err != nil {
+			return err
+		}
 		existing, qerr := eventForLuma(ctx, w, ev.LumaID.V)
 		if qerr != nil && !errors.Is(qerr, store.ErrNotFound) {
 			return qerr

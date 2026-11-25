@@ -19,7 +19,7 @@ test('P2-1: a 401 from any API call during a session goes to /login', async ({ p
 
 test('P2-2: /login?next= never leaves the site', async ({ page }) => {
   await devLoginSkipTour(page, 'director');
-  for (const next of ['/%5Cevil.example', '//evil.example', '%5C%5Cevil.example', 'https://evil.example/']) {
+  for (const next of ['/.//evil.example', '/%252e//evil.example', '/x/..//evil.example', '/%5Cevil.example', '//evil.example', '%5C%5Cevil.example', 'https://evil.example/']) {
     await page.goto(`/login?next=${next}`);
     // Whatever the origin under test (WEB_ORIGIN), we stay on it and land on home.
     await expect.poll(() => new URL(page.url()).pathname).toBe('/');

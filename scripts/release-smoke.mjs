@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Checks the real release binary without STATIC_DIR, dev authentication or seeded users.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -19,6 +19,11 @@ await new Promise((done) => listener.close(done));
 const origin = `http://127.0.0.1:${port}`;
 const env = { ...process.env, ADDR: `127.0.0.1:${port}`, APP_URL: origin, DB_PATH: join(work, 'smoke.db') };
 for (const key of ['STATIC_DIR', 'DEV_AUTH', 'DEV_AUTH_KEY']) delete env[key];
+// A release must refuse fixtures even when asked to overwrite a database.
+const seed = spawnSync(resolve(bin), ['seed', '-force', '-reset'], { env, encoding: 'utf8' });
+assert.ifError(seed.error);
+assert.notEqual(seed.status, 0, 'release excludes seed fixtures');
+assert.equal(existsSync(env.DB_PATH), false, 'release seed cannot create a database');
 const server = spawn(resolve(bin), ['serve'], { env, stdio: ['ignore', 'ignore', 'inherit'] });
 let spawnError;
 server.on('error', (error) => { spawnError = error; });

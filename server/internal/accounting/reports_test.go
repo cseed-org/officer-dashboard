@@ -298,3 +298,12 @@ func TestForm990TreatsOpeningReversalsAsOpening(t *testing.T) {
 		t.Errorf("expenses: form 990 %d, activities %d, functional %d, want 200", f.Totals.PartIXLine25.TotalCents, actExpense, fe.Totals.TotalCents)
 	}
 }
+
+func TestCSVNeutralizesWhitespacePrefixedFormulas(t *testing.T) {
+	for _, raw := range []string{" =1+1", " \t+SUM(A1)", "\n@evil", " \r-1"} {
+		out := CSV(map[string]any{"vendor": raw})
+		if !strings.Contains(out, "'"+raw) {
+			t.Fatalf("formula not guarded: %q", out)
+		}
+	}
+}

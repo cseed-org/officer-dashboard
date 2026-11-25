@@ -8,6 +8,7 @@
     "node": ">=22.23.4"
   },
   "scripts": {
+    "test": "npm run test:scripts",
     "contract-check": "node scripts/contract-check.mjs",
     "mcp-tools": "node scripts/gen-mcp-tools.mjs",
     "test:scripts": "node --test \"scripts/*.test.mjs\""

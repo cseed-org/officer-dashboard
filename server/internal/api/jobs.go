@@ -19,11 +19,21 @@ var bearerRE = regexp.MustCompile(`(?i)^Bearer ([^\s]+)$`)
 // authenticateToken checks the Bearer service token and its scope. Reads leave token
 // state unchanged; mutations stamp last_used_at inside their own transaction.
 func (c *Ctx) authenticateToken(scope string) (*store.ServiceToken, error) {
+	t, err := c.serviceTokenIn(c.S.db.Read(), scope)
+	if err == nil {
+		c.Token, c.User = t, nil
+	}
+	return t, err
+}
+
+// serviceTokenIn also runs inside mutation transactions: a slow body cannot
+// outlive revocation, expiry, a scope change or its creator's authority.
+func (c *Ctx) serviceTokenIn(q *store.Queries, scope string) (*store.ServiceToken, error) {
 	m := bearerRE.FindStringSubmatch(c.R.Header.Get("Authorization"))
 	if m == nil {
 		return nil, fail(401, "unauthenticated", "Service token required")
 	}
-	t, err := c.S.db.Read().TokenByHash(c.Context(), auth.SHA256Hex(m[1]))
+	t, err := q.TokenByHash(c.Context(), auth.SHA256Hex(m[1]))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, fail(401, "unauthenticated", "Invalid or expired service token")
 	}
@@ -35,7 +45,7 @@ func (c *Ctx) authenticateToken(scope string) (*store.ServiceToken, error) {
 	}
 	// A token acts with its creator's authority: it dies with that authority, even if the
 	// revocation on deactivation/demotion was somehow missed.
-	creator, err := c.S.db.Read().UserByID(c.Context(), t.CreatedBy)
+	creator, err := q.UserByID(c.Context(), t.CreatedBy)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
@@ -49,7 +59,6 @@ func (c *Ctx) authenticateToken(scope string) (*store.ServiceToken, error) {
 	if !has {
 		return nil, forbidden("Service token lacks required scope")
 	}
-	c.Token, c.User = t, nil
 	return t, nil
 }
 
@@ -166,6 +175,10 @@ func (c *Ctx) agentJobClaim() error {
 	ctx := c.Context()
 	var view FulfillmentJob
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
+		tok, err = c.serviceTokenIn(w, "agent:jobs")
+		if err != nil {
+			return err
+		}
 		j, err := w.JobByID(ctx, c.R.PathValue("id"))
 		if err != nil {
 			return notFoundErr("Record not found")
@@ -227,6 +240,10 @@ func (c *Ctx) agentJobComplete() error {
 	var heldNote *notify.Event
 	var doneReq *store.Request
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
+		tok, err = c.serviceTokenIn(w, "agent:jobs")
+		if err != nil {
+			return err
+		}
 		j, err := w.JobByID(ctx, c.R.PathValue("id"))
 		if err != nil {
 			return notFoundErr("Record not found")

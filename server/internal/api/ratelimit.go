@@ -155,7 +155,7 @@ func retryAfter(wait time.Duration) int { return int(wait/time.Second) + 1 }
 // (TRUSTED_PROXIES, loopback by default): then X-Forwarded-For is read from the right,
 // skipping trusted hops, and the first untrusted hop is the client. Each proxy appends the
 // address it received from, so anything the client wrote itself sits further left and is
-// never reached. IPv6 clients are keyed by their /64. A direct loopback request without the
+// never reached. IPv6 clients are keyed by their /48. A direct loopback request without the
 // header (local tools, tests) is reported as local and not limited.
 func clientIP(r *http.Request, trusted []*net.IPNet) (key string, local bool) {
 	host := peerHost(r)
@@ -194,18 +194,21 @@ func inNets(ip net.IP, nets []*net.IPNet) bool {
 	return false
 }
 
-// ipKey is the bucket key: the IPv4 address, or the /64 of an IPv6 one.
+// ipKey is the bucket key: the IPv4 address, or the /48 of an IPv6 one.
 func ipKey(ip net.IP) string {
 	if v4 := ip.To4(); v4 != nil {
 		return v4.String()
 	}
-	return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
+	return ip.Mask(net.CIDRMask(48, 128)).String() + "/48"
 }
 
 // limitedRoute names the budget a request draws on: sign-in routes and the upload/import
 // routes (expensive, and the ones a script would hammer). Everything else is unlimited.
 func limitedRoute(r *http.Request) string {
 	p := cleanPath(r.URL.Path)
+	if p == "/oauth/token" {
+		return ""
+	} // parsed and limited by grant type in oauthToken
 	if strings.HasPrefix(p, "/auth/") || p == "/api/portal/invite" || (strings.HasPrefix(p, "/oauth/") && r.Method == http.MethodPost) {
 		return "auth"
 	}
@@ -238,6 +241,9 @@ func (s *Server) allowRoute(kind string, client *http.Request) (bool, time.Durat
 		return true, 0
 	}
 	l := s.authLimit
+	if kind == "refresh" {
+		l = s.refreshLimit
+	}
 	if kind == "upload" {
 		l = s.uploadLimit
 	}

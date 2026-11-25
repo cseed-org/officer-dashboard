@@ -182,6 +182,9 @@ func (c *Ctx) officerUpdate() error {
 	ctx := c.Context()
 	var out *OfficerDTO
 	err := c.S.db.Write(ctx, func(q *store.Queries) error {
+		if _, err := c.directorIn(q); err != nil {
+			return err
+		}
 		before, err := c.loadOfficer(ctx, q, c.R.PathValue("id"), true)
 		if err != nil {
 			return err
@@ -468,6 +471,15 @@ func (c *Ctx) profilePut() error {
 					issues := &validate.Issues{}
 					issues.Add("subteamId", "Subteam not found")
 					return validationError(issues)
+				}
+				teams, err := q.Subteams(ctx)
+				if err != nil {
+					return err
+				}
+				for _, team := range teams {
+					if team.ID == subteam.V && strings.EqualFold(team.Name, "Design") {
+						return forbidden("Ask a director to assign the Design subteam")
+					}
 				}
 				p.SubteamID = subteam.V
 			} else {

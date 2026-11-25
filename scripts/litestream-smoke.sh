@@ -7,7 +7,9 @@ echo "Litestream version: $version"
 test "$version" = "0.3.14"
 work=/data/litestream-smoke
 mkdir -p "$work"
-DB_PATH="$work/dashboard.db" /app/dashboard seed -reset
+# Release binaries exclude fixtures. A migrated empty database exercises the
+# same WAL snapshot path without introducing sample accounts into the image.
+DB_PATH="$work/dashboard.db" /app/dashboard migrate
 cat > "$work/litestream.yml" <<EOF
 dbs:
   - path: $work/dashboard.db

@@ -22,6 +22,9 @@ func pausedMutation(t *testing.T, e *testEnv, method, path string, body any, who
 	bodyReader := &gatedReadCloser{data: raw, entered: entered, release: release}
 	req := httptest.NewRequest(method, "http://localhost:8090"+path, bodyReader)
 	req.Header.Set("Content-Type", "application/json")
+	if who.token != "" {
+		req.Header.Set("Authorization", "Bearer "+who.token)
+	}
 	if who.cookie != nil {
 		req.AddCookie(who.cookie)
 	}
