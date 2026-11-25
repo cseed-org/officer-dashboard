@@ -11,9 +11,9 @@ build:            ## default build: no dev login, no embedded front end
 build-dev:        ## dev build: adds /auth/dev (also needs DEV_AUTH=1)
 	CGO_ENABLED=1 $(GO) build -tags dev -o bin/dashboard-dev ./cmd/dashboard
 
-build-release:    ## release build: embeds ../web/dist (run the front-end build first)
+build-release:    ## release build: embeds ../web/dist and excludes sample fixtures (build web first)
 	rm -rf internal/web/dist && cp -r ../web/dist internal/web/dist
-	CGO_ENABLED=1 $(GO) build -trimpath -tags embedweb -ldflags "$(LDFLAGS)" -o bin/dashboard ./cmd/dashboard
+	CGO_ENABLED=1 $(GO) build -trimpath -tags embedweb,release -ldflags "$(LDFLAGS)" -o bin/dashboard ./cmd/dashboard
 
 test:
 	$(GO) test ./...
