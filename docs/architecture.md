@@ -30,7 +30,7 @@ server/
   internal/validate    request validation with zod-shaped error details
   internal/seed        the FY2027 sample books (ported from the historical TypeScript seed)
   internal/web         static file server: directory (dev) or go:embed (release)
-  deploy/              Dockerfile support, Litestream config, systemd units
+  deploy/              Dockerfile support, backup helper/updater, systemd units
   scripts/backup       online SQLite backup
 ```
 

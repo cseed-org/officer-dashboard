@@ -193,8 +193,8 @@ app execution. The backup helper reads `BACKUP_BEARER_SECRET_FILE`,
 without exporting their values. Off-box restore accepts the same sink `_FILE` keys.
 A missing/empty/unreadable file, or a direct credential plus `_FILE`, fails closed.
 Direct values remain compatible for isolated tests and non-container configurations;
-the production templates use files. App files are resolved by the entrypoint, so commands
-that bypass it must use their normal non-secret CLI settings directly.
+the production templates use files. Every `dashboard` subcommand resolves app `_FILE` keys
+itself; the image ships no shell-side resolver.
 
 Compose sets `BACKUP_REQUIRED=1`: the app refuses to create a missing production DB.
 The backup service stages its encrypted recovery snapshot for off-box decryption.

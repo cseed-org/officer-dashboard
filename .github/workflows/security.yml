@@ -37,6 +37,7 @@ jobs:
           docker build -f server/Dockerfile -t dashboard-backup-qa .
           docker build -f server/Dockerfile --target backup-test-image -t dashboard-backup-test .
           node scripts/backup-roundtrip.mjs
+
   govulncheck:
     runs-on: ubuntu-latest
     timeout-minutes: 15
