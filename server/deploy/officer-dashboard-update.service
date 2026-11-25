@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply an approved dashboard prod digest
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/officer-dashboard/server/deploy
+ExecStart=/usr/bin/python3 /opt/officer-dashboard/scripts/update
+UMask=0077
+TimeoutStartSec=15min

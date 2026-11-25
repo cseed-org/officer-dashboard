@@ -1,6 +1,8 @@
 # Shell scripts run inside Linux containers: keep LF even in a Windows checkout.
 *.sh text eol=lf
 server/scripts/backup text eol=lf
+scripts/restore-from-d1 text eol=lf
+scripts/update text eol=lf
 # Generators emit LF; keep their committed output stable in Windows checkouts.
 server/internal/api/mcp_tools.json text eol=lf
 web/src/lib/endpoints.generated.ts text eol=lf

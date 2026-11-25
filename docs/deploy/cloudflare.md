@@ -1,5 +1,10 @@
 # Cloudflare setup
 
+> Current no-card image: use [Fresh install](fresh-install.md) and
+> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
+> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+
+
 You come here from [step 2 of the deploy guide](README.md#2-set-up-cloudflare). Do steps 0 to 9
 in order, then go back. Step 10 runs later, once the dashboard is up.
 

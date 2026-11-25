@@ -16,41 +16,26 @@ jobs:
     if: github.event_name == 'schedule'
     uses: ./.github/workflows/gitleaks.yml
 
-  litestream:
+  backup-sink:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          go-version-file: server/go.mod
-          cache-dependency-path: server/go.sum
-      - name: Build the shipped image
-        run: docker build -f server/Dockerfile -t dashboard-security .
-      - name: Smoke test Litestream in the release image
+          node-version: 24
+      - run: npm ci
+        working-directory: server/deploy/backup-sink
+      - run: npm audit --audit-level=high
+        working-directory: server/deploy/backup-sink
+      - run: npm test
+        working-directory: server/deploy/backup-sink
+      - name: Build and exercise the encrypted backup client
         run: |
-          docker image inspect dashboard-security --format '{{.Size}}'
-          docker run --rm --entrypoint /bin/sh \
-            -v "$PWD/scripts/litestream-smoke.sh:/litestream-smoke.sh:ro" \
-            dashboard-security /litestream-smoke.sh
-      - name: Prepare the shipped Litestream binary scan
-        run: |
-          container=$(docker create dashboard-security)
-          trap 'docker rm "$container"' EXIT
-          docker cp "$container:/usr/local/bin/litestream" ./litestream
-          go version ./litestream
-          expected=$(sed -n 's/^toolchain //p' server/go.mod)
-          test "$(go version ./litestream)" = "./litestream: $expected"
-          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
-      - name: Scan the shipped Litestream binary (report-only for AWS SDK v1)
-        # GO-2022-0635 and GO-2022-0646 have no fixed AWS SDK v1 version.
-        # SDK v2 migration requires Litestream code changes, outside this dependency bump.
-        # Build, upstream tests, runtime smoke and toolchain checks remain blocking.
-        continue-on-error: true
-        run: govulncheck -mode=binary ./litestream
-
+          docker build -f server/Dockerfile -t dashboard-backup-qa .
+          node scripts/backup-roundtrip.mjs
   govulncheck:
     runs-on: ubuntu-latest
     timeout-minutes: 15

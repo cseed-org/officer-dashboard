@@ -1,15 +1,24 @@
 #!/bin/sh
-# Container entrypoint. Containers have ephemeral disks, so when a replica is configured
-# (LITESTREAM_BUCKET) the database is restored from it on boot and replicated continuously
-# while the server runs. Without one it is a plain single-node start (a Pi, local Docker).
 set -eu
-
-if [ -n "${LITESTREAM_BUCKET:-}" ]; then
-  export LITESTREAM_PATH="${LITESTREAM_PATH:-dashboard}" LITESTREAM_REGION="${LITESTREAM_REGION:-auto}" LITESTREAM_ENDPOINT="${LITESTREAM_ENDPOINT:-}"
-  # First boot of a new bucket: nothing to restore, the server creates and migrates the file.
-  litestream restore -config /etc/litestream.yml -if-db-not-exists -if-replica-exists "$DB_PATH"
-  exec litestream replicate -config /etc/litestream.yml -exec "/app/dashboard serve"
+if [ -n "${BACKUP_SINK_URL:-}" ]; then
+  if [ ! -f "$DB_PATH" ]; then
+    # D5 forbids keeping the decryption key here. Never replace a lost DB with an empty one.
+    if [ ! -f "${DB_PATH}.recovery.age" ]; then
+      python3 /app/backup.py download --output "${DB_PATH}.recovery.age"
+    fi
+    echo 'Restore off-box with scripts/restore-from-d1, install the DB, then restart.' >&2
+    exit 1
+  fi
+  python3 /app/backup.py loop &
+  backup_pid=$!
+  /app/dashboard serve &
+  app_pid=$!
+  trap 'kill -TERM "$app_pid" "$backup_pid" 2>/dev/null || true' TERM INT
+  set +e
+  wait "$app_pid"
+  result=$?
+  kill -TERM "$backup_pid" 2>/dev/null || true
+  wait "$app_pid" 2>/dev/null
+  exit "$result"
 fi
-
-echo "LITESTREAM_BUCKET is not set: the database lives only on this container's disk." >&2
 exec /app/dashboard serve

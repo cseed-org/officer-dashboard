@@ -1,5 +1,10 @@
 # Upgrade
 
+> Current no-card image: use [Fresh install](fresh-install.md) and
+> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
+> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+
+
 Use this page when the dashboard already runs with Docker (`compose.cloudflare.yml`, set up with
 the [deploy guide](README.md)). For a Pi running the dashboard under systemd, see
 [Other setups → Upgrade under systemd](other-setups.md#upgrade-under-systemd).

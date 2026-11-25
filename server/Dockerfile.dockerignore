@@ -8,6 +8,8 @@
 worktrees
 tmp
 **/node_modules
+**/__pycache__
+**/.wrangler
 **/.astro
 **/dist
 **/test-results

@@ -1,8 +1,8 @@
 # Configuration
 
 Every setting the dashboard reads, with whether you need it and its default. To deploy, start with
-[Deploy the dashboard, step by step](deploy/README.md); it tells you which of these to set and
-when. A Docker deployment only needs the rows marked **required**, the Litestream backup settings,
+[Fresh install](deploy/fresh-install.md); it tells you which of these to set and
+when. A Docker deployment only needs the rows marked **required**, the D1 backup settings,
 and the Google ones; everything else turns on an optional feature or is for developers.
 
 **Where settings go.** With Docker, the dashboard's settings go in `server/deploy/dashboard.env`
@@ -19,7 +19,6 @@ Read by `compose.cloudflare.yml`, not by the dashboard.
 | --- | --- | --- | --- |
 | `APP_URL` | **required** | – | the public `https` address, no slash at the end. Passed to the dashboard; wins over `dashboard.env` |
 | `TUNNEL_TOKEN` | **required** | – | the Cloudflare Tunnel's token ([Cloudflare step 1](deploy/cloudflare.md#1-create-the-tunnel)) |
-| `DASHBOARD_TAG` | **required** | – | which published `ghcr.io/cseed-org/officer-dashboard` image to run. A fixed tag: `0.15.0`, or `sha-<7 characters>` before a release exists. Never `latest`, `0.15` or `main`: they move, and a later `pull` would upgrade and migrate without a backup |
 | `DASHBOARD_IMAGE` | optional | – | the whole image name instead, for an image you build (`officer-dashboard:local`) or the copy an upgrade keeps. Wins over `DASHBOARD_TAG` |
 | `TUNNEL_NET` | optional | `10.250.89` | first three numbers of the private network between the two containers: subnet `.0/28`, containers `.8/29` (also the dashboard's `TRUSTED_PROXIES`), gateway `.1`. Change it if compose says the pool overlaps |
 
@@ -68,22 +67,26 @@ Receipt storage is chosen in this order: Drive (both variables), then `RECEIPTS_
 development build with `DEV_AUTH=1`, a `receipts/` folder beside the database. Otherwise uploads
 answer 503.
 
-### Backups (Litestream, in the container)
+### Backups (encrypted D1 snapshots)
 
-Read by the image's entrypoint and `litestream.yml`, not by the dashboard. Without
-`LITESTREAM_BUCKET` the database exists only in the container's volume.
+Read by the image entrypoint and `backup.py`. Without `BACKUP_SINK_URL`, only the
+local data volume stores the database. Set all backup credentials before enabling.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `LITESTREAM_BUCKET` | – | turns on restore-at-start and continuous copying to this bucket |
-| `LITESTREAM_ENDPOINT` | empty | the bucket's address: `https://<account ID>.r2.cloudflarestorage.com` for R2; empty for AWS S3 |
-| `LITESTREAM_REGION` | `auto` | `auto` for R2, for example `us-west-2` for S3 |
-| `LITESTREAM_PATH` | `dashboard` | folder inside the bucket |
-| `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY` | – | a key for this bucket only |
+| `BACKUP_SINK_URL` | empty | HTTPS URL of the dedicated D1 backup Worker; enables hourly encrypted backups |
+| `BACKUP_BEARER_SECRET` | empty | same bearer secret configured on the sink Worker |
+| `BACKUP_ACCESS_CLIENT_ID`, `BACKUP_ACCESS_CLIENT_SECRET` | empty | Access service token for the backup hostname, separate from dashboard callers |
+| `BACKUP_AGE_RECIPIENT` | empty | public age recipient; private identity remains offline |
+| `BACKUP_MEMBERSHIP_ACCOUNT_ID`, `BACKUP_MEMBERSHIP_DATABASE_ID` | empty | account and membership D1 database for weekly SQL export |
+| `BACKUP_MEMBERSHIP_API_TOKEN` | empty | account-scoped D1 Edit token; can modify all account D1 databases, never given to the sink |
 
-Set `LITESTREAM_REGION` and `LITESTREAM_PATH` explicitly even though the entrypoint has defaults:
-the restore checks in the deploy docs run Litestream without the entrypoint.
-
+The image includes Python 3 and age; Litestream and its `LITESTREAM_*` settings are removed.
+See [fresh install](deploy/fresh-install.md) and [upgrade/restore](deploy/upgrade-existing.md).
+Missing DB with backups enabled stops startup after downloading ciphertext for off-box recovery.
+`DB_PATH` defaults to `/data/dashboard.db`. Restore refuses to overwrite an existing output.
+Compose requires `DASHBOARD_IMAGE` pinned to an approved digest in `prod-image.env`; the host
+updater writes that pin after health succeeds. `DASHBOARD_TAG` is no longer consumed.
 ### Backups (systemd)
 
 Read by `scripts/backup` and its timer.

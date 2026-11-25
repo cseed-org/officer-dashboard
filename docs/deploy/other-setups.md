@@ -1,5 +1,10 @@
 # Other setups
 
+> Current no-card image: use [Fresh install](fresh-install.md) and
+> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
+> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+
+
 The [deploy guide](README.md) covers the recommended setup: the published image in Docker, behind
 a Cloudflare Tunnel. This page covers the alternatives, briefly. Each one assumes you know the
 main guide.

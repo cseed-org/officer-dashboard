@@ -1,0 +1,6 @@
+#!/bin/sh
+# Recovery workstation: Python 3, age and the OFF-BOX private key.
+set -eu
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export DB_PATH="${DB_PATH:-./restore-lock.db}"
+exec python3 "$root/server/deploy/backup.py" restore "$@"

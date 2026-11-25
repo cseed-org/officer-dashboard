@@ -1,0 +1,13 @@
+name = "dashboard-backup-sink"
+main = "src/index.ts"
+compatibility_date = "2026-07-30"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+preview_urls = false
+
+# Set a custom domain protected by Access before deployment. No membership binding/token.
+[[d1_databases]]
+binding = "BACKUPS"
+database_name = "dashboard-backups"
+database_id = "REPLACE_WITH_BACKUP_DATABASE_ID"
+migrations_dir = "migrations"

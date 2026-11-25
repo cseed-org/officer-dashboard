@@ -34,14 +34,25 @@ test("deploy-appropriate server environment keys have template entries", () => {
 
 test("container and backup settings have template entries", () => {
   const expected = [
-    "LITESTREAM_BUCKET",
-    "LITESTREAM_ENDPOINT",
-    "LITESTREAM_REGION",
-    "LITESTREAM_PATH",
-    "LITESTREAM_ACCESS_KEY_ID",
-    "LITESTREAM_SECRET_ACCESS_KEY",
+    "BACKUP_SINK_URL",
+    "BACKUP_BEARER_SECRET",
+    "BACKUP_ACCESS_CLIENT_ID",
+    "BACKUP_ACCESS_CLIENT_SECRET",
+    "BACKUP_AGE_RECIPIENT",
+    "BACKUP_MEMBERSHIP_ACCOUNT_ID",
+    "BACKUP_MEMBERSHIP_DATABASE_ID",
+    "BACKUP_MEMBERSHIP_API_TOKEN",
     "KEEP",
     "BACKUP_REMOTE",
   ];
   assert.deepEqual(expected.filter((key) => !hasEntry(template, key)), []);
+});
+
+test("backup client environment keys are documented and templated", () => {
+  const source = read('server/deploy/backup.py');
+  const inventory = [...source.matchAll(/os\.environ(?:\[|\.get\()'([A-Z_]+)'/g)].map(m => m[1]);
+  assert.ok(inventory.length >= 8);
+  assert.deepEqual(inventory.filter(key => !configuration.includes(`\`${key}\``)), []);
+  assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(template, key)), []);
+  assert.ok(!source.includes('LITESTREAM_'));
 });
