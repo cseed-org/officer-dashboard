@@ -8,6 +8,7 @@
 set -eu
 umask 0077
 DB_PATH="${DB_PATH:-./data/dashboard.db}"
+case "$DB_PATH" in /*) ;; *) DB_PATH="$(pwd)/$DB_PATH";; esac
 : "${BACKUP_DIR:?set an absolute BACKUP_DIR}"
 : "${BACKUP_AGE_RECIPIENT:?set the public age recipient}"
 KEEP="${KEEP:-30}"
@@ -20,9 +21,8 @@ mkdir -p "$BACKUP_DIR"
 work=$(mktemp -d "$BACKUP_DIR/.backup-work.XXXXXX")
 trap 'rm -f "$work/snapshot.db" "$work/snapshot.db-wal" "$work/snapshot.db-shm" "$work/snapshot.gz" "$work/snapshot.age"; rmdir "$work"' EXIT
 trap 'exit 1' HUP INT TERM
-# mktemp paths contain only the configured directory and a random suffix. Escape SQL quotes.
-escaped=$(printf '%s' "$work/snapshot.db" | sed "s/'/''/g")
-sqlite3 "$DB_PATH" '.timeout 10000' ".backup '$escaped'"
+# Keep the dot-command destination constant; directory names never become command text.
+(cd "$work" && sqlite3 "$DB_PATH" '.timeout 10000' '.backup snapshot.db')
 [ "$(sqlite3 "$work/snapshot.db" 'PRAGMA integrity_check;')" = ok ] || { echo 'Integrity check failed' >&2; exit 1; }
 gzip -c "$work/snapshot.db" > "$work/snapshot.gz"
 age -r "$BACKUP_AGE_RECIPIENT" -o "$work/snapshot.age" "$work/snapshot.gz"
