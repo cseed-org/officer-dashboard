@@ -90,6 +90,8 @@ jobs:
       - run: npm ci
       - name: MCP tool list matches the contract
         run: node scripts/gen-mcp-tools.mjs --check
+      - name: Updater and offline restore fault regression tests
+        run: python3 -m unittest discover -s scripts -p "test_*.py" -v
       - name: Script regression tests
         run: npm run test:scripts
       - name: Canonical and browser contract parity
@@ -198,10 +200,10 @@ jobs:
             type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
           labels: |
             org.opencontainers.image.title=officer-dashboard
-            org.opencontainers.image.description=CSEED officer dashboard: Go server with the embedded web front end and Litestream
+            org.opencontainers.image.description=CSEED officer dashboard: Go server with the embedded web front end and encrypted D1 snapshots
           annotations: |
             org.opencontainers.image.title=officer-dashboard
-            org.opencontainers.image.description=CSEED officer dashboard: Go server with the embedded web front end and Litestream
+            org.opencontainers.image.description=CSEED officer dashboard: Go server with the embedded web front end and encrypted D1 snapshots
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:

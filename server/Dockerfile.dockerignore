@@ -8,6 +8,8 @@
 worktrees
 tmp
 **/node_modules
+**/__pycache__
+**/.wrangler
 **/.astro
 **/dist
 **/test-results
@@ -27,3 +29,6 @@ server/data
 !**/.env.example
 **/*.env
 !**/*.env.example
+
+# Secret files may have no extension. Never send their directory to a builder.
+server/deploy/secrets

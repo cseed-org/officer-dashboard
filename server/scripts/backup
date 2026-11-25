@@ -1,51 +1,34 @@
 #!/bin/sh
-# Consistent online backup of the dashboard's SQLite database.
-#
-#   DB_PATH=/var/lib/officer-dashboard/dashboard.db BACKUP_DIR=/mnt/usb/dashboard scripts/backup
-#
-# `sqlite3 .backup` copies a live WAL-mode database through SQLite's own backup API, so it is
-# safe while the server is running (never `cp` the .db file by itself: you would miss the -wal).
-# The copy is verified with PRAGMA integrity_check, gzipped, and old ones are pruned.
-#
-# Settings (environment):
-#   DB_PATH       database file                      (default ./data/dashboard.db)
-#   BACKUP_DIR    explicit destination for backups   (required)
-#   KEEP          how many backups to keep           (default 30)
-#   BACKUP_REMOTE optional destination for an off-box copy, a command that receives the file:
-#                   BACKUP_REMOTE='rclone copyto {} r2:cseed-backups/$(basename {})'
-#                   BACKUP_REMOTE='aws s3 cp {} s3://cseed-backups/'
-#
-# Restore: stop the server, then
-#   gunzip -c backups/dashboard-YYYYMMDD-HHMMSS.db.gz > /var/lib/officer-dashboard/dashboard.db
-#   rm -f dashboard.db-wal dashboard.db-shm; start the server (it re-applies migrations).
-# Receipts are not in the database: they are in Google Drive (or RECEIPTS_DIR, back that up too).
-# In a container with Litestream, use `litestream restore` instead (see server/README.md).
+# Consistent local SQLite backup. Only age-encrypted artifacts leave the temporary directory.
+# BACKUP_DIR must be an absolute operator-selected directory, not a default inside a checkout.
+# Requires sqlite3, gzip and age. Keep the age private identity OFF this host.
+# BACKUP_REMOTE, if set, is an executable hook receiving the ciphertext filename as one argument.
+# Restore off-box: age -d -i /offline/key dashboard-*.db.gz.age | gzip -d > restored.db;
+# check integrity before installing it into a stopped deployment.
 set -eu
-umask 077
-
+umask 0077
 DB_PATH="${DB_PATH:-./data/dashboard.db}"
-: "${BACKUP_DIR:?set BACKUP_DIR to an explicit backup destination}"
+case "$DB_PATH" in /*) ;; *) DB_PATH="$(pwd)/$DB_PATH";; esac
+: "${BACKUP_DIR:?set an absolute BACKUP_DIR}"
+: "${BACKUP_AGE_RECIPIENT:?set the public age recipient}"
 KEEP="${KEEP:-30}"
-
-command -v sqlite3 >/dev/null 2>&1 || { echo "sqlite3 is required (apt install sqlite3)" >&2; exit 1; }
-[ -f "$DB_PATH" ] || { echo "no database at $DB_PATH" >&2; exit 1; }
-
+case "$BACKUP_DIR" in /*) ;; *) echo 'BACKUP_DIR must be absolute' >&2; exit 1;; esac
+case "$KEEP" in ''|*[!0-9]*) echo 'KEEP must be a positive integer' >&2; exit 1;; esac
+[ "$KEEP" -gt 0 ] || exit 1
+for tool in sqlite3 gzip age; do command -v "$tool" >/dev/null 2>&1 || { echo "$tool is required" >&2; exit 1; }; done
+[ -f "$DB_PATH" ] || { echo 'Database not found' >&2; exit 1; }
 mkdir -p "$BACKUP_DIR"
-stamp="$(date -u +%Y%m%d-%H%M%S)"
-tmp="$BACKUP_DIR/.dashboard-$stamp.db"
-out="$BACKUP_DIR/dashboard-$stamp.db.gz"
-trap 'rm -f "$tmp"' EXIT
-
-sqlite3 "$DB_PATH" ".timeout 10000" ".backup '$tmp'"
-check="$(sqlite3 "$tmp" 'PRAGMA integrity_check;')"
-[ "$check" = "ok" ] || { echo "integrity_check failed: $check" >&2; exit 1; }
-gzip -c "$tmp" > "$out"
-echo "backup written: $out ($(wc -c < "$out") bytes)"
-
-if [ -n "${BACKUP_REMOTE:-}" ]; then
-  cmd="$(printf '%s' "$BACKUP_REMOTE" | sed "s|{}|$out|g")"
-  sh -c "$cmd"
-fi
-
-# Prune: keep the newest $KEEP.
-ls -1t "$BACKUP_DIR"/dashboard-*.db.gz 2>/dev/null | tail -n +"$((KEEP + 1))" | while read -r old; do rm -f "$old"; done
+work=$(mktemp -d "$BACKUP_DIR/.backup-work.XXXXXX")
+trap 'rm -f "$work/snapshot.db" "$work/snapshot.db-wal" "$work/snapshot.db-shm" "$work/snapshot.gz" "$work/snapshot.age"; rmdir "$work"' EXIT
+trap 'exit 1' HUP INT TERM
+# Keep the dot-command destination constant; directory names never become command text.
+(cd "$work" && sqlite3 "$DB_PATH" '.timeout 10000' '.backup snapshot.db')
+[ "$(sqlite3 "$work/snapshot.db" 'PRAGMA integrity_check;')" = ok ] || { echo 'Integrity check failed' >&2; exit 1; }
+gzip -c "$work/snapshot.db" > "$work/snapshot.gz"
+age -r "$BACKUP_AGE_RECIPIENT" -o "$work/snapshot.age" "$work/snapshot.gz"
+out="$BACKUP_DIR/dashboard-$(date -u +%Y%m%d-%H%M%S)-${work##*.}.db.gz.age"
+mv "$work/snapshot.age" "$out"
+echo 'Encrypted backup written'
+if [ -n "${BACKUP_REMOTE:-}" ]; then "$BACKUP_REMOTE" "$out"; fi
+# Never silently delete or transmit pre-existing plaintext backups. Migrate those off-box.
+ls -1t "$BACKUP_DIR"/dashboard-*.db.gz.age 2>/dev/null | tail -n +"$((KEEP + 1))" | while IFS= read -r old; do rm -f "$old"; done

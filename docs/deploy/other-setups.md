@@ -1,5 +1,10 @@
 # Other setups
 
+> Current Free-plan image: use [Fresh install](fresh-install.md) and
+> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
+> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+
+
 The [deploy guide](README.md) covers the recommended setup: the published image in Docker, behind
 a Cloudflare Tunnel. This page covers the alternatives, briefly. Each one assumes you know the
 main guide.
@@ -19,7 +24,7 @@ file on the Pi's own disk unless you add an off-site copy yourself.
 | --- | --- | --- |
 | Gets the dashboard by | downloading the image | building it on the Pi |
 | Database | `/data/dashboard.db` in the `dashboard-data` volume | `/var/lib/officer-dashboard/dashboard.db` |
-| Backup | Litestream to R2, every second | `scripts/backup` nightly, on the Pi; off-site only with `BACKUP_REMOTE` |
+| Backup | age-encrypted D1 snapshots, hourly | age-encrypted `scripts/backup` nightly; off-site with an executable `BACKUP_REMOTE` hook |
 | Settings file | `server/deploy/dashboard.env` | `/etc/officer-dashboard/env` |
 | Tunnel | a `cloudflared` container → `http://dashboard:8090` | `cloudflared` installed on the Pi → `http://127.0.0.1:8090` |
 
@@ -65,7 +70,7 @@ file on the Pi's own disk unless you add an off-site copy yourself.
    `sudo -u dashboard env DB_PATH=/var/lib/officer-dashboard/dashboard.db /opt/officer-dashboard/dashboard migrate`.
    The outside check: `./bin/dashboard mcp-check https://<your-hostname>`, with the same two
    variables as [Cloudflare step 10](cloudflare.md#10-check-it-from-outside).
-7. **Nightly backup:**
+7. **Nightly encrypted backup:** install the age CLI, then set the public `BACKUP_AGE_RECIPIENT` and an absolute `BACKUP_DIR` in the service env file. Keep its private identity off-host.
    ```sh
    sudo install -m 0755 scripts/backup /opt/officer-dashboard/backup
    sudo install -m 0644 deploy/dashboard-backup.service deploy/dashboard-backup.timer /etc/systemd/system/
@@ -73,19 +78,18 @@ file on the Pi's own disk unless you add an off-site copy yourself.
    sudo systemctl start dashboard-backup.service
    sudo journalctl -u dashboard-backup -n 20 --no-pager
    ```
-   You should see `backup written: /var/lib/officer-dashboard/backups/dashboard-….db.gz`. It keeps
-   the newest 30 (`KEEP`). For an off-site copy, set `BACKUP_REMOTE` in the env file to a command
-   that receives the file (`{}` is its path), as described in the header of `scripts/backup`, for
-   example `BACKUP_REMOTE=rclone copyto {} r2:<bucket>/$(basename {})`. Not verified here: the
-   backup runs as `dashboard` with `ProtectHome=true`, so an `rclone` config must live under
-   `/var/lib/officer-dashboard`.
+   You should see `Encrypted backup written`. It keeps the newest 30 (`KEEP`)
+   `.db.gz.age` files. `BACKUP_REMOTE`, when set, is an executable hook receiving only
+   the ciphertext filename as its single argument. Keep remote-copy configuration
+   under `/var/lib/officer-dashboard` because the service has `ProtectHome=true`.
 
 Receipts: Google Drive, or `RECEIPTS_DIR=/var/lib/officer-dashboard/receipts`, which you must back
 up yourself (it is not in the database).
 
-**Restore a nightly backup:** stop the service, unzip the chosen `.db.gz` over
-`/var/lib/officer-dashboard/dashboard.db`, delete the matching `-wal` and `-shm` files, fix the
-owner, start. The commands are in [Rollback under systemd](#rollback-under-systemd).
+**Restore a nightly backup:** on a recovery workstation, decrypt with the off-box age
+identity, gunzip and require SQLite integrity `ok`. Then stop the service and install
+that verified database, with owner `dashboard` and mode 0600. Remove its stale WAL/SHM
+while stopped and restart. Never copy the age private identity onto the service host.
 
 ### Upgrade under systemd
 
@@ -99,22 +103,15 @@ back up, install, start. In `server/`:
    make build-release
    ./bin/dashboard version
    ```
-2. **Test on a copy of last night's backup:**
-   ```sh
-   sudo systemctl start dashboard-backup.service
-   f=$(sudo sh -c 'ls -1t /var/lib/officer-dashboard/backups/dashboard-*.db.gz | head -1') && echo "$f"
-   v=$(mktemp -d) && sudo gunzip -c "$f" > "$v/dry.db"
-   sqlite3 "$v/dry.db" 'PRAGMA integrity_check;'
-   date; DB_PATH="$v/dry.db" ./bin/dashboard migrate; date
-   rm -rf "$v"
-   ```
-   You should see `ok`, then the new migration count. A migration error here would happen for
-   real too: stop and report it.
+2. **Test on an off-box restored copy:** trigger a fresh encrypted backup and transfer
+   the `.db.gz.age` file to the recovery workstation. Decrypt there with the private
+   identity, check integrity, and run candidate migrations on a disposable copy.
+   Keep the encrypted rollback point and its off-box identity available.
 3. **Stop, back up, keep the old files, install, start:**
    ```sh
    sudo systemctl stop dashboard
    sudo systemctl start dashboard-backup.service
-   f=$(sudo sh -c 'ls -1t /var/lib/officer-dashboard/backups/dashboard-*.db.gz | head -1') && echo "$f"
+   f=$(sudo sh -c 'ls -1t /var/lib/officer-dashboard/backups/dashboard-*.db.gz.age | head -1') && echo "$f"
    sudo mkdir -p /opt/officer-dashboard/pre-upgrade
    sudo cp -p /opt/officer-dashboard/dashboard /opt/officer-dashboard/backup /etc/systemd/system/dashboard.service \
      /etc/systemd/system/dashboard-backup.service /etc/systemd/system/dashboard-backup.timer /opt/officer-dashboard/pre-upgrade/
@@ -135,7 +132,8 @@ Every change since the backup `$f` is lost. (In a new shell, find it with
 
 ```sh
 sudo systemctl stop dashboard
-sudo sh -c "gunzip -c $f > /var/lib/officer-dashboard/dashboard.db"
+# Decrypt/verify $f on the recovery workstation first, then transfer the verified DB.
+sudo install -m 0600 -o dashboard -g dashboard /path/to/offbox-verified.db /var/lib/officer-dashboard/dashboard.db
 sudo rm -f /var/lib/officer-dashboard/dashboard.db-wal /var/lib/officer-dashboard/dashboard.db-shm
 sudo chown dashboard:dashboard /var/lib/officer-dashboard/dashboard.db
 p=/opt/officer-dashboard/pre-upgrade
@@ -146,32 +144,37 @@ sudo systemctl daemon-reload && sudo systemctl start dashboard
 
 ## Build the image yourself
 
-Use this to run a version that has no published image, or if you can't use GitHub's registry.
-Nothing needs building first: the image build also builds the web front end. It takes about 3
-minutes on a fast x86 machine; longer on a Pi (not measured).
-
-**With compose**, in `server/deploy`:
-
-```sh
-echo DASHBOARD_IMAGE=officer-dashboard:local >> .env
-docker compose -f compose.cloudflare.yml -f compose.build.yml build --build-arg VERSION=$(git describe --always --dirty) dashboard
-docker compose -f compose.cloudflare.yml up -d
-```
-
-`officer-dashboard:local` is a local name: compose never downloads it and it can't be mistaken for
-a release. To upgrade, check out the new version, build again the same way, and follow
-[Upgrade](upgrade.md) from step 4. Without `--build-arg VERSION`, `dashboard version` prints `dev`.
-
-**Without compose**, from the repository root:
+Production requires a registry digest even when you build the image yourself. Configure
+`.env`, `dashboard.env`, `backup.env` and the separate secret directories using
+[Fresh install](fresh-install.md) first. From the repository root, choose a registry
+and tag you can push, then publish and resolve that exact build:
 
 ```sh
-docker build -f server/Dockerfile --build-arg VERSION=$(git describe --always --dirty) -t officer-dashboard:local .
-docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile -t <registry>/officer-dashboard:<tag> --push .
+IMAGE=registry.example.org/your-org/officer-dashboard:reviewed-build
+docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile \
+  --build-arg VERSION="$(git describe --always --dirty)" -t "$IMAGE" --push .
+DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+printf 'DASHBOARD_IMAGE=%s@%s\n' "${IMAGE%:*}" "$DIGEST" > server/deploy/prod-image.env
+cd server/deploy
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
 ```
 
-The first builds for this machine. The second builds both platforms and pushes them to a
-registry, because Docker can't load a two-platform image locally (or use
-`--output type=oci,dest=image.tar`). Neither needs emulation.
+Use the explicit database initialization in [Fresh install](fresh-install.md) before
+`up` on a new host. On an existing host, take the verified backup and follow
+[Upgrade an existing host](upgrade-existing.md) before changing its pin. The approved
+`:prod` updater applies only to the project's published GHCR images; keep it disabled
+for a separately managed registry. Both platforms build without emulation.
+
+For a local build without publishing, use the development stack from the repository root:
+
+```sh
+docker compose -f compose.dev.yaml up -d --build
+```
+
+This stack is for development with sample data and developer sign-in. The optional
+`compose.build.yml` override is build-only and cannot turn a local tag into a production pin.
 
 ## Practice run on a quick tunnel
 

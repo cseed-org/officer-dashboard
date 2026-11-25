@@ -1,0 +1,22 @@
+{
+  "name": "dashboard-backup-sink",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "miniflare": "4.20260730.0",
+    "vitest": "5.1.1",
+    "wrangler": "4.168.0"
+  },
+  "overrides": {
+    "miniflare@4.20260730.0": {
+      "sharp": "0.35.5",
+      "undici": "7.30.1"
+    }
+  }
+}

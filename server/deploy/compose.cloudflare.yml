@@ -1,81 +1,91 @@
-# The dashboard behind a Cloudflare Tunnel, with cloudflared in its own container.
-# Step by step: docs/deploy/README.md (Cloudflare tunnel, Access, bypass, bot settings and
-# mcp-check: docs/deploy/cloudflare.md).
-#
-#   cd server/deploy
-#   cp .env.example .env                    # TUNNEL_TOKEN, APP_URL, DASHBOARD_TAG (compose settings)
-#   cp dashboard.env.example dashboard.env  # Discord, Drive, Litestream… (the app's settings)
-#   docker compose -f compose.cloudflare.yml pull      # the published image (ghcr.io)
-#   docker compose -f compose.cloudflare.yml up -d
-#   (to run an image built from this checkout instead: compose.build.yml)
-#   docker compose -f compose.cloudflare.yml run --rm --no-deps -e CF_ACCESS_CLIENT_ID -e CF_ACCESS_CLIENT_SECRET \
-#     --entrypoint /app/dashboard dashboard mcp-check https://<APP_URL host>
-#   (the two Access variables are optional, from your shell: they also check the service-token path)
-#
-# The dashboard publishes no port: the only way in is the tunnel. cloudflared reaches it as
-# http://dashboard:8090 on the private `tunnel` network. Containers on it get addresses from
-# ${TUNNEL_NET}.8/29 only, and that range is exactly TRUSTED_PROXIES: the dashboard believes
-# X-Forwarded-For only from cloudflared (and the network's other containers), never from the
-# Docker gateway ${TUNNEL_NET}.1, through which anything the host forwards would arrive. So
-# the per-IP limits see each real client instead of cloudflared's address.
+# Production: immutable approved digest, separate app/backup secret mounts.
+# See docs/deploy/fresh-install.md. Every compose invocation uses both env files:
+# docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
 name: officer-dashboard
+
+x-dashboard-runtime: &dashboard-runtime
+  image: ${DASHBOARD_IMAGE:?set DASHBOARD_IMAGE to an approved image@sha256:digest}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,mode=1777"]
+  mem_limit: 512m
+  pids_limit: 128
+  stop_grace_period: 45s
 
 services:
   dashboard:
-    # The image CI publishes for each release tag and each push to main. DASHBOARD_TAG in .env
-    # picks the version: pin a fixed one (0.15.0, or sha-<commit>), then upgrading is backup,
-    # new tag, `pull`, `up -d`. DASHBOARD_IMAGE replaces the whole name, for an image you built
-    # (compose.build.yml). There is deliberately no `build:` here: if a pull fails, compose
-    # stops instead of quietly building this checkout under the release's name.
-    image: ${DASHBOARD_IMAGE:-ghcr.io/cseed-org/officer-dashboard:${DASHBOARD_TAG:?set DASHBOARD_TAG in server/deploy/.env to the image tag to run, e.g. 0.15.0 (see .env.example)}}
-    restart: unless-stopped
-    # The app's settings (Discord, Drive, SMTP, LITESTREAM_*…): copy dashboard.env.example.
+    <<: *dashboard-runtime
     env_file: dashboard.env
     environment:
-      # These win over dashboard.env.
-      APP_URL: ${APP_URL:?set APP_URL in server/deploy/.env to the public https origin, e.g. https://officers.example.org}
+      APP_URL: ${APP_URL:?set the public HTTPS origin}
       ADDR: ":8090"
       TRUSTED_PROXIES: ${TUNNEL_NET:-10.250.89}.8/29
-    networks:
-      - tunnel
-    # No `ports:`. To reach the dashboard from this machine for maintenance, publish it on
-    # loopback only, e.g. - "127.0.0.1:8090:8090". Those requests arrive from the gateway,
-    # which is not a trusted proxy, so their X-Forwarded-For is ignored.
+      BACKUP_REQUIRED: "1"
+      DEPLOY_IMAGE: ${DASHBOARD_IMAGE}
+    networks: [tunnel]
     volumes:
-      # The SQLite file. With LITESTREAM_BUCKET set (dashboard.env) it is also replicated and
-      # restored on boot by the image's entrypoint, exactly as without compose.
       - dashboard-data:/data
-    security_opt:
-      - no-new-privileges:true
+      - type: bind
+        source: ./secrets/app
+        target: /run/secrets/app
+        read_only: true
+        bind: {create_host_path: false}
     healthcheck:
       test: ["CMD", "/app/dashboard", "healthcheck"]
       interval: 30s
       timeout: 3s
       retries: 3
       start_period: 15s
-    # The server stops within 15 s (cmd/dashboard ShutdownBudget); Litestream then flushes
-    # its last WAL frames to the replica. Give both time before Docker kills the container.
-    stop_grace_period: 45s
+
+  backup:
+    <<: *dashboard-runtime
+    entrypoint: ["/app/dashboard-backup"]
+    command: ["loop"]
+    env_file: backup.env
+    environment:
+      DB_PATH: /data/dashboard.db
+      DEPLOY_IMAGE: ${DASHBOARD_IMAGE}
+    mem_limit: 256m
+    pids_limit: 64
+    networks: [backup-egress]
+    volumes:
+      - dashboard-data:/data
+      - type: bind
+        source: ./secrets/backup
+        target: /run/secrets/backup
+        read_only: true
+        bind: {create_host_path: false}
+    healthcheck: {disable: true}
 
   cloudflared:
     # Official image. Pin a release and bump it deliberately
     # (https://github.com/cloudflare/cloudflared/releases).
     image: cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    user: "65532:65532"
     restart: unless-stopped
-    # A remotely managed tunnel: its published route (hostname → http://dashboard:8090) is
-    # set in the Cloudflare dashboard, so this container only needs the token.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
+    mem_limit: 128m
+    pids_limit: 64
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in server/deploy/.env (Cloudflare → Networking → Tunnels → your tunnel → the install command's token)}
-    networks:
-      - tunnel
-    security_opt:
-      - no-new-privileges:true
+      TUNNEL_TOKEN_FILE: /run/secrets/tunnel-token
+    volumes:
+      - type: bind
+        source: ${TUNNEL_TOKEN_FILE:?set the host path to the tunnel token file}
+        target: /run/secrets/tunnel-token
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [tunnel]
     depends_on:
-      dashboard:
-        condition: service_healthy
+      dashboard: {condition: service_healthy}
 
 networks:
+  backup-egress: {}
   tunnel:
     driver: bridge
     ipam:

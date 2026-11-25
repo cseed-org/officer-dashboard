@@ -1,6 +1,95 @@
 # Deployment
 
-This page moved. To deploy, start at **[Deploy the dashboard, step by step](deploy/README.md)**.
+For the current $0 Free-plan deployment, start with **[Fresh install](deploy/fresh-install.md)**
+or **[Upgrade an existing host](deploy/upgrade-existing.md)**. The original guide's R2 and
+Litestream sections describe the previous image. The current image uses encrypted D1 snapshots.
+
+## Measured size and free-tier budget
+
+Measured locally on 2026-11-24 using the release image's `dashboard seed -reset` in an
+isolated data directory: **72 tables, 1,060,864 bytes SQLite, 67,507 bytes gzip**. Seed:
+6 users, 6 events, 6 purchase requests, 18 journal lines, plus the full schema/indexes.
+The original gzip measurement used Python's level 9. The static Go backup helper's
+gzip plus age stream measured **72,059 ciphertext bytes** on this seed; plan at
+**75,000 ciphertext bytes per seed copy**.
+No production database was available to measure. WAL is captured consistently with
+SQLite's online backup API, the same API used by `.backup`; integrity is checked first.
+Receipts remain outside SQLite (Drive); this backs up their metadata, not Drive contents.
+
+Limits checked against official documentation:
+[D1 limits](https://developers.cloudflare.com/d1/platform/limits/) lists 500 MB per free
+database, 5 GB per account, 10 databases and 2,000,000 bytes per row;
+[D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/) lists 5 million rows
+read and 100,000 written daily, including index changes. Enforcement began
+[September 1, 2026](https://developers.cloudflare.com/changelog/post/2026-09-01-d1-free-tier-limit-enforcement/).
+[Workers limits](https://developers.cloudflare.com/workers/platform/limits/) lists
+100,000 requests daily, 10 ms CPU per request, and 50 subrequests per invocation.
+
+Each ciphertext chunk is at most **1,900,000 bytes**. The sink accepts at most 13 chunks
+(24,700,000 bytes) per snapshot so commit performs at most 16 D1 operations and uses
+one chunk of memory at a time. The final hash covers the complete ordered ciphertext.
+Free CPU allowance still needs a real-account rehearsal with the largest expected DB;
+local Wrangler does not enforce production CPU limits. Oversize or rejected uploads
+alert and stop; they do not fall back to plaintext or another paid service.
+
+Retention is 48 hourly + 30 daily + 4 weekly membership exports: 82 copies. Daily
+promotion reclassifies one hourly snapshot rather than copying its BLOBs. Conservative
+reserved storage per copy is `2 * (ceil(size/4096)*4096 + chunks*8192 + 16384)`:
+page rounding, metadata and twofold overhead. The hard logical reservation ceiling and
+current physical-usage guard are 450,000,000 bytes, leaving 50 MB below the D1 cap.
+The physical check does not add the new reservation to the file high-water size: deleted
+pages can be reused. Actual D1 storage errors still stop and alert for operator recovery.
+At 75,000 bytes this reserves 204,800 bytes/copy, or **16,793,600 bytes for 82**.
+
+Growth assumption: 100 officers, 1,000 members, 200 events/year, 20,000 activity/audit
+rows/year at 1 KB per row plus 100% index/schema allowance gives roughly 40 MB raw/year.
+At an illustrative 10:1 gzip ratio that is 4 MB/copy: full retention reserves about
+663 MB and cannot fit; 24 hourly + 30 daily + 4 weekly still needs about 469 MB.
+At 3 MB/copy, those figures are about 498 MB and 352 MB respectively. These are
+planning scenarios, not measured compression guarantees. The client automatically prunes
+to 24 hourly when the full-retention estimate or projected usage is too large. It also
+prunes older committed copies by reservation space needed for the next upload,
+while preserving the newest committed copy of each kind. Daily/weekly count targets can
+therefore shrink under pressure. If protected copies, pending uploads, physical storage
+or daily budgets still block an upload, it alerts loudly through `DISCORD_WEBHOOK_URL`.
+It cannot promise all requested copies as data grows.
+
+Before every upload the client prunes, checks logical bytes, reserved writes, and upload
+count, then obtains an atomic server reservation. Each snapshot reserves `100+20*chunks`
+writes including BLOB/index changes, commit, promotion and deletion. One-chunk snapshots
+at 24/day cost 2,880 reserved writes/day; one weekly export adds 120 on its day. Requests
+are bounded by 100/upload and reads by 3,000/upload for the supplied client, including
+usage scans, prune and download verification. Normal one-chunk traffic is about 200
+Worker requests and fewer than 72,000 scanned rows/day. Hard limits: 200 uploads/day,
+40,000 reserved writes/day, 100 total snapshot records, bounded bodies and immutable chunks.
+This allows at most 20,000 planned requests and 600,000 scanned rows/day; 10,000 additional
+write allowance covers cleanup/accounting across midnight. UTC resets match Cloudflare.
+
+**Shared-account allocation is a prerequisite:** reserve at most 50,000 writes, 4 million
+reads, 80,000 Worker requests and 4.5 GB for membership and other applications. A Worker
+bound only to backups cannot observe or constrain the other databases/account workloads.
+Therefore no claim of an unconditional account-wide limit guarantee is possible. Check
+account metrics before enabling and after each weekly export; unexpected other traffic
+can still exhaust the account quota. Cloudflare rejects over-quota queries until UTC reset.
+Do not place the broad account API token in this Worker just to measure the account.
+
+Storage alerts start at 350 MB (70% of 500 MB). Write alerts conservatively include the
+50,000-write allocation for other workloads, so 20,000 reserved backup writes reaches
+70% of the account write budget. The sink separately rejects at its 40,000 reservation
+ceiling. Unauthorized floods are controlled by Access; the planned request/read bounds
+assume only the supplied trusted client, not an attacker who holds both credentials.
+
+For setup, reviewer settings, off-box recovery and the monthly drill, use the linked
+runbooks above. Automatic boot restore stages ciphertext and stops for off-box decryption,
+preserving D5. Automatic migration rollback uses a temporary stopped local checkpoint.
+
+The release runtime is `busybox:stable-musl`. Both dashboard and backup helper are
+statically linked with `release,osusergo,netgo,sqlite_omit_load_extension` (plus `embedweb`
+for the dashboard). SQLite's backup API, gzip and age encryption are compiled into the
+backup helper; no Python, Debian runtime packages, Litestream or external age executable
+are shipped. Python and the age CLI are needed only on the host/recovery workstation.
+Re-scan the combined final image after merging the application security changes: a clean
+scan of this branch is not proof for the merged artifact.
 
 | You want | Go to |
 | --- | --- |
@@ -11,6 +100,21 @@ This page moved. To deploy, start at **[Deploy the dashboard, step by step](depl
 | a fix for an error | [Troubleshooting](deploy/troubleshooting.md) |
 | a Pi under systemd, a self-built image, a quick-tunnel practice run, or what's in the image | [Other setups](deploy/other-setups.md) |
 | every setting and its default | [Configuration](configuration.md) |
+
+## Live Free-plan rehearsal
+
+Before enabling the production timer, rehearse against the authenticated custom-domain
+Worker on the actual Workers Free account. Local Wrangler does not enforce edge CPU.
+Upload the largest expected ciphertext, including a full 1,900,000-byte chunk and a
+13-chunk snapshot if that maximum is intended for use. Exercise reservation/prune,
+chunk PUT, commit (which reads and hashes every chunk), download and daily promotion.
+In the Cloudflare Worker observability metrics/logs, record CPU time for each route,
+including cold and repeated requests, and inspect CPU-limit errors. **Workers Free allows
+10 ms CPU per invocation.** Record the maximum and distribution with the ciphertext size,
+chunk count, date and Worker version; verify headroom below 10 ms before accepting that
+snapshot size. Reduce the supported workload and repeat if it fails; do not assume a
+paid plan or infer CPU compatibility from a local round trip. Continue the 24-hour
+rehearsal while checking account-wide requests, D1 reads/writes/storage and backup alerts.
 
 ## Cloudflare Tunnel + Access
 

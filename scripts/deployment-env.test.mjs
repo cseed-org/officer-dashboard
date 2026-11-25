@@ -16,7 +16,9 @@ assert.ok(keys.size >= 25, "the server environment inventory should be extracted
 
 const configuration = read("docs/configuration.md");
 const template = read("server/deploy/dashboard.env.example");
-const hasEntry = (source, key) => new RegExp(`(?:^|\\n)#?${key}=`).test(source);
+const backupTemplate = read("server/deploy/backup.env.example");
+const allTemplates = template + "\n" + backupTemplate;
+const hasEntry = (source, key) => new RegExp(`(?:^|\\n)#?${key}(?:_FILE)?=`).test(source);
 
 // ADDR and DB_PATH are set by the systemd unit/container. Dev auth belongs only on
 // disposable test deployments. New deployments use DRIVE_ROOT_FOLDER_ID, not its alias.
@@ -34,14 +36,48 @@ test("deploy-appropriate server environment keys have template entries", () => {
 
 test("container and backup settings have template entries", () => {
   const expected = [
-    "LITESTREAM_BUCKET",
-    "LITESTREAM_ENDPOINT",
-    "LITESTREAM_REGION",
-    "LITESTREAM_PATH",
-    "LITESTREAM_ACCESS_KEY_ID",
-    "LITESTREAM_SECRET_ACCESS_KEY",
+    "BACKUP_SINK_URL",
+    "BACKUP_BEARER_SECRET",
+    "BACKUP_ACCESS_CLIENT_ID",
+    "BACKUP_ACCESS_CLIENT_SECRET",
+    "BACKUP_AGE_RECIPIENT",
+    "BACKUP_MEMBERSHIP_ACCOUNT_ID",
+    "BACKUP_MEMBERSHIP_DATABASE_ID",
+    "BACKUP_MEMBERSHIP_API_TOKEN",
     "KEEP",
     "BACKUP_REMOTE",
   ];
-  assert.deepEqual(expected.filter((key) => !hasEntry(template, key)), []);
+  assert.deepEqual(expected.filter((key) => !hasEntry(allTemplates, key)), []);
+});
+
+test("backup client environment keys are documented and templated", () => {
+  const source = read('server/deploy/backup.py');
+  const inventory = [...source.matchAll(/os\.environ(?:\[|\.get\()'([A-Z_]+)'/g)].map(m => m[1]);
+  assert.ok(inventory.length >= 8);
+  assert.deepEqual(inventory.filter(key => !configuration.includes(`\`${key}\``)), []);
+  assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(allTemplates, key)), []);
+  assert.ok(!source.includes('LITESTREAM_'));
+});
+
+test("static container backup settings are documented without an interpreter runtime", () => {
+  const source = read('server/cmd/dashboard-backup/main.go');
+  const inventory = [...source.matchAll(/setting\("([A-Z_]+)"\)/g)].map(m => m[1]);
+  assert.ok(inventory.length >= 8);
+  assert.deepEqual(inventory.filter(key => !configuration.includes(`\`${key}\``)), []);
+  assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(allTemplates, key)), []);
+  assert.match(read('server/Dockerfile'), /^FROM busybox:stable-musl@sha256:[0-9a-f]{64} AS runtime$/m);
+  assert.ok(!read('server/deploy/entrypoint.sh').includes('python3'));
+});
+
+
+test("self-build production recipe publishes and pins before startup", () => {
+  const docs = read('docs/deploy/other-setups.md');
+  const recipe = docs.slice(docs.indexOf('## Build the image yourself'), docs.indexOf('## Practice run'));
+  assert.ok(recipe.includes('--push'));
+  assert.ok(recipe.includes('imagetools inspect'));
+  assert.ok(recipe.includes('server/deploy/prod-image.env'));
+  const productionCommands = recipe.split('\n').filter(line => line.startsWith('docker compose') && line.includes('compose.cloudflare.yml'));
+  assert.equal(productionCommands.length, 2);
+  for (const command of productionCommands) assert.ok(command.includes('--env-file .env --env-file prod-image.env'));
+  assert.ok(!read('server/deploy/compose.build.yml').includes('officer-dashboard:local'));
 });

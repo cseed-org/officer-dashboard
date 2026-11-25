@@ -1,5 +1,10 @@
 # Troubleshooting
 
+> Current Free-plan image: use [Fresh install](fresh-install.md) and
+> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
+> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+
+
 Find what you see in the left column. Commands run on the server in
 `~/officer-dashboard/server/deploy`. To read the dashboard's log:
 `docker compose -f compose.cloudflare.yml logs dashboard`.
