@@ -34,7 +34,9 @@ type R2 struct {
 	Now                                 func() time.Time
 	// Alert delivers an operator warning and reports whether it was accepted.
 	Alert func(ctx context.Context, reason string) bool
-	mu    sync.RWMutex
+	// Analytics, when configured, re-seeds a restored ledger (see Reseed).
+	Analytics *R2Analytics
+	mu        sync.RWMutex
 }
 
 // AlertReason describes the thresholds named by a store.R2Alert* mask.
@@ -354,9 +356,59 @@ func (r *R2) Reconcile(ctx context.Context) error {
 	return r.reserve(ctx, "check", "", "", 0)
 }
 
-// Daily runs the first inventory immediately, so startup never waits on R2,
-// then every 24 hours. A failure keeps uploads closed, retries every five
-// minutes, and alerts once per failure streak (re-sent until Discord accepts).
+// Reseed raises a ledger marked stale (by a restore) before billable requests
+// resume: from Cloudflare analytics within 30 seconds, or else to half of each
+// free-tier allowance, alerting once. It reports whether it needs to run again:
+// a failed measurement is retried so the ledger can still rise to the real
+// usage, and an undelivered alert is re-sent.
+func (r *R2) Reseed(ctx context.Context) (bool, error) {
+	state, err := r.DB.R2Reseed(ctx)
+	if err != nil || !state.Pending {
+		return err != nil, err
+	}
+	now := r.Now().UTC()
+	failure := errors.New("Cloudflare R2 analytics not configured")
+	if r.Analytics != nil {
+		measure, cancel := context.WithTimeout(ctx, 30*time.Second)
+		seed, err := r.Analytics.Usage(measure, now)
+		cancel()
+		if err == nil {
+			if err = r.DB.ReseedR2(ctx, now, seed, true); err == nil {
+				return false, nil
+			}
+		}
+		failure = err
+	}
+	if !state.FallbackApplied {
+		if err := r.DB.ReseedR2(ctx, now, store.R2FallbackSeed(), false); err != nil {
+			return true, err
+		}
+	}
+	if !state.Alerted && ctx.Err() == nil {
+		delivered := true
+		if r.Alert != nil {
+			reason := "R2 usage counters were re-seeded after a database restore without Cloudflare analytics (" + failure.Error() + "): the guard now assumes half of each free-tier allowance is already used this month and in the last 32 days. Uploads and downloads continue under the normal 70% warning and 90% refusal."
+			warning, stop := context.WithTimeout(ctx, 5*time.Second)
+			delivered = r.Alert(warning, reason)
+			stop()
+		}
+		if delivered {
+			if err := r.DB.R2ReseedAlerted(ctx, r.Analytics == nil); err != nil {
+				return true, err
+			}
+			if r.Analytics == nil {
+				return false, nil
+			}
+		}
+	}
+	return true, failure
+}
+
+// Daily first re-seeds a restored ledger, then runs the first inventory,
+// immediately, so startup never waits on R2; then every 24 hours. A failure
+// keeps uploads closed, retries every five minutes, and alerts once per
+// failure streak (re-sent until Discord accepts). An incomplete re-seed is
+// retried hourly.
 func (r *R2) Daily(ctx context.Context, onError func(error)) {
 	t := time.NewTimer(0)
 	defer t.Stop()
@@ -366,12 +418,16 @@ func (r *R2) Daily(ctx context.Context, onError func(error)) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if until, err := r.DB.R2LockedUntil(ctx); err == nil && until.After(r.Now()) {
-				t.Reset(until.Sub(r.Now()) + time.Second)
-				continue
+			next := 24 * time.Hour
+			again, err := r.Reseed(ctx)
+			if err != nil {
+				onError(err)
+			}
+			if again {
+				next = time.Hour
 			}
 			scan, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			err := r.Reconcile(scan)
+			err = r.Reconcile(scan)
 			cancel()
 			if err != nil {
 				onError(err)
@@ -384,11 +440,11 @@ func (r *R2) Daily(ctx context.Context, onError func(error)) {
 					alerted = r.Alert(warning, reason)
 					stop()
 				}
-				t.Reset(5 * time.Minute)
+				next = 5 * time.Minute
 			} else {
 				alerted = false
-				t.Reset(24 * time.Hour)
 			}
+			t.Reset(next)
 		}
 	}
 }

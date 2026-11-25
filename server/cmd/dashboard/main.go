@@ -106,6 +106,7 @@ type settings struct {
 	ServiceAccountJSON, DriveRoot                        string
 	ReceiptsDir                                          string
 	FileStorage, R2Account, R2Bucket, R2Access, R2Secret string
+	R2AnalyticsToken                                     string // optional, read-only Account Analytics
 	DevAuth                                              bool
 	DevAuthKey                                           string
 	TolerancePercent, ToleranceCents                     string
@@ -147,6 +148,7 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	s.R2Bucket = env("R2_BUCKET", "")
 	s.R2Access = env("R2_ACCESS_KEY_ID", "")
 	s.R2Secret = env("R2_SECRET_ACCESS_KEY", "")
+	s.R2AnalyticsToken = env("R2_ANALYTICS_TOKEN", "")
 	if s.FileStorage != "" && s.FileStorage != "r2" && s.FileStorage != "drive" && s.FileStorage != "local" {
 		return s, errors.New("FILE_STORAGE must be r2, drive or local")
 	}
@@ -156,7 +158,7 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	if s.FileStorage == "local" && s.ReceiptsDir == "" {
 		return s, errors.New("FILE_STORAGE=local requires RECEIPTS_DIR")
 	}
-	if s.FileStorage != "r2" && (s.R2Account != "" || s.R2Bucket != "" || s.R2Access != "" || s.R2Secret != "") {
+	if s.FileStorage != "r2" && (s.R2Account != "" || s.R2Bucket != "" || s.R2Access != "" || s.R2Secret != "" || s.R2AnalyticsToken != "") {
 		return s, errors.New("R2 settings require FILE_STORAGE=r2")
 	}
 	s.DevAuth = env("DEV_AUTH", "") == "1"
@@ -267,11 +269,14 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		if err != nil {
 			return nil, err
 		}
+		if s.R2AnalyticsToken != "" {
+			r.Analytics = files.NewR2Analytics(s.R2Account, s.R2Bucket, s.R2AnalyticsToken)
+		}
 		r.Alert = func(ctx context.Context, reason string) bool {
 			return cfg.Notifier.(*notify.Discord).Deliver(ctx, notify.Event{Number: "R2", Type: "storage.budget", Title: "Storage budget or inventory needs attention", Reason: reason}, s.AppURL)
 		}
 		// Inventory runs in FileStorageDaily, never on the startup path: an R2
-		// outage, exhausted budget, rejected token or restore lock must not stop
+		// outage, exhausted budget, rejected token or a pending re-seed must not stop
 		// the dashboard or fail an update's health check. If a scan fails,
 		// uploads stay closed (a scan invalidates freshness before listing) and
 		// the failure is alerted.

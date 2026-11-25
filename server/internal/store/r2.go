@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"time"
 )
 
@@ -35,6 +37,13 @@ func (d *DB) BindR2(ctx context.Context, bucket string) error {
 		}
 		if existing != bucket {
 			return errors.New("R2 bucket differs from budget ledger")
+		}
+		// A ledger with history but no mirror beside it came from another
+		// volume (a manual restore or a host move): its counters may be stale.
+		if _, err := os.Stat(d.r2MirrorPath()); errors.Is(err, fs.ErrNotExist) {
+			if _, err := q.q.ExecContext(ctx, `INSERT OR IGNORE INTO r2_reseed(id,requested_at) SELECT 1,? WHERE EXISTS(SELECT 1 FROM r2_day WHERE class_a>0 OR class_b>0) OR EXISTS(SELECT 1 FROM r2_month WHERE class_a>0 OR class_b>0)`, time.Now().Unix()); err != nil {
+				return err
+			}
 		}
 		// Recover spending a rollback or restore erased from dashboard.db. If
 		// any was missing, the inventory is stale too: close uploads until a scan.
@@ -73,12 +82,14 @@ func (d *DB) ReserveR2(ctx context.Context, now time.Time, class, key, user stri
 	err := d.Write(ctx, func(q *Queries) error {
 		month := now.UTC().Format("2006-01")
 		if class == "put" || class == "list" || class == "get" {
-			var until string
-			if err := q.q.QueryRowContext(ctx, `SELECT coalesce((SELECT until_utc FROM r2_restore_lock WHERE until_utc>?), '')`, now.UTC().Format("2006-01-02T15:04:05Z")).Scan(&until); err != nil {
+			// Only until the first re-seed attempt (at most about 30 seconds
+			// after startup) has raised a possibly stale ledger; see ReseedR2.
+			var pending int
+			if err := q.q.QueryRowContext(ctx, `SELECT count(*) FROM r2_reseed WHERE fallback_at=0`).Scan(&pending); err != nil {
 				return err
 			}
-			if until != "" {
-				return fmt.Errorf("R2 uploads and downloads locked until %s after database restore: %w", until, ErrR2Budget)
+			if pending != 0 {
+				return ErrR2Reseeding
 			}
 		}
 		if _, err := q.q.ExecContext(ctx, `INSERT OR IGNORE INTO r2_month(month) VALUES(?)`, month); err != nil {
@@ -208,15 +219,6 @@ func (d *DB) R2AlertClaim(ctx context.Context, now time.Time) (int, error) {
 func (d *DB) AckR2Alert(ctx context.Context, now time.Time) error {
 	_, err := d.W.ExecContext(ctx, `UPDATE r2_month SET alerted=alerted | alert_claim_mask WHERE month=?`, now.UTC().Format("2006-01"))
 	return err
-}
-
-func (d *DB) R2LockedUntil(ctx context.Context) (time.Time, error) {
-	var value string
-	err := d.R.QueryRowContext(ctx, `SELECT coalesce((SELECT until_utc FROM r2_restore_lock WHERE id=1),'')`).Scan(&value)
-	if err != nil || value == "" {
-		return time.Time{}, err
-	}
-	return time.Parse("2006-01-02T15:04:05Z", value)
 }
 
 func boolInt(v bool) int {

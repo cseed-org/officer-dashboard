@@ -68,6 +68,13 @@ func filesMigrateCmd(args []string, getenv func(string) string, out io.Writer) e
 	target.Alert = func(ctx context.Context, reason string) bool {
 		return notifier.Deliver(ctx, notify.Event{Number: "R2", Type: "storage.budget", Title: "R2 budget alert during file migration", Reason: reason}, s.AppURL)
 	}
+	if s.R2AnalyticsToken != "" {
+		target.Analytics = files.NewR2Analytics(s.R2Account, s.R2Bucket, s.R2AnalyticsToken)
+	}
+	// A restored ledger is raised before the migration spends anything.
+	if _, err := target.Reseed(ctx); err != nil {
+		fmt.Fprintf(out, "R2 usage re-seed: %v\n", err)
+	}
 	scan, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	err = target.Reconcile(scan)
 	cancel()

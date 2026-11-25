@@ -120,7 +120,7 @@ func TestR2GuardAtomicQuotaAndStaleInventory(t *testing.T) {
 	}
 }
 
-func TestR2RollingBillingWindowAndRestoreLock(t *testing.T) {
+func TestR2RollingBillingWindowAndRestoreReseed(t *testing.T) {
 	d, err := Open(t.TempDir() + "/db")
 	if err != nil {
 		t.Fatal(err)
@@ -143,10 +143,22 @@ func TestR2RollingBillingWindowAndRestoreLock(t *testing.T) {
 	if _, err := d.ReserveR2(ctx, later, "get", "", "", 0); err != nil {
 		t.Fatal("rolling budget did not recover", err)
 	}
-	d.W.Exec(`INSERT INTO r2_restore_lock VALUES(1,?)`, later.Add(32*24*time.Hour).Format("2006-01-02T15:04:05Z"))
+	// D-20: a restore marker holds billable requests only until the re-seed
+	// has raised the ledger, never for days.
+	if err := d.RequestR2Reseed(ctx, later); err != nil {
+		t.Fatal(err)
+	}
 	for _, class := range []string{"list", "get"} {
-		if _, err := d.ReserveR2(ctx, later, class, "", "", 0); !errors.Is(err, ErrR2Budget) {
-			t.Fatal("restored ledger granted budget", class, err)
+		if _, err := d.ReserveR2(ctx, later, class, "", "", 0); !errors.Is(err, ErrR2Reseeding) {
+			t.Fatal("restored ledger spent before its re-seed", class, err)
+		}
+	}
+	if err := d.ReseedR2(ctx, later, R2FallbackSeed(), false); err != nil {
+		t.Fatal(err)
+	}
+	for _, class := range []string{"list", "get"} {
+		if _, err := d.ReserveR2(ctx, later, class, "", "", 0); err != nil {
+			t.Fatal("restore still locks R2 after the re-seed", class, err)
 		}
 	}
 }

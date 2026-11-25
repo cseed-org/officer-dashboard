@@ -196,7 +196,7 @@ func preR2Database(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, table := range []string{"r2_budget", "r2_month", "r2_day", "r2_restore_lock", "r2_objects", "r2_user_day", "r2_migrations"} {
+	for _, table := range []string{"r2_budget", "r2_month", "r2_day", "r2_reseed", "r2_objects", "r2_user_day", "r2_migrations"} {
 		if _, err := db.W.Exec(`DROP TABLE ` + table); err != nil {
 			t.Fatal(err)
 		}

@@ -54,7 +54,7 @@ func TestR2MirrorRestoresErasedSpending(t *testing.T) {
 	}
 }
 
-func TestR2MirrorKeepsRestoreLockAndFailsClosed(t *testing.T) {
+func TestR2MirrorFailsClosedWhenUnreadable(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "dashboard.db")
@@ -62,30 +62,9 @@ func TestR2MirrorKeepsRestoreLockAndFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer d.Close()
 	now := time.Now().UTC()
 	d.BindR2(ctx, "account/bucket")
-	until := now.Add(48 * time.Hour).Format("2006-01-02T15:04:05Z")
-	d.W.Exec(`INSERT INTO r2_restore_lock VALUES(1,?)`, until)
-	d.Close()
-	d, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	d.BindR2(ctx, "account/bucket") // writes the lock into the mirror
-	d.Close()
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		os.Remove(path + suffix)
-	}
-	d, err = Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	d.BindR2(ctx, "account/bucket")
-	if _, err := d.ReserveR2(ctx, now, "get", "", "", 0); !errors.Is(err, ErrR2Budget) {
-		t.Fatal("restore lock lost with the database", err)
-	}
-	d.W.Exec(`DELETE FROM r2_restore_lock`)
 	os.WriteFile(filepath.Join(dir, R2MirrorName), []byte("{truncated"), 0o600)
 	if err := d.BindR2(ctx, "account/bucket"); err != nil {
 		t.Fatal("unreadable mirror must not stop startup", err)

@@ -38,16 +38,16 @@ sys.path.insert(0,'/app')
 from backup import restore,Sink
 restore('latest','/data/restored.db','/data/test.agekey')
 # The decrypted snapshot's SHA-256 is verified inside restore(); afterwards the
-# official restore stamps the R2 restore lock, so compare logical content.
+# official restore adds the R2 re-seed marker, so compare logical content.
 def dump(path,skip=()):
  with sqlite3.connect(path) as db:
   tables=[r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
   return {t:(db.execute('SELECT sql FROM sqlite_master WHERE name=?',(t,)).fetchone()[0],sorted(db.execute(f'SELECT * FROM "{t}"').fetchall(),key=repr)) for t in tables if t not in skip}
-assert dump('/data/restored.db',('r2_restore_lock',))==dump('/data/reference.db',('r2_restore_lock',))
+assert dump('/data/restored.db',('r2_reseed',))==dump('/data/reference.db',('r2_reseed',))
 with sqlite3.connect('/data/restored.db') as db:
  assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
- lock=db.execute("SELECT until_utc>strftime('%Y-%m-%dT%H:%M:%SZ','now','+31 days') FROM r2_restore_lock WHERE id=1").fetchone()
- assert lock==(1,),'restore must stamp the 32-day R2 lock'
+ marker=db.execute('SELECT count(*) FROM r2_reseed WHERE fallback_at=0').fetchone()
+ assert marker==(1,),'restore must mark the R2 ledger for re-seeding'
 restore('latest','/data/restored.age',None,encrypted_only=True)
 plain=gzip.decompress(subprocess.check_output(['age','-d','-i','/data/test.agekey','/data/restored.age']))
 assert hashlib.sha256(plain).hexdigest()==hashlib.sha256(Path('/data/reference.db').read_bytes()).hexdigest()

@@ -84,13 +84,15 @@ test("self-build production recipe publishes and pins before startup", () => {
 
 
 test("R2 storage selection and file credentials stay documented and isolated", () => {
-  for (const key of ["FILE_STORAGE", "R2_ACCOUNT_ID", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]) {
+  for (const key of ["FILE_STORAGE", "R2_ACCOUNT_ID", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ANALYTICS_TOKEN"]) {
     assert.ok(configuration.includes(`\`${key}\``));
     assert.ok(hasEntry(template, key));
   }
   const secrets = read('server/cmd/dashboard/secret_files.go');
   assert.ok(secrets.includes('"R2_ACCESS_KEY_ID"'));
   assert.ok(secrets.includes('"R2_SECRET_ACCESS_KEY"'));
+  assert.ok(secrets.includes('"R2_ANALYTICS_TOKEN"'));
   assert.ok(!backupTemplate.includes('R2_SECRET_ACCESS_KEY'));
+  assert.ok(!backupTemplate.includes('R2_ANALYTICS_TOKEN'));
   assert.ok(read('server/deploy/compose.cloudflare.yml').includes('target: /run/secrets/app'));
 });

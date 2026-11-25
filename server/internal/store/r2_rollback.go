@@ -32,7 +32,7 @@ func MergeR2BeforeRollback(ctx context.Context, live, checkpoint string) error {
 		return err
 	}
 	defer tx.Rollback()
-	tables := []string{"r2_budget", "r2_day", "r2_month", "r2_user_day", "r2_objects", "r2_migrations", "r2_restore_lock"}
+	tables := []string{"r2_budget", "r2_day", "r2_month", "r2_user_day", "r2_objects", "r2_migrations", "r2_reseed"}
 	for _, table := range tables {
 		var schema string
 		if err := tx.QueryRowContext(ctx, `SELECT sql FROM r2_live.sqlite_master WHERE type='table' AND name=?`, table).Scan(&schema); err != nil {
@@ -52,7 +52,7 @@ func MergeR2BeforeRollback(ctx context.Context, live, checkpoint string) error {
 		`INSERT INTO r2_user_day SELECT * FROM r2_live.r2_user_day WHERE true ON CONFLICT(user_id,day) DO UPDATE SET uploads=max(uploads,excluded.uploads)`,
 		`INSERT OR IGNORE INTO r2_objects SELECT * FROM r2_live.r2_objects`,
 		`INSERT OR IGNORE INTO r2_migrations SELECT * FROM r2_live.r2_migrations`,
-		`INSERT INTO r2_restore_lock SELECT * FROM r2_live.r2_restore_lock WHERE true ON CONFLICT(id) DO UPDATE SET until_utc=max(until_utc,excluded.until_utc)`,
+		`INSERT OR IGNORE INTO r2_reseed SELECT * FROM r2_live.r2_reseed`,
 		`UPDATE r2_budget SET bytes=max(bytes,coalesce((SELECT sum(bytes) FROM r2_objects),0)),reconciled_at=0`,
 	} {
 		if _, err := tx.ExecContext(ctx, query); err != nil {

@@ -173,12 +173,13 @@ replay, uses a 20-second timeout, and retains a day of rolling-window margin at 
 The app scans every object page and checks for multipart uploads in the background
 right after startup and every 24 hours, retrying a failed scan every five minutes.
 Startup never waits on R2: an outage, a rejected token, an exhausted budget or a
-restore lock leaves the rest of the dashboard running, keeps uploads closed and
+pending usage re-seed leaves the rest of the dashboard running, keeps uploads closed and
 sends a Discord warning. Only configuration errors (account or bucket format,
 missing secret or webhook, ledger bound to another bucket) stop startup. For 858 objects, that costs two Class A requests per scan (one
-object page and one multipart check), about 62/month plus starts. No analytics
-or account token is needed: the same bucket-scoped Object Read & Write S3 token
-can list. Uploads close if inventory is older than 25 hours or a scan fails.
+object page and one multipart check), about 62/month plus starts. The guard needs
+no analytics or account token: the same bucket-scoped Object Read & Write S3 token
+can list. An optional read-only analytics token only improves the re-seed after a
+restore (below). Uploads close if inventory is older than 25 hours or a scan fails.
 Each scan sets the byte total to the listed bytes plus reservations that are
 unlisted but less than one hour old. Those may still be a PUT in flight from
 another process; the client timeout is 20 seconds and it never retries. An unlisted
@@ -210,19 +211,42 @@ ledger across redeploys. Billing notifications are informational, not hard caps.
 These operating conditions are required for the $0 budget; the app cannot protect
 against a separate client or administrator spending outside its ledger.
 
-Never reset budget tables. The official off-box restore command stamps the restored
-DB with a 32-day R2 lock, because inventory cannot reconstruct already-spent
-operations. R2 receipt and design-file downloads also return 507 throughout this lock;
-other dashboard functions remain available. The response includes the unlock date.
-Do not remove that lock. Routine image rollback instead merges the candidate
-image's R2 counters into the checkpoint before restoring it, so it preserves
-spent operations without imposing a new lock.
+Never reset budget tables. A restored database cannot know the R2 operations spent
+after its snapshot, and inventory cannot reconstruct them. The official off-box
+restore command therefore adds an `r2_reseed` marker to the restored DB (there is
+no lock). On its next start the app re-seeds this month's usage counters before it
+sends another billable request:
+
+1. With `R2_ANALYTICS_TOKEN_FILE` set, it reads the bucket's Class A and Class B
+   operations for the current UTC month and for the guard's rolling 32-day window,
+   plus stored bytes, from Cloudflare's free
+   [GraphQL Analytics API](https://developers.cloudflare.com/r2/platform/metrics-analytics/)
+   (`r2OperationsAdaptiveGroups` and `r2StorageAdaptiveGroups`), within 30 seconds.
+2. It merges each counter and each window with the restored ledger by maximum, so
+   no counter ever goes down. Unknown operation types count as Class A; deletes
+   are free. The next inventory scan replaces the byte figure with listed bytes.
+3. If no analytics token is configured, or Cloudflare does not answer, it instead
+   assumes 50% of each free-tier allowance is already used in both windows, takes
+   the maximum with the ledger and sends one Discord warning. With a token
+   configured it retries the measurement hourly, which can still raise the
+   counters further.
+
+Uploads and downloads then continue under the normal 70% warning and 90%
+refusal. While the first re-seed attempt runs (at most about 30 seconds after
+startup), billable R2 requests answer 507 with a retry message; other dashboard
+functions are unaffected. A ledger with recorded spending but no
+`r2-usage-ledger.json` beside it (for example a database copied to a new host) is
+treated the same way. Analytics can lag by a few minutes, so operations spent in
+the minutes just before a restore may be missed; the 10% margin below the free
+tier absorbs that. Do not remove the marker. Routine image rollback instead merges
+the candidate image's R2 counters into the checkpoint before restoring it, so it
+preserves spent operations without a re-seed.
 
 Rollback can also run through an older image whose `dashboard-backup` predates R2
 and cannot merge, for example the first update to an R2 image, interrupted-update
 recovery, or a manual copy of `.update-before.db`. For that case the app keeps
 `/data/r2-usage-ledger.json` beside the database. It holds operation counts for the
-last 40 days and this and last month, plus the restore lock. The app rewrites and
+last 40 days and this and last month. The app rewrites and
 fsyncs it inside the same SQLite transaction as every billable reservation, before
 the request is sent. At startup the app takes the maximum of the file and the
 database, so spending erased from `dashboard.db` is restored; any recovery also
@@ -230,15 +254,15 @@ forces a fresh inventory before uploads reopen. The file is never part of a chec
 backup. **Never delete, edit or replace it**, and keep it with the data volume.
 If it is unreadable, the app keeps running but refuses billable R2 requests until
 an operator restores a valid copy. Losing it together with the volume is the
-off-box restore case, which the 32-day lock covers.
+off-box restore case, which the re-seed covers.
 For a manual restore (including manually decrypting an encrypted-only download),
-apply this conservative lock before starting the app, even if the old snapshot
+add the marker yourself before starting the app, even if the old snapshot
 predates R2's tables:
 
 ```sql
-CREATE TABLE IF NOT EXISTS r2_restore_lock(id INTEGER PRIMARY KEY CHECK(id=1),until_utc TEXT NOT NULL);
-INSERT INTO r2_restore_lock VALUES(1,strftime('%Y-%m-%dT%H:%M:%SZ','now','+32 days'))
-ON CONFLICT(id) DO UPDATE SET until_utc=max(until_utc,excluded.until_utc);
+CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, fallback_at INTEGER NOT NULL DEFAULT 0, alerted INTEGER NOT NULL DEFAULT 0);
+INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER))
+ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,fallback_at=0,alerted=0;
 ```
 
 Keep the original DB/ledger when rolling back an application image. Stored backend
@@ -294,6 +318,15 @@ Cloudflare settings or deploy it.
 
    Keep the existing Discord webhook `_FILE` setting. The hardened compose already
    mounts `secrets/app` read-only only into the app. No backup credentials change.
+
+7. Optional, for accurate counters after a restore: in **My Profile > API Tokens >
+   Create Token > Create Custom Token**, grant only **Account > Account Analytics >
+   Read**, for this account only, with no other permissions. It is free and
+   read-only, and is separate from the R2 S3 token above. Save it as
+   `secrets/app/r2-analytics-token` (owner UID 10001, mode 0400) and add
+   `R2_ANALYTICS_TOKEN_FILE=/run/secrets/app/r2-analytics-token` to `dashboard.env`.
+   Without it, a restore makes the guard assume half of each allowance is used
+   (see above). The direct `R2_ANALYTICS_TOKEN` variable is rejected.
    Follow the approved image/update steps. Uploads stay closed until the background
    scan right after startup validates the credentials with a full private inventory.
    Only configuration errors fail startup. A rejected token, a network or inventory

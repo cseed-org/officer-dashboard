@@ -148,12 +148,16 @@ def backup(kind='hourly'):
         return result
 
 
-def lock_restored_r2(path):
-    # Restoring SQLite cannot recover operations spent after the snapshot.
-    # Lock billable R2 requests for 32 days; unrelated app features still work.
+R2_RESEED_SCHEMA = 'CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, fallback_at INTEGER NOT NULL DEFAULT 0, alerted INTEGER NOT NULL DEFAULT 0)'
+
+
+def mark_restored_r2(path):
+    # Restoring SQLite cannot recover R2 operations spent after the snapshot.
+    # The marker makes the app re-seed its usage counters (Cloudflare analytics,
+    # else half of each free-tier allowance) before its next billable request.
     with closing(sqlite3.connect(path)) as db, db:
-        db.execute('CREATE TABLE IF NOT EXISTS r2_restore_lock(id INTEGER PRIMARY KEY CHECK(id=1), until_utc TEXT NOT NULL)')
-        db.execute("INSERT INTO r2_restore_lock VALUES(1,strftime('%Y-%m-%dT%H:%M:%SZ','now','+32 days')) ON CONFLICT(id) DO UPDATE SET until_utc=max(until_utc,excluded.until_utc)")
+        db.execute(R2_RESEED_SCHEMA)
+        db.execute("INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER)) ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,fallback_at=0,alerted=0")
 
 
 def restore(snapshot_id, target, identity, encrypted_only=False):
@@ -176,10 +180,10 @@ def restore(snapshot_id, target, identity, encrypted_only=False):
         with gzip.open(work / 'snapshot.gz', 'rb') as src, (work / 'snapshot.db').open('wb') as dst:
             shutil.copyfileobj(src, dst)
         integrity(work / 'snapshot.db')
-        lock_restored_r2(work / 'snapshot.db')
+        mark_restored_r2(work / 'snapshot.db')
         os.link(work / 'snapshot.db', target)
     print('sha256 verified; integrity ok')
-    print('R2 billable file operations locked for 32 days to preserve the free-tier budget; do not remove r2_restore_lock.')
+    print('R2 usage counters will be re-seeded on first start (Cloudflare analytics, else 50% of each free-tier allowance); do not remove r2_reseed.')
 
 
 def membership():
