@@ -65,7 +65,7 @@ test("static container backup settings are documented without an interpreter run
   assert.ok(inventory.length >= 8);
   assert.deepEqual(inventory.filter(key => !configuration.includes(`\`${key}\``)), []);
   assert.deepEqual(inventory.filter(key => key !== 'DB_PATH' && !hasEntry(allTemplates, key)), []);
-  assert.ok(read('server/Dockerfile').includes('FROM busybox:stable-musl AS runtime'));
+  assert.match(read('server/Dockerfile'), /^FROM busybox:stable-musl@sha256:[0-9a-f]{64} AS runtime$/m);
   assert.ok(!read('server/deploy/entrypoint.sh').includes('python3'));
 });
 
