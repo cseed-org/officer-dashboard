@@ -146,12 +146,15 @@ func TestR2WarningRetriesUntilDelivered(t *testing.T) {
 	r.DB.ReconcileR2(ctx, r.Now(), 7_000_000_000)
 	calls := 0
 	r.Alert = func(context.Context) bool { calls++; return calls > 1 }
-	now:=r.Now();r.Now=func()time.Time{return now}
+	now := r.Now()
+	r.Now = func() time.Time { return now }
 	for i := 0; i < 4; i++ {
 		if err := r.reserve(ctx, "check", "", "", 0); err != nil {
 			t.Fatal(err)
 		}
-		if i==1{now=now.Add(16*time.Minute)}
+		if i == 1 {
+			now = now.Add(16 * time.Minute)
+		}
 	}
 	if calls != 2 {
 		t.Fatal("warning was lost or repeated after acceptance", calls)
