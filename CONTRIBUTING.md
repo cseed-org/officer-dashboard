@@ -76,30 +76,43 @@ For questions and reports, see [SUPPORT.md](SUPPORT.md).
 
 ## Releases and dependency updates
 
-Every push to `main` runs release-please with a GitHub App token. It maintains one
+Every push to `main` runs the pinned release-please CLI with a GitHub App
+token. It maintains one
 release PR containing `CHANGELOG.md`, `version.txt`, the release manifest, and both
-Node package versions and lockfiles. The first release is `0.15.0`; later versions
-follow Conventional Commits (`feat`, `fix`, `perf`, `deps`, `deps-dev`, `docs`).
+Node package versions and lockfiles. The first release is `0.15.0`. Only `feat`,
+`fix`, `perf` and `deps` commits propose a release or appear in its notes;
+`deps-dev`, `docs`, `chore`, `ci`, `build`, `test`, `refactor`, `style`
+and `revert` changes stay hidden and never cut a release on their own. The
+repository's history predates Conventional Commits, so no release PR exists until
+the first `feat`/`fix`/`perf`/`deps` change merges after setup; that PR
+proposes `0.15.0`.
 Review the proposed version and notes, wait for all required checks, then squash
 merge the release PR with its generated `chore(main): release ...` title. Release
 PRs require a person to merge them.
 
 Release-please creates the immutable `vX.Y.Z` tag and GitHub Release. The release
-image workflow waits up to 20 minutes for that commit's successful main CI run and
-`publish` job, then promotes the existing image digest to semantic version tags.
+image workflow waits up to 75 minutes — beyond main CI's worst-case critical path
+of about 60 minutes — for that commit's successful main CI run and `publish` job,
+retrying transient GitHub API errors, then promotes the existing image digest to
+semantic version tags.
 It does not build another image. Failed or missing publication stops promotion;
-the GitHub Release may exist before image aliases or signatures are ready. After
-resolving CI or registry/signing errors, rerun the failed release-image workflow
-from Actions; keep the original release/tag. See
+the GitHub Release may exist before image aliases or the attestation are ready. A
+timeout while main CI is still running is routine, not an incident: reruns are
+idempotent, so rerun the failed release-image workflow
+from Actions once CI is green; keep the original release/tag. See
 [image tags and verification](docs/deployment.md#release-images-and-verification).
 
-Dependabot uses `deps:` / `deps-dev:` titles. Minor and patch PRs enter GitHub's
-auto-merge queue and still need every required check and any required approval to
-pass. Major updates receive
-`major-update` and require manual review and merging.
+Dependabot uses `deps:` / `deps-dev:` titles. The auto-merge workflow runs only
+when both the PR author and the event actor are `dependabot[bot]`, reads the
+highest semver update type from Dependabot's own commit metadata (grouped updates
+included), and queues minor and patch PRs into GitHub's
+auto-merge queue; they still need every required check and any required approval
+to pass. Major updates receive the
+`major-update` label — created on the fly if missing — and require manual review
+and merging. PRs without recognizable semver metadata are left alone.
 
-Maintainers must enable repository auto-merge, create the `major-update` label from
-`.github/labels.yml`, and require the `pr-title` check alongside existing checks.
+Maintainers must enable repository auto-merge and require the `pr-title` check
+alongside existing checks.
 Install a repository-scoped GitHub App with contents and pull requests write
 access; save `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` as repository secrets.
 Allow that App to create `v*` tags through the tag-creation ruleset, while preserving
@@ -109,13 +122,14 @@ Missing App secrets fail explicitly. Repository settings, secrets, rulesets and
 the protected `production` environment require maintainer setup; workflows do not
 create them.
 
-Merging the automation PR activates these workflows immediately. Before merging,
-allow the pinned actions under the repository's selected-action policy, configure
-the App and tag-creation bypass, enable auto-merge, and create the major-update
-label. Once `pr-title` has run successfully, add it to required checks. Without App
+Merging the automation PR activates these workflows immediately. They use only
+GitHub-owned actions and the already-allowed `docker/*` actions, all pinned by
+full SHA, so the selected-action policy needs no changes. Before merging,
+configure the App and tag-creation bypass and enable auto-merge.
+Once `pr-title` has run successfully, add it to required checks. Without App
 setup, every main push fails release-please; other CI still runs. Before merging
-the first release PR, review its notes: historical nonconventional commit subjects
-are omitted from automatic changelogs and may need a manual summary.
+the first release PR, review its notes and supplement them manually if context
+from the pre-Conventional-Commits history matters.
 
 ### One-time release App setup
 

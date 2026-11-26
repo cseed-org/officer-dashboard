@@ -17,29 +17,29 @@ The image's binary version remains the source commit's short SHA because release
 promotion never rebuilds it.
 
 The release workflow requires a successful `main` CI run, including its `publish`
-job, for the tag's resolved commit. It checks that the image revision matches the
+job, for the tag's resolved commit; it waits up to 75 minutes for that run. It
+checks that the image revision matches the
 full commit and that all promoted tags keep the same digest. It adds a GitHub
-artifact attestation and a keyless Cosign signature using GitHub's OIDC identity.
+artifact attestation (Sigstore-backed) for the promoted digest using GitHub's
+OIDC identity.
 The release attestation records promotion; the original build's provenance and
 SBOM remain attached to the image. Tags never authorize a build.
 
-With Cosign and GitHub CLI installed and authenticated for GHCR as needed, resolve
-the release digest and verify both records before deploying:
+The GHCR package is private: authenticate with a `read:packages` token and sign
+in to the registry (for example `gh auth login` plus
+`echo "$(gh auth token)" | docker login ghcr.io -u <user> --password-stdin`)
+before inspecting or verifying. With the GitHub CLI installed, resolve
+the release digest and verify the promotion attestation before deploying:
 
 ```sh
 IMAGE=ghcr.io/cseed-org/officer-dashboard
 DIGEST=$(docker buildx imagetools inspect "$IMAGE:0.15.0" --format '{{.Manifest.Digest}}')
-cosign verify "$IMAGE@$DIGEST" \
-  --certificate-identity 'https://github.com/cseed-org/officer-dashboard/.github/workflows/release-publish.yml@refs/tags/v0.15.0' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
-gh attestation verify "oci://$IMAGE@$DIGEST" \
-  --repo cseed-org/officer-dashboard \
-  --signer-workflow cseed-org/officer-dashboard/.github/workflows/release-publish.yml
+gh attestation verify "oci://$IMAGE@$DIGEST" --owner cseed-org
 ```
 
-The release event's workflow identity uses the release tag ref. Change the version
-in both commands when verifying another release; keep the expected workflow and
-tag identity exact.
+Change the version when verifying another release. Add
+`--signer-workflow cseed-org/officer-dashboard/.github/workflows/release-publish.yml`
+to also require the promotion workflow as the attestation signer.
 
 Semantic release publication does not deploy production. Continue using the
 separate `promote-production.yml` workflow and protected `production` environment

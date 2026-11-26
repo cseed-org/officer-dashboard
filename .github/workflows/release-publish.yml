@@ -15,7 +15,9 @@ jobs:
   release-image:
     if: '!github.event.release.prerelease'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Main CI's worst-case critical path is about 60 minutes; allow the wait
+    # below plus the promotion steps to finish.
+    timeout-minutes: 90
     permissions:
       contents: read
       actions: read
@@ -46,24 +48,35 @@ jobs:
           commit=$(jq -r '.sha' <<< "$object")
           ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq '.status')
           [[ "$ancestry" == ahead || "$ancestry" == identical ]]
-          for attempt in {1..40}; do
+          # 150 x 30s covers main CI's worst-case critical path (~60 minutes)
+          # plus queueing headroom. Transient API errors count as "not ready
+          # yet" and retry; a completed but failed CI run fails fast.
+          for attempt in {1..150}; do
             runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-              -f head_sha="$commit" -f event=push -f branch=main -f per_page=100)
+              -f head_sha="$commit" -f event=push -f branch=main -f per_page=100 \
+              2>/dev/null || echo '{"workflow_runs":[]}')
             run=$(jq -c '[.workflow_runs[]] | sort_by(.run_number) | last // empty' <<< "$runs")
             if [[ -n "$run" && $(jq -r '.status' <<< "$run") == completed ]]; then
               if [[ $(jq -r '.conclusion' <<< "$run") != success ]]; then
                 echo '::error::Main CI failed for the release commit; refusing promotion.'
                 exit 1
               fi
-              jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$(jq -r '.id' <<< "$run")/jobs?per_page=100")
-              jq -e -s 'any(.[].jobs[]; .name == "publish" and .conclusion == "success")' <<< "$jobs"
-              echo "commit=$commit" >> "$GITHUB_OUTPUT"
-              echo "version=$version" >> "$GITHUB_OUTPUT"
-              exit 0
+              if jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$(jq -r '.id' <<< "$run")/jobs?per_page=100" 2>/dev/null); then
+                if jq -e -s 'any(.[].jobs[]; .name == "publish" and .conclusion == "success")' <<< "$jobs" > /dev/null; then
+                  echo "commit=$commit" >> "$GITHUB_OUTPUT"
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                echo '::error::Main CI succeeded but its publish job did not; refusing promotion.'
+                exit 1
+              fi
+            fi
+            if (( attempt % 10 == 0 )); then
+              echo "Waiting for successful main CI for $commit (attempt $attempt/150)."
             fi
             sleep 30
           done
-          echo '::error::Timed out waiting for successful main CI and its publish job.'
+          echo '::error::Timed out waiting for successful main CI and its publish job. Rerun this workflow once main CI is green; reruns are idempotent.'
           exit 1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
@@ -98,8 +111,3 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
-      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
-      - name: Sign the promoted digest with GitHub OIDC
-        env:
-          DIGEST: ${{ steps.image.outputs.digest }}
-        run: cosign sign --yes "$IMAGE@$DIGEST"

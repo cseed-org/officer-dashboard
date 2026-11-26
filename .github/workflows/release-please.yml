@@ -14,7 +14,9 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    env:
+      REPO: ${{ github.repository }}
     steps:
       - name: Require the release GitHub App
         env:
@@ -32,8 +34,25 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          token: ${{ steps.app.outputs.token }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          # release-please 17 requires Node 22; ubuntu-latest defaults to Node 20.
+          node-version: '22'
+      - name: Create or update the release pull request
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ steps.app.outputs.token }}
+        run: >-
+          npx --yes release-please@17.11.2 release-pr
+          --token "$RELEASE_PLEASE_TOKEN"
+          --repo-url "$REPO"
+          --config-file release-please-config.json
+          --manifest-file .release-please-manifest.json
+      - name: Publish releases for merged release pull requests
+        env:
+          RELEASE_PLEASE_TOKEN: ${{ steps.app.outputs.token }}
+        run: >-
+          npx --yes release-please@17.11.2 github-release
+          --token "$RELEASE_PLEASE_TOKEN"
+          --repo-url "$REPO"
+          --config-file release-please-config.json
+          --manifest-file .release-please-manifest.json

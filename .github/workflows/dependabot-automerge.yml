@@ -7,26 +7,53 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   dependabot-automerge:
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
-        id: metadata
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read the highest semver update type from Dependabot commit metadata
+        id: update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bodies=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json commits --jq '.commits[].messageBody')
+          highest=none
+          bestrank=0
+          while IFS= read -r type; do
+            case "$type" in
+              version-update:semver-major) rank=3 ;;
+              version-update:semver-minor) rank=2 ;;
+              version-update:semver-patch) rank=1 ;;
+              *) rank=0 ;;
+            esac
+            if (( rank > bestrank )); then
+              bestrank=$rank
+              highest=$type
+            fi
+          done < <(grep -oE 'update-type: *version-update:semver-(major|minor|patch)' <<< "$bodies" | sed 's/^update-type: *//' || true)
+          echo "Highest Dependabot update type: $highest"
+          echo "highest=$highest" >> "$GITHUB_OUTPUT"
       - name: Queue minor and patch updates behind required checks
-        if: contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.metadata.outputs.update-type)
+        if: contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.update.outputs.highest)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr merge --auto --squash "$PR_URL"
       - name: Mark major updates for manual review
-        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        if: steps.update.outputs.highest == 'version-update:semver-major'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr edit "$PR_URL" --add-label major-update
+        run: |
+          gh label create major-update --color d93f0b --description "Major dependency update requiring manual review" --force
+          gh pr edit "$PR_URL" --add-label major-update
+      - name: Leave updates without semver metadata to a person
+        if: steps.update.outputs.highest == 'none'
+        run: echo 'No Dependabot semver metadata found; leaving this PR for manual review.'
