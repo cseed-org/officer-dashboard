@@ -63,6 +63,9 @@ above it.
 
 ## Files in a Google Shared Drive
 
+Before connecting, complete the [Drive provider setup](deployment.md#file-storage-the-google-shared-drive-person-only-setup),
+including enabling the Drive API, adding the Drive OAuth callback URI and publishing the consent screen.
+
 Receipts and design files live in one Google **Shared Drive** (made by a UW advisor). The
 dashboard reaches it as a **member Google account**: an owner connects that account once in
 Settings → Google Drive file storage, and chooses the folder the dashboard files everything

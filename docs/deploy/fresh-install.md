@@ -49,12 +49,20 @@ Keep the existing remote-managed Tunnel and Access configuration from
 
 ## Bootstrap the host
 
+Prepare [Cloudflare Tunnel and Access](cloudflare.md), steps 1–8 and 10, and
+[create the Discord app](README.md#3-create-the-discord-app). Set the redirect URI
+to `${APP_URL}/auth/callback` and obtain the first owner's Discord ID as described
+in [owner bootstrap](../configuration.md#core). The Discord client secret belongs
+in `secrets/app/discord-client-secret`, referenced by `DISCORD_CLIENT_SECRET_FILE`.
+
 Use a Linux host with Docker Compose v2, buildx and Python 3.11+. Give its dedicated
 deployment user a GHCR credential with **read:packages only**, through Docker's credential
 helper. Do not put it in compose, the image or Git. Package visibility changes require
 separate approval. The deployment user can control Docker and must be trusted accordingly.
 
-Copy `.env.example` to `.env`, `dashboard.env.example` to `dashboard.env`, and `backup.env.example` to `backup.env` in `server/deploy`. Keep only paths to secrets in these files. Create `secrets/app` and `secrets/backup` owned by uid 10001 with mode 0700. Put each required credential in its named file (mode 0400, uid 10001). Comment out unused optional `_FILE` entries rather than making empty files. The tunnel token is a separate mode-0400 file owned by uid 65532; set its host path as `TUNNEL_TOKEN_FILE` in `.env`. Protect the env files with mode 0600. The dashboard gets only the app directory, the backup service only the backup directory, and cloudflared only the tunnel token file. Backup settings never belong in `dashboard.env`. Resolve the
+Clone the repository if needed, then enter `server/deploy` from its root. All host
+Compose commands below run in that directory; use your actual checkout location.
+Copy `.env.example` to `.env`, `dashboard.env.example` to `dashboard.env`, and `backup.env.example` to `backup.env`. Keep only paths to secrets in these files. Create `secrets/app` and `secrets/backup` owned by uid 10001 with mode 0700. Put each required credential in its named file (mode 0400, uid 10001). Comment out unused optional `_FILE` entries rather than making empty files. The tunnel token is a separate mode-0400 file owned by uid 65532; set its host path as `TUNNEL_TOKEN_FILE` in `.env`. Protect the env files with mode 0600. The dashboard gets only the app directory, the backup service only the backup directory, and cloudflared only the tunnel token file. Backup settings never belong in `dashboard.env`. Resolve the
 approved image with `docker buildx imagetools inspect ghcr.io/cseed-org/officer-dashboard:prod`.
 Write its immutable reference to `prod-image.env`:
 
@@ -65,7 +73,6 @@ DASHBOARD_IMAGE=ghcr.io/cseed-org/officer-dashboard@sha256:<approved digest>
 Run compose with both env files on **every** invocation:
 
 ```sh
-cd /opt/officer-dashboard/server/deploy
 docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
 ```
 
@@ -77,6 +84,11 @@ docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.y
   run --rm --no-deps --entrypoint /bin/sh dashboard -c 'umask 077; exec /app/dashboard migrate'
 docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
 ```
+
+Once healthy, open `APP_URL`, complete Cloudflare Access and sign in with Discord as
+the configured bootstrap owner. Connect the [org Google calendar](google-calendar.md)
+and complete the [Google Shared Drive setup](../deployment.md#file-storage-the-google-shared-drive-person-only-setup)
+before expecting Google invites, file uploads or the independent Drive backup copy.
 
 If any previous installation existed, restore its DB instead. With backups configured,
 the app refuses to start on a missing DB; the separate backup service downloads `<DB_PATH>.recovery.age`. **An unattended

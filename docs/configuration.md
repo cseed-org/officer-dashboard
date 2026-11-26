@@ -60,7 +60,7 @@ Each is off until set; the log says "not configured" at startup for each one tha
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | – | SMTP sign-in |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | – | the membership mirror and analytics widgets, from Cloudflare's API. Only for these widgets: backups don't use them |
 | `CLOUDFLARE_ZONE_ID` | – | limits analytics to one domain |
-| `D1_DATABASE_ID` | – | the existing membership D1 database to mirror (read only; the dashboard never creates or changes it, and it is not the backup) |
+| `D1_DATABASE_ID` | – | the existing membership D1 database, separate from backups. Sync reads it; director-authorized member edits update its `People` rows. The dashboard does not create this database. Use a token with D1 Edit permission when enabling member edits |
 | `AGENT_SETTLEMENT_TOLERANCE_PERCENT`, `AGENT_SETTLEMENT_TOLERANCE_CENTS` | `10`, `2500` | the purchasing agent's hold ceiling: the larger of estimate × 1.10 and estimate + $25 |
 | `STATIC_DIR` (`-static`) | the built-in front end | serve the front end from this folder instead. Only release builds (`embedweb`, as in the image) have one built in |
 | `STATIC_FALLBACK` (`-static-fallback`), `STATIC_FALLBACK_STATUS` (`-static-fallback-status`) | `404.html`, `404` | page for unknown non-API paths. An alternative single-page front end can set `200.html`, `200` |

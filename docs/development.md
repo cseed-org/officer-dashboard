@@ -12,7 +12,7 @@ commands, or use the Docker stack below to build Go and SQLite inside Linux.
 cd server && make dev                 # seeds ./data/dev.db, serves with the dev login
 ```
 
-See [Deploy the dashboard, step by step](deploy/README.md) and [configuration](configuration.md) for deployment and settings, and
+See [Fresh install](deploy/fresh-install.md) and [configuration](configuration.md) for deployment and settings, and
 [front-end guide](frontend.md) for the front-end dev server.
 
 ## Run it in Docker
