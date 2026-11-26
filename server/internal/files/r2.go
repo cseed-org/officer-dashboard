@@ -356,11 +356,13 @@ func (r *R2) Reconcile(ctx context.Context) error {
 	return r.reserve(ctx, "check", "", "", 0)
 }
 
-// Reseed ends a restore pause (D-21) when it can: from Cloudflare analytics
-// within 30 seconds, or once the 32-day safety cap has passed. Nothing is
-// assumed when analytics is missing or fails: R2 stays paused, and a Discord
-// alert is sent once and then about daily (re-sent until delivered). It reports
-// whether R2 is still paused; Daily then retries hourly.
+// Reseed ends a restore pause (D-21) when it can: from a Cloudflare analytics
+// reading (30-second timeout) under the strict rule in store/r2_reseed.go, or
+// once the 32-day safety cap has passed. Nothing is assumed when analytics is
+// missing, early or failing: R2 stays paused and the reading is retried hourly.
+// A Discord alert is sent once and then every 24 hours (re-sent until
+// delivered); a reading that reaches the 90% line alerts once, saying so, and
+// the pause then runs to the cap. It reports whether R2 is still paused.
 func (r *R2) Reseed(ctx context.Context) (bool, error) {
 	state, err := r.DB.R2Reseed(ctx)
 	if err != nil || !state.Pending {
@@ -371,20 +373,42 @@ func (r *R2) Reseed(ctx context.Context) (bool, error) {
 		paused, err := r.DB.ExpireR2Reseed(ctx, now)
 		return paused || err != nil, err
 	}
-	failure := errors.New("Cloudflare R2 analytics not configured")
-	if r.Analytics != nil {
+	until := state.Until.Format("2006-01-02 15:04 UTC")
+	var failure error
+	cause := ""
+	switch {
+	case !state.OverGuard.IsZero():
+	case r.Analytics == nil:
+		failure = errors.New("Cloudflare R2 analytics not configured")
+	case now.Before(state.ReadyAt()):
+		cause = "Cloudflare analytics are read no earlier than " + state.ReadyAt().Format("2006-01-02 15:04 UTC") + ", 6 hours after the restore, so pre-restore operations have been counted"
+	default:
 		measure, cancel := context.WithTimeout(ctx, 30*time.Second)
 		seed, err := r.Analytics.Usage(measure, now)
 		cancel()
+		var result store.R2ReseedResult
 		if err == nil {
-			if err = r.DB.ReseedR2(ctx, now, seed); err == nil {
-				return false, nil
-			}
+			result, err = r.DB.ReseedR2(ctx, now, seed)
 		}
-		failure = err
+		switch {
+		case err != nil:
+			failure = err
+		case result == store.R2ReseedUnlocked:
+			return false, nil
+		case result == store.R2ReseedOverGuard:
+			state.OverGuard, state.AlertedAt = now, time.Time{}
+		}
 	}
-	if r.Alert != nil && ctx.Err() == nil && (state.AlertedAt.IsZero() || now.Sub(state.AlertedAt) >= 23*time.Hour) {
-		reason := "R2 storage is paused after a database restore: the usage counters cannot be re-seeded (" + failure.Error() + "). Uploads and downloads return storage unavailable until Cloudflare analytics answers (retried hourly; set R2_ANALYTICS_TOKEN_FILE to an Account Analytics Read token) or until " + state.Until.Format("2006-01-02 15:04 UTC") + ", when the 32-day billing window has rolled."
+	if failure != nil {
+		cause = "the usage counters cannot be re-seeded (" + failure.Error() + ")"
+	}
+	reason := "R2 storage is paused after a database restore: " + cause + ". Uploads and downloads return storage unavailable until Cloudflare analytics answers (retried hourly; set R2_ANALYTICS_TOKEN_FILE to an Account Analytics Read token) or until " + until + ", when the 32-day billing window has rolled."
+	due := state.AlertedAt.IsZero() || now.Sub(state.AlertedAt) >= 24*time.Hour
+	if !state.OverGuard.IsZero() {
+		reason = "R2 storage stays paused after a database restore until " + until + ": twice Cloudflare's usage reading reaches the 90% safety line, so the free tier cannot be guaranteed before the 32-day billing window has rolled. Uploads and downloads return storage unavailable until then; no further analytics reads are made."
+		due = state.AlertedAt.IsZero() // once
+	}
+	if r.Alert != nil && ctx.Err() == nil && due {
 		warning, stop := context.WithTimeout(ctx, 5*time.Second)
 		delivered := r.Alert(warning, reason)
 		stop()

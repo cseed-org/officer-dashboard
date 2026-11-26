@@ -190,10 +190,10 @@ class R2RestoreBudgetTests(unittest.TestCase):
                 self.assertEqual(db.execute("SELECT count(*) FROM r2_reseed WHERE requested_at >= CAST(strftime('%s','now') AS INTEGER) - 60 AND alerted_at = 0").fetchone(), (1,))
                 self.assertEqual(db.execute("SELECT count(*) FROM sqlite_master WHERE name = 'r2_restore_lock'").fetchone(), (0,))
                 # A second restore restarts the pause and its alerts.
-                db.execute('UPDATE r2_reseed SET requested_at = 1, alerted_at = 1')
+                db.execute('UPDATE r2_reseed SET requested_at = 1, alerted_at = 1, over_guard_at = 1')
             backup.mark_restored_r2(path)
             with contextlib.closing(sqlite3.connect(path)) as db, db:
-                self.assertEqual(db.execute("SELECT count(*), max(requested_at) >= CAST(strftime('%s','now') AS INTEGER) - 60, max(alerted_at) FROM r2_reseed").fetchone(), (1, 1, 0))
+                self.assertEqual(db.execute("SELECT count(*), max(requested_at) >= CAST(strftime('%s','now') AS INTEGER) - 60, max(alerted_at), max(over_guard_at) FROM r2_reseed").fetchone(), (1, 1, 0, 0))
 
 
 if __name__ == '__main__':

@@ -153,11 +153,12 @@ func TestR2RollingBillingWindowAndRestoreReseed(t *testing.T) {
 			t.Fatal("restored ledger spent before its re-seed", class, err)
 		}
 	}
-	if err := d.ReseedR2(ctx, later, R2Seed{MonthA: 10}); err != nil {
-		t.Fatal(err)
+	ready := later.Add(R2ReseedLag)
+	if r, err := d.ReseedR2(ctx, ready, R2Seed{MonthA: 10}); r != R2ReseedUnlocked || err != nil {
+		t.Fatal(r, err)
 	}
 	for _, class := range []string{"list", "get"} {
-		if _, err := d.ReserveR2(ctx, later, class, "", "", 0); err != nil {
+		if _, err := d.ReserveR2(ctx, ready, class, "", "", 0); err != nil {
 			t.Fatal("restore still locks R2 after the re-seed", class, err)
 		}
 	}

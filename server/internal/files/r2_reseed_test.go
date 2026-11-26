@@ -70,7 +70,7 @@ const testKey = "files/00000000-0000-4000-8000-000000000000"
 func TestR2ReseedFromCloudflareAnalytics(t *testing.T) {
 	r := testR2(t)
 	ctx := context.Background()
-	r.DB.RequestR2Reseed(ctx, r.Now())
+	r.DB.RequestR2Reseed(ctx, r.Now().Add(-store.R2ReseedLag))
 	if _, err := r.DB.ReserveR2(ctx, r.Now(), "get", "", "", 0); !errors.Is(err, store.ErrR2Reseeding) {
 		t.Fatal("spent before the re-seed", err)
 	}
@@ -100,10 +100,10 @@ func TestR2ReseedFromCloudflareAnalytics(t *testing.T) {
 		t.Fatal("measured re-seed incomplete", paused, err)
 	}
 	u, _ := r.DB.R2Usage(ctx, r.Now())
-	if u.ClassA != 1200 || u.ClassB != 5000 || u.Bytes != 4010 {
-		t.Fatal("month counters not re-seeded from analytics", u)
+	if u.ClassA != 2400 || u.ClassB != 10000 || u.Bytes != 8020 {
+		t.Fatal("month counters not seeded with twice the analytics reading", u)
 	}
-	if a, b := rolling(t, r); a != 3000 || b != 8000 {
+	if a, b := rolling(t, r); a != 6000 || b != 16000 {
 		t.Fatal("rolling window not re-seeded from analytics", a, b)
 	}
 	if alerts != 0 {
@@ -132,13 +132,13 @@ func TestR2AnalyticsFailureKeepsR2Paused(t *testing.T) {
 			clock := r.Now()
 			r.Now = func() time.Time { return clock }
 			r.DB.ReconcileR2(ctx, clock, 0, nil)
-			r.DB.RequestR2Reseed(ctx, clock)
+			r.DB.RequestR2Reseed(ctx, clock.Add(-store.R2ReseedLag))
 			bucket := newFakeBucket(t, r, nil)
 			var healthy atomic.Bool
 			if reply != nil {
 				fakeAnalytics(t, r, func(w http.ResponseWriter, _ *http.Request) {
 					if healthy.Load() {
-						w.Write([]byte(`{"data":{"viewer":{"accounts":[{"month":[{"sum":{"requests":700000},"dimensions":{"actionType":"PutObject"}}],"rolling":[],"storage":[]}]}}}`))
+						w.Write([]byte(`{"data":{"viewer":{"accounts":[{"month":[{"sum":{"requests":300000},"dimensions":{"actionType":"PutObject"}}],"rolling":[],"storage":[]}]}}}`))
 						return
 					}
 					reply(w)
@@ -170,7 +170,7 @@ func TestR2AnalyticsFailureKeepsR2Paused(t *testing.T) {
 			if u, _ := r.DB.R2Usage(ctx, clock); u.ClassA != 0 || u.ClassB != 0 || u.Bytes != 0 {
 				t.Fatal("pause assumed usage", u)
 			}
-			// Undelivered: re-sent at the next hourly retry; then about daily.
+			// Undelivered: re-sent at the next hourly retry; then every 24 hours.
 			clock = clock.Add(time.Hour)
 			delivered = true
 			step()
@@ -179,10 +179,15 @@ func TestR2AnalyticsFailureKeepsR2Paused(t *testing.T) {
 			if len(reasons) != 2 || !strings.Contains(reasons[1], "paused") || !strings.Contains(reasons[1], "R2_ANALYTICS_TOKEN_FILE") || !strings.Contains(reasons[1], "2026-12-17 00:00 UTC") {
 				t.Fatal("pause alert not re-sent until delivered", reasons)
 			}
-			clock = clock.Add(22 * time.Hour)
+			clock = clock.Add(22 * time.Hour) // 23 hours after the delivered alert
+			step()
+			if len(reasons) != 2 {
+				t.Fatal("pause alert repeated within 24 hours", len(reasons))
+			}
+			clock = clock.Add(time.Hour)
 			step()
 			if len(reasons) != 3 {
-				t.Fatal("pause alert not repeated about daily", len(reasons))
+				t.Fatal("pause alert not repeated after 24 hours", len(reasons))
 			}
 			if reply == nil {
 				return
@@ -191,8 +196,8 @@ func TestR2AnalyticsFailureKeepsR2Paused(t *testing.T) {
 			if next := step(); next != 24*time.Hour {
 				t.Fatal("recovered analytics did not end the pause and scan", next)
 			}
-			if u, _ := r.DB.R2Usage(ctx, clock); u.ClassA < 700000 {
-				t.Fatal("measurement not merged", u)
+			if u, _ := r.DB.R2Usage(ctx, clock); u.ClassA < 600000 {
+				t.Fatal("twice the measurement not merged", u)
 			}
 			if _, err := r.Put(ctx, testUpload); err != nil {
 				t.Fatal("R2 stayed paused after analytics and inventory", err)
@@ -211,7 +216,7 @@ func TestR2RestoredInventoryNeverReopensUploads(t *testing.T) {
 	if err := r.DB.ReconcileR2(ctx, r.Now(), 0, nil); err != nil { // recent restored inventory
 		t.Fatal(err)
 	}
-	r.DB.RequestR2Reseed(ctx, r.Now())
+	r.DB.RequestR2Reseed(ctx, r.Now().Add(-store.R2ReseedLag))
 	var listOK atomic.Bool
 	bucket := newFakeBucket(t, r, &listOK)
 	var healthy atomic.Bool
@@ -264,6 +269,88 @@ func TestR2RestoredInventoryNeverReopensUploads(t *testing.T) {
 	}
 }
 
+// Round 6: analytics are not read until 6 hours after the restore; until then
+// R2 stays paused (with the pause alert) and the hourly retry continues.
+func TestR2AnalyticsInsideLagWindowWaits(t *testing.T) {
+	r := testR2(t)
+	ctx := context.Background()
+	clock := r.Now()
+	r.Now = func() time.Time { return clock }
+	r.DB.ReconcileR2(ctx, clock, 0, nil)
+	r.DB.RequestR2Reseed(ctx, clock)
+	bucket := newFakeBucket(t, r, nil)
+	var reads atomic.Int64
+	fakeAnalytics(t, r, func(w http.ResponseWriter, _ *http.Request) {
+		reads.Add(1)
+		w.Write([]byte(emptyAnalytics))
+	})
+	var reasons []string
+	r.Alert = func(_ context.Context, reason string) bool { reasons = append(reasons, reason); return true }
+	alerted := false
+	for _, at := range []time.Duration{0, store.R2ReseedLag - time.Minute} {
+		clock = time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC).Add(at)
+		if next := r.dailyStep(ctx, func(error) {}, &alerted); next != time.Hour {
+			t.Fatal("reading inside the lag window ended the pause", at, next)
+		}
+	}
+	if reads.Load() != 0 || bucket.requests.Load() != 0 {
+		t.Fatal("R2 or analytics called inside the lag window", reads.Load(), bucket.requests.Load())
+	}
+	if len(reasons) != 1 || !strings.Contains(reasons[0], "6 hours after the restore") {
+		t.Fatal("lag-window pause alert", reasons)
+	}
+	if _, err := r.Get(ctx, testKey); !errors.Is(err, store.ErrR2Reseeding) {
+		t.Fatal("download inside the lag window", err)
+	}
+	clock = time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC).Add(store.R2ReseedLag)
+	if next := r.dailyStep(ctx, func(error) {}, &alerted); next != 24*time.Hour || reads.Load() != 1 {
+		t.Fatal("reading after the lag window did not unlock and scan", next, reads.Load())
+	}
+	if _, err := r.Put(ctx, testUpload); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Round 6: if twice the reading reaches the 90% line, R2 stays paused until
+// the 32-day cap; the alert says why, once, and analytics are not read again.
+func TestR2OverGuardReadingAlertsOnceAndWaitsForCap(t *testing.T) {
+	r := testR2(t)
+	ctx := context.Background()
+	start := r.Now()
+	clock := start
+	r.Now = func() time.Time { return clock }
+	r.DB.ReconcileR2(ctx, clock, 0, nil)
+	r.DB.RequestR2Reseed(ctx, clock.Add(-store.R2ReseedLag))
+	bucket := newFakeBucket(t, r, nil)
+	var reads atomic.Int64
+	fakeAnalytics(t, r, func(w http.ResponseWriter, _ *http.Request) {
+		reads.Add(1)
+		w.Write([]byte(`{"data":{"viewer":{"accounts":[{"month":[{"sum":{"requests":450000},"dimensions":{"actionType":"PutObject"}}],"oldest":[],"rolling":[],"storage":[]}]}}}`))
+	})
+	var reasons []string
+	r.Alert = func(_ context.Context, reason string) bool { reasons = append(reasons, reason); return true }
+	alerted := false
+	for _, later := range []time.Duration{0, time.Hour, 48 * time.Hour} {
+		clock = start.Add(later)
+		if next := r.dailyStep(ctx, func(error) {}, &alerted); next != time.Hour {
+			t.Fatal("over-guard reading ended the pause", later, next)
+		}
+	}
+	if reads.Load() != 1 || bucket.requests.Load() != 0 {
+		t.Fatal("analytics re-read or R2 called while over the guard", reads.Load(), bucket.requests.Load())
+	}
+	if len(reasons) != 1 || !strings.Contains(reasons[0], "90% safety line") || !strings.Contains(reasons[0], "2026-12-17 00:00 UTC") {
+		t.Fatal("over-guard alert not sent exactly once with its reason", reasons)
+	}
+	if _, err := r.Get(ctx, testKey); !errors.Is(err, store.ErrR2Reseeding) {
+		t.Fatal("over-guard pause served a download", err)
+	}
+	clock = time.Date(2026, 12, 17, 0, 0, 0, 0, time.UTC)
+	if next := r.dailyStep(ctx, func(error) {}, &alerted); next != 24*time.Hour {
+		t.Fatal("over-guard pause outlived the cap", next)
+	}
+}
+
 // D-21 safety cap: without analytics, R2 unlocks on the 32nd UTC day after
 // the restore day, once the billing window has fully rolled, and then scans.
 func TestR2RestoreUnlocksAfter32Days(t *testing.T) {
@@ -297,7 +384,7 @@ func TestR2DailyReseedsThenOpensUploads(t *testing.T) {
 	r := testR2(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	r.DB.RequestR2Reseed(ctx, r.Now())
+	r.DB.RequestR2Reseed(ctx, r.Now().Add(-store.R2ReseedLag))
 	newFakeBucket(t, r, nil)
 	fakeAnalytics(t, r, func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte(emptyAnalytics)) })
 	r.Alert = func(context.Context, string) bool { return true }

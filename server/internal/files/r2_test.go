@@ -10,6 +10,7 @@ import (
 	"officerdashboard/internal/store"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -235,14 +236,25 @@ func TestR2AmbiguousPutReleasedByLaterInventory(t *testing.T) {
 	now := r.Now()
 	r.Now = func() time.Time { return now }
 	r.DB.ReconcileR2(ctx, now, 0, nil)
-	release := make(chan struct{})
+	// Each PUT is signalled once the fake bucket has received it, so the
+	// failure below is always an ambiguous network outcome, never a timeout
+	// inside the reservation itself.
+	received := make(chan struct{}, 2)
+	var puts atomic.Int64
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		switch {
 		case req.Method == http.MethodPut:
-			select {
-			case <-release:
-			case <-req.Context().Done():
+			io.Copy(io.Discard, req.Body)
+			received <- struct{}{}
+			if puts.Add(1) == 1 {
+				// The connection drops before any response.
+				conn, _, err := w.(http.Hijacker).Hijack()
+				if err == nil {
+					conn.Close()
+				}
+				return
 			}
+			<-req.Context().Done() // the client hangs up
 		case req.URL.Query().Has("uploads"):
 			io.WriteString(w, `<ListMultipartUploadsResult></ListMultipartUploadsResult>`)
 		default:
@@ -250,20 +262,23 @@ func TestR2AmbiguousPutReleasedByLaterInventory(t *testing.T) {
 		}
 	}))
 	defer fake.Close()
-	defer close(release)
 	r.Endpoint = fake.URL
-	r.HTTP.Timeout = 50 * time.Millisecond
 	if _, err := r.Put(ctx, PutInput{UserID: "alice", MimeType: "application/pdf", Body: []byte("%PDF-x")}); err == nil {
-		t.Fatal("expected transport timeout")
+		t.Fatal("expected a dropped connection")
 	}
-	r.HTTP.Timeout = 5 * time.Second
-	cancelled, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	<-received
+	cancelled, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if _, err := r.Put(cancelled, PutInput{UserID: "alice", MimeType: "application/pdf", Body: []byte("%PDF-y")}); !errors.Is(err, context.DeadlineExceeded) {
+	go func() {
+		<-received
+		cancel()
+	}()
+	if _, err := r.Put(cancelled, PutInput{UserID: "alice", MimeType: "application/pdf", Body: []byte("%PDF-y")}); !errors.Is(err, context.Canceled) {
 		t.Fatal("expected client hang-up", err)
 	}
-	if u, _ := r.DB.R2Usage(ctx, now); u.Bytes != 12 {
-		t.Fatal("ambiguous PUTs must stay reserved", u)
+	// Both reservations committed before their PUTs reached the bucket.
+	if u, _ := r.DB.R2Usage(ctx, now); puts.Load() != 2 || u.Bytes != 12 {
+		t.Fatal("ambiguous PUTs must stay reserved", puts.Load(), u)
 	}
 	now = now.Add(10 * time.Minute)
 	if err := r.Reconcile(ctx); err != nil {

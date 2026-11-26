@@ -232,7 +232,8 @@ HTTP 507 explains that the safety budget was reached. Counters survive restarts
 in SQLite. A successful deletion releases known bytes. An upload with an unknown
 outcome keeps its reservation until a scan at least an hour later shows the object
 absent. After a restore R2 is paused until the counters are re-seeded from Cloudflare
-analytics (uploads also wait for a fresh inventory), or for at most 32 days; nothing is assumed. R2 problems never stop startup: they close uploads and alert. See [R2 setup and budget constraints](deployment.md#private-r2-file-storage)
+analytics (read at least 6 hours after the restore, seeded at twice the reading, and only if that stays below
+every 90% line; uploads also wait for a fresh inventory), or for at most 32 days; nothing is assumed. R2 problems never stop startup: they close uploads and alert. See [R2 setup and budget constraints](deployment.md#private-r2-file-storage)
 before enabling it. Existing files keep their backend label: migrate or retain
 access to the old backend before switching; use the optional `dashboard files-migrate-r2` command (dry-run by default)
 before switching. D1 remains the encrypted database backup target; no R2 backup copy is

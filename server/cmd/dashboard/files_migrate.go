@@ -74,7 +74,10 @@ func filesMigrateCmd(args []string, getenv func(string) string, out io.Writer) e
 	// A restored ledger is re-seeded before the migration spends anything;
 	// while R2 is paused (D-21) the migration does not start.
 	if paused, err := target.Reseed(ctx); paused {
-		return fmt.Errorf("%w (%v)", store.ErrR2Reseeding, err)
+		if err != nil {
+			return fmt.Errorf("%w (%v)", store.ErrR2Reseeding, err)
+		}
+		return store.ErrR2Reseeding
 	} else if err != nil {
 		fmt.Fprintf(out, "R2 usage re-seed: %v\n", err)
 	}

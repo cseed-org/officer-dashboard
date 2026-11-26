@@ -223,24 +223,33 @@ the app has re-seeded its usage counters:
    plus stored bytes, from Cloudflare's free
    [GraphQL Analytics API](https://developers.cloudflare.com/r2/platform/metrics-analytics/)
    (`r2OperationsAdaptiveGroups` and `r2StorageAdaptiveGroups`), within 30 seconds.
-2. It merges each counter and each window with the restored ledger by maximum, so
-   no counter ever goes down. Unknown operation types count as Class A; deletes
-   are free. The next inventory scan replaces the byte figure with listed bytes.
-3. Downloads then resume. Uploads resume after the next complete inventory scan,
+   These adaptive datasets are sampled estimates that lag ingestion, so a reading
+   is not trusted as an upper bound on its own. It is read no earlier than **6 hours
+   after the restore marker**: R2 has sent nothing since the marker, and the
+   operations spent before the restore have had time to be counted. Earlier
+   attempts wait for the next hourly retry.
+2. It seeds each counter as **twice the reading**, merged with the restored ledger
+   by maximum (Class A, Class B and stored bytes, in both the calendar month and
+   the rolling 32-day window), so no counter ever goes down. Unknown operation
+   types count as Class A; deletes are free. The next inventory scan replaces the
+   byte figure with listed bytes.
+3. It ends the pause only if every seeded counter is still below the 90% refusal
+   line. Otherwise R2 stays paused until the 32-day cap (below), with one Discord
+   alert saying why, and no further readings are taken.
+4. Downloads then resume. Uploads resume after the next complete inventory scan,
    which runs straight away: the restored inventory predates the restore, so it is
    never trusted. Both then run under the normal 70% warning and 90% refusal.
-4. If no analytics token is configured, or Cloudflare does not answer, nothing is
+5. If no analytics token is configured, or Cloudflare does not answer, nothing is
    assumed: **R2 stays paused**, the re-seed is retried hourly, and a Discord alert
-   is sent once and then about daily. Without a working token, a restore pauses R2
+   is sent once and then every 24 hours. Without a working token, a restore pauses R2
    for up to 32 days: the pause ends on its own at the start of the 32nd UTC day
    after the restore day, when every operation the ledger may have lost has left
    both the calendar month and the rolling 32-day window. Uploads then also wait
    for a fresh inventory.
 
 A ledger with recorded spending but no `r2-usage-ledger.json` beside it (for example a database copied to a new host) is
-treated the same way. Analytics can lag by a few minutes, so operations spent in
-the minutes just before a restore may be missed; the 10% margin below the free
-tier absorbs that. Do not remove the marker. Routine image rollback instead merges
+treated the same way. The doubled reading is the only allowance for sampling
+error and lag: the 10% margin below the free tier is not relied on for it. Do not remove the marker. Routine image rollback instead merges
 the candidate image's R2 counters into the checkpoint before restoring it, so it
 preserves spent operations without a re-seed.
 
@@ -262,9 +271,9 @@ add the marker yourself before starting the app, even if the old snapshot
 predates R2's tables:
 
 ```sql
-CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, alerted_at INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, alerted_at INTEGER NOT NULL DEFAULT 0, over_guard_at INTEGER NOT NULL DEFAULT 0);
 INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER))
-ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,alerted_at=0;
+ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,alerted_at=0,over_guard_at=0;
 ```
 
 Keep the original DB/ledger when rolling back an application image. Stored backend

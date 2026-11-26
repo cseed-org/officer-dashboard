@@ -148,7 +148,7 @@ def backup(kind='hourly'):
         return result
 
 
-R2_RESEED_SCHEMA = 'CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, alerted_at INTEGER NOT NULL DEFAULT 0)'
+R2_RESEED_SCHEMA = 'CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, alerted_at INTEGER NOT NULL DEFAULT 0, over_guard_at INTEGER NOT NULL DEFAULT 0)'
 
 
 def mark_restored_r2(path):
@@ -157,7 +157,7 @@ def mark_restored_r2(path):
     # re-seeds the usage counters, or for at most 32 UTC days.
     with closing(sqlite3.connect(path)) as db, db:
         db.execute(R2_RESEED_SCHEMA)
-        db.execute("INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER)) ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,alerted_at=0")
+        db.execute("INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER)) ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,alerted_at=0,over_guard_at=0")
 
 
 def restore(snapshot_id, target, identity, encrypted_only=False):
