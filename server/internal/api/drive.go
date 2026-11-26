@@ -16,6 +16,7 @@ import (
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/files"
+	"officerdashboard/internal/notify"
 	"officerdashboard/internal/store"
 	"officerdashboard/internal/validate"
 )
@@ -256,6 +257,10 @@ func (s *Server) Drive(ctx context.Context) (*files.Drive, error) {
 	}
 	return nil, files.ErrNotConnected
 }
+
+// Alerts is the server's ops alerter (one per key per hour), for loops started beside it
+// such as the Drive event export.
+func (s *Server) Alerts() *notify.Alerter { return s.cfg.Alerts }
 
 // storeFile uploads through cfg.Files and alerts when Drive is full or throttling us; the
 // API then answers 507 storage_quota (toAPIError), so the upload is never lost silently.
