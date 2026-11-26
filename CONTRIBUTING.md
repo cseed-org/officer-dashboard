@@ -82,7 +82,11 @@ release PR containing `CHANGELOG.md`, `version.txt`, the release manifest, and b
 Node package versions and lockfiles. The first release is `0.15.0`. Only `feat`,
 `fix`, `perf` and `deps` commits propose a release or appear in its notes;
 `deps-dev`, `docs`, `chore`, `ci`, `build`, `test`, `refactor`, `style`
-and `revert` changes stay hidden and never cut a release on their own. The
+and `revert` changes stay hidden and never cut a release on their own. A gate
+(`scripts/release-gate.mjs`) enforces this strictly: the workflow skips the
+release-pr step unless a commit since the last `vX.Y.Z` tag has one of the four
+types, so a breaking marker or `BREAKING CHANGE` note on a hidden type (such as
+`ci!: replace the build environment`) cannot open a release PR. The
 repository's history predates Conventional Commits, so no release PR exists until
 the first `feat`/`fix`/`perf`/`deps` change merges after setup; that PR
 proposes `0.15.0`.
@@ -93,9 +97,10 @@ PRs require a person to merge them.
 Release-please creates the immutable `vX.Y.Z` tag and GitHub Release. The release
 image workflow waits up to 75 minutes — beyond main CI's worst-case critical path
 of about 60 minutes — for that commit's successful main CI run and `publish` job,
-retrying transient GitHub API errors, then promotes the existing image digest to
-semantic version tags.
-It does not build another image. Failed or missing publication stops promotion;
+retrying transient GitHub API errors, then promotes the image digest that exact
+run attempt recorded as a CI artifact to semantic version tags.
+It does not build another image and never resolves the mutable sha-commit
+source tag. Failed or missing publication stops promotion;
 the GitHub Release may exist before image aliases or the attestation are ready. A
 timeout while main CI is still running is routine, not an incident: reruns are
 idempotent, so rerun the failed release-image workflow
@@ -103,13 +108,15 @@ from Actions once CI is green; keep the original release/tag. See
 [image tags and verification](docs/deployment.md#release-images-and-verification).
 
 Dependabot uses `deps:` / `deps-dev:` titles. The auto-merge workflow runs only
-when both the PR author and the event actor are `dependabot[bot]`, reads the
-highest semver update type from Dependabot's own commit metadata (grouped updates
-included), and queues minor and patch PRs into GitHub's
-auto-merge queue; they still need every required check and any required approval
+when both the PR author and the event actor are `dependabot[bot]`, parses the
+structured `updated-dependencies` YAML trailer in Dependabot's own commit
+metadata (grouped updates included), and fails closed: every listed dependency
+must carry a recognized semver update type or the PR stays manual. Minor and
+patch PRs are queued into GitHub's auto-merge queue pinned to the inspected head
+commit; they still need every required check and any required approval
 to pass. Major updates receive the
 `major-update` label — created on the fly if missing — and require manual review
-and merging. PRs without recognizable semver metadata are left alone.
+and merging. PRs with missing, incomplete or unrecognized metadata are left alone.
 
 Maintainers must enable repository auto-merge and require the `pr-title` check
 alongside existing checks.

@@ -8,16 +8,23 @@ plus an independent daily/monthly copy in Google Drive ([below](#a-second-indepe
 ## Release images and verification
 
 CI on `main` builds `ghcr.io/cseed-org/officer-dashboard:main` and
-`:sha-<7-character commit>` with SBOM and build provenance. A published stable
-GitHub Release such as `v0.15.0` promotes that commit's existing multi-platform
+`:sha-<7-character commit>` with SBOM and build provenance, and records the
+pushed digest as a run-scoped CI artifact. A published stable
+GitHub Release such as `v0.15.0` promotes that recorded multi-platform
 digest to `:0.15.0`, `:0.15` and `:latest`. Releases at major version 1 and later
 also update `:1` (or the corresponding major); there is no `:0` alias. Prereleases
-are excluded. Version aliases and `latest` can move: pin deployments by digest.
+are excluded. The exact version always (re)points at the recorded digest —
+promotion fails rather than replace a different build — while `latest` and the
+minor/major aliases advance only when the release is the highest published
+stable version in their scope, so rerunning an older release leaves newer
+aliases alone. Version aliases and `latest` can move: pin deployments by digest.
 The image's binary version remains the source commit's short SHA because release
 promotion never rebuilds it.
 
 The release workflow requires a successful `main` CI run, including its `publish`
-job, for the tag's resolved commit; it waits up to 75 minutes for that run. It
+job, for the tag's resolved commit; it waits up to 75 minutes for that run, then
+redeems the digest that exact run attempt recorded — never the mutable
+`:sha-<commit>` source tag, which a rerun could have replaced. It
 checks that the image revision matches the
 full commit and that all promoted tags keep the same digest. It adds a GitHub
 artifact attestation (Sigstore-backed) for the promoted digest using GitHub's

@@ -27,6 +27,10 @@ jobs:
             echo '::error::Configure RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY for a repository-installed GitHub App with contents and pull requests write permissions and v* tag-creation bypass. See scripts/setup-release-app.mjs.'
             exit 1
           fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
       - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         id: app
         with:
@@ -38,7 +42,28 @@ jobs:
         with:
           # release-please 17 requires Node 22; ubuntu-latest defaults to Node 20.
           node-version: '22'
+      - name: Skip release pull requests without a release-worthy commit
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only feat, fix, perf and deps may cut a release (any scope,
+          # optional "!"). Hidden types must not propose one, even through a
+          # breaking marker or BREAKING CHANGE note, because release-please
+          # keeps breaking notes for hidden types; without this gate a lone
+          # "ci!: ..." would open a release PR.
+          last=$(git tag -l 'v*' | grep -E '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -1 || true)
+          range=HEAD
+          if [[ -n "$last" ]]; then range="$last..HEAD"; fi
+          eligible=$(git log --format=%s "$range" | node scripts/release-gate.mjs)
+          if [[ "$eligible" == true ]]; then
+            echo "Commits since ${last:-the first commit} include a release-worthy type."
+          else
+            echo "No feat/fix/perf/deps commit since ${last:-the first commit}; no release PR."
+          fi
+          echo "eligible=$eligible" >> "$GITHUB_OUTPUT"
       - name: Create or update the release pull request
+        if: steps.gate.outputs.eligible == 'true'
         env:
           RELEASE_PLEASE_TOKEN: ${{ steps.app.outputs.token }}
         run: >-

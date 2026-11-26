@@ -23,37 +23,78 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bodies=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json commits --jq '.commits[].messageBody')
-          highest=none
-          bestrank=0
-          while IFS= read -r type; do
-            case "$type" in
-              version-update:semver-major) rank=3 ;;
-              version-update:semver-minor) rank=2 ;;
-              version-update:semver-patch) rank=1 ;;
-              *) rank=0 ;;
-            esac
-            if (( rank > bestrank )); then
-              bestrank=$rank
-              highest=$type
-            fi
-          done < <(grep -oE 'update-type: *version-update:semver-(major|minor|patch)' <<< "$bodies" | sed 's/^update-type: *//' || true)
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid,commits > pr.json
+          head=$(jq -r '.headRefOid' pr.json)
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          jq -c '[.commits[].messageBody // ""]' pr.json > bodies.json
+          # Parse Dependabot's structured metadata trailer — the YAML
+          # updated-dependencies block after the final "---" of each commit
+          # body — and fail closed: unless every commit lists at least one
+          # dependency and every listed dependency carries a recognized semver
+          # update-type, report none and leave the PR to a person.
+          highest=$(python3 - <<'PY'
+          import json, yaml
+
+          recognized = {
+              "version-update:semver-major": 3,
+              "version-update:semver-minor": 2,
+              "version-update:semver-patch": 1,
+          }
+
+          def trailer(body):
+              lines = body.splitlines()
+              for i in range(len(lines) - 1, -1, -1):
+                  if lines[i].strip() == "---":
+                      try:
+                          data = yaml.safe_load("\n".join(lines[i + 1:]))
+                      except yaml.YAMLError:
+                          return None
+                      return data if isinstance(data, dict) else None
+              return None
+
+          def highest():
+              bodies = json.load(open("bodies.json", encoding="utf-8"))
+              if not bodies:
+                  return "none"
+              best, rank = "none", 0
+              for body in bodies:
+                  data = trailer(body if isinstance(body, str) else "")
+                  if data is None:
+                      return "none"
+                  deps = data.get("updated-dependencies")
+                  if not isinstance(deps, list) or not deps:
+                      return "none"
+                  for entry in deps:
+                      if not isinstance(entry, dict):
+                          return "none"
+                      update = entry.get("update-type")
+                      if update not in recognized:
+                          return "none"
+                      if recognized[update] > rank:
+                          rank, best = recognized[update], update
+              return best
+
+          print(highest())
+          PY
+          )
           echo "Highest Dependabot update type: $highest"
           echo "highest=$highest" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
       - name: Queue minor and patch updates behind required checks
         if: contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.update.outputs.highest)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: gh pr merge --auto --squash "$PR_URL"
+          HEAD: ${{ steps.update.outputs.head }}
+        run: gh pr merge --auto --squash --match-head-commit "$HEAD" "$PR_URL"
       - name: Mark major updates for manual review
         if: steps.update.outputs.highest == 'version-update:semver-major'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          gh label create major-update --color d93f0b --description "Major dependency update requiring manual review" --force
+          gh label create major-update --repo "$GITHUB_REPOSITORY" --color d93f0b --description "Major dependency update requiring manual review" --force
           gh pr edit "$PR_URL" --add-label major-update
-      - name: Leave updates without semver metadata to a person
+      - name: Leave updates without fully recognized semver metadata to a person
         if: steps.update.outputs.highest == 'none'
-        run: echo 'No Dependabot semver metadata found; leaving this PR for manual review.'
+        run: echo 'Dependabot metadata is missing, incomplete or unrecognized; leaving this PR for manual review.'

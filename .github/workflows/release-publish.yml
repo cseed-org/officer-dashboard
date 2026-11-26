@@ -61,10 +61,14 @@ jobs:
                 echo '::error::Main CI failed for the release commit; refusing promotion.'
                 exit 1
               fi
-              if jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$(jq -r '.id' <<< "$run")/jobs?per_page=100" 2>/dev/null); then
+              run_id=$(jq -r '.id' <<< "$run")
+              run_attempt=$(jq -r '.run_attempt' <<< "$run")
+              if jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/attempts/$run_attempt/jobs?per_page=100" 2>/dev/null); then
                 if jq -e -s 'any(.[].jobs[]; .name == "publish" and .conclusion == "success")' <<< "$jobs" > /dev/null; then
                   echo "commit=$commit" >> "$GITHUB_OUTPUT"
                   echo "version=$version" >> "$GITHUB_OUTPUT"
+                  echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+                  echo "run-attempt=$run_attempt" >> "$GITHUB_OUTPUT"
                   exit 0
                 fi
                 echo '::error::Main CI succeeded but its publish job did not; refusing promotion.'
@@ -84,28 +88,83 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Promote the existing digest without rebuilding
+      - name: Read the digest recorded by the validated CI run attempt
+        id: digest
+        env:
+          RUN_ID: ${{ steps.release.outputs.run-id }}
+          RUN_ATTEMPT: ${{ steps.release.outputs.run-attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The digest comes only from the exact run attempt just validated,
+          # never from a mutable tag: a later CI rerun of the same commit can
+          # build a different digest before its own checks have finished.
+          artifacts=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/artifacts?per_page=100")
+          artifact_id=$(jq -s -r '[.[].artifacts[] | select(.name == "image-digest" and (.expired | not))] | first | .id // empty' <<< "$artifacts")
+          if [[ -z "$artifact_id" ]]; then
+            echo '::error::The validated CI run attempt recorded no image-digest artifact; refusing promotion.'
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > image-digest.zip
+          digest=$(unzip -p image-digest.zip image-digest.txt | tr -d '[:space:]')
+          if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo '::error::The recorded digest is malformed; refusing promotion.'
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Promote the recorded digest without rebuilding
         id: image
         env:
           COMMIT: ${{ steps.release.outputs.commit }}
           VERSION: ${{ steps.release.outputs.version }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
         shell: bash
         run: |
           set -euo pipefail
-          digest=$(docker buildx imagetools inspect "$IMAGE:sha-${COMMIT:0:7}" --format '{{.Manifest.Digest}}')
-          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-          # Confirm that the short SHA source belongs to the full release commit.
-          revision=$(docker buildx imagetools inspect "$IMAGE@$digest" --format '{{json .Manifest}}' | jq -r '.annotations["org.opencontainers.image.revision"]')
+          # Confirm that the recorded digest belongs to the full release commit.
+          revision=$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}' | jq -r '.annotations["org.opencontainers.image.revision"]')
           [[ "$revision" == "$COMMIT" ]]
+          # Never replace a different build: an existing exact-version tag must
+          # already point at the recorded digest (idempotent reruns only).
+          existing=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+          if [[ -n "$existing" && "$existing" != "$DIGEST" ]]; then
+            echo "::error::$IMAGE:$VERSION already points to $existing, not the recorded $DIGEST; refusing to replace a different build."
+            exit 1
+          fi
           major="${VERSION%%.*}"
-          tags=(--tag "$IMAGE:$VERSION" --tag "$IMAGE:${VERSION%.*}" --tag "$IMAGE:latest")
-          if [[ "$major" != 0 ]]; then tags+=(--tag "$IMAGE:$major"); fi
-          docker buildx imagetools create "${tags[@]}" "$IMAGE@$digest"
+          tags=(--tag "$IMAGE:$VERSION")
+          # The exact version always (re)points at the recorded digest. Moving
+          # aliases advance only: point one at this digest only when no
+          # strictly newer published stable vX.Y.Z tag falls in its scope
+          # (latest: every stable release; minor: same major.minor; major:
+          # same major), so rerunning an older release leaves newer aliases
+          # alone. sort -V compares semver.
+          published=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name')
+          alias_blocked() { # $1 = all, a major, or a major.minor scope
+            local scope=$1 other
+            while IFS= read -r tag; do
+              [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+              other="${tag#v}"
+              case "$scope" in
+                all) ;;
+                *.*) [[ "${other%.*}" == "$scope" ]] || continue ;;
+                *) [[ "${other%%.*}" == "$scope" ]] || continue ;;
+              esac
+              if [[ "$other" != "$VERSION" && $(printf '%s\n%s\n' "$VERSION" "$other" | sort -V | tail -1) == "$other" ]]; then
+                return 0
+              fi
+            done <<< "$published"
+            return 1
+          }
+          alias_blocked all || tags+=(--tag "$IMAGE:latest")
+          alias_blocked "${VERSION%.*}" || tags+=(--tag "$IMAGE:${VERSION%.*}")
+          if [[ "$major" != 0 ]]; then alias_blocked "$major" || tags+=(--tag "$IMAGE:$major"); fi
+          docker buildx imagetools create "${tags[@]}" "$IMAGE@$DIGEST"
           for ((i=1; i<${#tags[@]}; i+=2)); do
             promoted=$(docker buildx imagetools inspect "${tags[i]}" --format '{{.Manifest.Digest}}')
-            [[ "$promoted" == "$digest" ]]
+            [[ "$promoted" == "$DIGEST" ]]
           done
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.IMAGE }}
