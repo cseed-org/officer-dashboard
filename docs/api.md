@@ -113,7 +113,7 @@ these schemas; `gen-mcp-tools --check` and `TestMCPToolsMatchRoutes` fail if `EN
 | POST | `/api/requests/:id/deny` | director | — | `PurchaseDenyRequest` | `PurchaseRequestResponse` |
 | POST | `/api/requests/:id/transition` | director | — | `PurchaseTransitionRequest` | `PurchaseRequestResponse` |
 | POST | `/api/requests/:id/attachments` | officer | — | multipart: `AttachmentUploadFields` + `file` | `AttachmentUploadResponse` |
-| GET | `/api/attachments/:id` | officer | — | — | receipt bytes or Drive redirect |
+| GET | `/api/attachments/:id` | officer | — | — | receipt bytes (streamed from Drive or disk) |
 | GET | `/api/design-requests` | officer | — | — | `DesignRequestsListResponse` |
 | POST | `/api/design-requests` | officer | — | `DesignRequestCreateRequest` | `DesignRequestResponse` |
 | GET | `/api/design-requests/:id` | officer | — | — | `DesignRequestResponse` |
@@ -124,7 +124,7 @@ these schemas; `gen-mcp-tools --check` and `TestMCPToolsMatchRoutes` fail if `EN
 | POST | `/api/design-requests/:id/approve` | officer | — | — | `DesignRequestResponse` |
 | POST | `/api/design-requests/:id/comments` | officer | — | `DesignCommentRequest` | `DesignRequestResponse` |
 | POST | `/api/design-requests/:id/files` | officer | — | multipart: `DesignFileUploadFields` + `file` | `DesignRequestResponse` |
-| GET | `/api/design-files/:id` | officer | — | — | file bytes or Drive redirect |
+| GET | `/api/design-files/:id` | officer | — | — | file bytes (streamed from Drive or disk) |
 | GET | `/api/events/:id/design-request-draft` | officer | — | — | `DesignRequestDraftResponse` |
 | POST | `/api/events/:id/design-requests` | officer | — | `DesignRequestFromEventRequest` (optional) | `DesignRequestResponse` |
 | PUT | `/api/events/:id/design-need` | officer ² | — | `EventDesignNeedRequest` | `EventDesignNeedResponse` |
@@ -340,10 +340,13 @@ the app builds or normalizes an in-app link; the Go static handler does not serv
   Fund-balance rows additionally expose `restrictedEndingCents` and
   `unrestrictedEndingCents`; `releasesCents` is informational and is not subtracted a
   second time from the combined fund roll-forward.
-- `GET /api/attachments/:id` downloads a local receipt or redirects to its Drive link, for
-  the uploader, the request's requester and directors only (403 for other officers). For other
-  officers, `PurchaseRequestDetail.attachments[].url` is `null` (the metadata stays visible), so
-  a Drive link is never handed out either. Production uploads return 503 when Drive is unconfigured.
+- `GET /api/attachments/:id` streams the receipt's bytes, from Drive or local disk, for the
+  uploader, the request's requester and directors only (403 for other officers, and Drive is
+  not called). For other officers, `PurchaseRequestDetail.attachments[].url` is `null` (the
+  metadata stays visible). `url` is always `/api/attachments/:id` and `DesignFile.url`
+  always `/api/design-files/:id`: no Drive link is ever returned. Uploads answer 503
+  `not_configured` when no Google account is connected for Drive (or its access was revoked),
+  and 507 `storage_quota` when Drive is full or still rate limiting after retries.
 - A restricted-fund settlement posts its expense plus an atomic restriction release.
   Expenses appear without donor restriction; grant attribution stays on the original fund.
 - Reimbursement `reimbursed→closed` records payment (debit payable, credit checking).
@@ -731,6 +734,14 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
 - Officer GET /api/program-tracks; leadership POST /api/program-tracks.
 - Leadership: GET /api/settings/org-google/status, navigation GET /api/settings/org-google/connect,
   DELETE /api/settings/org-google. OAuth callback: /auth/org-google/callback.
+- Owner (Drive file storage, [Integrations](integrations.md#files-in-a-google-shared-drive)):
+  GET /api/settings/drive/status (`DriveStatus`: account email, root folder, reachable,
+  `canWrite`, usage with `measuredAt`; never tokens; usage comes from the daily check or the
+  day's first load, and `?refresh=1` measures it again), navigation GET /api/settings/drive/connect, OAuth callback
+  /auth/drive-google/callback, PUT /api/settings/drive/root (`DriveRootRequest`: a folder id or
+  `drive.google.com/drive/folders/…` link, checked for Content-manager access; 409 when
+  `DRIVE_ROOT_FOLDER_ID` is set or no account is connected), DELETE /api/settings/drive
+  (revokes the grant).
   OrgGoogleStatus adds `needsReconnect` (revoked refresh token) and nullable `lastSyncError`.
 - Token/MCP agent meeting writes default to sendInvites:false unless the request sets it.
 - Event create/update accepts nullable startsAt and inclusive tentativeFrom/tentativeTo dates.

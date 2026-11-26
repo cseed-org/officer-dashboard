@@ -206,6 +206,12 @@ await call('health');
 await call('orgCalendars', {who: officer});
 await call('orgGoogleStatus', {who: leadership});
 await call('orgGoogleDisconnect', {who: leadership});
+// Drive storage settings are owner-only; with no Google account connected the root cannot be set.
+await call('driveStatus', {who: officer, expect: 403});
+await call('driveStatus', {who: leadership});
+await call('driveStatus', {who: leadership, query: {refresh: '1'}});
+await call('driveRootPut', {who: leadership, body: {folderId: 'contractRootFolder01'}, expect: 409});
+await call('driveDisconnect', {who: leadership});
 const orgMeeting = await call('orgEventCreate', {who: officer, body: {calendarKey:'internal',title:'Contract meeting',startsAt:'2026-11-24T18:00:00Z',endsAt:'2026-11-24T19:00:00Z'}});
 const orgId = orgMeeting.json.event.id;
 await call('orgEventUpdate', {who: officer,params:{id:orgId},body:{title:'Updated meeting'}});
@@ -760,7 +766,7 @@ for (let i = 0; i < 31; i++) {
 }
 
 // Everything with a zod response schema must have been exercised.
-const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback', 'orgGoogleConnect', 'orgGoogleCallback']); // redirects, and dev-build-only routes: covered by the Go tests
+const SKIP = new Set(['authLogin', 'authCallback', 'authLogout', 'authDev', 'authDevInfo', 'googleConnect', 'googleCallback', 'orgGoogleConnect', 'orgGoogleCallback', 'driveConnect', 'driveCallback']); // redirects, and dev-build-only routes: covered by the Go tests
 const missed = Object.entries(ENDPOINTS).filter(([n, e]) => !SKIP.has(n) && !covered.has(n)).map(([n, e]) => `${n} (${e.method} ${e.path})`);
 if (missed.length) fail('coverage', `endpoints never called: ${missed.join(', ')}`);
 

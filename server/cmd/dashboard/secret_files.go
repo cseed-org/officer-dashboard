@@ -9,6 +9,11 @@ import (
 
 // Resolve service credentials in memory for both direct systemd and container entry points.
 func fileSettings(getenv func(string) string) (func(string) string, error) {
+	// A private key pasted into the environment leaks through process listings, compose
+	// files and crash dumps; the key file is mounted as a secret instead.
+	if getenv("GOOGLE_SERVICE_ACCOUNT_JSON") != "" {
+		return nil, errors.New("GOOGLE_SERVICE_ACCOUNT_JSON must be set as GOOGLE_SERVICE_ACCOUNT_JSON_FILE, a path to the key file")
+	}
 	values := map[string]string{}
 	for _, key := range []string{"DEV_AUTH_KEY", "DISCORD_CLIENT_SECRET", "DISCORD_WEBHOOK_URL", "DISCORD_BOT_TOKEN", "SMTP_USERNAME", "SMTP_PASSWORD", "GOOGLE_OAUTH_CLIENT_SECRET", "CLOUDFLARE_API_TOKEN", "GOOGLE_SERVICE_ACCOUNT_JSON"} {
 		path := getenv(key + "_FILE")

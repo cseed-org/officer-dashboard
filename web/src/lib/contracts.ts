@@ -97,6 +97,8 @@ export const ApiError = z.object({
       'over_tolerance',
       'archived',
       'rate_limited',
+      /** 507: Google Drive is full or throttling the dashboard; the file was not saved. */
+      'storage_quota',
       'not_configured',
       'too_large',
       /** 403 while an invited officer hasn't finished setup; only /api/me* is open. */
@@ -425,7 +427,7 @@ export const Attachment = z.object({
   mimeType: z.string(),
   sizeBytes: z.number().int().nonnegative(),
   storage: z.enum(STORAGE_BACKENDS),
-  /** Drive webViewLink, or a /api/attachments/:id URL for the local stub. */
+  /** /api/attachments/:id, the authorized download (never a Drive link); null for viewers who may not open it. */
   url: z.string().nullable(),
   uploadedBy: UserSummary,
   createdAt: IsoDateTime,
@@ -1188,6 +1190,7 @@ export const DesignComment = z.object({ id: Id, author: UserSummary, body: z.str
 export type DesignComment = z.infer<typeof DesignComment>;
 export const DesignFile = z.object({
   id: Id, kind: DesignFileKind, filename: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
+  /** /api/design-files/:id, the authorized download (never a Drive link). */
   url: z.string(), uploadedBy: UserSummary, createdAt: IsoDateTime,
 });
 export type DesignFile = z.infer<typeof DesignFile>;
@@ -1580,6 +1583,21 @@ export const ProgramTracksResponse = z.object({tracks: z.array(ProgramTrack)});
 /** needsReconnect: the org refresh token was revoked. lastSyncError: the last failed pass (null when healthy). */
 export const OrgGoogleStatus = z.object({configured: z.boolean(), connected: z.boolean(), email: z.string().nullable(), needsReconnect: z.boolean(), lastSyncError: z.string().nullable()});
 export type OrgGoogleStatus = z.infer<typeof OrgGoogleStatus>;
+/** Owners' view of file storage (server/internal/api/drive.go). Never carries tokens. */
+export const DriveStatus = z.object({
+  configured: z.boolean(), connected: z.boolean(), email: z.string().nullable(), needsReconnect: z.boolean(),
+  rootFolderId: z.string(), rootFromEnv: z.boolean(), rootReachable: z.boolean(), rootName: z.string().nullable(),
+  sharedDrive: z.boolean(), canWrite: z.boolean(), storage: z.enum(['drive', 'local', '']),
+  /** From the daily check or the day's first status load; `?refresh=1` measures again (it lists the whole drive). */
+  usage: z.object({ usedBytes: z.number().int().nonnegative(), quotaBytes: z.number().int().positive(), percent: z.number().int().nonnegative(), measuredAt: IsoDateTime }).nullable(),
+  error: z.string().nullable(),
+});
+export type DriveStatus = z.infer<typeof DriveStatus>;
+export const DriveStatusQuery = z.object({ refresh: z.literal('1').optional() });
+export type DriveStatusQuery = z.infer<typeof DriveStatusQuery>;
+/** A shared-drive folder id, or its drive.google.com/drive/folders/… link. */
+export const DriveRootRequest = z.object({ folderId: z.string().trim().min(1).max(2048) });
+export type DriveRootRequest = z.infer<typeof DriveRootRequest>;
 
 export const ENDPOINTS = {
   orgCalendars: {method:'GET', path:'/api/orgcal/calendars', auth:'officer', response:OrgCalendarsResponse},
@@ -1599,6 +1617,11 @@ export const ENDPOINTS = {
   orgGoogleConnect: {method:'GET', path:'/api/settings/org-google/connect', auth:'leadership', response:'redirect'},
   orgGoogleCallback: {method:'GET', path:'/auth/org-google/callback', auth:'leadership', response:'redirect'},
   orgGoogleDisconnect: {method:'DELETE', path:'/api/settings/org-google', auth:'leadership', response:OrgGoogleStatus},
+  driveStatus: {method:'GET', path:'/api/settings/drive/status', auth:'owner', query:DriveStatusQuery, response:DriveStatus},
+  driveConnect: {method:'GET', path:'/api/settings/drive/connect', auth:'owner', response:'redirect'},
+  driveCallback: {method:'GET', path:'/auth/drive-google/callback', auth:'owner', response:'redirect'},
+  driveDisconnect: {method:'DELETE', path:'/api/settings/drive', auth:'owner', response:DriveStatus},
+  driveRootPut: {method:'PUT', path:'/api/settings/drive/root', auth:'owner', body:DriveRootRequest, response:DriveStatus},
 
  buildspaceList: {method: 'GET', path: '/api/buildspace-launchpad', auth: 'officer', query: LaunchpadQuery, response: BuildspaceResponse},
  buildspaceProjectSave: {method: 'PUT', path: '/api/buildspace-launchpad/projects/:id', auth: 'officer', body: BuildspaceProjectBody, response: z.object({project: BuildspaceProject})},

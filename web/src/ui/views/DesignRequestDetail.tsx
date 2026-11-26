@@ -316,7 +316,7 @@ function FileList({ files, label }: { files: DesignFile[]; label: string }) {
     <ul class="files" aria-label={label}>
       {files.map((f) => (
         <li key={f.id}>
-          <a class="file-name" href={safeUrl(f.url) ?? '#'} target={f.url.startsWith('http') ? '_blank' : undefined} rel="noopener noreferrer" download={f.url.startsWith('/') ? f.filename : undefined}>
+          <a class="file-name" href={safeUrl(f.url) ?? '#'} rel="noopener noreferrer" download={f.filename}>
             {f.filename}
           </a>
           <span class="file-meta">

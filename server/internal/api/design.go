@@ -267,10 +267,8 @@ func (d *designCtx) fileDTO(f *store.DesignFile) (DesignFileDTO, error) {
 	if err != nil {
 		return DesignFileDTO{}, err
 	}
+	// Always the dashboard's own authorized download, never a Drive link.
 	url := "/api/design-files/" + f.ID
-	if f.WebViewLink != nil {
-		url = *f.WebViewLink
-	}
 	return DesignFileDTO{ID: f.ID, Kind: f.Kind, Filename: f.Filename, MimeType: f.MimeType, SizeBytes: f.SizeBytes, URL: url, UploadedBy: userSummary(up), CreatedAt: isoMs(f.CreatedAt)}, nil
 }
 
@@ -683,7 +681,7 @@ func (c *Ctx) designDelete() error {
 	}
 	ctx := c.Context()
 	id := c.R.PathValue("id")
-	var keys []string
+	var stored []store.DesignFile
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
 		r, err := w.DesignRequestByID(ctx, id)
 		if err != nil {
@@ -707,10 +705,8 @@ func (c *Ctx) designDelete() error {
 		}
 		snap := designSnapshot(r)
 		fileIDs, commentIDs := []string{}, []string{}
+		stored = fs
 		for _, f := range fs {
-			if f.Storage == storageKind(c.S.cfg.Files) {
-				keys = append(keys, f.StorageKey) // local files are removed, Drive files trashed
-			}
 			fileIDs = append(fileIDs, f.ID+" "+f.Filename)
 		}
 		for _, cm := range cs {
@@ -725,11 +721,7 @@ func (c *Ctx) designDelete() error {
 	if err != nil {
 		return err
 	}
-	for _, k := range keys {
-		if derr := c.S.cfg.Files.Delete(context.WithoutCancel(ctx), k); derr != nil {
-			c.S.log.Error("could not remove a design file", "key", k, "error", derr)
-		}
-	}
+	c.removeDesignFiles(context.WithoutCancel(ctx), id, stored)
 	writeJSON(c.W, 200, map[string]any{"ok": true})
 	return nil
 }
@@ -828,7 +820,15 @@ func (c *Ctx) designUpload() error {
 	if name == "" || len(name) > 255 {
 		return badRequest("File name must be 1 to 255 characters")
 	}
-	stored, err := c.S.cfg.Files.Put(ctx, files.PutInput{Folder: []string{"Design requests", id}, Filename: name, MimeType: mime, Body: body})
+	in := files.PutInput{Folder: []string{"Design requests", id}, Filename: name, MimeType: mime, Body: body}
+	if r.EventID != nil {
+		if ev, err := q.EventByID(ctx, *r.EventID); err == nil {
+			// Events/<date> <name> [<event id>]/Design/<design id>
+			in.Event = &files.EventRef{StartsAtMs: eventStartMs(ev), Name: ev.Name, ID: ev.ID}
+			in.Folder = []string{"Design", id}
+		}
+	}
+	stored, err := c.S.storeFile(ctx, in)
 	if err != nil {
 		return err
 	}
@@ -851,10 +851,6 @@ func (c *Ctx) designUpload() error {
 		}
 		df := store.DesignFile{ID: auth.UUID(), RequestID: id, Kind: kind.V, Filename: name, MimeType: mime, SizeBytes: stored.SizeBytes,
 			Storage: stored.Storage, StorageKey: stored.Key, UploadedBy: u.ID, CreatedAt: c.S.nowMs()}
-		if stored.WebViewLink != "" {
-			l := stored.WebViewLink
-			df.WebViewLink = &l
-		}
 		if err := w.InsertDesignFile(ctx, df); err != nil {
 			return err
 		}
@@ -882,12 +878,9 @@ func (c *Ctx) designFileDownload() error {
 	if err != nil {
 		return notFoundErr("Record not found")
 	}
-	if f.Storage == "drive" {
-		if f.WebViewLink == nil {
-			return notFoundErr("Record not found")
-		}
-		http.Redirect(c.W, c.R, *f.WebViewLink, http.StatusFound)
-		return nil
+	// Drive files are streamed through here too: officers never need access to the drive.
+	if f.Storage != c.S.storageKind(ctx) {
+		return files.ErrUnavailable
 	}
 	file, err := c.S.cfg.Files.Get(ctx, f.StorageKey)
 	if err != nil {
@@ -1000,14 +993,47 @@ func truncRunes(s string, n int) string {
 	return strings.TrimSpace(string([]rune(s)[:n]))
 }
 
-// storageKind names the configured file backend as design_request_files.storage records it,
-// so a delete after a backend switch doesn't hand one backend the other's keys.
-func storageKind(s files.Store) string {
-	switch s.(type) {
-	case files.Local, *files.Local:
-		return "local"
-	case *files.Drive:
-		return "drive"
+// eventStartMs is the event's start as Unix ms, or nil for a tentative or undated event.
+func eventStartMs(ev *store.Event) *int64 {
+	if ev.StartsAt == "" {
+		return nil
 	}
-	return ""
+	t, err := luma.ParseInstant(ev.StartsAt)
+	if err != nil {
+		return nil
+	}
+	ms := t.UnixMilli()
+	return &ms
+}
+
+// removeDesignFiles removes a deleted request's files from the backend each was stored in
+// (local files are removed, Drive files trashed), even when that is no longer the current
+// backend. A file that cannot be removed (no store of its kind, or the call failed) is
+// logged and audited as orphaned, so nothing is lost silently.
+func (c *Ctx) removeDesignFiles(ctx context.Context, requestID string, fs []store.DesignFile) {
+	var orphans []map[string]any
+	for _, f := range fs {
+		st := c.S.storeFor(ctx, f.Storage)
+		reason := "no " + f.Storage + " storage is configured"
+		if st != nil {
+			err := st.Delete(ctx, f.StorageKey)
+			if err == nil {
+				continue
+			}
+			reason = "delete failed"
+			c.S.log.Error("could not remove a design file", "key", f.StorageKey, "error", err)
+		} else {
+			c.S.log.Error("design file left in storage", "key", f.StorageKey, "storage", f.Storage, "reason", reason)
+		}
+		orphans = append(orphans, map[string]any{"id": f.ID, "filename": f.Filename, "storage": f.Storage, "storageKey": f.StorageKey, "reason": reason})
+	}
+	if len(orphans) == 0 {
+		return
+	}
+	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		return c.audit(ctx, w, "design_request.files_orphaned", "design_request", requestID, nil, map[string]any{"files": orphans})
+	})
+	if err != nil {
+		c.S.log.Error("could not audit orphaned design files", "request", requestID, "error", err)
+	}
 }

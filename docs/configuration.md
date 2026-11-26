@@ -47,10 +47,12 @@ Each is off until set; the log says "not configured" at startup for each one tha
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | – | Google sign-in for calendars: per-officer sync (callback `${APP_URL}/auth/google/callback`) and the org calendar (callback `${APP_URL}/auth/org-google/callback`), set up in [Google calendar setup](deploy/google-calendar.md). The secret also seals stored Google tokens: changing it means every Google connection must be made again |
-| `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID` | – | receipts in a Google shared drive. The JSON variable takes the key file's **contents** on one line (`jq -c . key.json`), not a path. Set both: the JSON without the folder turns receipts off. See [Integrations](integrations.md#receipts-and-google-service-accounts) |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | – | Google sign-in for calendars, per-officer sync (callback `${APP_URL}/auth/google/callback`) and the org calendar (callback `${APP_URL}/auth/org-google/callback`), set up in [Google calendar setup](deploy/google-calendar.md); and the Google account the dashboard stores files as (callback `${APP_URL}/auth/drive-google/callback`, connected by an owner in Settings → Google Drive file storage; see [Integrations](integrations.md#files-in-a-google-shared-drive)). The secret also seals stored Google tokens: changing it means every Google connection must be made again |
+| `DRIVE_ROOT_FOLDER_ID` | – | the Shared Drive folder the dashboard files everything under. Usually chosen in Settings instead; when set here it wins and Settings shows it read-only |
+| `DRIVE_QUOTA_BYTES` | `100e9` (100 GB) | the storage the daily Drive check measures usage against; owners get a Discord alert (through `DISCORD_WEBHOOK_URL`, else the log) at 70 %. A plain byte count or `e` notation |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | – | the alternative to a connected account: a Google service-account key, accepted **only** as `GOOGLE_SERVICE_ACCOUNT_JSON_FILE` (a path to the key file). A direct value stops startup. It needs `DRIVE_ROOT_FOLDER_ID`, and is used only while no account is connected in Settings |
 | `GOOGLE_DRIVE_FOLDER_ID` | – | old name for `DRIVE_ROOT_FOLDER_ID`, which wins |
-| `RECEIPTS_DIR` | – | receipts on local disk instead of Drive, for a single machine (not in a container: the files would be lost). Back the folder up yourself. With no receipt storage, uploads answer 503 |
+| `RECEIPTS_DIR` | – | receipts and design files on local disk instead of Drive, for a single machine (not in a container: the files would be lost). Back the folder up yourself. With no file storage, uploads answer 503 |
 | `DISCORD_WEBHOOK_URL` | – | purchase and other notifications to a Discord channel; without it they only go to the log |
 | `DISCORD_BOT_TOKEN` | – | officer invitation DMs; without it, invites are links you copy |
 | `SMTP_HOST`, `SMTP_FROM` | – | email delivery of `.ics` calendar invites and Launchpad invites. Both are needed; without them invites are copyable links. The org calendar doesn't need SMTP: Google sends its invites |
@@ -63,9 +65,19 @@ Each is off until set; the log says "not configured" at startup for each one tha
 | `STATIC_DIR` (`-static`) | the built-in front end | serve the front end from this folder instead. Only release builds (`embedweb`, as in the image) have one built in |
 | `STATIC_FALLBACK` (`-static-fallback`), `STATIC_FALLBACK_STATUS` (`-static-fallback-status`) | `404.html`, `404` | page for unknown non-API paths. An alternative single-page front end can set `200.html`, `200` |
 
-Receipt storage is chosen in this order: Drive (both variables), then `RECEIPTS_DIR`, then, in a
-development build with `DEV_AUTH=1`, a `receipts/` folder beside the database. Otherwise uploads
-answer 503.
+File storage (receipts and design files) is chosen on every upload, in this order:
+
+1. the Google account an owner connected in Settings, once a root folder is chosen (in
+   Settings, or `DRIVE_ROOT_FOLDER_ID`);
+2. the service account (`GOOGLE_SERVICE_ACCOUNT_JSON_FILE` plus `DRIVE_ROOT_FOLDER_ID`);
+3. `RECEIPTS_DIR`;
+4. in a development build with `DEV_AUTH=1`, a `receipts/` folder beside the database.
+
+Otherwise uploads answer 503 `not_configured` ("Google Drive is not connected"), and after
+Google revokes the connected account's access, 503 asking an owner to reconnect. A full or
+throttling Drive answers 507 `storage_quota`. A file is always downloaded from the backend
+its row records; one stored in another backend answers 503 rather than being looked up in
+the wrong place.
 
 ### Backups (encrypted D1 snapshots)
 
@@ -186,6 +198,8 @@ without exporting their contents. Supported app entrypoint keys are
 `DISCORD_CLIENT_SECRET_FILE`, `DISCORD_WEBHOOK_URL_FILE`, `DISCORD_BOT_TOKEN_FILE`,
 `SMTP_USERNAME_FILE`, `SMTP_PASSWORD_FILE`, `GOOGLE_OAUTH_CLIENT_SECRET_FILE`,
 `GOOGLE_SERVICE_ACCOUNT_JSON_FILE`, `CLOUDFLARE_API_TOKEN_FILE` and `DEV_AUTH_KEY_FILE`.
+`GOOGLE_SERVICE_ACCOUNT_JSON` is file-only: a private key pasted into the environment
+leaks through process listings and compose files, so a direct value stops startup.
 The app reads its own values at startup; backup values and their paths are stripped before
 app execution. The backup helper reads `BACKUP_BEARER_SECRET_FILE`,
 `BACKUP_ACCESS_CLIENT_ID_FILE`, `BACKUP_ACCESS_CLIENT_SECRET_FILE`,
