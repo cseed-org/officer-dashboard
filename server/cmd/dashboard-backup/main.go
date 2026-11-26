@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -109,6 +110,21 @@ func (s *sink) list() ([]snapshot, error) {
 	err := s.request("/snapshots", "GET", nil, &result)
 	return result, err
 }
+
+// sanitize trims an error for an alert line: single line, no control characters, capped.
+func sanitize(err error) string {
+	msg := strings.Map(func(r rune) rune {
+		if r < ' ' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, err.Error())
+	if len(msg) > 200 {
+		msg = msg[:200] + "..."
+	}
+	return msg
+}
+
 func notify(message string) {
 	fmt.Fprintln(os.Stderr, message)
 	if endpoint := setting("DISCORD_WEBHOOK_URL"); endpoint != "" {
@@ -362,6 +378,13 @@ func encrypt(source, target string) error {
 	return out.Sync()
 }
 func backup() (snapshot, error) {
+	return backupWithPublish(nil)
+}
+
+// backupWithPublish takes this hour's encrypted snapshot and uploads it to the D1 sink.
+// publish, when set, also hands the same ciphertext to the dashboard's Drive uploader
+// through the outbox; its failure only alerts and never stops the D1 copy.
+func backupWithPublish(publish func(string) error) (snapshot, error) {
 	work, err := os.MkdirTemp(filepath.Dir(dbPath()), "backup-")
 	if err != nil {
 		return snapshot{}, err
@@ -374,11 +397,183 @@ func backup() (snapshot, error) {
 	if err = encrypt(filepath.Join(work, "snapshot.db"), encrypted); err != nil {
 		return snapshot{}, err
 	}
+	if publish != nil {
+		if err := publish(encrypted); err != nil {
+			notify("Drive backup outbox publish failed (" + sanitize(err) + "); the D1 snapshot continues")
+		}
+	}
 	s, err := newSink()
 	if err != nil {
 		return snapshot{}, err
 	}
 	return s.upload(encrypted, "hourly")
+}
+
+// outboxManifest is the sidecar's description of one ciphertext waiting for the Drive
+// uploader. The data file lands first, the manifest last, so the uploader's hourly pass
+// never acts on a half-published pair.
+type outboxManifest struct {
+	SHA256  string `json:"sha256"`
+	Size    int64  `json:"size"`
+	Created string `json:"created"`
+	Kind    string `json:"kind"`
+}
+
+// driveOutboxDir is the handoff directory the dashboard container reads. Both containers
+// mount the same data volume (compose.cloudflare.yml), so it needs no new volume.
+func driveOutboxDir() string {
+	return filepath.Join(filepath.Dir(dbPath()), "drive-outbox")
+}
+
+// driveOutboxMarker records the last UTC day published to the outbox, so the once-a-day
+// publish survives the uploader deleting the files it has uploaded.
+func driveOutboxMarker() string {
+	return filepath.Join(filepath.Dir(dbPath()), ".drive-outbox-day")
+}
+
+func driveOutboxDay() string {
+	body, err := os.ReadFile(driveOutboxMarker())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(body))
+}
+
+func markDriveOutboxDay(day string) error {
+	return publishBytes([]byte(day+"\n"), driveOutboxMarker(), 0600)
+}
+
+// driveOutboxPublisher returns the hook that publishes today's snapshot for the Drive
+// uploader, or nil when today was already published.
+func driveOutboxPublisher() func(string) error {
+	day := time.Now().UTC().Format("2006-01-02")
+	if driveOutboxDay() == day {
+		return nil
+	}
+	return func(encrypted string) error {
+		// The file name uses the same day as the marker, even when encryption crosses
+		// midnight UTC, so a renamed file is never published twice under different shas.
+		if err := publishDriveOutbox(encrypted, day, time.Now()); err != nil {
+			return err
+		}
+		return markDriveOutboxDay(day)
+	}
+}
+
+// publishDriveOutbox hands this hour's ciphertext to the Drive uploader as
+// dashboard-<day>.db.gz.age plus its manifest, and keeps at most three days waiting.
+func publishDriveOutbox(encrypted, day string, now time.Time) error {
+	dir := driveOutboxDir()
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return err
+	}
+	sha, size, err := digest(encrypted)
+	if err != nil {
+		return err
+	}
+	name := "dashboard-" + day + ".db.gz.age"
+	if err = publishFile(encrypted, filepath.Join(dir, name)); err != nil {
+		return err
+	}
+	manifest, err := json.Marshal(outboxManifest{SHA256: sha, Size: size, Created: now.UTC().Format(time.RFC3339), Kind: "daily"})
+	if err != nil {
+		return err
+	}
+	if err = publishBytes(manifest, filepath.Join(dir, "dashboard-"+day+".json"), 0640); err != nil {
+		return err
+	}
+	return capDriveOutbox(dir, 3)
+}
+
+// publishFile places source at target atomically (same-directory temp, then rename) with
+// mode 0640: a hard link when the outbox shares the filesystem, a streamed copy otherwise.
+func publishFile(source, target string) error {
+	temp, err := os.CreateTemp(filepath.Dir(target), ".publish-*")
+	if err != nil {
+		return err
+	}
+	name := temp.Name()
+	temp.Close()
+	if err = os.Remove(name); err != nil {
+		return err
+	}
+	defer os.Remove(name)
+	if err = os.Link(source, name); err != nil {
+		in, err := os.Open(source)
+		if err != nil {
+			return err
+		}
+		defer in.Close()
+		out, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(out, cancelReader{in})
+		syncErr := out.Sync()
+		closeErr := out.Close()
+		switch {
+		case copyErr != nil:
+			return copyErr
+		case syncErr != nil:
+			return syncErr
+		case closeErr != nil:
+			return closeErr
+		}
+	}
+	if err := os.Chmod(name, 0640); err != nil {
+		return err
+	}
+	return os.Rename(name, target)
+}
+
+// publishBytes writes data to target atomically (same-directory temp, fsync, rename).
+func publishBytes(data []byte, target string, mode os.FileMode) error {
+	temp, err := os.CreateTemp(filepath.Dir(target), ".publish-*")
+	if err != nil {
+		return err
+	}
+	name := temp.Name()
+	defer os.Remove(name)
+	if _, err := temp.Write(data); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Chmod(mode); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, target)
+}
+
+// capDriveOutbox keeps at most keep ciphertext files, deleting the oldest (their names
+// sort chronologically) together with their manifests. A file evicted while it still
+// waits for the Drive upload is called out: Drive backups are silently falling behind.
+func capDriveOutbox(dir string, keep int) error {
+	matches, err := filepath.Glob(filepath.Join(dir, "dashboard-*.db.gz.age"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(matches)
+	for len(matches) > keep {
+		victim := matches[0]
+		matches = matches[1:]
+		if err := os.Remove(victim); err != nil {
+			return err
+		}
+		manifest := strings.TrimSuffix(victim, ".db.gz.age") + ".json"
+		if err := os.Remove(manifest); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		notify("Drive outbox dropped un-uploaded snapshot " + filepath.Base(victim) + ": the dashboard has not uploaded Drive backups for days")
+	}
+	return nil
 }
 func membership() error {
 	account, database := setting("BACKUP_MEMBERSHIP_ACCOUNT_ID"), setting("BACKUP_MEMBERSHIP_DATABASE_ID")
@@ -495,7 +690,7 @@ func scheduled() error {
 		}
 		return errors.New("no recovery snapshot available")
 	}
-	m, err := backup()
+	m, err := backupWithPublish(driveOutboxPublisher())
 	if err != nil {
 		return err
 	}

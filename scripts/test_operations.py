@@ -156,6 +156,48 @@ class RestoreTests(unittest.TestCase):
             with self.assertRaises(sqlite3.DatabaseError):
                 backup.integrity(target)
 
+    def test_restore_input_decrypts_gunzips_and_places(self):
+        source_db = self.root / 'source.db'
+        with contextlib.closing(sqlite3.connect(source_db)) as db, db:
+            db.execute('CREATE TABLE proof(value)')
+            db.execute("INSERT INTO proof VALUES('present')")
+        ciphertext = self.root / 'dashboard-2026-11-20.db.gz.age'
+        ciphertext.write_bytes(b'drive ciphertext')
+        target = self.root / 'restored.db'
+        def decrypt(args, **kwargs):
+            with gzip.open(args[args.index('-o') + 1], 'wb') as output:
+                output.write(source_db.read_bytes())
+        with patch.object(backup.subprocess, 'run', decrypt):
+            backup.restore_local(ciphertext, target, 'offline-identity')
+        with contextlib.closing(sqlite3.connect(target)) as db:
+            self.assertEqual(db.execute('SELECT value FROM proof').fetchone(), ('present',))
+        with self.assertRaises(ValueError):
+            backup.restore_local(ciphertext, target, 'offline-identity')
+        with self.assertRaises(ValueError):
+            backup.restore_local(ciphertext, self.root / 'other.db', '')
+        self.assertFalse((self.root / 'other.db').exists())
+
+    def test_restore_input_falls_back_to_copy_across_filesystems(self):
+        source_db = self.root / 'source.db'
+        with contextlib.closing(sqlite3.connect(source_db)) as db, db:
+            db.execute('CREATE TABLE proof(value)')
+            db.execute("INSERT INTO proof VALUES('present')")
+        ciphertext = self.root / 'dashboard-2026-11-20.db.gz.age'
+        ciphertext.write_bytes(b'drive ciphertext')
+        target = self.root / 'restored.db'
+        def decrypt(args, **kwargs):
+            with gzip.open(args[args.index('-o') + 1], 'wb') as output:
+                output.write(source_db.read_bytes())
+        real_link = os.link
+        def exdev(src, dst):
+            if str(dst).endswith('snapshot.age'):
+                raise OSError(18, 'Invalid cross-device link')
+            return real_link(src, dst)
+        with patch.object(backup.os, 'link', exdev), patch.object(backup.subprocess, 'run', decrypt):
+            backup.restore_local(ciphertext, target, 'offline-identity')
+        with contextlib.closing(sqlite3.connect(target)) as db:
+            self.assertEqual(db.execute('SELECT value FROM proof').fetchone(), ('present',))
+
     def test_restore_never_replaces_competing_destination(self):
         for encrypted_only in [True, False]:
             target = self.root / str(encrypted_only)

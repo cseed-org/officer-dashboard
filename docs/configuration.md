@@ -93,6 +93,15 @@ local data volume stores the database. Set all backup credentials before enablin
 | `BACKUP_MEMBERSHIP_ACCOUNT_ID`, `BACKUP_MEMBERSHIP_DATABASE_ID` | empty | account and membership D1 database for weekly SQL export |
 | `BACKUP_MEMBERSHIP_API_TOKEN` | empty | account-scoped D1 Edit token; can modify all account D1 databases, never given to the sink |
 
+The same ciphertext also goes to Google Drive: once per UTC day the sidecar publishes
+`dashboard-<date>.db.gz.age` plus a sha256 manifest to `drive-outbox/` beside the database,
+and the dashboard uploads it to `Backups/daily` (plus a first-of-month `Backups/monthly`
+copy) using the app's Drive connection, keeping 30 daily and 12 monthly copies and alerting
+on stuck or failed uploads. `dashboard drive-backup list` and `dashboard drive-backup restore`
+fetch a verified copy back, still ciphertext; `backup.py restore --input <file>` decrypts it
+offline with the age identity. This adds no settings: the uploader reuses the Drive sign-in
+and `DB_PATH`.
+
 The image uses BusyBox musl with static dashboard and backup binaries. SQLite, gzip and age encryption are compiled into `dashboard-backup`; Python, an age executable and Debian packages are not shipped. The off-box restore workstation still needs Python 3 and age. Litestream and its `LITESTREAM_*` settings are removed.
 See [fresh install](deploy/fresh-install.md) and [upgrade/restore](deploy/upgrade-existing.md).
 Missing DB with backups enabled stops startup after downloading ciphertext for off-box recovery.
