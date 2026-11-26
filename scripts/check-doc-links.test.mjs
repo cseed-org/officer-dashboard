@@ -40,12 +40,14 @@ test("markdownAnchors covers duplicates, HTML anchors and skips code blocks", ()
     "# Not a heading",
     "```",
     "## `make dev` resets **everything**",
+    "## With <code>html</code> tags",
   ].join("\n"));
   assert.ok(anchors.has("top"));
   assert.ok(anchors.has("setup"));
   assert.ok(anchors.has("setup-1"));
   assert.ok(anchors.has("setup-2"));
   assert.ok(anchors.has("make-dev-resets-everything"));
+  assert.ok(anchors.has("with-html-tags"));
   assert.ok(!anchors.has("not-a-heading"));
 });
 

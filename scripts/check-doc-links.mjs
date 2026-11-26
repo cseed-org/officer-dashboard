@@ -25,17 +25,34 @@ export function githubSlug(text) {
     .replace(/ /g, "-");
 }
 
+// Remove HTML tags without a sanitizing regex: only "<" followed by a tag
+// open (letter, "/" or "!") starts a tag, and plain text resumes after ">".
+function stripHtmlTags(text) {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "<" && /[A-Za-z/!]/.test(text[i + 1] ?? "")) {
+      const end = text.indexOf(">", i + 1);
+      if (end === -1) break;
+      i = end + 1;
+      continue;
+    }
+    out += text[i];
+    i++;
+  }
+  return out;
+}
+
 function headingText(raw) {
-  return raw
+  const withoutMarkup = raw
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]*)\]\[[^\]]*\]/g, "$1")
-    .replace(/<[^>]+>/g, "")
     .replace(/(\*\*|__)(.*?)\1/g, "$2")
     .replace(/(\*|~~)(.*?)\1/g, "$2")
-    .replace(/_([^_]+)_/g, "$1")
-    .trim();
+    .replace(/_([^_]+)_/g, "$1");
+  return stripHtmlTags(withoutMarkup).trim();
 }
 
 // Anchor ids GitHub exposes for a rendered Markdown file: slugified ATX
