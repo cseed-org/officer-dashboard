@@ -28,6 +28,9 @@ type Service struct {
 	Log     *slog.Logger
 	Timeout time.Duration // zero uses the ten-minute pass limit
 	mu      sync.Mutex
+	// lastCoverSweep is when every live event folder was last listed for stale
+	// covers; guarded by mu. Zero (a fresh process) sweeps on the first pass.
+	lastCoverSweep time.Time
 }
 
 // Hourly delays the first pass to let startup settle. Every failure, including

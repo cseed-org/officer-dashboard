@@ -704,11 +704,11 @@ func TestDeletedEventsAndStaleCoversAreTrashed(t *testing.T) {
 	cover("image/webp", 2)
 	run()
 	current := fake.Path("Events", folder.Name, "cover.webp")
-	if current == nil || !fake.Get(oldCover.ID).Trashed || !fake.Get(stale).Trashed || !fake.Get(orphan).Trashed {
-		t.Fatal("deleted event or obsolete covers remained live")
+	if current == nil || !fake.Get(oldCover.ID).Trashed || !fake.Get(stale).Trashed {
+		t.Fatal("obsolete covers remained live")
 	}
-	if fake.Get(planning).Trashed || fake.Get(poster).Trashed {
-		t.Fatal("cleanup trashed unrelated material")
+	if fake.Get(planning).Trashed || fake.Get(poster).Trashed || fake.Get(orphan).Trashed {
+		t.Fatal("cleanup trashed unrelated material or a folder it never exported")
 	}
 	if err := db.Write(ctx, func(q *store.Queries) error { _, err := q.DeleteEventCover(ctx, "ev1"); return err }); err != nil {
 		t.Fatal(err)
@@ -725,9 +725,15 @@ func TestDeletedEventsAndStaleCoversAreTrashed(t *testing.T) {
 	if err := db.Write(ctx, func(q *store.Queries) error { return q.DeleteEvent(ctx, "ev1") }); err != nil {
 		t.Fatal(err)
 	}
+	exported := []*drivefake.File{fake.Path("Events", folder.Name, "event.json"), fake.Path("Events", folder.Name, "summary.md"), fake.Path("Events", folder.Name, "cover.webp")}
 	run()
-	if !fake.Get(folder.ID).Trashed {
-		t.Fatal("deleted event folder remained live")
+	for _, f := range exported {
+		if f == nil || !fake.Get(f.ID).Trashed {
+			t.Fatal("deleted event's exported files remained live")
+		}
+	}
+	if got := fake.Get(folder.ID); got.Trashed || got.Name != folder.Name+" (deleted)" || fake.Get(poster).Trashed {
+		t.Fatalf("folder with other files was not kept and renamed: %+v", got)
 	}
 	if err := db.Write(ctx, func(q *store.Queries) error {
 		return q.InsertEvent(ctx, store.Event{ID: "ev1", Name: "Winter Mixer", StartsAt: "2026-12-01T20:00:00Z", Status: "published"})

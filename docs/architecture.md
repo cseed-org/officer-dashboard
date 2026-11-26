@@ -63,17 +63,34 @@ version-checked read transaction. At most one cover is retained at a time. Ident
 cover bytes skip upload even when the source version changes.
 
 Each connected pass also performs privacy cleanup under `Events/`. It scans the
-event folders together and trashes folders with a trailing `[event id]` whose event
-no longer exists. It removes stale `cover.*` files when a cover is replaced, changes
-extension, or is removed, retaining only the current exported cover. Unrelated files
-and design subfolders of live events are preserved. The `[event id]` folder suffix
-identifies managed event folders; `cover.*` is reserved for generated cover files.
-Cleanup rechecks event existence
-and cover version before deleting, so concurrent new events or changed covers wait
-for the next snapshot. Successful trash operations clear the affected export state,
-allowing identical content to be exported again after recreation. Drive's recoverable
-trash behavior applies. These cleanup listings still run when file hashes are
-unchanged; unchanged records need no per-event folder discovery or upload.
+event folders together, but only touches a folder whose trailing `[event id]` has
+`drive_export_state` under the current root, so a folder this export never wrote
+(another instance's root, a dev or seeded database, a database restored from an
+older backup, or a hand-made `Photos [2025]`) loses nothing. When such an owned
+folder's event no longer exists, cleanup trashes only the files the export writes
+there: `event.json`, `summary.md` and `cover.*`, found by their state ids or those
+names. It then lists the folder again. An empty folder is trashed; a folder that
+still holds anything else, such as `Design/<request id>/` uploads that
+`design_request_files` rows still reference (an event delete sets
+`design_requests.event_id` to NULL, and a re-linked request's earlier files stay in
+the old event's folder), is renamed `<name> [<id>] (deleted)` and left in place.
+Cleanup never trashes or recurses into a subfolder. The renamed folder no longer
+ends in `[id]`, so it is never matched as an event folder again. If any exported
+file cannot be trashed, the folder and its state are kept and the next pass retries.
+
+For live events, cleanup removes stale `cover.*` files when a cover is replaced,
+changes extension, or is removed, retaining only the current exported cover. It
+lists an event's folder only when that event's cover state points anywhere but the
+current cover (a replaced or removed cover, or an earlier trash that failed), plus
+one full sweep of every owned folder per process start and per 24 hours, which also
+catches stale covers that have no state. An unchanged pass therefore makes two
+Drive listings (the root's `Events` lookup and the `Events` listing) regardless of
+the number of events. Unrelated files and design subfolders of live events are
+preserved; `cover.*` is reserved for generated cover files. Cleanup rechecks event
+existence and cover version before deleting, so concurrent new events or changed
+covers wait for the next snapshot. Successful trash operations clear the affected
+export state, allowing identical content to be exported again after recreation.
+Drive's recoverable trash behavior applies.
 Removing a program rewrites its track's JSON. Cleanup of entire `Programs/` folders
 is outside this event-and-cover cleanup.
 
