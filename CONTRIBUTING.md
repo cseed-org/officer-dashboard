@@ -88,11 +88,14 @@ Release-please creates the immutable `vX.Y.Z` tag and GitHub Release. The releas
 image workflow waits up to 20 minutes for that commit's successful main CI run and
 `publish` job, then promotes the existing image digest to semantic version tags.
 It does not build another image. Failed or missing publication stops promotion;
-after resolving CI, rerun the failed release-image workflow. See
+the GitHub Release may exist before image aliases or signatures are ready. After
+resolving CI or registry/signing errors, rerun the failed release-image workflow
+from Actions; keep the original release/tag. See
 [image tags and verification](docs/deployment.md#release-images-and-verification).
 
 Dependabot uses `deps:` / `deps-dev:` titles. Minor and patch PRs enter GitHub's
-auto-merge queue and still need every required check to pass. Major updates receive
+auto-merge queue and still need every required check and any required approval to
+pass. Major updates receive
 `major-update` and require manual review and merging.
 
 Maintainers must enable repository auto-merge, create the `major-update` label from
@@ -105,3 +108,11 @@ and GitHub Releases trigger CI; the default `GITHUB_TOKEN` would suppress those 
 Missing App secrets fail explicitly. Repository settings, secrets, rulesets and
 the protected `production` environment require maintainer setup; workflows do not
 create them.
+
+Merging the automation PR activates these workflows immediately. Before merging,
+allow the pinned actions under the repository's selected-action policy, configure
+the App and tag-creation bypass, enable auto-merge, and create the major-update
+label. Once `pr-title` has run successfully, add it to required checks. Without App
+setup, every main push fails release-please; other CI still runs. Before merging
+the first release PR, review its notes: historical nonconventional commit subjects
+are omitted from automatic changelogs and may need a manual summary.
