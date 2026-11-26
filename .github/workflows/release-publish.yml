@@ -21,6 +21,7 @@ jobs:
       actions: read
       packages: write
       attestations: write
+      artifact-metadata: write
       id-token: write
     env:
       IMAGE: ghcr.io/cseed-org/officer-dashboard
