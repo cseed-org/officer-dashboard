@@ -34,6 +34,7 @@ import (
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
+	"officerdashboard/internal/driveexport"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/mcpcheck"
 	"officerdashboard/internal/notify"
@@ -302,6 +303,33 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// The export worker uses its own Drive client and never runs on a request path.
+	// Cancellation stops both its timer and any in-flight Drive requests.
+	exportDone := make(chan struct{})
+	var exportDeadline time.Time
+	if s.ServiceAccountJSON != "" && s.DriveRoot != "" {
+		drive, err := files.NewDrive(s.ServiceAccountJSON, s.DriveRoot, nil)
+		if err != nil {
+			return err
+		}
+		exporter := &driveexport.Service{DB: db, Drive: drive, Log: log}
+		go func() { defer close(exportDone); exporter.Hourly(ctx) }()
+	} else {
+		close(exportDone)
+	}
+	defer func() {
+		stop()
+		if exportDeadline.IsZero() {
+			exportDeadline = time.Now().Add(ShutdownBudget)
+		}
+		wait := time.NewTimer(max(0, time.Until(exportDeadline)))
+		defer wait.Stop()
+		select {
+		case <-exportDone:
+		case <-wait.C:
+			log.Warn("Drive export still stopping")
+		}
+	}()
 	go sessionJanitor(ctx, db, log)
 	// Deliver calendar jobs a previous run left in the outbox, and retry failed
 	// ones hourly.
@@ -321,6 +349,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		log.Info("shutting down")
 		// One deadline for the whole stop, so it fits inside the service manager's timeout.
 		deadline := time.Now().Add(ShutdownBudget)
+		exportDeadline = deadline
 		shutdown, cancel := context.WithDeadline(context.Background(), deadline)
 		defer cancel()
 		err := httpSrv.Shutdown(shutdown)
@@ -334,7 +363,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 }
 
 // ShutdownBudget is the most serve spends stopping after SIGTERM: draining HTTP requests,
-// then waiting for the calendar worker. The service manager must allow more, with room
+// then waiting for the calendar and Drive export workers. The service manager must allow more, with room
 // for db.Close and Litestream's final flush: deploy/dashboard.service TimeoutStopSec and
 // deploy/compose.cloudflare.yml stop_grace_period (checked by TestStopTimeoutsExceedShutdownBudget).
 const ShutdownBudget = 15 * time.Second

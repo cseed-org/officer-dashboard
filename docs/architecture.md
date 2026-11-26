@@ -23,6 +23,7 @@ server/
   internal/cloudflare  Cloudflare D1 and GraphQL analytics client
   internal/mcpcheck    the mcp-check deployment reachability checks
   internal/files       receipts: Google Drive (shared drive) and local disk
+  internal/driveexport hourly readable event/program snapshots in Drive; content hashes skip unchanged files
   internal/notify      Discord webhook, invitation bot DMs, console fallback
   internal/notion      placeholder Notion event-link sync
   internal/fiscal      fiscal years, monthly periods, Pacific dates
