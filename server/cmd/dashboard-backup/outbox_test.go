@@ -34,7 +34,7 @@ func TestDriveOutboxPublishManifestAndCap(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := publishDriveOutbox(source, now); err != nil {
+		if err := publishDriveOutbox(source, day, now); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -331,5 +331,55 @@ func TestDriveOutboxFailureKeepsD1(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no outbox alert sent: %v", alerts)
+	}
+}
+
+// TestCapDriveOutboxEvictsUnuploadedWithNotice runs the real cadence (one publish per UTC
+// day, cap 3) and proves the oldest, still-un-uploaded file is evicted with an alert, so
+// silently-falling-behind Drive backups are never silent.
+func TestCapDriveOutboxEvictsUnuploadedWithNotice(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DB_PATH", filepath.Join(dir, "dashboard.db"))
+	source := filepath.Join(dir, "snapshot.age")
+	if err := os.WriteFile(source, []byte("ciphertext-bytes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var alertsMu sync.Mutex
+	var alerts []string
+	discord := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Content string `json:"content"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		alertsMu.Lock()
+		alerts = append(alerts, body.Content)
+		alertsMu.Unlock()
+	}))
+	defer discord.Close()
+	t.Setenv("DISCORD_WEBHOOK_URL", discord.URL)
+
+	for _, day := range []string{"2026-11-20", "2026-11-21", "2026-11-22", "2026-11-23"} {
+		now, err := time.Parse("2006-01-02", day)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := publishDriveOutbox(source, day, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	matches, err := filepath.Glob(filepath.Join(driveOutboxDir(), "dashboard-*.db.gz.age"))
+	if err != nil || len(matches) != 3 {
+		t.Fatalf("outbox cap kept %d files, want 3", len(matches))
+	}
+	alertsMu.Lock()
+	defer alertsMu.Unlock()
+	found := false
+	for _, a := range alerts {
+		if strings.Contains(a, "dropped un-uploaded snapshot dashboard-2026-11-20.db.gz.age") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no eviction notice sent: %v", alerts)
 	}
 }

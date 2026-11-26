@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -140,5 +142,22 @@ func TestConnectDriveNotConnected(t *testing.T) {
 	db := testDB(t)
 	if _, err := connectDrive(context.Background(), settings{}, db, nil); !errors.Is(err, files.ErrNotConnected) {
 		t.Fatalf("error = %v, want ErrNotConnected", err)
+	}
+}
+
+func TestDriveBackupRefusesMissingDB(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "dashboard.db")
+	getenv := func(key string) string {
+		if key == "DB_PATH" {
+			return missing
+		}
+		return ""
+	}
+	err := driveBackupCmd([]string{"list"}, getenv, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("error = %v, want a missing-DB refusal pointing at the web UI", err)
+	}
+	if _, statErr := os.Stat(missing); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("the command created a database: %v", statErr)
 	}
 }

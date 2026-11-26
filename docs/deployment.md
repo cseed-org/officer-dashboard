@@ -96,7 +96,12 @@ on Discord. After each verified upload the uploader keeps the newest 30 daily an
 12 monthly copies. `entrypoint.sh` keeps every `BACKUP_*` variable out of the app, both
 services mount the same `dashboard-data` volume, and the age identity stays offline.
 
-Restore from Drive (the dashboard never decrypts):
+Restore from Drive (the dashboard never decrypts). `drive-backup` reads the stored Drive
+sign-in from the live database, so run it only while `/data/dashboard.db` exists — it
+refuses to create one. When the database itself is gone (total loss), skip the CLI:
+open the shared drive in the Google Drive web UI, download the newest file from
+`Backups/daily` (or `Backups/monthly`) by hand, and finish with
+`backup.py restore --input` below.
 
     cd server/deploy
     dc="docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml"
@@ -105,7 +110,8 @@ Restore from Drive (the dashboard never decrypts):
       --latest --output /data/drive-restore.db.gz.age
 
 `drive-backup restore` verifies the ciphertext against Drive's stored sha256 and never
-overwrites an existing file. Copy it off-box and finish with the age identity:
+overwrites an existing file. Copy it off-box (or use the hand-downloaded file) and finish
+with the age identity:
 
     python3 backup.py restore --input drive-restore.db.gz.age \
       --identity <identity file> --output restored.db

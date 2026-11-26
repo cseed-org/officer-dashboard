@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -47,6 +48,14 @@ func driveBackupCmd(args []string, getenv func(string) string, stdout io.Writer)
 		if *output == "" {
 			return errors.New("restore needs --output")
 		}
+	}
+	// Never create or migrate the database here: the disaster case is exactly when the DB
+	// is missing, and creating an empty one would defeat the entrypoint's missing-DB boot
+	// guard. The total-loss path is the Drive web UI plus backup.py restore --input.
+	if _, err := os.Stat(s.DBPath); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("%s is missing: without the dashboard database there is no stored Drive sign-in to use. Download the snapshot from the Drive web UI (Backups/daily or Backups/monthly) and restore it offline with: backup.py restore --input <file> --identity <age identity> --output <new db>", s.DBPath)
+	} else if err != nil {
+		return err
 	}
 	db, err := openDB(s.DBPath)
 	if err != nil {

@@ -32,8 +32,9 @@ const (
 )
 
 // stuckAfter is how long a snapshot may wait in the outbox before uploads are considered
-// stuck and an alert goes out.
-const stuckAfter = 3 * 24 * time.Hour
+// stuck and an alert goes out. The sidecar keeps three daily files (oldest about two days,
+// evicted by the third publish after it), so the alert must fire well inside that window.
+const stuckAfter = 36 * time.Hour
 
 // Manifest is the sidecar's description of one published ciphertext (dashboard-<day>.json).
 type Manifest struct {
@@ -176,7 +177,7 @@ func (s *Service) RunOnce(ctx context.Context) error {
 	}
 	for _, p := range waiting {
 		if !p.created.IsZero() && s.now().Sub(p.created) > stuckAfter {
-			s.alert(ctx, "drive-backup-stuck", "Google Drive backups are stuck: "+p.name+" has waited over 3 days for upload")
+			s.alert(ctx, "drive-backup-stuck", "Google Drive backups are stuck: "+p.name+" has waited over 36 hours for upload")
 		}
 	}
 	var store Store
@@ -199,8 +200,15 @@ func (s *Service) RunOnce(ctx context.Context) error {
 	uploaded := false
 	for _, p := range waiting {
 		if err := s.upload(ctx, store, p); err != nil {
-			s.alert(ctx, "drive-backup-upload", "Google Drive backup upload failed; retrying hourly: "+err.Error())
-			return err
+			if ctx.Err() != nil {
+				return ctx.Err() // shutting down mid-upload is not a failure
+			}
+			// One bad file must not block the newer snapshots behind it.
+			s.alert(ctx, "drive-backup-upload", "Google Drive backup upload failed for "+p.name+"; continuing with newer snapshots: "+err.Error())
+			if errors.Is(err, errPermanent) {
+				s.reject(p)
+			}
+			continue
 		}
 		uploaded = true
 	}
@@ -214,11 +222,25 @@ func (s *Service) RunOnce(ctx context.Context) error {
 	return nil
 }
 
+// errPermanent marks upload failures that can never succeed on retry (a corrupt outbox
+// pair, or a different file already in Drive under the same name).
+var errPermanent = errors.New("will not succeed on retry")
+
+// reject sets a permanently failed pair aside (<name>.rejected) so later passes and the
+// operator no longer trip over it. The bytes stay on disk for inspection.
+func (s *Service) reject(p pending) {
+	for _, path := range []string{p.path, p.manifestPath()} {
+		if err := os.Rename(path, path+".rejected"); err != nil && !errors.Is(err, os.ErrNotExist) {
+			s.log().Warn("could not set aside the rejected outbox file", "path", path, "error", err)
+		}
+	}
+}
+
 // Hourly runs a pass at startup and then every hour until ctx ends, in the pattern of
 // cfsync.Service.Daily.
 func (s *Service) Hourly(ctx context.Context) {
 	for {
-		if err := s.RunOnce(ctx); err != nil {
+		if err := s.RunOnce(ctx); err != nil && ctx.Err() == nil {
 			s.log().Warn("Google Drive backup pass failed; retrying in an hour", "error", err)
 		}
 		timer := time.NewTimer(time.Hour)
@@ -264,7 +286,7 @@ func (s *Service) upload(ctx context.Context, store Store, p pending) error {
 		return err
 	}
 	if sha != p.manifest.SHA256 || size != p.manifest.Size {
-		return fmt.Errorf("outbox file %s does not match its manifest", p.name)
+		return fmt.Errorf("outbox file %s does not match its manifest: %w", p.name, errPermanent)
 	}
 	dailyID, err := store.EnsureFolder(ctx, []string{"Backups", "daily"})
 	if err != nil {
@@ -276,7 +298,7 @@ func (s *Service) upload(ctx context.Context, store Store, p pending) error {
 	}
 	if existing != nil {
 		if existing.AppProperties["sha256"] != sha {
-			return fmt.Errorf("Drive already holds a different %s", p.name)
+			return fmt.Errorf("Drive already holds a different %s: %w", p.name, errPermanent)
 		}
 	} else {
 		props := map[string]string{"sha256": sha, "size": strconv.FormatInt(size, 10), "kind": p.manifest.Kind}
@@ -305,7 +327,8 @@ func (s *Service) upload(ctx context.Context, store Store, p pending) error {
 			return err
 		}
 	}
-	if err := os.Remove(p.path); err != nil {
+	// The sidecar's outbox cap may have evicted the pair while it uploaded; that is fine.
+	if err := os.Remove(p.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	if err := os.Remove(p.manifestPath()); err != nil {
@@ -345,9 +368,10 @@ func (s *Service) retention(ctx context.Context, store Store) error {
 	for _, job := range []struct {
 		folder []string
 		keep   int
+		match  func(string) bool
 	}{
-		{[]string{"Backups", "daily"}, DailyKeep},
-		{[]string{"Backups", "monthly"}, MonthlyKeep},
+		{[]string{"Backups", "daily"}, DailyKeep, dayNameRE.MatchString},
+		{[]string{"Backups", "monthly"}, MonthlyKeep, monthNameRE.MatchString},
 	} {
 		id, err := store.EnsureFolder(ctx, job.folder)
 		if err != nil {
@@ -359,7 +383,7 @@ func (s *Service) retention(ctx context.Context, store Store) error {
 		}
 		var copies []files.Entry
 		for _, e := range entries {
-			if !e.IsFolder() && strings.HasPrefix(e.Name, "dashboard-") {
+			if !e.IsFolder() && job.match(e.Name) {
 				copies = append(copies, e)
 			}
 		}

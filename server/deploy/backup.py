@@ -186,7 +186,11 @@ def restore_local(source, target, identity):
     with tempfile.TemporaryDirectory(prefix='restore-', dir=target.parent) as work:
         work = Path(work)
         staged = work / 'snapshot.age'
-        os.link(source, staged)
+        try:
+            os.link(source, staged)
+        except OSError:
+            # EXDEV: --input sits on a different filesystem (e.g. a browser download).
+            shutil.copy2(source, staged)
         subprocess.run(['age', '-d', '-i', identity, '-o', str(work / 'snapshot.gz'), str(staged)], check=True)
         with gzip.open(work / 'snapshot.gz', 'rb') as src, (work / 'snapshot.db').open('wb') as dst:
             shutil.copyfileobj(src, dst)

@@ -10,9 +10,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"filippo.io/age"
 	_ "github.com/mattn/go-sqlite3"
@@ -65,14 +65,15 @@ func TestRestoreRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	ciphertext := encryptLikeSidecar(t, plaintext, identity.Recipient())
-	sum := sha256.Sum256(ciphertext)
-	sha := hex.EncodeToString(sum[:])
 
+	// Upload through the real hourly pass, from the sidecar's outbox.
 	fake := drivefake.New()
 	drive := testDrive(fake)
-	if _, err := drive.UploadStream(ctx, []string{"Backups", "daily"}, "dashboard-2026-11-20.db.gz.age", "application/octet-stream",
-		bytes.NewReader(ciphertext), int64(len(ciphertext)),
-		map[string]string{"sha256": sha, "size": strconv.Itoa(len(ciphertext)), "kind": "daily"}); err != nil {
+	outbox := filepath.Join(t.TempDir(), "drive-outbox")
+	published := time.Date(2026, 11, 20, 1, 0, 0, 0, time.UTC)
+	writeOutbox(t, outbox, "dashboard-2026-11-20.db.gz.age", ciphertext, published)
+	svc := &Service{Drive: staticDrive(drive), Outbox: outbox, Now: func() time.Time { return published.Add(time.Hour) }}
+	if err := svc.RunOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
 

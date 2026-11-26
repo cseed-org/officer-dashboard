@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -208,9 +209,8 @@ func TestQuotaErrorKeepsOutboxAndAlerts(t *testing.T) {
 		Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now },
 		Alert: func(_ context.Context, _, message string) { alerts = append(alerts, message) },
 	}
-	err := svc.RunOnce(context.Background())
-	if !errors.Is(err, files.ErrQuota) {
-		t.Fatalf("error = %v, want ErrQuota", err)
+	if err := svc.RunOnce(context.Background()); err != nil {
+		t.Fatalf("a failing upload must not fail the pass: %v", err)
 	}
 	if left := outboxFiles(t, outbox); len(left) != 2 {
 		t.Fatalf("outbox not kept for retry: %v", left)
@@ -226,11 +226,66 @@ func TestQuotaErrorKeepsOutboxAndAlerts(t *testing.T) {
 	}
 }
 
+// TestFailingFileDoesNotBlockNewer: a permanently failing file alerts and is set aside,
+// while the newer snapshot behind it still uploads.
+func TestFailingFileDoesNotBlockNewer(t *testing.T) {
+	dir := t.TempDir()
+	outbox := filepath.Join(dir, "drive-outbox")
+	now := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
+	// The older pair's manifest lies about the sha: a permanent failure.
+	writeOutbox(t, outbox, "dashboard-2026-11-19.db.gz.age", []byte("older ciphertext"), now.Add(-30*time.Hour))
+	manifestPath := filepath.Join(outbox, "dashboard-2026-11-19.json")
+	raw, _ := os.ReadFile(manifestPath)
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	m.SHA256 = strings.Repeat("0", 64)
+	bad, _ := json.Marshal(m)
+	if err := os.WriteFile(manifestPath, bad, 0640); err != nil {
+		t.Fatal(err)
+	}
+	// The newer pair is fine.
+	writeOutbox(t, outbox, "dashboard-2026-11-20.db.gz.age", []byte("newer ciphertext"), now.Add(-24*time.Hour))
+	fake := drivefake.New()
+	var alerts []string
+	svc := &Service{
+		Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now },
+		Alert: func(_ context.Context, _, message string) { alerts = append(alerts, message) },
+	}
+	if err := svc.RunOnce(context.Background()); err != nil {
+		t.Fatalf("one bad file failed the pass: %v", err)
+	}
+	if daily := fake.Path("Backups", "daily", "dashboard-2026-11-20.db.gz.age"); daily == nil {
+		t.Fatal("newer snapshot was blocked by the older failure")
+	}
+	if daily := fake.Path("Backups", "daily", "dashboard-2026-11-19.db.gz.age"); daily != nil {
+		t.Fatal("corrupt file was uploaded")
+	}
+	if len(alerts) != 1 || !strings.Contains(alerts[0], "dashboard-2026-11-19") {
+		t.Fatalf("alerts: %v", alerts)
+	}
+	// The rejected pair is set aside and no longer scanned.
+	for _, name := range []string{"dashboard-2026-11-19.db.gz.age.rejected", "dashboard-2026-11-19.json.rejected"} {
+		if _, err := os.Stat(filepath.Join(outbox, name)); err != nil {
+			t.Fatalf("rejected pair not set aside: %v", err)
+		}
+	}
+	if err := svc.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(alerts) != 1 {
+		t.Fatalf("rejected file alerted again: %v", alerts)
+	}
+}
+
 func TestStuckOutboxAlerts(t *testing.T) {
 	dir := t.TempDir()
 	outbox := filepath.Join(dir, "drive-outbox")
 	now := time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC)
-	writeOutbox(t, outbox, "dashboard-2026-11-20.db.gz.age", []byte("ciphertext"), now.Add(-4*24*time.Hour))
+	// 60h old: inside the sidecar's real cadence (cap 3, one publish per day), where the
+	// oldest waiting file reaches about 72h before eviction.
+	writeOutbox(t, outbox, "dashboard-2026-11-20.db.gz.age", []byte("ciphertext"), now.Add(-60*time.Hour))
 	var alerts []string
 	svc := &Service{
 		Outbox: outbox, Now: func() time.Time { return now },
@@ -291,16 +346,75 @@ func TestMidPublishAndManifestMismatch(t *testing.T) {
 		Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now },
 		Alert: func(_ context.Context, _, message string) { alerts = append(alerts, message) },
 	}
-	if err := svc.RunOnce(context.Background()); err == nil {
-		t.Fatal("manifest mismatch accepted")
+	if err := svc.RunOnce(context.Background()); err != nil {
+		t.Fatalf("manifest mismatch failed the pass: %v", err)
 	}
 	if n := fake.Count(http.MethodPost, "/upload/"); n != 0 {
 		t.Fatalf("corrupt file uploaded (%d uploads)", n)
 	}
-	if left := outboxFiles(t, outbox); len(left) != 3 {
-		t.Fatalf("outbox not kept: %v", left)
+	// The mid-publish file waits; the mismatched pair is set aside as .rejected.
+	if _, err := os.Stat(filepath.Join(outbox, "dashboard-2026-11-19.db.gz.age")); err != nil {
+		t.Fatal("mid-publish file was touched")
+	}
+	for _, name := range []string{"dashboard-2026-11-20.db.gz.age.rejected", "dashboard-2026-11-20.json.rejected"} {
+		if _, err := os.Stat(filepath.Join(outbox, name)); err != nil {
+			t.Fatalf("mismatched pair not set aside: %v", err)
+		}
 	}
 	if len(alerts) == 0 {
 		t.Fatal("mismatch did not alert")
+	}
+}
+
+// stubStore implements Store in memory for retention unit tests.
+type stubStore struct {
+	listErr error
+	entries []files.Entry
+	deleted []string
+}
+
+func (s *stubStore) EnsureFolder(context.Context, []string) (string, error) { return "folder", nil }
+func (s *stubStore) List(context.Context, string) ([]files.Entry, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return s.entries, nil
+}
+func (s *stubStore) UploadStream(context.Context, []string, string, string, io.Reader, int64, map[string]string) (files.Entry, error) {
+	return files.Entry{}, errors.New("not implemented")
+}
+func (s *stubStore) Download(context.Context, string) (io.ReadCloser, error) {
+	return nil, errors.New("not implemented")
+}
+func (s *stubStore) DeleteByID(_ context.Context, id string) error {
+	s.deleted = append(s.deleted, id)
+	return nil
+}
+
+func TestRetentionListError(t *testing.T) {
+	st := &stubStore{listErr: errors.New("drive unreachable")}
+	svc := &Service{}
+	if err := svc.retention(context.Background(), st); err == nil {
+		t.Fatal("List error not surfaced")
+	}
+	if len(st.deleted) != 0 {
+		t.Fatalf("retention deleted on a List error: %v", st.deleted)
+	}
+}
+
+func TestRetentionIgnoresForeignFiles(t *testing.T) {
+	// dashboard-notes.txt is not a backup copy: it must not count toward the cap, and a
+	// real copy must not be trashed early because of it.
+	entries := []files.Entry{{ID: "notes", Name: "dashboard-notes.txt"}}
+	for day := 1; day <= 31; day++ {
+		entries = append(entries, files.Entry{ID: fmt.Sprintf("f%02d", day), Name: fmt.Sprintf("dashboard-2026-09-%02d.db.gz.age", day)})
+	}
+	st := &stubStore{entries: entries}
+	svc := &Service{}
+	if err := svc.retention(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.deleted) != 1 || st.deleted[0] != "f01" {
+		t.Fatalf("retention deleted %v, want just the oldest copy f01", st.deleted)
 	}
 }

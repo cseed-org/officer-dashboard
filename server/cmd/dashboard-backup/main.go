@@ -110,6 +110,21 @@ func (s *sink) list() ([]snapshot, error) {
 	err := s.request("/snapshots", "GET", nil, &result)
 	return result, err
 }
+
+// sanitize trims an error for an alert line: single line, no control characters, capped.
+func sanitize(err error) string {
+	msg := strings.Map(func(r rune) rune {
+		if r < ' ' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, err.Error())
+	if len(msg) > 200 {
+		msg = msg[:200] + "..."
+	}
+	return msg
+}
+
 func notify(message string) {
 	fmt.Fprintln(os.Stderr, message)
 	if endpoint := setting("DISCORD_WEBHOOK_URL"); endpoint != "" {
@@ -384,7 +399,7 @@ func backupWithPublish(publish func(string) error) (snapshot, error) {
 	}
 	if publish != nil {
 		if err := publish(encrypted); err != nil {
-			notify("Drive backup outbox publish failed; the D1 snapshot continues")
+			notify("Drive backup outbox publish failed (" + sanitize(err) + "); the D1 snapshot continues")
 		}
 	}
 	s, err := newSink()
@@ -436,7 +451,9 @@ func driveOutboxPublisher() func(string) error {
 		return nil
 	}
 	return func(encrypted string) error {
-		if err := publishDriveOutbox(encrypted, time.Now()); err != nil {
+		// The file name uses the same day as the marker, even when encryption crosses
+		// midnight UTC, so a renamed file is never published twice under different shas.
+		if err := publishDriveOutbox(encrypted, day, time.Now()); err != nil {
 			return err
 		}
 		return markDriveOutboxDay(day)
@@ -444,9 +461,8 @@ func driveOutboxPublisher() func(string) error {
 }
 
 // publishDriveOutbox hands this hour's ciphertext to the Drive uploader as
-// dashboard-<UTC day>.db.gz.age plus its manifest, and keeps at most three days waiting.
-func publishDriveOutbox(encrypted string, now time.Time) error {
-	day := now.UTC().Format("2006-01-02")
+// dashboard-<day>.db.gz.age plus its manifest, and keeps at most three days waiting.
+func publishDriveOutbox(encrypted, day string, now time.Time) error {
 	dir := driveOutboxDir()
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return err
@@ -537,7 +553,8 @@ func publishBytes(data []byte, target string, mode os.FileMode) error {
 }
 
 // capDriveOutbox keeps at most keep ciphertext files, deleting the oldest (their names
-// sort chronologically) together with their manifests.
+// sort chronologically) together with their manifests. A file evicted while it still
+// waits for the Drive upload is called out: Drive backups are silently falling behind.
 func capDriveOutbox(dir string, keep int) error {
 	matches, err := filepath.Glob(filepath.Join(dir, "dashboard-*.db.gz.age"))
 	if err != nil {
@@ -554,6 +571,7 @@ func capDriveOutbox(dir string, keep int) error {
 		if err := os.Remove(manifest); err != nil && !os.IsNotExist(err) {
 			return err
 		}
+		notify("Drive outbox dropped un-uploaded snapshot " + filepath.Base(victim) + ": the dashboard has not uploaded Drive backups for days")
 	}
 	return nil
 }
