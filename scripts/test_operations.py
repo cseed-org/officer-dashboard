@@ -178,7 +178,7 @@ class RestoreTests(unittest.TestCase):
 
 
 class R2RestoreBudgetTests(unittest.TestCase):
-    def test_restored_ledger_is_marked_for_reseed_not_locked(self):
+    def test_restored_ledger_is_marked_for_reseed(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get('PANE_SCRATCH_DIR')) as work:
             path = Path(work) / 'restored.db'
             with contextlib.closing(sqlite3.connect(path)) as db, db:
@@ -187,13 +187,13 @@ class R2RestoreBudgetTests(unittest.TestCase):
             backup.mark_restored_r2(path)
             with contextlib.closing(sqlite3.connect(path)) as db, db:
                 self.assertEqual(db.execute('SELECT value FROM proof').fetchone(), (42,))
-                self.assertEqual(db.execute("SELECT count(*) FROM r2_reseed WHERE requested_at >= CAST(strftime('%s','now') AS INTEGER) - 60 AND fallback_at = 0").fetchone(), (1,))
+                self.assertEqual(db.execute("SELECT count(*) FROM r2_reseed WHERE requested_at >= CAST(strftime('%s','now') AS INTEGER) - 60 AND alerted_at = 0").fetchone(), (1,))
                 self.assertEqual(db.execute("SELECT count(*) FROM sqlite_master WHERE name = 'r2_restore_lock'").fetchone(), (0,))
-                # A restore after a completed fallback must re-seed again.
-                db.execute('UPDATE r2_reseed SET fallback_at = 1, alerted = 1')
+                # A second restore restarts the pause and its alerts.
+                db.execute('UPDATE r2_reseed SET requested_at = 1, alerted_at = 1')
             backup.mark_restored_r2(path)
             with contextlib.closing(sqlite3.connect(path)) as db, db:
-                self.assertEqual(db.execute('SELECT count(*), max(fallback_at), max(alerted) FROM r2_reseed').fetchone(), (1, 0, 0))
+                self.assertEqual(db.execute("SELECT count(*), max(requested_at) >= CAST(strftime('%s','now') AS INTEGER) - 60, max(alerted_at) FROM r2_reseed").fetchone(), (1, 1, 0))
 
 
 if __name__ == '__main__':

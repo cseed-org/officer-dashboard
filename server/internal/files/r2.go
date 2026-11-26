@@ -356,59 +356,52 @@ func (r *R2) Reconcile(ctx context.Context) error {
 	return r.reserve(ctx, "check", "", "", 0)
 }
 
-// Reseed raises a ledger marked stale (by a restore) before billable requests
-// resume: from Cloudflare analytics within 30 seconds, or else to half of each
-// free-tier allowance, alerting once. It reports whether it needs to run again:
-// a failed measurement is retried so the ledger can still rise to the real
-// usage, and an undelivered alert is re-sent.
+// Reseed ends a restore pause (D-21) when it can: from Cloudflare analytics
+// within 30 seconds, or once the 32-day safety cap has passed. Nothing is
+// assumed when analytics is missing or fails: R2 stays paused, and a Discord
+// alert is sent once and then about daily (re-sent until delivered). It reports
+// whether R2 is still paused; Daily then retries hourly.
 func (r *R2) Reseed(ctx context.Context) (bool, error) {
 	state, err := r.DB.R2Reseed(ctx)
 	if err != nil || !state.Pending {
 		return err != nil, err
 	}
 	now := r.Now().UTC()
+	if !now.Before(state.Until) {
+		paused, err := r.DB.ExpireR2Reseed(ctx, now)
+		return paused || err != nil, err
+	}
 	failure := errors.New("Cloudflare R2 analytics not configured")
 	if r.Analytics != nil {
 		measure, cancel := context.WithTimeout(ctx, 30*time.Second)
 		seed, err := r.Analytics.Usage(measure, now)
 		cancel()
 		if err == nil {
-			if err = r.DB.ReseedR2(ctx, now, seed, true); err == nil {
+			if err = r.DB.ReseedR2(ctx, now, seed); err == nil {
 				return false, nil
 			}
 		}
 		failure = err
 	}
-	if !state.FallbackApplied {
-		if err := r.DB.ReseedR2(ctx, now, store.R2FallbackSeed(), false); err != nil {
-			return true, err
-		}
-	}
-	if !state.Alerted && ctx.Err() == nil {
-		delivered := true
-		if r.Alert != nil {
-			reason := "R2 usage counters were re-seeded after a database restore without Cloudflare analytics (" + failure.Error() + "): the guard now assumes half of each free-tier allowance is already used this month and in the last 32 days. Uploads and downloads continue under the normal 70% warning and 90% refusal."
-			warning, stop := context.WithTimeout(ctx, 5*time.Second)
-			delivered = r.Alert(warning, reason)
-			stop()
-		}
+	if r.Alert != nil && ctx.Err() == nil && (state.AlertedAt.IsZero() || now.Sub(state.AlertedAt) >= 23*time.Hour) {
+		reason := "R2 storage is paused after a database restore: the usage counters cannot be re-seeded (" + failure.Error() + "). Uploads and downloads return storage unavailable until Cloudflare analytics answers (retried hourly; set R2_ANALYTICS_TOKEN_FILE to an Account Analytics Read token) or until " + state.Until.Format("2006-01-02 15:04 UTC") + ", when the 32-day billing window has rolled."
+		warning, stop := context.WithTimeout(ctx, 5*time.Second)
+		delivered := r.Alert(warning, reason)
+		stop()
 		if delivered {
-			if err := r.DB.R2ReseedAlerted(ctx, r.Analytics == nil); err != nil {
+			if err := r.DB.R2ReseedAlerted(ctx, now); err != nil {
 				return true, err
-			}
-			if r.Analytics == nil {
-				return false, nil
 			}
 		}
 	}
 	return true, failure
 }
 
-// Daily first re-seeds a restored ledger, then runs the first inventory,
-// immediately, so startup never waits on R2; then every 24 hours. A failure
-// keeps uploads closed, retries every five minutes, and alerts once per
-// failure streak (re-sent until Discord accepts). An incomplete re-seed is
-// retried hourly.
+// Daily first ends a restore pause if it can, then runs the first inventory,
+// immediately, so startup never waits on R2; then every 24 hours. While R2 is
+// paused it makes no R2 request and retries hourly. A failed inventory keeps
+// uploads closed, retries every five minutes, and alerts once per failure
+// streak (re-sent until Discord accepts).
 func (r *R2) Daily(ctx context.Context, onError func(error)) {
 	t := time.NewTimer(0)
 	defer t.Stop()
@@ -418,33 +411,36 @@ func (r *R2) Daily(ctx context.Context, onError func(error)) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			next := 24 * time.Hour
-			again, err := r.Reseed(ctx)
-			if err != nil {
-				onError(err)
-			}
-			if again {
-				next = time.Hour
-			}
-			scan, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			err = r.Reconcile(scan)
-			cancel()
-			if err != nil {
-				onError(err)
-				if !alerted && r.Alert != nil && ctx.Err() == nil {
-					reason := "R2 inventory scan failed; uploads stay closed until it succeeds (retrying every 5 minutes)."
-					if errors.Is(err, ErrR2Credentials) {
-						reason = "R2 rejected the configured access key; uploads stay closed and downloads fail until the R2 token is fixed."
-					}
-					warning, stop := context.WithTimeout(ctx, 5*time.Second)
-					alerted = r.Alert(warning, reason)
-					stop()
-				}
-				next = 5 * time.Minute
-			} else {
-				alerted = false
-			}
-			t.Reset(next)
+			t.Reset(r.dailyStep(ctx, onError, &alerted))
 		}
 	}
+}
+
+// dailyStep runs one Daily round and returns the delay until the next.
+func (r *R2) dailyStep(ctx context.Context, onError func(error), alerted *bool) time.Duration {
+	paused, err := r.Reseed(ctx)
+	if err != nil {
+		onError(err)
+	}
+	if paused {
+		return time.Hour
+	}
+	scan, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	err = r.Reconcile(scan)
+	cancel()
+	if err == nil {
+		*alerted = false
+		return 24 * time.Hour
+	}
+	onError(err)
+	if !*alerted && r.Alert != nil && ctx.Err() == nil {
+		reason := "R2 inventory scan failed; uploads stay closed until it succeeds (retrying every 5 minutes)."
+		if errors.Is(err, ErrR2Credentials) {
+			reason = "R2 rejected the configured access key; uploads stay closed and downloads fail until the R2 token is fixed."
+		}
+		warning, stop := context.WithTimeout(ctx, 5*time.Second)
+		*alerted = r.Alert(warning, reason)
+		stop()
+	}
+	return 5 * time.Minute
 }

@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS r2_month (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS r2_day(day TEXT PRIMARY KEY, class_a INTEGER NOT NULL DEFAULT 0, class_b INTEGER NOT NULL DEFAULT 0);
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, fallback_at INTEGER NOT NULL DEFAULT 0, alerted INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, alerted_at INTEGER NOT NULL DEFAULT 0);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS r2_objects (key TEXT PRIMARY KEY, bytes INTEGER NOT NULL CHECK(bytes>0), reserved_at INTEGER NOT NULL DEFAULT 0);
 --> statement-breakpoint

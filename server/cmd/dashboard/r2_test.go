@@ -36,12 +36,12 @@ func TestStorageSelectionFailsClosed(t *testing.T) {
 	}
 }
 
-// Review #1: no R2 state (exhausted budget, pending re-seed, unreachable or
+// Review #1: no R2 state (exhausted budget, restore pause, unreachable or
 // rejecting R2: startup makes no R2 request) may stop the dashboard.
 func TestExhaustedR2DoesNotStopDashboard(t *testing.T) {
 	for name, state := range map[string]string{
 		"exhausted":      `INSERT INTO r2_day VALUES(strftime('%Y-%m-%d','now'),900000,9000000)`,
-		"restore-reseed": `INSERT INTO r2_reseed(id,requested_at) VALUES(1,0)`,
+		"restore-paused": `INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER))`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			db, err := openDB(filepath.Join(t.TempDir(), "db"))

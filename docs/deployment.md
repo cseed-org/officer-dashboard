@@ -173,12 +173,12 @@ replay, uses a 20-second timeout, and retains a day of rolling-window margin at 
 The app scans every object page and checks for multipart uploads in the background
 right after startup and every 24 hours, retrying a failed scan every five minutes.
 Startup never waits on R2: an outage, a rejected token, an exhausted budget or a
-pending usage re-seed leaves the rest of the dashboard running, keeps uploads closed and
+restore pause leaves the rest of the dashboard running, keeps uploads closed and
 sends a Discord warning. Only configuration errors (account or bucket format,
 missing secret or webhook, ledger bound to another bucket) stop startup. For 858 objects, that costs two Class A requests per scan (one
 object page and one multipart check), about 62/month plus starts. The guard needs
 no analytics or account token: the same bucket-scoped Object Read & Write S3 token
-can list. An optional read-only analytics token only improves the re-seed after a
+can list. A recommended read-only analytics token lets R2 resume quickly after a
 restore (below). Uploads close if inventory is older than 25 hours or a scan fails.
 Each scan sets the byte total to the listed bytes plus reservations that are
 unlisted but less than one hour old. Those may still be a PUT in flight from
@@ -213,11 +213,12 @@ against a separate client or administrator spending outside its ledger.
 
 Never reset budget tables. A restored database cannot know the R2 operations spent
 after its snapshot, and inventory cannot reconstruct them. The official off-box
-restore command therefore adds an `r2_reseed` marker to the restored DB (there is
-no lock). On its next start the app re-seeds this month's usage counters before it
-sends another billable request:
+restore command therefore adds an `r2_reseed` marker to the restored DB, which
+pauses R2: uploads and downloads answer HTTP 507 "storage unavailable" (other
+dashboard functions are unaffected, and startup never waits on any of this) until
+the app has re-seeded its usage counters:
 
-1. With `R2_ANALYTICS_TOKEN_FILE` set, it reads the bucket's Class A and Class B
+1. With `R2_ANALYTICS_TOKEN_FILE` set (recommended, setup step 7), it reads the bucket's Class A and Class B
    operations for the current UTC month and for the guard's rolling 32-day window,
    plus stored bytes, from Cloudflare's free
    [GraphQL Analytics API](https://developers.cloudflare.com/r2/platform/metrics-analytics/)
@@ -225,17 +226,18 @@ sends another billable request:
 2. It merges each counter and each window with the restored ledger by maximum, so
    no counter ever goes down. Unknown operation types count as Class A; deletes
    are free. The next inventory scan replaces the byte figure with listed bytes.
-3. If no analytics token is configured, or Cloudflare does not answer, it instead
-   assumes 50% of each free-tier allowance is already used in both windows, takes
-   the maximum with the ledger and sends one Discord warning. With a token
-   configured it retries the measurement hourly, which can still raise the
-   counters further.
+3. Downloads then resume. Uploads resume after the next complete inventory scan,
+   which runs straight away: the restored inventory predates the restore, so it is
+   never trusted. Both then run under the normal 70% warning and 90% refusal.
+4. If no analytics token is configured, or Cloudflare does not answer, nothing is
+   assumed: **R2 stays paused**, the re-seed is retried hourly, and a Discord alert
+   is sent once and then about daily. Without a working token, a restore pauses R2
+   for up to 32 days: the pause ends on its own at the start of the 32nd UTC day
+   after the restore day, when every operation the ledger may have lost has left
+   both the calendar month and the rolling 32-day window. Uploads then also wait
+   for a fresh inventory.
 
-Uploads and downloads then continue under the normal 70% warning and 90%
-refusal. While the first re-seed attempt runs (at most about 30 seconds after
-startup), billable R2 requests answer 507 with a retry message; other dashboard
-functions are unaffected. A ledger with recorded spending but no
-`r2-usage-ledger.json` beside it (for example a database copied to a new host) is
+A ledger with recorded spending but no `r2-usage-ledger.json` beside it (for example a database copied to a new host) is
 treated the same way. Analytics can lag by a few minutes, so operations spent in
 the minutes just before a restore may be missed; the 10% margin below the free
 tier absorbs that. Do not remove the marker. Routine image rollback instead merges
@@ -260,9 +262,9 @@ add the marker yourself before starting the app, even if the old snapshot
 predates R2's tables:
 
 ```sql
-CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, fallback_at INTEGER NOT NULL DEFAULT 0, alerted INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, alerted_at INTEGER NOT NULL DEFAULT 0);
 INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER))
-ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,fallback_at=0,alerted=0;
+ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,alerted_at=0;
 ```
 
 Keep the original DB/ledger when rolling back an application image. Stored backend
@@ -319,14 +321,14 @@ Cloudflare settings or deploy it.
    Keep the existing Discord webhook `_FILE` setting. The hardened compose already
    mounts `secrets/app` read-only only into the app. No backup credentials change.
 
-7. Optional, for accurate counters after a restore: in **My Profile > API Tokens >
+7. Recommended, so a restore does not pause R2 for up to 32 days: in **My Profile > API Tokens >
    Create Token > Create Custom Token**, grant only **Account > Account Analytics >
    Read**, for this account only, with no other permissions. It is free and
    read-only, and is separate from the R2 S3 token above. Save it as
    `secrets/app/r2-analytics-token` (owner UID 10001, mode 0400) and add
    `R2_ANALYTICS_TOKEN_FILE=/run/secrets/app/r2-analytics-token` to `dashboard.env`.
-   Without it, a restore makes the guard assume half of each allowance is used
-   (see above). The direct `R2_ANALYTICS_TOKEN` variable is rejected.
+   Without it, a restore pauses R2 uploads and downloads for up to 32 days (see
+   above). The direct `R2_ANALYTICS_TOKEN` variable is rejected.
    Follow the approved image/update steps. Uploads stay closed until the background
    scan right after startup validates the credentials with a full private inventory.
    Only configuration errors fail startup. A rejected token, a network or inventory

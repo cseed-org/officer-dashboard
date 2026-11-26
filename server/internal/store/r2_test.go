@@ -143,8 +143,8 @@ func TestR2RollingBillingWindowAndRestoreReseed(t *testing.T) {
 	if _, err := d.ReserveR2(ctx, later, "get", "", "", 0); err != nil {
 		t.Fatal("rolling budget did not recover", err)
 	}
-	// D-20: a restore marker holds billable requests only until the re-seed
-	// has raised the ledger, never for days.
+	// D-21: a restore marker holds billable requests until the re-seed has
+	// raised the ledger.
 	if err := d.RequestR2Reseed(ctx, later); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestR2RollingBillingWindowAndRestoreReseed(t *testing.T) {
 			t.Fatal("restored ledger spent before its re-seed", class, err)
 		}
 	}
-	if err := d.ReseedR2(ctx, later, R2FallbackSeed(), false); err != nil {
+	if err := d.ReseedR2(ctx, later, R2Seed{MonthA: 10}); err != nil {
 		t.Fatal(err)
 	}
 	for _, class := range []string{"list", "get"} {

@@ -82,10 +82,10 @@ func (d *DB) ReserveR2(ctx context.Context, now time.Time, class, key, user stri
 	err := d.Write(ctx, func(q *Queries) error {
 		month := now.UTC().Format("2006-01")
 		if class == "put" || class == "list" || class == "get" {
-			// Only until the first re-seed attempt (at most about 30 seconds
-			// after startup) has raised a possibly stale ledger; see ReseedR2.
+			// D-21: a restored ledger never spends until analytics re-seeds
+			// it or the safety cap passes; see r2_reseed.go.
 			var pending int
-			if err := q.q.QueryRowContext(ctx, `SELECT count(*) FROM r2_reseed WHERE fallback_at=0`).Scan(&pending); err != nil {
+			if err := q.q.QueryRowContext(ctx, `SELECT count(*) FROM r2_reseed WHERE `+r2ReseedUntil+`>?`, now.Unix()).Scan(&pending); err != nil {
 				return err
 			}
 			if pending != 0 {

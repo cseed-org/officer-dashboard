@@ -41,7 +41,7 @@ func TestR2AnalyticsReseedRaisesCounters(t *testing.T) {
 	d, ctx, now := reseedLedger(t)
 	d.RequestR2Reseed(ctx, now)
 	seed := R2Seed{MonthA: 1200, MonthB: 34000, RollingA: 2500, RollingB: 40000, Bytes: 7_000_000}
-	if err := d.ReseedR2(ctx, now, seed, true); err != nil {
+	if err := d.ReseedR2(ctx, now, seed); err != nil {
 		t.Fatal(err)
 	}
 	u, _ := d.R2Usage(ctx, now)
@@ -57,6 +57,16 @@ func TestR2AnalyticsReseedRaisesCounters(t *testing.T) {
 	if _, err := d.ReserveR2(ctx, now, "get", "", "", 0); err != nil {
 		t.Fatal(err)
 	}
+	// Round 5: the restored inventory looked fresh but predates the restore.
+	if _, err := d.ReserveR2(ctx, now, "put", "k", "alice", 10); !errors.Is(err, ErrR2Budget) {
+		t.Fatal("measured re-seed reopened uploads before a fresh inventory", err)
+	}
+	if err := d.ReconcileR2(ctx, now, 7_000_000, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.ReserveR2(ctx, now, "put", "k", "alice", 10); err != nil {
+		t.Fatal("fresh inventory did not reopen uploads", err)
+	}
 }
 
 // D-20: max-merge per counter and per window; a lower seed changes nothing.
@@ -68,7 +78,7 @@ func TestR2ReseedNeverLowersACounter(t *testing.T) {
 	d.W.Exec(`INSERT INTO r2_month(month,class_a,class_b) VALUES(?,300,9000)`, now.Format("2006-01"))
 	d.W.Exec(`UPDATE r2_budget SET bytes=5000`)
 	// Month A lower, month B higher; rolling A higher, rolling B lower.
-	if err := d.ReseedR2(ctx, now, R2Seed{MonthA: 100, MonthB: 9500, RollingA: 700, RollingB: 10, Bytes: 1}, true); err != nil {
+	if err := d.ReseedR2(ctx, now, R2Seed{MonthA: 100, MonthB: 9500, RollingA: 700, RollingB: 10, Bytes: 1}); err != nil {
 		t.Fatal(err)
 	}
 	u, _ := d.R2Usage(ctx, now)
@@ -83,49 +93,65 @@ func TestR2ReseedNeverLowersACounter(t *testing.T) {
 	if old != 200 {
 		t.Fatal("re-seed rewrote an earlier day", old)
 	}
-	if err := d.ReseedR2(ctx, now, R2Seed{}, false); err != nil {
+	if err := d.ReseedR2(ctx, now, R2Seed{}); err != nil {
 		t.Fatal(err)
 	}
 	if after, _ := d.R2Usage(ctx, now); after != u {
 		t.Fatal("zero seed lowered the ledger", after)
 	}
-	if err := d.ReseedR2(ctx, now, R2Seed{MonthA: -1}, true); err == nil {
+	if err := d.ReseedR2(ctx, now, R2Seed{MonthA: -1}); err == nil {
 		t.Fatal("negative seed accepted")
 	}
 }
 
-// D-20: without a measurement, half of each allowance is assumed used; the
-// marker stays (a later measurement can still raise it) but requests resume.
-func TestR2FallbackReseedAssumesHalfAndKeepsWorking(t *testing.T) {
+// D-21: without a measurement nothing is assumed. Billable requests stay
+// refused, counters unchanged, until the 32nd UTC day after the restore day,
+// when every operation spent before the restore has left the rolling window.
+func TestR2RestorePausesUntilBillingWindowRolls(t *testing.T) {
 	d, ctx, now := reseedLedger(t)
-	d.RequestR2Reseed(ctx, now)
-	if err := d.ReseedR2(ctx, now, R2FallbackSeed(), false); err != nil {
+	// Spending the ledger knows of on the restore day, at the 90% ceiling.
+	d.W.Exec(`INSERT INTO r2_day VALUES(?,?,0)`, now.Format("2006-01-02"), R2ClassALimit*9/10)
+	if err := d.RequestR2Reseed(ctx, now); err != nil {
 		t.Fatal(err)
 	}
-	u, _ := d.R2Usage(ctx, now)
-	if u.ClassA != R2ClassALimit/2 || u.ClassB != R2ClassBLimit/2 || u.Bytes != R2StorageLimit/2 {
-		t.Fatal("fallback did not assume 50%", u)
+	before, _ := d.R2Usage(ctx, now)
+	until := time.Date(2026, 12, 22, 0, 0, 0, 0, time.UTC)
+	if s, _ := d.R2Reseed(ctx); !s.Pending || !s.Until.Equal(until) || !s.AlertedAt.IsZero() {
+		t.Fatal("pause state", s)
 	}
-	if a, b := rollingR2(t, d, now); a != R2ClassALimit/2 || b != R2ClassBLimit/2 {
-		t.Fatal("fallback did not cover the rolling window", a, b)
-	}
-	if s, _ := d.R2Reseed(ctx); !s.Pending || !s.FallbackApplied || s.Alerted {
-		t.Fatal("fallback state", s)
-	}
-	for _, class := range []string{"list", "get"} {
-		if _, err := d.ReserveR2(ctx, now, class, "", "", 0); err != nil {
-			t.Fatal("fallback re-seed blocked R2", class, err)
+	for _, at := range []time.Time{now, until.Add(-time.Second)} {
+		for _, class := range []string{"put", "list", "get"} {
+			if _, err := d.ReserveR2(ctx, at, class, "k", "alice", 10); !errors.Is(err, ErrR2Reseeding) || !errors.Is(err, ErrR2Budget) {
+				t.Fatal("paused ledger spent", at, class, err)
+			}
+		}
+		if _, err := d.ReserveR2(ctx, at, "delete", "k", "", 0); err != nil {
+			t.Fatal("free deletion paused", err)
+		}
+		if paused, err := d.ExpireR2Reseed(ctx, at); !paused || err != nil {
+			t.Fatal("pause ended early", at, paused, err)
 		}
 	}
-	// A measurement that is higher still raises the ledger and ends the re-seed.
-	if err := d.ReseedR2(ctx, now, R2Seed{MonthA: R2ClassALimit * 6 / 10}, true); err != nil {
-		t.Fatal(err)
+	if after, _ := d.R2Usage(ctx, now); after != before {
+		t.Fatal("pause assumed usage", before, after)
 	}
-	if u, _ := d.R2Usage(ctx, now); u.ClassA != R2ClassALimit*6/10 {
-		t.Fatal(u)
+	// From the cap on, downloads resume (the restore-day ceiling has left the
+	// rolling window); uploads still wait for a fresh inventory.
+	for _, class := range []string{"list", "get"} {
+		if _, err := d.ReserveR2(ctx, until, class, "", "", 0); err != nil {
+			t.Fatal("pause outlived the billing window", class, err)
+		}
 	}
-	if s, _ := d.R2Reseed(ctx); s.Pending {
-		t.Fatal(s)
+	if paused, err := d.ExpireR2Reseed(ctx, until); paused || err != nil {
+		t.Fatal("expired pause kept", paused, err)
+	}
+	var reconciled int64
+	d.R.QueryRow(`SELECT reconciled_at FROM r2_budget`).Scan(&reconciled)
+	if s, _ := d.R2Reseed(ctx); s.Pending || reconciled != 0 {
+		t.Fatal("expiry kept the marker or the restored inventory", s, reconciled)
+	}
+	if _, err := d.ReserveR2(ctx, until, "put", "k", "alice", 10); !errors.Is(err, ErrR2Budget) {
+		t.Fatal("expired pause reopened uploads before a fresh inventory", err)
 	}
 }
 
@@ -134,7 +160,7 @@ func TestR2RefusalHoldsAfterReseed(t *testing.T) {
 	d, ctx, now := reseedLedger(t)
 	d.RequestR2Reseed(ctx, now)
 	edge := R2ClassALimit*9/10 - 1
-	if err := d.ReseedR2(ctx, now, R2Seed{MonthA: 10, RollingA: edge, RollingB: R2ClassBLimit * 9 / 10}, true); err != nil {
+	if err := d.ReseedR2(ctx, now, R2Seed{MonthA: 10, RollingA: edge, RollingB: R2ClassBLimit * 9 / 10}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.ReserveR2(ctx, now, "list", "", "", 0); err != nil {
@@ -145,16 +171,6 @@ func TestR2RefusalHoldsAfterReseed(t *testing.T) {
 	}
 	if _, err := d.ReserveR2(ctx, now, "get", "", "", 0); !errors.Is(err, ErrR2Budget) {
 		t.Fatal("re-seeded Class B passed 90%", err)
-	}
-	// The fallback alone leaves 40 points of headroom before refusing.
-	d2, ctx2, now2 := reseedLedger(t)
-	d2.ReseedR2(ctx2, now2, R2FallbackSeed(), false)
-	d2.W.Exec(`UPDATE r2_day SET class_a=class_a+? WHERE day=?`, R2ClassALimit*4/10-1, now2.Format("2006-01-02"))
-	if _, err := d2.ReserveR2(ctx2, now2, "list", "", "", 0); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := d2.ReserveR2(ctx2, now2, "list", "", "", 0); !errors.Is(err, ErrR2Budget) {
-		t.Fatal("fallback ledger passed 90%", err)
 	}
 }
 
@@ -184,7 +200,7 @@ func TestR2LedgerWithoutMirrorRequestsReseed(t *testing.T) {
 	if err := d.BindR2(ctx, "account/bucket"); err != nil {
 		t.Fatal(err)
 	}
-	if s, _ := d.R2Reseed(ctx); !s.Pending || s.FallbackApplied {
+	if s, _ := d.R2Reseed(ctx); !s.Pending {
 		t.Fatal("moved ledger not marked for re-seed", s)
 	}
 }

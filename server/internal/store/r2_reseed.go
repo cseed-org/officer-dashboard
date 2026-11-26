@@ -7,48 +7,59 @@ import (
 )
 
 // Restoring dashboard.db cannot bring back R2 operations spent after the
-// snapshot. Instead of locking R2 (D-20), a restore leaves an r2_reseed marker
-// and the app raises the ledger once, before it sends another billable request:
-// from Cloudflare's analytics when that is configured and answers, otherwise to
-// half of each free-tier allowance. The normal 70% warning and 90% refusal
-// then apply as usual.
+// snapshot. A restore therefore leaves an r2_reseed marker, and billable R2
+// requests (uploads, listings and downloads) stay paused (D-21) until either:
+//   - Cloudflare's analytics re-seeds the ledger (ReseedR2). Downloads then
+//     resume; uploads also wait for a complete inventory taken afterwards.
+//   - R2ReseedPauseDays UTC days pass from the restore, so every operation the
+//     ledger may have lost has left both the monthly and the rolling window.
+// Nothing is ever assumed: an unknown ledger never spends.
 
-var ErrR2Reseeding = fmt.Errorf("R2 usage counters are being re-seeded after a database restore; retry in a minute: %w", ErrR2Budget)
+// R2ReseedPauseDays is the safety cap: the guard's rolling window is the
+// current UTC day plus the 31 before it, so from the 32nd UTC day after the
+// restore day no lost operation is inside it (or inside the calendar month).
+const R2ReseedPauseDays = 32
+
+var ErrR2Reseeding = fmt.Errorf("R2 storage is unavailable: paused after a database restore until Cloudflare analytics re-seeds the usage counters (at most %d days): %w", R2ReseedPauseDays, ErrR2Budget)
 
 // R2Seed is usage measured outside the ledger: operation counts for the current
 // UTC month and for the guard's rolling window (current UTC day plus the 31
 // before it), and stored bytes.
 type R2Seed struct{ MonthA, MonthB, RollingA, RollingB, Bytes int64 }
 
-// R2FallbackSeed assumes half of each free-tier allowance is already used.
-func R2FallbackSeed() R2Seed {
-	return R2Seed{MonthA: R2ClassALimit / 2, MonthB: R2ClassBLimit / 2, RollingA: R2ClassALimit / 2, RollingB: R2ClassBLimit / 2, Bytes: R2StorageLimit / 2}
+// R2ReseedState describes a restore pause. Pending false means none.
+type R2ReseedState struct {
+	Pending bool
+	// Until is when the pause ends on its own; AlertedAt is the last delivered
+	// pause alert (zero if none).
+	Until, AlertedAt time.Time
 }
 
-// R2ReseedState describes a pending re-seed. Pending false means none is needed.
-type R2ReseedState struct{ Pending, FallbackApplied, Alerted bool }
+// r2ReseedUntil is the start of the 32nd UTC day after the restore day.
+const r2ReseedUntil = `(requested_at/86400+32)*86400`
 
 func (d *DB) R2Reseed(ctx context.Context) (R2ReseedState, error) {
 	var s R2ReseedState
-	var fallback, alerted int64
-	err := d.R.QueryRowContext(ctx, `SELECT count(*),coalesce(max(fallback_at),0),coalesce(max(alerted),0) FROM r2_reseed`).Scan(&s.Pending, &fallback, &alerted)
-	s.FallbackApplied, s.Alerted = fallback > 0, alerted != 0
+	var n, until, alerted int64
+	err := d.R.QueryRowContext(ctx, `SELECT count(*),coalesce(max(`+r2ReseedUntil+`),0),coalesce(max(alerted_at),0) FROM r2_reseed`).Scan(&n, &until, &alerted)
+	s.Pending, s.Until = n > 0, time.Unix(until, 0).UTC()
+	if alerted > 0 {
+		s.AlertedAt = time.Unix(alerted, 0).UTC()
+	}
 	return s, err
 }
 
-// RequestR2Reseed marks the ledger as possibly stale.
+// RequestR2Reseed marks the ledger as possibly stale and pauses R2.
 func (d *DB) RequestR2Reseed(ctx context.Context, now time.Time) error {
-	_, err := d.W.ExecContext(ctx, `INSERT INTO r2_reseed(id,requested_at) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,fallback_at=0,alerted=0`, now.Unix())
+	_, err := d.W.ExecContext(ctx, `INSERT INTO r2_reseed(id,requested_at) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,alerted_at=0`, now.Unix())
 	return err
 }
 
-// ReseedR2 max-merges seed into the ledger, per counter and per window, and
-// never lowers anything. A rolling-window shortfall is added to today's row,
-// which keeps it inside the window for the longest possible time. measured
-// (the seed came from Cloudflare) completes the re-seed; otherwise the marker
-// records that the fallback was applied so billable requests resume and a later
-// measurement can still raise the ledger further.
-func (d *DB) ReseedR2(ctx context.Context, now time.Time, seed R2Seed, measured bool) error {
+// ReseedR2 max-merges a Cloudflare measurement into the ledger, per counter
+// and per window, never lowering anything, and ends the pause. A rolling-window
+// shortfall is added to today's row, which keeps it inside the window for the
+// longest possible time.
+func (d *DB) ReseedR2(ctx context.Context, now time.Time, seed R2Seed) error {
 	if seed.MonthA < 0 || seed.MonthB < 0 || seed.RollingA < 0 || seed.RollingB < 0 || seed.Bytes < 0 {
 		return fmt.Errorf("invalid R2 usage seed")
 	}
@@ -70,30 +81,50 @@ func (d *DB) ReseedR2(ctx context.Context, now time.Time, seed R2Seed, measured 
 				return err
 			}
 		}
-		// The next inventory replaces bytes with what is actually listed.
 		if _, err := q.q.ExecContext(ctx, `UPDATE r2_budget SET bytes=max(bytes,?) WHERE id=1`, seed.Bytes); err != nil {
 			return err
 		}
 		if _, err := syncR2Mirror(ctx, q, d.r2MirrorPath(), now); err != nil {
 			return err
 		}
-		var err error
-		if measured {
-			_, err = q.q.ExecContext(ctx, `DELETE FROM r2_reseed`)
-		} else {
-			_, err = q.q.ExecContext(ctx, `UPDATE r2_reseed SET fallback_at=? WHERE fallback_at=0`, now.Unix())
-		}
-		return err
+		return endR2Pause(ctx, q, `DELETE FROM r2_reseed`)
 	})
 }
 
-// R2ReseedAlerted records the fallback warning as delivered; done also clears
-// the marker (no analytics to retry).
-func (d *DB) R2ReseedAlerted(ctx context.Context, done bool) error {
-	query := `UPDATE r2_reseed SET alerted=1`
-	if done {
-		query = `DELETE FROM r2_reseed WHERE fallback_at>0`
+// ExpireR2Reseed ends a pause whose safety cap has passed. It reports whether
+// a pause is still in force.
+func (d *DB) ExpireR2Reseed(ctx context.Context, now time.Time) (bool, error) {
+	paused := false
+	err := d.Write(ctx, func(q *Queries) error {
+		if err := endR2Pause(ctx, q, `DELETE FROM r2_reseed WHERE `+r2ReseedUntil+`<=?`, now.Unix()); err != nil {
+			return err
+		}
+		var n int
+		err := q.q.QueryRowContext(ctx, `SELECT count(*) FROM r2_reseed`).Scan(&n)
+		paused = n > 0
+		return err
+	})
+	return paused, err
+}
+
+// endR2Pause runs the marker deletion and, in the same transaction, discards
+// the inventory timestamp when it ended a pause: a restored inventory can look
+// fresh but predates the restore, so uploads stay closed on the freshness
+// gate until a complete inventory taken afterwards succeeds.
+func endR2Pause(ctx context.Context, q *Queries, deletion string, args ...any) error {
+	res, err := q.q.ExecContext(ctx, deletion, args...)
+	if err != nil {
+		return err
 	}
-	_, err := d.W.ExecContext(ctx, query)
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return err
+	}
+	_, err = q.q.ExecContext(ctx, `UPDATE r2_budget SET reconciled_at=0 WHERE id=1`)
+	return err
+}
+
+// R2ReseedAlerted records the delivery time of a pause alert.
+func (d *DB) R2ReseedAlerted(ctx context.Context, now time.Time) error {
+	_, err := d.W.ExecContext(ctx, `UPDATE r2_reseed SET alerted_at=?`, now.Unix())
 	return err
 }

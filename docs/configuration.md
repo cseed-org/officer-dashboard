@@ -216,7 +216,7 @@ selection. Explicit Drive requires its credentials/folder; explicit local requir
 | `R2_BUCKET` | Dedicated private Standard bucket |
 | `R2_ACCESS_KEY_ID` | Bucket-scoped S3 access key ID; prefer `R2_ACCESS_KEY_ID_FILE` |
 | `R2_SECRET_ACCESS_KEY` | Direct environment value rejected; use `R2_SECRET_ACCESS_KEY_FILE` |
-| `R2_ANALYTICS_TOKEN` | Optional read-only **Account Analytics Read** token, used only to re-seed usage counters after a restore; without it a restore assumes 50% of each allowance is used. Direct environment value rejected; use `R2_ANALYTICS_TOKEN_FILE` |
+| `R2_ANALYTICS_TOKEN` | Recommended read-only **Account Analytics Read** token, used only to re-seed usage counters after a restore; without it a restore pauses R2 uploads and downloads for up to 32 days. Direct environment value rejected; use `R2_ANALYTICS_TOKEN_FILE` |
 
 The `_FILE` settings use the existing bounded in-memory secret loader, with no
 simultaneous direct value. Put the files in `secrets/app/` on the host; the app
@@ -231,8 +231,8 @@ calendar-month counters and to a rolling 32-UTC-day window; the stricter wins.
 HTTP 507 explains that the safety budget was reached. Counters survive restarts
 in SQLite. A successful deletion releases known bytes. An upload with an unknown
 outcome keeps its reservation until a scan at least an hour later shows the object
-absent. After a restore the counters are re-seeded from Cloudflare analytics,
-or else to 50% of each allowance; R2 is never locked. R2 problems never stop startup: they close uploads and alert. See [R2 setup and budget constraints](deployment.md#private-r2-file-storage)
+absent. After a restore R2 is paused until the counters are re-seeded from Cloudflare
+analytics (uploads also wait for a fresh inventory), or for at most 32 days; nothing is assumed. R2 problems never stop startup: they close uploads and alert. See [R2 setup and budget constraints](deployment.md#private-r2-file-storage)
 before enabling it. Existing files keep their backend label: migrate or retain
 access to the old backend before switching; use the optional `dashboard files-migrate-r2` command (dry-run by default)
 before switching. D1 remains the encrypted database backup target; no R2 backup copy is

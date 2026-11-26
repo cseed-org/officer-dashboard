@@ -46,8 +46,8 @@ def dump(path,skip=()):
 assert dump('/data/restored.db',('r2_reseed',))==dump('/data/reference.db',('r2_reseed',))
 with sqlite3.connect('/data/restored.db') as db:
  assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
- marker=db.execute('SELECT count(*) FROM r2_reseed WHERE fallback_at=0').fetchone()
- assert marker==(1,),'restore must mark the R2 ledger for re-seeding'
+ marker=db.execute('SELECT count(*) FROM r2_reseed WHERE alerted_at=0').fetchone()
+ assert marker==(1,),'restore must pause R2 until the ledger is re-seeded'
 restore('latest','/data/restored.age',None,encrypted_only=True)
 plain=gzip.decompress(subprocess.check_output(['age','-d','-i','/data/test.agekey','/data/restored.age']))
 assert hashlib.sha256(plain).hexdigest()==hashlib.sha256(Path('/data/reference.db').read_bytes()).hexdigest()

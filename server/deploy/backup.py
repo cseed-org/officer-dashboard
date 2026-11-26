@@ -148,16 +148,16 @@ def backup(kind='hourly'):
         return result
 
 
-R2_RESEED_SCHEMA = 'CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, fallback_at INTEGER NOT NULL DEFAULT 0, alerted INTEGER NOT NULL DEFAULT 0)'
+R2_RESEED_SCHEMA = 'CREATE TABLE IF NOT EXISTS r2_reseed(id INTEGER PRIMARY KEY CHECK(id=1), requested_at INTEGER NOT NULL, alerted_at INTEGER NOT NULL DEFAULT 0)'
 
 
 def mark_restored_r2(path):
     # Restoring SQLite cannot recover R2 operations spent after the snapshot.
-    # The marker makes the app re-seed its usage counters (Cloudflare analytics,
-    # else half of each free-tier allowance) before its next billable request.
+    # The marker pauses billable R2 requests (D-21) until Cloudflare analytics
+    # re-seeds the usage counters, or for at most 32 UTC days.
     with closing(sqlite3.connect(path)) as db, db:
         db.execute(R2_RESEED_SCHEMA)
-        db.execute("INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER)) ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,fallback_at=0,alerted=0")
+        db.execute("INSERT INTO r2_reseed(id,requested_at) VALUES(1,CAST(strftime('%s','now') AS INTEGER)) ON CONFLICT(id) DO UPDATE SET requested_at=excluded.requested_at,alerted_at=0")
 
 
 def restore(snapshot_id, target, identity, encrypted_only=False):
@@ -183,7 +183,7 @@ def restore(snapshot_id, target, identity, encrypted_only=False):
         mark_restored_r2(work / 'snapshot.db')
         os.link(work / 'snapshot.db', target)
     print('sha256 verified; integrity ok')
-    print('R2 usage counters will be re-seeded on first start (Cloudflare analytics, else 50% of each free-tier allowance); do not remove r2_reseed.')
+    print('R2 stays paused after this restore until Cloudflare analytics re-seeds the usage counters (set R2_ANALYTICS_TOKEN_FILE), or for at most 32 days; do not remove r2_reseed.')
 
 
 def membership():
