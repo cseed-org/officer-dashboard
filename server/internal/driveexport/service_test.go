@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -13,8 +15,13 @@ import (
 	"officerdashboard/internal/driveexport"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/files/drivefake"
+	"officerdashboard/internal/notify"
 	"officerdashboard/internal/store"
 )
+
+func fixedDrive(d *files.Drive) func(context.Context) (*files.Drive, error) {
+	return func(context.Context) (*files.Drive, error) { return d, nil }
+}
 
 type tokens struct{}
 
@@ -42,7 +49,7 @@ func fixture(t *testing.T) (*store.DB, *files.Drive, *drivefake.Fake) {
 
 func TestExportWritesReadableEvent(t *testing.T) {
 	db, d, fake := fixture(t)
-	s := &driveexport.Service{DB: db, Drive: d}
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
 	if err := s.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -57,12 +64,12 @@ func TestExportWritesReadableEvent(t *testing.T) {
 
 func TestUnchangedExportSurvivesServiceRestartWithoutUploads(t *testing.T) {
 	db, d, fake := fixture(t)
-	if err := (&driveexport.Service{DB: db, Drive: d}).Run(context.Background()); err != nil {
+	if err := (&driveexport.Service{DB: db, Drive: fixedDrive(d)}).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	uploads := fake.Count("POST", "/upload/") + fake.Count("PATCH", "/upload/")
 	time.Sleep(2 * time.Millisecond)
-	if err := (&driveexport.Service{DB: db, Drive: d}).Run(context.Background()); err != nil {
+	if err := (&driveexport.Service{DB: db, Drive: fixedDrive(d)}).Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if got := fake.Count("POST", "/upload/") + fake.Count("PATCH", "/upload/"); got != uploads {
@@ -110,7 +117,7 @@ func TestExportIncludesOnlyAllowedEventData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := (&driveexport.Service{DB: db, Drive: d}).Run(ctx); err != nil {
+	if err := (&driveexport.Service{DB: db, Drive: fixedDrive(d)}).Run(ctx); err != nil {
 		t.Fatal(err)
 	}
 	for _, n := range []string{"event.json", "summary.md"} {
@@ -176,7 +183,7 @@ func TestCoverAndProgramExportIncludesExceptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &driveexport.Service{DB: db, Drive: d}
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
 	if err := s.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +220,7 @@ func TestEventEditAndRenamePreservesFolderAndCover(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	s := &driveexport.Service{DB: db, Drive: d}
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
 	if err := s.Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +283,7 @@ func TestQuotaAndRateLimitStopPassAndResume(t *testing.T) {
 				}
 				return nil
 			}
-			s := &driveexport.Service{DB: db, Drive: d}
+			s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
 			if err := s.Run(ctx); !errors.Is(err, tc.want) {
 				t.Fatalf("got %v; want %v", err, tc.want)
 			}
@@ -302,7 +309,7 @@ func TestHourlyWaitsAtStartupAndStopsOnCancellation(t *testing.T) {
 	db, d, fake := fixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { defer close(done); (&driveexport.Service{DB: db, Drive: d}).Hourly(ctx) }()
+	go func() { defer close(done); (&driveexport.Service{DB: db, Drive: fixedDrive(d)}).Hourly(ctx) }()
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 	select {
@@ -328,7 +335,7 @@ func TestConcurrentPassIsSkippedAndSnapshotDoesNotHoldWriter(t *testing.T) {
 		}
 		return nil
 	}
-	s := &driveexport.Service{DB: db, Drive: d}
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
 	select {
@@ -366,5 +373,98 @@ func TestConcurrentPassIsSkippedAndSnapshotDoesNotHoldWriter(t *testing.T) {
 	}
 	if !strings.Contains(string(fake.Get(f.ID).Body), "Added during export") {
 		t.Fatal("next pass missed committed change")
+	}
+}
+
+func TestCurrentDriveIsResolvedForEveryPass(t *testing.T) {
+	db, d, first := fixture(t)
+	var current *files.Drive
+	var resolveErr error = files.ErrNotConnected
+	s := &driveexport.Service{DB: db, Drive: func(context.Context) (*files.Drive, error) { return current, resolveErr }}
+	if err := s.Run(context.Background()); !errors.Is(err, files.ErrNotConnected) {
+		t.Fatalf("disconnected: %v", err)
+	}
+	if len(first.Calls()) != 0 {
+		t.Fatal("disconnected export contacted Drive")
+	}
+	current, resolveErr = d, nil
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	second := drivefake.New()
+	second.RootID = "another-root"
+	current = files.NewDriveWithTokens(tokens{}, second.RootID, second)
+	if err := s.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if second.Path("Events", "2026-12-01 Winter Mixer [ev1]", "event.json") == nil {
+		t.Fatal("new root was skipped using the old root's hashes")
+	}
+	resolveErr = files.ErrReconnect
+	if err := s.Run(context.Background()); !errors.Is(err, files.ErrReconnect) {
+		t.Fatalf("revoked: %v", err)
+	}
+}
+
+type alertTransport func(*http.Request) (*http.Response, error)
+
+func (f alertTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestExportAlertsUseSharedHourlyQuotaKey(t *testing.T) {
+	db, d, fake := fixture(t)
+	fake.Fail = func(*http.Request) *http.Response { return drivefake.Error(403, "storageQuotaExceeded") }
+	now := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	var messages []string
+	a := notify.NewAlerter("https://synthetic.invalid/alert", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	a.Now = func() time.Time { return now }
+	a.HTTP = &http.Client{Transport: alertTransport(func(r *http.Request) (*http.Response, error) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, string(b))
+		return &http.Response{StatusCode: 204, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d), Alerts: a}
+	for i := 0; i < 2; i++ {
+		if err := s.Run(context.Background()); !errors.Is(err, files.ErrQuota) {
+			t.Fatal(err)
+		}
+	}
+	if len(messages) != 1 {
+		t.Fatalf("sent %d alerts within an hour", len(messages))
+	}
+	// Request uploads and exports share this operational key.
+	if a.Alert(context.Background(), "drive-quota-full", "request upload also failed") {
+		t.Fatal("export did not use the shared quota key")
+	}
+	now = now.Add(time.Hour)
+	if err := s.Run(context.Background()); !errors.Is(err, files.ErrQuota) {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 {
+		t.Fatalf("sent %d alerts after an hour", len(messages))
+	}
+	for _, m := range messages {
+		if strings.Contains(m, "Winter Mixer") || strings.Contains(m, "synthetic-token") {
+			t.Fatal("alert contains source data")
+		}
+	}
+}
+
+func TestExportSharesEventFolderWithDesignUploads(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	at := time.Date(2026, 12, 1, 20, 0, 0, 0, time.UTC).UnixMilli()
+	_, err := d.Put(ctx, files.PutInput{Folder: []string{"Design", "design1"}, Event: &files.EventRef{StartsAtMs: &at, Name: "Winter Mixer", ID: "ev1"}, Filename: "poster.png", MimeType: "image/png", Body: []byte("\x89PNG\r\n\x1a\nsynthetic")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := fake.Path("Events", "2026-12-01 Winter Mixer [ev1]")
+	if err := (&driveexport.Service{DB: db, Drive: fixedDrive(d)}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fake.Get(folder.ID) == nil || fake.Path("Events", folder.Name, "Design", "design1") == nil || fake.Path("Events", folder.Name, "event.json") == nil {
+		t.Fatal("design and readable export did not share the event folder")
 	}
 }

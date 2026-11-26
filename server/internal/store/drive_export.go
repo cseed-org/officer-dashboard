@@ -2,7 +2,7 @@ package store
 
 import "context"
 
-// DriveExportState remembers successful uploads. Path uses stable entity ids rather
+// DriveExportState remembers successful uploads. Path includes the Drive root and stable entity ids rather
 // than display names so renaming an event does not re-upload its unchanged cover.
 type DriveExportState struct {
 	Path, DriveFileID, SHA256 string

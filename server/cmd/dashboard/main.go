@@ -318,20 +318,12 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	// The export worker uses its own Drive client and never runs on a request path.
-	// Cancellation stops both its timer and any in-flight Drive requests.
+	// Resolve the server's current Drive each pass so Settings connections and
+	// root changes take effect without restarting. Disconnected passes do no work.
 	exportDone := make(chan struct{})
 	var exportDeadline time.Time
-	if s.ServiceAccountJSON != "" && s.DriveRoot != "" {
-		drive, err := files.NewDrive(s.ServiceAccountJSON, s.DriveRoot, nil)
-		if err != nil {
-			return err
-		}
-		exporter := &driveexport.Service{DB: db, Drive: drive, Log: log}
-		go func() { defer close(exportDone); exporter.Hourly(ctx) }()
-	} else {
-		close(exportDone)
-	}
+	exporter := &driveexport.Service{DB: db, Drive: srv.Drive, Alerts: srv.Alerts(), Log: log}
+	go func() { defer close(exportDone); exporter.Hourly(ctx) }()
 	defer func() {
 		stop()
 		if exportDeadline.IsZero() {

@@ -13,16 +13,20 @@ import (
 
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/luma"
+	"officerdashboard/internal/notify"
 	"officerdashboard/internal/store"
 )
 
 var ErrBusy = errors.New("a Drive export is already running")
 
 type Service struct {
-	DB    *store.DB
-	Drive *files.Drive
-	Log   *slog.Logger
-	mu    sync.Mutex
+	DB *store.DB
+	// Drive resolves the active connection once per pass, including connections
+	// made in Settings after the dashboard started.
+	Drive  func(context.Context) (*files.Drive, error)
+	Alerts *notify.Alerter
+	Log    *slog.Logger
+	mu     sync.Mutex
 }
 
 // Hourly delays the first pass to let startup settle. Every failure, including
@@ -36,7 +40,7 @@ func (s *Service) Hourly(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		if err := s.Run(ctx); err != nil && ctx.Err() == nil {
+		if err := s.Run(ctx); err != nil && ctx.Err() == nil && !errors.Is(err, files.ErrNotConnected) {
 			log := s.Log
 			if log == nil {
 				log = slog.Default()
@@ -55,17 +59,36 @@ type eventSnapshot struct {
 
 // Run takes one consistent read snapshot, closes the transaction before network
 // work, and records each successful upload separately so failed passes can resume.
-func (s *Service) Run(ctx context.Context) error {
+func (s *Service) Run(ctx context.Context) (err error) {
 	if !s.mu.TryLock() {
 		return ErrBusy
 	}
 	defer s.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
+	defer func() {
+		if err == nil || ctx.Err() != nil || errors.Is(err, files.ErrNotConnected) {
+			return
+		}
+		key, msg := "drive-export", "Google Drive readable event/program export failed; the next hourly pass will retry. Check the dashboard logs."
+		switch {
+		case errors.Is(err, files.ErrQuota):
+			key, msg = "drive-quota-full", "Google Drive refused a readable dashboard export: the shared drive is out of storage. Free space; the next hourly export will retry."
+		case errors.Is(err, files.ErrRateLimited):
+			key, msg = "drive-rate-limited", "Google Drive is rate limiting the dashboard; a readable export failed after retries. The next hourly export will retry."
+		case errors.Is(err, files.ErrReconnect):
+			key, msg = "drive-revoked", "Google Drive access for the dashboard was revoked or expired. An owner must reconnect Google Drive in Settings before exports resume."
+		}
+		s.Alerts.Alert(ctx, key, msg)
+	}()
+	drive, err := s.Drive(ctx)
+	if err != nil {
+		return err
+	}
 	var events []eventSnapshot
 	var tracks []trackRecord
 	var states map[string]store.DriveExportState
-	err := s.DB.ReadTx(ctx, func(q *store.Queries) error {
+	err = s.DB.ReadTx(ctx, func(q *store.Queries) error {
 		var err error
 		states, err = q.DriveExportStates(ctx)
 		if err != nil {
@@ -163,7 +186,7 @@ func (s *Service) Run(ctx context.Context) error {
 			v := t.UnixMilli()
 			ms = &v
 		}
-		if _, err := files.EventFolder(ctx, s.Drive, ms, e.Event.Name, e.Event.ID); err != nil {
+		if _, err := files.EventFolder(ctx, drive, ms, e.Event.Name, e.Event.ID); err != nil {
 			return err
 		}
 		folder := []string{"Events", files.EventFolderName(ms, e.Event.Name, e.Event.ID)}
@@ -173,7 +196,7 @@ func (s *Service) Run(ctx context.Context) error {
 				mime = "text/markdown"
 			}
 			render := func(at int64) ([]byte, error) { r := e.Record; r.ExportedAt = at; return renderEvent(r, name) }
-			if err := s.upload(ctx, states, "Events/"+e.Event.ID+"/"+name, folder, name, mime, render); err != nil {
+			if err := s.upload(ctx, drive, states, "Events/"+e.Event.ID+"/"+name, folder, name, mime, render); err != nil {
 				return err
 			}
 		}
@@ -183,7 +206,7 @@ func (s *Service) Run(ctx context.Context) error {
 				return fmt.Errorf("unsupported event cover MIME type")
 			}
 			name := "cover." + ext
-			if err := s.upload(ctx, states, "Events/"+e.Event.ID+"/"+name, folder, name, c.MimeType, func(int64) ([]byte, error) { return c.Bytes, nil }); err != nil {
+			if err := s.upload(ctx, drive, states, "Events/"+e.Event.ID+"/"+name, folder, name, c.MimeType, func(int64) ([]byte, error) { return c.Bytes, nil }); err != nil {
 				return err
 			}
 		}
@@ -193,7 +216,7 @@ func (s *Service) Run(ctx context.Context) error {
 		if name == "" {
 			name = files.SafeName(t.ID)
 		}
-		if err := s.upload(ctx, states, "Programs/"+t.ID+"/program.json", []string{"Programs", name}, "program.json", "application/json", func(at int64) ([]byte, error) { t.ExportedAt = at; return json.MarshalIndent(t, "", "  ") }); err != nil {
+		if err := s.upload(ctx, drive, states, "Programs/"+t.ID+"/program.json", []string{"Programs", name}, "program.json", "application/json", func(at int64) ([]byte, error) { t.ExportedAt = at; return json.MarshalIndent(t, "", "  ") }); err != nil {
 			return err
 		}
 	}
@@ -204,7 +227,10 @@ var coverExtensions = map[string]string{"image/png": "png", "image/jpeg": "jpg",
 
 // Render using the last successful export time first. A changed document gets a
 // fresh time and hash; unchanged bytes keep their time and cause no upload.
-func (s *Service) upload(ctx context.Context, states map[string]store.DriveExportState, key string, folder []string, name, mime string, render func(int64) ([]byte, error)) error {
+func (s *Service) upload(ctx context.Context, drive *files.Drive, states map[string]store.DriveExportState, key string, folder []string, name, mime string, render func(int64) ([]byte, error)) error {
+	// The root is part of the destination identity. Switching folders in Settings
+	// must export every file there even when its source content did not change.
+	key = "Drive/" + drive.RootID() + "/" + key
 	previous := states[key]
 	body, err := render(previous.ExportedAt)
 	if err != nil {
@@ -219,7 +245,7 @@ func (s *Service) upload(ctx context.Context, states map[string]store.DriveExpor
 	if err != nil {
 		return err
 	}
-	entry, err := s.Drive.Upsert(ctx, files.UpsertInput{Folder: folder, Name: name, MimeType: mime, Body: body, MaxBytes: 16 << 20, AllowedMIME: []string{mime}})
+	entry, err := drive.Upsert(ctx, files.UpsertInput{Folder: folder, Name: name, MimeType: mime, Body: body, MaxBytes: 16 << 20, AllowedMIME: []string{mime}})
 	if err != nil {
 		return err
 	}
