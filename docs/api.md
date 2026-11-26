@@ -751,3 +751,13 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
   "Tentative <from> – <to>" subtitle. Tentative Events sort at tentativeFrom, are left out of the
   calendar feed (they appear on the org Events calendar) and of time-based stats (hosted counts,
   last event, events summary).
+
+### Owner setup status
+
+`GET /api/setup/status` requires an active owner and returns
+`{integrations: [{key, label, state, detail, action, docs}]}`.
+States are `connected`, `configured`, `missing`, or `error`; actions are
+`connect`, `env`, or `none`. Metadata is limited to account emails, root folder
+name, quota percentage and successful-operation timestamps. It never returns
+credentials or webhook URLs. Missing optional export/backup integrations are
+identified in the detail text. Host secrets are configured outside the UI.

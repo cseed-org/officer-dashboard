@@ -19,6 +19,7 @@ const ENDPOINTS: Record<EndpointName, { method: 'GET' | 'POST' | 'PUT' | 'PATCH'
   orgGoogleConnect: { method: 'GET', path: '/api/settings/org-google/connect' },
   orgGoogleCallback: { method: 'GET', path: '/auth/org-google/callback' },
   orgGoogleDisconnect: { method: 'DELETE', path: '/api/settings/org-google' },
+  setupStatus: { method: 'GET', path: '/api/setup/status' },
   driveStatus: { method: 'GET', path: '/api/settings/drive/status' },
   driveConnect: { method: 'GET', path: '/api/settings/drive/connect' },
   driveCallback: { method: 'GET', path: '/auth/drive-google/callback' },

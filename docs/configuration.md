@@ -217,3 +217,30 @@ moving tags and require `image@sha256:<64 lowercase hex characters>`. Bootstrap 
 reviewed immutable digest, and use the protected production promotion workflow afterward.
 
 Cloudflared uses its documented [`TUNNEL_TOKEN_FILE`](https://developers.cloudflare.com/tunnel/reference/run-parameters/#token-file) support. Runtime restrictions use the [Compose service controls](https://docs.docker.com/reference/compose-file/services/).
+
+## Owner integration setup
+
+Owners open `/setup` to connect Google Drive and the org Google Calendar, check the
+Drive root folder and quota, and see which host integrations are configured.
+Settings links to this page. Other officers are redirected home and cannot read
+`GET /api/setup/status` (403). Status responses are not cached and contain no
+credentials, webhook URLs or secret-file paths.
+
+For Discord login, set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET_FILE`.
+For invite DMs set `DISCORD_BOT_TOKEN_FILE`; for notifications set
+`DISCORD_WEBHOOK_URL_FILE`. SMTP needs `SMTP_HOST` and `SMTP_FROM`, with
+`SMTP_USERNAME_FILE` and `SMTP_PASSWORD_FILE` for authentication. Cloudflare
+uses `CLOUDFLARE_API_TOKEN_FILE` plus its account/resource IDs. All secret
+values stay in host files; Setup has no credential inputs.
+
+The OAuth sealing key is derived from `GOOGLE_OAUTH_CLIENT_SECRET_FILE`;
+keep that secret stable so saved Google grants remain readable.
+`BOOTSTRAP_OWNER_DISCORD_ID` and `BOOTSTRAP_OWNER_NAME` provision the initial
+owner only; absence does not remove an existing owner.
+
+Export status is read when the optional `drive_export_state` table exists.
+The backup container owns `BACKUP_*` configuration; the app cannot inspect it.
+Backup uploads and outbox age show "not installed" until the backup integration
+publishes dashboard-readable status. A configured indicator confirms the
+application has configuration, not that delivery or provider authentication
+has succeeded. Use the last-run times and provider checks for operational proof.

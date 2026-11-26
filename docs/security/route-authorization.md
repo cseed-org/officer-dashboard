@@ -292,3 +292,11 @@ These exist only in binaries built with the `dev` tag (`devauth_on.go`); the rel
 - Service tokens are stored as SHA-256 digests and looked up by digest; there is no plaintext token equality comparison. Scopes, expiry, revocation and active director creator are checked. OAuth grants enforce resource/audience, expiry, active user, revocation, PKCE, one-time codes and rotating refresh-token replay detection.
 - Base-image builder tags remain mutable (low); the final BusyBox manifest is digest-pinned. Shared authenticated read APIs do not have a general search/read quota (low). Operational tuning and live provider checks remain separate follow-up work.
 - Verification results and exact image/commit identifiers are recorded in the PR and private status report. Local synthetic tests do not certify the deployed service or external provider ACLs.
+
+## Owner integration setup
+
+`GET /api/setup/status` requires `ownerIn`, which rechecks active leadership
+and the owner flag from the database. The `/setup` UI redirects non-owners home;
+its navigation entry is visible only after the current user is confirmed owner.
+The endpoint returns an allowlist of integration labels, states, setup hints
+and non-secret metadata; never credential values or raw provider errors.

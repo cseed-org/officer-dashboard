@@ -68,7 +68,6 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
   const cals = useApi('orgCalendars');
   const events = useApi('orgEvents', { query: { from: range.from, to: range.to } }, range);
   const feed = useApi('calendarFeed', { query: { start: range.from, end: range.to, sources: OVERLAY_SOURCES.join(',') } }, range);
-  const leadership = me.role === 'leadership';
 
   const calendars = cals.status === 'ready' ? cals.data.calendars : FALLBACK_CALENDARS;
   const calOf = (k: OrgCalendarKey) => calendars.find((c) => c.key === k) ?? FALLBACK_CALENDARS.find((c) => c.key === k)!;
@@ -221,9 +220,9 @@ export default function CalendarView({ me }: { me: CurrentUser }) {
                   ? 'Google Calendar sync has stopped: the org account needs reconnecting. Meetings are saved here, but nothing reaches Google and no invites go out until it is reconnected.'
                   : 'Google Calendar isn’t connected. Meetings are saved here, but nothing reaches Google and no invites go out until it is.'
                 : 'The last sync with Google Calendar failed, so recent changes may not have reached Google or invitees yet.'}{' '}
-              {leadership ? (
-                <a href="/settings#org-google" data-google-settings>
-                  {sync.connected ? 'Check it in Settings →' : 'Connect it in Settings →'}
+              {me.isOwner ? (
+                <a href="/setup#org-calendar" data-google-settings>
+                  {sync.connected ? 'Check it in Setup →' : 'Connect it in Setup →'}
                 </a>
               ) : sync.connected ? (
                 'If it keeps happening, tell leadership.'

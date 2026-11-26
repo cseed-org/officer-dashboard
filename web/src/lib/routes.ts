@@ -18,6 +18,7 @@ export const href = {
   home: '/',
   login: (next?: string) => `/login${qs({ next: next && next !== '/' ? next : null })}`,
   settings: '/settings',
+  setup: '/setup',
 
   events: (o: { when?: 'upcoming' | 'past'; q?: string } = {}) => `/events${qs(o)}`,
   event: (id: string) => `/events?id=${enc(id)}`,

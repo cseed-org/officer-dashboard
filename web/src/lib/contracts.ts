@@ -1292,6 +1292,12 @@ export type EventDesignNeedResponse = z.infer<typeof EventDesignNeedResponse>;
 
 export const OwnerTransferRequest = z.object({ toUserId: Id });
 
+export const SetupStatus = z.object({integrations: z.array(z.object({
+  key: z.string(), label: z.string(), state: z.enum(['connected', 'configured', 'missing', 'error']),
+  detail: z.string(), action: z.enum(['connect', 'env', 'none']), docs: z.url(),
+}))});
+export type SetupStatus = z.infer<typeof SetupStatus>;
+
 type Auth = 'owner' | 'leadership' | 'public' | 'officer' | 'director' | 'portal' | 'portal:builder' | 'portal:mentor' | `token:${(typeof SERVICE_TOKEN_SCOPES)[number]}`;
 interface EndpointSpec {
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -1614,6 +1620,7 @@ export const ENDPOINTS = {
   orgGoogleConnect: {method:'GET', path:'/api/settings/org-google/connect', auth:'leadership', response:'redirect'},
   orgGoogleCallback: {method:'GET', path:'/auth/org-google/callback', auth:'leadership', response:'redirect'},
   orgGoogleDisconnect: {method:'DELETE', path:'/api/settings/org-google', auth:'leadership', response:OrgGoogleStatus},
+  setupStatus: {method:'GET', path:'/api/setup/status', auth:'owner', response:SetupStatus},
   driveStatus: {method:'GET', path:'/api/settings/drive/status', auth:'owner', response:DriveStatus},
   driveConnect: {method:'GET', path:'/api/settings/drive/connect', auth:'owner', response:'redirect'},
   driveCallback: {method:'GET', path:'/auth/drive-google/callback', auth:'owner', response:'redirect'},

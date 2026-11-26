@@ -38,6 +38,7 @@ export function loadMe(): Promise<CurrentUser> {
       current = user;
       permissions.accept();
       applyRole(user.role);
+      document.documentElement.dataset.owner = String(user.isOwner);
       watchPermissions();
       // Invitees finish setup before anything else.
       if (onboarding && location.pathname !== '/onboarding') {
@@ -84,6 +85,7 @@ export function refreshMe(): Promise<void> {
       current = user;
       mePromise = Promise.resolve(user);
       applyRole(user.role);
+      document.documentElement.dataset.owner = String(user.isOwner);
       if (changed) epoch++;
       for (const l of listeners) l();
     })
@@ -143,6 +145,7 @@ export function useMe(): MeState {
 /** Forget the role cached for the pre-paint script (sign-out). */
 export function clearCachedRole() {
   applyRole(null);
+  delete document.documentElement.dataset.owner;
 }
 
 export const isDirector = (u: CurrentUser | null | undefined) => !!u && u.role !== 'officer';
