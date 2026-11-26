@@ -490,7 +490,7 @@ func (c *Ctx) requestAttach() error {
 		at = *r.SubmittedAt
 	}
 	fy, _ := fiscal.YearFor(fiscal.PacificDate(time.UnixMilli(at)), fiscal.DefaultStartMonth)
-	stored, err := c.S.cfg.Files.Put(ctx, files.PutInput{Folder: []string{fmt.Sprintf("FY%d", fy), r.ID}, Filename: fh.Filename, MimeType: mime, Body: body})
+	stored, err := c.S.storeFile(ctx, files.PutInput{Folder: []string{"Finance", fmt.Sprintf("FY%d", fy), r.ID}, Filename: fh.Filename, MimeType: mime, Body: body})
 	if err != nil {
 		return err
 	}
@@ -505,10 +505,6 @@ func (c *Ctx) requestAttach() error {
 		}
 		a := store.Attachment{ID: auth.UUID(), RequestID: &id, Kind: kind.V, Filename: fh.Filename, MimeType: mime, SizeBytes: stored.SizeBytes,
 			Storage: stored.Storage, StorageKey: stored.Key, UploadedBy: u.ID, CreatedAt: store.Ms(c.S.nowMs())}
-		if stored.WebViewLink != "" {
-			l := stored.WebViewLink
-			a.WebViewLink = &l
-		}
 		if err := w.InsertAttachment(ctx, a); err != nil {
 			return err
 		}
@@ -555,12 +551,10 @@ func (c *Ctx) attachmentDownload() error {
 	if !canOpenReceipt(u, a.UploadedBy, requesterID) {
 		return forbidden("Only the requester and directors may open receipts")
 	}
-	if a.Storage == "drive" {
-		if a.WebViewLink == nil {
-			return notFoundErr("Record not found")
-		}
-		http.Redirect(c.W, c.R, *a.WebViewLink, http.StatusFound)
-		return nil
+	// Drive receipts are streamed through here too, after the check above: nobody needs
+	// access to the drive, and nobody gets a link that outlives that check.
+	if a.Storage != c.S.storageKind(ctx) {
+		return files.ErrUnavailable
 	}
 	file, err := c.S.cfg.Files.Get(ctx, a.StorageKey)
 	if err != nil {

@@ -59,33 +59,97 @@ clears the hold; sending it back to `approved` cancels the held job instead. Ord
 directors share the estimate-plus-tolerance settlement ceiling; only leadership can settle
 above it.
 
-## Receipts and Google service accounts
+## Files in a Google Shared Drive
 
-Receipts allow PDF, PNG, JPEG, HEIC and WebP, up to 10 MB. Configure
-`GOOGLE_SERVICE_ACCOUNT_JSON` and `DRIVE_ROOT_FOLDER_ID` (the older
-`GOOGLE_DRIVE_FOLDER_ID` is accepted as an alias). Share the Drive folder with the
-service-account identity. The Go adapter uses RS256 JWT exchange, Drive v3
-multipart uploads and shared-drive flags, following Google's
-[service-account protocol](https://developers.google.com/identity/protocols/oauth2/service-account)
-and [upload API](https://developers.google.com/workspace/drive/api/guides/manage-uploads).
-The token requests the full `https://www.googleapis.com/auth/drive` scope to access the pre-existing shared folder. Files are
-stored under `FY<year>/<request-id>/`, and officers need Drive access to open its links.
-Folder lookups search the shared drive that holds the root folder (`corpora=drive` +
-`driveId`, or `corpora=allDrives` if the root isn't in a shared drive). When two first
-uploads race to create the same folder, both re-list after creating, keep the oldest,
-and the loser's empty duplicate is trashed. Trashing needs the service account to be a
-**Content manager** of the shared drive; as a Contributor the empty duplicate just stays.
+Receipts and design files live in one Google **Shared Drive** (made by a UW advisor). The
+dashboard reaches it as a **member Google account**: an owner connects that account once in
+Settings → Google Drive file storage, and chooses the folder the dashboard files everything
+under (or pins it with `DRIVE_ROOT_FOLDER_ID`). The account needs the drive's **Content
+manager** role, so it can add, rename and trash files. Officers need no access to the drive.
 
-**Lock down the service account.** Because the scope is the full `drive` scope, the key
-reaches every file shared with that account. Make the service account a member of the
-receipts shared drive **only** (don't share other folders or drives with it), and keep
-its key **only** in the server's environment / secret store (`GOOGLE_SERVICE_ACCOUNT_JSON`):
-never in the repo, CI variables or chat. Rotate the key if it leaks.
+**Opening a file never needs a Drive link.** `GET /api/attachments/:id` and
+`GET /api/design-files/:id` run the dashboard's own check first (receipts: the requester,
+the uploader and directors; design files: officers), then stream the bytes from Drive with
+`Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` and
+`Cache-Control: private, no-store`. Every API response carries only those
+`/api/...` URLs; no `drive.google.com` link is stored for new uploads or sent to the
+browser. A refused download never reaches Drive. The bytes are checked against the
+receipt rules again on the way out (PDF, PNG, JPEG, HEIC or WebP, up to 10 MB, content
+matching its type), so a file changed in Drive is not served.
 
-Receipt operations return HTTP 503 if neither a local receipts directory nor complete Drive credentials/root folder are configured. Development selects the local-disk file store.
-Uploads precede the attachment metadata transaction, so a failed metadata commit may
-leave an unreferenced file for later cleanup. MIME validation checks the declared type;
-there is no virus scan or content classification.
+### Folder tree
+
+```text
+<root folder>/                                   DRIVE_ROOT_FOLDER_ID, or chosen in Settings
+  Finance/FY<year>/<request id>/<receipt>        receipts and quotes (this PR)
+  Events/<YYYY-MM-DD> <event name> [<event id>]/
+    Design/<design request id>/<file>            design files of an event's request (this PR)
+    event.json, summary.md, cover.<ext>          readable event record (event export)
+  Design requests/<design request id>/<file>     design files with no event (this PR)
+  Programs/<track>/program.json                  readable program record (event export)
+  Backups/daily/, Backups/monthly/               encrypted database snapshots (backups)
+```
+
+An event folder is named by `files.EventFolderName`: the start date in the club timezone
+(`undated` for a tentative or undated event), the event name with `/\:*?"<>|` and control
+characters replaced and capped at 80 characters, and the event id in brackets. The folder
+is found by that trailing `[<event id>]`, so when an event is renamed or rescheduled its
+folder is renamed in place and keeps its contents. Files uploaded before this layout stay
+where they are; only new uploads use it.
+
+### How the client behaves
+
+The Go client (`server/internal/files`) uses Drive v3 with the shared-drive flags. List
+queries search the shared drive that holds the root folder (`corpora=drive` + `driveId`,
+or `corpora=allDrives` when the root is not in a shared drive). When two first uploads
+race to create the same folder, both re-list after creating, keep the oldest, and trash
+the loser's empty duplicate. Answers of 429, 5xx and 403 `rateLimitExceeded` /
+`userRateLimitExceeded` are retried up to five times with jittered exponential backoff
+(1 s, 2 s, 4 s, 8 s), honouring `Retry-After` up to 32 s. A 401 fetches a new access token
+once. Large files (backups) use resumable uploads in 8 MiB chunks.
+
+### When Drive says no
+
+- **Drive full** (403 `storageQuotaExceeded`, `teamDriveFileLimitExceeded`, ...) or still
+  **rate limited** after the retries: the upload is refused with 507 `storage_quota`, nothing
+  is recorded, and owners get a Discord alert (at most one an hour per kind, through
+  `DISCORD_WEBHOOK_URL`, else the log).
+- **Running low:** once a day the dashboard sums the shared drive's file sizes (trashed
+  files included, since they count until purged) and alerts at 70 % of
+  `DRIVE_QUOTA_BYTES` (default 100 GB). Settings shows that figure with its time, and
+  measures again only when an owner presses Refresh or the figure is a day old, because
+  each measurement lists the whole drive.
+- **Access revoked or expired** (Google answers `invalid_grant`): the account is marked
+  disconnected, owners are alerted once, and uploads and downloads answer 503 until an
+  owner reconnects. The OAuth consent screen must be **in Production**: in Testing mode
+  Google expires refresh tokens after 7 days.
+- **Not connected:** uploads answer 503 `not_configured`. Development uses local disk.
+
+Uploads happen before the attachment row is written; when that write fails, the uploaded
+file is trashed again. There is no virus scan or content classification.
+
+### The connected account's tokens
+
+The connect flow (`/api/settings/drive/connect` → Google → `/auth/drive-google/callback`)
+uses the `GOOGLE_OAUTH_CLIENT_ID` client with state and PKCE, asks for
+`openid email https://www.googleapis.com/auth/drive` (Drive only, never the calendar
+scopes), and refuses a grant without the Drive scope. The full `drive` scope is needed
+because `drive.file` cannot see a shared drive somebody else made. The refresh and access
+tokens are sealed with the OAuth client secret, like the org calendar's, in
+`drive_google_account`; they never appear in a response, log or audit row. Disconnecting
+revokes the grant at Google. Audit actions: `drive.google_connected`, `drive.root_set`,
+`drive.google_disconnected`.
+
+### Alternative: a service account
+
+Without a connected account, a service-account key works too: set
+`GOOGLE_SERVICE_ACCOUNT_JSON_FILE` (a path; a direct `GOOGLE_SERVICE_ACCOUNT_JSON` value
+stops startup) and `DRIVE_ROOT_FOLDER_ID`, and make the service account a Content manager
+of the shared drive **only**. It uses RS256 JWT exchange
+([service-account protocol](https://developers.google.com/identity/protocols/oauth2/service-account))
+with the same `drive` scope, so the key reaches everything shared with it: keep it in the
+secret mount, never in the repo, CI or chat, and rotate it if it leaks. A connected
+account wins over the service account.
 
 ## Purchase notifications
 

@@ -30,6 +30,12 @@ func testDrive(fake *drivefake.Fake) *files.Drive {
 	return files.NewDriveWithTokens(staticTokens{}, fake.RootID, fake).WithClock(nil, noSleep)
 }
 
+// staticDrive resolves the same store on every pass, as (*api.Server).Drive does while the
+// connection is unchanged.
+func staticDrive(store Store) func(context.Context) (Store, error) {
+	return func(context.Context) (Store, error) { return store, nil }
+}
+
 // writeOutbox publishes a fake sidecar pair (ciphertext + manifest) into dir.
 func writeOutbox(t *testing.T, dir, name string, body []byte, created time.Time) {
 	t.Helper()
@@ -71,7 +77,7 @@ func TestUploadPublishesDailyAndMonthly(t *testing.T) {
 	now := time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)
 	writeOutbox(t, outbox, "dashboard-2026-11-20.db.gz.age", []byte("ciphertext day one"), now.Add(-24*time.Hour))
 	fake := drivefake.New()
-	svc := &Service{Store: testDrive(fake), Outbox: outbox, Now: func() time.Time { return now }}
+	svc := &Service{Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now }}
 	if err := svc.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +120,7 @@ func TestIdenticalRemoteIsSkipped(t *testing.T) {
 		AppProperties: map[string]string{"sha256": hex.EncodeToString(sum[:]), "kind": "daily"}})
 	fake.Add(drivefake.File{Name: "dashboard-2026-11.db.gz.age", Parent: monthlyID, Body: body,
 		AppProperties: map[string]string{"sha256": hex.EncodeToString(sum[:]), "kind": "monthly"}})
-	svc := &Service{Store: testDrive(fake), Outbox: outbox, Now: func() time.Time { return now }}
+	svc := &Service{Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now }}
 	if err := svc.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +139,7 @@ func TestMonthlyUploadedOncePerMonth(t *testing.T) {
 	writeOutbox(t, outbox, "dashboard-2026-11-20.db.gz.age", []byte("ciphertext day one"), now.Add(-48*time.Hour))
 	writeOutbox(t, outbox, "dashboard-2026-11-21.db.gz.age", []byte("ciphertext day two"), now.Add(-24*time.Hour))
 	fake := drivefake.New()
-	svc := &Service{Store: testDrive(fake), Outbox: outbox, Now: func() time.Time { return now }}
+	svc := &Service{Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now }}
 	if err := svc.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +171,7 @@ func TestRetentionKeepsNewest(t *testing.T) {
 	for _, month := range months {
 		fake.Add(drivefake.File{Name: "dashboard-" + month + ".db.gz.age", Parent: monthlyID, Body: []byte("old")})
 	}
-	svc := &Service{Store: testDrive(fake), Outbox: outbox, Now: func() time.Time { return now }}
+	svc := &Service{Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now }}
 	if err := svc.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -199,8 +205,8 @@ func TestQuotaErrorKeepsOutboxAndAlerts(t *testing.T) {
 	}
 	var alerts []string
 	svc := &Service{
-		Store: testDrive(fake), Outbox: outbox, Now: func() time.Time { return now },
-		Alert: func(_ context.Context, message string) { alerts = append(alerts, message) },
+		Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now },
+		Alert: func(_ context.Context, _, message string) { alerts = append(alerts, message) },
 	}
 	err := svc.RunOnce(context.Background())
 	if !errors.Is(err, files.ErrQuota) {
@@ -212,10 +218,11 @@ func TestQuotaErrorKeepsOutboxAndAlerts(t *testing.T) {
 	if len(alerts) != 1 || !strings.Contains(alerts[0], "upload failed") {
 		t.Fatalf("alerts: %v", alerts)
 	}
-	// The next failing pass within the alert interval does not repeat the alert.
+	// The production alerter (notify.Alerter) rate-limits per key; the service itself alerts
+	// on every failing pass.
 	_ = svc.RunOnce(context.Background())
-	if len(alerts) != 1 {
-		t.Fatalf("alert not rate-limited: %v", alerts)
+	if len(alerts) != 2 {
+		t.Fatalf("second failing pass did not alert again: %v", alerts)
 	}
 }
 
@@ -227,7 +234,7 @@ func TestStuckOutboxAlerts(t *testing.T) {
 	var alerts []string
 	svc := &Service{
 		Outbox: outbox, Now: func() time.Time { return now },
-		Alert: func(_ context.Context, message string) { alerts = append(alerts, message) },
+		Alert: func(_ context.Context, _, message string) { alerts = append(alerts, message) },
 	}
 	// Even with Drive disconnected, a snapshot waiting over 3 days alerts.
 	if err := svc.RunOnce(context.Background()); err != nil {
@@ -246,7 +253,7 @@ func TestFreshOutboxDoesNotAlert(t *testing.T) {
 	var alerts []string
 	svc := &Service{
 		Outbox: outbox, Now: func() time.Time { return now },
-		Alert: func(_ context.Context, message string) { alerts = append(alerts, message) },
+		Alert: func(_ context.Context, _, message string) { alerts = append(alerts, message) },
 	}
 	if err := svc.RunOnce(context.Background()); err != nil {
 		t.Fatal(err)
@@ -281,8 +288,8 @@ func TestMidPublishAndManifestMismatch(t *testing.T) {
 	var alerts []string
 	fake := drivefake.New()
 	svc := &Service{
-		Store: testDrive(fake), Outbox: outbox, Now: func() time.Time { return now },
-		Alert: func(_ context.Context, message string) { alerts = append(alerts, message) },
+		Drive: staticDrive(testDrive(fake)), Outbox: outbox, Now: func() time.Time { return now },
+		Alert: func(_ context.Context, _, message string) { alerts = append(alerts, message) },
 	}
 	if err := svc.RunOnce(context.Background()); err == nil {
 		t.Fatal("manifest mismatch accepted")

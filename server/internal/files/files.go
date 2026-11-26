@@ -48,19 +48,29 @@ func wrap(msg string) error { return uploadError(msg) }
 func (e uploadError) Error() string        { return string(e) }
 func (e uploadError) Is(target error) bool { return target == ErrInvalidUpload }
 
-// PutInput is one file to store under a logical folder path, e.g. ["FY2027", "<request id>"].
+// PutInput is one file to store under a logical folder path, e.g.
+// ["Finance", "FY2027", "<request id>"].
 type PutInput struct {
-	Folder   []string
+	Folder []string
+	// Event, when set, roots Folder in the event's own folder (Events/<EventFolderName>/...),
+	// found by the event id so a renamed event keeps one folder. Local storage ignores it.
+	Event    *EventRef
 	Filename string
 	MimeType string
 	Body     []byte
+}
+
+// EventRef names an event for EventFolder.
+type EventRef struct {
+	StartsAtMs *int64 // nil for a tentative or undated event
+	Name, ID   string
 }
 
 // Stored describes a stored file.
 type Stored struct {
 	Storage     string // "drive" | "local"
 	Key         string
-	WebViewLink string // "" when there is none
+	WebViewLink string // always "": files are opened through the dashboard, never by a Drive link
 	SizeBytes   int64
 }
 

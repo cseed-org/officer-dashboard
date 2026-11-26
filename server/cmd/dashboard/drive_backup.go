@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -89,106 +88,107 @@ func driveBackupCmd(args []string, getenv func(string) string, stdout io.Writer)
 	}
 }
 
-// driveAccount is the stored Drive sign-in (PR A's drive_google_account, written when an
-// owner connects Google Drive in Settings). A row with an empty sealed refresh token is
-// not connected.
-type driveAccount struct {
-	Subject, Email, SealedRefresh, SealedAccess string
-	ExpiresAt                                   int64
-	RootFolderID                                string
-}
-
-// readDriveAccount returns the stored account, or nil when the table or a connected row is
-// absent (older databases, or Drive never connected).
-func readDriveAccount(ctx context.Context, db *store.DB) (*driveAccount, error) {
-	var n int
-	if err := db.R.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='drive_google_account'`).Scan(&n); err != nil {
-		return nil, err
-	}
-	if n == 0 {
-		return nil, nil
-	}
-	var a driveAccount
-	err := db.R.QueryRowContext(ctx, `SELECT subject,email,sealed_refresh,sealed_access,expires_at,root_folder_id FROM drive_google_account WHERE id=1`).
-		Scan(&a.Subject, &a.Email, &a.SealedRefresh, &a.SealedAccess, &a.ExpiresAt, &a.RootFolderID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	if a.SealedRefresh == "" {
-		return nil, nil
-	}
-	return &a, nil
-}
-
-// connectDrive builds the Drive client for drive-backup: the member Google account an
-// owner connected in Settings when present, otherwise the service-account credentials,
-// matching the app's storage selection. client is nil in production (default HTTP).
+// connectDrive builds the Drive the dashboard currently stores files in, the same choice
+// api.storeSwitch makes: the member account an owner connected in Settings, else the
+// service-account fallback, else ErrNotConnected (never connected) or ErrReconnect (Google
+// refused the grant; an owner must reconnect). client is nil in production (default HTTP).
 func connectDrive(ctx context.Context, s settings, db *store.DB, client files.Doer) (*files.Drive, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 60 * time.Second}
 	}
-	account, err := readDriveAccount(ctx, db)
+	a, err := db.Read().DriveGoogleAccount(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		a, err = nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	if account != nil {
-		if s.GoogleClientID == "" || s.GoogleSecret == "" {
-			return nil, errors.New("a Google account is connected for Drive but GOOGLE_OAUTH_CLIENT_ID/GOOGLE_OAUTH_CLIENT_SECRET are not set")
+	fallback := func() (*files.Drive, error) {
+		if s.ServiceAccountJSON == "" || s.DriveRoot == "" {
+			return nil, nil
 		}
+		return files.NewDrive(s.ServiceAccountJSON, s.DriveRoot, client)
+	}
+	if a != nil && a.Connected() {
 		root := s.DriveRoot // the environment wins when set, as in the app
 		if root == "" {
-			root = account.RootFolderID
+			root = a.RootFolderID
 		}
 		if root == "" {
-			return nil, errors.New("DRIVE_ROOT_FOLDER_ID is not set and no root folder was chosen in Settings")
+			if fb, ferr := fallback(); fb != nil || ferr != nil {
+				return fb, ferr
+			}
+			return nil, errors.New("choose the Google Drive folder for dashboard files in Settings (or set DRIVE_ROOT_FOLDER_ID)")
 		}
-		sealer := calendar.NewSealer(s.GoogleSecret)
-		src := &files.OAuthRefreshSource{
-			ClientID: s.GoogleClientID, ClientSecret: s.GoogleSecret,
-			RefreshToken: func(ctx context.Context) (string, error) {
-				a, err := readDriveAccount(ctx, db)
-				if err != nil || a == nil {
-					return "", err
-				}
-				return sealer.Open(a.SealedRefresh)
-			},
-			Saved: func(ctx context.Context, t files.OAuthToken) error {
-				return db.Write(ctx, func(w *store.Queries) error {
-					return saveDriveToken(ctx, w, sealer, t)
-				})
-			},
-			Revoked: func(ctx context.Context) {
-				_ = db.Write(ctx, func(w *store.Queries) error {
-					return markDriveDisconnected(ctx, w)
-				})
-			},
-			HTTP: client,
-		}
+		src := &cliDriveTokens{db: db, client: client, id: s.GoogleClientID, secret: s.GoogleSecret, subject: a.Subject, connectedAt: a.ConnectedAt}
 		return files.NewDriveWithTokens(src, root, client), nil
 	}
-	if s.ServiceAccountJSON != "" && s.DriveRoot != "" {
-		return files.NewDrive(s.ServiceAccountJSON, s.DriveRoot, client)
+	if fb, ferr := fallback(); fb != nil || ferr != nil {
+		return fb, ferr
+	}
+	if a != nil && a.RevokedAt != nil {
+		return nil, files.ErrReconnect
 	}
 	return nil, files.ErrNotConnected
 }
 
-// saveDriveToken persists a minted access token (and a rotated refresh token), sealed like
-// the org calendar's, so later runs reuse it.
-func saveDriveToken(ctx context.Context, w *store.Queries, sealer *calendar.Sealer, t files.OAuthToken) error {
-	if t.Refresh != "" {
-		return w.Exec(ctx, `UPDATE drive_google_account SET sealed_access=?, expires_at=?, sealed_refresh=? WHERE id=1`,
-			sealer.Seal(t.Access), t.Expiry.UnixMilli(), sealer.Seal(t.Refresh))
-	}
-	return w.Exec(ctx, `UPDATE drive_google_account SET sealed_access=?, expires_at=? WHERE id=1`,
-		sealer.Seal(t.Access), t.Expiry.UnixMilli())
+// cliDriveTokens mirrors api's driveTokens for this offline command: the sealed access
+// token while it is fresh, else a refresh-token grant whose result is sealed back into the
+// account row, so later runs (and the dashboard) reuse it.
+type cliDriveTokens struct {
+	db          *store.DB
+	client      files.Doer
+	id, secret  string
+	subject     string
+	connectedAt int64
 }
 
-// markDriveDisconnected records that Google refused the refresh token; an owner must
-// reconnect in Settings before Drive works again.
-func markDriveDisconnected(ctx context.Context, w *store.Queries) error {
-	return w.Exec(ctx, `UPDATE drive_google_account SET sealed_refresh='', sealed_access='', expires_at=0, revoked_at=? WHERE id=1`,
-		time.Now().UnixMilli())
+func (t *cliDriveTokens) Token(ctx context.Context) (string, time.Time, error) {
+	sealer := calendar.NewSealer(t.secret)
+	a, err := t.db.Read().DriveGoogleAccount(ctx)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", time.Time{}, files.ErrNotConnected
+	}
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	if a.Subject != t.subject || a.ConnectedAt != t.connectedAt {
+		return "", time.Time{}, files.ErrNotConnected // disconnected or replaced since this Drive was built
+	}
+	if a.RevokedAt != nil {
+		return "", time.Time{}, files.ErrReconnect
+	}
+	if !a.Connected() {
+		return "", time.Time{}, files.ErrNotConnected
+	}
+	if a.ExpiresAt > time.Now().UnixMilli()+60_000 {
+		if access, err := sealer.Open(a.SealedAccess); err == nil && access != "" {
+			return access, time.UnixMilli(a.ExpiresAt), nil
+		}
+	}
+	if t.id == "" || t.secret == "" {
+		return "", time.Time{}, files.ErrNotConnected
+	}
+	src := &files.OAuthRefreshSource{
+		ClientID: t.id, ClientSecret: t.secret,
+		RefreshToken: func(context.Context) (string, error) { return sealer.Open(a.SealedRefresh) },
+		Saved: func(ctx context.Context, tok files.OAuthToken) error {
+			refresh := ""
+			if tok.Refresh != "" {
+				refresh = sealer.Seal(tok.Refresh)
+			}
+			return t.db.Write(ctx, func(q *store.Queries) error {
+				_, err := q.SaveDriveAccess(ctx, t.subject, t.connectedAt, sealer.Seal(tok.Access), tok.Expiry.UnixMilli(), refresh)
+				return err
+			})
+		},
+		Revoked: func(ctx context.Context) {
+			_ = t.db.Write(context.WithoutCancel(ctx), func(q *store.Queries) error {
+				_, err := q.MarkDriveGoogleRevoked(ctx, t.subject, t.connectedAt, time.Now().UnixMilli())
+				return err
+			})
+		},
+		HTTP: t.client,
+	}
+	return src.Token(ctx)
 }

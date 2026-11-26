@@ -440,3 +440,48 @@ func TestOAuthRefreshSourceRefreshesCachesAndReportsRevocation(t *testing.T) {
 		t.Errorf("no account: %v; want ErrNotConnected", err)
 	}
 }
+
+func TestPutForAnEventGoesUnderTheEventFolder(t *testing.T) {
+	d, fake, _ := onDrive(t)
+	ctx := context.Background()
+	at := time.Date(2026, 11, 20, 19, 0, 0, 0, time.UTC).UnixMilli()
+	ev := &EventRef{StartsAtMs: &at, Name: "Demo: Day", ID: "ev1"}
+	s, err := d.Put(ctx, PutInput{Event: ev, Folder: []string{"Design", "dr1"}, Filename: "poster.png", MimeType: "image/png", Body: []byte("\x89PNG\r\n\x1a\nxx")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := fake.Path("Events", "2026-11-20 Demo Day [ev1]", "Design", "dr1", "poster.png")
+	if f == nil || f.ID != s.Key || s.WebViewLink != "" {
+		t.Fatalf("stored %+v at %+v", s, f)
+	}
+	// Renamed event: the next upload reuses the renamed folder.
+	ev.Name = "Demo Night"
+	if _, err := d.Put(ctx, PutInput{Event: ev, Folder: []string{"Design", "dr1"}, Filename: "v2.png", MimeType: "image/png", Body: []byte("\x89PNG\r\n\x1a\nyy")}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.Path("Events", "2026-11-20 Demo Night [ev1]", "Design", "dr1", "poster.png") == nil || len(fake.Children(fake.Path("Events").ID)) != 1 {
+		t.Error("the renamed event did not keep its folder")
+	}
+}
+
+func TestCheckRootNeedsAWritableFolder(t *testing.T) {
+	d, fake, _ := onDrive(t)
+	ctx := context.Background()
+	if r, err := d.CheckRoot(ctx); err != nil || !r.CanAddChildren || r.DriveID != "shared-1" {
+		t.Errorf("CheckRoot = %+v, %v", r, err)
+	}
+	fake.ReadOnly = true
+	if r, err := d.CheckRoot(ctx); err != nil || r.CanAddChildren {
+		t.Errorf("read-only CheckRoot = %+v, %v", r, err)
+	}
+	file := fake.Add(drivefake.File{Name: "x.pdf", Body: pdf})
+	_, acct := newKey(t)
+	notFolder, _ := NewDrive(acct, file, fake)
+	if _, err := notFolder.CheckRoot(ctx); err == nil {
+		t.Error("a file was accepted as the root folder")
+	}
+	missing, _ := NewDrive(acct, "missing", fake)
+	if _, err := missing.CheckRoot(ctx); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing root: %v", err)
+	}
+}

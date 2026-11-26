@@ -46,3 +46,20 @@ func TestAllApplicationFileCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestServiceAccountKeyIsAcceptedOnlyAsAFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sa.json")
+	os.WriteFile(path, []byte(`{"client_email":"synthetic@example.iam.gserviceaccount.com"}`), 0600)
+	if get, err := fileSettings(env(map[string]string{"GOOGLE_SERVICE_ACCOUNT_JSON_FILE": path})); err != nil || !strings.Contains(get("GOOGLE_SERVICE_ACCOUNT_JSON"), "synthetic@") {
+		t.Fatalf("file form refused: %v", err)
+	}
+	_, err := fileSettings(env(map[string]string{"GOOGLE_SERVICE_ACCOUNT_JSON": `{"private_key":"synthetic"}`}))
+	if err == nil || !strings.Contains(err.Error(), "GOOGLE_SERVICE_ACCOUNT_JSON_FILE") || strings.Contains(err.Error(), "synthetic") {
+		t.Fatalf("direct value: %v", err)
+	}
+	var out, logs bytes.Buffer
+	if code := run([]string{"serve"}, env(map[string]string{"GOOGLE_SERVICE_ACCOUNT_JSON": `{"private_key":"synthetic"}`}), &out, &logs); code != 1 ||
+		!strings.Contains(logs.String(), "GOOGLE_SERVICE_ACCOUNT_JSON_FILE") || strings.Contains(logs.String(), "private_key") {
+		t.Fatalf("serve with a direct key: exit %d, %s", code, logs.String())
+	}
+}

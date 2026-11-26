@@ -6,7 +6,6 @@
 package drivebackup
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,14 +14,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"officerdashboard/internal/files"
@@ -37,9 +34,6 @@ const (
 // stuckAfter is how long a snapshot may wait in the outbox before uploads are considered
 // stuck and an alert goes out.
 const stuckAfter = 3 * 24 * time.Hour
-
-// alertInterval rate-limits repeated alerts of the same kind.
-const alertInterval = 6 * time.Hour
 
 // Manifest is the sidecar's description of one published ciphertext (dashboard-<day>.json).
 type Manifest struct {
@@ -66,19 +60,17 @@ func OutboxDir(dbPath string) string {
 
 // Service runs the hourly upload pass.
 type Service struct {
-	// Store is the connected Drive; nil when Drive is not connected, and passes only watch
-	// for stuck snapshots.
-	Store Store
+	// Drive resolves the Drive store for one pass ((*api.Server).Drive in production); an
+	// error (files.ErrNotConnected, files.ErrReconnect, or a 503) means Drive is not
+	// connected and the pass only watches for stuck snapshots.
+	Drive func(ctx context.Context) (Store, error)
 	// Outbox is the directory the sidecar publishes to (OutboxDir).
 	Outbox string
-	// Alert delivers an operator alert (e.g. DiscordAlert); nil logs only. The service
-	// rate-limits alerts to one per kind per alertInterval.
-	Alert func(ctx context.Context, message string)
+	// Alert delivers an operator alert ((*notify.Alerter).Alert in production, already
+	// rate-limited per key); nil logs only.
+	Alert func(ctx context.Context, key, message string)
 	Log   *slog.Logger
 	Now   func() time.Time
-
-	mu        sync.Mutex
-	lastAlert map[string]time.Time
 }
 
 func (s *Service) now() time.Time {
@@ -95,32 +87,12 @@ func (s *Service) log() *slog.Logger {
 	return slog.Default()
 }
 
-// alert sends one alert per key per alertInterval.
+// alert logs and forwards one alert; the production Alerter rate-limits per key.
 func (s *Service) alert(ctx context.Context, key, message string) {
-	s.mu.Lock()
-	if s.lastAlert == nil {
-		s.lastAlert = map[string]time.Time{}
-	}
-	now := s.now()
-	if last, ok := s.lastAlert[key]; ok && now.Sub(last) < alertInterval {
-		s.mu.Unlock()
-		return
-	}
-	s.lastAlert[key] = now
-	s.mu.Unlock()
 	s.log().Warn(message)
 	if s.Alert != nil {
-		s.Alert(ctx, message)
+		s.Alert(ctx, key, message)
 	}
-}
-
-// recovered lets a failure alert fire promptly again after a clean pass.
-func (s *Service) recovered(keys ...string) {
-	s.mu.Lock()
-	for _, k := range keys {
-		delete(s.lastAlert, k)
-	}
-	s.mu.Unlock()
 }
 
 var (
@@ -199,15 +171,26 @@ func (s *Service) scan() ([]pending, error) {
 func (s *Service) RunOnce(ctx context.Context) error {
 	waiting, err := s.scan()
 	if err != nil {
-		s.alert(ctx, "scan", "Google Drive backups: cannot read the outbox: "+err.Error())
+		s.alert(ctx, "drive-backup-scan", "Google Drive backups: cannot read the outbox: "+err.Error())
 		return err
 	}
 	for _, p := range waiting {
 		if !p.created.IsZero() && s.now().Sub(p.created) > stuckAfter {
-			s.alert(ctx, "stuck", "Google Drive backups are stuck: "+p.name+" has waited over 3 days for upload")
+			s.alert(ctx, "drive-backup-stuck", "Google Drive backups are stuck: "+p.name+" has waited over 3 days for upload")
 		}
 	}
-	if s.Store == nil {
+	var store Store
+	if s.Drive != nil {
+		st, err := s.Drive(ctx)
+		if err != nil {
+			if len(waiting) > 0 {
+				s.log().Info("Google Drive backups waiting, but Drive is not connected", "count", len(waiting), "error", err)
+			}
+			return nil
+		}
+		store = st
+	}
+	if store == nil {
 		if len(waiting) > 0 {
 			s.log().Info("Google Drive backups waiting, but Drive is not connected", "count", len(waiting))
 		}
@@ -215,20 +198,19 @@ func (s *Service) RunOnce(ctx context.Context) error {
 	}
 	uploaded := false
 	for _, p := range waiting {
-		if err := s.upload(ctx, p); err != nil {
-			s.alert(ctx, "upload", "Google Drive backup upload failed; retrying hourly: "+err.Error())
+		if err := s.upload(ctx, store, p); err != nil {
+			s.alert(ctx, "drive-backup-upload", "Google Drive backup upload failed; retrying hourly: "+err.Error())
 			return err
 		}
 		uploaded = true
 	}
 	if uploaded {
 		// Retention runs only after a verified upload.
-		if err := s.retention(ctx); err != nil {
-			s.alert(ctx, "retention", "Google Drive backup retention failed: "+err.Error())
+		if err := s.retention(ctx, store); err != nil {
+			s.alert(ctx, "drive-backup-retention", "Google Drive backup retention failed: "+err.Error())
 			return err
 		}
 	}
-	s.recovered("upload", "stuck")
 	return nil
 }
 
@@ -276,7 +258,7 @@ func findByName(ctx context.Context, store Store, folderID, name string) (*files
 // upload moves one snapshot to Backups/daily and, if the month has no copy yet, to
 // Backups/monthly, verifies the remote metadata, and removes the local pair. A snapshot
 // already in Drive under the same name and sha is recognised and only deleted locally.
-func (s *Service) upload(ctx context.Context, p pending) error {
+func (s *Service) upload(ctx context.Context, store Store, p pending) error {
 	sha, size, err := digest(p.path)
 	if err != nil {
 		return err
@@ -284,11 +266,11 @@ func (s *Service) upload(ctx context.Context, p pending) error {
 	if sha != p.manifest.SHA256 || size != p.manifest.Size {
 		return fmt.Errorf("outbox file %s does not match its manifest", p.name)
 	}
-	dailyID, err := s.Store.EnsureFolder(ctx, []string{"Backups", "daily"})
+	dailyID, err := store.EnsureFolder(ctx, []string{"Backups", "daily"})
 	if err != nil {
 		return err
 	}
-	existing, err := findByName(ctx, s.Store, dailyID, p.name)
+	existing, err := findByName(ctx, store, dailyID, p.name)
 	if err != nil {
 		return err
 	}
@@ -298,28 +280,28 @@ func (s *Service) upload(ctx context.Context, p pending) error {
 		}
 	} else {
 		props := map[string]string{"sha256": sha, "size": strconv.FormatInt(size, 10), "kind": p.manifest.Kind}
-		if err := s.uploadStream(ctx, []string{"Backups", "daily"}, p, size, props); err != nil {
+		if err := s.uploadStream(ctx, store, []string{"Backups", "daily"}, p, size, props); err != nil {
 			return err
 		}
-		if err := verify(ctx, s.Store, dailyID, p.name, size, sha); err != nil {
+		if err := verify(ctx, store, dailyID, p.name, size, sha); err != nil {
 			return err
 		}
 	}
-	monthlyID, err := s.Store.EnsureFolder(ctx, []string{"Backups", "monthly"})
+	monthlyID, err := store.EnsureFolder(ctx, []string{"Backups", "monthly"})
 	if err != nil {
 		return err
 	}
 	month := p.monthName()
-	monthly, err := findByName(ctx, s.Store, monthlyID, month)
+	monthly, err := findByName(ctx, store, monthlyID, month)
 	if err != nil {
 		return err
 	}
 	if monthly == nil {
 		props := map[string]string{"sha256": sha, "size": strconv.FormatInt(size, 10), "kind": "monthly"}
-		if err := s.uploadStream(ctx, []string{"Backups", "monthly"}, pending{name: month, path: p.path}, size, props); err != nil {
+		if err := s.uploadStream(ctx, store, []string{"Backups", "monthly"}, pending{name: month, path: p.path}, size, props); err != nil {
 			return err
 		}
-		if err := verify(ctx, s.Store, monthlyID, month, size, sha); err != nil {
+		if err := verify(ctx, store, monthlyID, month, size, sha); err != nil {
 			return err
 		}
 	}
@@ -332,13 +314,13 @@ func (s *Service) upload(ctx context.Context, p pending) error {
 	return nil
 }
 
-func (s *Service) uploadStream(ctx context.Context, folder []string, p pending, size int64, props map[string]string) error {
+func (s *Service) uploadStream(ctx context.Context, store Store, folder []string, p pending, size int64, props map[string]string) error {
 	f, err := os.Open(p.path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_, err = s.Store.UploadStream(ctx, folder, p.name, backupMIME, f, size, props)
+	_, err = store.UploadStream(ctx, folder, p.name, backupMIME, f, size, props)
 	return err
 }
 
@@ -359,7 +341,7 @@ func verify(ctx context.Context, store Store, folderID, name string, size int64,
 
 // retention keeps the newest DailyKeep daily and MonthlyKeep monthly copies by name and
 // trashes the rest. Only dashboard-* files are touched.
-func (s *Service) retention(ctx context.Context) error {
+func (s *Service) retention(ctx context.Context, store Store) error {
 	for _, job := range []struct {
 		folder []string
 		keep   int
@@ -367,11 +349,11 @@ func (s *Service) retention(ctx context.Context) error {
 		{[]string{"Backups", "daily"}, DailyKeep},
 		{[]string{"Backups", "monthly"}, MonthlyKeep},
 	} {
-		id, err := s.Store.EnsureFolder(ctx, job.folder)
+		id, err := store.EnsureFolder(ctx, job.folder)
 		if err != nil {
 			return err
 		}
-		entries, err := s.Store.List(ctx, id)
+		entries, err := store.List(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -383,31 +365,11 @@ func (s *Service) retention(ctx context.Context) error {
 		}
 		sort.Slice(copies, func(i, j int) bool { return copies[i].Name < copies[j].Name })
 		for len(copies) > job.keep {
-			if err := s.Store.DeleteByID(ctx, copies[0].ID); err != nil {
+			if err := store.DeleteByID(ctx, copies[0].ID); err != nil {
 				return err
 			}
 			copies = copies[1:]
 		}
 	}
 	return nil
-}
-
-// DiscordAlert posts plain-text alerts to a Discord webhook, like the backup sidecar does.
-func DiscordAlert(webhookURL string) func(context.Context, string) {
-	client := &http.Client{Timeout: 20 * time.Second}
-	return func(ctx context.Context, message string) {
-		body, _ := json.Marshal(map[string]any{
-			"content":          message,
-			"allowed_mentions": map[string]any{"parse": []string{}},
-		})
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
-		if err != nil {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		res, err := client.Do(req)
-		if err == nil {
-			res.Body.Close()
-		}
-	}
 }

@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -54,7 +55,7 @@ func main() { os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)) }
 func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	resolved, err := fileSettings(getenv)
 	if err != nil {
-		fmt.Fprintln(stderr, "invalid application secret file configuration")
+		fmt.Fprintln(stderr, "invalid application secret file configuration:", err)
 		return 1
 	}
 	getenv = resolved
@@ -108,6 +109,7 @@ type settings struct {
 	SMTPPassword, SMTPFrom           string
 	GoogleClientID, GoogleSecret     string
 	ServiceAccountJSON, DriveRoot    string
+	DriveQuotaBytes                  int64
 	ReceiptsDir                      string
 	DevAuth                          bool
 	DevAuthKey                       string
@@ -145,6 +147,13 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 	s.ServiceAccountJSON = env("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 	s.DriveRoot = env("DRIVE_ROOT_FOLDER_ID", env("GOOGLE_DRIVE_FOLDER_ID", ""))
 	s.ReceiptsDir = env("RECEIPTS_DIR", "")
+	if q := env("DRIVE_QUOTA_BYTES", ""); q != "" {
+		n, err := strconv.ParseFloat(q, 64)
+		if err != nil || n < 1e6 || n > 1e15 {
+			return s, errors.New("DRIVE_QUOTA_BYTES must be a byte count such as 100e9")
+		}
+		s.DriveQuotaBytes = int64(n)
+	}
 	s.DevAuth = env("DEV_AUTH", "") == "1"
 	s.DevAuthKey = env("DEV_AUTH_KEY", "")
 	s.AccessTeam, s.AccessAudience = env("CLOUDFLARE_ACCESS_TEAM_DOMAIN", ""), env("CLOUDFLARE_ACCESS_AUD", "")
@@ -182,13 +191,6 @@ func openDB(path string) (*store.DB, error) {
 
 // buildServer wires configuration into an api.Server.
 func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error) {
-	srv, _, err := buildServerWithDrive(s, db, log)
-	return srv, err
-}
-
-// buildServerWithDrive also reports the Drive receipt store when one was configured, so
-// serve can hand it to the Drive backup uploader.
-func buildServerWithDrive(s settings, db *store.DB, log *slog.Logger) (*api.Server, *files.Drive, error) {
 	mismatch, err := db.BootstrapOwner(context.Background(), s.BootstrapDirector, s.BootstrapOwnerName, time.Now().UnixMilli())
 	if err != nil {
 		return nil, fmt.Errorf("provision dashboard owner: %w", err)
@@ -201,12 +203,12 @@ func buildServerWithDrive(s settings, db *store.DB, log *slog.Logger) (*api.Serv
 	if s.TrustedProxies != "" {
 		var err error
 		if trusted, err = api.ParseTrustedProxies(s.TrustedProxies); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
 	access, err := api.NewAccessVerifier(s.AccessTeam, s.AccessAudience, s.AccessServiceAudience)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	cfg := api.Config{
 		Access:         access,
@@ -236,6 +238,9 @@ func buildServerWithDrive(s settings, db *store.DB, log *slog.Logger) (*api.Serv
 	} else {
 		cfg.Notifier = notify.Console{Log: log}
 	}
+	// Ops alerts (Drive full, Drive disconnected) go to the same webhook, or the log.
+	cfg.Alerts = notify.NewAlerter(s.WebhookURL, log)
+	cfg.DriveRootEnv, cfg.DriveQuotaBytes = s.DriveRoot, s.DriveQuotaBytes
 	if s.DiscordBotToken != "" {
 		cfg.DM = notify.NewDiscordBot(s.DiscordBotToken)
 	} else {
@@ -251,24 +256,25 @@ func buildServerWithDrive(s settings, db *store.DB, log *slog.Logger) (*api.Serv
 	} else {
 		log.Warn("Google Calendar sync is not configured (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET)")
 	}
-	var driveStore *files.Drive
 	switch {
 	case s.ServiceAccountJSON != "" && s.DriveRoot != "":
 		d, err := files.NewDrive(s.ServiceAccountJSON, s.DriveRoot, nil)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		cfg.Files = d
-		driveStore = d
 	case s.ServiceAccountJSON != "":
-		log.Warn("GOOGLE_SERVICE_ACCOUNT_JSON is set without DRIVE_ROOT_FOLDER_ID: receipt uploads will answer 503")
+		log.Warn("GOOGLE_SERVICE_ACCOUNT_JSON_FILE is set without DRIVE_ROOT_FOLDER_ID: the service account is not used")
 		cfg.Files = files.Unavailable{}
 	case s.ReceiptsDir != "":
 		cfg.Files = files.Local{Root: s.ReceiptsDir}
 	case cfg.DevAuth:
 		cfg.Files = files.Local{Root: filepath.Join(filepath.Dir(s.DBPath), "receipts")}
+	case cfg.Google != nil:
+		log.Info("file storage waits for an owner to connect Google Drive in Settings; uploads answer 503 until then")
+		cfg.Files = files.Unavailable{}
 	default:
-		log.Warn("no receipt storage configured (set Drive credentials, or RECEIPTS_DIR for local disk): uploads answer 503")
+		log.Warn("no file storage configured (connect Google Drive in Settings, which needs GOOGLE_OAUTH_CLIENT_ID; or RECEIPTS_DIR for local disk): uploads answer 503")
 		cfg.Files = files.Unavailable{}
 	}
 	var root fs.FS
@@ -285,7 +291,7 @@ func buildServerWithDrive(s settings, db *store.DB, log *slog.Logger) (*api.Serv
 	} else {
 		log.Warn("no front end to serve (set STATIC_DIR, or build with -tags embedweb)")
 	}
-	return api.New(cfg), driveStore, nil
+	return api.New(cfg), nil
 }
 
 func serve(args []string, getenv func(string) string, log *slog.Logger) error {
@@ -306,7 +312,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		return err
 	}
 	defer db.Close()
-	srv, driveStore, err := buildServerWithDrive(s, db, log)
+	srv, err := buildServer(s, db, log)
 	if err != nil {
 		return err
 	}
@@ -325,17 +331,15 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	go calendarRetry(ctx, srv)
 	go srv.CloudflareDaily(ctx)
 	// Upload the sidecar's encrypted daily snapshots to Drive (Backups/daily plus a monthly
-	// copy). The service idles until the outbox holds files and Drive is connected.
-	var driveAlert func(context.Context, string)
-	if s.WebhookURL != "" {
-		driveAlert = drivebackup.DiscordAlert(s.WebhookURL)
-	}
+	// copy). The service resolves the current Drive each pass and idles while the outbox is
+	// empty or Drive is not connected.
 	go (&drivebackup.Service{
-		Store:  driveStore,
+		Drive:  func(ctx context.Context) (drivebackup.Store, error) { return srv.Drive(ctx) },
 		Outbox: drivebackup.OutboxDir(s.DBPath),
-		Alert:  driveAlert,
+		Alert:  func(ctx context.Context, key, msg string) { srv.Alerts().Alert(ctx, key, msg) },
 		Log:    log,
 	}).Hourly(ctx)
+	go srv.DriveQuotaDaily(ctx)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
 	log.Info("listening", "addr", s.Addr, "db", s.DBPath, "app_url", s.AppURL, "version", version, "dev_build", api.DevBuild, "startup_ms", time.Since(started).Milliseconds())

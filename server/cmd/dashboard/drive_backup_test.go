@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,18 +18,6 @@ import (
 	"officerdashboard/internal/files/drivefake"
 	"officerdashboard/internal/store"
 )
-
-// driveAccountSchema mirrors PR A's 0037_drive_account.sql: the stored Drive sign-in an
-// owner connects in Settings.
-const driveAccountSchema = `CREATE TABLE drive_google_account (
-	id INTEGER PRIMARY KEY CHECK(id=1),
-	subject TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '',
-	sealed_refresh TEXT NOT NULL DEFAULT '', sealed_access TEXT NOT NULL DEFAULT '',
-	expires_at INTEGER NOT NULL DEFAULT 0,
-	connected_by TEXT REFERENCES users(id) ON DELETE SET NULL, connected_at INTEGER NOT NULL DEFAULT 0,
-	revoked_at INTEGER,
-	root_folder_id TEXT NOT NULL DEFAULT ''
-);`
 
 const testClientSecret = "synthetic-test-client-secret"
 
@@ -44,15 +31,19 @@ func testDB(t *testing.T) *store.DB {
 	return db
 }
 
+// insertDriveAccount connects a member account with a stale access token, so the first use
+// refreshes through the token endpoint.
 func insertDriveAccount(t *testing.T, db *store.DB) {
 	t.Helper()
-	if _, err := db.W.Exec(driveAccountSchema); err != nil {
-		t.Fatal(err)
-	}
 	sealer := calendar.NewSealer(testClientSecret)
-	_, err := db.W.Exec(`INSERT INTO drive_google_account(id,subject,email,sealed_refresh,sealed_access,expires_at,connected_at,root_folder_id)
-		VALUES(1,'sub-test','drive@example.org',?,?,0,1,'root')`,
-		sealer.Seal("synthetic-refresh-token"), sealer.Seal("synthetic-stale-access"))
+	err := db.Write(context.Background(), func(q *store.Queries) error {
+		return q.ConnectDriveGoogle(context.Background(), store.DriveGoogleAccount{
+			Subject: "sub-test", Email: "drive@example.org",
+			SealedRefresh: sealer.Seal("synthetic-refresh-token"),
+			SealedAccess:  sealer.Seal("synthetic-stale-access"),
+			ConnectedAt:   1,
+		})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +53,7 @@ func TestConnectDriveUsesStoredAccount(t *testing.T) {
 	db := testDB(t)
 	insertDriveAccount(t, db)
 	fake := drivefake.New()
-	s := settings{GoogleClientID: "synthetic-client-id", GoogleSecret: testClientSecret}
+	s := settings{GoogleClientID: "synthetic-client-id", GoogleSecret: testClientSecret, DriveRoot: fake.RootID}
 	drive, err := connectDrive(context.Background(), s, db, fake)
 	if err != nil {
 		t.Fatal(err)
@@ -97,13 +88,8 @@ func TestConnectDriveRevokedMarksDisconnected(t *testing.T) {
 	db := testDB(t)
 	insertDriveAccount(t, db)
 	fake := drivefake.New()
-	fake.Fail = func(req *http.Request) *http.Response {
-		if req.URL.Host == "oauth2.googleapis.com" {
-			return drivefake.Error(http.StatusBadRequest, "invalid_grant")
-		}
-		return nil
-	}
-	s := settings{GoogleClientID: "synthetic-client-id", GoogleSecret: testClientSecret}
+	fake.RefreshError = "invalid_grant"
+	s := settings{GoogleClientID: "synthetic-client-id", GoogleSecret: testClientSecret, DriveRoot: fake.RootID}
 	drive, err := connectDrive(context.Background(), s, db, fake)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +109,7 @@ func TestConnectDriveRevokedMarksDisconnected(t *testing.T) {
 }
 
 func TestConnectDriveServiceAccountFallback(t *testing.T) {
-	db := testDB(t) // no drive_google_account table at all
+	db := testDB(t) // no member account connected
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
