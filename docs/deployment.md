@@ -14,7 +14,7 @@ gzip plus age stream measured **72,059 ciphertext bytes** on this seed; plan at
 **75,000 ciphertext bytes per seed copy**.
 No production database was available to measure. WAL is captured consistently with
 SQLite's online backup API, the same API used by `.backup`; integrity is checked first.
-Receipts remain outside SQLite (Drive); this backs up their metadata, not Drive contents.
+Receipts and design files remain outside SQLite (in the Shared Drive); this backs up their metadata, not Drive contents.
 
 Limits checked against official documentation:
 [D1 limits](https://developers.cloudflare.com/d1/platform/limits/) lists 500 MB per free
@@ -132,3 +132,38 @@ step N". The step numbers are unchanged in [Cloudflare setup](deploy/cloudflare.
 | 7 | [Cache rule](deploy/cloudflare.md#7-never-cache-the-agent-paths) |
 | 8 | [Rocket Loader and Email Obfuscation](deploy/cloudflare.md#8-turn-off-rocket-loader-and-email-obfuscation) |
 | 9 (check from outside) | [Check it from outside](deploy/cloudflare.md#10-check-it-from-outside), now step 10 |
+
+## File storage: the Google Shared Drive (person-only setup)
+
+Receipts and design files go to one Google Shared Drive, which the dashboard reaches as a
+member Google account (see [Integrations](integrations.md#files-in-a-google-shared-drive)).
+The Drive API's standard quota costs nothing and needs no billing account; over its limits
+Google answers 403 or 429, never a bill. These steps need a person; nothing in the
+repository can do them:
+
+1. **The Shared Drive.** A UW advisor creates it (for example "CSEED dashboard"), turns
+   off sharing outside the organisation, and creates the root folder in it.
+2. **A Google Cloud project with no billing.** Use the project that holds
+   `GOOGLE_OAUTH_CLIENT_ID` (see [Google calendar setup](deploy/google-calendar.md)), or a
+   new one. Enable the **Google Drive API** and don't attach a billing account.
+3. **The OAuth redirect URI.** In that OAuth client, add the authorized redirect URI
+   `${APP_URL}/auth/drive-google/callback`.
+4. **Publish the OAuth consent screen to Production.** In Testing mode Google expires
+   refresh tokens after 7 days, and file storage would stop every week. Add the
+   `https://www.googleapis.com/auth/drive` scope to the consent screen.
+5. **The account.** Choose the Google account the dashboard stores files as (a UW account
+   that outlives one officer's term is best) and give it **Content manager** on the
+   Shared Drive. Officers need no Drive access; they open files through the dashboard.
+6. **Connect it.** Signed in to the dashboard as an owner, open Settings → Google Drive file
+   storage, choose **Connect Google Drive**, sign in as that account and allow Drive access.
+   Then paste the root folder's link and choose **Use this folder**. The status shows the
+   account, the folder, and the storage used.
+7. **Alerts.** Set `DISCORD_WEBHOOK_URL` so owners hear when the drive is 70 % full
+   (`DRIVE_QUOTA_BYTES`, default 100 GB), full, or the account's access was revoked.
+
+**Alternative: a service account.** Instead of steps 4 to 6, create a service account in
+the project, add it to the Shared Drive as a Content manager (and to nothing else), save
+its key as `secrets/app/google-service-account-json`, and set
+`GOOGLE_SERVICE_ACCOUNT_JSON_FILE` and `DRIVE_ROOT_FOLDER_ID`. A direct
+`GOOGLE_SERVICE_ACCOUNT_JSON` value is refused at startup. A connected account wins over
+the service account.

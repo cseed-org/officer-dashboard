@@ -293,8 +293,9 @@ There are two files, both in `server/deploy`, both private:
    later. In particular:
    - The `APP_URL` line at the top of `dashboard.env` doesn't matter: the one in `.env` wins.
    - You add the two `GOOGLE_OAUTH_` lines in step 7.
-   - Optional: receipts in Google Drive (`GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID`;
-     while empty, officers can't upload receipts to purchases), Discord channel notifications
+   - Receipts and design files go to a Google Shared Drive that an owner connects later in
+     Settings (see [File storage](../deployment.md#file-storage-the-google-shared-drive-person-only-setup);
+     until then officers can't upload them). Optional: Discord channel notifications
      (`DISCORD_WEBHOOK_URL`) and email invites (`SMTP_*`). See the
      [settings reference](../configuration.md) when you want them.
 

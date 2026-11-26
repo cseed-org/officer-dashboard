@@ -121,7 +121,7 @@ To run the dashboard for real, follow **[Deploy the dashboard, step by step](doc
 | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord OAuth credentials. |
 | `BOOTSTRAP_OWNER_DISCORD_ID` | Provision the initial owner while no owner exists. |
 | `DISCORD_BOT_TOKEN` | Officer invitation DMs. |
-| `GOOGLE_SERVICE_ACCOUNT_JSON`, `DRIVE_ROOT_FOLDER_ID` | Google Drive receipt storage. |
+| `DRIVE_ROOT_FOLDER_ID`, `DRIVE_QUOTA_BYTES` | Google Shared Drive file storage: the account is connected in Settings; `GOOGLE_SERVICE_ACCOUNT_JSON_FILE` is the service-account alternative. |
 | `RECEIPTS_DIR` | Local receipt storage alternative. |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID` | Membership sync and analytics integration. |
 
