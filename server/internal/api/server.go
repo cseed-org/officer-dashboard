@@ -30,7 +30,15 @@ type Config struct {
 	Cloudflare *cfsync.Service
 	DB         *store.DB
 	Files      files.Store
-	Notifier   notify.Notifier
+	// DriveRootEnv is DRIVE_ROOT_FOLDER_ID; when set it wins over the folder chosen in Settings.
+	DriveRootEnv string
+	// DriveQuotaBytes is DRIVE_QUOTA_BYTES (0 = 100 GB): the daily check alerts at 70%.
+	DriveQuotaBytes int64
+	// DriveHTTP carries Drive API calls for the connected account (tests); nil = default client.
+	DriveHTTP files.Doer
+	// Alerts posts operational alerts (Drive full, revoked); nil logs them.
+	Alerts   *notify.Alerter
+	Notifier notify.Notifier
 	// DM sends invite DMs through the Discord bot; nil when DISCORD_BOT_TOKEN is unset,
 	// and invites fall back to copy-link only.
 	DM notify.DirectMessenger
@@ -135,6 +143,9 @@ func New(cfg Config) *Server {
 	if cfg.Files == nil {
 		cfg.Files = files.Unavailable{}
 	}
+	if cfg.Alerts == nil {
+		cfg.Alerts = notify.NewAlerter("", cfg.Log)
+	}
 	if cfg.Version == "" {
 		cfg.Version = "0.1.0"
 	}
@@ -150,6 +161,9 @@ func New(cfg Config) *Server {
 	s.mcpLimit = newRateLimiter(orDefault(cfg.MCPRateLimit, defaultMCPRateLimit), cfg.Now)
 	if cfg.Google != nil {
 		s.sealer = calendar.NewSealer(cfg.Google.ClientSecret)
+		// An owner can connect a Google account for Drive at runtime; until then (or after a
+		// disconnect) the configured store is used.
+		s.cfg.Files = &storeSwitch{s: s, fallback: cfg.Files}
 	}
 	if u, err := url.Parse(cfg.AppURL); err == nil {
 		s.secure = u.Scheme == "https"

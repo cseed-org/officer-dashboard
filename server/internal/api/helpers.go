@@ -318,10 +318,8 @@ func attachmentDTO(a *store.Attachment, cat *catalog) (AttachmentDTO, error) {
 	if err != nil {
 		return AttachmentDTO{}, err
 	}
+	// Always the dashboard's own authorized download, never a Drive link.
 	url := "/api/attachments/" + a.ID
-	if a.WebViewLink != nil {
-		url = *a.WebViewLink
-	}
 	return AttachmentDTO{ID: a.ID, Kind: a.Kind, Filename: a.Filename, MimeType: a.MimeType, SizeBytes: a.SizeBytes, Storage: a.Storage, URL: &url, UploadedBy: userSummary(up), CreatedAt: isoMs(int64(a.CreatedAt))}, nil
 }
 

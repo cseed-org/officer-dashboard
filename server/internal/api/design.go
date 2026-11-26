@@ -267,10 +267,8 @@ func (d *designCtx) fileDTO(f *store.DesignFile) (DesignFileDTO, error) {
 	if err != nil {
 		return DesignFileDTO{}, err
 	}
+	// Always the dashboard's own authorized download, never a Drive link.
 	url := "/api/design-files/" + f.ID
-	if f.WebViewLink != nil {
-		url = *f.WebViewLink
-	}
 	return DesignFileDTO{ID: f.ID, Kind: f.Kind, Filename: f.Filename, MimeType: f.MimeType, SizeBytes: f.SizeBytes, URL: url, UploadedBy: userSummary(up), CreatedAt: isoMs(f.CreatedAt)}, nil
 }
 
@@ -707,8 +705,9 @@ func (c *Ctx) designDelete() error {
 		}
 		snap := designSnapshot(r)
 		fileIDs, commentIDs := []string{}, []string{}
+		kind := c.S.storageKind(ctx)
 		for _, f := range fs {
-			if f.Storage == storageKind(c.S.cfg.Files) {
+			if f.Storage == kind {
 				keys = append(keys, f.StorageKey) // local files are removed, Drive files trashed
 			}
 			fileIDs = append(fileIDs, f.ID+" "+f.Filename)
@@ -828,7 +827,15 @@ func (c *Ctx) designUpload() error {
 	if name == "" || len(name) > 255 {
 		return badRequest("File name must be 1 to 255 characters")
 	}
-	stored, err := c.S.cfg.Files.Put(ctx, files.PutInput{Folder: []string{"Design requests", id}, Filename: name, MimeType: mime, Body: body})
+	in := files.PutInput{Folder: []string{"Design requests", id}, Filename: name, MimeType: mime, Body: body}
+	if r.EventID != nil {
+		if ev, err := q.EventByID(ctx, *r.EventID); err == nil {
+			// Events/<date> <name> [<event id>]/Design/<design id>
+			in.Event = &files.EventRef{StartsAtMs: eventStartMs(ev), Name: ev.Name, ID: ev.ID}
+			in.Folder = []string{"Design", id}
+		}
+	}
+	stored, err := c.S.storeFile(ctx, in)
 	if err != nil {
 		return err
 	}
@@ -851,10 +858,6 @@ func (c *Ctx) designUpload() error {
 		}
 		df := store.DesignFile{ID: auth.UUID(), RequestID: id, Kind: kind.V, Filename: name, MimeType: mime, SizeBytes: stored.SizeBytes,
 			Storage: stored.Storage, StorageKey: stored.Key, UploadedBy: u.ID, CreatedAt: c.S.nowMs()}
-		if stored.WebViewLink != "" {
-			l := stored.WebViewLink
-			df.WebViewLink = &l
-		}
 		if err := w.InsertDesignFile(ctx, df); err != nil {
 			return err
 		}
@@ -882,12 +885,9 @@ func (c *Ctx) designFileDownload() error {
 	if err != nil {
 		return notFoundErr("Record not found")
 	}
-	if f.Storage == "drive" {
-		if f.WebViewLink == nil {
-			return notFoundErr("Record not found")
-		}
-		http.Redirect(c.W, c.R, *f.WebViewLink, http.StatusFound)
-		return nil
+	// Drive files are streamed through here too: officers never need access to the drive.
+	if f.Storage != c.S.storageKind(ctx) {
+		return files.ErrUnavailable
 	}
 	file, err := c.S.cfg.Files.Get(ctx, f.StorageKey)
 	if err != nil {
@@ -1000,14 +1000,15 @@ func truncRunes(s string, n int) string {
 	return strings.TrimSpace(string([]rune(s)[:n]))
 }
 
-// storageKind names the configured file backend as design_request_files.storage records it,
-// so a delete after a backend switch doesn't hand one backend the other's keys.
-func storageKind(s files.Store) string {
-	switch s.(type) {
-	case files.Local, *files.Local:
-		return "local"
-	case *files.Drive:
-		return "drive"
+// eventStartMs is the event's start as Unix ms, or nil for a tentative or undated event.
+func eventStartMs(ev *store.Event) *int64 {
+	if ev.StartsAt == "" {
+		return nil
 	}
-	return ""
+	t, err := luma.ParseInstant(ev.StartsAt)
+	if err != nil {
+		return nil
+	}
+	ms := t.UnixMilli()
+	return &ms
 }
