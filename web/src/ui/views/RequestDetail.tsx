@@ -175,7 +175,8 @@ export default function RequestDetail({
 
 /**
  * The server sends `url` only to viewers who may open the receipt (uploader, requester,
- * directors): /api/attachments/:id for local files, the Drive link otherwise. null → no link.
+ * directors): always /api/attachments/:id, which streams the file after the same check,
+ * wherever it is stored. null → no link.
  */
 const attachmentHref = (a: { url: string | null }) => (a.url ? safeUrl(a.url) : null);
 
@@ -623,8 +624,7 @@ function Attachments({ r, authorized, onUploaded }: { r: PurchaseRequestDetail; 
   return (
     <Section title="receipts & files" id="files">
       <p class="small muted flush">
-        Receipts are filed in CSEED’s shared Google Drive, and the links open there. You need access to that drive to view them; ask a
-        director if Drive says you don’t have permission.
+        Receipts are filed privately in CSEED’s shared Google Drive. The requester and directors open them here; nobody needs access to the drive.
       </p>
       {r.attachments.length === 0 ? (
         <Empty title="No files yet">{r.type === 'reimbursement' ? 'Attach the receipt so the reimbursement can be paid.' : 'Attach the quote or the receipt once it is bought.'}</Empty>
