@@ -116,7 +116,9 @@ once. Large files (backups) use resumable uploads in 8 MiB chunks.
   `DISCORD_WEBHOOK_URL`, else the log).
 - **Running low:** once a day the dashboard sums the shared drive's file sizes (trashed
   files included, since they count until purged) and alerts at 70 % of
-  `DRIVE_QUOTA_BYTES` (default 100 GB). Settings shows the same figure.
+  `DRIVE_QUOTA_BYTES` (default 100 GB). Settings shows that figure with its time, and
+  measures again only when an owner presses Refresh or the figure is a day old, because
+  each measurement lists the whole drive.
 - **Access revoked or expired** (Google answers `invalid_grant`): the account is marked
   disconnected, owners are alerted once, and uploads and downloads answer 503 until an
   owner reconnects. The OAuth consent screen must be **in Production**: in Testing mode

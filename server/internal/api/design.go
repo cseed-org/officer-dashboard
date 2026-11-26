@@ -681,7 +681,7 @@ func (c *Ctx) designDelete() error {
 	}
 	ctx := c.Context()
 	id := c.R.PathValue("id")
-	var keys []string
+	var stored []store.DesignFile
 	err = c.S.db.Write(ctx, func(w *store.Queries) error {
 		r, err := w.DesignRequestByID(ctx, id)
 		if err != nil {
@@ -705,11 +705,8 @@ func (c *Ctx) designDelete() error {
 		}
 		snap := designSnapshot(r)
 		fileIDs, commentIDs := []string{}, []string{}
-		kind := c.S.storageKind(ctx)
+		stored = fs
 		for _, f := range fs {
-			if f.Storage == kind {
-				keys = append(keys, f.StorageKey) // local files are removed, Drive files trashed
-			}
 			fileIDs = append(fileIDs, f.ID+" "+f.Filename)
 		}
 		for _, cm := range cs {
@@ -724,11 +721,7 @@ func (c *Ctx) designDelete() error {
 	if err != nil {
 		return err
 	}
-	for _, k := range keys {
-		if derr := c.S.cfg.Files.Delete(context.WithoutCancel(ctx), k); derr != nil {
-			c.S.log.Error("could not remove a design file", "key", k, "error", derr)
-		}
-	}
+	c.removeDesignFiles(context.WithoutCancel(ctx), id, stored)
 	writeJSON(c.W, 200, map[string]any{"ok": true})
 	return nil
 }
@@ -1011,4 +1004,36 @@ func eventStartMs(ev *store.Event) *int64 {
 	}
 	ms := t.UnixMilli()
 	return &ms
+}
+
+// removeDesignFiles removes a deleted request's files from the backend each was stored in
+// (local files are removed, Drive files trashed), even when that is no longer the current
+// backend. A file that cannot be removed (no store of its kind, or the call failed) is
+// logged and audited as orphaned, so nothing is lost silently.
+func (c *Ctx) removeDesignFiles(ctx context.Context, requestID string, fs []store.DesignFile) {
+	var orphans []map[string]any
+	for _, f := range fs {
+		st := c.S.storeFor(ctx, f.Storage)
+		reason := "no " + f.Storage + " storage is configured"
+		if st != nil {
+			err := st.Delete(ctx, f.StorageKey)
+			if err == nil {
+				continue
+			}
+			reason = "delete failed"
+			c.S.log.Error("could not remove a design file", "key", f.StorageKey, "error", err)
+		} else {
+			c.S.log.Error("design file left in storage", "key", f.StorageKey, "storage", f.Storage, "reason", reason)
+		}
+		orphans = append(orphans, map[string]any{"id": f.ID, "filename": f.Filename, "storage": f.Storage, "storageKey": f.StorageKey, "reason": reason})
+	}
+	if len(orphans) == 0 {
+		return
+	}
+	err := c.S.db.Write(ctx, func(w *store.Queries) error {
+		return c.audit(ctx, w, "design_request.files_orphaned", "design_request", requestID, nil, map[string]any{"files": orphans})
+	})
+	if err != nil {
+		c.S.log.Error("could not audit orphaned design files", "request", requestID, "error", err)
+	}
 }

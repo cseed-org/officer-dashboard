@@ -82,8 +82,9 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 		log.Debug("request timed out")
 		return fail(504, "internal", "Request timed out")
 	case errors.Is(err, files.ErrQuota), errors.Is(err, files.ErrRateLimited):
-		// Drive is full or throttling us after retries: say so plainly (storeFile alerts).
-		return fail(507, "storage_quota", "Google Drive storage is full or busy, so the file was not saved. Try again later; the owners have been alerted.")
+		// Drive is full or throttling us after retries, on an upload or a download: say so
+		// plainly (storeFile also alerts the owners about refused uploads).
+		return fail(507, "storage_quota", "Google Drive is full or busy, so the file could not be stored or opened. Try again later.")
 	case errors.Is(err, files.ErrNotConnected), errors.Is(err, files.ErrReconnect):
 		return fail(503, "not_configured", err.Error())
 	case errors.Is(err, files.ErrUnavailable):

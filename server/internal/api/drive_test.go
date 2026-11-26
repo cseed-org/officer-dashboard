@@ -2,9 +2,13 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/files"
@@ -177,7 +182,7 @@ func TestDriveStatusRootAndDisconnectNeverExposeTokens(t *testing.T) {
 	expectStatus(t, "root before connect", e.do("PUT", "/api/settings/drive/root", map[string]any{"folderId": driveRootID}, owner), 409)
 	owner = connectDrive(t, e)
 	fake.Add(drivefake.File{Name: "existing.pdf", Body: make([]byte, 1000)})
-	st = e.mustOK(e.get("/api/settings/drive/status", owner))
+	st = e.mustOK(e.get("/api/settings/drive/status?refresh=1", owner))
 	if st.at("connected") != true || st.str("email") != "drive-member@example.org" || st.str("rootFolderId") != driveRootID || st.at("rootReachable") != true ||
 		st.at("sharedDrive") != true || st.at("canWrite") != true || st.str("storage") != "drive" || st.num("usage", "usedBytes") != 1000 || st.num("usage", "quotaBytes") != 100e9 {
 		t.Fatalf("status %s", st.Raw)
@@ -366,4 +371,101 @@ func TestTheDailyQuotaCheckAlertsAtSeventyPercent(t *testing.T) {
 	if pct := e.srv.checkDriveQuota(context.Background()); pct != 71 || len(alerts.all()) != 1 || !strings.Contains(alerts.all()[0], "71%") {
 		t.Fatalf("71%%: pct %d alerts %q", pct, alerts.all())
 	}
+}
+
+func TestDriveStatusServesCachedUsageUntilRefreshedOrADayOld(t *testing.T) {
+	e, fake, _ := driveEnv(t)
+	owner := connectDrive(t, e) // the root PUT's status measured once
+	fake.Add(drivefake.File{Name: "a.pdf", Body: make([]byte, 500)})
+	scans := func() int {
+		n := 0
+		for _, c := range fake.Calls() {
+			if c.Method == "GET" && c.URL.Path == "/drive/v3/files" && strings.HasPrefix(c.URL.Query().Get("q"), "mimeType != ") {
+				n++
+			}
+		}
+		return n
+	}
+	before := scans()
+	st := e.mustOK(e.get("/api/settings/drive/status", owner))
+	if st.num("usage", "usedBytes") != 0 || scans() != before || st.str("usage", "measuredAt") == "" {
+		t.Fatalf("status rescanned the drive: %s (scans %d → %d)", st.Raw, before, scans())
+	}
+	st = e.mustOK(e.get("/api/settings/drive/status?refresh=1", owner))
+	if st.num("usage", "usedBytes") != 500 || scans() != before+1 {
+		t.Fatalf("explicit refresh: %s", st.Raw)
+	}
+	fake.Add(drivefake.File{Name: "b.pdf", Body: make([]byte, 100)})
+	if e.srv.checkDriveQuota(context.Background()); e.mustOK(e.get("/api/settings/drive/status", owner)).num("usage", "usedBytes") != 600 {
+		t.Error("the daily check did not refresh the cached usage")
+	}
+	fake.Add(drivefake.File{Name: "c.pdf", Body: make([]byte, 100)})
+	e.clock = e.clock.Add(25 * time.Hour)
+	if got := e.mustOK(e.get("/api/settings/drive/status", owner)).num("usage", "usedBytes"); got != 700 {
+		t.Errorf("a day-old figure was served: %d", got)
+	}
+}
+
+func TestDeletedDesignRequestsTrashTheirDriveFilesOrAuditThem(t *testing.T) {
+	e, fake, _ := driveEnv(t)
+	owner := connectDrive(t, e)
+	priya := e.officer()
+	png := formFile{"file", "ref.png", "image/png", "\x89PNG\r\n\x1a\nsynthetic"}
+	upload := func() (string, string) {
+		id := e.mustOK(e.post("/api/design-requests", with(designBody(), "eventId", nil), priya)).str("request", "id")
+		e.mustOK(e.post("/api/design-requests/"+id+"/files", formBody{fields: map[string]string{"kind": "reference"}, files: []formFile{png}}, priya))
+		return id, fake.Path("Design requests", id, "ref.png").ID
+	}
+	id, key := upload()
+	e.mustOK(e.do("DELETE", "/api/design-requests/"+id, nil, priya))
+	if f := fake.Get(key); f == nil || !f.Trashed {
+		t.Errorf("connected: file %+v not trashed", f)
+	}
+	// Disconnected, with no service account: the file stays in Drive, recorded as orphaned.
+	id, key = upload()
+	e.mustOK(e.do("DELETE", "/api/settings/drive", nil, owner))
+	e.mustOK(e.do("DELETE", "/api/design-requests/"+id, nil, priya))
+	if f := fake.Get(key); f == nil || f.Trashed {
+		t.Errorf("disconnected: file %+v", f)
+	}
+	after := e.scalar(`SELECT coalesce(max(after_json),'') FROM audit_log WHERE action='design_request.files_orphaned' AND entity_id=?`, id).(string)
+	if !strings.Contains(after, key) || !strings.Contains(after, "no drive storage is configured") {
+		t.Errorf("orphan audit %q", after)
+	}
+}
+
+func TestADisconnectedAccountsFilesAreTrashedThroughTheServiceAccountFallback(t *testing.T) {
+	e, fake, _ := driveEnv(t)
+	_, acct := newServiceAccount(t)
+	sa, err := files.NewDrive(acct, driveRootID, fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.srv.cfg.Files.(*storeSwitch).fallback = sa
+	owner := connectDrive(t, e)
+	priya := e.officer()
+	id := e.mustOK(e.post("/api/design-requests", with(designBody(), "eventId", nil), priya)).str("request", "id")
+	e.mustOK(e.post("/api/design-requests/"+id+"/files", formBody{fields: map[string]string{"kind": "reference"}, files: []formFile{{"file", "ref.png", "image/png", "\x89PNG\r\n\x1a\nsynthetic"}}}, priya))
+	key := fake.Path("Design requests", id, "ref.png").ID
+	e.mustOK(e.do("DELETE", "/api/settings/drive", nil, owner))
+	e.mustOK(e.do("DELETE", "/api/design-requests/"+id, nil, priya))
+	if f := fake.Get(key); f == nil || !f.Trashed {
+		t.Errorf("file %+v not trashed through the service account", f)
+	}
+	if n := e.scalar(`SELECT count(*) FROM audit_log WHERE action='design_request.files_orphaned'`); n != int64(0) {
+		t.Errorf("%v orphan audits", n)
+	}
+}
+
+// newServiceAccount makes a throwaway service-account key JSON (generated per test run).
+func newServiceAccount(t *testing.T) (*rsa.PrivateKey, string) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, _ := x509.MarshalPKCS8PrivateKey(key)
+	acct, _ := json.Marshal(map[string]string{"client_email": "synthetic@example.iam.gserviceaccount.com",
+		"private_key": string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))})
+	return key, string(acct)
 }
