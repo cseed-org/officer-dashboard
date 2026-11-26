@@ -202,7 +202,7 @@ func driveWith(t *testing.T, f *fakeDrive) *Drive {
 func TestUploadsThroughSharedDriveFolders(t *testing.T) {
 	f := &fakeDrive{driveID: "shared-1"}
 	s := upload(t, driveWith(t, f), "req")
-	if s.Key != "file" || s.Storage != "drive" || s.SizeBytes != 3 || s.WebViewLink != "https://drive.google.com/file/d/file/view" {
+	if s.Key != "file" || s.Storage != "drive" || s.SizeBytes != 3 || s.WebViewLink != "" {
 		t.Errorf("stored %+v", s)
 	}
 	for _, c := range f.calls[1:] {

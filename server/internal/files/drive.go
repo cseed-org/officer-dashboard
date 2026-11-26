@@ -758,12 +758,25 @@ func (d *Drive) uploadJSON(ctx context.Context, method, path string, meta any, m
 	return json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(out)
 }
 
-// Put uploads a receipt or design file under the folder path below the root folder.
+// Put uploads a receipt or design file under the folder path below the root folder (or
+// below the event's folder when in.Event is set).
 func (d *Drive) Put(ctx context.Context, in PutInput) (Stored, error) {
 	if err := ValidateUpload(in.MimeType, int64(len(in.Body))); err != nil {
 		return Stored{}, err
 	}
-	parent, err := d.EnsureFolder(ctx, in.Folder)
+	var parent string
+	var err error
+	if in.Event != nil {
+		parent, err = EventFolder(ctx, d, in.Event.StartsAtMs, in.Event.Name, in.Event.ID)
+		for _, part := range in.Folder {
+			if err != nil {
+				break
+			}
+			parent, err = d.folder(ctx, part, parent)
+		}
+	} else {
+		parent, err = d.EnsureFolder(ctx, in.Folder)
+	}
 	if err != nil {
 		return Stored{}, err
 	}
@@ -772,17 +785,47 @@ func (d *Drive) Put(ctx context.Context, in PutInput) (Stored, error) {
 		Parents []string `json:"parents"`
 	}{in.Filename, []string{parent}}
 	var f struct {
-		ID          string `json:"id"`
-		WebViewLink string `json:"webViewLink"`
+		ID string `json:"id"`
 	}
-	if err := d.uploadJSON(ctx, http.MethodPost, "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink,size", meta, in.MimeType, in.Body, &f); err != nil {
+	if err := d.uploadJSON(ctx, http.MethodPost, "/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id", meta, in.MimeType, in.Body, &f); err != nil {
 		return Stored{}, err
 	}
-	link := f.WebViewLink
-	if link == "" {
-		link = "https://drive.google.com/file/d/" + f.ID + "/view"
+	if f.ID == "" {
+		return Stored{}, errors.New("Drive upload returned no file id")
 	}
-	return Stored{Storage: "drive", Key: f.ID, WebViewLink: link, SizeBytes: int64(len(in.Body))}, nil
+	return Stored{Storage: "drive", Key: f.ID, SizeBytes: int64(len(in.Body))}, nil
+}
+
+// RootInfo describes the configured root folder.
+type RootInfo struct {
+	ID, Name string
+	DriveID  string // the shared drive holding it; "" when it is in someone's My Drive
+	// CanAddChildren: the connected account may create folders and files in it.
+	CanAddChildren bool
+}
+
+// CheckRoot reads the root folder and fails unless it is an untrashed folder.
+func (d *Drive) CheckRoot(ctx context.Context) (RootInfo, error) {
+	if !driveIDRE.MatchString(d.rootID) {
+		return RootInfo{}, errors.New("the Drive root folder id is not valid")
+	}
+	var f struct {
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		MimeType     string `json:"mimeType"`
+		DriveID      string `json:"driveId"`
+		Trashed      bool   `json:"trashed"`
+		Capabilities struct {
+			CanAddChildren bool `json:"canAddChildren"`
+		} `json:"capabilities"`
+	}
+	if err := d.callJSON(ctx, http.MethodGet, "/drive/v3/files/"+url.PathEscape(d.rootID)+"?fields=id,name,mimeType,driveId,trashed,capabilities(canAddChildren)&supportsAllDrives=true", nil, &f); err != nil {
+		return RootInfo{}, err
+	}
+	if f.MimeType != folderMIME || f.Trashed {
+		return RootInfo{}, errors.New("the Drive root is not a folder, or it is in the trash")
+	}
+	return RootInfo{ID: f.ID, Name: f.Name, DriveID: f.DriveID, CanAddChildren: f.Capabilities.CanAddChildren}, nil
 }
 
 // UpsertInput is one generated file (an export, a manifest) to write under Folder.

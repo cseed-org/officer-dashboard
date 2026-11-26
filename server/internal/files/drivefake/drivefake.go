@@ -7,6 +7,7 @@ package drivefake
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,8 +55,19 @@ type Fake struct {
 	PageSize int
 	// QuotaLimit and QuotaUsage are returned by about.storageQuota.
 	QuotaLimit, QuotaUsage int64
+	// Grant is what the OAuth token endpoint answers to an authorization_code exchange:
+	// the scope string and the account in the ID token. Defaults: the Drive scope and
+	// a synthetic member account.
+	GrantScope, GrantSubject, GrantEmail string
+	// RefreshError, when set, is the OAuth error a refresh_token grant answers (e.g. "invalid_grant").
+	RefreshError string
+	// ReadOnly makes folders report canAddChildren=false (a Viewer, not a Content manager).
+	ReadOnly bool
 	// Fail, when set, runs before routing; a non-nil response is returned as is.
 	Fail func(req *http.Request) *http.Response
+
+	// Revoked lists the tokens sent to the OAuth revoke endpoint.
+	Revoked []string
 
 	files    map[string]*File
 	sessions map[string]*session
@@ -229,6 +241,8 @@ func (f *Fake) meta(x *File) map[string]any {
 		"trashed": x.Trashed, "appProperties": x.AppProperties}
 	if x.MimeType != FolderMIME {
 		m["size"] = strconv.Itoa(len(x.Body))
+	} else {
+		m["capabilities"] = map[string]bool{"canAddChildren": !f.ReadOnly}
 	}
 	if f.DriveID != "" {
 		m["driveId"] = f.DriveID
@@ -263,7 +277,7 @@ func (f *Fake) route(req *http.Request, body []byte) *http.Response {
 	u := req.URL
 	q := u.Query()
 	if u.Host == "oauth2.googleapis.com" {
-		return js(200, map[string]any{"access_token": "fake-access-token", "expires_in": 3600})
+		return f.oauth(u.Path, body)
 	}
 	switch {
 	case req.Method == http.MethodGet && u.Path == "/drive/v3/about":
@@ -368,6 +382,29 @@ func (f *Fake) route(req *http.Request, body []byte) *http.Response {
 		return &http.Response{StatusCode: 204, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(""))}
 	}
 	return Error(400, "unexpectedRoute")
+}
+
+func (f *Fake) oauth(path string, body []byte) *http.Response {
+	form, _ := url.ParseQuery(string(body))
+	switch {
+	case path == "/revoke":
+		f.Revoked = append(f.Revoked, form.Get("token"))
+		return js(200, map[string]any{})
+	case form.Get("grant_type") == "authorization_code":
+		scope, sub, email := f.GrantScope, f.GrantSubject, f.GrantEmail
+		if scope == "" {
+			scope = "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/drive"
+		}
+		if sub == "" {
+			sub, email = "drive-member-sub", "drive-member@example.org"
+		}
+		claims, _ := json.Marshal(map[string]string{"sub": sub, "email": email})
+		idToken := "e30." + base64.RawURLEncoding.EncodeToString(claims) + ".sig"
+		return js(200, map[string]any{"access_token": "fake-access-token", "refresh_token": "fake-refresh-token", "expires_in": 3600, "id_token": idToken, "scope": scope})
+	case form.Get("grant_type") == "refresh_token" && f.RefreshError != "":
+		return js(400, map[string]any{"error": f.RefreshError})
+	}
+	return js(200, map[string]any{"access_token": "fake-access-token", "expires_in": 3600})
 }
 
 func mergeProps(x *File, in map[string]*string) {
