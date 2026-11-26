@@ -105,7 +105,7 @@ This resets sample data on every app start; stop with
 
 For a local build, install Go matching [server/go.mod](server/go.mod) (minimum 1.26;
 its `toolchain` directive selects the build toolchain), a C compiler for SQLite/cgo,
-Make, a POSIX shell, and Node ≥22.23.4 (from `package.json`). Use Bash/WSL on Windows;
+GNU Make, a POSIX shell, and Node ≥22.23.4 (from `package.json`). Use Bash/WSL on Windows;
 the commands below use POSIX environment assignments. From the repository root:
 
 ```sh

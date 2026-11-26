@@ -4,7 +4,7 @@
 
 Needs Go matching [server/go.mod](../server/go.mod) (minimum 1.26, with the build
 toolchain selected by its `toolchain` directive), a C compiler (cgo, for SQLite),
-Make, a POSIX shell and Node ≥ 22.23.4. On Windows use Bash/WSL for these shell
+GNU Make, a POSIX shell and Node ≥ 22.23.4. On Windows use Bash/WSL for these shell
 commands, or use the Docker stack below to build Go and SQLite inside Linux.
 
 ```sh
