@@ -101,6 +101,7 @@ Roles rank `leadership > director > officer`; unknown roles are denied. Owner is
 | Invite officers, fix a not-yet-onboarded invite's name/subteam, manage officer subteam/title | No | Yes, except leadership targets | Yes | Yes |
 | Change roles / director active status / edit leadership | No | No | Yes | Yes |
 | Manage ownership or demote/deactivate owners | No | No | No | Yes, with last-owner protection |
+| Manage Google Drive and org Google Calendar sign-ins on Setup | No | No | No | Yes; connect, callback and disconnect enforce owner access server-side |
 | Launchpad: invite builders, resend/revoke builder invites, mentor availability/caps, auto-assign, archive/restore | Yes | Yes | Yes | Yes |
 | Launchpad: create/archive/delete cohorts, invite mentors, manage mentor accounts, disable/enable accounts, delete projects/builders | No | Yes | Yes | Yes |
 
@@ -112,3 +113,6 @@ leadership access. Directors deactivate/reactivate officers only; leadership als
 directors and leadership. Role changes require leadership; owner targets require an owner.
 The old `/admin` page redirects to Officers Access; `?tab=tokens`, `?tab=audit` and
 `#audit` links open the matching tab. API permissions and audit recording are unchanged.
+
+Org Google account status remains readable by leadership through its read-only API.
+Managing the shared account requires owner access, including when calling endpoints directly.

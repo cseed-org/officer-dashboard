@@ -205,6 +205,16 @@ await call('health');
 // Org calendar and programs: all published JSON endpoints, including locks.
 await call('orgCalendars', {who: officer});
 await call('orgGoogleStatus', {who: leadership});
+// Management of org sign-in is owner-only even for other leadership officers.
+db.prepare("UPDATE users SET role='leadership' WHERE id='user-director'").run();
+try {
+  await call('orgGoogleStatus', {who: directorA});
+  await call('orgGoogleConnect', {who: directorA, expect: 403});
+  await call('orgGoogleCallback', {who: directorA, query: {state:'synthetic-state', code:'synthetic-code'}, expect: 403});
+  await call('orgGoogleDisconnect', {who: directorA, expect: 403});
+} finally {
+  db.prepare("UPDATE users SET role='director' WHERE id='user-director'").run();
+}
 await call('orgGoogleDisconnect', {who: leadership});
 // Owner setup returns only safe integration metadata.
 await call('setupStatus', {who: officer, expect: 403});

@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -38,11 +39,15 @@ func (c *Ctx) setupStatus() error {
 		entries = append(entries, setupIntegration{key, label, state, hint, "env", setupDocs})
 	}
 	drive := s.driveStatusBody(c.Context())
+	driveEmail, _ := drive["email"].(string)
+	if strings.TrimSpace(driveEmail) == "" {
+		driveEmail = "the connected Google account"
+	}
 	state, detail := "missing", "Connect a Google account and choose a shared drive folder."
 	if drive["connected"] == true {
-		detail = fmt.Sprintf("Connected as %s. Choose a root folder.", drive["email"])
+		detail = fmt.Sprintf("Connected as %s. Choose a root folder.", driveEmail)
 		if drive["rootReachable"] == true && drive["canWrite"] == true {
-			state, detail = "connected", fmt.Sprintf("%s ; %s", drive["email"], drive["rootName"])
+			state, detail = "connected", fmt.Sprintf("%s ; %s", driveEmail, drive["rootName"])
 		} else if drive["rootFolderId"] != "" {
 			state, detail = "error", "Root folder is unreachable or cannot accept files. Check Drive access below."
 		}
@@ -66,13 +71,21 @@ func (c *Ctx) setupStatus() error {
 	}
 	state, detail = "missing", "Connect the organization's Google account."
 	if email != nil {
-		state, detail = "connected", "Connected as "+*email
+		accountEmail := *email
+		if strings.TrimSpace(accountEmail) == "" {
+			accountEmail = "the connected Google account"
+		}
+		state, detail = "connected", "Connected as "+accountEmail
 	}
 	if reconnect || last != "" {
 		state, detail = "error", "Calendar sync needs attention. Reconnect or retry below."
 	}
 	if s.cfg.Google == nil {
-		state, detail = "missing", "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET_FILE in host configuration."
+		if email != nil || reconnect || last != "" {
+			state, detail = "error", "Google OAuth configuration is missing. Restore the host secrets to use this account."
+		} else {
+			state, detail = "missing", "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET_FILE in host configuration."
+		}
 	}
 	entries = append(entries, setupIntegration{"org-calendar", "Org Google Calendar", state, detail, "connect", setupDocs})
 	add("discord-login", "Discord login", s.cfg.Discord != nil, "Set DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET_FILE in host configuration.")

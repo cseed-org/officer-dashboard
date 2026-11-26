@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"officerdashboard/internal/auth"
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/cfsync"
@@ -99,5 +100,70 @@ func TestSetupStatusConfigurationAndOptionalExport(t *testing.T) {
 func TestSetupIsAnAllowedLoginDestination(t *testing.T) {
 	if got := auth.SafeNext("/setup"); got != "/setup" {
 		t.Fatalf("setup login destination: %s", got)
+	}
+}
+
+func TestSetupOrgCalendarStatePrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name                             string
+		connected, configured, syncError bool
+		state, detail                    string
+	}{
+		{"missing configuration", false, false, false, "missing", "Set GOOGLE_OAUTH_CLIENT_ID"},
+		{"connected without configuration", true, false, false, "error", "Restore the host secrets"},
+		{"sync error without configuration", true, false, true, "error", "Restore the host secrets"},
+		{"connected and configured", true, true, false, "connected", "org@example.invalid"},
+		{"sync error", true, true, true, "error", "Calendar sync needs attention"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t, func(c *Config) {
+				if tc.configured {
+					c.Google = calendar.NewGoogle("synthetic-client", "synthetic-google-secret", "http://localhost/callback")
+				}
+			})
+			if tc.connected {
+				if err := e.db.Write(context.Background(), func(q *store.Queries) error {
+					return q.SaveOrgGoogleAccount(context.Background(), store.OrgGoogleAccount{Subject: "synthetic-sub", Email: "org@example.invalid", SealedRefresh: "synthetic-sealed"})
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.syncError {
+				e.srv.recordOrgSync(errors.New("synthetic sync failure"))
+			}
+			r := e.mustOK(e.get("/api/setup/status", e.as("user-leadership")))
+			for _, v := range r.list("integrations") {
+				item := v.(map[string]any)
+				if item["key"] == "org-calendar" {
+					if item["state"] != tc.state || !strings.Contains(item["detail"].(string), tc.detail) {
+						t.Fatalf("unexpected org calendar state: %v", item)
+					}
+					return
+				}
+			}
+			t.Fatal("org calendar card missing")
+		})
+	}
+}
+
+func TestSetupConnectedAccountsWithoutEmailHaveReadableLabels(t *testing.T) {
+	e, _, _ := driveEnv(t)
+	owner := connectDrive(t, e)
+	if err := e.db.Write(context.Background(), func(q *store.Queries) error {
+		if err := q.Exec(context.Background(), `UPDATE drive_google_account SET email=''`); err != nil {
+			return err
+		}
+		return q.SaveOrgGoogleAccount(context.Background(), store.OrgGoogleAccount{Subject: "synthetic-org", SealedRefresh: "synthetic-sealed"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := e.mustOK(e.get("/api/setup/status", owner))
+	for _, v := range r.list("integrations") {
+		item := v.(map[string]any)
+		if item["key"] == "drive" || item["key"] == "org-calendar" {
+			if !strings.Contains(item["detail"].(string), "the connected Google account") || strings.Contains(item["detail"].(string), "<nil>") {
+				t.Fatalf("unreadable account: %v", item)
+			}
+		}
 	}
 }

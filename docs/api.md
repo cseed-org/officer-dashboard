@@ -732,8 +732,11 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
 - Officer: GET/POST /api/programs; PATCH/DELETE /api/programs/:id;
   POST/DELETE /api/programs/:id/exceptions (DELETE takes onDate query).
 - Officer GET /api/program-tracks; leadership POST /api/program-tracks.
-- Leadership: GET /api/settings/org-google/status, navigation GET /api/settings/org-google/connect,
-  DELETE /api/settings/org-google. OAuth callback: /auth/org-google/callback.
+- Leadership: GET /api/settings/org-google/status (read-only account status).
+- Owner: navigation GET /api/settings/org-google/connect, OAuth callback
+  /auth/org-google/callback, DELETE /api/settings/org-google. These sign-in management
+  operations recheck ownership from the DB; callback and disconnect recheck inside the
+  write transaction. Non-owner leadership receives 403. Owners manage sign-ins on `/setup`.
 - Owner (Drive file storage, [Integrations](integrations.md#files-in-a-google-shared-drive)):
   GET /api/settings/drive/status (`DriveStatus`: account email, root folder, reachable,
   `canWrite`, usage; never tokens), navigation GET /api/settings/drive/connect, OAuth callback
