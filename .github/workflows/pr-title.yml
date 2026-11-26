@@ -16,6 +16,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          # The default parser only accepts word characters; Dependabot's
+          # development prefix also contains a hyphen.
+          headerPattern: '^([\w-]+)(?:\((.*)\))?!?: (.*)$'
           types: |
             feat
             fix
