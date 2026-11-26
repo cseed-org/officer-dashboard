@@ -206,6 +206,9 @@ await call('health');
 await call('orgCalendars', {who: officer});
 await call('orgGoogleStatus', {who: leadership});
 await call('orgGoogleDisconnect', {who: leadership});
+// Owner setup returns only safe integration metadata.
+await call('setupStatus', {who: officer, expect: 403});
+await call('setupStatus', {who: leadership});
 // Drive storage settings are owner-only; with no Google account connected the root cannot be set.
 await call('driveStatus', {who: officer, expect: 403});
 await call('driveStatus', {who: leadership});
