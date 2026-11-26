@@ -81,16 +81,16 @@ func (s *Service) trashEvent(ctx context.Context, drive *files.Drive, states map
 }
 
 func (s *Service) cleanupCovers(ctx context.Context, drive *files.Drive, states map[string]store.DriveExportState, folderID string, e eventSnapshot) error {
-	if !e.CoverKnown {
-		// A transient cover read/upload failure is retried.
-		return nil
-	}
 	current, err := s.DB.Read().EventByID(ctx, e.Event.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		return s.trashEvent(ctx, drive, states, folderID, e.Event.ID)
 	}
 	if err != nil {
 		return err
+	}
+	if !e.CoverKnown {
+		// A transient cover failure must not prevent deleted-event cleanup.
+		return nil
 	}
 	if !sameCoverVersion(current.CoverUpdatedAt, e.Event.CoverUpdatedAt) {
 		return nil

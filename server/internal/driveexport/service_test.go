@@ -856,3 +856,45 @@ func TestFailedStaleCoverTrashRetriesWithoutUploadingAgain(t *testing.T) {
 		t.Fatal("cleanup retry uploaded unchanged records")
 	}
 }
+
+func TestCleanupTrashesEventDeletedBeforeItsCoverRead(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
+	if err := db.Write(ctx, func(q *store.Queries) error {
+		if err := q.InsertEvent(ctx, store.Event{ID: "ev2", Name: "Removed event", StartsAt: "2026-12-02T20:00:00Z"}); err != nil {
+			return err
+		}
+		return q.PutEventCover(ctx, store.Cover{EventID: "ev2", MimeType: "image/png", Bytes: []byte("old cover"), UpdatedAt: 1})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	old := fake.Path("Events", "2026-12-02 Removed event [ev2]")
+	if err := db.Write(ctx, func(q *store.Queries) error {
+		if err := q.Exec(ctx, `UPDATE events SET name='Changed' WHERE id='ev1'`); err != nil {
+			return err
+		}
+		return q.PutEventCover(ctx, store.Cover{EventID: "ev2", MimeType: "image/png", Bytes: []byte("new version"), UpdatedAt: 2})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	removed := false
+	fake.Fail = func(*http.Request) *http.Response {
+		if !removed {
+			removed = true
+			if err := db.Write(ctx, func(q *store.Queries) error { return q.DeleteEvent(ctx, "ev2") }); err != nil {
+				t.Error(err)
+			}
+		}
+		return nil
+	}
+	if err := s.Run(ctx); err != nil && !errors.Is(err, store.ErrNotFound) {
+		t.Fatal(err)
+	}
+	if !fake.Get(old.ID).Trashed {
+		t.Fatal("a missing cover read prevented deleted-event cleanup")
+	}
+}
