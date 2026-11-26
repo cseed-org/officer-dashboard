@@ -8,6 +8,7 @@ import (
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
+	"officerdashboard/internal/files"
 	"officerdashboard/internal/notify"
 	"officerdashboard/internal/store"
 	"strings"
@@ -166,4 +167,34 @@ func TestSetupConnectedAccountsWithoutEmailHaveReadableLabels(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestSetupDriveCardReportsServiceAccountStorage(t *testing.T) {
+	e, fake, _ := driveEnv(t)
+	_, acct := newServiceAccount(t)
+	sa, err := files.NewDrive(acct, driveRootID, fake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.srv.cfg.Files.(*storeSwitch).fallback = sa
+	r := e.get("/api/setup/status", e.as("user-leadership"))
+	expectStatus(t, "owner", r, 200)
+	var body struct {
+		Integrations []struct{ Key, State, Detail string }
+	}
+	if err := json.Unmarshal([]byte(r.Raw), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, i := range body.Integrations {
+		if i.Key == "drive" {
+			if i.State != "configured" || !strings.Contains(i.Detail, "service account") {
+				t.Fatalf("service-account Drive card: %s %q", i.State, i.Detail)
+			}
+			if strings.Contains(string(r.Raw), "PRIVATE KEY") || strings.Contains(string(r.Raw), "gserviceaccount.com") {
+				t.Fatal("setup response leaked service-account key material")
+			}
+			return
+		}
+	}
+	t.Fatal("no drive entry")
 }

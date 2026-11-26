@@ -739,7 +739,8 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
   write transaction. Non-owner leadership receives 403. Owners manage sign-ins on `/setup`.
 - Owner (Drive file storage, [Integrations](integrations.md#files-in-a-google-shared-drive)):
   GET /api/settings/drive/status (`DriveStatus`: account email, root folder, reachable,
-  `canWrite`, usage; never tokens), navigation GET /api/settings/drive/connect, OAuth callback
+  `canWrite`, usage with `measuredAt`; never tokens; usage comes from the daily check or the
+  day's first load, and `?refresh=1` measures it again), navigation GET /api/settings/drive/connect, OAuth callback
   /auth/drive-google/callback, PUT /api/settings/drive/root (`DriveRootRequest`: a folder id or
   `drive.google.com/drive/folders/…` link, checked for Content-manager access; 409 when
   `DRIVE_ROOT_FOLDER_ID` is set or no account is connected), DELETE /api/settings/drive

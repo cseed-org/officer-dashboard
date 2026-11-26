@@ -38,7 +38,7 @@ func (c *Ctx) setupStatus() error {
 		}
 		entries = append(entries, setupIntegration{key, label, state, hint, "env", setupDocs})
 	}
-	drive := s.driveStatusBody(c.Context())
+	drive := s.driveStatusBody(c.Context(), false)
 	driveEmail, _ := drive["email"].(string)
 	if strings.TrimSpace(driveEmail) == "" {
 		driveEmail = "the connected Google account"
@@ -50,6 +50,14 @@ func (c *Ctx) setupStatus() error {
 			state, detail = "connected", fmt.Sprintf("%s ; %s", driveEmail, drive["rootName"])
 		} else if drive["rootFolderId"] != "" {
 			state, detail = "error", "Root folder is unreachable or cannot accept files. Check Drive access below."
+		}
+	} else if drive["storage"] == "drive" {
+		// No connected account, but the server's service account stores files in Drive.
+		if drive["rootReachable"] == true && drive["canWrite"] == true {
+			rootName, _ := drive["rootName"].(string)
+			state, detail = "configured", "Stored with the server's service account ; "+rootName
+		} else {
+			state, detail = "error", "The service account's root folder is unreachable or cannot accept files. Check Drive access below."
 		}
 	}
 	if drive["needsReconnect"] == true {

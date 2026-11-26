@@ -3,6 +3,7 @@ import { api, endpointUrl } from '../../lib/api/client';
 import type { DriveStatus } from '../../lib/contracts';
 import { Drawer } from '../components/Drawer';
 import { errorMessage } from '../components/states';
+import { fmtDateTime } from '../../lib/format';
 
 /** `?drive=` after Google consent returns (server/internal/api/drive.go). */
 const RESULT: Record<string, { tone: 'positive' | 'negative' | 'info'; text: string }> = {
@@ -56,6 +57,7 @@ export function DrivePanel() {
       setConfirming(false);
     }
   };
+  const refreshUsage = () => run(() => api('driveStatus', { query: { refresh: '1' } }), 'Storage use measured again.');
   const disconnect = () => run(() => api('driveDisconnect'), 'Google account disconnected. Uploads answer “not connected” until an account is connected again; stored files stay in Drive.');
   const saveRoot = (e: Event) => {
     e.preventDefault();
@@ -74,16 +76,6 @@ export function DrivePanel() {
     );
   } else if (!st) {
     body = <div class="skel skel--row" aria-busy="true" />;
-  } else if (!st.configured) {
-    body = (
-      <div class="stack stack--tight" data-drive="not-configured">
-        <p class="notice notice--attention">Google OAuth isn’t configured on this dashboard, so a Google account can’t be connected for file storage yet.</p>
-        <p class="field-hint" style={{ overflowWrap: 'anywhere' }}>
-          An owner sets <code>GOOGLE_OAUTH_CLIENT_ID</code> and <code>GOOGLE_OAUTH_CLIENT_SECRET</code> and adds <code>{callback}</code> as an authorized redirect URI in
-          that client. See <code>docs/deployment.md</code>.
-        </p>
-      </div>
-    );
   } else {
     const trouble = st.needsReconnect || (st.connected && !!st.rootFolderId && !st.rootReachable) || (st.rootReachable && !st.canWrite);
     body = (
@@ -100,11 +92,24 @@ export function DrivePanel() {
             ) : null}
             . Officers open them through the dashboard; they don’t need access to the drive.
           </p>
+        ) : st.storage === 'drive' ? (
+          <p class="notice notice--positive" data-drive-service-account>
+            Receipts and design files are stored with the server’s service account
+            {st.rootReachable && st.rootName ? (
+              <>
+                {' '}
+                in <strong>{st.rootName}</strong>
+              </>
+            ) : null}
+            . Officers open them through the dashboard.
+          </p>
         ) : (
           <p class="notice">
             {st.needsReconnect
               ? `Google revoked the dashboard’s access to ${st.email ?? 'the Drive account'}. Uploads are paused until it is reconnected.`
-              : 'Not connected. Connect the Google account that has Content manager access to the club’s shared drive.'}
+              : st.storage === 'local'
+                ? 'Files are stored on this server’s disk. Connect the Google account that has Content manager access to the club’s shared drive to store them there.'
+                : 'Not connected. Connect the Google account that has Content manager access to the club’s shared drive.'}
           </p>
         )}
         {st.error && (
@@ -119,7 +124,10 @@ export function DrivePanel() {
         )}
         {st.usage && (
           <p class="small muted" data-drive-usage>
-            {gb(st.usage.usedBytes)} of {gb(st.usage.quotaBytes)} used ({st.usage.percent}%). Owners are alerted at 70%.
+            {gb(st.usage.usedBytes)} of {gb(st.usage.quotaBytes)} used ({st.usage.percent}%), measured {fmtDateTime(st.usage.measuredAt)}. Owners are alerted at 70%.{' '}
+            <button type="button" class="btn btn--small" onClick={refreshUsage} disabled={busy} data-drive-refresh>
+              Refresh
+            </button>
           </p>
         )}
         {st.connected &&
@@ -148,8 +156,14 @@ export function DrivePanel() {
               </div>
             </form>
           ))}
+        {!st.configured && (
+          <p class="field-hint" style={{ overflowWrap: 'anywhere' }} data-drive="oauth-not-configured">
+            To connect a Google account, an owner sets <code>GOOGLE_OAUTH_CLIENT_ID</code> and <code>GOOGLE_OAUTH_CLIENT_SECRET</code> and adds <code>{callback}</code> as
+            an authorized redirect URI in that client. See <code>docs/deployment.md</code>.
+          </p>
+        )}
         <div class="action-row">
-          {(!st.connected || st.needsReconnect) && (
+          {st.configured && (!st.connected || st.needsReconnect) && (
             <a class="btn btn--primary" href={connectHref} data-reload data-drive-connect>
               {st.needsReconnect ? 'Reconnect Google Drive' : 'Connect Google Drive'}
             </a>
@@ -160,7 +174,7 @@ export function DrivePanel() {
             </button>
           )}
         </div>
-        {!st.connected && <p class="field-hint">Consent opens on Google and returns here.</p>}
+        {st.configured && !st.connected && <p class="field-hint">Consent opens on Google and returns here.</p>}
       </div>
     );
   }

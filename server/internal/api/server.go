@@ -123,6 +123,9 @@ type Server struct {
 	orgNeedsReauth bool
 	orgFailures    int
 	orgRetryAt     time.Time
+	// The last Drive usage measurement, shown by the Settings status (drive.go).
+	driveUsageMu sync.Mutex
+	driveUsage   *driveUsageSnap
 }
 
 // New builds a server from its config.
