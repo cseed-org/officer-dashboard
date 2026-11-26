@@ -100,7 +100,7 @@ pass. Major updates receive
 
 Maintainers must enable repository auto-merge, create the `major-update` label from
 `.github/labels.yml`, and require the `pr-title` check alongside existing checks.
-Install a repository-scoped GitHub App with contents, issues and pull requests write
+Install a repository-scoped GitHub App with contents and pull requests write
 access; save `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` as repository secrets.
 Allow that App to create `v*` tags through the tag-creation ruleset, while preserving
 the separate rules preventing tag updates/deletion. An App token lets release PRs
@@ -116,3 +116,38 @@ label. Once `pr-title` has run successfully, add it to required checks. Without 
 setup, every main push fails release-please; other CI still runs. Before merging
 the first release PR, review its notes: historical nonconventional commit subjects
 are omitted from automatic changelogs and may need a manual summary.
+
+### One-time release App setup
+
+Run this **once per repository, not per server**, from a machine with Node and
+authenticated GitHub CLI (`gh auth login`). The person running it needs permission
+to create an organization GitHub App, set repository secrets, install that App,
+and administer repository rulesets. Preview without making requests or changes:
+
+```sh
+node scripts/setup-release-app.mjs --org cseed-org --repo officer-dashboard --dry-run
+```
+
+When ready, run the same command without `--dry-run`. Open the printed loopback
+URL and approve GitHub's App manifest form. The helper saves `RELEASE_APP_ID` and
+`RELEASE_APP_PRIVATE_KEY` through `gh secret set` using stdin; it never prints or
+writes the private key to disk. Follow the printed installation link, select
+**Only select repositories**, and select **officer-dashboard** only. The helper
+waits up to 10 minutes, verifies that exact repository selection, then adds the
+App to **Version tags - owners create** while preserving existing bypass actors.
+It leaves **Version tags - immutable** alone.
+
+The default App name is `cseed-release`; change it with `--name`. The server binds
+only to `127.0.0.1`, using `--port`, then `PANE_PORT`, then an OS-assigned free port.
+If a port is occupied, use `--port 0`. Keep this terminal running during approval
+and installation. The loopback callback requires the person to use a browser on
+the same machine as the helper.
+
+If both secrets already exist, the helper stops without making changes. `--force`
+intentionally creates a replacement App and overwrites the secrets; it does not
+remove the old App or its bypass. If only one secret exists, it stops for manual
+recovery unless forced. An installation timeout leaves saved secrets in place but
+does not add the bypass: finish installing that App and add its creation bypass
+manually, rather than creating another App. Check the terminal's completion message
+before merging a release PR. This helper does not enable auto-merge, change the
+action allowlist, create labels, or configure the production environment.
