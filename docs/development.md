@@ -83,8 +83,9 @@ the development database, dependencies and cache.
 
 CI ([ci.yml](../.github/workflows/ci.yml)) runs Go, contract and web checks, plus release
 smoke tests and a selected Compose Playwright suite, on pushes to `main` and pull requests.
-Markdown changes also run [docs.yml](../.github/workflows/docs.yml): relative links must
-pass offline; external checks are advisory and accept rate-limit responses.
+Markdown changes also run [docs.yml](../.github/workflows/docs.yml):
+`scripts/check-doc-links.mjs` verifies every relative file link and section anchor
+offline (external links are skipped), using only first-party GitHub actions.
 
 ## Run it
 
