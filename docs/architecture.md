@@ -24,6 +24,7 @@ server/
   internal/mcpcheck    the mcp-check deployment reachability checks
   internal/files       receipts: Google Drive (shared drive) and local disk
   internal/drivebackup uploads the sidecar's encrypted snapshots to Drive (daily + monthly) and restores them
+  internal/driveexport hourly readable event/program snapshots in Drive; content hashes skip unchanged files
   internal/notify      Discord webhook, invitation bot DMs, console fallback
   internal/notion      placeholder Notion event-link sync
   internal/fiscal      fiscal years, monthly periods, Pacific dates
@@ -34,6 +35,65 @@ server/
   deploy/              Dockerfile support, backup helper/updater, systemd units
   scripts/backup       online SQLite backup
 ```
+
+## Readable Drive exports
+
+`internal/driveexport` resolves the active Drive connection for each pass. It starts
+after five minutes, waits an hour after each pass, and has a ten-minute pass limit.
+Disconnected, revoked, and missing-root connections are quiet skips; the connection
+flow owns revocation alerts. Other failures use the shared operational alerter.
+Quota and rate errors stop a pass; an individual event or track error is collected
+while later records continue. A pass timeout alerts through the still-active parent
+context; shutdown cancellation stays quiet.
+
+Event text, guest counts, linked requests, program data, and prior export state come
+from one database snapshot. Explicit allow-list structs render `event.json` and
+`summary.md` into the same event folder that design uploads use. Track exports use
+`Programs/<unique track key>/program.json`, so duplicate display names and renames
+do not change their destination. Expense summaries distinguish `estimated_total_cents`
+from nullable `actual_total_cents`, with `actual_count` identifying how many requests
+have recorded actuals. An event without a date or tentative window reads
+`Date: to be decided`.
+
+Every generated file has an exact-byte SHA-256 in `drive_export_state` (migration
+0038). Render and compare before folder discovery or upload. The retained export
+timestamp prevents the clock alone from changing the bytes. State is scoped to the
+Drive root and stable entity IDs. A separate `cover.source` state marker fingerprints
+`Event.CoverUpdatedAt`; only a changed cover version loads its bytes, in a small
+version-checked read transaction. At most one cover is retained at a time. Identical
+cover bytes skip upload even when the source version changes.
+
+Each connected pass also performs privacy cleanup under `Events/`. It scans the
+event folders together, but only touches a folder whose trailing `[event id]` has
+`drive_export_state` under the current root, so a folder this export never wrote
+(another instance's root, a dev or seeded database, a database restored from an
+older backup, or a hand-made `Photos [2025]`) loses nothing. When such an owned
+folder's event no longer exists, cleanup trashes only the files the export writes
+there: `event.json`, `summary.md` and `cover.*`, found by their state ids or those
+names. It then lists the folder again. An empty folder is trashed; a folder that
+still holds anything else, such as `Design/<request id>/` uploads that
+`design_request_files` rows still reference (an event delete sets
+`design_requests.event_id` to NULL, and a re-linked request's earlier files stay in
+the old event's folder), is renamed `<name> [<id>] (deleted)` and left in place.
+Cleanup never trashes or recurses into a subfolder. The renamed folder no longer
+ends in `[id]`, so it is never matched as an event folder again. If any exported
+file cannot be trashed, the folder and its state are kept and the next pass retries.
+
+For live events, cleanup removes stale `cover.*` files when a cover is replaced,
+changes extension, or is removed, retaining only the current exported cover. It
+lists an event's folder only when that event's cover state points anywhere but the
+current cover (a replaced or removed cover, or an earlier trash that failed), plus
+one full sweep of every owned folder per process start and per 24 hours, which also
+catches stale covers that have no state. An unchanged pass therefore makes two
+Drive listings (the root's `Events` lookup and the `Events` listing) regardless of
+the number of events. Unrelated files and design subfolders of live events are
+preserved; `cover.*` is reserved for generated cover files. Cleanup rechecks event
+existence and cover version before deleting, so concurrent new events or changed
+covers wait for the next snapshot. Successful trash operations clear the affected
+export state, allowing identical content to be exported again after recreation.
+Drive's recoverable trash behavior applies.
+Removing a program rewrites its track's JSON. Cleanup of entire `Programs/` folders
+is outside this event-and-cover cleanup.
 
 ## Stack, and why each dependency
 

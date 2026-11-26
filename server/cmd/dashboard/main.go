@@ -39,6 +39,7 @@ import (
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
 	"officerdashboard/internal/drivebackup"
+	"officerdashboard/internal/driveexport"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/mcpcheck"
 	"officerdashboard/internal/notify"
@@ -323,6 +324,25 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// Resolve the server's current Drive each pass so Settings connections and
+	// root changes take effect without restarting. Disconnected passes do no work.
+	exportDone := make(chan struct{})
+	var exportDeadline time.Time
+	exporter := &driveexport.Service{DB: db, Drive: exportDriveResolver(srv.Drive), Alerts: srv.Alerts(), Log: log}
+	go func() { defer close(exportDone); exporter.Hourly(ctx) }()
+	defer func() {
+		stop()
+		if exportDeadline.IsZero() {
+			exportDeadline = time.Now().Add(ShutdownBudget)
+		}
+		wait := time.NewTimer(max(0, time.Until(exportDeadline)))
+		defer wait.Stop()
+		select {
+		case <-exportDone:
+		case <-wait.C:
+			log.Warn("Drive export still stopping")
+		}
+	}()
 	go sessionJanitor(ctx, db, log)
 	// Deliver calendar jobs a previous run left in the outbox, and retry failed
 	// ones hourly.
@@ -332,13 +352,31 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	go srv.CloudflareDaily(ctx)
 	// Upload the sidecar's encrypted daily snapshots to Drive (Backups/daily plus a monthly
 	// copy). The service resolves the current Drive each pass and idles while the outbox is
-	// empty or Drive is not connected.
-	go (&drivebackup.Service{
-		Drive:  func(ctx context.Context) (drivebackup.Store, error) { return srv.Drive(ctx) },
-		Outbox: drivebackup.OutboxDir(s.DBPath),
-		Alert:  func(ctx context.Context, key, msg string) { srv.Alerts().Alert(ctx, key, msg) },
-		Log:    log,
-	}).Hourly(ctx)
+	// empty or Drive is not connected. Like the exporter, it stops within ShutdownBudget.
+	backupDone := make(chan struct{})
+	go func() {
+		defer close(backupDone)
+		(&drivebackup.Service{
+			Drive:  func(ctx context.Context) (drivebackup.Store, error) { return srv.Drive(ctx) },
+			Outbox: drivebackup.OutboxDir(s.DBPath),
+			Alert:  func(ctx context.Context, key, msg string) { srv.Alerts().Alert(ctx, key, msg) },
+			Log:    log,
+		}).Hourly(ctx)
+	}()
+	defer func() {
+		stop()
+		deadline := exportDeadline
+		if deadline.IsZero() {
+			deadline = time.Now().Add(ShutdownBudget)
+		}
+		wait := time.NewTimer(max(0, time.Until(deadline)))
+		defer wait.Stop()
+		select {
+		case <-backupDone:
+		case <-wait.C:
+			log.Warn("Drive backup uploader still stopping")
+		}
+	}()
 	go srv.DriveQuotaDaily(ctx)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
@@ -352,6 +390,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		log.Info("shutting down")
 		// One deadline for the whole stop, so it fits inside the service manager's timeout.
 		deadline := time.Now().Add(ShutdownBudget)
+		exportDeadline = deadline
 		shutdown, cancel := context.WithDeadline(context.Background(), deadline)
 		defer cancel()
 		err := httpSrv.Shutdown(shutdown)
@@ -365,10 +404,23 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 }
 
 // ShutdownBudget is the most serve spends stopping after SIGTERM: draining HTTP requests,
-// then waiting for the calendar worker. The service manager must allow more, with room
+// then waiting for the calendar and Drive export workers. The service manager must allow more, with room
 // for db.Close and Litestream's final flush: deploy/dashboard.service TimeoutStopSec and
 // deploy/compose.cloudflare.yml stop_grace_period (checked by TestStopTimeoutsExceedShutdownBudget).
 const ShutdownBudget = 15 * time.Second
+
+// A connected account without a selected root is configuration state, not an
+// operational export failure. The API owns that error; the worker sees a skip.
+func exportDriveResolver(resolve func(context.Context) (*files.Drive, error)) func(context.Context) (*files.Drive, error) {
+	return func(ctx context.Context) (*files.Drive, error) {
+		drive, err := resolve(ctx)
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusServiceUnavailable && apiErr.Code == "not_configured" {
+			return nil, files.ErrNotConnected
+		}
+		return drive, err
+	}
+}
 
 // calendarRetry restarts the calendar outbox worker hourly, so every job that failed (SMTP
 // relay or Google down) is retried, whatever its backoff, without waiting for a change.
