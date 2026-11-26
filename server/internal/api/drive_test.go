@@ -30,7 +30,11 @@ type alertLog struct {
 	msgs []string
 }
 
-func (a *alertLog) all() []string { a.mu.Lock(); defer a.mu.Unlock(); return append([]string(nil), a.msgs...) }
+func (a *alertLog) all() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]string(nil), a.msgs...)
+}
 
 const driveRootID = "cseedDriveRoot01"
 
@@ -236,7 +240,9 @@ func TestDriveReceiptsAreStreamedOnlyAfterTheReceiptCheck(t *testing.T) {
 	if n := e.scalar(`SELECT count(*) FROM attachments WHERE web_view_link IS NOT NULL`); n != int64(0) {
 		t.Errorf("%v new rows carry a Drive link", n)
 	}
-	downloads := func() int { return fake.Count("GET", "/drive/v3/files/") - fake.Count("GET", "/drive/v3/files/"+driveRootID) }
+	downloads := func() int {
+		return fake.Count("GET", "/drive/v3/files/") - fake.Count("GET", "/drive/v3/files/"+driveRootID)
+	}
 	before := downloads()
 	expectStatus(t, "anonymous", e.get(link, anon), 401)
 	expectStatus(t, "another officer", e.get(link, e.as("user-marcus")), 403)
