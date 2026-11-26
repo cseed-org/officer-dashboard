@@ -66,12 +66,16 @@ Each connected pass also performs privacy cleanup under `Events/`. It scans the
 event folders together and trashes folders with a trailing `[event id]` whose event
 no longer exists. It removes stale `cover.*` files when a cover is replaced, changes
 extension, or is removed, retaining only the current exported cover. Unrelated files
-and design subfolders of live events are preserved. Cleanup rechecks event existence
+and design subfolders of live events are preserved. The `[event id]` folder suffix
+identifies managed event folders; `cover.*` is reserved for generated cover files.
+Cleanup rechecks event existence
 and cover version before deleting, so concurrent new events or changed covers wait
 for the next snapshot. Successful trash operations clear the affected export state,
 allowing identical content to be exported again after recreation. Drive's recoverable
 trash behavior applies. These cleanup listings still run when file hashes are
 unchanged; unchanged records need no per-event folder discovery or upload.
+Removing a program rewrites its track's JSON. Cleanup of entire `Programs/` folders
+is outside this event-and-cover cleanup.
 
 ## Stack, and why each dependency
 
