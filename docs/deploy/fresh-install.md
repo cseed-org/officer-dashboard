@@ -61,11 +61,18 @@ can control Docker and must be trusted accordingly.
 ### Sign in to the private image registry
 
 The GHCR image is **private**. A public source checkout does not grant image access.
-Complete this once on the host, as the same dedicated OS user that will run Compose
-and the image updater:
+Use the same OS identity for registry login, Compose and the image updater. The supplied
+`officer-dashboard-update.service` runs as **root**: for that default setup, enter a root
+shell with `sudo -i` before configuring the helper, logging in and running the host
+Compose commands below. This uses root's Docker configuration and credential store.
+If you customize the unit to use a different user, configure that user's `HOME`,
+`DOCKER_CONFIG` and helper `PATH` consistently before logging in.
 
 1. **Create the token.** A package administrator grants **Read** access to the GitHub
-   account used for deployment. The operator of that account opens GitHub **Settings →
+   account used for deployment. A direct grant on this private organization package
+   requires that account to be an organization member (or receive access through an
+   organization team); see [package access settings](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility#configuring-access-to-packages-for-an-organization).
+   The operator of that GitHub account opens **Settings →
    Developer settings → Personal access tokens → Tokens (classic) → Generate new token
    (classic)**. Select **`read:packages` only**, choose an expiry and record its renewal
    date. Do not select `repo`, `write:packages` or `delete:packages`. Authorize the token
@@ -79,6 +86,7 @@ and the image updater:
    ```json
    {"credHelpers": {"ghcr.io": "pass"}}
    ```
+   If already logged in to GHCR, run `docker logout ghcr.io` before switching helpers.
    Merge this entry into the existing JSON; preserve other settings. If Docker Desktop
    already uses its configured system credential store, keep that working configuration.
    Confirm the chosen helper and its backing store are ready before the next step:
@@ -92,7 +100,8 @@ and the image updater:
    as this same OS user so Docker can find the saved login. Never put the token in
    Compose/env files, command arguments, the image or Git. If a pull returns `denied`
    or `unauthorized`, check package access, token expiry and SSO authorization, then log
-   in again with a replacement read-only token. An expiry does not stop the running app;
+   in again with a replacement read-only token. Renew before the recorded expiry date.
+   An expiry does not stop the running app;
    it prevents the next image download.
 
 ### Prepare the deployment files
@@ -148,10 +157,13 @@ whose main CI publish passed. The reviewer checks that SHA and approves the pend
 then retags `sha-<first 7 characters>` by its digest as `:prod`.
 
 Install `officer-dashboard-update.service` and `.timer` from `server/deploy` into
-`/etc/systemd/system`; adjust `/opt/officer-dashboard` if necessary. Run `systemctl daemon-reload`
-and `systemctl enable --now officer-dashboard-update.timer`. Authenticate GHCR as the service's
-user (root in the supplied unit), using the read-only credential. Check the journal and run
-the first update manually. Tunnel and Access remain remote-managed; neither is reprovisioned.
+`/etc/systemd/system`; adjust `/opt/officer-dashboard` if necessary. Run `systemctl daemon-reload`.
+The updater uses root in the supplied unit, matching the registry login above. Ensure its
+helper and backing store work unattended in the service environment, including `HOME`,
+`DOCKER_CONFIG` and helper `PATH`; an interactive login alone does not prove timer access.
+Run `systemctl start officer-dashboard-update.service`, inspect its journal for a successful
+first update, and only then run `systemctl enable --now officer-dashboard-update.timer`.
+Tunnel and Access remain remote-managed; neither is reprovisioned.
 
 The app/backup containers run with all capabilities dropped, read-only root filesystems,
 bounded tmpfs `/tmp` and memory/PID limits. Their shared `/data` is writable for SQLite
