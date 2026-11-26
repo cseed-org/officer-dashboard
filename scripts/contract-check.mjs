@@ -209,6 +209,7 @@ await call('orgGoogleDisconnect', {who: leadership});
 // Drive storage settings are owner-only; with no Google account connected the root cannot be set.
 await call('driveStatus', {who: officer, expect: 403});
 await call('driveStatus', {who: leadership});
+await call('driveStatus', {who: leadership, query: {refresh: '1'}});
 await call('driveRootPut', {who: leadership, body: {folderId: 'contractRootFolder01'}, expect: 409});
 await call('driveDisconnect', {who: leadership});
 const orgMeeting = await call('orgEventCreate', {who: officer, body: {calendarKey:'internal',title:'Contract meeting',startsAt:'2026-11-24T18:00:00Z',endsAt:'2026-11-24T19:00:00Z'}});

@@ -1597,10 +1597,13 @@ export const DriveStatus = z.object({
   configured: z.boolean(), connected: z.boolean(), email: z.string().nullable(), needsReconnect: z.boolean(),
   rootFolderId: z.string(), rootFromEnv: z.boolean(), rootReachable: z.boolean(), rootName: z.string().nullable(),
   sharedDrive: z.boolean(), canWrite: z.boolean(), storage: z.enum(['drive', 'local', '']),
-  usage: z.object({ usedBytes: z.number().int().nonnegative(), quotaBytes: z.number().int().positive(), percent: z.number().int().nonnegative() }).nullable(),
+  /** From the daily check or the day's first status load; `?refresh=1` measures again (it lists the whole drive). */
+  usage: z.object({ usedBytes: z.number().int().nonnegative(), quotaBytes: z.number().int().positive(), percent: z.number().int().nonnegative(), measuredAt: IsoDateTime }).nullable(),
   error: z.string().nullable(),
 });
 export type DriveStatus = z.infer<typeof DriveStatus>;
+export const DriveStatusQuery = z.object({ refresh: z.literal('1').optional() });
+export type DriveStatusQuery = z.infer<typeof DriveStatusQuery>;
 /** A shared-drive folder id, or its drive.google.com/drive/folders/… link. */
 export const DriveRootRequest = z.object({ folderId: z.string().trim().min(1).max(2048) });
 export type DriveRootRequest = z.infer<typeof DriveRootRequest>;
@@ -1623,7 +1626,7 @@ export const ENDPOINTS = {
   orgGoogleConnect: {method:'GET', path:'/api/settings/org-google/connect', auth:'leadership', response:'redirect'},
   orgGoogleCallback: {method:'GET', path:'/auth/org-google/callback', auth:'leadership', response:'redirect'},
   orgGoogleDisconnect: {method:'DELETE', path:'/api/settings/org-google', auth:'leadership', response:OrgGoogleStatus},
-  driveStatus: {method:'GET', path:'/api/settings/drive/status', auth:'owner', response:DriveStatus},
+  driveStatus: {method:'GET', path:'/api/settings/drive/status', auth:'owner', query:DriveStatusQuery, response:DriveStatus},
   driveConnect: {method:'GET', path:'/api/settings/drive/connect', auth:'owner', response:'redirect'},
   driveCallback: {method:'GET', path:'/auth/drive-google/callback', auth:'owner', response:'redirect'},
   driveDisconnect: {method:'DELETE', path:'/api/settings/drive', auth:'owner', response:DriveStatus},

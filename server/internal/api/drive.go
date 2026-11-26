@@ -286,6 +286,10 @@ func (s *Server) storageKind(ctx context.Context) string {
 		}
 		st = cur
 	}
+	return kindOf(st)
+}
+
+func kindOf(st files.Store) string {
 	switch st.(type) {
 	case files.Local, *files.Local:
 		return "local"
@@ -293,6 +297,26 @@ func (s *Server) storageKind(ctx context.Context) string {
 		return "drive"
 	}
 	return ""
+}
+
+// storeFor returns a store holding files recorded with `storage` ("drive" or "local"),
+// whether or not it is the current backend: the current store, else the fallback behind
+// the switch (a service-account Drive or local disk). nil when none is configured, e.g.
+// Drive files while the connected account is disconnected and there is no service account.
+func (s *Server) storeFor(ctx context.Context, storage string) files.Store {
+	cands := []files.Store{s.cfg.Files}
+	if w, ok := s.cfg.Files.(*storeSwitch); ok {
+		cands = []files.Store{w.fallback}
+		if cur, err := w.current(ctx); err == nil {
+			cands = []files.Store{cur, w.fallback}
+		}
+	}
+	for _, st := range cands {
+		if storage != "" && kindOf(st) == storage {
+			return st
+		}
+	}
+	return nil
 }
 
 // DriveQuotaDaily checks Drive usage against DRIVE_QUOTA_BYTES once a day until ctx ends,
@@ -314,19 +338,53 @@ func (s *Server) DriveQuotaDaily(ctx context.Context) {
 	}
 }
 
+// driveUsageMaxAge is how long a measured usage figure serves the Settings status: About
+// lists every file in the shared drive, so it runs daily or on an owner's explicit refresh.
+const driveUsageMaxAge = 24 * time.Hour
+
+type driveUsageSnap struct {
+	root string
+	u    files.Usage
+	at   time.Time
+}
+
+// measureDrive runs About and caches the result for the status view.
+func (s *Server) measureDrive(ctx context.Context, d *files.Drive) (driveUsageSnap, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	u, err := d.About(ctx)
+	if err != nil {
+		return driveUsageSnap{}, err
+	}
+	snap := driveUsageSnap{root: d.RootID(), u: u, at: s.now()}
+	s.driveUsageMu.Lock()
+	s.driveUsage = &snap
+	s.driveUsageMu.Unlock()
+	return snap, nil
+}
+
+// cachedDriveUsage is the last measurement of this root, when it is younger than a day.
+func (s *Server) cachedDriveUsage(root string) (driveUsageSnap, bool) {
+	s.driveUsageMu.Lock()
+	defer s.driveUsageMu.Unlock()
+	if s.driveUsage == nil || s.driveUsage.root != root || s.now().Sub(s.driveUsage.at) >= driveUsageMaxAge {
+		return driveUsageSnap{}, false
+	}
+	return *s.driveUsage, true
+}
+
 // checkDriveQuota measures usage once; it returns the percent used (-1 when not measured).
 func (s *Server) checkDriveQuota(ctx context.Context) int64 {
 	d, err := s.Drive(ctx)
 	if err != nil {
 		return -1
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	u, err := d.About(ctx)
+	snap, err := s.measureDrive(ctx, d)
 	if err != nil {
 		s.log.Warn("Drive quota check failed", "error", err)
 		return -1
 	}
+	u := snap.u
 	quota := s.driveQuota()
 	pct := u.UsedBytes * 100 / quota
 	if pct >= driveQuotaAlertPercent {
@@ -348,12 +406,13 @@ func (c *Ctx) driveStatus() error {
 	if err := c.driveOwner(); err != nil {
 		return err
 	}
-	writeJSON(c.W, 200, c.S.driveStatusBody(c.Context()))
+	writeJSON(c.W, 200, c.S.driveStatusBody(c.Context(), c.R.URL.Query().Get("refresh") == "1"))
 	return nil
 }
 
-// driveStatusBody is the Settings view of Drive. It never carries tokens.
-func (s *Server) driveStatusBody(ctx context.Context) map[string]any {
+// driveStatusBody is the Settings view of Drive. It never carries tokens. Usage comes from
+// the last measurement (daily check, or earlier today); refresh measures it again.
+func (s *Server) driveStatusBody(ctx context.Context, refresh bool) map[string]any {
 	a, _ := s.driveAccount(ctx)
 	root, fromEnv := s.driveRoot(a)
 	out := map[string]any{
@@ -377,9 +436,14 @@ func (s *Server) driveStatusBody(ctx context.Context) map[string]any {
 		return out
 	}
 	out["rootReachable"], out["rootName"], out["sharedDrive"], out["canWrite"] = true, info.Name, info.DriveID != "", info.CanAddChildren
-	if u, err := d.About(ctx); err == nil {
-		out["usage"] = map[string]any{"usedBytes": u.UsedBytes, "quotaBytes": s.driveQuota(), "percent": u.UsedBytes * 100 / s.driveQuota()}
+	snap, ok := s.cachedDriveUsage(d.RootID())
+	if refresh || !ok {
+		var err error
+		if snap, err = s.measureDrive(ctx, d); err != nil {
+			return out
+		}
 	}
+	out["usage"] = map[string]any{"usedBytes": snap.u.UsedBytes, "quotaBytes": s.driveQuota(), "percent": snap.u.UsedBytes * 100 / s.driveQuota(), "measuredAt": isoMs(snap.at.UnixMilli())}
 	return out
 }
 
