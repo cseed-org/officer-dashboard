@@ -55,10 +55,47 @@ to `${APP_URL}/auth/callback` and obtain the first owner's Discord ID as describ
 in [owner bootstrap](../configuration.md#core). The Discord client secret belongs
 in `secrets/app/discord-client-secret`, referenced by `DISCORD_CLIENT_SECRET_FILE`.
 
-Use a Linux host with Docker Compose v2, buildx and Python 3.11+. Give its dedicated
-deployment user a GHCR credential with **read:packages only**, through Docker's credential
-helper. Do not put it in compose, the image or Git. Package visibility changes require
-separate approval. The deployment user can control Docker and must be trusted accordingly.
+Use a Linux host with Docker Compose v2, buildx and Python 3.11+. The deployment user
+can control Docker and must be trusted accordingly.
+
+### Sign in to the private image registry
+
+The GHCR image is **private**. A public source checkout does not grant image access.
+Complete this once on the host, as the same dedicated OS user that will run Compose
+and the image updater:
+
+1. **Create the token.** A package administrator grants **Read** access to the GitHub
+   account used for deployment. The operator of that account opens GitHub **Settings →
+   Developer settings → Personal access tokens → Tokens (classic) → Generate new token
+   (classic)**. Select **`read:packages` only**, choose an expiry and record its renewal
+   date. Do not select `repo`, `write:packages` or `delete:packages`. Authorize the token
+   for the organization if it requires SSO. GHCR requires a classic token for this host
+   login; see [GitHub's registry authentication instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic).
+2. **Prepare the credential helper before logging in.** Follow Docker's
+   [credential-store setup](https://docs.docker.com/reference/cli/docker/login/#credential-stores)
+   to install and initialize a helper for that OS user. For example, `pass` needs an
+   initialized GPG/password store and `docker-credential-pass` on `PATH`; its per-registry
+   configuration in `~/.docker/config.json` is:
+   ```json
+   {"credHelpers": {"ghcr.io": "pass"}}
+   ```
+   Merge this entry into the existing JSON; preserve other settings. If Docker Desktop
+   already uses its configured system credential store, keep that working configuration.
+   Confirm the chosen helper and its backing store are ready before the next step:
+   without a helper Docker may store the token unencrypted in `config.json`.
+3. **Log in as the deployment OS user**, using the GitHub username that owns the token:
+   ```sh
+   docker login ghcr.io --username YOUR_GITHUB_USERNAME
+   ```
+   At the **Password** prompt paste the token, not the GitHub account password. Docker
+   stores it through the configured helper. Expect `Login Succeeded`. Run later pulls
+   as this same OS user so Docker can find the saved login. Never put the token in
+   Compose/env files, command arguments, the image or Git. If a pull returns `denied`
+   or `unauthorized`, check package access, token expiry and SSO authorization, then log
+   in again with a replacement read-only token. An expiry does not stop the running app;
+   it prevents the next image download.
+
+### Prepare the deployment files
 
 Clone the repository if needed, then enter `server/deploy` from its root. All host
 Compose commands below run in that directory; use your actual checkout location.

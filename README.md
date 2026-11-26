@@ -125,7 +125,7 @@ See [development](docs/development.md) for live front-end development, seeding, 
 
 ## Deploy
 
-To run the dashboard for real, follow **[Fresh install](docs/deploy/fresh-install.md)**. This operator runbook assumes a 64-bit Linux host with Docker/Compose, buildx, Python 3.11+, deployment credentials and GHCR read access. It covers the published image, a Cloudflare Tunnel and Access sign-in, encrypted backups to Cloudflare D1 and Google Drive, and links to Google setup. See [deployment](docs/deployment.md) for image and release details.
+To run the dashboard for real, follow **[Fresh install](docs/deploy/fresh-install.md)**. This operator runbook assumes a 64-bit Linux host with Docker/Compose, buildx, Python 3.11+ and deployment credentials. The GHCR image is private; follow the [read-only registry login steps](docs/deploy/fresh-install.md#sign-in-to-the-private-image-registry) before pulling it. The runbook covers the published image, a Cloudflare Tunnel and Access sign-in, encrypted backups to Cloudflare D1 and Google Drive, and links to Google setup. See [deployment](docs/deployment.md) for image and release details.
 
 [Back to top](#top)
 
