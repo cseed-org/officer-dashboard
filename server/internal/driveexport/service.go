@@ -23,10 +23,11 @@ type Service struct {
 	DB *store.DB
 	// Drive resolves the active connection once per pass, including connections
 	// made in Settings after the dashboard started.
-	Drive  func(context.Context) (*files.Drive, error)
-	Alerts *notify.Alerter
-	Log    *slog.Logger
-	mu     sync.Mutex
+	Drive   func(context.Context) (*files.Drive, error)
+	Alerts  *notify.Alerter
+	Log     *slog.Logger
+	Timeout time.Duration // zero uses the ten-minute pass limit
+	mu      sync.Mutex
 }
 
 // Hourly delays the first pass to let startup settle. Every failure, including
@@ -40,7 +41,7 @@ func (s *Service) Hourly(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		if err := s.Run(ctx); err != nil && ctx.Err() == nil && !errors.Is(err, files.ErrNotConnected) {
+		if err := s.Run(ctx); err != nil && ctx.Err() == nil && !disconnected(err) {
 			log := s.Log
 			if log == nil {
 				log = slog.Default()
@@ -52,34 +53,40 @@ func (s *Service) Hourly(ctx context.Context) {
 }
 
 type eventSnapshot struct {
-	Event  store.Event
-	Record eventRecord
-	Cover  *store.Cover
+	Event      store.Event
+	Record     eventRecord
+	CoverKnown bool
+	CoverID    string
 }
 
-// Run takes one consistent read snapshot, closes the transaction before network
-// work, and records each successful upload separately so failed passes can resume.
+// Run snapshots text and metadata before network work. Changed covers use their
+// own version-checked read transaction. Each successful upload is saved separately.
 func (s *Service) Run(ctx context.Context) (err error) {
 	if !s.mu.TryLock() {
 		return ErrBusy
 	}
 	defer s.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	parent := ctx
+	limit := s.Timeout
+	if limit <= 0 {
+		limit = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(parent, limit)
 	defer cancel()
 	defer func() {
-		if err == nil || ctx.Err() != nil || errors.Is(err, files.ErrNotConnected) {
+		if err == nil || parent.Err() != nil || disconnected(err) {
 			return
 		}
 		key, msg := "drive-export", "Google Drive readable event/program export failed; the next hourly pass will retry. Check the dashboard logs."
 		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			msg = "Google Drive readable export timed out; completed files are saved and the next hourly pass will retry."
 		case errors.Is(err, files.ErrQuota):
 			key, msg = "drive-quota-full", "Google Drive refused a readable dashboard export: the shared drive is out of storage. Free space; the next hourly export will retry."
 		case errors.Is(err, files.ErrRateLimited):
 			key, msg = "drive-rate-limited", "Google Drive is rate limiting the dashboard; a readable export failed after retries. The next hourly export will retry."
-		case errors.Is(err, files.ErrReconnect):
-			key, msg = "drive-revoked", "Google Drive access for the dashboard was revoked or expired. An owner must reconnect Google Drive in Settings before exports resume."
 		}
-		s.Alerts.Alert(ctx, key, msg)
+		s.Alerts.Alert(parent, key, msg)
 	}()
 	drive, err := s.Drive(ctx)
 	if err != nil {
@@ -145,14 +152,19 @@ func (s *Service) Run(ctx context.Context) (err error) {
 			for _, p := range requests {
 				total := r.Expenses[p.Status]
 				total.Count++
-				total.TotalCents += p.TotalCents
+				total.EstimatedTotalCents += p.TotalCents
+				if p.ActualTotalCents != nil {
+					actual := int64(0)
+					if total.ActualTotalCents != nil {
+						actual = *total.ActualTotalCents
+					}
+					actual += *p.ActualTotalCents
+					total.ActualTotalCents = &actual
+					total.ActualCount++
+				}
 				r.Expenses[p.Status] = total
 			}
-			cover, err := q.EventCover(ctx, e.ID)
-			if err != nil && !errors.Is(err, store.ErrNotFound) {
-				return err
-			}
-			events = append(events, eventSnapshot{e, r, cover})
+			events = append(events, eventSnapshot{Event: e, Record: r})
 		}
 		allTracks, err := q.ProgramTracks(ctx)
 		if err != nil {
@@ -180,48 +192,61 @@ func (s *Service) Run(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	for _, e := range events {
-		var ms *int64
-		if t, err := luma.ParseInstant(e.Event.StartsAt); err == nil {
-			v := t.UnixMilli()
-			ms = &v
-		}
-		if _, err := files.EventFolder(ctx, drive, ms, e.Event.Name, e.Event.ID); err != nil {
-			return err
-		}
-		folder := []string{"Events", files.EventFolderName(ms, e.Event.Name, e.Event.ID)}
-		for _, name := range []string{"event.json", "summary.md"} {
-			mime := "application/json"
-			if name == "summary.md" {
-				mime = "text/markdown"
-			}
-			render := func(at int64) ([]byte, error) { r := e.Record; r.ExportedAt = at; return renderEvent(r, name) }
-			if err := s.upload(ctx, drive, states, "Events/"+e.Event.ID+"/"+name, folder, name, mime, render); err != nil {
-				return err
-			}
-		}
-		if c := e.Cover; c != nil {
-			ext, ok := coverExtensions[c.MimeType]
-			if !ok {
-				return fmt.Errorf("unsupported event cover MIME type")
-			}
-			name := "cover." + ext
-			if err := s.upload(ctx, drive, states, "Events/"+e.Event.ID+"/"+name, folder, name, c.MimeType, func(int64) ([]byte, error) { return c.Bytes, nil }); err != nil {
-				return err
+	var failures []error
+	for i := range events {
+		if err := s.exportEvent(ctx, drive, states, &events[i]); err != nil {
+			failures = append(failures, err)
+			if stopPass(err) {
+				return errors.Join(failures...)
 			}
 		}
 	}
+
 	for _, t := range tracks {
-		name := files.SafeName(t.Name)
-		if name == "" {
-			name = files.SafeName(t.ID)
-		}
+		// Keys are unique and stable; display names may collide or change. Keep
+		// the exact key as one Drive name component rather than sanitizing two
+		// distinct keys into the same name.
+		name := t.Key
 		if err := s.upload(ctx, drive, states, "Programs/"+t.ID+"/program.json", []string{"Programs", name}, "program.json", "application/json", func(at int64) ([]byte, error) { t.ExportedAt = at; return json.MarshalIndent(t, "", "  ") }); err != nil {
-			return err
+			failures = append(failures, err)
+			if stopPass(err) {
+				return errors.Join(failures...)
+			}
 		}
+	}
+	if err := s.cleanup(ctx, drive, states, events); err != nil {
+		failures = append(failures, err)
+		if stopPass(err) {
+			return errors.Join(failures...)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// A cover source marker is metadata, separate from the exact-byte file hash.
+// EventCover is loaded only for a new version, and released after this event.
+func coverVersion(at int64) string { return digest([]byte(fmt.Sprintf("cover-v1:%d", at))) }
+
+func disconnected(err error) bool {
+	return errors.Is(err, files.ErrNotConnected) || errors.Is(err, files.ErrReconnect)
+}
+
+func eventStart(e store.Event) *int64 {
+	if t, err := luma.ParseInstant(e.StartsAt); err == nil {
+		v := t.UnixMilli()
+		return &v
 	}
 	return nil
 }
+
+type pendingFile struct {
+	State      store.DriveExportState
+	Name, MIME string
+	Body       []byte
+}
+
+func stateKey(d *files.Drive, key string) string { return "Drive/" + d.RootID() + "/" + key }
+func digest(body []byte) string                  { return fmt.Sprintf("%x", sha256.Sum256(body)) }
 
 var coverExtensions = map[string]string{"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/heic": "heic"}
 
@@ -230,26 +255,116 @@ var coverExtensions = map[string]string{"image/png": "png", "image/jpeg": "jpg",
 func (s *Service) upload(ctx context.Context, drive *files.Drive, states map[string]store.DriveExportState, key string, folder []string, name, mime string, render func(int64) ([]byte, error)) error {
 	// The root is part of the destination identity. Switching folders in Settings
 	// must export every file there even when its source content did not change.
-	key = "Drive/" + drive.RootID() + "/" + key
+	p, err := prepare(states, stateKey(drive, key), name, mime, render)
+	if err != nil || p == nil {
+		return err
+	}
+	return s.uploadPrepared(ctx, drive, states, folder, p)
+}
+
+func prepare(states map[string]store.DriveExportState, key, name, mime string, render func(int64) ([]byte, error)) (*pendingFile, error) {
 	previous := states[key]
 	body, err := render(previous.ExportedAt)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	hash := func(b []byte) string { return fmt.Sprintf("%x", sha256.Sum256(b)) }
-	if previous.SHA256 == hash(body) {
-		return nil
+	if previous.SHA256 == digest(body) {
+		return nil, nil
 	}
 	now := time.Now().UTC().UnixMilli()
 	body, err = render(now)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	entry, err := drive.Upsert(ctx, files.UpsertInput{Folder: folder, Name: name, MimeType: mime, Body: body, MaxBytes: 16 << 20, AllowedMIME: []string{mime}})
+	return &pendingFile{State: store.DriveExportState{Path: key, SHA256: digest(body), ExportedAt: now}, Name: name, MIME: mime, Body: body}, nil
+}
+
+func (s *Service) uploadPrepared(ctx context.Context, drive *files.Drive, states map[string]store.DriveExportState, folder []string, p *pendingFile) error {
+	entry, err := drive.Upsert(ctx, files.UpsertInput{Folder: folder, Name: p.Name, MimeType: p.MIME, Body: p.Body, MaxBytes: 16 << 20, AllowedMIME: []string{p.MIME}})
 	if err != nil {
 		return err
 	}
-	return s.DB.Write(ctx, func(q *store.Queries) error {
-		return q.SaveDriveExportState(ctx, store.DriveExportState{Path: key, DriveFileID: entry.ID, SHA256: hash(body), ExportedAt: now})
-	})
+	p.State.DriveFileID = entry.ID
+	err = s.DB.Write(ctx, func(q *store.Queries) error { return q.SaveDriveExportState(ctx, p.State) })
+	if err == nil {
+		states[p.State.Path] = p.State
+	}
+	return err
+}
+
+func (s *Service) exportEvent(ctx context.Context, drive *files.Drive, states map[string]store.DriveExportState, e *eventSnapshot) error {
+	e.CoverKnown = e.Event.CoverUpdatedAt == nil
+	marker := states[stateKey(drive, "Events/"+e.Event.ID+"/cover.source")]
+	if e.Event.CoverUpdatedAt != nil && marker.SHA256 == coverVersion(*e.Event.CoverUpdatedAt) && marker.DriveFileID != "" {
+		e.CoverKnown = true
+		e.CoverID = marker.DriveFileID
+	}
+	var pending []*pendingFile
+	var coverSource *store.DriveExportState
+	var coverPath string
+	folder := []string{"Events", files.EventFolderName(eventStart(e.Event), e.Event.Name, e.Event.ID)}
+	for _, name := range []string{"event.json", "summary.md"} {
+		mime := "application/json"
+		if name == "summary.md" {
+			mime = "text/markdown"
+		}
+		render := func(at int64) ([]byte, error) { r := e.Record; r.ExportedAt = at; return renderEvent(r, name) }
+		p, err := prepare(states, stateKey(drive, "Events/"+e.Event.ID+"/"+name), name, mime, render)
+		if err != nil {
+			return err
+		}
+		if p != nil {
+			pending = append(pending, p)
+		}
+	}
+	if e.Event.CoverUpdatedAt != nil && !e.CoverKnown {
+		var c *store.Cover
+		err := s.DB.ReadTx(ctx, func(q *store.Queries) (err error) { c, err = q.EventCover(ctx, e.Event.ID); return })
+		if err != nil {
+			return err
+		}
+		if c.UpdatedAt != *e.Event.CoverUpdatedAt {
+			return errors.New("event cover changed during export")
+		}
+		ext, ok := coverExtensions[c.MimeType]
+		if !ok {
+			e.CoverKnown = true // Unsupported replacement: no old cover may remain live.
+			return fmt.Errorf("unsupported event cover MIME type")
+		}
+		name := "cover." + ext
+		coverPath = stateKey(drive, "Events/"+e.Event.ID+"/"+name)
+		p, err := prepare(states, coverPath, name, c.MimeType, func(int64) ([]byte, error) { return c.Bytes, nil })
+		if err != nil {
+			return err
+		}
+		if p != nil {
+			pending = append(pending, p)
+		}
+		coverSource = &store.DriveExportState{Path: stateKey(drive, "Events/"+e.Event.ID+"/cover.source"), SHA256: coverVersion(c.UpdatedAt), ExportedAt: time.Now().UnixMilli()}
+	}
+	if len(pending) > 0 {
+		if _, err := files.EventFolder(ctx, drive, eventStart(e.Event), e.Event.Name, e.Event.ID); err != nil {
+			return err
+		}
+	}
+	for _, p := range pending {
+		if err := s.uploadPrepared(ctx, drive, states, folder, p); err != nil {
+			return err
+		}
+	}
+	if coverSource != nil {
+		coverSource.DriveFileID = states[coverPath].DriveFileID
+		if err := s.DB.Write(ctx, func(q *store.Queries) error { return q.SaveDriveExportState(ctx, *coverSource) }); err != nil {
+			return err
+		}
+		states[coverSource.Path] = *coverSource
+		e.CoverKnown = true
+		e.CoverID = coverSource.DriveFileID
+	}
+
+	return nil
+}
+
+func stopPass(err error) bool {
+	return disconnected(err) || errors.Is(err, files.ErrQuota) || errors.Is(err, files.ErrRateLimited) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

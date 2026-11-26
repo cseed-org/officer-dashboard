@@ -49,8 +49,10 @@ type designRecord struct {
 	Folder  string  `json:"folder"`
 }
 type expenseRecord struct {
-	Count      int   `json:"count"`
-	TotalCents int64 `json:"total_cents"`
+	Count               int    `json:"count"`
+	EstimatedTotalCents int64  `json:"estimated_total_cents"`
+	ActualTotalCents    *int64 `json:"actual_total_cents"`
+	ActualCount         int    `json:"actual_count"`
 }
 type trackRecord struct {
 	Schema     int             `json:"schema"`
@@ -96,6 +98,8 @@ func renderEvent(r eventRecord, name string) ([]byte, error) {
 	fmt.Fprintf(&b, "# %s\n\nID: %s\nStatus: %s\n", r.Name, r.ID, r.Status)
 	if r.StartsAt != "" {
 		fmt.Fprintf(&b, "Starts: %s\nEnds: %s\n", r.StartsAt, value(r.EndsAt))
+	} else if value(r.TentativeFrom) == "" && value(r.TentativeTo) == "" {
+		b.WriteString("Date: to be decided\n")
 	} else {
 		fmt.Fprintf(&b, "Tentative window: %s to %s\n", value(r.TentativeFrom), value(r.TentativeTo))
 	}
@@ -115,7 +119,12 @@ func renderEvent(r eventRecord, name string) ([]byte, error) {
 	sort.Strings(statuses)
 	for _, status := range statuses {
 		e := r.Expenses[status]
-		fmt.Fprintf(&b, "- %s: %d requests, %d cents\n", status, e.Count, e.TotalCents)
+		fmt.Fprintf(&b, "- %s: %d requests, estimated %d cents; ", status, e.Count, e.EstimatedTotalCents)
+		if e.ActualTotalCents == nil {
+			b.WriteString("actual not recorded\n")
+		} else {
+			fmt.Fprintf(&b, "actual %d cents (%d of %d requests)\n", *e.ActualTotalCents, e.ActualCount, e.Count)
+		}
 	}
 	fmt.Fprintf(&b, "\nSchema: %d\nExported at (Unix milliseconds): %d\n", r.Schema, r.ExportedAt)
 	return []byte(b.String()), nil

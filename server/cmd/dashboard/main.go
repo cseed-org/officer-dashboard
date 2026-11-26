@@ -322,7 +322,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	// root changes take effect without restarting. Disconnected passes do no work.
 	exportDone := make(chan struct{})
 	var exportDeadline time.Time
-	exporter := &driveexport.Service{DB: db, Drive: srv.Drive, Alerts: srv.Alerts(), Log: log}
+	exporter := &driveexport.Service{DB: db, Drive: exportDriveResolver(srv.Drive), Alerts: srv.Alerts(), Log: log}
 	go func() { defer close(exportDone); exporter.Hourly(ctx) }()
 	defer func() {
 		stop()
@@ -375,6 +375,19 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 // for db.Close and Litestream's final flush: deploy/dashboard.service TimeoutStopSec and
 // deploy/compose.cloudflare.yml stop_grace_period (checked by TestStopTimeoutsExceedShutdownBudget).
 const ShutdownBudget = 15 * time.Second
+
+// A connected account without a selected root is configuration state, not an
+// operational export failure. The API owns that error; the worker sees a skip.
+func exportDriveResolver(resolve func(context.Context) (*files.Drive, error)) func(context.Context) (*files.Drive, error) {
+	return func(ctx context.Context) (*files.Drive, error) {
+		drive, err := resolve(ctx)
+		var apiErr *api.APIError
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusServiceUnavailable && apiErr.Code == "not_configured" {
+			return nil, files.ErrNotConnected
+		}
+		return drive, err
+	}
+}
 
 // calendarRetry restarts the calendar outbox worker hourly, so every job that failed (SMTP
 // relay or Google down) is retried, whatever its backoff, without waiting for a change.

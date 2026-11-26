@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -108,6 +109,9 @@ func TestExportIncludesOnlyAllowedEventData(t *testing.T) {
 				return err
 			}
 		}
+		if err := q.Exec(ctx, `UPDATE purchase_requests SET actual_total_cents=350 WHERE id='r2'`); err != nil {
+			return err
+		}
 		checked := int64(1)
 		if err := q.UpsertGuests(ctx, "ev1", []store.GuestIn{{ID: "guest", Email: email, Name: ptr("Private Guest"), CheckedInAt: &checked}}, 0); err != nil {
 			return err
@@ -145,13 +149,15 @@ func TestExportIncludesOnlyAllowedEventData(t *testing.T) {
 		t.Fatalf("wrong guest counts: %s", doc["guests"])
 	}
 	var expenses map[string]struct {
-		Count int   `json:"count"`
-		Total int64 `json:"total_cents"`
+		Count       int    `json:"count"`
+		Estimate    int64  `json:"estimated_total_cents"`
+		Actual      *int64 `json:"actual_total_cents"`
+		ActualCount int    `json:"actual_count"`
 	}
 	if err := json.Unmarshal(doc["expenses"], &expenses); err != nil {
 		t.Fatal(err)
 	}
-	if expenses["submitted"].Count != 2 || expenses["submitted"].Total != 1500 {
+	if got := expenses["submitted"]; got.Count != 2 || got.Estimate != 1500 || got.Actual == nil || *got.Actual != 350 || got.ActualCount != 1 {
 		t.Fatalf("wrong expense totals: %s", doc["expenses"])
 	}
 	for _, c := range fake.Calls() {
@@ -163,6 +169,22 @@ func TestExportIncludesOnlyAllowedEventData(t *testing.T) {
 				t.Errorf("export contains private value %q", secret)
 			}
 		}
+	}
+}
+
+func TestUnknownEventDateReadsToBeDecided(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	// A legacy empty start is permitted by the table's NOT NULL branch.
+	if err := db.Write(ctx, func(q *store.Queries) error { return q.Exec(ctx, `UPDATE events SET starts_at='' WHERE id='ev1'`) }); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&driveexport.Service{DB: db, Drive: fixedDrive(d)}).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f := fake.Path("Events", "undated Winter Mixer [ev1]", "summary.md")
+	if f == nil || !strings.Contains(string(f.Body), "Date: to be decided") || strings.Contains(string(f.Body), "Tentative window:  to ") {
+		t.Fatal("missing plain-language undecided date")
 	}
 }
 
@@ -466,5 +488,371 @@ func TestExportSharesEventFolderWithDesignUploads(t *testing.T) {
 	}
 	if fake.Get(folder.ID) == nil || fake.Path("Events", folder.Name, "Design", "design1") == nil || fake.Path("Events", folder.Name, "event.json") == nil {
 		t.Fatal("design and readable export did not share the event folder")
+	}
+}
+
+func TestReconnectSkipsTwoPassesWithoutAlerts(t *testing.T) {
+	db, _, _ := fixture(t)
+	sent := 0
+	a := notify.NewAlerter("https://synthetic.invalid/alert", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	a.HTTP = &http.Client{Transport: alertTransport(func(*http.Request) (*http.Response, error) {
+		sent++
+		return &http.Response{StatusCode: 204, Body: io.NopCloser(strings.NewReader(""))}, nil
+	})}
+	s := &driveexport.Service{DB: db, Drive: func(context.Context) (*files.Drive, error) { return nil, files.ErrReconnect }, Alerts: a}
+	for range 2 {
+		if err := s.Run(context.Background()); !errors.Is(err, files.ErrReconnect) {
+			t.Fatal(err)
+		}
+	}
+	if sent != 0 {
+		t.Fatalf("sent %d alerts while disconnected", sent)
+	}
+}
+
+func TestUnchangedEventsDoNotRepeatFolderDiscovery(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	if err := db.Write(ctx, func(q *store.Queries) error {
+		for _, id := range []string{"ev2", "ev3", "ev4"} {
+			if err := q.InsertEvent(ctx, store.Event{ID: id, Name: id, StartsAt: "2026-12-02T20:00:00Z"}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	before := len(fake.Calls())
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	lookups := 0
+	for _, c := range fake.Calls()[before:] {
+		if c.Method != "GET" {
+			t.Fatalf("unchanged pass mutated Drive: %s", c.Method)
+		}
+		if strings.Contains(c.URL.Query().Get("q"), "name = 'Events'") {
+			lookups++
+		}
+	}
+	if lookups > 1 {
+		t.Fatalf("unchanged pass repeated Events lookup %d times", lookups)
+	}
+}
+
+func TestCoverSourceVersionControlsByteLoading(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	put := func(at int64, body string) {
+		t.Helper()
+		if err := db.Write(ctx, func(q *store.Queries) error {
+			return q.PutEventCover(ctx, store.Cover{EventID: "ev1", MimeType: "image/png", Bytes: []byte(body), UpdatedAt: at})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(1, "first cover")
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cover := fake.Path("Events", "2026-12-01 Winter Mixer [ev1]", "cover.png")
+	put(1, "second cover") // No new source version: the worker must not reload bytes.
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if string(fake.Get(cover.ID).Body) != "first cover" {
+		t.Fatal("unchanged source version reloaded the cover")
+	}
+	put(2, "second cover")
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if string(fake.Get(cover.ID).Body) != "second cover" {
+		t.Fatal("changed source version did not reload the cover")
+	}
+	before := fake.Count("PATCH", "/upload/")
+	put(3, "second cover")
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fake.Count("PATCH", "/upload/") != before {
+		t.Fatal("identical cover bytes were re-uploaded after a metadata update")
+	}
+}
+
+func TestBadCoverDoesNotBlockOtherExports(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	if err := db.Write(ctx, func(q *store.Queries) error {
+		// Model a legacy row written before the current MIME constraint.
+		if err := q.Exec(ctx, `PRAGMA ignore_check_constraints=ON`); err != nil {
+			return err
+		}
+		if err := q.PutEventCover(ctx, store.Cover{EventID: "ev1", MimeType: "application/legacy", Bytes: []byte("unsupported"), UpdatedAt: 1}); err != nil {
+			return err
+		}
+		if err := q.Exec(ctx, `PRAGMA ignore_check_constraints=OFF`); err != nil {
+			return err
+		}
+		return q.InsertEvent(ctx, store.Event{ID: "ev2", Name: "Other event", StartsAt: "2026-12-02T20:00:00Z"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := (&driveexport.Service{DB: db, Drive: fixedDrive(d)}).Run(ctx)
+	if err == nil {
+		t.Fatal("bad cover did not report its error")
+	}
+	if fake.Path("Events", "2026-12-02 Other event [ev2]", "event.json") == nil || fake.Path("Programs", "buildspace", "program.json") == nil {
+		t.Fatal("one bad event blocked later exports")
+	}
+}
+
+func TestPassTimeoutAlertsButShutdownCancellationDoesNot(t *testing.T) {
+	for _, shutdown := range []bool{false, true} {
+		t.Run(fmt.Sprint(shutdown), func(t *testing.T) {
+			sent := 0
+			a := notify.NewAlerter("https://synthetic.invalid/alert", slog.New(slog.NewTextHandler(io.Discard, nil)))
+			a.HTTP = &http.Client{Transport: alertTransport(func(*http.Request) (*http.Response, error) {
+				sent++
+				return &http.Response{StatusCode: 204, Body: io.NopCloser(strings.NewReader(""))}, nil
+			})}
+			parent, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if shutdown {
+				cancel()
+			}
+			s := &driveexport.Service{Timeout: 5 * time.Millisecond, Alerts: a, Drive: func(ctx context.Context) (*files.Drive, error) { <-ctx.Done(); return nil, ctx.Err() }}
+			err := s.Run(parent)
+			if shutdown {
+				if !errors.Is(err, context.Canceled) || sent != 0 {
+					t.Fatalf("shutdown: %v, alerts %d", err, sent)
+				}
+			} else if !errors.Is(err, context.DeadlineExceeded) || sent != 1 {
+				t.Fatalf("timeout: %v, alerts %d", err, sent)
+			}
+		})
+	}
+}
+
+func TestTrackFoldersUseUniqueKeys(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	if err := db.Write(ctx, func(q *store.Queries) error {
+		for _, track := range []store.ProgramTrack{{ID: "track-a", Key: "alpha", Name: "Same name", Hue: "violet"}, {ID: "track-b", Key: "beta", Name: "Same name", Hue: "coral"}} {
+			if err := q.SaveProgramTrack(ctx, track); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	a, b := fake.Path("Programs", "alpha", "program.json"), fake.Path("Programs", "beta", "program.json")
+	if a == nil || b == nil || a.ID == b.ID {
+		t.Fatal("tracks with equal names collided")
+	}
+	if err := db.Write(ctx, func(q *store.Queries) error {
+		return q.Exec(ctx, `UPDATE program_tracks SET name='Renamed' WHERE id='track-a'`)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.Path("Programs", "alpha", "program.json"); got.ID != a.ID || !strings.Contains(string(got.Body), "Renamed") {
+		t.Fatal("track rename changed its destination")
+	}
+}
+
+func TestDeletedEventsAndStaleCoversAreTrashed(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
+	cover := func(mime string, at int64) {
+		t.Helper()
+		if err := db.Write(ctx, func(q *store.Queries) error {
+			return q.PutEventCover(ctx, store.Cover{EventID: "ev1", MimeType: mime, Bytes: []byte("cover bytes"), UpdatedAt: at})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run := func() {
+		t.Helper()
+		if err := s.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cover("image/png", 1)
+	run()
+	events := fake.Path("Events")
+	folder := fake.Path("Events", "2026-12-01 Winter Mixer [ev1]")
+	oldCover := fake.Path("Events", folder.Name, "cover.png")
+	orphan := fake.Add(drivefake.File{Name: "undated Removed [deleted]", Parent: events.ID, MimeType: drivefake.FolderMIME})
+	planning := fake.Add(drivefake.File{Name: "Planning", Parent: events.ID, MimeType: drivefake.FolderMIME})
+	stale := fake.Add(drivefake.File{Name: "cover.jpeg", Parent: folder.ID, Body: []byte("stale private cover")})
+	poster := fake.Add(drivefake.File{Name: "poster.png", Parent: folder.ID, Body: []byte("design file")})
+	cover("image/webp", 2)
+	run()
+	current := fake.Path("Events", folder.Name, "cover.webp")
+	if current == nil || !fake.Get(oldCover.ID).Trashed || !fake.Get(stale).Trashed || !fake.Get(orphan).Trashed {
+		t.Fatal("deleted event or obsolete covers remained live")
+	}
+	if fake.Get(planning).Trashed || fake.Get(poster).Trashed {
+		t.Fatal("cleanup trashed unrelated material")
+	}
+	if err := db.Write(ctx, func(q *store.Queries) error { _, err := q.DeleteEventCover(ctx, "ev1"); return err }); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if !fake.Get(current.ID).Trashed {
+		t.Fatal("removed source cover remained live")
+	}
+	cover("image/webp", 3)
+	run()
+	if got := fake.Path("Events", folder.Name, "cover.webp"); got == nil || got.ID == current.ID {
+		t.Fatal("re-added identical cover was skipped using trashed-file state")
+	}
+	if err := db.Write(ctx, func(q *store.Queries) error { return q.DeleteEvent(ctx, "ev1") }); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if !fake.Get(folder.ID).Trashed {
+		t.Fatal("deleted event folder remained live")
+	}
+	if err := db.Write(ctx, func(q *store.Queries) error {
+		return q.InsertEvent(ctx, store.Event{ID: "ev1", Name: "Winter Mixer", StartsAt: "2026-12-01T20:00:00Z", Status: "published"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run()
+	if fake.Path("Events", folder.Name, "event.json") == nil {
+		t.Fatal("re-created event was skipped using deleted-folder state")
+	}
+}
+
+func TestCleanupPreservesEventsCreatedAfterSnapshot(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	root := fake.Path("Events")
+	added := false
+	newFolder := ""
+	fake.Fail = func(*http.Request) *http.Response {
+		if !added {
+			added = true
+			if err := db.Write(ctx, func(q *store.Queries) error {
+				return q.InsertEvent(ctx, store.Event{ID: "new", Name: "New event", StartsAt: "2026-12-04T20:00:00Z"})
+			}); err != nil {
+				t.Error(err)
+			}
+			newFolder = fake.Add(drivefake.File{Name: "2026-12-04 New event [new]", Parent: root.ID, MimeType: drivefake.FolderMIME})
+		}
+		return nil
+	}
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if newFolder == "" || fake.Get(newFolder).Trashed {
+		t.Fatal("cleanup trashed an event created after the snapshot")
+	}
+	fake.Fail = nil
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fake.Path("Events", "2026-12-04 New event [new]", "event.json") == nil {
+		t.Fatal("next pass missed the new event")
+	}
+}
+
+func TestEventUploadFailureDoesNotBlockLaterEvents(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	if err := db.Write(ctx, func(q *store.Queries) error {
+		return q.InsertEvent(ctx, store.Event{ID: "ev2", Name: "Other event", StartsAt: "2026-12-02T20:00:00Z"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake.Fail = func(r *http.Request) *http.Response {
+		if strings.HasPrefix(r.URL.Path, "/upload/") {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+			}
+			r.Body = io.NopCloser(strings.NewReader(string(body)))
+			if strings.Contains(string(body), "Winter Mixer") {
+				return drivefake.Error(400, "invalid")
+			}
+		}
+		return nil
+	}
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
+	if err := s.Run(ctx); err == nil {
+		t.Fatal("failed event was not reported")
+	}
+	if fake.Path("Events", "2026-12-02 Other event [ev2]", "event.json") == nil {
+		t.Fatal("failed upload blocked a later event")
+	}
+	fake.Fail = nil
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if fake.Path("Events", "2026-12-01 Winter Mixer [ev1]", "event.json") == nil {
+		t.Fatal("failed upload was not retried")
+	}
+}
+
+func TestFailedStaleCoverTrashRetriesWithoutUploadingAgain(t *testing.T) {
+	db, d, fake := fixture(t)
+	ctx := context.Background()
+	s := &driveexport.Service{DB: db, Drive: fixedDrive(d)}
+	put := func(mime string, at int64) {
+		t.Helper()
+		if err := db.Write(ctx, func(q *store.Queries) error {
+			return q.PutEventCover(ctx, store.Cover{EventID: "ev1", MimeType: mime, Bytes: []byte("cover"), UpdatedAt: at})
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("image/png", 1)
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	old := fake.Path("Events", "2026-12-01 Winter Mixer [ev1]", "cover.png")
+	put("image/webp", 2)
+	fake.Fail = func(r *http.Request) *http.Response {
+		if r.Method == "PATCH" && r.URL.Path == "/drive/v3/files/"+old.ID {
+			return drivefake.Error(400, "invalid")
+		}
+		return nil
+	}
+	if err := s.Run(ctx); err == nil {
+		t.Fatal("failed cleanup was not reported")
+	}
+	if fake.Get(old.ID).Trashed {
+		t.Fatal("failed cleanup was marked complete")
+	}
+	before := fake.Count("POST", "/upload/") + fake.Count("PATCH", "/upload/")
+	fake.Fail = nil
+	if err := s.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !fake.Get(old.ID).Trashed {
+		t.Fatal("stale cover trash was not retried")
+	}
+	if fake.Count("POST", "/upload/")+fake.Count("PATCH", "/upload/") != before {
+		t.Fatal("cleanup retry uploaded unchanged records")
 	}
 }
