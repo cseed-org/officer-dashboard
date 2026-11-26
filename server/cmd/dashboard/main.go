@@ -8,6 +8,9 @@
 //	dashboard mcp-check [-register] <public url>
 //	                       check from outside that agents can reach /mcp (Cloudflare Tunnel + Access);
 //	                       with CF_ACCESS_CLIENT_ID/_SECRET set, also that service calls pass Access
+//	dashboard drive-backup list|restore
+//	                       list or fetch the encrypted snapshots uploaded to Google Drive
+//	                       (ciphertext; decryption happens offline with the age identity)
 //	dashboard version
 package main
 
@@ -35,6 +38,7 @@ import (
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
+	"officerdashboard/internal/drivebackup"
 	"officerdashboard/internal/driveexport"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/mcpcheck"
@@ -75,10 +79,12 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		err = healthcheck(args, getenv)
 	case "mcp-check":
 		return mcpCheckCmd(args, getenv, stdout, stderr)
+	case "drive-backup":
+		err = driveBackupCmd(args, getenv, stdout)
 	case "version":
 		fmt.Fprintln(stdout, version)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|healthcheck|mcp-check|version]\n", cmd)
+		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|healthcheck|mcp-check|drive-backup|version]\n", cmd)
 		return 2
 	}
 	if err != nil {
@@ -344,6 +350,33 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	srv.ResumeCalendar()
 	go calendarRetry(ctx, srv)
 	go srv.CloudflareDaily(ctx)
+	// Upload the sidecar's encrypted daily snapshots to Drive (Backups/daily plus a monthly
+	// copy). The service resolves the current Drive each pass and idles while the outbox is
+	// empty or Drive is not connected. Like the exporter, it stops within ShutdownBudget.
+	backupDone := make(chan struct{})
+	go func() {
+		defer close(backupDone)
+		(&drivebackup.Service{
+			Drive:  func(ctx context.Context) (drivebackup.Store, error) { return srv.Drive(ctx) },
+			Outbox: drivebackup.OutboxDir(s.DBPath),
+			Alert:  func(ctx context.Context, key, msg string) { srv.Alerts().Alert(ctx, key, msg) },
+			Log:    log,
+		}).Hourly(ctx)
+	}()
+	defer func() {
+		stop()
+		deadline := exportDeadline
+		if deadline.IsZero() {
+			deadline = time.Now().Add(ShutdownBudget)
+		}
+		wait := time.NewTimer(max(0, time.Until(deadline)))
+		defer wait.Stop()
+		select {
+		case <-backupDone:
+		case <-wait.C:
+			log.Warn("Drive backup uploader still stopping")
+		}
+	}()
 	go srv.DriveQuotaDaily(ctx)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
