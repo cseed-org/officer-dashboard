@@ -1,11 +1,10 @@
 # Other setups
 
-> Current Free-plan image: use [Fresh install](fresh-install.md) and
-> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
-> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+> For the recommended production Docker deployment, use [Fresh install](fresh-install.md)
+> and [Upgrade/restore](upgrade-existing.md). Litestream is no longer shipped.
 
 
-The [deploy guide](README.md) covers the recommended setup: the published image in Docker, behind
+The [fresh-install guide](fresh-install.md) covers the recommended setup: the published image in Docker, behind
 a Cloudflare Tunnel. This page covers the alternatives, briefly. Each one assumes you know the
 main guide.
 
@@ -30,14 +29,15 @@ file on the Pi's own disk unless you add an off-site copy yourself.
 
 ### Install
 
-1. **Tools:** `sudo apt install git build-essential sqlite3`, Go 1.27.4 from
+1. **Tools:** `sudo apt install git build-essential sqlite3`, Go matching
+   [server/go.mod](../../server/go.mod) from
    [go.dev/dl](https://go.dev/dl/) (`linux-arm64`; Debian's Go is too old), and Node 22.23.4 or
    newer from [nodejs.org](https://nodejs.org/en/download).
 2. **Cloudflare:** do [Cloudflare setup](cloudflare.md) with two differences in step 1: pick
    **Debian** and **run** Cloudflare's install command on the Pi, and set the Service URL to
    `http://127.0.0.1:8090`. Skip step 9 (R2) unless you want it for `BACKUP_REMOTE`.
 3. **Discord:** [deploy guide step 3](README.md#3-create-the-discord-app).
-4. **Build**, from the repository root, after `git checkout v0.15.0` (or the commit):
+4. **Build**, from the repository root, after checking out your reviewed release tag or commit:
    ```sh
    (cd web && npm ci && npm run build)
    (cd server && make build-release)
@@ -55,8 +55,7 @@ file on the Pi's own disk unless you add an off-site copy yourself.
    sudoedit /etc/officer-dashboard/env
    ```
    In the env file set `APP_URL=https://<your-hostname>` and the same Discord and owner lines as
-   [deploy guide step 4](README.md#4-fill-in-the-settings-files). Leave the `LITESTREAM_` lines
-   commented out. `TRUSTED_PROXIES` can stay unset: `cloudflared` on the Pi connects from the Pi
+   [deploy guide step 4](README.md#4-fill-in-the-settings-files). `TRUSTED_PROXIES` can stay unset: `cloudflared` on the Pi connects from the Pi
    itself, which is trusted by default.
 6. **Start:**
    ```sh
@@ -98,7 +97,8 @@ back up, install, start. In `server/`:
 
 1. **Build:**
    ```sh
-   git fetch origin --tags && git checkout v0.16.0
+   git fetch origin --tags
+   git checkout <reviewed-release-tag-or-commit>
    (cd ../web && npm ci && npm run build)
    make build-release
    ./bin/dashboard version
@@ -192,18 +192,18 @@ public.
 ## What's in the image
 
 - **Platforms:** 64-bit x86 (`linux/amd64`) and 64-bit ARM (`linux/arm64`, a Pi 5).
-- **Contents:** the `dashboard` server with the web front end built in, and Litestream 0.3.14,
-  on `debian:bookworm-slim`. It runs as user `dashboard` (uid 10001, gid 999) and keeps its data
-  in `/data`.
+- **Contents:** the static `dashboard` server with the web front end built in, and the
+  `dashboard-backup` helper, on BusyBox musl. It runs as user `dashboard` (uid 10001)
+  and keeps its data in `/data`. Litestream and Python are not shipped.
 - **Listens** on port 8090 inside the container (`ADDR=:8090`, `DB_PATH=/data/dashboard.db`).
   Because it listens beyond its own machine, it refuses to start without `APP_URL`.
-- **Starts** through `server/deploy/entrypoint.sh`: with `LITESTREAM_BUCKET` set, it restores the
-  database from the bucket if there is no local file, then runs the dashboard under
-  `litestream replicate`. Without it, the database lives only in the container's volume.
+- **Starts** through `server/deploy/entrypoint.sh`. With `BACKUP_REQUIRED=1`, a missing
+  database stops startup; initialize a new installation or restore off-box first.
+  The separate backup service stages encrypted recovery snapshots, never plaintext restores.
 - **Health check:** `dashboard healthcheck`, every 30 seconds.
 - **Behind another proxy** (Caddy, or `cloudflared` you run yourself): set `APP_URL` to the public
   `https` address and `TRUSTED_PROXIES` to the proxy's address or network, so rate limits see each
   visitor instead of the proxy. `compose.cloudflare.yml` does this for you.
-- **Security build details:** Litestream is built from source with the dashboard's Go version and
-  patched dependency versions; the Security workflow scans the shipped binary. See the comments in
+- **Security build details:** both Go binaries are statically linked with SQLite extension
+  loading disabled. Base images are digest-pinned. See the comments in
   `server/Dockerfile`.

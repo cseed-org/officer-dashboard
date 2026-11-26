@@ -1,0 +1,48 @@
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check relative links (required)
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: --offline --include-fragments --no-progress '**/*.md'
+          output: lychee/offline.md
+      - name: Restore external-link cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .lycheecache
+          key: lychee-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: lychee-${{ runner.os }}-
+      - name: Check external links (advisory)
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          args: --cache --max-cache-age 1d --accept '200..=299,429' --exclude-loopback --timeout 15 --max-retries 2 --no-progress '**/*.md'
+          fail: false
+          output: lychee/external.md

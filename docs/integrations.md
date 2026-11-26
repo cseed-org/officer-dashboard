@@ -47,7 +47,9 @@ adapter (`scripts/buildspace-discord-stub.mjs`) adds them from `CF_ACCESS_CLIENT
 must add the two headers themselves. A 401 or redirect from Cloudflare (no JSON `error` body)
 means Access refused the service token. The dashboard itself never sees or needs the token.
 
-**Agent settlement tolerance.** The purchasing agent's `POST /api/agent/jobs/:id/complete`
+### Agent settlement tolerance
+
+The purchasing agent's `POST /api/agent/jobs/:id/complete`
 may post an `actualTotalCents` of up to the larger of the estimate + 10% and the
 estimate + $25 (set by `AGENT_SETTLEMENT_TOLERANCE_PERCENT` / `_CENTS`). Above that it
 gets a 409 and the job becomes `held`: its claim is cleared, so later complete, failed or

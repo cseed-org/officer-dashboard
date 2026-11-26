@@ -1,6 +1,6 @@
 # Go backend
 
-The Go API serves the static Astro front end over one SQLite database. Build with Go 1.24+ and a C compiler (cgo).
+The Go API serves the static Astro front end over one SQLite database. Build with Go matching [go.mod](go.mod) (minimum 1.26, with the build toolchain selected by its `toolchain` directive) and a C compiler (cgo). Make targets require a POSIX shell.
 
 From this directory, `make dev` builds the dev-login binary, resets `data/dev.db`, and serves `../web/dist` on port 8090. Build the front end first using the [root quick start](../README.md#quick-start).
 
