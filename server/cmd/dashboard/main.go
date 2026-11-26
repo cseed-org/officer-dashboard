@@ -8,6 +8,9 @@
 //	dashboard mcp-check [-register] <public url>
 //	                       check from outside that agents can reach /mcp (Cloudflare Tunnel + Access);
 //	                       with CF_ACCESS_CLIENT_ID/_SECRET set, also that service calls pass Access
+//	dashboard drive-backup list|restore
+//	                       list or fetch the encrypted snapshots uploaded to Google Drive
+//	                       (ciphertext; decryption happens offline with the age identity)
 //	dashboard version
 package main
 
@@ -34,6 +37,7 @@ import (
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
+	"officerdashboard/internal/drivebackup"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/mcpcheck"
 	"officerdashboard/internal/notify"
@@ -73,10 +77,12 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 		err = healthcheck(args, getenv)
 	case "mcp-check":
 		return mcpCheckCmd(args, getenv, stdout, stderr)
+	case "drive-backup":
+		err = driveBackupCmd(args, getenv, stdout)
 	case "version":
 		fmt.Fprintln(stdout, version)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|healthcheck|mcp-check|version]\n", cmd)
+		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|healthcheck|mcp-check|drive-backup|version]\n", cmd)
 		return 2
 	}
 	if err != nil {
@@ -176,6 +182,13 @@ func openDB(path string) (*store.DB, error) {
 
 // buildServer wires configuration into an api.Server.
 func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error) {
+	srv, _, err := buildServerWithDrive(s, db, log)
+	return srv, err
+}
+
+// buildServerWithDrive also reports the Drive receipt store when one was configured, so
+// serve can hand it to the Drive backup uploader.
+func buildServerWithDrive(s settings, db *store.DB, log *slog.Logger) (*api.Server, *files.Drive, error) {
 	mismatch, err := db.BootstrapOwner(context.Background(), s.BootstrapDirector, s.BootstrapOwnerName, time.Now().UnixMilli())
 	if err != nil {
 		return nil, fmt.Errorf("provision dashboard owner: %w", err)
@@ -188,12 +201,12 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 	if s.TrustedProxies != "" {
 		var err error
 		if trusted, err = api.ParseTrustedProxies(s.TrustedProxies); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	access, err := api.NewAccessVerifier(s.AccessTeam, s.AccessAudience, s.AccessServiceAudience)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cfg := api.Config{
 		Access:         access,
@@ -238,13 +251,15 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 	} else {
 		log.Warn("Google Calendar sync is not configured (GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET)")
 	}
+	var driveStore *files.Drive
 	switch {
 	case s.ServiceAccountJSON != "" && s.DriveRoot != "":
 		d, err := files.NewDrive(s.ServiceAccountJSON, s.DriveRoot, nil)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		cfg.Files = d
+		driveStore = d
 	case s.ServiceAccountJSON != "":
 		log.Warn("GOOGLE_SERVICE_ACCOUNT_JSON is set without DRIVE_ROOT_FOLDER_ID: receipt uploads will answer 503")
 		cfg.Files = files.Unavailable{}
@@ -270,7 +285,7 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 	} else {
 		log.Warn("no front end to serve (set STATIC_DIR, or build with -tags embedweb)")
 	}
-	return api.New(cfg), nil
+	return api.New(cfg), driveStore, nil
 }
 
 func serve(args []string, getenv func(string) string, log *slog.Logger) error {
@@ -291,7 +306,7 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 		return err
 	}
 	defer db.Close()
-	srv, err := buildServer(s, db, log)
+	srv, driveStore, err := buildServerWithDrive(s, db, log)
 	if err != nil {
 		return err
 	}
@@ -309,6 +324,18 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	srv.ResumeCalendar()
 	go calendarRetry(ctx, srv)
 	go srv.CloudflareDaily(ctx)
+	// Upload the sidecar's encrypted daily snapshots to Drive (Backups/daily plus a monthly
+	// copy). The service idles until the outbox holds files and Drive is connected.
+	var driveAlert func(context.Context, string)
+	if s.WebhookURL != "" {
+		driveAlert = drivebackup.DiscordAlert(s.WebhookURL)
+	}
+	go (&drivebackup.Service{
+		Store:  driveStore,
+		Outbox: drivebackup.OutboxDir(s.DBPath),
+		Alert:  driveAlert,
+		Log:    log,
+	}).Hourly(ctx)
 	errc := make(chan error, 1)
 	go func() { errc <- httpSrv.ListenAndServe() }()
 	log.Info("listening", "addr", s.Addr, "db", s.DBPath, "app_url", s.AppURL, "version", version, "dev_build", api.DevBuild, "startup_ms", time.Since(started).Milliseconds())

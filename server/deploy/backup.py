@@ -172,6 +172,29 @@ def restore(snapshot_id, target, identity, encrypted_only=False):
     print('sha256 verified; integrity ok')
 
 
+def restore_local(source, target, identity):
+    """Offline restore from a ciphertext file on hand: a drive-backup download, or a file
+    saved from the Drive web UI. Runs decrypt -> gunzip -> integrity -> place."""
+    source = Path(source)
+    if not target:
+        raise ValueError('restore needs --output')
+    target = Path(target).resolve()
+    if target.exists():
+        raise ValueError('destination already exists')
+    if not identity:
+        raise ValueError('restore from an input file needs the off-box age identity')
+    with tempfile.TemporaryDirectory(prefix='restore-', dir=target.parent) as work:
+        work = Path(work)
+        staged = work / 'snapshot.age'
+        os.link(source, staged)
+        subprocess.run(['age', '-d', '-i', identity, '-o', str(work / 'snapshot.gz'), str(staged)], check=True)
+        with gzip.open(work / 'snapshot.gz', 'rb') as src, (work / 'snapshot.db').open('wb') as dst:
+            shutil.copyfileobj(src, dst)
+        integrity(work / 'snapshot.db')
+        os.link(work / 'snapshot.db', target)
+    print('decrypted; integrity ok')
+
+
 def membership():
     account, database = os.environ['BACKUP_MEMBERSHIP_ACCOUNT_ID'], os.environ['BACKUP_MEMBERSHIP_DATABASE_ID']
     url = f'https://api.cloudflare.com/client/v4/accounts/{account}/d1/database/{database}/export'
@@ -229,6 +252,7 @@ def main():
     parser.add_argument('--snapshot', default='latest')
     parser.add_argument('--output')
     parser.add_argument('--identity')
+    parser.add_argument('--input', help='restore from a local ciphertext file (e.g. a Drive download) instead of the sink')
     args = parser.parse_args()
     if args.command == 'loop':
         loop()
@@ -240,6 +264,10 @@ def main():
             backup()
         elif args.command == 'membership':
             membership()
+        elif args.input:
+            if args.command != 'restore':
+                raise ValueError('--input belongs to restore')
+            restore_local(args.input, args.output, args.identity)
         else:
             restore(args.snapshot, args.output, args.identity, args.command == 'download')
 

@@ -2,7 +2,8 @@
 
 For the current $0 Free-plan deployment, start with **[Fresh install](deploy/fresh-install.md)**
 or **[Upgrade an existing host](deploy/upgrade-existing.md)**. The original guide's R2 and
-Litestream sections describe the previous image. The current image uses encrypted D1 snapshots.
+Litestream sections describe the previous image. The current image uses encrypted D1 snapshots,
+plus an independent daily/monthly copy in Google Drive ([below](#a-second-independent-copy-in-google-drive)).
 
 ## Measured size and free-tier budget
 
@@ -78,6 +79,39 @@ Storage alerts start at 350 MB (70% of 500 MB). Write alerts conservatively incl
 70% of the account write budget. The sink separately rejects at its 40,000 reservation
 ceiling. Unauthorized floods are controlled by Access; the planned request/read bounds
 assume only the supplied trusted client, not an attacker who holds both credentials.
+
+## A second, independent copy in Google Drive
+
+The D1 snapshots above are one off-box copy; the shared Google Drive holds another, on a
+separate path with no shared credential. Once per UTC day the backup sidecar also hands
+that hour's ciphertext (the same age-over-gzip bytes, not a second database copy) to the
+dashboard through `/data/drive-outbox/`: `dashboard-<YYYY-MM-DD>.db.gz.age` plus a sha256
+manifest, at most three days waiting. The dashboard, which holds the Drive sign-in,
+uploads each waiting file to `Backups/daily/`, adds a first-of-month copy to
+`Backups/monthly/dashboard-<YYYY-MM>.db.gz.age`, verifies Drive's stored size and sha256,
+and only then deletes its local copy. Uploads are idempotent (a file already in Drive
+under the same name and sha is only deleted locally) and retried hourly after quota,
+rate-limit or network failures; failures and any snapshot waiting over three days alert
+on Discord. After each verified upload the uploader keeps the newest 30 daily and
+12 monthly copies. `entrypoint.sh` keeps every `BACKUP_*` variable out of the app, both
+services mount the same `dashboard-data` volume, and the age identity stays offline.
+
+Restore from Drive (the dashboard never decrypts):
+
+    cd server/deploy
+    dc="docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml"
+    $dc run --rm --no-deps --entrypoint /app/dashboard dashboard drive-backup list
+    $dc run --rm --no-deps --entrypoint /app/dashboard dashboard drive-backup restore \
+      --latest --output /data/drive-restore.db.gz.age
+
+`drive-backup restore` verifies the ciphertext against Drive's stored sha256 and never
+overwrites an existing file. Copy it off-box and finish with the age identity:
+
+    python3 backup.py restore --input drive-restore.db.gz.age \
+      --identity <identity file> --output restored.db
+
+`--input` also works for a file downloaded by hand from the Drive web UI: it decrypts,
+gunzips, checks SQLite integrity, and only then places the database.
 
 For setup, reviewer settings, off-box recovery and the monthly drill, use the linked
 runbooks above. Automatic boot restore stages ciphertext and stops for off-box decryption,

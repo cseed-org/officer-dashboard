@@ -10,7 +10,7 @@ in a Cloudflare Container.
 
 ```
 server/
-  cmd/dashboard        main: serve | seed | migrate | provision-leadership | healthcheck | mcp-check | version
+  cmd/dashboard        main: serve | seed | migrate | provision-leadership | healthcheck | mcp-check | drive-backup | version
   internal/api         HTTP handlers, middleware, sessions, routes
   internal/store       every SQL statement; embedded migrations 0000 onward
   internal/accounting  posting engine, journal validation, financial reports, CSV export
@@ -23,6 +23,7 @@ server/
   internal/cloudflare  Cloudflare D1 and GraphQL analytics client
   internal/mcpcheck    the mcp-check deployment reachability checks
   internal/files       receipts: Google Drive (shared drive) and local disk
+  internal/drivebackup uploads the sidecar's encrypted snapshots to Drive (daily + monthly) and restores them
   internal/notify      Discord webhook, invitation bot DMs, console fallback
   internal/notion      placeholder Notion event-link sync
   internal/fiscal      fiscal years, monthly periods, Pacific dates
