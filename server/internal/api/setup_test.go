@@ -8,11 +8,15 @@ import (
 	"officerdashboard/internal/calendar"
 	"officerdashboard/internal/cfsync"
 	"officerdashboard/internal/cloudflare"
+	"officerdashboard/internal/drivebackup"
 	"officerdashboard/internal/files"
 	"officerdashboard/internal/notify"
 	"officerdashboard/internal/store"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSetupStatusOwnerOnly(t *testing.T) {
@@ -51,12 +55,12 @@ func TestSetupStatusSafeConfiguredAndConnectedMetadata(t *testing.T) {
 			t.Fatalf("setup response leaked %s", forbidden)
 		}
 	}
-	if !strings.Contains(string(r.Raw), "Last export: not installed") {
-		t.Fatal("missing integration must be explicit")
+	if !strings.Contains(string(r.Raw), "Last export: no export yet") {
+		t.Fatal("empty export history must be explicit")
 	}
 }
 
-func TestSetupStatusConfigurationAndOptionalExport(t *testing.T) {
+func TestSetupStatusConfigurationAndExportHistory(t *testing.T) {
 	e := newEnv(t, func(c *Config) {
 		c.Setup = SetupConfig{BootstrapOwner: true, DiscordWebhook: true}
 		c.Notifier = notify.NewDiscord("https://example.invalid/synthetic-webhook")
@@ -66,8 +70,7 @@ func TestSetupStatusConfigurationAndOptionalExport(t *testing.T) {
 		c.Cloudflare = &cfsync.Service{Client: cloudflare.New(cloudflare.Config{Token: "synthetic-cloudflare-value"})}
 	})
 	if err := e.db.Write(context.Background(), func(q *store.Queries) error {
-		return q.Exec(context.Background(), `CREATE TABLE drive_export_state(path TEXT PRIMARY KEY, exported_at INTEGER);
-   INSERT INTO drive_export_state VALUES('event.json',1795550400000);
+		return q.Exec(context.Background(), `INSERT INTO drive_export_state(path,sha256,exported_at) VALUES('event.json','synthetic-sha',1795550400000),('older.json','synthetic-sha',1795464000000);
    INSERT INTO cloudflare_sync_state(kind,last_success) VALUES('members',1795550400000);`)
 	}); err != nil {
 		t.Fatal(err)
@@ -84,7 +87,7 @@ func TestSetupStatusConfigurationAndOptionalExport(t *testing.T) {
 		if i.Key != "drive" && i.Key != "org-calendar" && i.Key != "sealing-key" && i.State != "configured" {
 			t.Fatalf("%s: %s", i.Key, i.State)
 		}
-		if i.Key == "drive" && strings.Contains(i.Detail, "Last export: not installed") {
+		if i.Key == "drive" && !strings.Contains(i.Detail, "Last export: 2026-11-24T20:00:00Z") {
 			t.Fatal("export timestamp not read")
 		}
 		if i.Key == "cloudflare" && strings.Contains(i.Detail, "Last sync: never") {
@@ -95,6 +98,61 @@ func TestSetupStatusConfigurationAndOptionalExport(t *testing.T) {
 		if strings.Contains(string(r.Raw), v) {
 			t.Fatal("credential in response")
 		}
+	}
+}
+
+func TestSetupStatusBackupOutbox(t *testing.T) {
+	for _, state := range []string{"absent", "empty", "pending", "unreadable"} {
+		t.Run(state, func(t *testing.T) {
+			e := newEnv(t)
+			outbox := drivebackup.OutboxDir(e.db.Path)
+			want := "Outbox exists: false"
+			if state == "unreadable" {
+				if err := os.WriteFile(outbox, []byte("synthetic obstruction"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				want = "Outbox readable: false"
+			} else if state != "absent" {
+				if err := os.Mkdir(outbox, 0700); err != nil {
+					t.Fatal(err)
+				}
+				want = "Outbox exists: true ; Pending files: false"
+				// Temporary, rejected and unrelated files must not count as pending.
+				for _, name := range []string{"dashboard-2026-11-22.db.gz.age.tmp", "dashboard-2026-11-22.db.gz.age.rejected", "synthetic-private-file"} {
+					if err := os.WriteFile(filepath.Join(outbox, name), nil, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if state == "pending" {
+					for i, name := range []string{"dashboard-2026-11-24.db.gz.age", "dashboard-2026-11-23.db.gz.age"} {
+						path := filepath.Join(outbox, name)
+						if err := os.WriteFile(path, []byte("synthetic ciphertext"), 0600); err != nil {
+							t.Fatal(err)
+						}
+						stamp := time.Date(2026, 11, 24-i, 20, 0, 0, 0, time.UTC)
+						if err := os.Chtimes(path, stamp, stamp); err != nil {
+							t.Fatal(err)
+						}
+					}
+					want = "Outbox exists: true ; Pending files: true ; Oldest pending file: 2026-11-23T20:00:00Z"
+				}
+			}
+			r := e.mustOK(e.get("/api/setup/status", e.as("user-leadership")))
+			for _, v := range r.list("integrations") {
+				i := v.(map[string]any)
+				if i["key"] == "drive" {
+					detail := i["detail"].(string)
+					if !strings.Contains(detail, want) || !strings.Contains(detail, "Last verified backup upload: managed by the backup container") {
+						t.Fatalf("backup status: %s", detail)
+					}
+					if strings.Contains(detail, filepath.Dir(e.db.Path)) || strings.Contains(detail, "synthetic-private-file") || strings.Contains(detail, "dashboard-2026") {
+						t.Fatalf("backup status disclosed a path or filename: %s", detail)
+					}
+					return
+				}
+			}
+			t.Fatal("Drive card missing")
+		})
 	}
 }
 

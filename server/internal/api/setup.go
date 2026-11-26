@@ -3,8 +3,12 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"officerdashboard/internal/drivebackup"
 )
 
 // SetupConfig records presence, never credential values or secret file paths.
@@ -69,9 +73,13 @@ func (c *Ctx) setupStatus() error {
 	if usage, ok := drive["usage"].(map[string]any); ok {
 		detail += fmt.Sprintf(" ; %v%% of DRIVE_QUOTA_BYTES used", usage["percent"])
 	}
-	detail += " ; Last export: " + setupRun(history.ExportInstalled, history.LastExport)
-	// Backup state is not installed on this stack; the sidecar does not publish a DB status yet.
-	detail += " ; Last backup upload: not installed ; Outbox age: not installed"
+	lastExport := "no export yet"
+	if history.LastExport != 0 {
+		lastExport = setupRun(history.LastExport)
+	}
+	detail += " ; Last export: " + lastExport
+	// The uploader verifies uploads but does not persist their timestamps.
+	detail += " ; Last verified backup upload: managed by the backup container ; " + setupOutbox(drivebackup.OutboxDir(s.db.Path))
 	entries = append(entries, setupIntegration{"drive", "Google Drive", state, detail, "connect", setupDocs})
 	email, reconnect, last, err := c.orgGoogleState()
 	if err != nil {
@@ -101,7 +109,7 @@ func (c *Ctx) setupStatus() error {
 	add("discord-webhook", "Discord notifications", s.cfg.Setup.DiscordWebhook, "Set DISCORD_WEBHOOK_URL_FILE in host secrets.")
 	add("smtp", "SMTP email", s.cfg.Mailer != nil, "Set SMTP_HOST and SMTP_FROM; use SMTP_USERNAME_FILE and SMTP_PASSWORD_FILE in host secrets.")
 	cf := s.cfg.Cloudflare != nil && s.cfg.Cloudflare.Client != nil && s.cfg.Cloudflare.Client.Config.Token != ""
-	add("cloudflare", "Cloudflare sync", cf, "Set CLOUDFLARE_API_TOKEN_FILE in host secrets and the account/resource IDs. Last sync: "+setupRun(true, history.LastCloudflare))
+	add("cloudflare", "Cloudflare sync", cf, "Set CLOUDFLARE_API_TOKEN_FILE in host secrets and the account/resource IDs. Last sync: "+setupRun(history.LastCloudflare))
 	entries = append(entries, setupIntegration{"d1-backups", "D1 backups", "configured", "Managed by the backup container. Last D1 upload: unavailable in dashboard status.", "none", setupDocs})
 	add("bootstrap-owner", "Bootstrap owner", s.cfg.Setup.BootstrapOwner, "Set BOOTSTRAP_OWNER_DISCORD_ID and BOOTSTRAP_OWNER_NAME in host configuration. Existing ownership survives restarts.")
 	add("sealing-key", "OAuth sealing key", s.sealer != nil, "Derived from GOOGLE_OAUTH_CLIENT_SECRET_FILE in host secrets; keep it stable across restarts.")
@@ -110,12 +118,42 @@ func (c *Ctx) setupStatus() error {
 	return nil
 }
 
-func setupRun(installed bool, ms int64) string {
-	if !installed {
-		return "not installed"
-	}
+func setupRun(ms int64) string {
 	if ms == 0 {
 		return "never"
 	}
 	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
+}
+
+// setupOutbox reads local metadata only. Never include paths, filenames or raw errors
+// in the response. The oldest timestamp shows how long a pending file has waited.
+func setupOutbox(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return "Outbox exists: false"
+	}
+	if err != nil {
+		return "Outbox exists: true ; Outbox readable: false"
+	}
+	var oldest time.Time
+	for _, entry := range entries {
+		match, _ := filepath.Match("dashboard-????-??-??.db.gz.age", entry.Name())
+		if !match || !entry.Type().IsRegular() {
+			continue
+		}
+		info, err := entry.Info()
+		if os.IsNotExist(err) {
+			continue // The uploader may have just removed a verified snapshot.
+		}
+		if err != nil {
+			return "Outbox exists: true ; Outbox readable: false"
+		}
+		if oldest.IsZero() || info.ModTime().Before(oldest) {
+			oldest = info.ModTime()
+		}
+	}
+	if oldest.IsZero() {
+		return "Outbox exists: true ; Pending files: false"
+	}
+	return "Outbox exists: true ; Pending files: true ; Oldest pending file: " + oldest.UTC().Format(time.RFC3339)
 }
