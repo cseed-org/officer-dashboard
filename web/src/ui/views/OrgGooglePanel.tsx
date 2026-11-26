@@ -13,7 +13,7 @@ const RESULT: Record<string, { tone: 'positive' | 'negative' | 'info'; text: str
 };
 
 /**
- * Leadership's card for the organization's Google account (plan decision 1): connect the
+ * Owner's card for the organization's Google account (plan decision 1): connect the
  * dedicated org Gmail once; the dashboard then owns the Internal, External, Weekly Programs and
  * Events calendars in it. Connect and Reconnect are navigations to Google consent, not fetches.
  */
@@ -37,10 +37,6 @@ export function OrgGooglePanel() {
     api('orgGoogleStatus').then(setSt, setError);
   };
   useEffect(load, []);
-  // /calendar links here as /settings#org-google; the page renders after sign-in, so scroll once it has.
-  useEffect(() => {
-    if (st && location.hash === '#org-google') document.getElementById('org-google')?.scrollIntoView({ block: 'start' });
-  }, [!!st]);
 
   const connectHref = endpointUrl('orgGoogleConnect');
   const callback = typeof location === 'undefined' ? '/auth/org-google/callback' : `${location.origin}/auth/org-google/callback`;

@@ -14,8 +14,6 @@ import { useApi } from '../../lib/api/useApi';
 import { ErrorState, Loading } from '../components/states';
 import { ProfileForm } from './ProfileForm';
 import { CalendarPanel } from './CalendarPanel';
-import { OrgGooglePanel } from './OrgGooglePanel';
-import { DrivePanel } from './DrivePanel';
 import { AgentsPanel } from './AgentsPanel';
 import { safeImageUrl } from '../../lib/url';
 import { startTour } from '../tour/startTour';
@@ -161,14 +159,10 @@ export default function SettingsView({ me, helloMedia }: { me: CurrentUser; hell
       <Section title="calendar" id="calendar">
         <CalendarPanel next="/settings" removable />
       </Section>
-      {me.role === 'leadership' && (
-        <Section title="org Google Calendar" id="org-google">
-          <OrgGooglePanel />
-        </Section>
-      )}
       {me.isOwner && (
-        <Section title="Google Drive file storage" id="drive">
-          <DrivePanel />
+        <Section title="Integration setup" id="integrations">
+          <p>Connect Google accounts and check host configuration on the owner Setup page.</p>
+          <a class="btn" href="/setup">Open Setup</a>
         </Section>
       )}
 

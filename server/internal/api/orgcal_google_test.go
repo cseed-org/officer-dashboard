@@ -280,7 +280,7 @@ func TestOrgCalendarGoogleFailedSendRetriedAfterRestart(t *testing.T) {
 		t.Fatal("retry did not record Google id", string(r.Raw))
 	}
 }
-func TestOrgCalendarOAuthLeadershipAndPKCE(t *testing.T) {
+func TestOrgCalendarOAuthOwnerAndPKCE(t *testing.T) {
 	e, _ := orgGoogleEnv(t)
 	r := e.get("/api/settings/org-google/connect", e.officer())
 	if r.Status != 403 {
@@ -306,4 +306,58 @@ func TestOrgCalendarOAuthLeadershipAndPKCE(t *testing.T) {
 	if r.at("connected") != false {
 		t.Fatal(string(r.Raw))
 	}
+}
+
+func TestOrgGoogleSignInRequiresOwnerIncludingNonOwnerLeadership(t *testing.T) {
+	e, _ := orgGoogleEnv(t)
+	for _, role := range []string{"officer", "director", "leadership"} {
+		t.Run(role, func(t *testing.T) {
+			if err := e.db.Write(context.Background(), func(q *store.Queries) error {
+				return q.Exec(context.Background(), `UPDATE users SET role=?,is_owner=0 WHERE id='user-director'`, role)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			who := e.as("user-director")
+			expectStatus(t, "connect", e.get("/api/settings/org-google/connect", who), 403)
+			expectStatus(t, "callback", e.get("/auth/org-google/callback?state=synthetic-state&code=synthetic-code", who), 403)
+			expectStatus(t, "disconnect", e.do("DELETE", "/api/settings/org-google", nil, who), 403)
+			r := e.mustOK(e.get("/api/settings/org-google/status", e.as("user-leadership")))
+			if r.at("connected") != true {
+				t.Fatal("unauthorized request disconnected the account")
+			}
+		})
+	}
+}
+
+func TestOrgGoogleCallbackRechecksOwnershipAfterTokenExchange(t *testing.T) {
+	e, fake := orgGoogleEnv(t)
+	// Keep a co-owner so the database's last-owner guard permits this revocation.
+	if err := e.db.Write(context.Background(), func(q *store.Queries) error {
+		return q.Exec(context.Background(), `UPDATE users SET role='leadership',is_owner=1 WHERE id='user-director'`)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	owner := e.as("user-leadership")
+	connect := e.get("/api/settings/org-google/connect", owner)
+	expectStatus(t, "owner connect", connect, 302)
+	consent, err := url.Parse(connect.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner.cookies = (&http.Response{Header: connect.Header}).Cookies()
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		err := e.db.Write(context.Background(), func(q *store.Queries) error {
+			return q.Exec(context.Background(), `UPDATE users SET is_owner=0 WHERE id='user-leadership'`)
+		})
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(500)
+			return
+		}
+		fake.serve(w, r)
+	}))
+	defer tokenServer.Close()
+	e.srv.cfg.Google.TokenURL = tokenServer.URL + "/token"
+	result := e.get("/auth/org-google/callback?state="+url.QueryEscape(consent.Query().Get("state"))+"&code=synthetic-code", owner)
+	expectStatus(t, "ownership removed during exchange", result, 403)
 }

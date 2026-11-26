@@ -54,7 +54,7 @@ func (c *Ctx) orgGoogleStatus() error {
 	return nil
 }
 func (c *Ctx) orgGoogleConnect() error {
-	if _, err := c.requireLeadership(); err != nil {
+	if _, err := c.ownerIn(c.S.db.Read()); err != nil {
 		return err
 	}
 	g := c.S.orgGoogle()
@@ -79,7 +79,7 @@ func (c *Ctx) orgGoogleCallback() error {
 		http.Redirect(c.W, c.R, "/settings?orgGoogle="+reason, http.StatusFound)
 		return nil
 	}
-	if _, err := c.requireLeadership(); err != nil {
+	if _, err := c.ownerIn(c.S.db.Read()); err != nil {
 		return err
 	}
 	if c.User.ID != user {
@@ -113,7 +113,7 @@ func (c *Ctx) orgGoogleCallback() error {
 	c.S.orgMu.Lock()
 	a := store.OrgGoogleAccount{Subject: account.Sub, Email: account.Email, SealedRefresh: c.S.sealer.Seal(tok.RefreshToken), SealedAccess: c.S.sealer.Seal(tok.AccessToken), ExpiresAt: c.S.nowMs() + tok.ExpiresIn*1000, ConnectedBy: &c.User.ID}
 	err = c.S.db.Write(c.Context(), func(q *store.Queries) error {
-		if _, err := c.requireLeadershipIn(q); err != nil {
+		if _, err := c.ownerIn(q); err != nil {
 			return err
 		}
 		old, err := q.OrgGoogleAccount(c.Context())
@@ -143,13 +143,13 @@ func (c *Ctx) orgGoogleCallback() error {
 	return back("connected")
 }
 func (c *Ctx) orgGoogleDisconnect() error {
-	if _, err := c.requireLeadership(); err != nil {
+	if _, err := c.ownerIn(c.S.db.Read()); err != nil {
 		return err
 	}
 	c.S.cancelOrgPass()
 	c.S.orgMu.Lock()
 	err := c.S.db.Write(c.Context(), func(q *store.Queries) error {
-		if _, err := c.requireLeadershipIn(q); err != nil {
+		if _, err := c.ownerIn(q); err != nil {
 			return err
 		}
 		if err := q.DisconnectOrgGoogle(c.Context()); err != nil {

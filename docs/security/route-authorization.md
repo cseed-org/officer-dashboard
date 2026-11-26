@@ -70,8 +70,8 @@ Source-traced P2 application authorization inventory for `sec/app-and-image`. Th
 | `GET /api/club/settings` | `clubSettingsGet` ([timezones.go](../../server/internal/api/timezones.go)) | [routes.go](../../server/internal/api/routes.go) | S | officer | Shared settings; available during onboarding. |
 | `PUT /api/club/settings` | `clubSettingsPut` ([timezones.go](../../server/internal/api/timezones.go)) | [routes.go](../../server/internal/api/routes.go) | S | leadership | Shared settings; leadership reloaded in TX. |
 | `GET /api/settings/org-google/status` | `orgGoogleStatus` ([orgcal_oauth.go](../../server/internal/api/orgcal_oauth.go)) | [routes.go](../../server/internal/api/routes.go) | S | leadership | Shared org-account status; email/error details restricted to leadership. |
-| `GET /api/settings/org-google/connect` | `orgGoogleConnect` ([orgcal_oauth.go](../../server/internal/api/orgcal_oauth.go)) | [routes.go](../../server/internal/api/routes.go) | S | leadership | Starts org-account consent; state/verifier and initiating officer ID stored in cookies. |
-| `DELETE /api/settings/org-google` | `orgGoogleDisconnect` ([orgcal_oauth.go](../../server/internal/api/orgcal_oauth.go)) | [routes.go](../../server/internal/api/routes.go) | S | leadership | Leadership reloaded in TX; disconnects shared org account. |
+| `GET /api/settings/org-google/connect` | `orgGoogleConnect` ([orgcal_oauth.go](../../server/internal/api/orgcal_oauth.go)) | [routes.go](../../server/internal/api/routes.go) | S | owner | Owner reloaded; starts org-account consent; state/verifier and initiating owner ID stored in cookies. |
+| `DELETE /api/settings/org-google` | `orgGoogleDisconnect` ([orgcal_oauth.go](../../server/internal/api/orgcal_oauth.go)) | [routes.go](../../server/internal/api/routes.go) | S | owner | Owner reloaded at entry and in TX; disconnects shared org account. |
 | `GET /api/settings/drive/status` | `driveStatus` ([drive.go](../../server/internal/api/drive.go)) | [routes.go](../../server/internal/api/routes.go) | S | owner | Owner reloaded; Drive account email, root folder and usage; never tokens. |
 | `GET /api/settings/drive/connect` | `driveConnect` ([drive.go](../../server/internal/api/drive.go)) | [routes.go](../../server/internal/api/routes.go) | S | owner | Starts Drive-account consent (Drive scope only); state/verifier and initiating owner ID stored in cookies. |
 | `PUT /api/settings/drive/root` | `driveRootPut` ([drive.go](../../server/internal/api/drive.go)) | [routes.go](../../server/internal/api/routes.go) | S | owner | Owner reloaded in TX; refused when `DRIVE_ROOT_FOLDER_ID` is set; folder must be reachable and writable by the connected account. |
@@ -206,7 +206,7 @@ A callback can be publicly routable but still require the session/state shown in
 | Method / path | Handler (definition) | Registration | Authentication | Minimum role | Object / action guard |
 | --- | --- | --- | --- | --- | --- |
 | `GET /auth/drive-google/callback` | `driveCallback` ([drive.go](../../server/internal/api/drive.go)) | [routes.go](../../server/internal/api/routes.go) | S + OAuth state/code | owner | State/PKCE and initiating owner match; a grant without the Drive scope is revoked and refused; owner reloaded in TX before the sealed tokens are stored. |
-| `GET /auth/org-google/callback` | `orgGoogleCallback` ([orgcal_oauth.go](../../server/internal/api/orgcal_oauth.go)) | [routes.go](../../server/internal/api/routes.go) | S + OAuth state/code | leadership | State/PKCE and initiating officer match; leadership reloaded in TX before replacing org account. |
+| `GET /auth/org-google/callback` | `orgGoogleCallback` ([orgcal_oauth.go](../../server/internal/api/orgcal_oauth.go)) | [routes.go](../../server/internal/api/routes.go) | S + OAuth state/code | owner | Owner reloaded at entry; state/PKCE and initiating owner match; owner reloaded in TX before replacing org account. |
 | `GET /auth/google/callback` | `googleCallback` ([calendar.go](../../server/internal/api/calendar.go)) | [routes.go](../../server/internal/api/routes.go) | S + OAuth state/code | officer | Signed-in user required; state/PKCE verified; Google token stored under current officer ID. |
 | `GET /.well-known/oauth-protected-resource` | `oauthProtectedResource` ([oauth.go](../../server/internal/api/oauth.go)) | [routes.go](../../server/internal/api/routes.go) | Public | none | Discovery metadata only; no user or application records. |
 | `GET /.well-known/oauth-protected-resource/mcp` | `oauthProtectedResource` ([oauth.go](../../server/internal/api/oauth.go)) | [routes.go](../../server/internal/api/routes.go) | Public | none | Discovery metadata only; no user or application records. |
@@ -292,3 +292,14 @@ These exist only in binaries built with the `dev` tag (`devauth_on.go`); the rel
 - Service tokens are stored as SHA-256 digests and looked up by digest; there is no plaintext token equality comparison. Scopes, expiry, revocation and active director creator are checked. OAuth grants enforce resource/audience, expiry, active user, revocation, PKCE, one-time codes and rotating refresh-token replay detection.
 - Base-image builder tags remain mutable (low); the final BusyBox manifest is digest-pinned. Shared authenticated read APIs do not have a general search/read quota (low). Operational tuning and live provider checks remain separate follow-up work.
 - Verification results and exact image/commit identifiers are recorded in the PR and private status report. Local synthetic tests do not certify the deployed service or external provider ACLs.
+
+## Owner integration setup
+
+`GET /api/setup/status` requires `ownerIn`, which rechecks active leadership
+and the owner flag from the database. The `/setup` UI redirects non-owners home;
+its navigation entry is visible only after the current user is confirmed owner.
+The endpoint returns an allowlist of integration labels, states, setup hints
+and non-secret metadata; never credential values or raw provider errors.
+
+Org Google connect, callback and disconnect also require `ownerIn`; non-owner leadership
+gets 403. The read-only org-account status API remains leadership-accessible.

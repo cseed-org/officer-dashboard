@@ -27,6 +27,8 @@ import (
 
 // Config wires the server to its collaborators.
 type Config struct {
+	// Setup contains presence flags only, captured after host secret files are resolved.
+	Setup      SetupConfig
 	Cloudflare *cfsync.Service
 	DB         *store.DB
 	Files      files.Store

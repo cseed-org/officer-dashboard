@@ -212,6 +212,7 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		return nil, err
 	}
 	cfg := api.Config{
+		Setup:          api.SetupConfig{BootstrapOwner: s.BootstrapDirector != "", DiscordWebhook: s.WebhookURL != ""},
 		Access:         access,
 		TrustedProxies: trusted,
 		Cloudflare:     &cfsync.Service{Client: cloudflare.New(s.Cloudflare), DB: db, Log: log},

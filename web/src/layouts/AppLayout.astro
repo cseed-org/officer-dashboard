@@ -14,7 +14,7 @@ import UserChip from '../ui/shell/UserChip';
 import SidebarResizer from '../ui/shell/SidebarResizer';
 import { EARLY_PAGE, EARLY_SHARED, earlyScript } from '../lib/early';
 
-export type PageKey = 'buildspace' | 'home' | 'events' | 'calendar' | 'finance' | 'admin' | 'settings' | 'officers' | 'members' | 'contacts' | 'design';
+export type PageKey = 'buildspace' | 'home' | 'events' | 'calendar' | 'finance' | 'admin' | 'settings' | 'setup' | 'officers' | 'members' | 'contacts' | 'design';
 interface Props {
   title: string;
   customHeader?: boolean;
@@ -181,6 +181,9 @@ const NAVSCRIPT = `(function () {
               </li>
             </ul>
             <div class="sidebar-foot">
+              <a class="nav-link" href="/setup" aria-current={page === 'setup' ? 'page' : undefined} title="Setup" data-nav="setup" data-owner-only>
+                <Icon name="settings" /><span class="nav-label">Setup</span>
+              </a>
               <a class="nav-link" href="/settings" aria-current={page === 'settings' ? 'page' : undefined} title="Settings" data-nav="settings">
                 <Icon name="settings" />
                 <span class="nav-label">Settings</span>

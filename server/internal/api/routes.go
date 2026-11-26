@@ -69,6 +69,7 @@ func (s *Server) routes(mux *http.ServeMux) {
 	h("GET /api/settings/org-google/connect", (*Ctx).orgGoogleConnect)
 	h("GET /auth/org-google/callback", (*Ctx).orgGoogleCallback)
 	h("DELETE /api/settings/org-google", (*Ctx).orgGoogleDisconnect)
+	h("GET /api/setup/status", (*Ctx).setupStatus)
 	h("GET /api/settings/drive/status", (*Ctx).driveStatus)
 	h("GET /api/settings/drive/connect", (*Ctx).driveConnect)
 	h("GET /auth/drive-google/callback", (*Ctx).driveCallback)

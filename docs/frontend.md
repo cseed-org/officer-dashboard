@@ -92,7 +92,8 @@ for anything else (status 404).
 | `/launchpad/join` | `launchpad/join/index.html` | Public invite acceptance; `?token=` |
 | `/launchpad/login` | `launchpad/login/index.html` | Public Launchpad portal sign-in |
 | `/admin` | `admin/index.html` | Redirects to Officers Access; query/hash tabs and legacy subpaths are mapped |
-| `/settings` | `settings/index.html` | theme, density, profile, time zone, calendar delivery, org Google Calendar (leadership; `#org-google`, `?orgGoogle=` result after consent), connected agents, Replay intro, sign out |
+| `/settings` | `settings/index.html` | theme, density, profile, time zone, personal calendar delivery, connected agents, Replay intro, sign out; owners get a Setup link |
+| `/setup` | `setup/index.html` | owner-only Google Drive and org Google Calendar sign-ins, root-folder check, and integration configuration status; legacy Settings OAuth result links forward here |
 | `/login` | `login/index.html` | `?next=`, `?error=not_allowlisted\|inactive\|state\|discord\|invite_unavailable` |
 | `/speakers` | Go redirect | 308 to `/contacts`, preserving the query string |
 | `/buildspace` | Go redirect | 301 to `/buildspace-launchpad`, preserving the query string |

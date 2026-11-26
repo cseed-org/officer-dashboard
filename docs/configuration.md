@@ -47,7 +47,7 @@ Each is off until set; the log says "not configured" at startup for each one tha
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | – | Google sign-in for calendars, per-officer sync (callback `${APP_URL}/auth/google/callback`) and the org calendar (callback `${APP_URL}/auth/org-google/callback`), set up in [Google calendar setup](deploy/google-calendar.md); and the Google account the dashboard stores files as (callback `${APP_URL}/auth/drive-google/callback`, connected by an owner in Settings → Google Drive file storage; see [Integrations](integrations.md#files-in-a-google-shared-drive)). The secret also seals stored Google tokens: changing it means every Google connection must be made again |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | – | Google sign-in for calendars, per-officer sync (callback `${APP_URL}/auth/google/callback`) and the org calendar (callback `${APP_URL}/auth/org-google/callback`), set up in [Google calendar setup](deploy/google-calendar.md); and the Google account the dashboard stores files as (callback `${APP_URL}/auth/drive-google/callback`, connected by an owner in Setup → Google Drive; see [Integrations](integrations.md#files-in-a-google-shared-drive)). The secret also seals stored Google tokens: changing it means every Google connection must be made again |
 | `DRIVE_ROOT_FOLDER_ID` | – | the Shared Drive folder the dashboard files everything under. Usually chosen in Settings instead; when set here it wins and Settings shows it read-only |
 | `DRIVE_QUOTA_BYTES` | `100e9` (100 GB) | the storage the daily Drive check measures usage against; owners get a Discord alert (through `DISCORD_WEBHOOK_URL`, else the log) at 70 %. A plain byte count or `e` notation |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | – | the alternative to a connected account: a Google service-account key, accepted **only** as `GOOGLE_SERVICE_ACCOUNT_JSON_FILE` (a path to the key file). A direct value stops startup. It needs `DRIVE_ROOT_FOLDER_ID`, and is used only while no account is connected in Settings |
@@ -226,3 +226,30 @@ moving tags and require `image@sha256:<64 lowercase hex characters>`. Bootstrap 
 reviewed immutable digest, and use the protected production promotion workflow afterward.
 
 Cloudflared uses its documented [`TUNNEL_TOKEN_FILE`](https://developers.cloudflare.com/tunnel/reference/run-parameters/#token-file) support. Runtime restrictions use the [Compose service controls](https://docs.docker.com/reference/compose-file/services/).
+
+## Owner integration setup
+
+Owners open `/setup` to connect Google Drive and the org Google Calendar, check the
+Drive root folder and quota, and see which host integrations are configured.
+Settings links to this page. Other officers are redirected home and cannot read
+`GET /api/setup/status` (403). Status responses are not cached and contain no
+credentials, webhook URLs or secret-file paths.
+
+For Discord login, set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET_FILE`.
+For invite DMs set `DISCORD_BOT_TOKEN_FILE`; for notifications set
+`DISCORD_WEBHOOK_URL_FILE`. SMTP needs `SMTP_HOST` and `SMTP_FROM`, with
+`SMTP_USERNAME_FILE` and `SMTP_PASSWORD_FILE` for authentication. Cloudflare
+uses `CLOUDFLARE_API_TOKEN_FILE` plus its account/resource IDs. All secret
+values stay in host files; Setup has no credential inputs.
+
+The OAuth sealing key is derived from `GOOGLE_OAUTH_CLIENT_SECRET_FILE`;
+keep that secret stable so saved Google grants remain readable.
+`BOOTSTRAP_OWNER_DISCORD_ID` and `BOOTSTRAP_OWNER_NAME` provision the initial
+owner only; absence does not remove an existing owner.
+
+Export status is read when the optional `drive_export_state` table exists.
+The backup container owns `BACKUP_*` configuration; the app cannot inspect it.
+Backup uploads and outbox age show "not installed" until the backup integration
+publishes dashboard-readable status. A configured indicator confirms the
+application has configuration, not that delivery or provider authentication
+has succeeded. Use the last-run times and provider checks for operational proof.

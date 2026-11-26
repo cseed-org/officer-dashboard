@@ -27,3 +27,6 @@ button, input, select, textarea {accent-color: var(--text);}
 button, a, input, select, textarea {-webkit-tap-highlight-color: transparent;}
 [hidden] {display: none !important;}
 @media (prefers-reduced-motion: reduce) {*, *::before, *::after {animation: none !important;transition: none !important;scroll-behavior: auto !important;}}
+
+/* Ownership is confirmed by /api/me before owner navigation appears. */
+html:not([data-owner="true"]) [data-owner-only] { display: none; }

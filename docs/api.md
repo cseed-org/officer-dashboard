@@ -732,8 +732,11 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
 - Officer: GET/POST /api/programs; PATCH/DELETE /api/programs/:id;
   POST/DELETE /api/programs/:id/exceptions (DELETE takes onDate query).
 - Officer GET /api/program-tracks; leadership POST /api/program-tracks.
-- Leadership: GET /api/settings/org-google/status, navigation GET /api/settings/org-google/connect,
-  DELETE /api/settings/org-google. OAuth callback: /auth/org-google/callback.
+- Leadership: GET /api/settings/org-google/status (read-only account status).
+- Owner: navigation GET /api/settings/org-google/connect, OAuth callback
+  /auth/org-google/callback, DELETE /api/settings/org-google. These sign-in management
+  operations recheck ownership from the DB; callback and disconnect recheck inside the
+  write transaction. Non-owner leadership receives 403. Owners manage sign-ins on `/setup`.
 - Owner (Drive file storage, [Integrations](integrations.md#files-in-a-google-shared-drive)):
   GET /api/settings/drive/status (`DriveStatus`: account email, root folder, reachable,
   `canWrite`, usage with `measuredAt`; never tokens; usage comes from the daily check or the
@@ -752,3 +755,13 @@ OrgCalendar*, OrgEvent*, Program* and OrgGoogleStatus in both contract files.
   "Tentative <from> – <to>" subtitle. Tentative Events sort at tentativeFrom, are left out of the
   calendar feed (they appear on the org Events calendar) and of time-based stats (hosted counts,
   last event, events summary).
+
+### Owner setup status
+
+`GET /api/setup/status` requires an active owner and returns
+`{integrations: [{key, label, state, detail, action, docs}]}`.
+States are `connected`, `configured`, `missing`, or `error`; actions are
+`connect`, `env`, or `none`. Metadata is limited to account emails, root folder
+name, quota percentage and successful-operation timestamps. It never returns
+credentials or webhook URLs. Missing optional export/backup integrations are
+identified in the detail text. Host secrets are configured outside the UI.

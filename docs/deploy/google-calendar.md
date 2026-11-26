@@ -9,7 +9,7 @@ sync. How the sync works is in [Organization calendar](../org-calendar.md).
 Until you do this, the dashboard works normally: meetings save in the dashboard, nothing goes to
 Google, and no invites are sent.
 
-**You need:** owner or leadership access to the dashboard, the org Gmail and its password, and
+**You need:** owner access to the dashboard, the org Gmail and its password, and
 about 30 minutes.
 
 **Not verified here:** the Google Cloud Console steps need a real account. Google renames menus;
@@ -87,13 +87,13 @@ it means connecting the org account, and every officer's Google, again.
    (**Officers → Access**). Calendars are shared with that address; an officer without one sees
    none. Officers you add later are shared with automatically.
 2. Open a private browser window, so the org Gmail is the only Google account in it. Go to
-   `https://<your-hostname>` and sign in to the dashboard as owner or leadership.
-3. **Settings** → **org Google Calendar** → **Connect org Google account**.
+   `https://<your-hostname>` and sign in to the dashboard as owner.
+3. **Setup** → **Org Google Calendar** → **Connect org Google account**.
 4. Choose the org Gmail. Google may warn the app is unverified: **Advanced** → continue. Allow
    "See, edit, share and permanently delete all the calendars you can access using Google
    Calendar".
 
-You should land back on Settings with the card saying **Connected as** the org Gmail.
+You should land back on Setup with the card saying **Connected as** the org Gmail.
 
 If you land with an error instead:
 
@@ -114,7 +114,7 @@ existing Event. Pushes of Events and programs never email anyone. Give it a few 
    account email, with **See all event details**.
 3. **As an officer:** the four calendars should appear in their Google Calendar. It can take a
    moment, and they may need to accept Google's share email.
-4. **In the dashboard:** the **Settings → org Google Calendar** card should say **Connected as**
+4. **In the dashboard:** the **Setup → Org Google Calendar** card should say **Connected as**
    the org Gmail, with no warning under it.
 
 Roster changes (a new officer, a changed email, someone deactivated) reach the sharing within
@@ -134,7 +134,7 @@ dashboard in another:
   You should see Google's **Events** calendar update. An edit made in Google to **Events** or
   **Weekly Programs** is undone at the next pull.
 
-**Disconnecting:** **Settings → org Google Calendar → Disconnect** stops the sync; meetings stay in
+**Disconnecting:** **Setup → Org Google Calendar → Disconnect** stops the sync; meetings stay in
 the dashboard. Reconnect with the **same** Gmail and the same four calendars are reused. A
 different Gmail gets four new calendars.
 

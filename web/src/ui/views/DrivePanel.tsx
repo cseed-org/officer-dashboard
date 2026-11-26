@@ -151,7 +151,7 @@ export function DrivePanel() {
               </label>
               <div class="action-row">
                 <button type="submit" class="btn" disabled={busy || !folder.trim()}>
-                  {busy ? 'Checking…' : st.rootFolderId ? 'Change folder' : 'Use this folder'}
+                  {busy ? 'Checking…' : 'Check and use folder'}
                 </button>
               </div>
             </form>

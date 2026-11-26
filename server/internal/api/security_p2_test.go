@@ -68,7 +68,7 @@ func TestP2AnonymousRouteMatrix(t *testing.T) {
 		}
 		return true
 	})
-	if n != 169 { // current inventory of private literal registrations, including aliases
+	if n != 170 { // current inventory of private literal registrations, including aliases
 		t.Fatalf("route enumeration unexpectedly incomplete: %d registrations", n)
 	}
 	t.Logf("checked %d private registrations with %d credential states", n, len(actors))
