@@ -5,6 +5,47 @@ or **[Upgrade an existing host](deploy/upgrade-existing.md)**. The original guid
 Litestream sections describe the previous image. The current image uses encrypted D1 snapshots,
 plus an independent daily/monthly copy in Google Drive ([below](#a-second-independent-copy-in-google-drive)).
 
+## Release images and verification
+
+CI on `main` builds `ghcr.io/cseed-org/officer-dashboard:main` and
+`:sha-<7-character commit>` with SBOM and build provenance. A published stable
+GitHub Release such as `v0.15.0` promotes that commit's existing multi-platform
+digest to `:0.15.0`, `:0.15` and `:latest`. Releases at major version 1 and later
+also update `:1` (or the corresponding major); there is no `:0` alias. Prereleases
+are excluded. Version aliases and `latest` can move: pin deployments by digest.
+The image's binary version remains the source commit's short SHA because release
+promotion never rebuilds it.
+
+The release workflow requires a successful `main` CI run, including its `publish`
+job, for the tag's resolved commit. It checks that the image revision matches the
+full commit and that all promoted tags keep the same digest. It adds a GitHub
+artifact attestation and a keyless Cosign signature using GitHub's OIDC identity.
+The release attestation records promotion; the original build's provenance and
+SBOM remain attached to the image. Tags never authorize a build.
+
+With Cosign and GitHub CLI installed and authenticated for GHCR as needed, resolve
+the release digest and verify both records before deploying:
+
+```sh
+IMAGE=ghcr.io/cseed-org/officer-dashboard
+DIGEST=$(docker buildx imagetools inspect "$IMAGE:0.15.0" --format '{{.Manifest.Digest}}')
+cosign verify "$IMAGE@$DIGEST" \
+  --certificate-identity 'https://github.com/cseed-org/officer-dashboard/.github/workflows/release-publish.yml@refs/tags/v0.15.0' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+gh attestation verify "oci://$IMAGE@$DIGEST" \
+  --repo cseed-org/officer-dashboard \
+  --signer-workflow cseed-org/officer-dashboard/.github/workflows/release-publish.yml
+```
+
+The release event's workflow identity uses the release tag ref. Change the version
+in both commands when verifying another release; keep the expected workflow and
+tag identity exact.
+
+Semantic release publication does not deploy production. Continue using the
+separate `promote-production.yml` workflow and protected `production` environment
+for production promotion. Maintainers must create that environment and its
+protection rules before using it.
+
 ## Measured size and free-tier budget
 
 Measured locally on 2026-11-24 using the release image's `dashboard seed -reset` in an

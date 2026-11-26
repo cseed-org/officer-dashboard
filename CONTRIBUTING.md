@@ -7,7 +7,7 @@ Start with [development setup](docs/development.md) for prerequisites, local ser
 - Branch from the latest `origin/main`; keep each branch focused on one change.
 - Open an issue for substantial behavior changes, then link it in a pull request targeting `main`.
 - Explain the problem, resulting behavior and validation. Keep unrelated cleanup separate.
-- Use short, descriptive commit subjects; no Conventional Commits prefix required.
+- Use a Conventional Commit PR title, such as `feat: add calendar export` or `fix: handle expired sign-in`. The squash merge subject drives release notes and version bumps; `pr-title` checks it.
 - Wait for CI and maintainer review; address feedback before merging.
 
 ## Checks
@@ -73,3 +73,35 @@ The CSEED name, logos and brand imagery are reserved. Forks must replace the bra
 - Improve responsive layouts using the design specification.
 
 For questions and reports, see [SUPPORT.md](SUPPORT.md).
+
+## Releases and dependency updates
+
+Every push to `main` runs release-please with a GitHub App token. It maintains one
+release PR containing `CHANGELOG.md`, `version.txt`, the release manifest, and both
+Node package versions and lockfiles. The first release is `0.15.0`; later versions
+follow Conventional Commits (`feat`, `fix`, `perf`, `deps`, `deps-dev`, `docs`).
+Review the proposed version and notes, wait for all required checks, then squash
+merge the release PR with its generated `chore(main): release ...` title. Release
+PRs require a person to merge them.
+
+Release-please creates the immutable `vX.Y.Z` tag and GitHub Release. The release
+image workflow waits up to 20 minutes for that commit's successful main CI run and
+`publish` job, then promotes the existing image digest to semantic version tags.
+It does not build another image. Failed or missing publication stops promotion;
+after resolving CI, rerun the failed release-image workflow. See
+[image tags and verification](docs/deployment.md#release-images-and-verification).
+
+Dependabot uses `deps:` / `deps-dev:` titles. Minor and patch PRs enter GitHub's
+auto-merge queue and still need every required check to pass. Major updates receive
+`major-update` and require manual review and merging.
+
+Maintainers must enable repository auto-merge, create the `major-update` label from
+`.github/labels.yml`, and require the `pr-title` check alongside existing checks.
+Install a repository-scoped GitHub App with contents, issues and pull requests write
+access; save `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` as repository secrets.
+Allow that App to create `v*` tags through the tag-creation ruleset, while preserving
+the separate rules preventing tag updates/deletion. An App token lets release PRs
+and GitHub Releases trigger CI; the default `GITHUB_TOKEN` would suppress those runs.
+Missing App secrets fail explicitly. Repository settings, secrets, rulesets and
+the protected `production` environment require maintainer setup; workflows do not
+create them.

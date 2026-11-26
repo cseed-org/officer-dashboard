@@ -1,0 +1,104 @@
+name: Publish release image
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-image
+  cancel-in-progress: false
+
+jobs:
+  release-image:
+    if: '!github.event.release.prerelease'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      id-token: write
+    env:
+      IMAGE: ghcr.io/cseed-org/officer-dashboard
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Resolve release commit and require successful main CI publication
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo '::error::Only stable vX.Y.Z release tags may promote images.'
+            exit 1
+          fi
+          version="${TAG#v}"
+          object=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object')
+          while [[ $(jq -r '.type' <<< "$object") == tag ]]; do
+            object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r '.sha' <<< "$object")" --jq '.object')
+          done
+          [[ $(jq -r '.type' <<< "$object") == commit ]]
+          commit=$(jq -r '.sha' <<< "$object")
+          ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq '.status')
+          [[ "$ancestry" == ahead || "$ancestry" == identical ]]
+          for attempt in {1..40}; do
+            runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f head_sha="$commit" -f event=push -f branch=main -f per_page=100)
+            run=$(jq -c '[.workflow_runs[]] | sort_by(.run_number) | last // empty' <<< "$runs")
+            if [[ -n "$run" && $(jq -r '.status' <<< "$run") == completed ]]; then
+              if [[ $(jq -r '.conclusion' <<< "$run") != success ]]; then
+                echo '::error::Main CI failed for the release commit; refusing promotion.'
+                exit 1
+              fi
+              jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$(jq -r '.id' <<< "$run")/jobs?per_page=100")
+              jq -e -s 'any(.[].jobs[]; .name == "publish" and .conclusion == "success")' <<< "$jobs"
+              echo "commit=$commit" >> "$GITHUB_OUTPUT"
+              echo "version=$version" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo '::error::Timed out waiting for successful main CI and its publish job.'
+          exit 1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote the existing digest without rebuilding
+        id: image
+        env:
+          COMMIT: ${{ steps.release.outputs.commit }}
+          VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest=$(docker buildx imagetools inspect "$IMAGE:sha-${COMMIT:0:7}" --format '{{.Manifest.Digest}}')
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          # Confirm that the short SHA source belongs to the full release commit.
+          revision=$(docker buildx imagetools inspect "$IMAGE@$digest" --format '{{json .Manifest}}' | jq -r '.annotations["org.opencontainers.image.revision"]')
+          [[ "$revision" == "$COMMIT" ]]
+          major="${VERSION%%.*}"
+          tags=(--tag "$IMAGE:$VERSION" --tag "$IMAGE:${VERSION%.*}" --tag "$IMAGE:latest")
+          if [[ "$major" != 0 ]]; then tags+=(--tag "$IMAGE:$major"); fi
+          docker buildx imagetools create "${tags[@]}" "$IMAGE@$digest"
+          for ((i=1; i<${#tags[@]}; i+=2)); do
+            promoted=$(docker buildx imagetools inspect "${tags[i]}" --format '{{.Manifest.Digest}}')
+            [[ "$promoted" == "$digest" ]]
+          done
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+      - uses: sigstore/cosign-installer@881c63bd87e38389154debd8331404ce7ca8a3ab # v4.1.4
+      - name: Sign the promoted digest with GitHub OIDC
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
