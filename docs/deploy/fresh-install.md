@@ -145,16 +145,21 @@ volume, then restart. The first-ever initialization above is deliberately explic
 ## GitHub approval gate (repository settings; requires approval)
 
 Repository Settings → Environments → New environment → name exactly `production` →
-Required reviewers → add the nominated human/review team → enable Prevent self-review →
-disable administrator bypass where available → Deployment branches/tags → selected
-branches → `main` only → Save. Verify these protections **before enabling promotion**;
-an Environment without required reviewers provides no approval gate. Confirm the package
-is private and the repository has write access to it. Do not change visibility implicitly.
+Required reviewers → add the maintainer (or review team) → Deployment branches/tags →
+protected branches only (or selected branches with `main` as the only branch
+policy) → Save. With a sole maintainer, Prevent self-review stays off so the
+maintainer can approve their own dispatch (decision D-15); once a second reviewer
+exists, enable Prevent self-review and disable administrator bypass where available. Verify these protections **before enabling
+promotion**; an Environment without required reviewers provides no approval gate. Confirm
+the package is private and the repository has write access to it. Do not change visibility
+implicitly.
 
 Actions → Approve production image → Run workflow on `main` → enter the full commit SHA
-whose main CI publish passed. The reviewer checks that SHA and approves the pending
-`production` job. It verifies main ancestry, successful CI, and the image revision annotation,
-then retags `sha-<first 7 characters>` by its digest as `:prod`.
+whose main CI publish passed → Run workflow. The reviewer checks that SHA and approves
+the pending `production` deployment review. The job verifies main ancestry, successful
+CI, and the image revision annotation, then retags `sha-<first 7 characters>` by its
+digest as `:prod`. The server's `officer-dashboard-update.timer` then pulls the changed
+`:prod` and restarts the dashboard on it.
 
 Install `officer-dashboard-update.service` and `.timer` from `server/deploy` into
 `/etc/systemd/system`; adjust `/opt/officer-dashboard` if necessary. Run `systemctl daemon-reload`.
