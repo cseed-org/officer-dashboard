@@ -61,7 +61,7 @@ func Discover(ctx context.Context, api cfapi.Reader, d plan.Desired) (plan.Obser
 		func() (err error) { o.IdP, err = x.idp(ctx); return },
 		func() error { return x.groups(ctx, o.Groups) },
 		func() error { return x.serviceTokens(ctx, o.ServiceTokens) },
-		func() (err error) { o.AppsCoveringHost, err = x.apps(ctx, o.Apps); return },
+		func() (err error) { o.OtherApps, err = x.apps(ctx, o.Apps); return },
 		func() error { return x.rules(ctx, o.Rules) },
 		func() (err error) { o.BotFightMode, err = x.botFightMode(ctx); return },
 		func() (err error) { o.D1, err = x.d1(ctx); return },
@@ -438,9 +438,9 @@ func (x *discovery) serviceTokens(ctx context.Context, out map[string]plan.Servi
 // https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/subresources/policies/methods/list/
 //
 // An app is matched by the exact set of its destinations, then by a superset (an app
-// that covers the desired destinations and others), then by name. The second list it
-// returns holds every app with a destination equal to the bare dashboard hostname.
-func (x *discovery) apps(ctx context.Context, out map[string]plan.App) ([]plan.App, error) {
+// that covers the desired destinations and others), then by name. It also returns, per
+// hostname, every unmatched app with a destination on the dashboard or backup hostname.
+func (x *discovery) apps(ctx context.Context, out map[string]plan.App) (map[string][]plan.App, error) {
 	type app struct {
 		ID           string `json:"id"`
 		Name         string `json:"name"`
@@ -550,17 +550,40 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) ([]plan.A
 		out[spec.Key] = got
 	}
 	// After matching, so a two-match error is raised before any extra policy reads.
-	var covering []plan.App
-	for i := range all {
-		if slices.Contains(dests[i], x.d.Hostname) {
+	// Only apps on the dashboard or backup hostname are read further, so an account's
+	// unrelated apps cost no requests beyond paging the list.
+	matched := map[string]bool{}
+	for _, a := range out {
+		if a.Found {
+			matched[a.ID] = true
+		}
+	}
+	other := map[string][]plan.App{}
+	for i, a := range all {
+		if matched[a.ID] {
+			continue
+		}
+		for _, host := range []string{x.d.Hostname, x.d.BackupHostname} {
+			if !onHost(dests[i], host) {
+				continue
+			}
 			got, err := readPolicies(i)
 			if err != nil {
 				return nil, err
 			}
-			covering = append(covering, got)
+			other[host] = append(other[host], got)
 		}
 	}
-	return covering, nil
+	return other, nil
+}
+
+func onHost(dests []string, host string) bool {
+	for _, d := range dests {
+		if d == host || strings.HasPrefix(d, host+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func containsAll(have, want []string) bool {

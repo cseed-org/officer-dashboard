@@ -58,9 +58,10 @@ type Observed struct {
 	BotFightMode  BotFightMode
 	D1            Seen
 	Worker        Worker
-	// AppsCoveringHost lists every Access application with a destination equal to the
-	// bare dashboard hostname, with its policies, whatever it is named or matched as.
-	AppsCoveringHost []App
+	// OtherApps lists, per hostname (the dashboard's and the backup Worker's), every
+	// Access application with a destination on that hostname, bare or with a path, that
+	// matched none of the documented applications. Each carries its policies.
+	OtherApps map[string][]App
 }
 
 type Zone struct {
@@ -561,14 +562,12 @@ func diffApp(d Desired, spec AppSpec, o Observed) Action {
 	if app.MatchedBy != "name" {
 		prefixCheck(c, d, app.Name, spec.Name)
 	}
-	if spec.Key == AppSite {
-		// Another application on the same bare hostname may decide its traffic too, so
-		// it is named and its policies get the same public-access checks.
-		for _, other := range o.AppsCoveringHost {
-			if other.ID == app.ID {
-				continue
-			}
-			c.driftf("application %q (%s) also covers %s; its policies may apply to the dashboard", other.Name, other.ID, o.hostname)
+	host := map[string]string{AppSite: d.Hostname, AppBackups: d.BackupHostname}[spec.Key]
+	if host != "" {
+		// Any other application on this hostname decides who reaches its paths, and
+		// the docs list none: they say every other path stays behind the PIN sign-in.
+		for _, other := range o.OtherApps[host] {
+			c.driftf("application %q (%s) also covers %s, which the docs do not list; its policies decide who reaches it", other.Name, other.ID, list(onHost(other.Destinations, host)))
 			if other.PoliciesUnknown != "" {
 				c.unknownf("%s", other.PoliciesUnknown)
 			}
@@ -577,7 +576,7 @@ func diffApp(d Desired, spec AppSpec, o Observed) Action {
 					c.driftf("its policy %q is bypass: requests skip the Access sign-in", p.Name)
 				}
 				if p.Decision != "deny" && slices.ContainsFunc(p.Include, func(in Include) bool { return in.Type == "everyone" }) {
-					c.driftf("its policy %q lets Everyone through: the hostname may be public", p.Name)
+					c.driftf("its policy %q lets Everyone through: those paths may be public", p.Name)
 				}
 			}
 		}
@@ -760,6 +759,17 @@ func paramMatches(want, got any) bool {
 		}
 	}
 	return true
+}
+
+// onHost returns the destinations ("host" or "host/path") that are on host.
+func onHost(dests []string, host string) []string {
+	var out []string
+	for _, d := range dests {
+		if d == host || strings.HasPrefix(d, host+"/") {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // routed reports whether the tunnel's routes send the dashboard hostname anywhere.

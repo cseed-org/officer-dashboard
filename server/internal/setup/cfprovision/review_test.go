@@ -4,10 +4,13 @@ package cfprovision
 // reviewer's repro, failing on 442676f, and now states the expected outcome.
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	"officerdashboard/internal/setup/cfapi"
 	"officerdashboard/internal/setup/cffake"
 	"officerdashboard/internal/setup/plan"
 )
@@ -341,4 +344,107 @@ func TestFollowupPrefixThatPrefixesRealNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	expect(t, action(t, d, o, "tunnel"), plan.Drift, `lacks the name prefix "officer-"`)
+}
+
+// Third review at c5ee549 (finding F-19): apps on other paths of the dashboard or
+// backup hostname that are not among the documented applications.
+
+func addApp(routes map[string]cffake.Response, app map[string]any) {
+	apps := append([]any(nil), routes[acctP+"/access/apps"].Result.([]any)...)
+	routes[acctP+"/access/apps"] = cffake.Response{Result: append(apps, app)}
+}
+
+// F-19: a public app on another path of the dashboard hostname.
+func TestThirdPublicAppOnOtherPathIsDrift(t *testing.T) {
+	routes := cffake.Complete()
+	open := siteApp([]any{pol("p-open", "bypass", everyone)}, cffake.Host+"/admin")
+	open["id"], open["name"] = "app-admin", "Admin (temporary)"
+	addApp(routes, open)
+	d := desired(t, "")
+	o, err := discover(t, routes, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := action(t, d, o, "access.app.site")
+	expect(t, a, plan.Drift, `application "Admin (temporary)" (app-admin) also covers officers.example.org/admin`)
+	expect(t, a, plan.Drift, `its policy "p-open" is bypass`)
+	expect(t, a, plan.Drift, `its policy "p-open" lets Everyone through`)
+}
+
+// F-19: an identity-only app on another path still gets a line: the docs say every
+// path they do not list stays behind the PIN sign-in.
+func TestThirdIdentityAppOnOtherPathIsDrift(t *testing.T) {
+	routes := cffake.Complete()
+	app := siteApp([]any{pol("p-staff", "allow", grp("g-officers"))}, cffake.Host+"/reports")
+	app["id"], app["name"] = "app-reports", "Reports"
+	addApp(routes, app)
+	d := desired(t, "")
+	o, err := discover(t, routes, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := action(t, d, o, "access.app.site")
+	expect(t, a, plan.Drift, `application "Reports" (app-reports) also covers officers.example.org/reports`)
+	if strings.Contains(strings.Join(a.Detail, " "), "Everyone") {
+		t.Errorf("identity-only app flagged as public: %v", a.Detail)
+	}
+}
+
+// F-19: the same check on the backup hostname.
+func TestThirdPublicAppOnBackupPathIsDrift(t *testing.T) {
+	routes := cffake.Complete()
+	open := siteApp([]any{pol("p-open", "bypass", everyone)}, cffake.Backup+"/usage")
+	open["id"], open["name"] = "app-usage", "Usage"
+	addApp(routes, open)
+	d := desired(t, "")
+	o, err := discover(t, routes, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := action(t, d, o, "access.app.backups")
+	expect(t, a, plan.Drift, `application "Usage" (app-usage) also covers backups.example.org/usage`)
+	expect(t, a, plan.Drift, `its policy "p-open" lets Everyone through`)
+}
+
+// F-19: requests stay flat however many unrelated apps the account has.
+func TestThirdRequestCountIgnoresUnrelatedApps(t *testing.T) {
+	count := func(extra int) (total, policyReads int) {
+		routes := cffake.Complete()
+		apps := append([]any(nil), routes[acctP+"/access/apps"].Result.([]any)...)
+		for i := 0; i < extra; i++ {
+			apps = append(apps, map[string]any{"id": fmt.Sprintf("app-%d", i), "name": fmt.Sprintf("Other %d", i), "type": "self_hosted",
+				"destinations": pubDest(fmt.Sprintf("site%d.example.org", i))})
+		}
+		for _, a := range apps { // no embedded policies: the worst case
+			delete(a.(map[string]any), "policies")
+		}
+		routes[acctP+"/access/apps"] = cffake.Response{Result: apps}
+		for _, id := range []string{"app-site", "app-agents", "app-services", "app-backups", "app-x"} {
+			routes[acctP+"/access/apps/"+id+"/policies"] = cffake.Response{Result: []any{}}
+		}
+		srv := cffake.Start(routes)
+		defer srv.Close()
+		if _, err := Discover(context.Background(), cfapi.New("t", cfapi.WithBaseURL(srv.URL), cfapi.WithRetry()), desired(t, "")); err != nil {
+			t.Fatal(err)
+		}
+		if bad := srv.NonGET(); len(bad) != 0 {
+			t.Fatalf("non-GET: %v", bad)
+		}
+		for _, r := range srv.Requests() {
+			total++
+			if strings.HasSuffix(r.Path, "/policies") {
+				policyReads++
+			}
+		}
+		return total, policyReads
+	}
+	baseTotal, basePolicies := count(0)
+	total, policies := count(300)
+	if policies != basePolicies {
+		t.Errorf("policy reads %d with 300 unrelated apps, %d without", policies, basePolicies)
+	}
+	// The only growth allowed is paging the apps list itself: 300 more apps at 20 a page.
+	if total-baseTotal != 15 {
+		t.Errorf("requests %d with 300 unrelated apps, %d without; want exactly 15 more list pages", total, baseTotal)
+	}
 }
