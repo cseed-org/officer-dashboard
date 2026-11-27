@@ -1,19 +1,11 @@
-# Upgrade an existing deployment
+# Updates and recovery
 
-First migrate from the previous Litestream image manually; it lacks `/app/dashboard-backup`,
-so the automatic updater cannot safely bootstrap itself. Keep the old image digest and
-its encrypted offline DB backup until this transition has passed a restore drill.
+Use this for the current Docker deployment. Complete [Fresh install](fresh-install.md)
+and verify an off-host restore before enabling automatic updates. Host Compose commands
+run from `server/deploy`; every production Compose command needs
+`--env-file .env --env-file prod-image.env -f compose.cloudflare.yml`.
 
-1. Complete the approved [D1 sink setup](fresh-install.md). Export the current SQLite
-   database with its online backup API, check integrity, gzip and age-encrypt it on the
-   recovery workstation. Retain its key off-box. Do not delete the former replica yet.
-2. Stop the dashboard, retain the data volume, pull the reviewed new immutable image,
-   and initialize `prod-image.env` with that digest. Replace Litestream settings with
-   the documented `BACKUP_*` settings in the separate `backup.env`. Move credentials to the app/backup/tunnel secret files and remove plaintext and backup credentials from `dashboard.env`. Keep the existing remote tunnel token, routes
-   and Access policies. Follow the [fresh install](fresh-install.md) compose commands
-   with **both** env files; do not initialize a new DB.
-3. Start the dashboard, check `/api/health`, run `/app/dashboard-backup backup` with
-   `docker compose ... run --rm --no-deps backup backup`, and do an off-box restore. Then enable the timer.
+## Approved updates and rollback
 
 Every five minutes `scripts/update` compares `:prod` to `prod-image.env`. On change it
 pulls the candidate by digest, stops the app and backup service to freeze writes, and requires a fresh
@@ -25,7 +17,7 @@ cloudflared is replaced by this command.
 
 If startup or health fails after migrations could run, it stops the candidate, removes
 the stopped database's WAL/SHM, restores the pre-update local checkpoint, starts the
-previous digest and checks health. The off-box-key rule prevents decrypting a D1
+previous digest and checks health. Keeping the decryption key off-host prevents decrypting a D1
 snapshot automatically on the host, so immediate rollback uses the stopped local
 checkpoint. A host/disk loss still requires the off-box restore. The checkpoint and
 migration copy have the data volume's existing access controls and are removed after
@@ -46,8 +38,12 @@ and pin intact. Never push a deliberately broken image to production's `:prod` t
 
 ## Monthly restore drill
 
-On an isolated recovery workstation, load only the backup sink's Access/bearer credentials
-and obtain the offline age identity. Run:
+On an isolated recovery workstation, check out this repository and start at its
+root. Install Python 3 and the age CLI. Configure `BACKUP_SINK_URL` and the sink's
+Access/bearer credentials using `BACKUP_ACCESS_CLIENT_ID_FILE`,
+`BACKUP_ACCESS_CLIENT_SECRET_FILE`, and `BACKUP_BEARER_SECRET_FILE`. These paths
+must point to protected files on the recovery workstation, not the container paths
+from production `backup.env`. Obtain the offline age identity. Run:
 
 ```sh
 DB_PATH=./drill-lock.db scripts/restore-from-d1 --snapshot latest \
@@ -61,12 +57,12 @@ records. Record snapshot ID/date, hash/integrity result and elapsed recovery tim
 the drill's plaintext copy and unmount the offline identity. Separately decrypt a weekly
 membership SQL export and import it into a local D1 database, never into the live mirror.
 
-The legacy systemd backup script now requires an absolute `BACKUP_DIR`, a public
+The alternative systemd backup script now requires an absolute `BACKUP_DIR`, a public
 `BACKUP_AGE_RECIPIENT` and the age CLI. It sets umask 0077, verifies a private temporary
 SQLite snapshot, and keeps/transmits only `.db.gz.age` artifacts. `BACKUP_REMOTE` is an
 executable hook receiving the ciphertext filename as one argument. Migrate pre-existing
-plaintext backups off-box; the script neither sends nor silently deletes them. P1 owns
-the systemd unit's UMask hardening; this change does not edit that unit.
+plaintext backups off-box; the script neither sends nor silently deletes them. See [systemd setup](other-setups.md#pi-under-systemd-without-docker)
+for that alternative deployment.
 
 ## Interrupted update recovery
 

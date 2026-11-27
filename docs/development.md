@@ -1,202 +1,203 @@
 # Development
 
-## Quick start
+Use the Docker setup for the fewest tools to install. Native development is an
+alternative if you want to run Go and Node directly. Both use sample data.
 
-Needs Go matching [server/go.mod](../server/go.mod) (minimum 1.26, with the build
-toolchain selected by its `toolchain` directive), a C compiler (cgo, for SQLite),
-GNU Make, a POSIX shell and Node 24 LTS. On Windows use Bash/WSL for these shell
-commands, or use the Docker stack below to build Go and SQLite inside Linux.
+## Get the code
+
+Install Git, then run:
 
 ```sh
-(cd web && npm ci && npm run build)   # static front end -> web/dist
-cd server && make dev                 # seeds ./data/dev.db, serves with the dev login
+git clone https://github.com/cseed-org/officer-dashboard.git
+cd officer-dashboard
 ```
 
-See [Fresh install](deploy/fresh-install.md) and [configuration](configuration.md) for deployment and settings, and
-[front-end guide](frontend.md) for the front-end dev server.
+Unless a section says otherwise, run commands from this repository root.
 
 ## Run it in Docker
 
-With Docker Desktop running Linux containers, from the repository root:
+Install Docker with Compose v2. On Windows or macOS, start Docker Desktop; on
+Windows, select Linux containers. You do not need Go, Node, or service credentials
+on your computer for this setup.
+
+**Every app-container start resets the sample database in the `dev_data` volume.**
+Use disposable data only.
 
 ```sh
 docker compose -f compose.dev.yaml up -d --build --wait
-docker compose -f compose.dev.yaml run --rm --no-deps e2e npx playwright test tests/onboarding-intro.spec.ts tests/onboarding-plan.spec.ts --output=test-results/intro
 ```
 
-The seeded Go dev build serves <http://localhost:8090/login>; Astro with hot reload
-serves <http://localhost:4340/login>. For developer sign-in, append
-`?key=local-docker-development-only` to `/login`. Override `DOCKER_DEV_AUTH_KEY`
-in your environment to change this local-only key; the test runner uses the same value.
-Both ports bind to IPv4 (`127.0.0.1`) and IPv6 (`::1`) host loopback, so
-`localhost` also works in browsers that try IPv6 first. They are not exposed on
-LAN interfaces. Apply changed port bindings on the next coordinated stack
-recreation. Every app-container start runs `seed -reset`,
-replacing the development database in the `dev_data` volume.
+Open <http://localhost:4340/login?key=local-docker-development-only>. Choose a
+role in **Developer mode** and continue. The app is ready when the services report
+healthy. If startup fails, inspect it with:
 
-Source is bind-mounted directly (writable for Astro's endpoint generator); the former `Sapling.tsx` / `sapling.ts` case
-clash was removed by renaming the markup module to `saplingMarkup.ts`.
-Dependencies and Astro's cache use named volumes; polling supports
-hot reload on Windows. After dependency changes, run
-`docker compose -f compose.dev.yaml run --rm --no-deps web npm ci`, then rebuild
-the stack. The Go server's static build updates on rebuild; Astro updates live.
-The web service also mounts the current tests and TypeScript configuration. To
-check them without restarting the running stack, use
-`docker compose -f compose.dev.yaml run --rm --no-deps web npm run check`.
-Playwright and its matching browser image (pinned in [compose.dev.yaml](../compose.dev.yaml)) write traces and failure artifacts
-to `test-results/docker/`. Every Playwright run clears its output directory.
-Use `run --rm --no-deps e2e` against the running stack so testing does not restart
-or reseed the services. Concurrent runs must choose distinct paths, e.g. append
-`--output=test-results/engine` or `--output=test-results/screen` after the test arguments.
-To capture intro frames, add `-e INTRO_FRAMES=/artifacts/frames/intro` before `e2e`;
-frames appear in `test-results/docker/frames/intro/`. Keep the Playwright output
-in its own subdirectory (`--output=test-results/intro`) so cleanup does not remove
-the frame directory. In Git Bash, prefix commands that pass container paths with
-`MSYS_NO_PATHCONV=1` to prevent conversion of `/artifacts/...` to a Windows path.
+```sh
+docker compose -f compose.dev.yaml ps
+docker compose -f compose.dev.yaml logs --tail 50 app web
+```
 
-The Compose default `WEB_ORIGIN=http://dashboard:4340` targets Astro, which sends
-no Content-Security-Policy. CSP tests require the Go server's **rebuilt static site**:
+| Address | Purpose |
+| --- | --- |
+| <http://localhost:4340> | Astro frontend with live updates when you edit web source |
+| <http://localhost:8090> | Go backend serving the frontend built into the development image |
+
+Both ports are bound to your computer's loopback interfaces. To change the local
+login key, set `DOCKER_DEV_AUTH_KEY` before starting the stack and use that key in
+the login URL.
+
+Web source is mounted from your checkout. Rebuild after Go changes or to refresh
+the Go-served static site; this restarts and resets the app. Recreate `web`
+alongside `app` because they share a network namespace:
 
 ```sh
 docker compose -f compose.dev.yaml up -d --build --wait app web
+```
+
+After changing web dependencies, refresh their volume and rebuild:
+
+```sh
+docker compose -f compose.dev.yaml run --rm --no-deps web npm ci
+docker compose -f compose.dev.yaml up -d --build --wait app web
+```
+
+Stop the stack with `docker compose -f compose.dev.yaml down`. Adding `-v`
+also deletes the sample database, installed dependencies, and caches.
+
+### Checks in Docker
+
+With the stack running:
+
+```sh
+docker compose -f compose.dev.yaml run --rm --no-deps web npm run check
+docker compose -f compose.dev.yaml run --rm --no-deps e2e
+```
+
+The browser tests use Astro by default. To check the Content Security Policy
+(CSP), which is sent by Go, rebuild the app and web services first, then run:
+
+```sh
 docker compose -f compose.dev.yaml run --rm --no-deps -e WEB_ORIGIN=http://dashboard:8090 e2e npx playwright test tests/csp.spec.ts --project=desktop --output=test-results/csp
 ```
 
-Rebuilding restarts and reseeds the development app; coordinate this with anyone
-running tests. Recreate `web` alongside `app` because they share a network namespace.
-Direct e2e traffic to `:8090` is not loopback and can hit the 30-per-minute sign-in
-limit in long batches. The Astro proxy uses loopback and the existing development
-exemption; production rate limits are unchanged. `DEV_ALLOWED_HOSTS` configures
-Vite's public `server.allowedHosts` option for the internal `dashboard` hostname.
+Browser artifacts appear under `test-results/docker/`. Each run clears its output
+directory; use separate `--output=test-results/<name>` paths for concurrent runs.
+Tests create records, so run them only against disposable data.
 
-Stop with `docker compose -f compose.dev.yaml down`; add `-v` to also remove
-the development database, dependencies and cache.
+## Native setup
 
-## Checks
+Install:
 
-| Check | Command |
-| --- | --- |
-| Go vet + tests (including dev sign-in) | `cd server && make vet && make test` |
-| API contract | `npm ci && npm run contract-check` (builds and runs the Go server itself) |
-| Front end build + types | `cd web && npm ci && npm run build && npx astro check` |
-| Front end e2e | `npm ci && cd web && npm ci && npx playwright install chromium && API_ORIGIN=http://localhost:8090 npm run test:e2e` (Astro; [built-site pass](../CONTRIBUTING.md#ui-changes) also required for CSP/production checks) |
+- Node 24 and npm, matching the root and web package manifests.
+- Go matching [server/go.mod](../server/go.mod): minimum 1.26, with toolchain
+  `go1.27.4` selected by the module. Go may download that toolchain automatically.
+- A C compiler for SQLite's cgo bindings, GNU Make, and a POSIX shell.
 
-CI ([ci.yml](../.github/workflows/ci.yml)) runs Go, contract and web checks, plus release
-smoke tests and a selected Compose Playwright suite, on pushes to `main` and pull requests.
-Markdown changes also run [docs.yml](../.github/workflows/docs.yml):
-`scripts/check-doc-links.mjs` verifies every relative file link and section anchor
-offline (external links are skipped), using only first-party GitHub actions.
+On Windows, use WSL for the native commands below. They use Bash-style
+environment assignments. For an Ubuntu-based WSL environment, the compiler and
+Make are available through `build-essential`; install Go and Node separately.
 
-## Run it
-
-Use the Go toolchain, C compiler and POSIX shell described above. From `server/`:
+Build the frontend:
 
 ```sh
-make dev                 # seeds ./data/dev.db, serves on :8090 with the dev login
-# or by hand:
-CGO_ENABLED=1 DB_PATH=./data/dev.db go run -tags dev ./cmd/dashboard seed -reset
-CGO_ENABLED=1 DEV_AUTH=1 DB_PATH=./data/dev.db STATIC_DIR=../web/dist go run -tags dev ./cmd/dashboard serve
+cd web
+npm ci
+npm run build
+cd ..
 ```
 
-Open <http://localhost:8090/auth/dev?as=director> (or `as=officer`, `as=leadership`) and press
-**Continue** to sign in without Discord (a GET only shows that confirmation; the button posts the
-sign-in form, so a link or image on another site cannot sign anyone in), or use the **Developer mode** panel that `/login` shows under the Discord button
-("Skip Discord and continue as" Leadership / Director / Officer; never an owner account). The panel appears
-whenever the server answers `GET /auth/dev/info` with `authorized: true`, so the same static
-build looks like production everywhere else.
-
-### Developer mode on a test deployment
-
-A shared test deployment can run the dev build so testers skip Discord, gated by a secret:
+Start the backend:
 
 ```sh
-make build-dev
-APP_URL=https://test.example.org ADDR=:8090 DEV_AUTH=1 DEV_AUTH_KEY=$(openssl rand -hex 24) ./bin/dashboard-dev serve
+cd server
+make dev
 ```
 
-On any non-loopback `APP_URL` the dev build refuses to start with `DEV_AUTH=1` unless
-`DEV_AUTH_KEY` is set and at least 16 characters long.
-
-With `DEV_AUTH_KEY` set, `/auth/dev` and the login panel need the key; without it both look
-exactly like a production build (`/auth/dev` answers the site's 404 page, no hint). Share links
-of the form
-
-```text
-https://<host>/auth/dev?as=leadership&key=<KEY>                 # confirm, then land on Home
-https://<host>/auth/dev?as=officer&key=<KEY>&next=/events       # confirm, then land on Events
-https://<host>/login?key=<KEY>                                  # show the Developer mode panel
-```
-
-`as` is `leadership`, `director` or `officer` for the dashboard, or `builder` or `mentor` for
-the Launchpad portal; `next` must be a path on the same site (anything else lands on `/`). Every
-sign-in carries the key (the confirmation page and the panel post it with the form); nothing
-remembers it, so a signed-out visitor needs a keyed link again. A form posted from another site
-is refused (403), and `discord=<id>` sign-ins cannot target leadership or owner accounts. On a
-keyed deployment, dev login never signs in as a dashboard owner: `as=leadership` picks the oldest
-non-owner leadership account (creating a "Dev leadership" placeholder if there is none), and
-`user=<owner id>` is refused (403). `as=owner` works only without `DEV_AUTH_KEY`, i.e. on a
-loopback-only local server. The key is never logged (request logs record the path only).
-
-**Test deployments only.** Anyone holding the key can sign in as any non-owner role, leadership included.
-Never point a dev build at real data, and never deploy one to production.
-
-**The dev login cannot exist in production.** `/auth/dev` is compiled in only with `-tags dev`
-*and* answers only when `DEV_AUTH=1`. The default build has no such route; setting `DEV_AUTH=1`
-on it logs a warning and changes nothing (`TestDefaultBuildHasNoDevLogin` asserts a 404 for
-every variant, including `POST /auth/dev`, `/auth/dev/info` and a correct `DEV_AUTH_KEY`).
-
-## Tests
-
-```sh
-go vet ./... && go test ./...            # unit + integration (~10 s, most of it RSA key generation)
-go test -tags dev ./internal/api ./cmd/... # the dev-login build
-node ../scripts/contract-check.mjs        # JSON endpoints vs the zod contract (needs `npm ci` at the repo root)
-```
-
-Ported from v1: `tests/core/*` (money, fiscal, settlement, Luma CSV, metrics, lifecycle, auth,
-contributions, journal, accounting engine and reports, safe redirects), `tests/db/*` (integrity
-triggers, seed), `tests/server/api.test.ts` (every scenario, against a real seeded SQLite file with
-a fixed clock) and `tests/server/drive.test.ts` (JWT, shared-drive corpus, folder races). New:
-search, Discord sign-in against a fake Discord (PKCE, allowlist, bootstrap leadership), session
-sliding, the Origin check, static serving, `healthcheck`.
-
-`scripts/contract-check.mjs` bundles `src/core/contracts.ts`, starts the server on a seeded temp
-database and validates exercised request bodies, queries and responses against `ENDPOINTS`:
-all GET endpoints plus a purchase lifecycle (create → attach → submit → approve by a second
-director → fulfil → close), a restricted-grant reimbursement, the purchasing-agent flow including an
-over-tolerance hold, Luma ingest, CSV import, and the director writes. It fails on any schema error,
-unexpected status, or non-exempt endpoint left unexercised. Seven endpoints are exempt
-(auth/Google redirects and the dev-build-only `/auth/dev` routes) and are covered by Go tests.
-
-The seeded FY2027 statements foot (printed by the check and asserted in `TestSeededFY2027StatementsFoot`):
-
-```
-unrestricted  $1,800.00 − $591.40 + $186.40 released = $1,395.00
-net assets ending $11,908.60 = total assets $11,908.60   (balanced)
-```
-
-During the original Go port, the Go seed was also diffed against the TypeScript seed: all 15 tables are byte-identical.
+**Every `make dev` resets `server/data/dev.db`.** It starts a development build
+on port 8090 and serves `web/dist`. Open
+<http://localhost:8090/auth/dev?as=director> and press **Continue**.
+You can also use `as=officer` or `as=leadership`.
+Stop the process with Ctrl+C.
 
 ## Live front-end development
 
-Keep the seeded backend from `make dev` running. In a second terminal, from the repo root:
+Keep the native backend running. In a second terminal, from the repository root:
 
 ```sh
 cd web
 API_ORIGIN=http://localhost:8090 npm run dev
 ```
 
-Open <http://127.0.0.1:4340/login>. The dev proxy forwards `/api` and `/auth`, rewrites Origin and redirects, and strips cookie Domain so dev sign-in works. Its default backend is `http://localhost:8090`, matching `APP_URL`. See [front-end reference](frontend.md).
+Open <http://localhost:4340/login> and use **Developer mode**.
+Astro forwards API and authentication requests to Go. Keep the backend's
+`APP_URL` consistent with `API_ORIGIN` when changing the default address.
+See [Frontend](frontend.md) for proxy behavior and source layout.
 
-## Browser checks
+## Checks
 
-From `web/`, with a seeded backend:
+Install the tooling dependencies at the repository root:
 
 ```sh
+npm ci
+```
+
+Run checks from the directory shown. Each command assumes you start there.
+
+| Directory | Check | Command |
+| --- | --- | --- |
+| Repository root | Script tests | `npm run test:scripts` |
+| Repository root | Markdown links and anchors | `node scripts/check-doc-links.mjs` |
+| Repository root | API contracts | `npm run contract-check` |
+| Repository root | Generated MCP tools | `node scripts/gen-mcp-tools.mjs --check` |
+| `server/` | Go analysis and tests, including dev login | `make vet && make test` |
+| `web/` | Frontend build and types | `npm ci && npm run build && npm run check` |
+
+The contract checker builds its own Go server and seeds a temporary database.
+It requires the native Go and C compiler prerequisites.
+
+### Browser checks
+
+Install both root and web dependencies. With a seeded native backend running,
+run from `web/`:
+
+```sh
+npm ci
 npx playwright install chromium
 API_ORIGIN=http://localhost:8090 npm run test:e2e
 ```
 
-Playwright uses Chromium at phone 390×844, tablet 820×1180, desktop 1440×900, and covers light/dark themes. It reuses the server on :4340 or starts one. `WEB_ORIGIN` targets an existing server instead; `WEB_PORT` changes the test dev port. Lifecycle tests create `agent-e2e-…` purchases. Install Chromium with Playwright if it is absent. Screenshot instructions and source layout are in [front-end reference](frontend.md).
+Playwright starts or reuses Astro on port 4340; it does not start the backend.
+After building the frontend, also test the site served by Go:
 
-Historical test-porting notes above describe v1-to-Go parity; the v1 sources and seed scripts now live in git history. Current schema migrations also include V0.3 tables.
+```sh
+WEB_ORIGIN=http://localhost:8090 npm run test:e2e
+```
+
+This second pass covers CSP, production assets, and Go redirects. Tests cover
+phone, tablet, and desktop layouts. See [Contributing](../CONTRIBUTING.md) for
+change-specific checks and screenshot requirements.
+
+## Developer mode on a test deployment
+
+This is an advanced option for a shared test server with disposable data.
+Developer login requires both a `-tags dev` build and `DEV_AUTH=1`.
+Production builds have no developer-login route.
+
+From `server/`, build and run with a secret key:
+
+```sh
+make build-dev
+export DEV_AUTH_KEY=$(openssl rand -hex 24)
+APP_URL=https://test.example.org ADDR=:8090 DEV_AUTH=1 ./bin/dashboard-dev serve
+```
+
+A non-loopback test deployment requires a key of at least 16 characters. Keep the
+generated key private and save it in your password manager when creating a test link. Share a link such as:
+
+```text
+https://test.example.org/login?key=<KEY>
+https://test.example.org/auth/dev?as=officer&key=<KEY>&next=/events
+```
+
+Anyone with the key can sign in as a non-owner role, including leadership.
+Keyed deployments refuse owner login. Never use a dev build with production data.
+See [Configuration](configuration.md) for developer settings.

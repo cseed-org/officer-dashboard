@@ -9,8 +9,6 @@ grid stays a complete 4×7 rectangle. Widgets added from the gallery start at 2�
 Drag a resize grip or use Shift+arrow keys to move between Calendar’s 2×1, 2×2
 and 4×2 sizes.
 
-![Before: separate event and design pages. After: one date-ranged feed powers three widget sizes.](evidence/calendar-widget/overview.png)
-
 ## Views and options
 
 | Size | Automatic view |
@@ -95,38 +93,3 @@ after dashboard-ux’s **0015_dashboard.sql**. The purchase-deadline index is
 General officer availability has no data model. Buildspace absences are separate cohort records. Existing Google/ICS integration sends club events out and does not read
 personal subscriptions. Those sources need separate data support before they can
 appear here. No external calendar credentials or network calls are introduced.
-
-## Screenshots
-
-These show local seeded data and clearly named QA events at desktop and phone
-widths, including month and compact/expanded week views. Historical captures may show
-removed controls. Current runtime verification exercises week/month rendering, the absence
-of controls, stable loading layout and chip/popover navigation; API tests cover source filtering.
-
-| Light | Dark |
-| --- | --- |
-| ![Desktop light](evidence/calendar-widget/desktop-light.png) | ![Desktop dark](evidence/calendar-widget/desktop-dark.png) |
-| ![Phone light](evidence/calendar-widget/phone-light.png) | ![Phone dark](evidence/calendar-widget/phone-dark.png) |
-
-
-| Week | Compact week |
-| --- | --- |
-| ![Week light](evidence/calendar-widget/week-light.png) | ![Compact week light](evidence/calendar-widget/small-light.png) |
-| ![Week dark](evidence/calendar-widget/week-dark.png) | ![Compact week dark](evidence/calendar-widget/small-dark.png) |
-
-![Keyboard focus reveals event time, location, source and Luma link](evidence/calendar-widget/item-focus.png)
-
-| Phone week | Phone compact week |
-| --- | --- |
-| ![Phone week light](evidence/calendar-widget/week-phone-light.png) | ![Phone compact week light](evidence/calendar-widget/small-phone-light.png) |
-| ![Phone week dark](evidence/calendar-widget/week-phone-dark.png) | ![Phone compact week dark](evidence/calendar-widget/small-phone-dark.png) |
-
-![Phone focus card stays inside the viewport](evidence/calendar-widget/item-focus-phone.png)
-
-## Integrated Home layout
-
-![Full Home layout, light](evidence/calendar-widget/home-light.png)
-
-![Full Home layout, dark](evidence/calendar-widget/home-dark.png)
-
-![Full Home layout, phone](evidence/calendar-widget/home-phone.png)

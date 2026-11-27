@@ -1,222 +1,86 @@
-<a id="top"></a>
-<div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="web/public/images/cseed-logo-white.png">
-    <img src="web/public/images/cseed-logo.png" alt="CSEED" width="160">
-  </picture>
-  <h1>CSEED Officer Dashboard</h1>
-  <p>Events, people, purchases, and club finances in one place.</p>
+# CSEED Officer Dashboard
+
+Manage club events, people, purchases, and finances in one place. Officers sign in
+with Discord; Launchpad builders and mentors use a separate portal.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/cseed-org/officer-dashboard/ci.yml?branch=main&label=CI)](https://github.com/cseed-org/officer-dashboard/actions/workflows/ci.yml)
+[![Astro](https://img.shields.io/github/package-json/dependency-version/cseed-org/officer-dashboard/astro?filename=web%2Fpackage.json)](web/package.json)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Go](https://img.shields.io/github/go-mod/go-version/cseed-org/officer-dashboard?filename=server%2Fgo.mod)](server/go.mod)
-[![Node](https://img.shields.io/github/package-json/engines/cseed-org/officer-dashboard?logo=node.js)](package.json)
-[![Astro](https://img.shields.io/github/package-json/dependency-version/cseed-org/officer-dashboard/astro?filename=web%2Fpackage.json&logo=astro)](web/package.json)
-[![Release](https://img.shields.io/github/v/release/cseed-org/officer-dashboard)](https://github.com/cseed-org/officer-dashboard/releases)
-[![Last commit](https://img.shields.io/github/last-commit/cseed-org/officer-dashboard)](https://github.com/cseed-org/officer-dashboard/commits/main)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
-[Docs](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Report a bug](https://github.com/cseed-org/officer-dashboard/issues/new)
-</div>
+## What it does
 
-## Table of contents
+- Plan events, meetings, and weekly programs on a shared calendar.
+- Manage officers, members, external contacts, and design requests.
+- Submit purchases, attach receipts, review budgets, and report on finances.
+- Run Launchpad cohorts, mentor assignments, and builder check-ins.
+- Connect Google Drive, Google Calendar, and AI agents through MCP.
 
-[Features](#features) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Quick start](#quick-start) · [Deploy](#deploy) · [Configuration](#configuration) · [Testing and checks](#testing-and-checks) · [Project layout](#project-layout) · [Documentation](#documentation) · [Contributing](#contributing) · [Security](#security) · [License](#license)
-
-## Features
-
-Discord sign-in with leadership, director, and officer roles, plus explicit owner access; Launchpad builders and mentors sign in to a separate portal.
-
-| Page | What you can do |
-| --- | --- |
-| Home | A grid of blocks: drag, resize (1×1 up to 4×2) and add widgets; see the Calendar widget, club activity and Cloudflare analytics connection states. |
-| Officers / onboarding | Invite via Discord DM, complete profiles, manage subteams, choose calendar delivery. |
-| Members | Search the local D1 mirror, edit member records, export CSV, and sync. |
-| Events | Plan events, generate a Luma handoff kit, import registrations/check-ins and reflections, track metrics. |
-| Calendar | One organization calendar (month, week, phone agenda) for Internal and External meetings, Weekly Programs and Events, with design/purchase deadlines and Buildspace check-ins as overlays; create meetings with invitees, recurrence, reminders or a tentative date range. See [organization calendar](docs/org-calendar.md). |
-| Finance | Submit and review purchase requests, attach receipts, track budgets, and view double-entry financial reports. |
-| External Contacts | Maintain contacts, track who has spoken for CSEED, and log outreach. |
-| Design | See which upcoming events still need design, and track requests on a Kanban board (filters, My work) with assignments, comments, files, and approval. |
-| Buildspace + Launchpad | Cohorts, builder register, mentor roster and auto-assign; builders and mentors get their own portal at `/launchpad`. |
-| Officers / Settings | Manage access, tokens, audit history, preferences, automatic/manual time zones, club location defaults, and calendar connections. |
-| AI agents | Connect your own agent (Claude Code, Claude, Cursor, ChatGPT) to `/mcp`; it signs in as you and works through one tool per API endpoint with your permissions. See [MCP agents](docs/mcp.md). |
-
-> [!NOTE]
-> Notion event links are placeholders; see the [integration status](docs/notion-integration.md).
-
-[Back to top](#top)
-
-## Screenshots
-
-Design captures; GitHub chooses the light or dark version to match your theme.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/v04/home-grid-1440-dark.png">
-  <img src="web/design/shots/v04/home-grid-1440-light.png" alt="Home dashboard as a grid of widget blocks" width="100%">
-</picture>
-
-<details>
-<summary>Events and officers</summary>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/events-v03-1440-dark.png">
-  <img src="web/design/shots/events-v03-1440-light.png" alt="Events planning page" width="100%">
-</picture>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/officers-v03-1440-dark.png">
-  <img src="web/design/shots/officers-v03-1440-light.png" alt="Officers directory" width="100%">
-</picture>
-</details>
-
-[Back to top](#top)
-
-## Architecture
-
-```mermaid
-flowchart LR
-  Browser[Browser: Astro + Preact] --> API[Go API]
-  API --> SQLite[(SQLite)]
-  API <--> Discord[Discord OAuth]
-  API --> Bot[Discord bot DMs / webhook]
-  API <--> CF[Cloudflare D1 / Analytics]
-  Luma[Luma CSV / survey CSV] --> API
-  API --> Calendar[Google Calendar / email invites]
-  API --> Receipts[Google Drive / local receipts]
-```
-
-The Go server serves the static front end and JSON API from one origin. SQLite is the primary database; D1 supplies the membership mirror. Run on a Raspberry Pi or a single container with encrypted off-box backups. See [architecture](docs/architecture.md). To deploy, follow [Fresh install](docs/deploy/fresh-install.md).
-
-[Back to top](#top)
+The Go server serves the Astro + Preact website and JSON API. SQLite stores the
+application data; Cloudflare D1 provides the optional membership mirror and the
+production backup store. See [architecture](docs/architecture.md) for details.
 
 ## Quick start
 
-Clone the repository and enter it first:
+To try the app with sample data, install Git and Docker with Compose v2. On
+Windows or macOS, start Docker Desktop; on Windows, use Linux containers.
+Run these commands in a terminal:
 
 ```sh
 git clone https://github.com/cseed-org/officer-dashboard.git
 cd officer-dashboard
+docker compose -f compose.dev.yaml up -d --build --wait
 ```
 
-For the Docker dev stack, install Docker with Compose v2 and run
-`docker compose -f compose.dev.yaml up -d --build --wait`. Open
-<http://localhost:4340/login?key=local-docker-development-only>.
-This resets sample data on every app start; stop with
-`docker compose -f compose.dev.yaml down`. See [development](docs/development.md#run-it-in-docker).
+Open <http://localhost:4340/login?key=local-docker-development-only>, choose a
+role in **Developer mode**, and continue. No Discord or Google credentials are
+needed for this local setup. The first build downloads dependencies and may take
+several minutes.
 
-For a local build, install Go matching [server/go.mod](server/go.mod) (minimum 1.26;
-its `toolchain` directive selects the build toolchain), a C compiler for SQLite/cgo,
-GNU Make, a POSIX shell, and Node 24 LTS (matching `package.json` and CI). Use Bash/WSL on Windows;
-the commands below use POSIX environment assignments. From the repository root:
+**Each app-container start replaces the sample database.** Use this stack only
+with disposable development data. Stop it from the repository root:
 
 ```sh
-(cd web && npm ci && npm run build)
-cd server
-make dev
+docker compose -f compose.dev.yaml down
 ```
 
-Open <http://localhost:8090/auth/dev?as=director> or <http://localhost:8090/auth/dev?as=officer> and press Continue.
-
-> [!IMPORTANT]
-> `make dev` resets the sample database at `server/data/dev.db`. The dev login requires both a `-tags dev` build and `DEV_AUTH=1`; production builds have no `/auth/dev` route. Test deployments can share keyed links instead: see `DEV_AUTH_KEY` in [docs/development.md](docs/development.md#developer-mode-on-a-test-deployment).
-
-See [development](docs/development.md) for live front-end development, seeding, and Playwright.
-
-[Back to top](#top)
+For native setup, live editing, and checks, read [Development](docs/development.md).
 
 ## Deploy
 
-### Install and update at a glance
+Follow [Fresh install](docs/deploy/fresh-install.md) to deploy on a 64-bit Linux
+host, including a Raspberry Pi. It covers the published image, Cloudflare Tunnel
+and Access, Discord sign-in, encrypted backups, and approved updates.
 
-Runs on any 64-bit Linux host with Docker + Compose and git: VPS, home server or Raspberry Pi (`linux/amd64` and `linux/arm64`). Nothing depends on the developer's machine. Allow outgoing internet, including TCP/UDP port 7844 for the Cloudflare tunnel.
-
-**Install:** run `git clone https://github.com/cseed-org/officer-dashboard.git && cd officer-dashboard/server/deploy`, then prepare `.env`, `dashboard.env`, `backup.env`, secret files and the approved digest in `prod-image.env` using [Fresh install](docs/deploy/fresh-install.md#prepare-the-deployment-files). The private image requires `docker login ghcr.io` with a `read:packages` token ([registry setup](docs/deploy/fresh-install.md#sign-in-to-the-private-image-registry)). Then run the commands below; use the migration command only for a brand-new database (restore an existing installation instead):
-
-```sh
-docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
-docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml run --rm --no-deps --entrypoint /bin/sh dashboard -c 'umask 077; exec /app/dashboard migrate'
-docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
-```
-
-- **Update:** merge to `main` → CI builds, tests and attests the image → a maintainer approves it in GitHub **Actions > Approve production image** (environment `production`) → the installed `officer-dashboard-update.timer` resolves `:prod`, pulls its digest and restarts safely. Production uses published images; `git pull` only refreshes the checkout's deployment/Compose files. See [approval and timer setup](docs/deploy/fresh-install.md#github-approval-gate-repository-settings-requires-approval) and [update/rollback behavior](docs/deploy/upgrade-existing.md).
-- **Manual alternative:** after backing up and updating `prod-image.env` to the approved digest, run `docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull && docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d` from `server/deploy`; this bypasses the timer's backup/rollback safeguards.
-- **Local development:** from the repository root, `git pull` followed by `docker compose -f compose.dev.yaml up -d --build` rebuilds the local app ([development](docs/development.md#run-it-in-docker)).
-
-To run the dashboard for real, follow **[Fresh install](docs/deploy/fresh-install.md)**. This operator runbook assumes a 64-bit Linux host with Docker/Compose, buildx, Python 3.11+ and deployment credentials. The GHCR image is private; follow the [read-only registry login steps](docs/deploy/fresh-install.md#sign-in-to-the-private-image-registry) before pulling it. The runbook covers the published image, a Cloudflare Tunnel and Access sign-in, encrypted backups to Cloudflare D1 and Google Drive, and links to Google setup. Release images promote the exact CI-built digest to version tags and include verifiable provenance; see [deployment](docs/deployment.md#release-images-and-verification) for image tags and verification.
-
-[Back to top](#top)
-
-## Configuration
-
-| Variable | Purpose / default |
-| --- | --- |
-| `ADDR`, `DB_PATH` | Listen on `127.0.0.1:8090` (beyond loopback needs `APP_URL`); database `./data/dashboard.db`. |
-| `APP_URL` | Public origin for OAuth, cookies, and notification links. |
-| `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | Discord OAuth credentials. |
-| `BOOTSTRAP_OWNER_DISCORD_ID` | Provision the initial owner while no owner exists. |
-| `DISCORD_BOT_TOKEN` | Officer invitation DMs. |
-| `DRIVE_ROOT_FOLDER_ID`, `DRIVE_QUOTA_BYTES` | Google Shared Drive file storage: the account is connected in Settings; `GOOGLE_SERVICE_ACCOUNT_JSON_FILE` is the service-account alternative. |
-| `RECEIPTS_DIR` | Local receipt storage alternative. |
-| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `D1_DATABASE_ID` | Membership sync and analytics integration. |
-
-All variables, aliases, defaults, and optional calendar settings: [configuration reference](docs/configuration.md).
-
-[Back to top](#top)
-
-## Testing and checks
-
-Run from the repository root:
-
-| Check | Command |
-| --- | --- |
-| Go vet and tests, including dev login | `cd server && make vet && make test` |
-| Root script tests and docs links | `npm ci && npm run test:scripts && node scripts/check-doc-links.mjs` |
-| API contracts | `npm ci && npm run contract-check` |
-| Web build and types | `cd web && npm ci && npm run build && npm run check` |
-| Playwright (local, seeded backend required) | `npm ci && cd web && npm ci && npx playwright install chromium && API_ORIGIN=http://localhost:8090 npm run test:e2e` |
-
-[CI](.github/workflows/ci.yml) runs Go, contract, web, release-smoke and Compose browser checks on PRs and pushes to `main`. Run the local suite against Astro, then against the built Go-served site for CSP and production asset checks; see [Playwright setup](CONTRIBUTING.md#ui-changes). [Docs CI](.github/workflows/docs.yml) checks Markdown links. [Test details](docs/development.md).
-
-[Back to top](#top)
-
-## Project layout
-
-| Path | Purpose |
-| --- | --- |
-| [server/](server/README.md) | Go API, accounting engine, embedded SQLite migrations, deployment assets. |
-| [web/](web/README.md) | Static Astro + Preact UI, design references, Playwright tests. |
-| [src/core/contracts.ts](src/core/contracts.ts) | Canonical zod API schemas; enums in `src/core/domain.ts`. |
-| [web/src/lib/contracts.ts](web/src/lib/contracts.ts) | Front-end contract schemas. |
-| [scripts/](scripts/) | Contract checks, MCP tool generation, script tests, documentation links and release tooling. |
-| [docs/](docs/README.md) | Guides and API reference. |
-
-The original TypeScript / Cloudflare Workers / D1 application is in git history before the v1-cleanup PR. The design follows [cseed.co](https://cseed.co): paper and ink, Playfair Display, Poppins, and Anonymous Pro.
-
-[Back to top](#top)
+For an existing installation, use [Updates and recovery](docs/deploy/upgrade-existing.md).
+Production setup uses different configuration and credentials from local development.
 
 ## Documentation
 
-Start at the [docs index](docs/README.md), including [API](docs/api.md), [permissions](docs/roles-and-permissions.md), [integrations](docs/integrations.md), and [accounting](docs/accounting.md).
+| You want to… | Start here |
+| --- | --- |
+| Find a guide | [Documentation index](docs/README.md) |
+| Change settings or connect services | [Configuration](docs/configuration.md) |
+| Contribute code or documentation | [Contributing](CONTRIBUTING.md) |
+| Understand endpoints or permissions | [API](docs/api.md) · [Roles and permissions](docs/roles-and-permissions.md) |
+| Get help or report a problem | [Support](SUPPORT.md) |
 
-> [!WARNING]
-> Accounting reports are preparatory rollups, not complete tax filings. CPA review is required before keeping real books or preparing filings.
+Accounting reports are preparatory rollups. Have a qualified accountant review
+them before using them for real books or tax filings.
 
-[Back to top](#top)
+## Project layout
 
-## Contributing
+| Directory | Contents |
+| --- | --- |
+| [server/](server/README.md) | Go backend, SQLite migrations, and deployment files |
+| [web/](web/README.md) | Astro + Preact frontend and browser tests |
+| [src/core/](src/core/) | Shared API contracts and domain types |
+| [scripts/](scripts/) | Contract checks, documentation checks, and release tooling |
+| [docs/](docs/README.md) | Setup, operations, and feature guides |
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). For usage help, see [SUPPORT.md](SUPPORT.md).
+## Security and license
 
-[Back to top](#top)
+Report vulnerabilities using [SECURITY.md](SECURITY.md). Follow the
+[Code of Conduct](CODE_OF_CONDUCT.md) when contributing.
 
-## Security
-
-Follow [SECURITY.md](SECURITY.md) to report vulnerabilities privately. Keep deployment credentials in the server environment or secret store.
-
-[Back to top](#top)
-
-## License
-
-Code: Apache-2.0. The CSEED name and logo are not licensed — see [TRADEMARKS.md](TRADEMARKS.md).
-See [LICENSE](LICENSE) and [NOTICE](NOTICE).
-
-[Back to top](#top)
+Code is licensed under [Apache-2.0](LICENSE); see [NOTICE](NOTICE).
+The CSEED name and logos are reserved; see [TRADEMARKS.md](TRADEMARKS.md).

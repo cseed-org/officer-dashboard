@@ -2,12 +2,15 @@
 
 Every setting the dashboard reads, with whether you need it and its default. To deploy, start with
 [Fresh install](deploy/fresh-install.md); it tells you which of these to set and
-when. A Docker deployment only needs the rows marked **required**, the D1 backup settings,
-and the Google ones; everything else turns on an optional feature or is for developers.
+when. Configure the required core and backup settings first. Google services,
+notifications, analytics, and membership sync are enabled separately as needed.
 
 **Where settings go.** With Docker, the dashboard's settings go in `server/deploy/dashboard.env`
 (copy [`dashboard.env.example`](../server/deploy/dashboard.env.example)), and compose's own
-settings in `server/deploy/.env` (copy [`.env.example`](../server/deploy/.env.example)). Under
+settings in `server/deploy/.env` (copy [`.env.example`](../server/deploy/.env.example)).
+Backup-only settings belong in `backup.env` (copy
+[`backup.env.example`](../server/deploy/backup.env.example)); the image pin belongs
+in `prod-image.env`. Pass both `.env` and `prod-image.env` to production Compose commands. Under
 systemd, the dashboard's settings go in `/etc/officer-dashboard/env`. Command-line flags, where
 shown, override the variable.
 
@@ -104,7 +107,7 @@ fetch a verified copy back, still ciphertext; `backup.py restore --input <file>`
 offline with the age identity. This adds no settings: the uploader reuses the Drive sign-in
 and `DB_PATH`.
 
-The image uses BusyBox musl with static dashboard and backup binaries. SQLite, gzip and age encryption are compiled into `dashboard-backup`; Python, an age executable and Debian packages are not shipped. The off-box restore workstation still needs Python 3 and age. Litestream and its `LITESTREAM_*` settings are removed.
+The image uses BusyBox musl with static dashboard and backup binaries. SQLite, gzip and age encryption are compiled into `dashboard-backup`; Python, an age executable and Debian packages are not shipped. The off-box restore workstation still needs Python 3 and age.
 See [fresh install](deploy/fresh-install.md) and [upgrade/restore](deploy/upgrade-existing.md).
 Missing DB with backups enabled stops startup after downloading ciphertext for off-box recovery.
 `DB_PATH` defaults to `/data/dashboard.db`. Restore refuses to overwrite an existing output.
@@ -153,9 +156,7 @@ don't belong in `dashboard.env`.
 
 Sessions live in the database (`sessions`, keyed by sha256 of the cookie token). Every session
 ends 30 days after sign-in however active the person is: the cookie and stored expiry never pass
-`created_at` + 30 days, and the server refuses (and deletes) any older session. Before V0.7 the
-cap was 90 days, so deploying V0.7 signs out anyone whose session is more than 30 days old; they
-sign in again with Discord. Signing in again replaces the browser's previous session. Service
+`created_at` + 30 days, and the server refuses (and deletes) any older session. Signing in again replaces the browser's previous session. Service
 tokens are stored as sha256 hashes. Writes that arrive with a session cookie and a foreign
 `Origin` header are refused (403), on top of `SameSite=Lax`.
 
@@ -172,8 +173,7 @@ plugins and `<base>` are refused. Every other response (JSON, files, redirects) 
 not orphan stored tokens, and one leaked secret does not expose both) is planned, not built.
 
 Static files are served for every path outside `/api/` and `/auth/`, **without** a session:
-the pages are shells and the data behind them is API-protected. (v1 redirected unauthenticated
-page requests to `/login`; the new front end does that client-side from `GET /api/me`.)
+the pages are shells and the data behind them is API-protected. The frontend redirects unauthenticated users after `GET /api/me`.
 
 ## Club location and time zones
 

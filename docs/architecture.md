@@ -3,10 +3,8 @@
 
 Paths in the package layout are relative to `server/`; contract paths are relative to the repo root.
 
-A single static-ish Go binary replaces the TypeScript Worker backend: the **same JSON API**
-(`docs/api.md`, `src/core/contracts.ts`), Discord sign-in, receipts, notifications and the
-static front end (`web/dist`), over one SQLite file. It runs on a Raspberry Pi 5 (arm64) or
-in a Cloudflare Container.
+The Go backend serves the JSON API and static Astro frontend over one SQLite
+database. Production runs on a 64-bit Linux host, usually in Docker.
 
 ```
 server/
@@ -30,7 +28,7 @@ server/
   internal/fiscal      fiscal years, monthly periods, Pacific dates
   internal/money       integer-cent parsing/formatting
   internal/validate    request validation with zod-shaped error details
-  internal/seed        the FY2027 sample books (ported from the historical TypeScript seed)
+  internal/seed        the FY2027 sample books for development
   internal/web         static file server: directory (dev) or go:embed (release)
   deploy/              Dockerfile support, backup helper/updater, systemd units
   scripts/backup       online SQLite backup
@@ -119,16 +117,12 @@ applied by an embedded runner into `schema_migrations`), so the same integrity r
 posted journal entries immutable, balanced posting, closed periods, append-only audit log,
 last-director guard, one approval and one settlement per request.
 
-v1 wrapped each mutation in a "guard row" batch because D1 has no interactive transactions. Here
-each mutation is one `BEGIN IMMEDIATE` transaction that re-reads current state before it writes,
-which is the same check made simpler (`TestReleasesRestrictedPurchases…` fires two concurrent
-approvals and expects exactly one 200 and one 409).
+Each mutation uses a `BEGIN IMMEDIATE` transaction and re-reads current state
+before writing, protecting against conflicting concurrent changes.
 
-All SQL is in `internal/store`; handlers call typed methods. Postgres would mean reimplementing
-that package. It is not built and not needed for 15–40 users on one box.
+All SQL is in `internal/store`; handlers call typed methods.
 
 ### Search
 
 `GET /api/search` uses a plain case-insensitive `LIKE '%q%'` over events, requests, contacts
-(all officers) and (directors) users and accounts. FTS5 was considered and rejected: the tables hold hundreds of rows, a query costs
-0.27 ms p50, and FTS5 would need a build tag, sync triggers and a rebuild path to save microseconds.
+(all officers) and (directors) users and accounts. Search uses SQLite without an additional full-text index.

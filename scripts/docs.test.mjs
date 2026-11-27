@@ -121,6 +121,5 @@ test("calendar guides describe the current no-controls widget", () => {
   assert.ok(calendar.includes("keyed by range and time zone"));
   assert.ok(!calendar.includes("Options saves view"));
   assert.ok(!calendar.includes("keyed by sources and time zone"));
-  assert.ok(docs["purchase-deadlines.md"].includes("Historical V0.6 controls"));
   assert.ok(normalizeProse(docs["buildspace.md"]).includes("projects marked Shipped"));
 });

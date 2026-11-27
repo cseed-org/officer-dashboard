@@ -12,10 +12,9 @@ runtime, same origin, with the session cookie. The Go backend serves `web/dist`.
   changes). On Home, Members, Contacts, Settings, Onboarding and the Launchpad join/login pages,
   the zod contract is not in the first JavaScript and the schemas load in the background. Events,
   Finance, Design, Officers, the Buildspace + Launchpad register and the `/launchpad/` portal still
-  import it statically at V0.14.1. Reads that arrive before the
+  import it statically. Reads that arrive before the
   schemas load render at once and are validated when they load (a mismatch replaces the page with
-  the same error); writes and later reads are validated before they return. See
-  [V0.6 Home speed](home-speed-v06.md).
+  the same error); writes and later reads are validated before they return.
 - Early reads: signed-in pages start `/api/me`, `/api/me/prefs` and `/api/club/settings` (Home
   also `/api/overview` and `/api/cloudflare/widgets`) from an inline head script
   (`src/lib/early.ts`); `api()` uses each response once. The build adds low-priority
@@ -39,15 +38,7 @@ npm ci
 API_ORIGIN=http://localhost:8090 npm run dev            # http://127.0.0.1:4340
 ```
 
-The Vite dev server proxies `/api` and `/auth` to `API_ORIGIN`:
-
-| Backend | `API_ORIGIN` |
-| --- | --- |
-| Go server (default; matches `APP_URL`) | `http://localhost:8090` |
-
-```sh
-API_ORIGIN=http://localhost:8090 npm run dev
-```
+The Vite dev server proxies `/api` and `/auth` to `API_ORIGIN`.
 
 The proxy rewrites `Origin` to the backend (its CSRF check), strips any cookie `Domain`
 and keeps redirects on :4340, so dev sign-in works: open `/login` and use the **Developer
@@ -55,7 +46,7 @@ mode** panel (see [development](development.md#developer-mode-on-a-test-deployme
 
 ## Routes (for the Go server)
 
-**Design board (V0.10).** `/design` shows four lanes over the five stages: To do (`new` + `accepted`;
+**Design board.** `/design` shows four lanes over the five stages: To do (`new` + `accepted`;
 `new` cards carry a "Needs approval" chip), Doing (`in-progress`), Review (`in-review`), Done
 (`delivered`, a gallery). Query: `?view=board|list|mine`, `?filter=mine|unassigned|due`, `?type=`,
 `?id=<request>` (detail), `?new=1[&eventId=]`, and `?lane=doing|review|done`, the lane a phone shows
@@ -141,11 +132,11 @@ tests/            Playwright
 
 External Contacts uses `/contacts`. The legacy `/speakers` route redirects to it (including contact deep links). The directory offers All / Has spoken / Not yet speaking-history filters and an editable “Has spoken for CSEED before” checkbox.
 
-## Onboarding hello screen (V0.12)
+## Onboarding hello screen
 
 `src/ui/onboarding/` holds `WelcomeIntro({ onDone, media, leaving })`, the first step of onboarding. The screen is the only thing on screen: a liquid-glass "Hello, welcome to cseed" over a looping background video (or its stand-in), cycling through 15 languages (`greetings.ts`; `cseed` is always lowercase LTR Latin). There are no buttons, hints or photos. A click, a tap, a swipe or any key starts it (printable keys, Enter, Space, the arrows). F-keys, Tab, modifiers, media keys and browser shortcuts are left to the browser. Escape is an invisible skip, and a second press fast-forwards to the final swap. A press within 650 ms of the one that started it (a double-click, a bounce) and key auto-repeat are the same press, so the intro is never skipped by accident.
 
-**What happens (revision 2, D-27/D-28).** The rest of the sentence melts away in a few wide drips (a press during a language change melts both phrases from where they are) while the glass word **cseed** stays. It moves to the centre and holds, then glides and shrinks into the logo's corner, where it becomes the real wordmark (opacity only, same box) and the sapling fades in. The backdrop fades onto `--paper`, the page's own colour, by the end of the glide. The page logo stays hidden (`.onb--intro .onb-shell-logo`) until the overlay unmounts in the same frame, so the two are never drawn at once. On the tablet rail the word fades and the sapling mark fades in. The whole run takes about 1.5 s.
+**What happens.** The rest of the sentence melts away in a few wide drips (a press during a language change melts both phrases from where they are) while the glass word **cseed** stays. It moves to the centre and holds, then glides and shrinks into the logo's corner, where it becomes the real wordmark (opacity only, same box) and the sapling fades in. The backdrop fades onto `--paper`, the page's own colour, by the end of the glide. The page logo stays hidden (`.onb--intro .onb-shell-logo`) until the overlay unmounts in the same frame, so the two are never drawn at once. On the tablet rail the word fades and the sapling mark fades in. The whole run takes about 1.5 s.
 
 **Who draws what.** The motion is `introPlan.ts` (the timeline: `buildPlan`, `sampleAt`, `retargetPlan`, `skipPlan`; pure, unit-tested in `tests/onboarding-plan.spec.ts`). The screen draws only what `sampleAt(plan, ms)` returns on each animation frame, by `transform` and `opacity`, and skips style writes whose value hasn't changed. Playback, fast-forward, Escape and resize all go through the sampler. The page logo is measured again when the word starts to travel, and a resize mid-run jumps to the end on the freshly measured logo.
 
@@ -163,17 +154,17 @@ Specs:
 - `tests/csp.spec.ts`: an invitee plays the intro under the page policy.
 - `tests/settings-replay-intro.spec.ts`: the Settings replay (below).
 
-**Replay from Settings (D-22).** Settings › Advanced › *Replay welcome intro* (every signed-in role) plays the full intro over Settings (`ReplayIntro.tsx`, loaded only when pressed): the same `WelcomeIntro`, landing on the real shell logo (the top bar's or sidebar's wordmark, or the rail's mark; hidden meanwhile by `html.wi-replay`), then you are back on Settings. It only plays: it reads and saves nothing, so no account or onboarding data changes and the intake steps never run. Escape and reduced motion behave as in onboarding. `helloMedia.ts` finds the video and poster for both pages at build time.
+**Replay from Settings.** Settings › Advanced › *Replay welcome intro* (every signed-in role) plays the full intro over Settings (`ReplayIntro.tsx`, loaded only when pressed): the same `WelcomeIntro`, landing on the real shell logo (the top bar's or sidebar's wordmark, or the rail's mark; hidden meanwhile by `html.wi-replay`), then you are back on Settings. It only plays: it reads and saves nothing, so no account or onboarding data changes and the intake steps never run. Escape and reduced motion behave as in onboarding. `helloMedia.ts` finds the video and poster for both pages at build time.
 
 ### Hello screen video (drop-in file)
 
 Put `hello-loop.mp4` (one short, silent, landscape loop: H.264, under about 8 s and 3 MB) and its first frame as `hello-poster.webp` (or `.jpg`) in `web/public/media/`. `src/ui/onboarding/helloMedia.ts` looks for them when the site is built (for onboarding and the Settings replay), so they appear **after the next build or deploy**, and a missing file never costs a 404. The video is cropped to fill any screen (`object-fit: cover`, centred), muted, looped, inline and silent. It is only added for full motion (not with reduced motion or Save-Data) and shows once it is actually playing, over the poster or the stand-in, so there is never a black frame. If it fails to load or autoplay is refused, the poster or the stand-in (a calm drifting gradient in the same layer) simply stays. It pauses once the greeting has melted. The Go server serves `.mp4` as `video/mp4` with byte ranges.
 
-## Brand marks (V0.11)
+## Brand marks
 
 The full logo is the `cseed-wordmark` images (ink on light, white on dark). The single-item mark is the sapling from `public/favicon.svg`, as an inline SVG: `Sapling` in `src/ui/brand/Sapling.tsx` (it renders statically from Astro too) and `saplingSvg()` in `src/ui/brand/saplingMarkup.ts` (a different name from `Sapling.tsx`, not just a different case, so case-insensitive file systems never mix them up) for markup built as a string. Its colours are `--sapling-leaf` / `--sapling-stem` in tokens.css, with lighter greens in dark. It is used inside `.wordmark-mark` on the sidebar rail, the sign-in and 404 cards, the onboarding logo ghost, and as the club-website chip in the Links widget. There is no "C" monogram any more.
 
-## Resizable sidebar (V0.9)
+## Resizable sidebar
 
 Desktop and tablet users can drag the sidebar's right edge (`SidebarResizer`, a focusable
 `role="separator"`; arrows, Home/End, Enter and double-click also work) between 64px (icons
@@ -185,6 +176,6 @@ it follows the user across devices. `lib/sidebar.ts` mirrors it into localStorag
 value applies on the next navigation (`__cseedSidebarLate`). A new or cleared device waits for
 `/api/me/prefs`, capped at 300 ms. Phones keep the menu sheet and have no handle.
 
-**Directory (V0.9).** Board Members (`/officers`) has three sub-sections under one search: *Officers* (active accounts), *Club Support Contacts* (external contacts with `clubSupport`, managed from `/contacts`; migration `0021_contact_club_support.sql`) and *Ex-Officers* (deactivated accounts; only directors receive those from `/api/officers`). Members (`/members`) also lists current officers with an Officer badge: `GET /api/members` returns `officers` (active users, with `memberId` when a member row shares one of their emails), and the page shows only the unmatched ones as extra first-page rows and badges the matched member rows. Display only: no member record is written.
+**Directory.** Board Members (`/officers`) has three sub-sections under one search: *Officers* (active accounts), *Club Support Contacts* (external contacts with `clubSupport`, managed from `/contacts`; migration `0021_contact_club_support.sql`) and *Ex-Officers* (deactivated accounts; only directors receive those from `/api/officers`). Members (`/members`) also lists current officers with an Officer badge: `GET /api/members` returns `officers` (active users, with `memberId` when a member row shares one of their emails), and the page shows only the unmatched ones as extra first-page rows and badges the matched member rows. Display only: no member record is written.
 
-**People pages and PersonDrawer (V0.10).** Board Members, Members and External Contacts each show one rounded card (the Home widget radius, border and shadow; `styles/people.css`) with the toolbar inside it, grouped tables with a sticky column header (`components/PeopleTable.tsx`), and rows that collapse to avatar + name + chip on phones. Clicking a person opens `components/PersonDrawer.tsx` instead of navigating: a modal `Drawer` in `bare` mode with a hero (band in the person's colour, avatar, chips, quick actions, up to three stats) and Overview / Activity / Manage tabs that the page supplies. `usePersonParam()` keeps the open person in `?person=` (Back closes a drawer opened from the list; a deep link closes in place). Officer stats and activity come from `GET /api/officers/{id}/activity` (events hosted, open design requests, purchases in flight, recent items), computed from existing rows only. An officer listed on Members without a membership record opens there as a read-only officer summary (stats, activity, a link to their Board Members profile). Buildspace can reuse the drawer by passing its own tabs.
+**People pages and PersonDrawer.** Board Members, Members and External Contacts each show one rounded card (the Home widget radius, border and shadow; `styles/people.css`) with the toolbar inside it, grouped tables with a sticky column header (`components/PeopleTable.tsx`), and rows that collapse to avatar + name + chip on phones. Clicking a person opens `components/PersonDrawer.tsx` instead of navigating: a modal `Drawer` in `bare` mode with a hero (band in the person's colour, avatar, chips, quick actions, up to three stats) and Overview / Activity / Manage tabs that the page supplies. `usePersonParam()` keeps the open person in `?person=` (Back closes a drawer opened from the list; a deep link closes in place). Officer stats and activity come from `GET /api/officers/{id}/activity` (events hosted, open design requests, purchases in flight, recent items), computed from existing rows only. An officer listed on Members without a membership record opens there as a read-only officer summary (stats, activity, a link to their Board Members profile). Buildspace can reuse the drawer by passing its own tabs.

@@ -1,6 +1,0 @@
-=== RUN   TestBinaryAssetValidators
-    validators_performance_test.go:16: binary cache: images/x.png {body:[] gzip:[] etag: contentType: size:0 modTime:{wall:0 ext:0 loc:<nil>}}
---- FAIL: TestBinaryAssetValidators (0.01s)
-FAIL
-FAIL	officerdashboard/internal/web	0.015s
-FAIL

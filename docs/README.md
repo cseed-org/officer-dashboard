@@ -1,30 +1,40 @@
 # Documentation
 
-**Deploying?** Start at **[Fresh install](deploy/fresh-install.md)**; for a running host use **[Upgrade/restore](deploy/upgrade-existing.md)**.
+## Get started
 
-| Guide | Contents |
+| Task | Guide |
 | --- | --- |
-| [Development](development.md) | Quick start, live development, seed data, tests, contract checks, Playwright. |
-| [Configuration](configuration.md) | Every setting: required or optional, defaults, compose and backup settings, club location/time zone. |
-| [Fresh install](deploy/fresh-install.md) | **Start here to deploy.** Docker on a Pi 5 or Linux box, private GHCR access, encrypted D1 and Drive backups, and approved image updates. See [Upgrade/restore](deploy/upgrade-existing.md), [Cloudflare setup](deploy/cloudflare.md), [Google calendar setup](deploy/google-calendar.md) and [Other setups](deploy/other-setups.md). The [original deployment walkthrough](deploy/README.md) retains historical R2/Litestream instructions. |
-| [Deployment](deployment.md) | Release image tags and provenance verification, backup sizing, recovery, integration setup and deployment runbooks. |
-| [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
-| [Buildspace + Launchpad](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
-| [Launchpad cohorts](launchpad-cohorts.md) | Cohorts, email invites, builder/mentor portals, identity and security model, auto-assign. |
-| [Home calendar](calendar-widget.md) | Calendar widget views, feed API, adding a source. |
-| [Organization calendar](org-calendar.md) | Shared Google calendars, meetings, OAuth, ACLs and two-way sync. |
-| [Weekly programs](programs.md) | Tracks, recurring sessions and skip/move exceptions. |
-| [Front end](frontend.md) | Routes, preferences, static serving, proxy, UI source layout. |
-| [Roles and permissions](roles-and-permissions.md) | Officers management tabs, role matrix, owner provisioning, transfer and recovery. |
-| [Purchase deadlines](purchase-deadlines.md) | Optional “needed by” dates on purchase requests, due hints, deadline sort and the Home calendar source. |
-| [Accounting](accounting.md) | Ledger, restrictions, purchase lifecycle, Form 990 limits. |
-| [Integrations](integrations.md) | Discord, Cloudflare, Luma CSV, Google Drive and Calendar, Notion status. |
-| [API](api.md) | HTTP endpoints and payloads, including External Contacts and speaking history. |
-| [MCP agents](mcp.md) | Connect your own AI agent to `/mcp`: OAuth sign-in as the officer, tools, audit and revocation. |
-| [Notion integration](notion-integration.md) | Placeholder behavior and future implementation boundary. |
-| [V0.14.1 performance](v0141-performance.md) | Release-wide web and server performance evidence, reproduction commands, raw route inventories and measurement limits. |
-| [V0.6 Home speed](home-speed-v06.md) | Home LCP 2.0s → 1.08s: early API reads, the zod contract off the first paint, module preloads, display-size logos; before/after per page. |
-| [V0.5 motion/performance](motion-performance-v05.md) | Before/after client and API measurements, motion behavior, screenshots, and remaining budgets. |
-| [Performance](performance.md) | Historical Raspberry Pi measurements and benchmark methodology. |
+| Run locally with sample data, edit the app, or run checks | [Development](development.md) |
+| Deploy a new production server | [Fresh install](deploy/fresh-install.md) |
+| Update, roll back, or recover an existing server | [Updates and recovery](deploy/upgrade-existing.md) |
+| Fix a deployment problem | [Troubleshooting](deploy/troubleshooting.md) |
+| Contribute a change | [Contributing](../CONTRIBUTING.md) |
 
-[Project overview](../README.md) · [Contributing](../CONTRIBUTING.md) · [Security](../SECURITY.md)
+## Configure and operate
+
+- [Configuration](configuration.md): settings, defaults, secret files, and owner setup.
+- [Deployment reference](deployment.md): release images, backup capacity, recovery, and Google Drive setup.
+- [Deployment guides](deploy/README.md): Cloudflare, Google Calendar, and alternative hosting.
+- [Roles and permissions](roles-and-permissions.md): account access, ownership, and recovery.
+- [Route authorization](security/route-authorization.md): server access controls.
+- [Integrations](integrations.md): Discord, Cloudflare, Luma imports, Google Drive, and Calendar.
+- [MCP agents](mcp.md): connect an AI agent with your dashboard permissions.
+- [Notion integration](notion-integration.md): current placeholder behavior and limitations.
+
+## Use and understand features
+
+- [Organization calendar](org-calendar.md) and [Home calendar widget](calendar-widget.md).
+- [Weekly programs](programs.md): recurring sessions and schedule exceptions.
+- [Buildspace + Launchpad](buildspace.md): projects, builders, activity, and Discord ingestion.
+- [Launchpad cohorts](launchpad-cohorts.md): invitations, builder and mentor portals, and assignments.
+- [Purchase deadlines](purchase-deadlines.md): needed-by dates and calendar visibility.
+- [Accounting](accounting.md): purchases, ledger entries, and financial reports.
+
+## Technical reference
+
+- [Architecture](architecture.md): Go packages, SQLite, authentication, and data flow.
+- [Frontend](frontend.md): routes, preferences, development proxy, and UI layout.
+- [API](api.md): endpoints and payloads.
+- [Releases and dependency updates](releases.md): maintainer workflows and repository setup.
+
+[Project overview](../README.md) · [Support](../SUPPORT.md) · [Security](../SECURITY.md)

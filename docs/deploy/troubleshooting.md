@@ -1,94 +1,91 @@
 # Troubleshooting
 
-> Current Free-plan image: use [Fresh install](fresh-install.md) and
-> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
-> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+Run host commands from `server/deploy` using the same OS user used for registry
+login. Every production Compose command needs both environment files:
 
+```sh
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml ps
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml logs --tail 50 dashboard backup cloudflared
+```
 
-Find what you see in the left column. Commands run on the server in
-`~/officer-dashboard/server/deploy`. To read the dashboard's log:
-`docker compose -f compose.cloudflare.yml logs dashboard`.
+Keep credentials out of shared logs. Start with [Fresh install](fresh-install.md)
+for setup or [Updates and recovery](upgrade-existing.md) for a failed update.
 
-## The download fails
+## Image download or configuration fails
 
-| You see | Why | Fix |
-| --- | --- | --- |
-| `denied` from `pull` | the image is private and this machine has no GitHub login, the token expired, or that account can't see the package | log in again ([deploy guide step 1, item 6](README.md#1-prepare-the-server)), with a token from an account that can open the package page |
-| `manifest unknown` or `not found` | no image has that tag | compare `DASHBOARD_TAG` in `.env` with the [package page](https://github.com/cseed-org/officer-dashboard/pkgs/container/officer-dashboard). A tag appears there about 15 minutes after its push, and only if its checks passed |
-| `no matching manifest for linux/arm/v7` | the system is 32-bit | install the 64-bit OS (`uname -m` must say `aarch64` or `x86_64`) |
-| `set DASHBOARD_TAG in server/deploy/.env…` (or `APP_URL`, `TUNNEL_TOKEN`) | that line in `.env` is missing or empty | fill it in ([deploy guide step 4](README.md#4-fill-in-the-settings-files)) |
-| `permission denied while trying to connect to the Docker daemon socket` | your user is not in the `docker` group yet | [deploy guide step 1, item 3](README.md#1-prepare-the-server), then log out and in |
+| You see | What to check |
+| --- | --- |
+| `denied` or `unauthorized` when pulling | Package Read access, token expiry, SSO authorization, and the OS user's Docker credential store. Repeat [registry login](fresh-install.md#sign-in-to-the-private-image-registry). |
+| `manifest unknown` or `not found` | The approved digest in `prod-image.env`. A source checkout or release tag alone does not approve production deployment. |
+| `no matching manifest for linux/arm/v7` | Use a 64-bit OS. `uname -m` should report `aarch64` or `x86_64`. |
+| Missing `DASHBOARD_IMAGE`, `APP_URL`, or `TUNNEL_TOKEN_FILE` | Check [deployment files](fresh-install.md#5-prepare-the-deployment-files) and pass both env files. |
+| Docker socket permission denied | Use the intended deployment OS user and verify its Docker access. |
+| `Pool overlaps` | Set `TUNNEL_NET` in `.env` to an unused private network prefix. |
 
-## The dashboard doesn't start
+## The dashboard does not start
 
-`docker compose -f compose.cloudflare.yml ps` shows `dashboard` restarting or `(unhealthy)`. Read
-the log's last lines: `docker compose -f compose.cloudflare.yml logs --tail 30 dashboard`.
+| You see | What to do |
+| --- | --- |
+| `Database missing` | For a brand-new installation, run the explicit [initialization](fresh-install.md#6-initialize-and-start). For existing data, restore a verified database off-host; do not initialize an empty replacement. |
+| Invalid public URL or forwarded host mismatch | Use the same public HTTPS hostname for `APP_URL` and the tunnel route. |
+| Invalid bootstrap Discord ID | Copy the owner's 17–20 digit user ID again; see [Discord setup](fresh-install.md#3-create-the-discord-app). |
+| Missing, empty, or unreadable secret file | Check the path, ownership, mode, and mount. App/backup files use UID 10001; the tunnel token uses UID 65532. Do not set both a direct secret and its `_FILE` variant. |
+| Migration or health failure during an update | Keep logs, the previous pin, and checkpoint. Follow [interrupted update recovery](upgrade-existing.md#interrupted-update-recovery). |
+| `update-recovery-required.json` blocks updates | Complete recovery before removing the marker. `--retry` does not override it. |
 
-| The log says | Why | Fix |
-| --- | --- | --- |
-| `APP_URL … must be https` | `APP_URL` in `.env` starts with `http://` | use `https://<your-hostname>` |
-| `BOOTSTRAP_OWNER_DISCORD_ID must be a 17–20 digit Discord ID` | the ID has a typo, spaces or quotes | copy it again ([deploy guide step 3](README.md#3-create-the-discord-app)) |
-| `fatal … migration <file> …` | a migration failed (usually during an upgrade) | stop it at once (`docker compose -f compose.cloudflare.yml stop dashboard`), keep the log, and [roll back](upgrade.md#rollback) |
-| a Litestream error about the bucket, key or endpoint | a `LITESTREAM_` line is wrong | check all six against [Cloudflare step 9](cloudflare.md#9-create-the-r2-bucket-for-backups); the endpoint is `https://<account ID>.r2.cloudflarestorage.com` |
-| `LITESTREAM_BUCKET is not set: the database lives only on this container's disk` | the Litestream lines are still commented out | remove the `#` from all six ([deploy guide step 4](README.md#4-fill-in-the-settings-files)). Without them there is no backup |
-| `Pool overlaps with other one on this address space` (from `up`) | another network on this machine uses `10.250.89.x` | set `TUNNEL_NET` in `.env` to another private prefix, for example `TUNNEL_NET=10.251.90` |
+## The site does not open
 
-## The site doesn't open
+| You see | What to check |
+| --- | --- |
+| Tunnel disconnected | Inspect `cloudflared` logs, the tunnel-token file, and outbound network access. The tunnel service waits for dashboard health. |
+| Tunnel connected but origin unavailable | The dashboard must be healthy and the tunnel service URL must be `http://dashboard:8090`. |
+| Hostname cannot be resolved | The domain must be active in Cloudflare and the tunnel's published hostname must exist. |
 
-| You see | Why | Fix |
-| --- | --- | --- |
-| Cloudflare error **1033**, or the tunnel shows down | `cloudflared` isn't connected | `docker compose -f compose.cloudflare.yml logs cloudflared`. A token error: check `TUNNEL_TOKEN` (the whole value after `--token`). It waits for the dashboard to be `(healthy)` first. Outgoing port 7844 (TCP and UDP) must not be blocked ([docs](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/)) |
-| Cloudflare error **502** | the tunnel is up but can't reach the dashboard | the route's Service URL must be `http://dashboard:8090` ([Cloudflare step 1](cloudflare.md#1-create-the-tunnel)), and the dashboard must be running |
-| the browser can't find the site at all | DNS isn't ready | the domain must be **Active** in Cloudflare ([step 0](cloudflare.md#0-put-your-domain-on-cloudflare-and-open-zero-trust)), and the tunnel's route must exist |
-| the log says `a request forwarded by a trusted proxy names a different host than APP_URL` | the tunnel's hostname and `APP_URL` differ | make them the same hostname |
+See [Cloudflare setup](cloudflare.md) for the tunnel and Access configuration.
 
 ## Signing in fails
 
-| You see | Why | Fix |
-| --- | --- | --- |
-| "A code has been emailed to you", but no email arrives | that email isn't in the `Officers` or `Launchpad` group | add it ([Cloudflare: adding someone](cloudflare.md#adding-someone-later)); check spam too |
-| Cloudflare offers other login methods, or none | the Access application's login methods | only **One-time PIN**, with instant authentication ([Cloudflare step 3](cloudflare.md#3-protect-the-whole-site-with-an-access-application)) |
-| Discord says the redirect URI is invalid | the Discord app's redirect doesn't match | exactly `https://<your-hostname>/auth/callback` ([deploy guide step 3](README.md#3-create-the-discord-app)) |
-| "Sign in with Discord" fails, and the log says `Discord sign-in is not configured` | `DISCORD_CLIENT_ID` or `DISCORD_CLIENT_SECRET` is empty | fill both in `dashboard.env`, then `docker compose -f compose.cloudflare.yml up -d` |
-| you sign in but have no owner access | `BOOTSTRAP_OWNER_DISCORD_ID` was wrong or empty on first start | [deploy guide step 6](README.md#6-sign-in-as-the-owner), last paragraph |
-| an invited person's link stops at the Cloudflare sign-in | their email wasn't in the group before the invite | add it, then they open the link again |
-
-## `mcp-check` fails
-
-`mcp-check` ([Cloudflare step 10](cloudflare.md#10-check-it-from-outside)) names a step for each
-problem. Its messages say "docs/deployment.md"; the step numbers are the same as in
-[Cloudflare setup](cloudflare.md):
-
-| It mentions | Fix |
+| You see | What to check |
 | --- | --- |
-| an Access sign-in on an agent path (step 4) | the bypass application is missing a path, or has a typo ([step 4](cloudflare.md#4-let-ai-agents-through-on-their-own-paths)) |
-| a challenge (step 6) | Bot Fight Mode is on, or the skip rule is missing or not at the top ([step 6](cloudflare.md#6-turn-off-bot-checks-for-agents)) |
-| a WAF block (step 6) | find the rule under **Security** → **Events** and add it to the skip rule ([step 6](cloudflare.md#6-turn-off-bot-checks-for-agents)) |
-| a cached answer (step 7) | add the cache rule ([step 7](cloudflare.md#7-never-cache-the-agent-paths)) |
-| the tunnel (step 1) | see [The site doesn't open](#the-site-doesnt-open) |
-| the consent page came through without Access (step 3) | the whole-site application is missing ([step 3](cloudflare.md#3-protect-the-whole-site-with-an-access-application)) |
-| the service token was refused (step 5) | check the service-token application covers `api/ingest` and `api/agent` with a **Service Auth** policy, the token hasn't expired, and you exported the right Client ID and Secret ([step 5](cloudflare.md#5-create-a-service-token-for-bots)) |
+| No Cloudflare PIN email | Add the email to the correct [Access group](cloudflare.md#adding-someone-later) and check spam. |
+| Discord rejects the redirect URI | Register exactly `https://<your-hostname>/auth/callback`, without a trailing slash. |
+| Discord sign-in is not configured | Set `DISCORD_CLIENT_ID` and a readable `DISCORD_CLIENT_SECRET_FILE`, then recreate the dashboard service. |
+| Signed in without owner access | Check [ownership and recovery](../roles-and-permissions.md#dashboard-ownership-and-recovery). Bootstrap settings do not replace an existing owner. |
+| An invitation stops at Access | Add that person's email to the Access group before they open the invitation. |
 
-## Backups
+## Agent or bot connections fail
 
-| You see | Why | Fix |
-| --- | --- | --- |
-| `litestream generations` prints no row | Litestream isn't copying | check the log for Litestream errors, and the six `LITESTREAM_` lines |
-| the restore test fails | the backup can't be read | same checks; fix this before any upgrade |
-| R2 shows nothing under `dashboard/` | wrong bucket, or `LITESTREAM_PATH` was changed | compare `LITESTREAM_BUCKET` and `LITESTREAM_PATH` with what R2 shows (after a rollback the folder is `dashboard-rollback-…`) |
+Run [the outside check](cloudflare.md#10-check-it-from-outside). Each failure
+names a Cloudflare setup step.
+
+| Check fails on… | Where to look |
+| --- | --- |
+| Access sign-in on an agent path | [Exact agent bypass paths](cloudflare.md#4-let-ai-agents-through-on-their-own-paths) |
+| A bot challenge or WAF block | [Bot checks](cloudflare.md#6-turn-off-bot-checks-for-agents) |
+| Cached responses | [Cache rule](cloudflare.md#7-never-cache-the-agent-paths) |
+| Unprotected consent page | [Whole-site Access application](cloudflare.md#3-protect-the-whole-site-with-an-access-application) |
+| Service token refused | [Bot service-token application](cloudflare.md#5-create-a-service-token-for-bots), token expiry, and headers |
+
+The backup hostname uses its own Access service token and bearer; dashboard
+agent bypass rules must not expose it.
+
+## Backups or recovery fail
+
+| You see | What to check |
+| --- | --- |
+| Backup upload refused | Check backup URL, Access service-token expiry, and bearer secret. The Worker and host must use the same bearer. |
+| Backup quota or CPU failure | Inspect usage and alerts using the [capacity reference](../deployment.md#measured-size-and-free-tier-budget) and [live rehearsal](../deployment.md#live-free-plan-rehearsal). Resolve the limit before relying on automatic updates. |
+| Restore cannot decrypt | On the recovery workstation, use the offline age identity matching the configured public recipient. Never copy the identity to production. |
+| Restore integrity or hash check fails | Keep the failed artifact for investigation; select another verified snapshot and repeat the [restore drill](upgrade-existing.md#monthly-restore-drill). Do not install an unverified database. |
+| Drive copy is missing | Check the owner's Drive connection, root folder, quota, and backup alerts. See [Drive backups](../deployment.md#a-second-independent-copy-in-google-drive). |
 
 ## Google calendar
 
-The **Settings → org Google Calendar** card shows the state. Log lines:
-`docker compose -f compose.cloudflare.yml logs dashboard | grep "org calendar"`. The card's
-warnings reset when the dashboard restarts, until the next sync sets them again.
+The owner can inspect the connection at `/setup` or in Settings.
 
-| You see | Why | Fix |
-| --- | --- | --- |
-| **Reconnect Google** on the card | Google revoked access: the app is still in Testing (7-day limit), the org Gmail's password changed, or its access was removed in the Google account | connect again with the same Gmail ([Google step 3](google-calendar.md#3-connect-the-org-gmail)). If it was Testing, publish the app ([Google step 1](google-calendar.md#1-create-the-google-oauth-client), item 7) |
-| "The last sync with Google failed", and the log says `org calendar sync failed; retained for retry` | one sync pass failed | it retries on its own (1 minute to 1 hour). A `403` in the error usually means the Calendar API is off or the `calendar` scope is missing (Google step 1, items 4 and 6) |
-| log: `org calendar ACL entry failed … email=…` | Google refused to share with that address: not a Google account, or a typo | fix that officer's account email in **Officers → Access** |
-| log: `org calendar ACL sync incomplete; retrying with backoff` | the line above, for one or more officers | fix the addresses; it retries on its own |
-| no **Connect** button, or the log says `Google Calendar sync is not configured` | the two `GOOGLE_OAUTH_` lines are empty | [Google step 2](google-calendar.md#2-add-the-client-to-the-dashboard) |
-| `redirect_uri_mismatch` on Google's page | the org redirect URI is missing or misspelled | exactly `https://<your-hostname>/auth/org-google/callback` |
-| an officer sees no calendars | no account email, or it isn't a Google account | set it in **Officers → Access**; sharing follows within a minute |
+| You see | What to check |
+| --- | --- |
+| Reconnect Google | Reconnect the org account and check the OAuth app's publishing status and account permissions. |
+| No Connect button | Configure the Google OAuth Client ID and secret file; see [Google setup](google-calendar.md#2-add-the-client-to-the-dashboard). |
+| `redirect_uri_mismatch` | Register `https://<your-hostname>/auth/org-google/callback` exactly. |
+| Sync or calendar-sharing failures | Inspect app logs and the officer's Google email; see [Organization calendar](../org-calendar.md). |
