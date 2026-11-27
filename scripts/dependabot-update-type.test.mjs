@@ -52,6 +52,11 @@ const rejected = [
   ['nested mapping cannot overwrite a direct major', ['---\nupdated-dependencies:\n- dependency-name: foo\n  update-type: version-update:semver-major\n  nested:\n    update-type: version-update:semver-patch']],
   ['duplicate update-type keys are ambiguous', ['---\nupdated-dependencies:\n- dependency-name: foo\n  update-type: version-update:semver-major\n  update-type: version-update:semver-patch']],
   ['misaligned continuation keys', ['---\nupdated-dependencies:\n- dependency-name: foo\n  update-type: version-update:semver-patch\n   dependency-type: direct:production']],
+  // N5 (round 5): a mapping nested beneath the FIRST key of a list item is
+  // outside the flat grammar as well — the empty first-key value is a
+  // nested-map introducer, and the deeper line is not a direct key.
+  ['nesting beneath the first list-item key', ['---\nupdated-dependencies:\n- dependency-name:\n    update-type: version-update:semver-patch']],
+  ['nesting beneath the first key with a nested dependency-name', ['---\nupdated-dependencies:\n- unexpected:\n    dependency-name: foo\n    update-type: version-update:semver-patch']],
   ['duplicate top-level keys are ambiguous', [`${block(dep('foo', 'version-update:semver-patch'))}\nupdated-dependencies: []`]],
   ['non-string body', [42]],
   ['non-array input', 'not an array'],

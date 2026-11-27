@@ -34,11 +34,14 @@ const scalar = (raw) => {
 // Parses the restricted trailer shape into {key: [entry, ...]} or null.
 // Grammar: top-level "key:" (list follows), "key: []" or "key: value"
 // lines at column 0; list items "- key: value" all at one consistent
-// indent; and each entry's direct "key: value" continuations all at one
-// indent deeper than the item marker. A deeper or misaligned line (a
-// nested mapping or list) and a duplicate key anywhere are rejected, so a
+// indent; and each entry's direct "key: value" continuations all at the
+// column of the entry's first key, which is fixed by the key's position
+// after the "- " marker rather than inferred from a later line. A deeper
+// or misaligned line (a nested mapping or list), an empty value (a
+// nested-map introducer) and a duplicate key anywhere are rejected, so a
 // value can only ever come from a direct property of its own list entry —
-// never supplied or overwritten by a nested mapping.
+// never supplied or overwritten by a nested mapping, not even one nested
+// beneath the item's first key.
 function parseSimpleYaml(lines) {
   const result = Object.create(null);
   let listKey = null; // top-level key whose list is being collected
@@ -47,15 +50,19 @@ function parseSimpleYaml(lines) {
   let entryIndent = null; // indent shared by the entry's direct keys
   for (const line of lines) {
     if (line.trim() === '') continue;
-    let match = /^([ \t]*)-[ \t]+([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
+    let match = /^([ \t]*)-([ \t]+)([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
     if (match) {
       if (listKey === null) return null;
       if (listIndent === null) listIndent = match[1].length;
       if (match[1].length !== listIndent) return null;
+      const value = scalar(match[4]);
+      if (value === null) return null; // empty value opens a nested mapping
       entry = Object.create(null);
-      entryIndent = null;
+      // The entry's direct keys sit at the column of this first key, fixed
+      // here from the "- " marker — not inferred from a continuation line.
+      entryIndent = match[1].length + 1 + match[2].length;
       result[listKey].push(entry);
-      entry[match[2]] = scalar(match[3]);
+      entry[match[3]] = value;
       continue;
     }
     match = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
@@ -77,10 +84,11 @@ function parseSimpleYaml(lines) {
     }
     match = /^([ \t]+)([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
     if (match && entry !== null && match[1].length > listIndent) {
-      if (entryIndent === null) entryIndent = match[1].length;
       if (match[1].length !== entryIndent) return null; // nested mapping or misaligned keys
       if (match[2] in entry) return null; // duplicate key: ambiguous, reject
-      entry[match[2]] = scalar(match[3]);
+      const value = scalar(match[3]);
+      if (value === null) return null; // empty value opens a nested mapping
+      entry[match[2]] = value;
       continue;
     }
     return null;
