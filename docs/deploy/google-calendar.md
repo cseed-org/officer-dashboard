@@ -1,7 +1,7 @@
 # Google calendar setup
 
-You come here from [step 7 of the deploy guide](README.md#7-connect-the-org-google-calendar), or
-once after an [upgrade](upgrade.md) to V0.15. It connects the org Gmail (the club's own Google
+Use this after [Fresh install](fresh-install.md) or an [upgrade](upgrade-existing.md).
+It connects the org Gmail (the club's own Google
 account), which then owns four Google calendars: **Internal Meetings**, **External Meetings**,
 **Weekly Programs** and **Events**. The dashboard shares them with every officer and keeps them in
 sync. How the sync works is in [Organization calendar](../org-calendar.md).
@@ -61,19 +61,22 @@ You should have a Client ID ending in `.apps.googleusercontent.com` and a Client
 
 ## 2. Add the client to the dashboard
 
-1. On the server, in `~/officer-dashboard/server/deploy`, edit `dashboard.env`. Remove the `#`
-   from these two lines and fill them in:
-   ```sh
+1. In your checkout's `server/deploy`, save the Client Secret in
+   `secrets/app/google-oauth-client-secret`, readable by uid 10001 with mode 0400,
+   following [Fresh install](fresh-install.md#bootstrap-the-host). Edit `dashboard.env`
+   and enable these lines:
+   ```dotenv
    GOOGLE_OAUTH_CLIENT_ID=<Client ID>
-   GOOGLE_OAUTH_CLIENT_SECRET=<Client Secret>
+   GOOGLE_OAUTH_CLIENT_SECRET_FILE=/run/secrets/app/google-oauth-client-secret
    ```
+   Remove any direct `GOOGLE_OAUTH_CLIENT_SECRET` line; setting both sources fails startup.
 2. Restart the dashboard with the new settings:
    ```sh
-   docker compose -f compose.cloudflare.yml up -d
+   docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
    ```
 3. Check, after about 30 seconds:
    ```sh
-   docker compose -f compose.cloudflare.yml logs --since 2m dashboard | grep -E "listening|Google Calendar sync"
+   docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml logs --since 2m dashboard | grep -E "listening|Google Calendar sync"
    ```
    You should see one line with `msg=listening` and none with `Google Calendar sync is not
    configured`. If that warning appears, one of the two lines is still empty or commented out.
@@ -153,4 +156,4 @@ decision for the dashboard's owners.
 
 Problems after setup: [Troubleshooting → Google calendar](troubleshooting.md#google-calendar).
 
-**← [Back to step 7 of the deploy guide](README.md#7-connect-the-org-google-calendar)**
+**← [Back to Fresh install](fresh-install.md)**

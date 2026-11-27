@@ -1,8 +1,9 @@
 # Deploy the dashboard, step by step
 
-> Current Free-plan image: use [Fresh install](fresh-install.md) and
-> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
-> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+> **Historical walkthrough for the previous R2/Litestream image.** For the current
+> image, follow [Fresh install](fresh-install.md) or [Upgrade/restore](upgrade-existing.md)
+> instead of the commands below. Litestream is no longer shipped. The linked
+> Tunnel/Access and Google setup pages remain useful.
 
 
 Follow this page from top to bottom. It takes you from an empty Raspberry Pi 5 (or any 64-bit

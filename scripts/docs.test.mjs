@@ -78,10 +78,13 @@ test("documentation index links every top-level guide", () => {
   assert.deepEqual(missing, []);
 });
 
-test("README Astro badge and MCP tool count match generated sources", () => {
+test("README Astro badge uses the package source and MCP tool count matches generated sources", () => {
   const readme = read("README.md");
-  const astro = JSON.parse(read("web/package.json")).dependencies.astro;
-  assert.ok(readme.includes(`Astro-${astro}-`), "README Astro badge should match web/package.json");
+  const badge = /\[!\[Astro\]\((https:\/\/img\.shields\.io\/[^)]+)\)\]\(web\/package\.json\)/.exec(readme);
+  assert.ok(badge, "README Astro badge should link to web/package.json");
+  const source = new URL(badge[1]);
+  assert.equal(source.pathname, "/github/package-json/dependency-version/cseed-org/officer-dashboard/astro");
+  assert.equal(source.searchParams.get("filename"), "web/package.json");
   const count = JSON.parse(read("server/internal/api/mcp_tools.json")).tools.length;
   const claimed = /works through (\d+) tools/.exec(readme);
   if (claimed) assert.equal(Number(claimed[1]), count);

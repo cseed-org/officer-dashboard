@@ -47,7 +47,9 @@ adapter (`scripts/buildspace-discord-stub.mjs`) adds them from `CF_ACCESS_CLIENT
 must add the two headers themselves. A 401 or redirect from Cloudflare (no JSON `error` body)
 means Access refused the service token. The dashboard itself never sees or needs the token.
 
-**Agent settlement tolerance.** The purchasing agent's `POST /api/agent/jobs/:id/complete`
+### Agent settlement tolerance
+
+The purchasing agent's `POST /api/agent/jobs/:id/complete`
 may post an `actualTotalCents` of up to the larger of the estimate + 10% and the
 estimate + $25 (set by `AGENT_SETTLEMENT_TOLERANCE_PERCENT` / `_CENTS`). Above that it
 gets a 409 and the job becomes `held`: its claim is cleared, so later complete, failed or
@@ -60,6 +62,9 @@ directors share the estimate-plus-tolerance settlement ceiling; only leadership 
 above it.
 
 ## Files in a Google Shared Drive
+
+Before connecting, complete the [Drive provider setup](deployment.md#file-storage-the-google-shared-drive-person-only-setup),
+including enabling the Drive API, adding the Drive OAuth callback URI and publishing the consent screen.
 
 Receipts and design files live in one Google **Shared Drive** (made by a UW advisor). The
 dashboard reaches it as a **member Google account**: an owner connects that account once in

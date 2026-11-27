@@ -1,11 +1,10 @@
 # Other setups
 
-> Current Free-plan image: use [Fresh install](fresh-install.md) and
-> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
-> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+> For the recommended production Docker deployment, use [Fresh install](fresh-install.md)
+> and [Upgrade/restore](upgrade-existing.md). Litestream is no longer shipped.
 
 
-The [deploy guide](README.md) covers the recommended setup: the published image in Docker, behind
+The [fresh-install guide](fresh-install.md) covers the recommended setup: the published image in Docker, behind
 a Cloudflare Tunnel. This page covers the alternatives, briefly. Each one assumes you know the
 main guide.
 
@@ -30,14 +29,15 @@ file on the Pi's own disk unless you add an off-site copy yourself.
 
 ### Install
 
-1. **Tools:** `sudo apt install git build-essential sqlite3`, Go 1.27.4 from
+1. **Tools:** `sudo apt install git build-essential sqlite3`, Go matching
+   [server/go.mod](../../server/go.mod) from
    [go.dev/dl](https://go.dev/dl/) (`linux-arm64`; Debian's Go is too old), and Node 22.23.4 or
    newer from [nodejs.org](https://nodejs.org/en/download).
 2. **Cloudflare:** do [Cloudflare setup](cloudflare.md) with two differences in step 1: pick
    **Debian** and **run** Cloudflare's install command on the Pi, and set the Service URL to
    `http://127.0.0.1:8090`. Skip step 9 (R2) unless you want it for `BACKUP_REMOTE`.
 3. **Discord:** [deploy guide step 3](README.md#3-create-the-discord-app).
-4. **Build**, from the repository root, after `git checkout v0.15.0` (or the commit):
+4. **Build**, from the repository root, after checking out your reviewed release tag or commit:
    ```sh
    (cd web && npm ci && npm run build)
    (cd server && make build-release)
@@ -54,9 +54,19 @@ file on the Pi's own disk unless you add an off-site copy yourself.
    sudo install -m 0640 -g dashboard deploy/dashboard.env.example /etc/officer-dashboard/env
    sudoedit /etc/officer-dashboard/env
    ```
-   In the env file set `APP_URL=https://<your-hostname>` and the same Discord and owner lines as
-   [deploy guide step 4](README.md#4-fill-in-the-settings-files). Leave the `LITESTREAM_` lines
-   commented out. `TRUSTED_PROXIES` can stay unset: `cloudflared` on the Pi connects from the Pi
+   Create a host secret file, then enter the Discord client secret with `sudoedit`:
+   ```sh
+   sudo install -d -m 0750 -o root -g dashboard /etc/officer-dashboard/secrets
+   sudo install -m 0640 -o root -g dashboard /dev/null /etc/officer-dashboard/secrets/discord-client-secret
+   sudoedit /etc/officer-dashboard/secrets/discord-client-secret
+   ```
+   In `/etc/officer-dashboard/env`, set `APP_URL=https://<your-hostname>`,
+   `DISCORD_CLIENT_ID`, `BOOTSTRAP_OWNER_DISCORD_ID` and optionally `BOOTSTRAP_OWNER_NAME`.
+   Replace the active container secret path with
+   `DISCORD_CLIENT_SECRET_FILE=/etc/officer-dashboard/secrets/discord-client-secret`;
+   do not also set `DISCORD_CLIENT_SECRET`. For each optional `_FILE` setting you enable,
+   create a host secret file with the same ownership/mode and use its host path.
+   `TRUSTED_PROXIES` can stay unset: `cloudflared` on the Pi connects from the Pi
    itself, which is trusted by default.
 6. **Start:**
    ```sh
@@ -98,7 +108,8 @@ back up, install, start. In `server/`:
 
 1. **Build:**
    ```sh
-   git fetch origin --tags && git checkout v0.16.0
+   git fetch origin --tags
+   git checkout <reviewed-release-tag-or-commit>
    (cd ../web && npm ci && npm run build)
    make build-release
    ./bin/dashboard version
@@ -158,7 +169,6 @@ DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}'
 printf 'DASHBOARD_IMAGE=%s@%s\n' "${IMAGE%:*}" "$DIGEST" > server/deploy/prod-image.env
 cd server/deploy
 docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
-docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
 ```
 
 Use the explicit database initialization in [Fresh install](fresh-install.md) before
@@ -166,6 +176,12 @@ Use the explicit database initialization in [Fresh install](fresh-install.md) be
 [Upgrade an existing host](upgrade-existing.md) before changing its pin. The approved
 `:prod` updater applies only to the project's published GHCR images; keep it disabled
 for a separately managed registry. Both platforms build without emulation.
+
+After initialization or the upgrade procedure, start the stack:
+
+```sh
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
+```
 
 For a local build without publishing, use the development stack from the repository root:
 
@@ -178,32 +194,27 @@ This stack is for development with sample data and developer sign-in. The option
 
 ## Practice run on a quick tunnel
 
-[`compose.quicktunnel.yml`](../../server/deploy/compose.quicktunnel.yml) runs the same two
-containers with a temporary `*.trycloudflare.com` address. It needs no Cloudflare account. The
-dashboard is the development build with sample data and a developer sign-in locked by
-`DEV_AUTH_KEY`. Its header has the commands; `down -v` removes everything when you are done.
-
-It proves the containers, the tunnel, `APP_URL`, sign-in and MCP through Cloudflare. It has **no
-Access and none of the domain settings**, so it can't test Cloudflare steps 2 to 8. There,
-`mcp-check` shows two warnings, which are expected: `GET /oauth/authorize` and
-`POST /api/ingest/luma` came through without Access. Never put real data in it: the address is
-public.
+The historical [`compose.quicktunnel.yml`](../../server/deploy/compose.quicktunnel.yml)
+is currently incompatible with the production Compose file's required image pin,
+secret-file mounts and backup service. Its header commands do not work with the current
+stack. Use the [local development stack](../development.md#run-it-in-docker) for sample
+data and developer sign-in; use [Fresh install](fresh-install.md) for a deployment.
 
 ## What's in the image
 
 - **Platforms:** 64-bit x86 (`linux/amd64`) and 64-bit ARM (`linux/arm64`, a Pi 5).
-- **Contents:** the `dashboard` server with the web front end built in, and Litestream 0.3.14,
-  on `debian:bookworm-slim`. It runs as user `dashboard` (uid 10001, gid 999) and keeps its data
-  in `/data`.
+- **Contents:** the static `dashboard` server with the web front end built in, and the
+  `dashboard-backup` helper, on BusyBox musl. It runs as user `dashboard` (uid 10001)
+  and keeps its data in `/data`. Litestream and Python are not shipped.
 - **Listens** on port 8090 inside the container (`ADDR=:8090`, `DB_PATH=/data/dashboard.db`).
   Because it listens beyond its own machine, it refuses to start without `APP_URL`.
-- **Starts** through `server/deploy/entrypoint.sh`: with `LITESTREAM_BUCKET` set, it restores the
-  database from the bucket if there is no local file, then runs the dashboard under
-  `litestream replicate`. Without it, the database lives only in the container's volume.
+- **Starts** through `server/deploy/entrypoint.sh`. With `BACKUP_REQUIRED=1`, a missing
+  database stops startup; initialize a new installation or restore off-box first.
+  The separate backup service stages encrypted recovery snapshots, never plaintext restores.
 - **Health check:** `dashboard healthcheck`, every 30 seconds.
 - **Behind another proxy** (Caddy, or `cloudflared` you run yourself): set `APP_URL` to the public
   `https` address and `TRUSTED_PROXIES` to the proxy's address or network, so rate limits see each
   visitor instead of the proxy. `compose.cloudflare.yml` does this for you.
-- **Security build details:** Litestream is built from source with the dashboard's Go version and
-  patched dependency versions; the Security workflow scans the shipped binary. See the comments in
+- **Security build details:** both Go binaries are statically linked with SQLite extension
+  loading disabled. Base images are digest-pinned. See the comments in
   `server/Dockerfile`.
