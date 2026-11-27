@@ -77,8 +77,24 @@ function renderedText(node) {
 }
 
 // HTML comment markup is not rendered, so hrefs, srcs and anchors inside a
-// comment never count; strip comments before scanning raw HTML.
-const stripHtmlComments = (value) => value.replace(/<!--[\s\S]*?-->/g, "");
+// comment never count: matches whose tag starts inside a comment are skipped.
+// Ranges are located with plain indexOf, never a sanitizing replace.
+function commentRanges(value) {
+  const ranges = [];
+  let from = 0;
+  while ((from = value.indexOf("<!--", from)) !== -1) {
+    const end = value.indexOf("-->", from + 4);
+    if (end === -1) {
+      ranges.push([from, value.length]);
+      return ranges;
+    }
+    ranges.push([from, end + 3]);
+    from = end + 3;
+  }
+  return ranges;
+}
+
+const insideComment = (ranges, index) => ranges.some(([from, to]) => index >= from && index < to);
 
 const lineInHtml = (node, index) => {
   let line = node.position.start.line;
@@ -98,9 +114,9 @@ export function markdownAnchors(markdown) {
     if (node.type === "heading") {
       anchors.add(slugger.slug(renderedText(node)));
     } else if (node.type === "html") {
-      const html = stripHtmlComments(node.value);
-      for (const match of html.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) {
-        anchors.add(match[1]);
+      const comments = commentRanges(node.value);
+      for (const match of node.value.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) {
+        if (!insideComment(comments, match.index)) anchors.add(match[1]);
       }
     }
     for (const child of node.children ?? []) visit(child);
@@ -125,14 +141,16 @@ export function extractLinks(markdown) {
   collect(tree);
   const links = [];
   const htmlRefs = (node) => {
-    const html = stripHtmlComments(node.value);
-    for (const match of html.matchAll(/<(?:img|source)\s[^>]*?(?:src|srcset)="([^"]+)"/g)) {
+    const comments = commentRanges(node.value);
+    for (const match of node.value.matchAll(/<(?:img|source)\s[^>]*?(?:src|srcset)="([^"]+)"/g)) {
+      if (insideComment(comments, match.index)) continue;
       for (const candidate of match[1].split(",")) {
         const url = candidate.trim().split(/\s+/)[0];
         if (url) links.push({ target: url, line: lineInHtml(node, match.index) });
       }
     }
-    for (const match of html.matchAll(/<a\s[^>]*?href="([^"]+)"/g)) {
+    for (const match of node.value.matchAll(/<a\s[^>]*?href="([^"]+)"/g)) {
+      if (insideComment(comments, match.index)) continue;
       const url = match[1].trim();
       if (url) links.push({ target: url, line: lineInHtml(node, match.index) });
     }
