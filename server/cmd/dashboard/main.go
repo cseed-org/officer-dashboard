@@ -11,6 +11,9 @@
 //	dashboard drive-backup list|restore
 //	                       list or fetch the encrypted snapshots uploaded to Google Drive
 //	                       (ciphertext; decryption happens offline with the age identity)
+//	dashboard setup --dry-run
+//	                       read the Cloudflare account and print what the install still needs
+//	                       (read-only; the token comes from CLOUDFLARE_SETUP_TOKEN_FILE or a prompt)
 //	dashboard version
 package main
 
@@ -44,6 +47,7 @@ import (
 	"officerdashboard/internal/mcpcheck"
 	"officerdashboard/internal/notify"
 	"officerdashboard/internal/purchases"
+	"officerdashboard/internal/setup"
 	"officerdashboard/internal/store"
 	"officerdashboard/internal/web"
 )
@@ -54,6 +58,10 @@ var version = "dev"
 func main() { os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)) }
 
 func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "setup" {
+		// Before fileSettings: setup runs while *_FILE targets may not exist yet.
+		return setup.Main(args[1:], getenv, stdout, stderr)
+	}
 	resolved, err := fileSettings(getenv)
 	if err != nil {
 		fmt.Fprintln(stderr, "invalid application secret file configuration:", err)
@@ -84,7 +92,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	case "version":
 		fmt.Fprintln(stdout, version)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|healthcheck|mcp-check|drive-backup|version]\n", cmd)
+		fmt.Fprintf(stderr, "unknown command %q\n\nusage: dashboard [serve|seed|migrate|provision-leadership|healthcheck|mcp-check|drive-backup|setup|version]\n", cmd)
 		return 2
 	}
 	if err != nil {

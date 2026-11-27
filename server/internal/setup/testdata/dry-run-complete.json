@@ -1,0 +1,225 @@
+{
+  "hostname": "officers.example.org",
+  "dry_run": true,
+  "actions": [
+    {
+      "id": "zone",
+      "kind": "ok",
+      "resource": "Zone",
+      "name": "example.org",
+      "existing_id": "zone-1"
+    },
+    {
+      "id": "token",
+      "kind": "ok",
+      "resource": "Setup token",
+      "name": "active",
+      "detail": [
+        "expires 2026-12-04T00:00:00Z; revoke it when setup is done"
+      ]
+    },
+    {
+      "id": "zero_trust",
+      "kind": "ok",
+      "resource": "Zero Trust organization",
+      "name": "club.cloudflareaccess.com"
+    },
+    {
+      "id": "zero_trust.session",
+      "kind": "ok",
+      "resource": "Global session duration",
+      "name": "730h (1 month)"
+    },
+    {
+      "id": "tunnel",
+      "kind": "ok",
+      "resource": "Tunnel",
+      "name": "officer-dashboard",
+      "existing_id": "6ff42ae2-765d-4adf-8112-31c55c1551ef"
+    },
+    {
+      "id": "tunnel.route",
+      "kind": "ok",
+      "resource": "Tunnel route",
+      "name": "officers.example.org → http://dashboard:8090"
+    },
+    {
+      "id": "dns",
+      "kind": "ok",
+      "resource": "DNS record",
+      "name": "officers.example.org",
+      "existing_id": "dns-1"
+    },
+    {
+      "id": "access.idp",
+      "kind": "ok",
+      "resource": "Identity provider",
+      "name": "One-time PIN",
+      "existing_id": "idp-otp"
+    },
+    {
+      "id": "access.group.officers",
+      "kind": "ok",
+      "resource": "Access group",
+      "name": "Officers",
+      "existing_id": "g-officers",
+      "detail": [
+        "membership is never compared or changed"
+      ]
+    },
+    {
+      "id": "access.group.launchpad",
+      "kind": "ok",
+      "resource": "Access group",
+      "name": "Launchpad",
+      "existing_id": "g-launchpad",
+      "detail": [
+        "membership is never compared or changed"
+      ]
+    },
+    {
+      "id": "access.service_token.services",
+      "kind": "ok",
+      "resource": "Service token",
+      "name": "officer-dashboard services",
+      "existing_id": "st-services",
+      "detail": [
+        "expires 2027-11-20T00:00:00Z"
+      ]
+    },
+    {
+      "id": "access.service_token.services.secret",
+      "kind": "unknowable",
+      "resource": "Service token secret",
+      "name": "officer-dashboard services",
+      "existing_id": "st-services",
+      "detail": [
+        "Cloudflare never returns the client secret, and it has no host file; setup will offer --rotate if the bots lost it"
+      ]
+    },
+    {
+      "id": "access.service_token.backups",
+      "kind": "ok",
+      "resource": "Service token",
+      "name": "dashboard-backups-host",
+      "existing_id": "st-backups",
+      "detail": [
+        "expires 2126-11-20T00:00:00Z"
+      ]
+    },
+    {
+      "id": "access.service_token.backups.secret",
+      "kind": "unknowable",
+      "resource": "Service token secret",
+      "name": "dashboard-backups-host",
+      "existing_id": "st-backups",
+      "detail": [
+        "Cloudflare never returns the client secret; setup will trust secrets/backup/access-client-secret if present, else offer --rotate"
+      ]
+    },
+    {
+      "id": "access.app.site",
+      "kind": "ok",
+      "resource": "Access application",
+      "name": "Officer Dashboard",
+      "existing_id": "app-site"
+    },
+    {
+      "id": "access.app.agents",
+      "kind": "ok",
+      "resource": "Access application",
+      "name": "Officer Dashboard: agents (bypass)",
+      "existing_id": "app-agents"
+    },
+    {
+      "id": "access.app.services",
+      "kind": "ok",
+      "resource": "Access application",
+      "name": "Officer Dashboard: services (service token)",
+      "existing_id": "app-services"
+    },
+    {
+      "id": "access.app.backups",
+      "kind": "ok",
+      "resource": "Access application",
+      "name": "Dashboard backups (service token)",
+      "existing_id": "app-backups",
+      "detail": [
+        "named \"Backup sink\" (matched by hostname and paths)"
+      ]
+    },
+    {
+      "id": "rule.firewall.skip",
+      "kind": "ok",
+      "resource": "Rule (http_request_firewall_custom)",
+      "name": "Agents and services: skip bot checks",
+      "existing_id": "r-skip"
+    },
+    {
+      "id": "rule.cache.bypass",
+      "kind": "ok",
+      "resource": "Rule (http_request_cache_settings)",
+      "name": "Agents and services: bypass cache",
+      "existing_id": "r-cache"
+    },
+    {
+      "id": "rule.config.consent",
+      "kind": "ok",
+      "resource": "Rule (http_config_settings)",
+      "name": "Consent page: no rewriting",
+      "existing_id": "r-config"
+    },
+    {
+      "id": "zone.bot_fight_mode",
+      "kind": "ok",
+      "resource": "Bot Fight Mode",
+      "name": "off"
+    },
+    {
+      "id": "d1",
+      "kind": "ok",
+      "resource": "D1 database",
+      "name": "dashboard-backups",
+      "existing_id": "d1-backups"
+    },
+    {
+      "id": "d1.migrations",
+      "kind": "unknowable",
+      "resource": "D1 migrations",
+      "name": "dashboard-backups",
+      "detail": [
+        "reading the d1_migrations table needs a D1 query (POST); a dry run sends only GET"
+      ]
+    },
+    {
+      "id": "worker",
+      "kind": "ok",
+      "resource": "Worker",
+      "name": "dashboard-backup-sink",
+      "existing_id": "dashboard-backup-sink"
+    },
+    {
+      "id": "worker.secret",
+      "kind": "unknowable",
+      "resource": "Worker secret",
+      "name": "BACKUP_BEARER_SECRET",
+      "detail": [
+        "set, but Cloudflare never returns its value; setup will trust secrets/backup/bearer if present, else offer --rotate"
+      ]
+    },
+    {
+      "id": "worker.domain",
+      "kind": "ok",
+      "resource": "Worker custom domain",
+      "name": "backups.example.org",
+      "existing_id": "wd-1"
+    }
+  ],
+  "summary": {
+    "create": 0,
+    "drift": 0,
+    "manual": 0,
+    "ok": 23,
+    "unknowable": 4
+  }
+}

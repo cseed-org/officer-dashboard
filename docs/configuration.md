@@ -237,6 +237,62 @@ reviewed immutable digest, and use the protected production promotion workflow a
 
 Cloudflared uses its documented [`TUNNEL_TOKEN_FILE`](https://developers.cloudflare.com/tunnel/reference/run-parameters/#token-file) support. Runtime restrictions use the [Compose service controls](https://docs.docker.com/reference/compose-file/services/).
 
+## Setup preview (`dashboard setup --dry-run`)
+
+`dashboard setup --dry-run` reads your Cloudflare account and lists, for each piece
+of [Cloudflare setup](deploy/cloudflare.md) and the backup Worker, whether it is
+`ok`, would be created (`create`), differs from the docs (`drift`), cannot be read
+(`unknowable`, for example a secret Cloudflare never returns), or needs a person
+(`manual`). It sends only `GET` requests and writes no files. Applying the plan is
+not built yet.
+
+| Variable | Needed? | Default | Meaning |
+| --- | --- | --- | --- |
+| `CLOUDFLARE_SETUP_TOKEN_FILE` | optional | – | file holding a Cloudflare API token for setup. Unset: setup asks for the token without echo. Never a flag, never logged. Separate from `CLOUDFLARE_API_TOKEN` |
+| `APP_URL` | **required** | – | the dashboard origin to check, also `--app-url` |
+| `BACKUP_SINK_URL` | optional | `backups.<parent domain>` | its host is the backup Worker hostname, also `--backup-hostname`. Setup says when it falls back to the default |
+| `TUNNEL_TOKEN_FILE` | optional | – | if readable, setup takes only the tunnel ID from it to find the tunnel, also `--tunnel-token-file` or `--tunnel-id` |
+
+Setup finds the tunnel by the ID from the host's tunnel token, then by the tunnel the
+dashboard hostname's DNS record points at, then by the name `officer-dashboard`, and
+reports any of these that disagree.
+
+Other flags: `--officers-group` and `--launchpad-group` (empty for no Launchpad
+group), `--name-prefix` and `--json`. `--name-prefix` prefixes every resource
+name, for a staging install beside the real one. A staging install also needs its
+own `APP_URL`: on the real install's hostname, setup finds the real install's
+applications, rules and tunnel, marks them as drift and prints a warning.
+
+It exits 0 when it printed the plan, whatever the plan says; 1 when it could not
+read the account (a bad token, two resources matching one name, a network failure,
+or a Cloudflare error other than the two below); and 2 for a usage error. A missing permission (401 or 403) or a Cloudflare
+server error (5xx or 429, after retries) on one resource makes only that line
+`unknowable`.
+
+Create a token for it under **Manage account** → **Account API tokens**, limited to
+the dashboard's account and its one zone, with a short expiry and these read
+permissions:
+
+- Account: Cloudflare Tunnel, Access: Apps, Access: Policies, Access: Groups,
+  Access: Identity Providers, Access: Organizations, Access: Service Tokens, D1,
+  Workers Scripts.
+- Zone: Zone, DNS, Zone WAF, Cache Rules, Config Rules, Bot Management.
+
+A missing permission shows as `unknowable` on the lines it affects. Delete the
+token and its file when you are done.
+
+On the host, from `server/deploy`, Compose passes `APP_URL` and gives a terminal
+for the token prompt. The `dashboard` service sees neither `backup.env` nor the
+tunnel token file, so pass the backup hostname (the host in `BACKUP_SINK_URL`)
+yourself. Without a tunnel ID, setup finds the tunnel through the hostname's DNS
+record; add `--tunnel-id <id>` (Zero Trust → Networking → Tunnels) to match by ID.
+
+```sh
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml \
+  run --rm --no-deps --entrypoint /app/dashboard dashboard \
+  setup --dry-run --backup-hostname backups.example.org
+```
+
 ## Owner integration setup
 
 Owners open `/setup` to connect Google Drive and the org Google Calendar, check the
