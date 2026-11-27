@@ -7,6 +7,24 @@ updates:
       prefix-development: deps-dev
     schedule:
       interval: weekly
+    # D-14: stay on Node LTS (even) majors, enforced in two layers:
+    # 1. These ignore lists are the first line: Dependabot never proposes odd
+    #    (non-LTS) majors such as 25 (PR #113, EOL June 2026). Docker ignore
+    #    versions use Bundler-style ranges matched against the tag's numeric
+    #    part, so they match suffixed tags like 25-bookworm-slim.
+    # 2. scripts/node-lts.test.mjs is the fail-closed backstop: CI goes red if
+    #    any pinned Node major in the repo is odd, and when these ranges stop
+    #    covering odd majors up to the highest pinned major + 10. A red test
+    #    means: extend the lists here.
+    ignore:
+      - dependency-name: node
+        versions:
+          - ">= 25, < 26"
+          - ">= 27, < 28"
+          - ">= 29, < 30"
+          - ">= 31, < 32"
+          - ">= 33, < 34"
+          - ">= 35, < 36"
   - package-ecosystem: docker
     directory: /docker
     commit-message:
@@ -14,6 +32,17 @@ updates:
       prefix-development: deps-dev
     schedule:
       interval: weekly
+    # Same two layers as /server: skip non-LTS (odd) Node majors, keep proposing
+    # even ones; scripts/node-lts.test.mjs fails CI when this list falls behind.
+    ignore:
+      - dependency-name: node
+        versions:
+          - ">= 25, < 26"
+          - ">= 27, < 28"
+          - ">= 29, < 30"
+          - ">= 31, < 32"
+          - ">= 33, < 34"
+          - ">= 35, < 36"
   - package-ecosystem: gomod
     directory: /server
     commit-message:
@@ -41,6 +70,11 @@ updates:
       prefix-development: deps-dev
     schedule:
       interval: weekly
+    # @types/node majors track the Node runtime; skip non-LTS (odd) majors too.
+    # Same fail-closed backstop: scripts/node-lts.test.mjs enforces coverage.
+    ignore:
+      - dependency-name: "@types/node"
+        versions: ["25.x", "27.x", "29.x", "31.x", "33.x", "35.x"]
     groups:
       minor-and-patch:
         update-types: [minor, patch]
