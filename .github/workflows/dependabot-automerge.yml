@@ -1,0 +1,67 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  dependabot-automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Parse with the trusted base-branch copy of the script, never the PR's.
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Read the highest semver update type from Dependabot commit metadata
+        id: update
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid,commits > pr.json
+          head=$(jq -r '.headRefOid' pr.json)
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          jq -c '[.commits[].messageBody // ""]' pr.json > bodies.json
+          # Parse Dependabot's structured metadata trailer — the YAML
+          # updated-dependencies block after the final "---" of each commit
+          # body — with the dependency-free script under scripts/ (covered by
+          # scripts/dependabot-update-type.test.mjs), and fail closed: unless
+          # every commit lists at least one dependency and every listed
+          # dependency carries a recognized semver update-type, report none
+          # and leave the PR to a person.
+          highest=$(node scripts/dependabot-update-type.mjs < bodies.json)
+          [[ "$highest" =~ ^version-update:semver-(major|minor|patch)$ ]] || highest=none
+          echo "Highest Dependabot update type: $highest"
+          echo "highest=$highest" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+      - name: Queue minor and patch updates behind required checks
+        if: contains(fromJSON('["version-update:semver-minor","version-update:semver-patch"]'), steps.update.outputs.highest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD: ${{ steps.update.outputs.head }}
+        run: gh pr merge --auto --squash --match-head-commit "$HEAD" "$PR_URL"
+      - name: Mark major updates for manual review
+        if: steps.update.outputs.highest == 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh label create major-update --repo "$GITHUB_REPOSITORY" --color d93f0b --description "Major dependency update requiring manual review" --force
+          gh pr edit "$PR_URL" --add-label major-update
+      - name: Leave updates without fully recognized semver metadata to a person
+        if: steps.update.outputs.highest == 'none'
+        run: echo 'Dependabot metadata is missing, incomplete or unrecognized; leaving this PR for manual review.'

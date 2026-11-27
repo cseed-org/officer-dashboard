@@ -1,0 +1,25 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require a conventional commit title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$TITLE" =~ ^(feat|fix|perf|deps|deps-dev|docs|chore|ci|build|refactor|revert|style|test)(\([^()]+\))?!?:[[:space:]].+ ]]; then
+            echo "::error::PR title must be a conventional commit such as 'feat: add calendar export'. Allowed types: feat, fix, perf, deps, deps-dev, docs, chore, ci, build, refactor, revert, style, test."
+            exit 1
+          fi
+          echo "PR title is a conventional commit: $TITLE"

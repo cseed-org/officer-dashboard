@@ -211,6 +211,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push linux/amd64 and linux/arm64
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -225,3 +226,22 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           # Registry publication never imports or exports the PR build cache.
           no-cache: true
+      # Release promotion (release-publish.yml) redeems this exact run attempt's
+      # digest instead of rediscovering one through the mutable sha-<7> tag.
+      - name: Record the pushed digest for release promotion
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          printf '%s\n' "$DIGEST" > image-digest.txt
+      # The artifact name pins the run attempt: release promotion lists
+      # artifacts through the run-level API route and selects exactly the
+      # artifact of the attempt it validated.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-digest-${{ github.run_attempt }}
+          path: image-digest.txt
+          if-no-files-found: error
+          retention-days: 90

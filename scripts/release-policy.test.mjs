@@ -66,3 +66,17 @@ test('failed, cancelled or skipped secret scanning blocks every publish step', (
     assert.equal(canPublish(ci, main, { gitleaks: result }), false, result);
   }
 });
+
+test('publish records the pushed digest in a run-scoped artifact for release promotion', () => {
+  const build = ci.jobs.publish.steps.find((step) => step.id === 'build');
+  assert.match(build.uses, /^docker\/build-push-action@/);
+  const record = ci.jobs.publish.steps.find((step) => step.name === 'Record the pushed digest for release promotion');
+  assert.equal(record.env.DIGEST, '${{ steps.build.outputs.digest }}');
+  assert.match(record.run, /\^sha256:\[a-f0-9\]\{64\}\$/);
+  const uploads = ci.jobs.publish.steps.filter((step) => step.uses?.startsWith('actions/upload-artifact@'));
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].with.name, 'image-digest-${{ github.run_attempt }}', 'the artifact name pins the run attempt');
+  assert.equal(uploads[0].with.path, 'image-digest.txt');
+  assert.equal(uploads[0].with['if-no-files-found'], 'error');
+  assert.equal(uploads[0].with['retention-days'], 90, 'promotion window documented in docs/deployment.md');
+});

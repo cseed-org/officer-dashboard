@@ -5,6 +5,60 @@ or **[Upgrade an existing host](deploy/upgrade-existing.md)**. The original guid
 Litestream sections describe the previous image. The current image uses encrypted D1 snapshots,
 plus an independent daily/monthly copy in Google Drive ([below](#a-second-independent-copy-in-google-drive)).
 
+## Release images and verification
+
+CI on `main` builds `ghcr.io/cseed-org/officer-dashboard:main` and
+`:sha-<7-character commit>` with SBOM and build provenance, and records the
+pushed digest as a run-scoped CI artifact named for the run attempt. A
+published stable
+GitHub Release such as `v0.15.0` promotes that recorded multi-platform
+digest to `:0.15.0`, `:0.15` and `:latest`. Releases at major version 1 and later
+also update `:1` (or the corresponding major); there is no `:0` alias. Prereleases
+are excluded. The exact version always (re)points at the recorded digest —
+promotion fails rather than replace a different build — while `latest` and the
+minor/major aliases advance only when the release is the highest published
+stable version in their scope (comparing published, non-draft, non-prerelease
+GitHub Releases, never bare tags), so rerunning an older release leaves newer
+aliases alone. Version aliases and `latest` can move: pin deployments by digest.
+The image's binary version remains the source commit's short SHA because release
+promotion never rebuilds it.
+
+The release workflow requires a successful `main` CI run, including its `publish`
+job, for the tag's resolved commit; it waits up to 75 minutes for that run, then
+redeems the digest that exact run attempt recorded — never the mutable
+`:sha-<commit>` source tag, which a rerun could have replaced. The digest
+artifact is kept for 90 days, so promotion, including idempotent reruns of the
+release workflow, must happen within 90 days of the CI run that built the
+image; after the artifact expires the workflow fails closed rather than fall
+back to the mutable source tag. It
+checks that the image revision matches the
+full commit and that all promoted tags keep the same digest. It adds a GitHub
+artifact attestation (Sigstore-backed) for the promoted digest using GitHub's
+OIDC identity.
+The release attestation records promotion; the original build's provenance and
+SBOM remain attached to the image. Tags never authorize a build.
+
+The GHCR package is private: authenticate with a `read:packages` token and sign
+in to the registry (for example `gh auth login` plus
+`echo "$(gh auth token)" | docker login ghcr.io -u <user> --password-stdin`)
+before inspecting or verifying. With the GitHub CLI installed, resolve
+the release digest and verify the promotion attestation before deploying:
+
+```sh
+IMAGE=ghcr.io/cseed-org/officer-dashboard
+DIGEST=$(docker buildx imagetools inspect "$IMAGE:0.15.0" --format '{{.Manifest.Digest}}')
+gh attestation verify "oci://$IMAGE@$DIGEST" --owner cseed-org
+```
+
+Change the version when verifying another release. Add
+`--signer-workflow cseed-org/officer-dashboard/.github/workflows/release-publish.yml`
+to also require the promotion workflow as the attestation signer.
+
+Semantic release publication does not deploy production. Continue using the
+separate `promote-production.yml` workflow and protected `production` environment
+for production promotion. Maintainers must create that environment and its
+protection rules before using it.
+
 ## Measured size and free-tier budget
 
 Measured locally on 2026-11-24 using the release image's `dashboard seed -reset` in an

@@ -23,3 +23,7 @@
 - name: 'area: contracts'
   color: fbca04
   description: Shared zod schemas and API compatibility
+
+- name: major-update
+  color: d93f0b
+  description: Major dependency update requiring manual review

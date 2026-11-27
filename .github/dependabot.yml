@@ -2,14 +2,23 @@ version: 2
 updates:
   - package-ecosystem: docker
     directory: /server
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
     schedule:
       interval: weekly
   - package-ecosystem: docker
     directory: /docker
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
     schedule:
       interval: weekly
   - package-ecosystem: gomod
     directory: /server
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
     schedule:
       interval: weekly
     groups:
@@ -17,6 +26,9 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
     schedule:
       interval: weekly
     groups:
@@ -24,6 +36,9 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: npm
     directory: /web
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
     schedule:
       interval: weekly
     groups:
@@ -31,6 +46,9 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
     schedule:
       interval: weekly
     groups:

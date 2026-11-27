@@ -1,0 +1,216 @@
+name: Publish release image
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-image
+  cancel-in-progress: false
+
+jobs:
+  release-image:
+    if: '!github.event.release.prerelease'
+    runs-on: ubuntu-latest
+    # Main CI's worst-case critical path is about 60 minutes; allow the wait
+    # below plus the promotion steps to finish.
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      attestations: write
+      artifact-metadata: write
+      id-token: write
+    env:
+      IMAGE: ghcr.io/cseed-org/officer-dashboard
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Resolve release commit and require successful main CI publication
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo '::error::Only stable vX.Y.Z release tags may promote images.'
+            exit 1
+          fi
+          version="${TAG#v}"
+          object=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq '.object')
+          while [[ $(jq -r '.type' <<< "$object") == tag ]]; do
+            object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$(jq -r '.sha' <<< "$object")" --jq '.object')
+          done
+          [[ $(jq -r '.type' <<< "$object") == commit ]]
+          commit=$(jq -r '.sha' <<< "$object")
+          ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$commit...main" --jq '.status')
+          [[ "$ancestry" == ahead || "$ancestry" == identical ]]
+          # 150 x 30s covers main CI's worst-case critical path (~60 minutes)
+          # plus queueing headroom. Transient API errors count as "not ready
+          # yet" and retry; a completed but failed CI run fails fast.
+          for attempt in {1..150}; do
+            runs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+              -f head_sha="$commit" -f event=push -f branch=main -f per_page=100 \
+              2>/dev/null || echo '{"workflow_runs":[]}')
+            run=$(jq -c '[.workflow_runs[]] | sort_by(.run_number) | last // empty' <<< "$runs")
+            if [[ -n "$run" && $(jq -r '.status' <<< "$run") == completed ]]; then
+              if [[ $(jq -r '.conclusion' <<< "$run") != success ]]; then
+                echo '::error::Main CI failed for the release commit; refusing promotion.'
+                exit 1
+              fi
+              run_id=$(jq -r '.id' <<< "$run")
+              run_attempt=$(jq -r '.run_attempt' <<< "$run")
+              if jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/attempts/$run_attempt/jobs?per_page=100" 2>/dev/null); then
+                if jq -e -s 'any(.[].jobs[]; .name == "publish" and .conclusion == "success")' <<< "$jobs" > /dev/null; then
+                  echo "commit=$commit" >> "$GITHUB_OUTPUT"
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+                  echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+                  echo "run-attempt=$run_attempt" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+                echo '::error::Main CI succeeded but its publish job did not; refusing promotion.'
+                exit 1
+              fi
+            fi
+            if (( attempt % 10 == 0 )); then
+              echo "Waiting for successful main CI for $commit (attempt $attempt/150)."
+            fi
+            sleep 30
+          done
+          echo '::error::Timed out waiting for successful main CI and its publish job. Rerun this workflow once main CI is green; reruns are idempotent.'
+          exit 1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read the digest recorded by the validated CI run attempt
+        id: digest
+        env:
+          RUN_ID: ${{ steps.release.outputs.run-id }}
+          RUN_ATTEMPT: ${{ steps.release.outputs.run-attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The digest comes only from the exact run attempt just validated,
+          # never from a mutable tag: a later CI rerun of the same commit can
+          # build a different digest before its own checks have finished. The
+          # artifacts API is run-scoped (no per-attempt route exists), so the
+          # attempt is pinned in the artifact name at upload time; require
+          # exactly one non-expired artifact of the validated attempt.
+          name="image-digest-$RUN_ATTEMPT"
+          artifacts=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100")
+          matches=$(jq -s --arg name "$name" '[.[].artifacts[] | select(.name == $name and (.expired | not))]' <<< "$artifacts")
+          if [[ $(jq 'length' <<< "$matches") != 1 ]]; then
+            echo "::error::Expected exactly one non-expired $name artifact in the validated CI run, found $(jq 'length' <<< "$matches"); refusing promotion."
+            exit 1
+          fi
+          artifact_id=$(jq -r '.[0].id' <<< "$matches")
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > image-digest.zip
+          digest=$(unzip -p image-digest.zip image-digest.txt | tr -d '[:space:]')
+          if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo '::error::The recorded digest is malformed; refusing promotion.'
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Promote the recorded digest without rebuilding
+        id: image
+        env:
+          COMMIT: ${{ steps.release.outputs.commit }}
+          VERSION: ${{ steps.release.outputs.version }}
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Confirm that the recorded digest belongs to the full release commit.
+          revision=$(docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}' | jq -r '.annotations["org.opencontainers.image.revision"]')
+          [[ "$revision" == "$COMMIT" ]]
+          # Never replace a different build: an existing exact-version tag must
+          # already point at the recorded digest (idempotent reruns only).
+          # Resolve the tag through the authenticated GHCR manifest API so a
+          # "tag absent" verdict comes only from the registry's structured
+          # answer for this exact manifest: HTTP 404 with a MANIFEST_UNKNOWN
+          # error body. Token, auth, transport and server errors — including an
+          # authorization endpoint's own 404 — retry with backoff and then fail
+          # closed: only a confirmed-absent tag is created without comparing
+          # digests.
+          repo_path="${IMAGE#ghcr.io/}"
+          headers=$(mktemp)
+          body=$(mktemp)
+          existing=""
+          for try in 1 2 3 4; do
+            token=$(curl -fsSL -u "$GITHUB_ACTOR:$GH_TOKEN" "https://ghcr.io/token?scope=repository:$repo_path:pull" | jq -r .token) || token=""
+            if [[ -n "$token" && "$token" != null ]]; then
+              status=$(curl -sS -o "$body" -D "$headers" -w '%{http_code}' \
+                -H "Authorization: Bearer $token" \
+                -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+                "https://ghcr.io/v2/$repo_path/manifests/$VERSION") || status=000
+              if [[ "$status" == 200 ]]; then
+                existing=$(sed -n 's/^[Dd]ocker-[Cc]ontent-[Dd]igest:[[:space:]]*//p' "$headers" | tr -d '\r' | head -1)
+                if [[ "$existing" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                  break
+                fi
+                echo "::error::GHCR returned HTTP 200 for $IMAGE:$VERSION without a valid Docker-Content-Digest header; refusing to promote without knowing whether the tag already exists."
+                exit 1
+              fi
+              if [[ "$status" == 404 ]] && grep -q MANIFEST_UNKNOWN "$body"; then
+                break
+              fi
+            fi
+            if (( try == 4 )); then
+              echo "::error::Could not resolve $IMAGE:$VERSION after $try attempts; refusing to promote without knowing whether the tag already exists."
+              exit 1
+            fi
+            sleep $((try * 10))
+          done
+          rm -f "$headers" "$body"
+          if [[ -n "$existing" && "$existing" != "$DIGEST" ]]; then
+            echo "::error::$IMAGE:$VERSION already points to $existing, not the recorded $DIGEST; refusing to replace a different build."
+            exit 1
+          fi
+          major="${VERSION%%.*}"
+          tags=(--tag "$IMAGE:$VERSION")
+          # The exact version always (re)points at the recorded digest. Moving
+          # aliases advance only: point one at this digest only when no
+          # strictly newer published stable vX.Y.Z release falls in its scope
+          # (latest: every stable release; minor: same major.minor; major:
+          # same major), so rerunning an older release leaves newer aliases
+          # alone. Candidates are published, non-draft, non-prerelease GitHub
+          # Releases (paginated): bare tags and GitHub prereleases never
+          # qualified for promotion, so they must not block aliases either.
+          # sort -V compares semver.
+          published=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select((.draft | not) and (.prerelease | not)) | .tag_name')
+          alias_blocked() { # $1 = all, a major, or a major.minor scope
+            local scope=$1 other
+            while IFS= read -r tag; do
+              [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+              other="${tag#v}"
+              case "$scope" in
+                all) ;;
+                *.*) [[ "${other%.*}" == "$scope" ]] || continue ;;
+                *) [[ "${other%%.*}" == "$scope" ]] || continue ;;
+              esac
+              if [[ "$other" != "$VERSION" && $(printf '%s\n%s\n' "$VERSION" "$other" | sort -V | tail -1) == "$other" ]]; then
+                return 0
+              fi
+            done <<< "$published"
+            return 1
+          }
+          alias_blocked all || tags+=(--tag "$IMAGE:latest")
+          alias_blocked "${VERSION%.*}" || tags+=(--tag "$IMAGE:${VERSION%.*}")
+          if [[ "$major" != 0 ]]; then alias_blocked "$major" || tags+=(--tag "$IMAGE:$major"); fi
+          docker buildx imagetools create "${tags[@]}" "$IMAGE@$DIGEST"
+          for ((i=1; i<${#tags[@]}; i+=2)); do
+            promoted=$(docker buildx imagetools inspect "${tags[i]}" --format '{{.Manifest.Digest}}')
+            [[ "$promoted" == "$DIGEST" ]]
+          done
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
