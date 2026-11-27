@@ -131,25 +131,43 @@ jobs:
           [[ "$revision" == "$COMMIT" ]]
           # Never replace a different build: an existing exact-version tag must
           # already point at the recorded digest (idempotent reruns only).
-          # Distinguish a confirmed-absent tag from lookup failures: retry
-          # transient registry errors with backoff, and fail closed when the
-          # lookup never resolves — only a confirmed-absent tag may be created
-          # without comparing digests.
+          # Resolve the tag through the authenticated GHCR manifest API so a
+          # "tag absent" verdict comes only from the registry's structured
+          # answer for this exact manifest: HTTP 404 with a MANIFEST_UNKNOWN
+          # error body. Token, auth, transport and server errors — including an
+          # authorization endpoint's own 404 — retry with backoff and then fail
+          # closed: only a confirmed-absent tag is created without comparing
+          # digests.
+          repo_path="${IMAGE#ghcr.io/}"
+          headers=$(mktemp)
+          body=$(mktemp)
           existing=""
           for try in 1 2 3 4; do
-            if out=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}' 2>&1); then
-              existing=$out
-              break
-            fi
-            if grep -qiE 'not found|manifest unknown' <<< "$out"; then
-              break
+            token=$(curl -fsSL -u "$GITHUB_ACTOR:$GH_TOKEN" "https://ghcr.io/token?scope=repository:$repo_path:pull" | jq -r .token) || token=""
+            if [[ -n "$token" && "$token" != null ]]; then
+              status=$(curl -sS -o "$body" -D "$headers" -w '%{http_code}' \
+                -H "Authorization: Bearer $token" \
+                -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+                "https://ghcr.io/v2/$repo_path/manifests/$VERSION") || status=000
+              if [[ "$status" == 200 ]]; then
+                existing=$(sed -n 's/^[Dd]ocker-[Cc]ontent-[Dd]igest:[[:space:]]*//p' "$headers" | tr -d '\r' | head -1)
+                if [[ "$existing" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+                  break
+                fi
+                echo "::error::GHCR returned HTTP 200 for $IMAGE:$VERSION without a valid Docker-Content-Digest header; refusing to promote without knowing whether the tag already exists."
+                exit 1
+              fi
+              if [[ "$status" == 404 ]] && grep -q MANIFEST_UNKNOWN "$body"; then
+                break
+              fi
             fi
             if (( try == 4 )); then
-              echo "::error::Could not resolve $IMAGE:$VERSION after $try attempts ($out); refusing to promote without knowing whether the tag already exists."
+              echo "::error::Could not resolve $IMAGE:$VERSION after $try attempts; refusing to promote without knowing whether the tag already exists."
               exit 1
             fi
             sleep $((try * 10))
           done
+          rm -f "$headers" "$body"
           if [[ -n "$existing" && "$existing" != "$DIGEST" ]]; then
             echo "::error::$IMAGE:$VERSION already points to $existing, not the recorded $DIGEST; refusing to replace a different build."
             exit 1

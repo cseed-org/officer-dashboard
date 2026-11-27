@@ -37,7 +37,16 @@ test('alias precedence compares published stable releases, never bare tags', () 
 test('exact-version guard fails closed on unresolved registry errors', () => {
   assert.doesNotMatch(promote.run, /imagetools inspect[^\n]*\|\| true/, 'no blanket swallow of lookup failures');
   assert.match(promote.run, /for try in 1 2 3 4/, 'bounded retries with backoff');
-  assert.match(promote.run, /not found\|manifest unknown/i, 'confirmed-absent detection');
+  // N3: absence is a structured registry answer for the exact manifest, not a
+  // substring in combined CLI output — an authorization endpoint's own 404
+  // must retry and fail closed like any other unresolved error.
+  assert.doesNotMatch(promote.run, /grep -qiE 'not found/, 'no substring match on combined tool output');
+  assert.doesNotMatch(promote.run, /imagetools inspect "\$IMAGE:\$VERSION"/, 'the exact-version check does not string-match CLI errors');
+  assert.match(promote.run, /https:\/\/ghcr\.io\/token\?scope=repository:\$repo_path:pull/, 'an authenticated pull-scoped registry token');
+  assert.match(promote.run, /https:\/\/ghcr\.io\/v2\/\$repo_path\/manifests\/\$VERSION/, 'queries the exact manifest URL');
+  assert.match(promote.run, /"\$status" == 404/, 'absence requires HTTP 404 from the manifest API');
+  assert.match(promote.run, /grep -q MANIFEST_UNKNOWN/, 'absence requires the registry MANIFEST_UNKNOWN error for that ref');
+  assert.match(promote.run, /\[Dd\]ocker-\[Cc\]ontent-\[Dd\]igest/, 'an existing tag is compared by its digest header');
   assert.match(promote.run, /refusing to promote without knowing whether the tag already exists/, 'unresolved errors fail closed');
 });
 

@@ -2,7 +2,8 @@
 // Reads a JSON array of commit message bodies on stdin (the commits of a
 // Dependabot PR) and prints the highest semver update-type across every
 // commit's structured metadata trailer: the YAML `updated-dependencies`
-// block after the final "---" of each body.
+// block after the final "---" of each body, up to its "..." document-end
+// marker when Dependabot's envelope includes one.
 //
 // Fails closed by printing "none" unless every commit carries a well-formed
 // trailer whose updated-dependencies list is nonempty and every entry has a
@@ -31,27 +32,39 @@ const scalar = (raw) => {
 };
 
 // Parses the restricted trailer shape into {key: [entry, ...]} or null.
-// Accepted: top-level "key:" (list follows) or "key: value" lines, list
-// items "- key: value" at any indent, and their more-indented
-// "key: value" continuations. Everything else is rejected.
+// Grammar: top-level "key:" (list follows), "key: []" or "key: value"
+// lines at column 0; list items "- key: value" all at one consistent
+// indent; and each entry's direct "key: value" continuations all at one
+// indent deeper than the item marker. A deeper or misaligned line (a
+// nested mapping or list) and a duplicate key anywhere are rejected, so a
+// value can only ever come from a direct property of its own list entry —
+// never supplied or overwritten by a nested mapping.
 function parseSimpleYaml(lines) {
-  const result = {};
-  let listKey = null;
-  let entry = null;
+  const result = Object.create(null);
+  let listKey = null; // top-level key whose list is being collected
+  let listIndent = null; // indent shared by every item of that list
+  let entry = null; // current list entry
+  let entryIndent = null; // indent shared by the entry's direct keys
   for (const line of lines) {
     if (line.trim() === '') continue;
-    let match = /^[ \t]*-[ \t]+([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
+    let match = /^([ \t]*)-[ \t]+([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
     if (match) {
       if (listKey === null) return null;
-      entry = {};
+      if (listIndent === null) listIndent = match[1].length;
+      if (match[1].length !== listIndent) return null;
+      entry = Object.create(null);
+      entryIndent = null;
       result[listKey].push(entry);
-      entry[match[1]] = scalar(match[2]);
+      entry[match[2]] = scalar(match[3]);
       continue;
     }
     match = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
     if (match) {
       listKey = null;
+      listIndent = null;
       entry = null;
+      entryIndent = null;
+      if (match[1] in result) return null; // duplicate top-level key
       if (match[2].trim() === '') {
         result[match[1]] = [];
         listKey = match[1];
@@ -62,9 +75,12 @@ function parseSimpleYaml(lines) {
       }
       continue;
     }
-    match = /^[ \t]+([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
-    if (match && entry !== null) {
-      entry[match[1]] = scalar(match[2]);
+    match = /^([ \t]+)([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(line);
+    if (match && entry !== null && match[1].length > listIndent) {
+      if (entryIndent === null) entryIndent = match[1].length;
+      if (match[1].length !== entryIndent) return null; // nested mapping or misaligned keys
+      if (match[2] in entry) return null; // duplicate key: ambiguous, reject
+      entry[match[2]] = scalar(match[3]);
       continue;
     }
     return null;
@@ -76,7 +92,14 @@ export function parseTrailer(body) {
   if (typeof body !== 'string') return null;
   const lines = body.split(/\r?\n/);
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].trim() === '---') return parseSimpleYaml(lines.slice(i + 1));
+    if (lines[i].trim() !== '---') continue;
+    // The metadata document runs from the marker to its YAML document-end
+    // ("...") when Dependabot's envelope includes one; whatever follows the
+    // terminator (the Git signoff) is not part of the document.
+    let doc = lines.slice(i + 1);
+    const end = doc.findIndex((line) => line.trim() === '...');
+    if (end !== -1) doc = doc.slice(0, end);
+    return parseSimpleYaml(doc);
   }
   return null;
 }
