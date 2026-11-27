@@ -7,15 +7,12 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import shlex
 import sys
 import time
 import urllib.request
 
-
-def run(args, env=None):
-    # Capture output: compose may echo configuration; never include it in Discord/errors.
-    return subprocess.run(args, check=True, text=True, capture_output=True, env=env).stdout.strip()
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from hostlib import dotenv, persist, repository, run, sync_directory  # noqa: E402  (shared with scripts/setup)
 
 
 def notify(message, settings):
@@ -34,47 +31,6 @@ def notify(message, settings):
             urllib.request.urlopen(req, timeout=20).close()
         except Exception:
             print('Discord notification failed', file=sys.stderr)
-
-
-def dotenv(path):
-    if not path.exists():
-        return {}
-    result = {}
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if line.startswith('export '):
-            line = line[7:].lstrip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        key, value = line.split('=', 1)
-        value = value.strip()
-        if value.startswith(('"', "'")):
-            parts = shlex.split(value, comments=True)
-            if len(parts) != 1:
-                raise ValueError('invalid quoted dotenv value')
-            value = parts[0]
-        else:
-            value = re.split(r'\s+#', value, maxsplit=1)[0].rstrip()
-        result[key.strip()] = value
-    return result
-
-
-def persist(path, value):
-    temporary = path.with_name(path.name + '.next')
-    with temporary.open('w') as output:
-        output.write(value)
-        output.flush()
-        os.fsync(output.fileno())
-    os.replace(temporary, path)
-    sync_directory(path.parent)
-
-
-def sync_directory(path):
-    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
 
 
 def clear_transaction(marker):
@@ -107,9 +63,7 @@ def main():
         previous = dotenv(state).get('DASHBOARD_IMAGE', '')
         if not re.fullmatch(r'[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}', previous):
             raise ValueError('previous image must be pinned by digest')
-        image_name = previous.partition('@')[0]
-        registry, separator, name = image_name.rpartition('/')
-        image_name = registry + separator + name.partition(':')[0]
+        image_name = repository(previous)
         if args.image:
             candidate = args.image
         else:

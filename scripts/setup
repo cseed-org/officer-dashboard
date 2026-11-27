@@ -7,9 +7,10 @@
   scripts/setup install-units [--enable-updates | --no-enable-updates]
 
 `host` and `preview` run `dashboard setup` from the pinned image with the deploy
-directory mounted; any flags this launcher does not know are passed on to it (see
-`scripts/setup host --yes -h`). Run as root. Works from any directory: the deploy
-directory defaults to the one beside this script (--deploy-dir to choose another).
+directory mounted; flags this launcher does not know are passed on to it (listed in
+`scripts/setup host -h` and docs/configuration.md, "Host files"). Run as root. Works
+from any directory: the deploy directory defaults to the one beside this script
+(--deploy-dir to choose another).
 """
 import argparse
 import csv
@@ -65,6 +66,7 @@ def stdin_is_tty():
 
 def interactive(args, input=None):
     """Run a container with the terminal attached; its output is the user's to read."""
+    sys.stdout.flush()
     return subprocess.run(args, input=input, text=True).returncode
 
 
@@ -198,7 +200,10 @@ def compose_isolation(deploy):
     if not project:
         compose_file = str((deploy / 'compose.cloudflare.yml').resolve())
         projects = json.loads(run(['docker', 'compose', 'ls', '--all', '--format', 'json']) or '[]')
-        others = {p.get('Name') for p in projects if compose_file not in (p.get('ConfigFiles') or '').split(',')}
+        def ours(files):
+            # Compose joins a project's files with commas, and a path may hold a comma too.
+            return files == compose_file or (',' + files + ',').find(',' + compose_file + ',') >= 0
+        others = {p.get('Name') for p in projects if not ours(p.get('ConfigFiles') or '')}
         project, n = DEFAULT_PROJECT, 2
         while project in others:
             project, n = f'{DEFAULT_PROJECT}-{n}', n + 1
@@ -363,7 +368,12 @@ def parser():
     sub = p.add_subparsers(dest='command', required=True)
     c = sub.add_parser('check', allow_abbrev=False, help='check the host prerequisites and image pin')
     c.add_argument('--image', help='image to pin when prod-image.env does not exist yet')
-    h = sub.add_parser('host', allow_abbrev=False, help='plan, and with --yes write, the env and secret files')
+    h = sub.add_parser('host', allow_abbrev=False, help='plan, and with --yes write, the env and secret files',
+                       epilog='Passed on to `dashboard setup host`: --app-url URL, --backup-hostname HOST, '
+                              '--discord-client-id ID, --owner-discord-id ID, --owner-name NAME, '
+                              '--age-recipient age1..., --rotate NAME. Secret names for --secret: '
+                              'discord-client-secret, discord-webhook-url, discord-bot-token, tunnel-token, '
+                              'backup-bearer, backup-access-client-id, backup-access-client-secret.')
     mode = h.add_mutually_exclusive_group()
     mode.add_argument('--dry-run', action='store_true', help='print the plan; read-only mount')
     mode.add_argument('--yes', action='store_true', help='write the planned files (and prod-image.env)')
