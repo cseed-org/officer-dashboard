@@ -81,3 +81,26 @@ test("self-build production recipe publishes and pins before startup", () => {
   for (const command of productionCommands) assert.ok(command.includes('--env-file .env --env-file prod-image.env'));
   assert.ok(!read('server/deploy/compose.build.yml').includes('officer-dashboard:local'));
 });
+
+test("every env key `dashboard setup host` writes is documented and templated", () => {
+  const host = read("server/internal/setup/host.go");
+  const layout = read("server/internal/setup/hostfiles/layout.go");
+  const templates = {
+    ".env": read("server/deploy/.env.example"),
+    "dashboard.env": template,
+    "backup.env": backupTemplate,
+  };
+  const written = [...host.matchAll(/Key: "([A-Z][A-Z0-9_]+)"/g)].map((m) => m[1]);
+  assert.ok(written.length >= 8, "the keys setup writes should be extracted from host.go");
+  const all = Object.values(templates).join("\n");
+  assert.deepEqual(written.filter((key) => !configuration.includes(`\`${key}\``)), [], "document in docs/configuration.md");
+  assert.deepEqual(written.filter((key) => !new RegExp(`(?:^|\n)#?${key}=`).test(all)), [], "add to an env template");
+  // Each secret's *_FILE key must be in the template of the file setup writes it to.
+  const secrets = [...layout.matchAll(/EnvFile: "([^"]+)", EnvKey: "([A-Z0-9_]+)"/g)];
+  assert.ok(secrets.length >= 7);
+  for (const [, file, key] of secrets) {
+    assert.ok(templates[file], `unknown env file ${file}`);
+    assert.match(templates[file], new RegExp(`(?:^|\n)#?${key}=`), `${key} belongs in ${file}.example`);
+    assert.ok(configuration.includes(`\`${key}\``), `${key} undocumented in docs/configuration.md`);
+  }
+});
