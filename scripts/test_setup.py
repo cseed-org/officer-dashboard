@@ -406,6 +406,7 @@ class SetupTests(unittest.TestCase):
         code = self.launch('host', '--yes')
         self.assertEqual(code, 1)
         self.assertIn('--compose-project-name', self.err)
+        self.assertIn('confirm', self.err, 'a moved checkout may confirm its own values')
         self.assertEqual(self.docker.containers, [])
         # Confirming the current values goes ahead, and tells Go the install exists.
         code = self.launch('host', '--yes', '--compose-project-name', 'officer-dashboard', '--tunnel-net', '10.250.89')
@@ -419,6 +420,67 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.launch('host', '--yes'), 0, self.err)
         args, _ = self.container()
         self.assertNotIn('--compose-project-name', args, 'nothing to pass: .env already says')
+
+    def other_install(self, project='officer-dashboard'):
+        """Install A: a live stack whose recorded working directory exists elsewhere."""
+        other = Path(self.temp.name) / 'club-a/server/deploy'
+        other.mkdir(parents=True, exist_ok=True)
+        self.project(other, project)
+        self.docker.volumes.append({'com.docker.compose.project': project})
+        return other
+
+    def assert_refused_without_confirm(self, code):
+        self.assertEqual(code, 1, self.out)
+        self.assertEqual(self.docker.containers, [], 'setup ran although another install owns the values')
+        self.assertFalse((self.deploy / '.env').exists())
+        self.assertFalse((self.deploy / 'prod-image.env').exists())
+        self.assertNotIn('confirm', self.err.lower(), 'another install\'s values must never be offered to confirm')
+        self.assertIn('free', self.err)
+
+    def test_new_install_cannot_take_another_installs_project(self):
+        # Review R-1 (S4b): B passes A's project and subnet, as if confirming them.
+        other = self.other_install()
+        code = self.launch('host', '--yes', '--image', PIN, '--compose-project-name', 'officer-dashboard', '--tunnel-net', '10.250.89')
+        self.assert_refused_without_confirm(code)
+        self.assertIn(str(other), self.err)
+        # Unchosen defaults: refused the same way, still without a confirm hint.
+        self.docker.containers.clear()
+        self.assert_refused_without_confirm(self.launch('host', '--yes', '--image', PIN))
+
+    def test_chosen_subnet_on_another_installs_network_is_refused(self):
+        # Review R-1 (1): a free project name, but A's subnet.
+        self.other_install()
+        code = self.launch('host', '--yes', '--image', PIN, '--compose-project-name', 'club-b', '--tunnel-net', '10.250.89')
+        self.assert_refused_without_confirm(code)
+        self.assertIn('10.250.89', self.err)
+
+    def test_env_copied_from_another_install_is_refused(self):
+        # Review R-1 (4): .env copied from A names A's project.
+        self.other_install()
+        (self.deploy / '.env').write_text('COMPOSE_PROJECT_NAME=officer-dashboard\nTUNNEL_NET=10.250.89\n')
+        code = self.launch('host', '--yes', '--image', PIN)
+        self.assertEqual(code, 1, self.out)
+        self.assertEqual(self.docker.containers, [])
+        self.assertNotIn('confirm', self.err.lower())
+
+    def test_stopped_install_may_confirm_its_own_values(self):
+        # Review R-3: after `compose down` only the volume and network are left.
+        self.pin()
+        self.docker.volumes.append({'com.docker.compose.project': 'officer-dashboard'})
+        self.docker.networks.append({'Name': 'officer-dashboard_tunnel', 'Labels': {'com.docker.compose.project': 'officer-dashboard'},
+                                     'IPAM': {'Config': [{'Subnet': '10.250.89.0/28'}]}})
+        self.assertEqual(self.launch('host', '--yes'), 1)
+        self.assertIn('confirm', self.err)
+        self.assertIn('stopped', self.err)
+        self.assertEqual(self.launch('host', '--yes', '--compose-project-name', 'officer-dashboard', '--tunnel-net', '10.250.89'), 0, self.err)
+        self.assertIn('--install-exists', self.container()[0])
+
+    def test_lan_subnet_asks_for_a_free_value(self):
+        self.pin()
+        self.docker.networks.append({'Name': 'lan', 'Labels': {}, 'IPAM': {'Config': [{'Subnet': '10.250.89.0/24'}]}})
+        self.assertEqual(self.launch('host', '--yes'), 1)
+        self.assertNotIn('confirm', self.err.lower())
+        self.assertIn('free', self.err)
 
     def test_pin_is_written_only_after_setup_succeeds(self):
         self.docker.exit = 1

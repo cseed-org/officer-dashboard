@@ -399,7 +399,6 @@ func TestHostProjectNameOnlyForANewInstall(t *testing.T) {
 			os.WriteFile(filepath.Join(dir, "prod-image.env"), []byte("DASHBOARD_IMAGE=r.example/d@sha256:"+strings.Repeat("a", 64)+"\n"), 0o600)
 			return nil
 		},
-		"containers or volumes": func(string) []string { return []string{"--install-exists"} },
 		"an existing .env": func(dir string) []string {
 			os.WriteFile(filepath.Join(dir, ".env"), []byte("#COMPOSE_PROJECT_NAME=officer-dashboard\n"), 0o600)
 			return nil
@@ -449,5 +448,22 @@ func TestHostKeepsAnEnvFilesMode(t *testing.T) {
 	}
 	if info, _ := os.Stat(path); info.Mode().Perm() != 0o640 {
 		t.Fatalf("mode %04o", info.Mode().Perm())
+	}
+}
+
+// Review R-1 (3): Docker has the project (--install-exists) but this directory has no
+// install at all: that project belongs to someone else, so setup refuses and writes nothing.
+func TestHostRefusesAProjectThatIsNotThisDirectorys(t *testing.T) {
+	dir := deployDir(t)
+	r := hostCmd(t, &memOwner{}, freshSecrets, append([]string{"--yes", "--deploy-dir", dir, "--secrets-stdin",
+		"--compose-project-name", "officer-dashboard", "--tunnel-net", "10.250.89", "--install-exists"}, freshArgs...)...)
+	if r.code == 0 {
+		t.Fatalf("a new install was set up inside another install's Compose project:\n%s", r.stdout)
+	}
+	if !strings.Contains(r.stderr, "no install") {
+		t.Fatalf("stderr %q", r.stderr)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".env")); err == nil {
+		t.Fatal(".env was written")
 	}
 }

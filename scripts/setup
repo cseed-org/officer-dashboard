@@ -187,15 +187,6 @@ WRITE_CAPS = ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']
 READ_CAPS = ['DAC_READ_SEARCH']
 
 
-def container_path(deploy, path):
-    """Where a host path inside the deploy directory appears in the container, else None."""
-    host = (deploy / path).resolve()
-    try:
-        return CONTAINER_DEPLOY + '/' + host.relative_to(deploy.resolve()).as_posix()
-    except ValueError:
-        return None
-
-
 def same_dir(recorded, deploy):
     """Whether Compose's recorded working directory is this deploy directory, by file
     identity (device and inode), so a symlinked or differently spelled path still
@@ -210,70 +201,103 @@ def docker_lines(args):
     return [line for line in run(args).splitlines() if line.strip()]
 
 
-def compose_check(deploy, project_flag, net_flag):
-    """Decide what to tell `setup host` about the Compose project name and tunnel subnet.
-
-    setup never picks either. The values in effect are the flag, else .env's own, else the
-    Compose default. When a value nobody chose (the default) is already used in Docker by
-    something setup cannot prove is this install, setup stops before writing anything and
-    asks for both values. Proof is file identity: every container of the project was
-    started from this deploy directory. Returns the flags for `dashboard setup host`:
-    the admin's own values, and --install-exists when Docker already has containers or
-    volumes for the project (then setup host never writes either key)."""
-    settings = dotenv(deploy / '.env')
-    project = project_flag or settings.get('COMPOSE_PROJECT_NAME') or DEFAULT_PROJECT
-    net = net_flag or settings.get('TUNNEL_NET') or DEFAULT_NET
-    project_chosen = bool(project_flag or settings.get('COMPOSE_PROJECT_NAME'))
-    net_chosen = bool(net_flag or settings.get('TUNNEL_NET'))
+def project_state(project):
+    """(recorded working directories of the project's containers, its volumes)."""
     label = 'label=com.docker.compose.project=' + project
-
     ids = docker_lines(['docker', 'ps', '-a', '-q', '--filter', label])
     workdirs = []
     if ids:
         for line in docker_lines(['docker', 'inspect', *ids, '--format', '{{json .Config.Labels}}']):
             workdirs.append((json.loads(line) or {}).get('com.docker.compose.project.working_dir', ''))
-    volumes = docker_lines(['docker', 'volume', 'ls', '-q', '--filter', label])
-    ours = bool(workdirs) and all(same_dir(w, deploy) for w in workdirs)
+    return workdirs, docker_lines(['docker', 'volume', 'ls', '-q', '--filter', label])
 
-    in_use = []
-    project_networks = []
+
+def compose_check(deploy, project_flag, net_flag):
+    """Decide what to tell `setup host` about the Compose project name and tunnel subnet.
+
+    setup never picks either. The values in effect are the flag, else .env's own, else the
+    Compose default. A project whose containers record a working directory that exists
+    and is not this deploy directory (file identity, os.path.samefile) belongs to another
+    install: setup refuses it, chosen or not, and refuses a subnet overlapping that
+    install's networks. A default value used by something setup cannot prove is this
+    install also stops it; confirming the current values is offered only when nothing
+    proves another owner: every recorded directory is gone (a moved checkout) or there
+    are no containers (a stopped install). Returns the flags for `dashboard setup host`."""
+    settings = dotenv(deploy / '.env')
+    project = project_flag or settings.get('COMPOSE_PROJECT_NAME') or DEFAULT_PROJECT
+    net = net_flag or settings.get('TUNNEL_NET') or DEFAULT_NET
+    project_chosen = bool(project_flag or settings.get('COMPOSE_PROJECT_NAME'))
+    net_chosen = bool(net_flag or settings.get('TUNNEL_NET'))
     try:
         subnet = ipaddress.ip_network(net + '.0/28')
     except ValueError:
         raise SetupError(f'TUNNEL_NET {net!r} is not three numbers such as 10.250.89') from None
+
+    states = {}
+
+    def state(name):
+        if name not in states:
+            states[name] = project_state(name)
+        return states[name]
+
+    def foreign(workdirs):
+        return [w for w in workdirs if w and os.path.exists(w) and not same_dir(w, deploy)]
+
+    workdirs, volumes = state(project)
+    ours = bool(workdirs) and all(same_dir(w, deploy) for w in workdirs)
+    refused, unproven = [], []
+    if foreign(workdirs):
+        refused.append(f'Compose project {project!r} belongs to another install, started from ' + ', '.join(sorted(set(foreign(workdirs)))))
+    project_networks = []
     network_ids = docker_lines(['docker', 'network', 'ls', '-q'])
     if network_ids:
         for line in docker_lines(['docker', 'network', 'inspect', *network_ids, '--format', '{{json .}}']):
             network = json.loads(line)
-            belongs = (network.get('Labels') or {}).get('com.docker.compose.project') == project
-            if belongs:
+            owner = (network.get('Labels') or {}).get('com.docker.compose.project')
+            if owner == project:
                 project_networks.append(network.get('Name', '?'))
             for config in (network.get('IPAM') or {}).get('Config') or []:
                 try:
                     other = ipaddress.ip_network(config['Subnet'], strict=False)
                 except (KeyError, TypeError, ValueError):
                     continue
-                if other.version == 4 and subnet.overlaps(other) and not (belongs and ours) and not net_chosen:
-                    in_use.append(f'network {network.get("Name", "?")!r} uses {other}, which overlaps {subnet}')
-    if (workdirs or volumes or project_networks) and not ours and not project_chosen:
-        where = sorted({w or '(unknown)' for w in workdirs})
+                if other.version != 4 or not subnet.overlaps(other) or (owner == project and ours):
+                    continue
+                text = f'network {network.get("Name", "?")!r} uses {other}, which overlaps {subnet}'
+                if owner and foreign(state(owner)[0]):
+                    refused.append(text + f' and belongs to another install (Compose project {owner!r})')
+                elif not net_chosen:
+                    unproven.append((text, owner == project))
+    if (workdirs or volumes or project_networks) and not ours and not project_chosen and not foreign(workdirs):
         parts = []
         if workdirs:
-            parts.append(f'{len(workdirs)} container(s) started from ' + ', '.join(where))
+            parts.append(f'{len(workdirs)} container(s) started from ' + ', '.join(sorted({w or '(unknown)' for w in workdirs})))
         if volumes:
             parts.append('volume(s) ' + ', '.join(volumes))
         if project_networks and not workdirs:
             parts.append('network(s) ' + ', '.join(project_networks))
-        in_use.insert(0, f'Compose project {project!r}: ' + '; '.join(parts))
-    if in_use:
+        unproven.insert(0, (f'Compose project {project!r}: ' + '; '.join(parts), True))
+    if refused:
         raise SetupError(
-            'Docker already uses the default Compose project name or tunnel subnet, and setup cannot prove it is '
-            'this install:\n  ' + '\n  '.join(in_use) + '\n'
-            'setup never picks these itself, and nothing was written. Pass both explicitly:\n'
-            '  --compose-project-name <name> --tunnel-net <first three numbers>\n'
-            f'If they are this install\'s own (for example after moving the checkout), pass its current values '
-            f'({project} and {net}) to confirm; nothing is renamed. For a second install, choose a name and a '
-            'subnet nothing above uses.')
+            'Docker already uses this Compose project name or tunnel subnet for another install:\n  '
+            + '\n  '.join(refused + [t for t, _ in unproven]) + '\n'
+            'setup never shares them, and nothing was written. Choose a project name and a subnet that are free:\n'
+            '  --compose-project-name <name> --tunnel-net <first three numbers>')
+    if unproven:
+        lines = '\n  '.join(t for t, _ in unproven)
+        # Confirming is offered only when everything in the way is this project's own and
+        # nothing proves another owner: a moved checkout or a stopped install.
+        if all(own for _, own in unproven):
+            hint = (f'If this is this install\'s own project (a moved checkout, or a stopped install with no '
+                    f'containers), pass its current values to confirm, and nothing is renamed:\n'
+                    f'  --compose-project-name {project} --tunnel-net {net}\n'
+                    'For a second install, choose a project name and a subnet that are free.')
+        else:
+            hint = ('Choose a project name and a subnet that are free:\n'
+                    '  --compose-project-name <name> --tunnel-net <first three numbers>')
+        raise SetupError('Docker already uses the default Compose project name or tunnel subnet, and setup cannot '
+                         'prove it is this install:\n  ' + lines + '\nsetup never picks these itself, and nothing '
+                         'was written. ' + hint)
     flags = []
     if project_flag:
         flags += ['--compose-project-name', project_flag]
