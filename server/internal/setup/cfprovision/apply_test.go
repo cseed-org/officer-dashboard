@@ -74,7 +74,9 @@ func byID(actions []plan.Action) map[string]plan.Action {
 }
 
 // inScope are the action IDs this version creates.
-var inScope = []string{"zero_trust.session", "access.idp", "access.group.officers", "access.group.launchpad",
+// The global session duration is not among them: by default setup does not write the
+// organization (TestOrgSessionIsManualByDefault).
+var inScope = []string{"access.idp", "access.group.officers", "access.group.launchpad",
 	"access.service_token.services", "access.app.site", "access.app.agents", "access.app.services",
 	"rule.firewall.skip", "rule.cache.bypass", "rule.config.consent", "tunnel", "tunnel.route", "dns"}
 
@@ -174,7 +176,7 @@ func TestApplyLiveAccountCreatesAccessFirstAndSaysSo(t *testing.T) {
 		t.Fatalf("%v\n%s", err, r.out.String())
 	}
 	text := r.out.String()
-	if !strings.Contains(text, "WARNING: officers.example.org is already published") || !strings.Contains(text, "Setup creates the Access applications first") {
+	if !strings.Contains(text, "WARNING: officers.example.org is already published") || !strings.Contains(text, "Setup changes nothing that publishes the hostname, and creates its Access application at step") {
 		t.Errorf("no loud warning:\n%s", text)
 	}
 	ws := r.acct.Writes()
@@ -463,6 +465,7 @@ func TestBotFightModeOnlyWithTheOption(t *testing.T) {
 	}}
 	r := newRig(t, routes)
 	r.opt.AllowBotFightModeOff = true
+	r.opt.StateDir = t.TempDir()
 	if _, err := r.apply(context.Background()); err != nil {
 		t.Fatalf("%v\n%s", err, r.out.String())
 	}
@@ -522,8 +525,12 @@ func TestPartialAgentsAppIsDriftNotCreate(t *testing.T) {
 	if m["access.app.services"].Kind != plan.Create {
 		t.Errorf("services %s: an app on /mcp does not overlap /api/ingest", m["access.app.services"].Kind)
 	}
-	if _, err := r.apply(context.Background()); err != nil {
-		t.Fatalf("%v\n%s", err, r.out.String())
+	// The site line is drift too (another app on its host), and the services app waits
+	// for the site app (F-6), so the run refuses before any write.
+	_, err := r.apply(context.Background())
+	var blocked *BlockedError
+	if !errors.As(err, &blocked) || len(r.acct.Writes()) != 0 {
+		t.Fatalf("err = %v, writes %d", err, len(r.acct.Writes()))
 	}
 	if n := count(r.acct, acct+"/access/apps", "name", "Officer Dashboard: agents (bypass)"); n != 0 {
 		t.Error("created a second application on /mcp")

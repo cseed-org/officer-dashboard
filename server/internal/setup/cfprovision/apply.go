@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -46,6 +48,8 @@ type Outputs struct {
 	TeamDomain  string `json:"team_domain,omitempty"`
 	SiteAUD     string `json:"site_aud,omitempty"`
 	ServicesAUD string `json:"services_aud,omitempty"`
+	// ServicesTokenExpiresAt is the services token's expires_at as Cloudflare lists it.
+	ServicesTokenExpiresAt string `json:"services_token_expires_at,omitempty"`
 	// Done lists each completed step and the ID it created or fetched for.
 	Done []Done `json:"done"`
 	// Writes lists every write sent, with the API reference page its body follows.
@@ -99,7 +103,7 @@ func NewEngine(token string, d plan.Desired, sink SecretSink, out io.Writer, opt
 		ro = append(ro, cfapi.WithRetry(c.retry...))
 	}
 	if opt.ServiceTokenDuration == "" {
-		opt.ServiceTokenDuration = "8760h"
+		opt.ServiceTokenDuration = "forever"
 	}
 	return &Engine{d: d, read: cfapi.New(token, ro...), write: cfwrite.New(token, wo...), sink: sink,
 		out: &redactor{w: out}, opt: opt, created: map[string]bool{}}
@@ -166,6 +170,7 @@ func (e *Engine) collect() {
 	}
 	e.outputs.SiteAUD = e.o.Apps[plan.AppSite].AUD
 	e.outputs.ServicesAUD = e.o.Apps[plan.AppServices].AUD
+	e.outputs.ServicesTokenExpiresAt = e.o.ServiceTokens[plan.TokenServices].ExpiresAt
 }
 
 // planChanges compares the reviewed plan with a fresh one by ID, kind and existing ID.
@@ -210,6 +215,10 @@ func (e *Engine) facts(ctx context.Context, actions []plan.Action) (Facts, error
 	if f.ServicesSecretKept, err = e.sink.Has(ctx, SecretServicesToken); err != nil {
 		return f, fmt.Errorf("cannot check the host's secret files: %w", err)
 	}
+	if f.PendingRestores, err = pendingRestores(e.opt.StateDir); err != nil {
+		return f, err
+	}
+	f.RateLimitRules, f.RateLimitUnknown = e.rateLimitRules(ctx)
 	if e.opt.AllowBotFightModeOff && e.o.BotFightMode.On != nil && *e.o.BotFightMode.On {
 		// GET /zones/{zone_id}/dns_records: every record name, to show what else the
 		// zone-wide switch affects.
@@ -399,13 +408,15 @@ func (e *Engine) keepSecret(ctx context.Context, sec Secret, recovery string) er
 
 // --- Steps. Each body is built from the API reference page quoted beside it. ---
 
-// session: PUT /accounts/{account_id}/access/organizations {"session_duration": "730h"}
+// session: PUT /accounts/{account_id}/access/organizations, only with
+// Options.AllowOrgSessionWrite.
 // https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/update/
-// ("Updates the configuration for your Zero Trust organization."; every body field is
-// optional; session_duration "Must be in the format `300ms` or `2h45m`.")
-// Runs only when the organization has no global session duration (the plan's create).
-// The reference does not say whether a PUT resets fields it omits, so every other field
-// is compared before and after.
+// ("Updates the configuration for your Zero Trust organization."; all 20 body fields
+// are optional; session_duration "Must be in the format `300ms` or `2h45m`.")
+// The reference does not say whether a PUT resets the fields it omits, so the body is a
+// read-modify-write: every documented writable field the organization has now, with
+// session_duration set. Every field is compared before and after; a difference is saved
+// with its old value to a restore record, which stops later runs until it is dealt with.
 func (e *Engine) session(ctx context.Context, s Step) error {
 	path := e.accountPath("/access/organizations")
 	before, err := e.rawObject(ctx, "Access: Organizations Read", path)
@@ -415,19 +426,126 @@ func (e *Engine) session(ctx context.Context, s Step) error {
 	if v, ok := before["session_duration"]; ok && string(v) != `""` && string(v) != "null" {
 		return &RejectedError{Step: s.Title, Method: "PUT", Path: path, Cause: "the organization now has a global session duration; setup never changes one that is set"}
 	}
-	body := map[string]any{"session_duration": e.d.OrgSessionDuration}
-	if err := e.send(ctx, s, "PUT", path, "https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/update/",
-		"Access: Organizations Edit", body, nil); err != nil {
+	body := writable(before, orgWritable)
+	body["session_duration"] = jsonString(e.d.OrgSessionDuration)
+	return e.readModifyWrite(ctx, s, path, "Access: Organizations Read", "Access: Organizations Edit",
+		"https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/update/",
+		"zero-trust-organization", before, body, "session_duration", "updated_at")
+}
+
+// orgWritable are the request body fields of the organization update, in the order of
+// https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/update/
+var orgWritable = []string{"allow_authenticate_via_warp", "auth_domain", "auto_redirect_to_identity", "custom_pages",
+	"deny_unmatched_requests", "deny_unmatched_requests_exempted_zone_names", "disable_end_user_app_creation",
+	"is_ui_read_only", "login_design", "mfa_config", "mfa_piv_key_requirements", "mfa_required_for_all_apps", "name",
+	"service_token_inactivity", "session_duration", "strict_service_token_auth", "ui_read_only_toggle_reason",
+	"user_seat_expiration_inactive_time", "warp_auth_non_browser_401", "warp_auth_session_duration"}
+
+// botWritable are the BotFightModeConfiguration request body fields of
+// https://developers.cloudflare.com/api/resources/bot_management/methods/update/
+// without the two the page calls "A read-only field" (stale_zone_configuration,
+// using_latest_model).
+var botWritable = []string{"ai_agents", "ai_bots_migration_opt_out", "ai_bots_protection", "ai_search", "ai_training",
+	"ai_user", "bot_preference_sync_enabled", "cf_robots_variant", "content_bots_protection", "crawler_protection",
+	"enable_js", "fight_mode", "is_robots_txt_managed", "jsd_api_results_enabled"}
+
+// writable returns the fields of obj named in fields.
+func writable(obj map[string]json.RawMessage, fields []string) map[string]json.RawMessage {
+	out := map[string]json.RawMessage{}
+	for _, k := range fields {
+		if v, ok := obj[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// readModifyWrite PUTs body to path, reads the object back and compares it with before,
+// ignoring the keys this write is meant to change (skip; the first is the one it sets).
+// Any other change is printed with its old value and saved to a restore record; every
+// later run refuses to start while that record exists.
+func (e *Engine) readModifyWrite(ctx context.Context, s Step, path, readPerm, writePerm, ref, record string,
+	before, body map[string]json.RawMessage, skip ...string) error {
+	if err := e.send(ctx, s, "PUT", path, ref, writePerm, body, nil); err != nil {
 		return err
 	}
-	after, err := e.rawObject(ctx, "Access: Organizations Read", path)
+	after, err := e.rawObject(ctx, readPerm, path)
 	if err != nil {
 		return fmt.Errorf("%s: the write succeeded, but reading it back failed: %w", s.Title, err)
 	}
-	if changed := changedKeys(before, after, "session_duration", "updated_at"); len(changed) > 0 {
-		return &VerifyError{Step: s.Title, Expected: "only session_duration to change", Got: []string{"also changed: " + strings.Join(changed, ", ")}}
+	changed, added := changedKeys(before, after, skip...)
+	for _, k := range added {
+		fmt.Fprintf(e.out, "  note: Cloudflare now also returns %s = %s\n", k, after[k])
+	}
+	if len(changed) > 0 {
+		file, ferr := e.saveRestore(record, path, before, after, changed)
+		got := []string{"these settings changed although setup sent their old values:"}
+		for _, k := range changed {
+			got = append(got, fmt.Sprintf("  %s: was %s, now %s", k, orMissing(before[k]), orMissing(after[k])))
+		}
+		if ferr != nil {
+			got = append(got, "the restore record could not be saved ("+ferr.Error()+"); copy the old values above")
+		} else {
+			got = append(got, "old values saved to "+file+"; setup will not run again until you restore them and delete that file")
+		}
+		return &VerifyError{Step: s.Title, Expected: "only " + skip[0] + " to change", Got: got}
 	}
 	return e.verify(ctx, s, "")
+}
+
+func orMissing(v json.RawMessage) string {
+	if v == nil {
+		return "(missing)"
+	}
+	return string(v)
+}
+
+// restorePrefix names restore records in Options.StateDir.
+const restorePrefix = "cloudflare-restore-"
+
+// saveRestore writes the old values of the changed keys, and the whole object as it was,
+// to a restore record in the state directory (mode 0600; settings only, no secret).
+func (e *Engine) saveRestore(record, path string, before, after map[string]json.RawMessage, changed []string) (string, error) {
+	if e.opt.StateDir == "" {
+		return "", errors.New("no state directory")
+	}
+	type change struct {
+		Before json.RawMessage `json:"before"`
+		After  json.RawMessage `json:"after"`
+	}
+	now := time.Now().UTC()
+	rec := struct {
+		Resource string                     `json:"resource"`
+		Path     string                     `json:"path"`
+		SavedAt  string                     `json:"saved_at"`
+		Changed  map[string]change          `json:"changed"`
+		Before   map[string]json.RawMessage `json:"before"`
+	}{Resource: record, Path: path, SavedAt: now.Format(time.RFC3339), Changed: map[string]change{}, Before: before}
+	for _, k := range changed {
+		rec.Changed[k] = change{Before: before[k], After: after[k]}
+	}
+	data, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	file := filepath.Join(e.opt.StateDir, restorePrefix+record+"-"+now.Format("20060102T150405.000000000Z")+".json")
+	if err := os.WriteFile(file, append(data, '\n'), 0o600); err != nil {
+		return "", err
+	}
+	return file, nil
+}
+
+// pendingRestores lists restore records left in dir.
+func pendingRestores(dir string) ([]string, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	files, err := filepath.Glob(filepath.Join(dir, restorePrefix+"*.json"))
+	if err != nil {
+		return nil, fmt.Errorf("cannot list the state directory: %w", err)
+	}
+	sort.Strings(files)
+	return files, nil
 }
 
 // idp: POST /accounts/{account_id}/access/identity_providers
@@ -661,7 +779,13 @@ func (e *Engine) createApp(ctx context.Context, s Step) (string, error) {
 	if r.ID == "" {
 		return "", &ShapeError{Step: s.Title, Missing: "the application id", Recovery: "Run setup again: it finds the application by its hostname and paths"}
 	}
-	return r.ID, e.verify(ctx, s, r.ID)
+	err = e.verify(ctx, s, r.ID)
+	var ve *VerifyError
+	if errors.As(err, &ve) && spec.Policy.Decision == "bypass" {
+		ve.Advice = fmt.Sprintf("Application %s skips the sign-in. Open it now in Zero Trust → Access controls → Applications and check its destinations: "+
+			"if they are wider than %s, delete it at once. Setup cannot delete it.", r.ID, strings.Join(spec.Destinations, ", "))
+	}
+	return r.ID, err
 }
 
 // createRule adds one rule to its phase.
@@ -876,6 +1000,10 @@ func (e *Engine) route(ctx context.Context, s Step) error {
 		newCfg[k] = v
 	}
 	newCfg["ingress"] = next
+	// The GET and this PUT are milliseconds apart and the PUT carries no version
+	// precondition (none is documented), so an edit made in the dashboard in between
+	// would be lost. That risk is accepted; the read-back below catches it for every key
+	// the GET returned.
 	if err := e.send(ctx, s, "PUT", path,
 		"https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/subresources/configurations/methods/update/",
 		"Cloudflare Tunnel Edit", map[string]any{"config": newCfg}, nil); err != nil {
@@ -889,8 +1017,18 @@ func (e *Engine) route(ctx context.Context, s Step) error {
 		return &VerifyError{Step: s.Title, ResourceID: e.o.Tunnel.ID, Expected: "the previous routes in order, with " + e.d.Hostname + " added before the catch-all",
 			Got: []string{"ingress " + string(after["ingress"])}}
 	}
-	if changed := changedKeys(cfg, after, "ingress"); len(changed) > 0 {
-		return &VerifyError{Step: s.Title, ResourceID: e.o.Tunnel.ID, Expected: "only the ingress rules to change", Got: []string{"also changed: " + strings.Join(changed, ", ")}}
+	// A key Cloudflare adds on its own (a fresh tunnel's warp-routing default, say) is
+	// reported, not failed; a key that was there before must be unchanged.
+	changed, added := changedKeys(cfg, after, "ingress")
+	for _, k := range added {
+		fmt.Fprintf(e.out, "  note: Cloudflare now also returns config.%s = %s\n", k, after[k])
+	}
+	if len(changed) > 0 {
+		got := []string{}
+		for _, k := range changed {
+			got = append(got, fmt.Sprintf("config.%s: was %s, now %s", k, orMissing(cfg[k]), orMissing(after[k])))
+		}
+		return &VerifyError{Step: s.Title, ResourceID: e.o.Tunnel.ID, Expected: "only the ingress rules to change", Got: got}
 	}
 	return e.verify(ctx, s, "")
 }
@@ -917,28 +1055,40 @@ func (e *Engine) dns(ctx context.Context, s Step) (string, error) {
 	return r.ID, e.verify(ctx, s, r.ID)
 }
 
-// botFightMode: PUT /zones/{zone_id}/bot_management {"fight_mode": false}
+// botFightMode: PUT /zones/{zone_id}/bot_management, only with
+// Options.AllowBotFightModeOff.
 // https://developers.cloudflare.com/api/resources/bot_management/methods/update/
 // ("fight_mode: optional boolean" "Whether to enable Bot Fight Mode."). The reference
-// does not say whether omitted fields are kept, so every other field is compared.
+// does not say whether omitted fields are kept, so the body is a read-modify-write of
+// the BotFightModeConfiguration fields the zone has now, with fight_mode false.
 func (e *Engine) botFightMode(ctx context.Context, s Step) error {
 	path := e.zonePath("/bot_management")
 	before, err := e.rawObject(ctx, "Bot Management Read", path)
 	if err != nil {
 		return err
 	}
-	if err := e.send(ctx, s, "PUT", path, "https://developers.cloudflare.com/api/resources/bot_management/methods/update/",
-		"Bot Management Edit", map[string]any{"fight_mode": false}, nil); err != nil {
-		return err
+	body := writable(before, botWritable)
+	body["fight_mode"] = json.RawMessage("false")
+	return e.readModifyWrite(ctx, s, path, "Bot Management Read", "Bot Management Edit",
+		"https://developers.cloudflare.com/api/resources/bot_management/methods/update/", "bot-management", before, body, "fight_mode")
+}
+
+// rateLimitRules counts the rules in the zone's http_ratelimit phase:
+// GET /zones/{zone_id}/rulesets/phases/http_ratelimit/entrypoint
+// https://developers.cloudflare.com/api/resources/rulesets/subresources/phases/methods/get/
+// A 404 with code 10003 means the phase has no rules; the live zone had this ruleset.
+func (e *Engine) rateLimitRules(ctx context.Context) (int, string) {
+	var rs struct {
+		Rules []json.RawMessage `json:"rules"`
 	}
-	after, err := e.rawObject(ctx, "Bot Management Read", path)
-	if err != nil {
-		return fmt.Errorf("%s: the write succeeded, but reading it back failed: %w", s.Title, err)
+	err := e.read.Get(ctx, e.zonePath("/rulesets/phases/http_ratelimit/entrypoint"), nil, &rs)
+	switch {
+	case err == nil:
+		return len(rs.Rules), ""
+	case cfapi.IsNotFound(err) && cfapi.HasCode(err, codeNoEntrypoint):
+		return 0, ""
 	}
-	if changed := changedKeys(before, after, "fight_mode"); len(changed) > 0 {
-		return &VerifyError{Step: s.Title, Expected: "only fight_mode to change", Got: []string{"also changed: " + strings.Join(changed, ", ")}}
-	}
-	return e.verify(ctx, s, "")
+	return 0, err.Error()
 }
 
 func (e *Engine) rawObject(ctx context.Context, perm, path string) (map[string]json.RawMessage, error) {
@@ -949,24 +1099,26 @@ func (e *Engine) rawObject(ctx context.Context, perm, path string) (map[string]j
 	return m, nil
 }
 
-// changedKeys lists the keys whose values differ between before and after, ignoring skip.
-func changedKeys(before, after map[string]json.RawMessage, skip ...string) []string {
-	var out []string
+// changedKeys compares before and after, ignoring skip. changed lists the keys that were
+// present before and now differ or are gone; added lists keys Cloudflare returns only
+// after the write (a default it fills in, for example), which are reported, not failed.
+func changedKeys(before, after map[string]json.RawMessage, skip ...string) (changed, added []string) {
 	for k, v := range before {
 		if contains(skip, k) {
 			continue
 		}
 		if w, ok := after[k]; !ok || !jsonEqual(v, w) {
-			out = append(out, k)
+			changed = append(changed, k)
 		}
 	}
 	for k := range after {
 		if _, ok := before[k]; !ok && !contains(skip, k) {
-			out = append(out, k)
+			added = append(added, k)
 		}
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(changed)
+	sort.Strings(added)
+	return changed, added
 }
 
 func contains(list []string, s string) bool {
@@ -1038,15 +1190,25 @@ func (r *redactor) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// scrubErr returns err unchanged when it holds no secret, and otherwise a plain error
-// with the secret removed.
+// scrubErr returns err unchanged when it holds no secret. Otherwise it wraps err so that
+// errors.As still finds its type, while every way of printing it shows the scrubbed text.
 func (r *redactor) scrubErr(err error) error {
 	if err == nil {
 		return nil
 	}
 	msg := err.Error()
 	if clean := r.scrub(msg); clean != msg {
-		return errors.New(clean)
+		return &scrubbedError{msg: clean, err: err}
 	}
 	return err
 }
+
+// scrubbedError prints only its scrubbed text, with %v, %+v, %s or %#v.
+type scrubbedError struct {
+	msg string
+	err error
+}
+
+func (e *scrubbedError) Error() string    { return e.msg }
+func (e *scrubbedError) GoString() string { return e.msg }
+func (e *scrubbedError) Unwrap() error    { return e.err }

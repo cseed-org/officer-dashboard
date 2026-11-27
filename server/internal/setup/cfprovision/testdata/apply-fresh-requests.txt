@@ -4,7 +4,11 @@
 ## 1. PUT /accounts/acct-1/access/organizations
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/update/
 {
-  "session_duration": "730h"
+  "auth_domain": "club.cloudflareaccess.com",
+  "is_ui_read_only": false,
+  "name": "club",
+  "session_duration": "730h",
+  "strict_service_token_auth": true
 }
 
 ## 2. POST /accounts/acct-1/access/identity_providers
@@ -44,7 +48,7 @@
 ## 5. POST /accounts/acct-1/access/service_tokens
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/service_tokens/methods/create/
 {
-  "duration": "8760h",
+  "duration": "forever",
   "name": "officer-dashboard services"
 }
 

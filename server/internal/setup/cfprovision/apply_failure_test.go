@@ -119,8 +119,9 @@ func TestSinkErrorTextIsScrubbed(t *testing.T) {
 	leaky := &leakySink{}
 	e := NewEngine("test-token", r.d, leaky, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry())
 	_, err := e.Apply(context.Background(), r.preview())
-	if err == nil || !strings.Contains(err.Error(), "[redacted]") {
-		t.Fatalf("err = %v", err)
+	var sinkErr *SinkError
+	if !errors.As(err, &sinkErr) || !strings.Contains(err.Error(), "[redacted]") {
+		t.Fatalf("err = %v (want a scrubbed *SinkError)", err)
 	}
 	requireNoSecrets(t, r.acct, "the error", errText(err))
 }
@@ -201,6 +202,9 @@ func TestOneFlakyReadDoesNotBreakVerification(t *testing.T) {
 // the reference before committing it.
 func TestRequestBodiesMatchGolden(t *testing.T) {
 	r := newRig(t, cffake.Fresh())
+	// Both opt-in writes are on, so their read-modify-write bodies are pinned too.
+	r.opt.AllowOrgSessionWrite = true
+	r.opt.StateDir = t.TempDir()
 	out, err := r.apply(context.Background())
 	if err != nil {
 		t.Fatal(err)

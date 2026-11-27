@@ -18,12 +18,22 @@ type Options struct {
 	// including your own". The members of an existing group are never read or changed.
 	GroupEmails map[string][]string
 	// ServiceTokenDuration is the "officer-dashboard services" token's lifetime, a Go
-	// duration or "forever". Empty means "8760h", Cloudflare's default ("The default is
-	// 1 year in hours (8760h).").
+	// duration or "forever". Empty means "forever": cloudflare.md §5.1 says "Service Token
+	// Duration: the longest offered", and the reference allows "the special value
+	// `forever` for non-expiring tokens". It is then a non-expiring credential.
 	ServiceTokenDuration string
 	// AllowBotFightModeOff lets setup turn Bot Fight Mode off. It is zone-wide, so without
 	// it setup prints the manual step; with it, the plan lists the zone's other hostnames.
 	AllowBotFightModeOff bool
+	// AllowOrgSessionWrite lets setup set the Zero Trust organization's global session
+	// duration when it is unset. The organization holds account-wide Access settings and
+	// no write to it has been tried on real Cloudflare, so by default setup prints the
+	// dashboard step instead.
+	AllowOrgSessionWrite bool
+	// StateDir is where setup keeps restore records: the old values of any setting a
+	// write changed that it should not have. It is required for the two opt-in writes
+	// above, and every run refuses to start while a record is there.
+	StateDir string
 }
 
 // StepKind is what one apply step does.
@@ -76,6 +86,12 @@ type Facts struct {
 	// OtherHostnames are the zone's DNS record names other than the dashboard's, shown
 	// before Bot Fight Mode is turned off for the whole zone.
 	OtherHostnames []string
+	// PendingRestores are restore records left by an earlier run in Options.StateDir.
+	PendingRestores []string
+	// RateLimitRules is the number of rules in the zone's http_ratelimit phase;
+	// RateLimitUnknown says why it could not be read.
+	RateLimitRules   int
+	RateLimitUnknown string
 }
 
 // freeLimits are the rule slots per phase by zone plan, from the product pages quoted
@@ -121,9 +137,25 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 	add := func(s Step) { p.Steps = append(p.Steps, s) }
 	creating := func(id string) bool { return kind(id) == plan.Create }
 
+	for _, file := range f.PendingRestores {
+		p.Blockers = append(p.Blockers, "an earlier run changed Cloudflare settings it should not have; their old values are in "+file+
+			". Restore them in the dashboard, then delete that file and run setup again")
+	}
+	needState := func(what string) {
+		if opt.StateDir == "" {
+			p.Blockers = append(p.Blockers, what+" needs a state directory for restore records (Options.StateDir)")
+		}
+	}
+
 	// 1. Account-wide Access settings and identities. None of these publishes anything.
 	if creating("zero_trust.session") {
-		add(Step{Kind: StepSession, ActionID: "zero_trust.session", Title: "set the global session duration to " + d.OrgSessionDuration})
+		if opt.AllowOrgSessionWrite {
+			add(Step{Kind: StepSession, ActionID: "zero_trust.session", Title: "set the global session duration to " + d.OrgSessionDuration + " (keeping every other organization setting)"})
+			needState("writing the Zero Trust organization")
+		} else {
+			p.Manual = append(p.Manual, "the Zero Trust organization has no global session duration. Setup does not write the organization by default. "+
+				"In Zero Trust: Access controls → Access settings → Set your global session duration → Edit → 1 month → Save (docs/deploy/cloudflare.md step 3)")
+		}
 	}
 	if creating("access.idp") {
 		add(Step{Kind: StepIdP, ActionID: "access.idp", Title: "add the One-time PIN identity provider"})
@@ -150,7 +182,10 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 	}
 
 	// 2. The Access applications, each with its reusable policy.
-	appNeeds := map[string][]string{plan.AppSite: {"access.idp"}, plan.AppServices: {tokenID}}
+	// The agents (bypass) and services apps carve paths out of the site app, so they
+	// wait for it: it must be ok already, or created and read back earlier in this run.
+	siteID := "access.app." + plan.AppSite
+	appNeeds := map[string][]string{plan.AppSite: {"access.idp"}, plan.AppAgents: {siteID}, plan.AppServices: {tokenID, siteID}}
 	for _, g := range d.Groups {
 		appNeeds[plan.AppSite] = append(appNeeds[plan.AppSite], "access.group."+g.Key)
 	}
@@ -210,7 +245,8 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 	// 5. Bot Fight Mode is zone-wide: only with the explicit option.
 	if bfm := by["zone.bot_fight_mode"]; bfm.Kind == plan.Drift && o.BotFightMode.On != nil && *o.BotFightMode.On {
 		if opt.AllowBotFightModeOff {
-			add(Step{Kind: StepBotFightMode, ActionID: "zone.bot_fight_mode", Title: "turn Bot Fight Mode off for the whole zone"})
+			add(Step{Kind: StepBotFightMode, ActionID: "zone.bot_fight_mode", Title: "turn Bot Fight Mode off for the whole zone (keeping every other bot setting)"})
+			needState("turning Bot Fight Mode off")
 			others := "none"
 			if len(f.OtherHostnames) > 0 {
 				others = strings.Join(f.OtherHostnames, ", ")
@@ -240,9 +276,27 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 	}
 
 	// The live account's state: published, but no Access application in front of it.
-	if creating("access.app."+plan.AppSite) && (kind("tunnel.route") == plan.OK || kind("dns") == plan.OK) {
+	if creating(siteID) && (kind("tunnel.route") == plan.OK || kind("dns") == plan.OK) {
+		n := 0
+		for i, s := range p.Steps {
+			if s.ActionID == siteID {
+				n = i + 1
+			}
+		}
 		p.Warnings = append(p.Warnings, fmt.Sprintf("%s is already published (tunnel route or DNS record exists) but no Access application protects it. "+
-			"Setup creates the Access applications first, before anything else. Do not start cloudflared until this run reports done.", d.Hostname))
+			"Setup changes nothing that publishes the hostname, and creates its Access application at step %d; the hostname stays unprotected until that step reads back ok. "+
+			"Do not start cloudflared until this run reports done.", d.Hostname, n))
+	}
+
+	// cloudflare.md §6.2 also asks the skip rule to cover "All rate limiting rules" when
+	// the zone has them; setup's rule does not, so that stays a manual step.
+	const rateLimitStep = "docs/deploy/cloudflare.md step 6.2 says the skip rule should also tick \"All rate limiting rules\" if you have them. " +
+		"In the domain: Security → Security rules → Agents and services: skip bot checks → Edit → tick All rate limiting rules → Save"
+	switch {
+	case f.RateLimitUnknown != "":
+		p.Manual = append(p.Manual, "setup could not read the zone's rate limiting rules ("+f.RateLimitUnknown+"). If it has any: "+rateLimitStep)
+	case f.RateLimitRules > 0:
+		p.Manual = append(p.Manual, fmt.Sprintf("the zone has %d rate limiting rules. %s", f.RateLimitRules, rateLimitStep))
 	}
 
 	for _, a := range actions {
