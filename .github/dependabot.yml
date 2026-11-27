@@ -7,6 +7,19 @@ updates:
       prefix-development: deps-dev
     schedule:
       interval: weekly
+    # D-14: stay on Node LTS (even) majors. Odd majors such as 25 (PR #113, EOL
+    # June 2026) are non-LTS and must not be proposed. Docker ignore versions use
+    # Bundler-style ranges matched against the tag's numeric part, so these match
+    # suffixed tags like 25-bookworm-slim. Extend as new odd majors appear.
+    ignore:
+      - dependency-name: node
+        versions:
+          - ">= 25, < 26"
+          - ">= 27, < 28"
+          - ">= 29, < 30"
+          - ">= 31, < 32"
+          - ">= 33, < 34"
+          - ">= 35, < 36"
   - package-ecosystem: docker
     directory: /docker
     commit-message:
@@ -14,6 +27,16 @@ updates:
       prefix-development: deps-dev
     schedule:
       interval: weekly
+    # Same as /server: skip non-LTS (odd) Node majors, keep proposing even ones.
+    ignore:
+      - dependency-name: node
+        versions:
+          - ">= 25, < 26"
+          - ">= 27, < 28"
+          - ">= 29, < 30"
+          - ">= 31, < 32"
+          - ">= 33, < 34"
+          - ">= 35, < 36"
   - package-ecosystem: gomod
     directory: /server
     commit-message:
@@ -41,6 +64,10 @@ updates:
       prefix-development: deps-dev
     schedule:
       interval: weekly
+    # @types/node majors track the Node runtime; skip non-LTS (odd) majors too.
+    ignore:
+      - dependency-name: "@types/node"
+        versions: ["25.x", "27.x", "29.x", "31.x", "33.x", "35.x"]
     groups:
       minor-and-patch:
         update-types: [minor, patch]
