@@ -112,6 +112,9 @@ func NewEngine(token string, d plan.Desired, sink SecretSink, out io.Writer, opt
 // Apply runs the create actions of actions, the plan the person reviewed. It discovers
 // the account again first and stops if anything changed. It returns what it did even
 // when it stops with an error; a run stopped by any error is safe to start again.
+//
+// The returned error, and every error it wraps, is scrubbed of the secrets the run saw.
+// Print the returned error itself: it carries the whole explanation.
 func (e *Engine) Apply(ctx context.Context, actions []plan.Action) (Outputs, error) {
 	out, err := e.apply(ctx, actions)
 	return out, e.out.scrubErr(err)
@@ -776,17 +779,42 @@ func (e *Engine) createApp(ctx context.Context, s Step) (string, error) {
 		"Access: Apps Edit", body, &r); err != nil {
 		return "", err
 	}
+	// From here the application exists. A bypass application that is not exactly what
+	// setup asked for may open the dashboard, and setup cannot delete it, so any failure
+	// now leads with what the person must check.
+	afterPost := func(err error) error {
+		if err == nil || spec.Policy.Decision != "bypass" {
+			return err
+		}
+		return &bypassAppError{AppID: orNone(r.ID), Paths: spec.Destinations, Err: err}
+	}
 	if r.ID == "" {
-		return "", &ShapeError{Step: s.Title, Missing: "the application id", Recovery: "Run setup again: it finds the application by its hostname and paths"}
+		return "", afterPost(&ShapeError{Step: s.Title, Missing: "the application id", Recovery: "Run setup again: it finds the application by its hostname and paths"})
 	}
-	err = e.verify(ctx, s, r.ID)
-	var ve *VerifyError
-	if errors.As(err, &ve) && spec.Policy.Decision == "bypass" {
-		ve.Advice = fmt.Sprintf("Application %s skips the sign-in. Open it now in Zero Trust → Access controls → Applications and check its destinations: "+
-			"if they are wider than %s, delete it at once. Setup cannot delete it.", r.ID, strings.Join(spec.Destinations, ", "))
-	}
-	return r.ID, err
+	return r.ID, afterPost(e.verify(ctx, s, r.ID))
 }
+
+// bypassAppError is any failure after a bypass application was created: the person must
+// check the new application at once, because it skips the sign-in.
+type bypassAppError struct {
+	AppID string
+	Paths []string
+	Err   error
+}
+
+func (e *bypassAppError) Error() string {
+	cause := e.Err.Error()
+	var amb *AmbiguousError
+	if errors.As(e.Err, &amb) {
+		// Not the ambiguity's own advice: renaming would leave the bypass in place.
+		cause = fmt.Sprintf("Cloudflare now lists more than one %s for %q (%s)", amb.Resource, amb.Name, strings.Join(amb.IDs, ", "))
+	}
+	return fmt.Sprintf("Access application %s was just created and skips the sign-in, but setup could not confirm it is what it asked for. "+
+		"Open it now in Zero Trust → Access controls → Applications and check its destinations: if they are wider than %s, delete it at once. "+
+		"Setup cannot delete it.\nWhat went wrong: %s", e.AppID, strings.Join(e.Paths, ", "), cause)
+}
+
+func (e *bypassAppError) Unwrap() error { return e.Err }
 
 // createRule adds one rule to its phase.
 //
@@ -1190,25 +1218,60 @@ func (r *redactor) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// scrubErr returns err unchanged when it holds no secret. Otherwise it wraps err so that
-// errors.As still finds its type, while every way of printing it shows the scrubbed text.
+// scrubErr returns err with every secret the run saw removed from it and from every
+// error it wraps, so that neither printing it nor unwrapping it (errors.As, errors.Unwrap)
+// can reach a secret. A setup error type is returned as a scrubbed copy of the same type,
+// so errors.As still works; a wrapping error is rebuilt around its scrubbed cause; any
+// other error whose text holds a secret becomes a plain error with the text scrubbed.
 func (r *redactor) scrubErr(err error) error {
-	if err == nil {
-		return nil
+	if err == nil || len(r.secrets) == 0 {
+		return err
+	}
+	if c, ok := r.scrubStruct(err); ok {
+		return c
 	}
 	msg := err.Error()
+	if u := errors.Unwrap(err); u != nil && strings.HasSuffix(msg, u.Error()) {
+		return fmt.Errorf("%s%w", r.scrub(strings.TrimSuffix(msg, u.Error())), r.scrubErr(u))
+	}
 	if clean := r.scrub(msg); clean != msg {
-		return &scrubbedError{msg: clean, err: err}
+		return errors.New(clean)
 	}
 	return err
 }
 
-// scrubbedError prints only its scrubbed text, with %v, %+v, %s or %#v.
-type scrubbedError struct {
-	msg string
-	err error
+// scrubStruct copies an error that is a pointer to a struct with only exported fields,
+// scrubbing its strings, string slices and wrapped errors. It reports false for any
+// other error, or when the copy still prints a secret.
+func (r *redactor) scrubStruct(err error) (error, bool) {
+	v := reflect.ValueOf(err)
+	if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
+		return nil, false
+	}
+	cp := reflect.New(v.Elem().Type())
+	cp.Elem().Set(v.Elem())
+	errType := reflect.TypeOf((*error)(nil)).Elem()
+	for i := 0; i < cp.Elem().NumField(); i++ {
+		f := cp.Elem().Field(i)
+		if !f.CanSet() {
+			return nil, false
+		}
+		switch {
+		case f.Kind() == reflect.String:
+			f.SetString(r.scrub(f.String()))
+		case f.Kind() == reflect.Slice && f.Type().Elem().Kind() == reflect.String:
+			s := reflect.MakeSlice(f.Type(), f.Len(), f.Len())
+			for j := 0; j < f.Len(); j++ {
+				s.Index(j).SetString(r.scrub(f.Index(j).String()))
+			}
+			f.Set(s)
+		case f.Type() == errType && !f.IsNil():
+			f.Set(reflect.ValueOf(r.scrubErr(f.Interface().(error))))
+		}
+	}
+	c, ok := cp.Interface().(error)
+	if !ok || r.scrub(c.Error()) != c.Error() {
+		return nil, false
+	}
+	return c, true
 }
-
-func (e *scrubbedError) Error() string    { return e.msg }
-func (e *scrubbedError) GoString() string { return e.msg }
-func (e *scrubbedError) Unwrap() error    { return e.err }

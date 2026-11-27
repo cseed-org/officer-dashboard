@@ -31,8 +31,10 @@ type Options struct {
 	// dashboard step instead.
 	AllowOrgSessionWrite bool
 	// StateDir is where setup keeps restore records: the old values of any setting a
-	// write changed that it should not have. It is required for the two opt-in writes
-	// above, and every run refuses to start while a record is there.
+	// write changed that it should not have. It is required for every apply, so that a
+	// record left by any earlier run is always found: the command must always pass the
+	// same directory (the install's deploy directory). Every run refuses to start while
+	// a record is there.
 	StateDir string
 }
 
@@ -141,22 +143,11 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 		p.Blockers = append(p.Blockers, "an earlier run changed Cloudflare settings it should not have; their old values are in "+file+
 			". Restore them in the dashboard, then delete that file and run setup again")
 	}
-	needState := func(what string) {
-		if opt.StateDir == "" {
-			p.Blockers = append(p.Blockers, what+" needs a state directory for restore records (Options.StateDir)")
-		}
+	if opt.StateDir == "" {
+		p.Blockers = append(p.Blockers, "Options.StateDir is required: it is where setup finds the restore records of earlier runs")
 	}
 
-	// 1. Account-wide Access settings and identities. None of these publishes anything.
-	if creating("zero_trust.session") {
-		if opt.AllowOrgSessionWrite {
-			add(Step{Kind: StepSession, ActionID: "zero_trust.session", Title: "set the global session duration to " + d.OrgSessionDuration + " (keeping every other organization setting)"})
-			needState("writing the Zero Trust organization")
-		} else {
-			p.Manual = append(p.Manual, "the Zero Trust organization has no global session duration. Setup does not write the organization by default. "+
-				"In Zero Trust: Access controls → Access settings → Set your global session duration → Edit → 1 month → Save (docs/deploy/cloudflare.md step 3)")
-		}
-	}
+	// 1. Identities. None of these publishes anything.
 	if creating("access.idp") {
 		add(Step{Kind: StepIdP, ActionID: "access.idp", Title: "add the One-time PIN identity provider"})
 	}
@@ -242,11 +233,17 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 		add(Step{Kind: StepDNS, ActionID: "dns", Title: "create the proxied CNAME " + d.Hostname + " → <tunnel>.cfargotunnel.com", Needs: append([]string{"tunnel.route"}, publishNeeds...)})
 	}
 
-	// 5. Bot Fight Mode is zone-wide: only with the explicit option.
+	// 5. Opt-in writes to account-wide and zone-wide settings, last of all: neither
+	// protects the hostname, so a refused or damaging write never delays what does.
+	// The dry run reports an unset global session as manual; only the option writes it.
+	sessionStep := false
+	if a := by["zero_trust.session"]; a.Kind == plan.Manual && o.Org.Found && o.Org.Unknown == "" && o.Org.SessionDuration == "" && opt.AllowOrgSessionWrite {
+		add(Step{Kind: StepSession, ActionID: "zero_trust.session", Title: "set the global session duration to " + d.OrgSessionDuration + " (keeping every other organization setting)"})
+		sessionStep = true
+	}
 	if bfm := by["zone.bot_fight_mode"]; bfm.Kind == plan.Drift && o.BotFightMode.On != nil && *o.BotFightMode.On {
 		if opt.AllowBotFightModeOff {
 			add(Step{Kind: StepBotFightMode, ActionID: "zone.bot_fight_mode", Title: "turn Bot Fight Mode off for the whole zone (keeping every other bot setting)"})
-			needState("turning Bot Fight Mode off")
 			others := "none"
 			if len(f.OtherHostnames) > 0 {
 				others = strings.Join(f.OtherHostnames, ", ")
@@ -301,7 +298,7 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 
 	for _, a := range actions {
 		switch {
-		case a.Kind == plan.Manual:
+		case a.Kind == plan.Manual && !(a.ID == "zero_trust.session" && sessionStep):
 			p.Manual = append(p.Manual, a.Resource+" "+a.Name+firstDetail(a))
 		case a.Kind == plan.Create && outOfScope[a.ID]:
 			p.Skipped = append(p.Skipped, fmt.Sprintf("%s %s: not created by this version (the backup Worker comes later)", a.Resource, a.Name))

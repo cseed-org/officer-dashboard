@@ -37,12 +37,12 @@ func TestOrgSessionIsManualByDefault(t *testing.T) {
 	if writeIndex(r.acct.Writes(), http.MethodPut, "/access/organizations") >= 0 {
 		t.Fatal("wrote the Zero Trust organization without the option")
 	}
-	if !strings.Contains(r.out.String(), "manual: the Zero Trust organization has no global session duration") ||
+	if !strings.Contains(r.out.String(), "manual: Global session duration 730h (1 month) (not set") ||
 		!strings.Contains(r.out.String(), "Set your global session duration → Edit → 1 month → Save") {
 		t.Errorf("no manual step:\n%s", r.out.String())
 	}
-	if k := byID(r.preview())["zero_trust.session"].Kind; k != plan.Create {
-		t.Errorf("session %s, want create (left for the person)", k)
+	if k := byID(r.preview())["zero_trust.session"].Kind; k != plan.Manual {
+		t.Errorf("session %s, want manual (left for the person)", k)
 	}
 	// Q-b: the services token follows the docs ("the longest offered").
 	if out.ServicesTokenExpiresAt != "2126-11-27T00:00:00Z" {
@@ -55,10 +55,10 @@ func TestOrgSessionIsManualByDefault(t *testing.T) {
 
 func TestOrgSessionWriteNeedsAStateDirectory(t *testing.T) {
 	r := newRig(t, cffake.Fresh())
-	r.opt.AllowOrgSessionWrite = true
+	r.opt.AllowOrgSessionWrite, r.opt.StateDir = true, ""
 	_, err := r.apply(context.Background())
 	var blocked *BlockedError
-	if !errors.As(err, &blocked) || !strings.Contains(err.Error(), "needs a state directory") || len(r.acct.Writes()) != 0 {
+	if !errors.As(err, &blocked) || !strings.Contains(err.Error(), "Options.StateDir is required") || len(r.acct.Writes()) != 0 {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -135,17 +135,19 @@ func TestOrgDamageIsRecordedWithOldValuesAndBlocksReruns(t *testing.T) {
 }
 
 func TestOrgSessionSetSinceThePreviewIsNotChanged(t *testing.T) {
-	// The recheck right before the PUT (reviewer's M06): someone set the session after
-	// the engine's own discovery and preflight read the organization.
+	// The recheck right before the PUT (reviewer's M06): someone sets the session while
+	// setup is busy with earlier steps. The session step is last, so the DNS record (the
+	// step before it) is where the change lands.
 	r := newRig(t, cffake.Fresh())
 	r.opt.AllowOrgSessionWrite = true
-	r.opt.StateDir = t.TempDir()
-	set := map[string]any{}
-	for k, v := range org(r) {
-		set[k] = v
-	}
-	set["session_duration"] = "24h"
-	r.acct.Inject(cffake.Injection{Method: "GET", Path: acctPath + "/access/organizations", Skip: 3, Result: set}) // the preview, the engine's discovery, its preflight
+	r.acct.Inject(cffake.Injection{Method: "POST", Path: zonePath + "/dns_records", After: func() {
+		set := map[string]any{}
+		for k, v := range org(r) {
+			set[k] = v
+		}
+		set["session_duration"] = "24h"
+		r.acct.Set(acctPath+"/access/organizations", cffake.Response{Result: set})
+	}})
 	_, err := r.apply(context.Background())
 	var rej *RejectedError
 	if !errors.As(err, &rej) || !strings.Contains(err.Error(), "never changes one that is set") {

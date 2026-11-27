@@ -61,8 +61,6 @@ type VerifyError struct {
 	ResourceID string
 	Expected   string
 	Got        []string
-	// Advice is what the person should do now, when the resource is risky as created.
-	Advice string
 }
 
 func (e *VerifyError) Error() string {
@@ -70,12 +68,8 @@ func (e *VerifyError) Error() string {
 	if id == "" {
 		id = "(no ID)"
 	}
-	msg := fmt.Sprintf("%s: the write succeeded, but reading it back does not match. Resource %s; expected %s; Cloudflare now shows:\n    %s\nSetup stopped here; nothing after this step was changed",
+	return fmt.Sprintf("%s: the write succeeded, but reading it back does not match. Resource %s; expected %s; Cloudflare now shows:\n    %s\nSetup stopped here; nothing after this step was changed",
 		e.Step, id, e.Expected, strings.Join(e.Got, "\n    "))
-	if e.Advice != "" {
-		msg += ".\n" + e.Advice
-	}
-	return msg
 }
 
 // SinkError means a secret Cloudflare handed out could not be kept on the host. The run

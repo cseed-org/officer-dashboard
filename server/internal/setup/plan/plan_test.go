@@ -90,7 +90,9 @@ func byID(actions []Action) map[string]Action {
 func TestDiffFreshAccountCreatesEverything(t *testing.T) {
 	got := Diff(desired(t), fresh())
 	s := Summary(got)
-	if s[Drift] != 0 || s[Manual] != 0 || s[Unknowable] != 0 {
+	// The unset global session is the one manual line: setup does not write the
+	// organization unless the apply engine is explicitly allowed to.
+	if s[Drift] != 0 || s[Manual] != 1 || s[Unknowable] != 0 {
 		t.Fatalf("summary %v", s)
 	}
 	for _, a := range got {
@@ -98,6 +100,8 @@ func TestDiffFreshAccountCreatesEverything(t *testing.T) {
 		switch a.ID {
 		case "zone", "token", "zero_trust", "zone.bot_fight_mode":
 			want = OK
+		case "zero_trust.session":
+			want = Manual
 		}
 		if a.Kind != want {
 			t.Errorf("%s: %s, want %s (%v)", a.ID, a.Kind, want, a.Detail)
@@ -151,7 +155,7 @@ func TestDiffTable(t *testing.T) {
 	}{
 		{"no zero trust", func(o *Observed) { o.Org = Org{} }, "zero_trust", Manual, "team name"},
 		{"global session set to 24h", func(o *Observed) { o.Org.SessionDuration = "24h" }, "zero_trust.session", Drift, "never changes a global value"},
-		{"global session unset", func(o *Observed) { o.Org.SessionDuration = "" }, "zero_trust.session", Create, "not set"},
+		{"global session unset", func(o *Observed) { o.Org.SessionDuration = "" }, "zero_trust.session", Manual, "not set"},
 		{"global session 730h written as minutes", func(o *Observed) { o.Org.SessionDuration = "43800m" }, "zero_trust.session", OK, ""},
 		{"token not verified", func(o *Observed) { o.Token = Token{} }, "token", Unknowable, "verify"},
 		{"token disabled", func(o *Observed) { o.Token.Status = "disabled" }, "token", Drift, "disabled"},

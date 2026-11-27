@@ -290,8 +290,11 @@ func Diff(d Desired, o Observed) []Action {
 	case o.Org.Unknown != "" || !o.Org.Found:
 		ses.unknownf("needs the Zero Trust organization")
 	case o.Org.SessionDuration == "":
-		ses.create = true
-		ses.notef("not set (Cloudflare's default is 24h)")
+		// The organization holds account-wide Access settings, so setup leaves this to
+		// the person unless the apply engine is explicitly allowed to write it.
+		ses.manual = true
+		ses.notef("not set (Cloudflare's default is 24h). Setup does not write the Zero Trust organization unless allowed. " +
+			"In Zero Trust: Access controls → Access settings → Set your global session duration → Edit → 1 month → Save (docs/deploy/cloudflare.md step 3)")
 	case !sameDuration(o.Org.SessionDuration, d.OrgSessionDuration):
 		ses.driftf("set to %s; setup never changes a global value that is already set", o.Org.SessionDuration)
 	}

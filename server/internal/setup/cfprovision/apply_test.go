@@ -32,6 +32,7 @@ func newRig(t *testing.T, routes map[string]cffake.Response) *rig {
 	t.Helper()
 	r := &rig{t: t, acct: cffake.NewAccount(routes), sink: &MemorySink{}, d: desired(t, ""), opt: Options{
 		GroupEmails: map[string][]string{plan.GroupOfficers: {"president@example.org"}, plan.GroupLaunchpad: {"mentor@example.org"}},
+		StateDir:    t.TempDir(),
 	}}
 	t.Cleanup(func() {
 		r.acct.Close()
