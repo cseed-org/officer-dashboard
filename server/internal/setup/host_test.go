@@ -353,3 +353,101 @@ func TestHostRejectsBadInput(t *testing.T) {
 		})
 	}
 }
+
+// fullInstall makes a complete install, as TestHostCompleteInstallIsANoOp does.
+func fullInstall(t *testing.T) (string, *memOwner) {
+	t.Helper()
+	dir := deployDir(t)
+	o := &memOwner{}
+	if r := hostCmd(t, o, freshSecrets, append([]string{"--yes", "--deploy-dir", dir, "--secrets-stdin", "--age-recipient", "age1" + strings.Repeat("q", 58)}, freshArgs...)...); r.code != 0 {
+		t.Fatalf("first run: %d %s", r.code, r.stderr)
+	}
+	return dir, o
+}
+
+// Review F-1: an existing install's Compose project name and subnet are never written,
+// even though the shipped .env has both keys commented out. A different value is a
+// conflict; the Compose default counts as the install's current value.
+func TestHostNeverRenamesAnExistingInstall(t *testing.T) {
+	dir, o := fullInstall(t)
+	before, _ := os.ReadFile(filepath.Join(dir, ".env"))
+	r := hostCmd(t, o, "", "--yes", "--deploy-dir", dir, "--compose-project-name", "officer-dashboard-2", "--tunnel-net", "10.250.90")
+	if r.code != 0 {
+		t.Fatalf("exit %d %s", r.code, r.stderr)
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, ".env"))
+	if string(after) != string(before) {
+		t.Fatalf(".env changed:\n%s", r.stdout)
+	}
+	for _, key := range []string{"COMPOSE_PROJECT_NAME", "TUNNEL_NET"} {
+		if !regexp.MustCompile(`conflict\s+\.env ` + key + `\s.*never renames`).MatchString(r.stdout) {
+			t.Errorf("%s conflict not reported:\n%s", key, r.stdout)
+		}
+	}
+	// The same values as the defaults are simply this install's own: nothing to do.
+	r = hostCmd(t, o, "", "--yes", "--deploy-dir", dir, "--compose-project-name", "officer-dashboard", "--tunnel-net", "10.250.89")
+	if r.code != 0 || !strings.Contains(r.stdout, "nothing to do") || strings.Contains(r.stdout, "conflict") {
+		t.Fatalf("exit %d\n%s", r.code, r.stdout)
+	}
+}
+
+// Review F-1: an image pin, or containers and volumes Docker already has for the project
+// (--install-exists, set by scripts/setup), also mark an existing install.
+func TestHostProjectNameOnlyForANewInstall(t *testing.T) {
+	for name, prep := range map[string]func(dir string) []string{
+		"image pin": func(dir string) []string {
+			os.WriteFile(filepath.Join(dir, "prod-image.env"), []byte("DASHBOARD_IMAGE=r.example/d@sha256:"+strings.Repeat("a", 64)+"\n"), 0o600)
+			return nil
+		},
+		"containers or volumes": func(string) []string { return []string{"--install-exists"} },
+		"an existing .env": func(dir string) []string {
+			os.WriteFile(filepath.Join(dir, ".env"), []byte("#COMPOSE_PROJECT_NAME=officer-dashboard\n"), 0o600)
+			return nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := deployDir(t)
+			extra := prep(dir)
+			r := hostCmd(t, &memOwner{}, "", append(append([]string{"--yes", "--deploy-dir", dir, "--compose-project-name", "club-two", "--tunnel-net", "10.250.90"}, extra...), freshArgs...)...)
+			if r.code != 0 {
+				t.Fatalf("exit %d %s", r.code, r.stderr)
+			}
+			f := env(t, filepath.Join(dir, ".env"))
+			if f.Has("COMPOSE_PROJECT_NAME") || f.Has("TUNNEL_NET") {
+				t.Fatalf("an existing install was given a new project or subnet:\n%s", r.stdout)
+			}
+		})
+	}
+}
+
+// Review N-1: the bearer reminder appears only when the bearer file was really written.
+func TestHostBearerReminderOnlyWhenWritten(t *testing.T) {
+	dir := deployDir(t)
+	if r := hostCmd(t, &memOwner{}, "", append([]string{"--dry-run", "--deploy-dir", dir}, freshArgs...)...); strings.Contains(r.stdout, "wrangler secret put") {
+		t.Fatal("a dry run printed the reminder for a bearer it did not write")
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "backup.env.example"))
+	os.WriteFile(filepath.Join(dir, "backup.env"), []byte(strings.Replace(string(raw), "/run/secrets/backup/bearer", "/run/secrets/backup/my-bearer", 1)), 0o600)
+	r := hostCmd(t, &memOwner{}, "", append([]string{"--yes", "--deploy-dir", dir}, freshArgs...)...)
+	if strings.Contains(r.stdout, "wrangler secret put") {
+		t.Fatalf("reminder printed though the bearer lives elsewhere:\n%s", r.stdout)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "secrets/backup/bearer")); err == nil {
+		t.Fatal("a bearer file was written although backup.env points elsewhere")
+	}
+}
+
+// Review F-3 at the command level: updating a key keeps dashboard.env's 0640.
+func TestHostKeepsAnEnvFilesMode(t *testing.T) {
+	dir := deployDir(t)
+	path := filepath.Join(dir, "dashboard.env")
+	raw, _ := os.ReadFile(filepath.Join(dir, "dashboard.env.example"))
+	os.WriteFile(path, raw, 0o640)
+	os.Chmod(path, 0o640)
+	if r := hostCmd(t, &memOwner{}, "", "--yes", "--deploy-dir", dir, "--discord-client-id", "123456789012345678", "--app-url", "https://dash.club.example"); r.code != 0 {
+		t.Fatalf("exit %d %s", r.code, r.stderr)
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o640 {
+		t.Fatalf("mode %04o", info.Mode().Perm())
+	}
+}

@@ -61,7 +61,7 @@ func runHost(_ context.Context, args []string, deps Deps) int {
 		fs.PrintDefaults()
 	}
 	var dir, appURL, backupHost, clientID, ownerID, ownerName, age, project, tunnelNet string
-	var dryRun, yes, fromStdin bool
+	var dryRun, yes, fromStdin, installExists bool
 	rotate := map[string]bool{}
 	fs.StringVar(&dir, "deploy-dir", ".", "the deployment directory (server/deploy)")
 	fs.BoolVar(&dryRun, "dry-run", false, "print the plan and write nothing")
@@ -73,8 +73,9 @@ func runHost(_ context.Context, args []string, deps Deps) int {
 	fs.StringVar(&ownerID, "owner-discord-id", "", "first owner's Discord user ID (BOOTSTRAP_OWNER_DISCORD_ID)")
 	fs.StringVar(&ownerName, "owner-name", "", "first owner's name (BOOTSTRAP_OWNER_NAME)")
 	fs.StringVar(&age, "age-recipient", "", "public age recipient for backups, age1… (BACKUP_AGE_RECIPIENT)")
-	fs.StringVar(&project, "compose-project-name", "", "Compose project name (COMPOSE_PROJECT_NAME), for a second install on this host")
-	fs.StringVar(&tunnelNet, "tunnel-net", "", "first three numbers of the tunnel network (TUNNEL_NET), for a second install on this host")
+	fs.StringVar(&project, "compose-project-name", "", "Compose project name (COMPOSE_PROJECT_NAME), for a second install on this host; written only for a new install")
+	fs.StringVar(&tunnelNet, "tunnel-net", "", "first three numbers of the tunnel network (TUNNEL_NET), for a second install on this host; written only for a new install")
+	fs.BoolVar(&installExists, "install-exists", false, "Docker already has containers or volumes for this install (set by scripts/setup)")
 	fs.Func("rotate", "replace this existing secret (repeatable); its new value must be on --secrets-stdin, except backup-bearer, which is generated", func(name string) error {
 		if _, ok := hostfiles.LookupSecret(name); !ok {
 			return fmt.Errorf("unknown secret %q (known: %s)", name, secretNames())
@@ -195,11 +196,35 @@ func runHost(_ context.Context, args []string, deps Deps) int {
 	if ownerName != "" {
 		files["dashboard.env"] = append(files["dashboard.env"], hostfiles.KV{Key: "BOOTSTRAP_OWNER_NAME", Value: ownerName})
 	}
-	if project != "" {
-		files[".env"] = append(files[".env"], hostfiles.KV{Key: "COMPOSE_PROJECT_NAME", Value: project})
-	}
-	if tunnelNet != "" {
-		files[".env"] = append(files[".env"], hostfiles.KV{Key: "TUNNEL_NET", Value: tunnelNet})
+	// The Compose project name selects the install's data volume, and TUNNEL_NET its
+	// network. Setup writes them only into a .env it is creating for a new install, and
+	// only when the admin passed them; it never picks them itself. For an existing
+	// install (a .env, an image pin, or containers or volumes in Docker), an absent key
+	// means the Compose default, and any other value is a conflict: changing it would
+	// move the install to new, empty volumes.
+	newInstall := !exists(filepath.Join(dir, ".env")) && !exists(filepath.Join(dir, "prod-image.env")) && !installExists
+	var fixedReports []func()
+	for _, k := range []struct{ key, value, def string }{
+		{"COMPOSE_PROJECT_NAME", project, "officer-dashboard"},
+		{"TUNNEL_NET", tunnelNet, "10.250.89"},
+	} {
+		switch {
+		case k.value == "":
+		case newInstall:
+			files[".env"] = append(files[".env"], hostfiles.KV{Key: k.key, Value: k.value})
+		default:
+			cur, from := current(".env", k.key), "set in .env"
+			if cur == "" {
+				cur, from = k.def, "the Compose default"
+			}
+			k := k
+			if k.value == cur {
+				fixedReports = append(fixedReports, func() { pl.Report(hostfiles.Exists, ".env", k.key, "") })
+			} else {
+				detail := fmt.Sprintf("this install uses %q (%s); setup never renames an existing install, which would move it to new, empty volumes; kept", cur, from)
+				fixedReports = append(fixedReports, func() { pl.Report(hostfiles.Conflict, ".env", k.key, detail) })
+			}
+		}
 	}
 	var planned []hostfiles.Secret
 	for _, s := range hostfiles.Secrets {
@@ -222,6 +247,11 @@ func runHost(_ context.Context, args []string, deps Deps) int {
 	}
 	for _, name := range []string{".env", "dashboard.env", "backup.env"} {
 		pl.Env(name, name+".example", files[name])
+		if name == ".env" {
+			for _, report := range fixedReports {
+				report()
+			}
+		}
 	}
 	for _, s := range planned {
 		pl.Secret(s)
@@ -247,12 +277,22 @@ func runHost(_ context.Context, args []string, deps Deps) int {
 			return 1
 		}
 		fmt.Fprintf(deps.Stdout, "Wrote %d changes.\n", p.Changes())
-	}
-	if generatedBearer && p.Changes() > 0 {
-		fmt.Fprintln(deps.Stdout, "The backup bearer secret is new: give the backup Worker the same value from secrets/backup/bearer\n"+
-			"(npx wrangler secret put BACKUP_BEARER_SECRET, fresh-install.md step 4.5), or it refuses the backups.")
+		if generatedBearer && wrote(p, "secrets/backup/bearer") {
+			fmt.Fprintln(deps.Stdout, "The backup bearer secret is new: give the backup Worker the same value from secrets/backup/bearer\n"+
+				"(npx wrangler secret put BACKUP_BEARER_SECRET, fresh-install.md step 4.5), or it refuses the backups.")
+		}
 	}
 	return 0
+}
+
+// wrote reports whether the applied plan created or replaced the file at rel.
+func wrote(p *hostfiles.Plan, rel string) bool {
+	for _, a := range p.Actions {
+		if a.Path == rel && a.Key == "" && (a.Kind == hostfiles.Create || a.Kind == hostfiles.Update) {
+			return true
+		}
+	}
+	return false
 }
 
 // readSecrets reads {"name": "value", ...} from r. Only names setup knows are accepted,

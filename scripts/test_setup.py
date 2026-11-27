@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -30,7 +31,8 @@ class FakeDocker:
         self.security = ['name=seccomp,profile=builtin', 'name=cgroupns']
         self.compose = True
         self.daemon = True
-        self.projects = []
+        self.compose_containers = []  # label dicts of containers Docker has
+        self.volumes = []             # label dicts of volumes Docker has
         self.networks = []
         self.digest = 'sha256:' + 'b' * 64
         self.calls = []
@@ -49,8 +51,16 @@ class FakeDocker:
             return 'Docker Compose version v2.40.0'
         if args[:4] == ['docker', 'buildx', 'imagetools', 'inspect']:
             return json.dumps({'digest': self.digest})
-        if args[:3] == ['docker', 'compose', 'ls']:
-            return json.dumps(self.projects)
+        if args[:3] == ['docker', 'ps', '-a']:
+            wanted = args[args.index('--filter') + 1].split('=', 1)[1].split('=', 1)[1]
+            return '\n'.join(str(i) for i, c in enumerate(self.compose_containers)
+                             if c.get('com.docker.compose.project') == wanted)
+        if args[:2] == ['docker', 'inspect']:
+            ids = [a for a in args[2:] if a.isdigit()]
+            return '\n'.join(json.dumps(self.compose_containers[int(i)]) for i in ids)
+        if args[:3] == ['docker', 'volume', 'ls']:
+            wanted = args[args.index('--filter') + 1].split('=', 1)[1].split('=', 1)[1]
+            return '\n'.join('v%d' % i for i, v in enumerate(self.volumes) if v.get('com.docker.compose.project') == wanted)
         if args[:3] == ['docker', 'network', 'ls']:
             return '\n'.join(str(i) for i in range(len(self.networks)))
         if args[:3] == ['docker', 'network', 'inspect']:
@@ -226,24 +236,31 @@ class SetupTests(unittest.TestCase):
         self.assertIn('--yes', tail)
         self.assertEqual(tail[tail.index('--app-url') + 1], 'https://dash.club.example')
 
-    def test_preview_is_read_only_and_token_never_on_a_command_line(self):
+    def test_preview_runs_unprivileged_and_sees_no_secrets(self):
+        # Review F-5: the networked preview gets only the tunnel token file and settings.
         self.pin()
         token = self.deploy.parent / 'cf token'
         token.write_text(TOKEN + '\n')
         (self.deploy / '.env').write_text('APP_URL=https://dash.club.example\nTUNNEL_TOKEN_FILE=./secrets/tunnel-token\n')
+        (self.deploy / 'secrets').mkdir()
+        (self.deploy / 'secrets/tunnel-token').write_text('tunnel')
         environ = dict(os.environ)
         self.assertEqual(self.launch('preview', '--token-file', str(token)), 0, self.err)
         args, stdin = self.container()
         for call in self.docker.calls:
             self.assertFalse(any(TOKEN in a for a in call), 'token on a command line: %r' % call)
         self.assertEqual(dict(os.environ), environ, 'token placed in the environment')
-        self.assertTrue(stdin is None or TOKEN not in stdin)
+        self.assertEqual(stdin.strip(), TOKEN, 'the token goes over stdin')
+        self.assertIn('CLOUDFLARE_SETUP_TOKEN_FILE=/dev/stdin', args)
+        self.assertEqual(args[args.index('--user') + 1], '65532:65532')
+        self.assertNotIn('--cap-add', args)
+        self.assertEqual(args[args.index('--cap-drop') + 1], 'ALL')
         mounts = [mount_fields(args[i + 1]) for i, a in enumerate(args) if a == '--mount']
-        self.assertTrue(all('readonly' in m for m in mounts), mounts)
-        self.assertIn({'type': 'bind', 'source': str(token), 'target': '/run/setup/cloudflare-token', 'readonly': True}, mounts)
-        self.assertIn('CLOUDFLARE_SETUP_TOKEN_FILE=/run/setup/cloudflare-token', args)
+        self.assertEqual(mounts, [{'type': 'bind', 'source': str(self.deploy / 'secrets/tunnel-token'),
+                                   'target': '/run/setup/tunnel-token', 'readonly': True}],
+                         'only the tunnel token file, never the deploy directory or secrets/')
+        self.assertIn('TUNNEL_TOKEN_FILE=/run/setup/tunnel-token', args)
         self.assertIn('APP_URL=https://dash.club.example', args)
-        self.assertIn('TUNNEL_TOKEN_FILE=/deploy/secrets/tunnel-token', args)
         tail = args[args.index(PIN) + 1:]
         self.assertEqual(tail[:2], ['setup', '--dry-run'])
         self.assertNotEqual(args[args.index('--network') + 1], 'none', 'the preview reads Cloudflare')
@@ -255,6 +272,7 @@ class SetupTests(unittest.TestCase):
         self.assertIn('-t', args)
         self.assertIn('-i', args)
         self.assertFalse(any('CLOUDFLARE_SETUP_TOKEN_FILE' in a for a in args))
+        self.assertFalse(any(a == '--mount' for a in args), 'no tunnel token file, nothing to mount')
 
     def test_secrets_go_over_stdin_never_argv(self):
         self.pin()
@@ -291,44 +309,121 @@ class SetupTests(unittest.TestCase):
         mount = mount_fields(self.container()[0][self.container()[0].index('--mount') + 1])
         self.assertEqual(mount['source'], str(self.deploy))
 
-    # ── Compose project name and subnet ────────────────────────────────────────────
+    # ── Compose project name and subnet (review F-1) ───────────────────────────────
+
+    def project(self, working_dir, project='officer-dashboard'):
+        """A container Docker has for project, started from working_dir."""
+        self.docker.compose_containers.append({'com.docker.compose.project': project,
+                                               'com.docker.compose.project.working_dir': str(working_dir)})
+        self.docker.networks.append({'Name': project + '_tunnel', 'Labels': {'com.docker.compose.project': project},
+                                     'IPAM': {'Config': [{'Subnet': '10.250.89.0/28'}]}})
+
+    def assert_stopped_before_writing(self, code):
+        self.assertEqual(code, 1, self.out)
+        self.assertIn('--compose-project-name', self.err)
+        self.assertIn('--tunnel-net', self.err)
+        self.assertEqual(self.docker.containers, [], 'setup ran although it had to stop')
+        self.assertFalse((self.deploy / '.env').exists())
 
     def test_defaults_left_alone_when_free(self):
         self.pin()
         self.assertEqual(self.launch('host', '--yes'), 0, self.err)
         args, _ = self.container()
-        self.assertNotIn('--compose-project-name', args)
-        self.assertNotIn('--tunnel-net', args)
+        for flag in ['--compose-project-name', '--tunnel-net', '--install-exists']:
+            self.assertNotIn(flag, args)
 
-    def test_picks_free_project_name_and_subnet_beside_another_install(self):
+    def test_never_picks_a_name_beside_another_install(self):
+        # A fresh deploy directory; another install already runs under the defaults.
+        other = Path(self.temp.name) / 'other install/server/deploy'
+        other.mkdir(parents=True)
+        self.project(other)
+        self.assert_stopped_before_writing(self.launch('host', '--yes', '--image', PIN))
+        self.assertIn('officer-dashboard', self.err)
+        self.assertIn(str(other), self.err)
+        self.assertIn('10.250.89', self.err)
+        self.assertFalse((self.deploy / 'prod-image.env').exists(), 'pin written before stopping')
+
+    def test_explicit_values_are_passed_on(self):
+        other = Path(self.temp.name) / 'other'
+        other.mkdir()
+        self.project(other)
+        code = self.launch('host', '--yes', '--image', PIN, '--compose-project-name', 'club-two', '--tunnel-net', '10.250.90')
+        self.assertEqual(code, 0, self.err)
+        args, _ = self.container()
+        tail = args[args.index(PIN) + 1:]
+        self.assertEqual(tail[tail.index('--compose-project-name') + 1], 'club-two')
+        self.assertEqual(tail[tail.index('--tunnel-net') + 1], '10.250.90')
+        self.assertNotIn('--install-exists', tail, 'club-two has nothing in Docker yet')
+
+    def test_a_used_subnet_alone_also_stops(self):
+        self.docker.networks.append({'Name': 'lan', 'Labels': {}, 'IPAM': {'Config': [{'Subnet': '10.250.89.0/24'}]}})
+        self.assert_stopped_before_writing(self.launch('host', '--yes', '--image', PIN))
+        self.assertIn('lan', self.err)
+
+    def test_running_install_started_by_the_documented_command(self):
+        # `docker compose ... up -d` run from the deploy directory: its own stack.
         self.pin()
-        self.docker.projects = [{'Name': 'officer-dashboard', 'Status': 'running(3)', 'ConfigFiles': '/srv/other/server/deploy/compose.cloudflare.yml'}]
-        self.docker.networks = [
-            {'Name': 'officer-dashboard_tunnel', 'Labels': {'com.docker.compose.project': 'officer-dashboard'}, 'IPAM': {'Config': [{'Subnet': '10.250.89.0/28'}]}},
-            {'Name': 'lan', 'Labels': {}, 'IPAM': {'Config': [{'Subnet': '10.250.90.0/24'}]}},
-        ]
+        self.project(self.deploy)
+        self.docker.volumes.append({'com.docker.compose.project': 'officer-dashboard'})
         self.assertEqual(self.launch('host', '--yes'), 0, self.err)
         args, _ = self.container()
-        self.assertEqual(args[args.index('--compose-project-name') + 1], 'officer-dashboard-2')
-        self.assertEqual(args[args.index('--tunnel-net') + 1], '10.250.91')
+        self.assertNotIn('--compose-project-name', args)
+        self.assertNotIn('--tunnel-net', args)
+        self.assertIn('--install-exists', args)
 
-    def test_own_running_project_is_not_a_collision(self):
+    def test_install_reached_through_a_symlink_is_recognised(self):
+        # Compose recorded the path through a symlink; setup was given the real path.
+        link = Path(self.temp.name) / 'link'
+        try:
+            os.symlink(self.install, link)
+        except OSError as error:
+            self.skipTest('no symlinks: %s' % error)
         self.pin()
-        self.docker.projects = [{'Name': 'officer-dashboard', 'ConfigFiles': str(self.deploy / 'compose.cloudflare.yml')}]
-        self.docker.networks = [{'Name': 'officer-dashboard_tunnel', 'Labels': {'com.docker.compose.project': 'officer-dashboard'}, 'IPAM': {'Config': [{'Subnet': '10.250.89.0/28'}]}}]
+        self.project(link / 'server/deploy')
         self.assertEqual(self.launch('host', '--yes'), 0, self.err)
         args, _ = self.container()
         self.assertNotIn('--compose-project-name', args)
-        self.assertNotIn('--tunnel-net', args)
+        self.assertIn('--install-exists', args)
+        # And the other way round: setup reached through the symlink.
+        self.docker.containers.clear()
+        self.docker.compose_containers[0]['com.docker.compose.project.working_dir'] = str(self.deploy)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.ExitStack() as stack:
+            for name, value in [('run', self.docker.run), ('interactive', self.docker.interactive),
+                                ('is_linux', lambda: True), ('is_root', lambda: True),
+                                ('which', lambda name: '/usr/bin/' + name), ('SELINUX_ENFORCE', self.selinux),
+                                ('stdin_is_tty', lambda: False)]:
+                stack.enter_context(patch.object(setup, name, value))
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(err))
+            code = setup.main(['--deploy-dir', str(link / 'server/deploy'), 'host', '--yes'])
+        self.assertEqual(code, 0, err.getvalue())
 
-    def test_values_already_in_env_are_kept(self):
+    def test_moved_checkout_stops_instead_of_renaming(self):
+        # The stack was created from the old path, which no longer exists.
         self.pin()
-        (self.deploy / '.env').write_text('COMPOSE_PROJECT_NAME=officer-dashboard\nTUNNEL_NET=10.250.89\n')
-        self.docker.projects = [{'Name': 'officer-dashboard', 'ConfigFiles': '/srv/other/compose.cloudflare.yml'}]
+        self.project(Path(self.temp.name) / 'old place/server/deploy')
+        code = self.launch('host', '--yes')
+        self.assertEqual(code, 1)
+        self.assertIn('--compose-project-name', self.err)
+        self.assertEqual(self.docker.containers, [])
+        # Confirming the current values goes ahead, and tells Go the install exists.
+        code = self.launch('host', '--yes', '--compose-project-name', 'officer-dashboard', '--tunnel-net', '10.250.89')
+        self.assertEqual(code, 0, self.err)
+        self.assertIn('--install-exists', self.container()[0])
+
+    def test_values_already_in_env_count_as_given(self):
+        self.pin()
+        (self.deploy / '.env').write_text('COMPOSE_PROJECT_NAME=club-two\nTUNNEL_NET=10.250.91\n')
+        self.project(Path(self.temp.name) / 'elsewhere')
         self.assertEqual(self.launch('host', '--yes'), 0, self.err)
         args, _ = self.container()
-        self.assertNotIn('--compose-project-name', args)
-        self.assertNotIn('--tunnel-net', args)
+        self.assertNotIn('--compose-project-name', args, 'nothing to pass: .env already says')
+
+    def test_pin_is_written_only_after_setup_succeeds(self):
+        self.docker.exit = 1
+        self.assertEqual(self.launch('host', '--yes', '--image', 'registry.example.org/club/dashboard'), 1)
+        self.assertFalse((self.deploy / 'prod-image.env').exists())
 
     # ── systemd units ──────────────────────────────────────────────────────────────
 
@@ -372,8 +467,18 @@ class SetupTests(unittest.TestCase):
         self.assertEqual((self.units / 'officer-dashboard-update.timer').stat().st_mtime_ns, before.st_mtime_ns)
         self.assertNotIn(['systemctl', 'daemon-reload'], self.docker.calls, 'nothing changed, nothing to reload')
 
+    def test_hand_rendered_unit_with_the_template_comments_is_the_same(self):
+        # Review N-6: the documented sed keeps the template's comments; that is not a conflict.
+        self.units = self.deploy.parent / 'systemd units'
+        self.units.mkdir()
+        template = (self.deploy / 'officer-dashboard-update.service').read_text()
+        (self.units / 'officer-dashboard-update.service').write_text(template.replace('@INSTALL_DIR@', self.unit_install))
+        self.assertEqual(self.install_units(), 0, self.err)
+        self.assertNotIn('conflict', self.out)
+        self.assertIn('exists', self.out)
+
     def test_units_refuse_paths_systemd_cannot_hold(self):
-        for bad in ['relative/path', '/a\\b', '/a\nb']:
+        for bad in ['relative/path', '/a\\b', '/a\nb', '/srv/$HOME', '/srv/"q"']:
             with self.subTest(path=bad):
                 self.assertEqual(self.launch('install-units', '--unit-dir', str(self.deploy), '--install-dir', bad), 1)
 
@@ -383,7 +488,7 @@ class SetupTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('systemd-analyze'), 'systemd-analyze not installed')
     def test_rendered_unit_passes_systemd_analyze_verify(self):
-        for install in ['/srv/club dashboard', '/srv/100% club']:
+        for install in ['/opt/club-dashboard', '/srv/club dashboard', '/srv/100% club']:
             with self.subTest(install=install):
                 units = Path(tempfile.mkdtemp(dir=self.temp.name))
                 service = units / 'officer-dashboard-update.service'
@@ -398,5 +503,22 @@ class SetupTests(unittest.TestCase):
                 self.assertEqual(problems, [], result.stderr)
 
 
+class BytecodeTests(unittest.TestCase):
+    def test_update_and_setup_write_no_bytecode_beside_themselves(self):
+        # Review N-3: the updater runs as root from the production checkout every five
+        # minutes; importing hostlib must not leave scripts/__pycache__ there.
+        with tempfile.TemporaryDirectory(dir=os.environ.get('PANE_SCRATCH_DIR')) as temp:
+            scripts = Path(temp) / 'scripts'
+            scripts.mkdir()
+            for name in ['update', 'setup', 'hostlib.py']:
+                shutil.copy(ROOT / 'scripts' / name, scripts / name)
+            for name in ['update', 'setup']:
+                result = subprocess.run([sys.executable, str(scripts / name), '--help'], capture_output=True, text=True,
+                                        env={k: v for k, v in os.environ.items() if k != 'PYTHONDONTWRITEBYTECODE'})
+                self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((scripts / '__pycache__').exists())
+
+
 if __name__ == '__main__':
     unittest.main()
+

@@ -11,6 +11,7 @@ import sys
 import time
 import urllib.request
 
+sys.dont_write_bytecode = True  # never leave __pycache__ in the production checkout
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hostlib import dotenv, persist, repository, run, sync_directory  # noqa: E402  (shared with scripts/setup)
 

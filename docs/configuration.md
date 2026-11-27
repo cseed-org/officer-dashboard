@@ -304,17 +304,27 @@ host, pins the image, and runs `dashboard setup` from that image with
 | `scripts/setup check [--image IMAGE]` | checks the host: Linux, root, Docker with the Compose plugin, the deploy directory and the image pin. Stops on rootless Docker, `userns-remap` and SELinux enforcing, which break the UID 10001 and 65532 file owners the containers need |
 | `scripts/setup host --dry-run` | prints what `host --yes` would write. The deploy directory is mounted read-only, and the container keeps only the read capability it needs to compare the secret files |
 | `scripts/setup host --yes [--secret NAME=FILE]…` | writes `prod-image.env` when it is missing, then the env files and secret files listed below. Only this phase can write: it runs as root in the container with just `CHOWN`, `DAC_OVERRIDE` and `FOWNER`, and no network |
-| `scripts/setup preview [--token-file FILE]` | the read-only [Cloudflare preview](#setup-preview-dashboard-setup---dry-run), with `APP_URL`, `BACKUP_SINK_URL` and the tunnel token file taken from the deploy directory. The token file is mounted read-only. Without one, setup asks for the token in a terminal |
+| `scripts/setup preview [--token-file FILE]` | the read-only [Cloudflare preview](#setup-preview-dashboard-setup---dry-run). It runs as cloudflared's UID 65532 with no capabilities, and sees only `APP_URL`, `BACKUP_SINK_URL` and the tunnel token file (read-only, for the tunnel ID); neither the deploy directory nor `secrets/` is mounted. The API token goes to it on standard input. Without a token file, setup asks for the token in a terminal |
 | `scripts/setup install-units [--enable-updates]` | installs the updater service, rendered for this checkout's path, and its timer. It does not turn on automatic updates unless you pass `--enable-updates` or answer yes |
 
 `host` takes the values for the env files as flags: `--app-url`,
 `--backup-hostname`, `--discord-client-id`, `--owner-discord-id`, `--owner-name`
 and `--age-recipient`. It writes the existing keys `APP_URL`, `TUNNEL_TOKEN_FILE`,
 `DISCORD_CLIENT_ID`, `BOOTSTRAP_OWNER_DISCORD_ID`, `BOOTSTRAP_OWNER_NAME`,
-`BACKUP_SINK_URL`, `BACKUP_AGE_RECIPIENT` and the `*_FILE` paths. It writes
-`COMPOSE_PROJECT_NAME` and `TUNNEL_NET` only when another install on the host
-already uses their defaults. Each env file is created from its `*.example`
-template when it is missing, with mode 0600.
+`BACKUP_SINK_URL`, `BACKUP_AGE_RECIPIENT` and the `*_FILE` paths. Each env file
+is created from its `*.example` template when it is missing, with mode 0600; an
+existing file keeps its mode and owner. A symlinked env file, secret file or
+secret directory is reported and left alone.
+
+Setup never chooses `COMPOSE_PROJECT_NAME` or `TUNNEL_NET`: the project name
+selects the install's data volume. It writes them only when you pass
+`--compose-project-name` and `--tunnel-net` for a new install (no `.env`, no
+`prod-image.env`, nothing in Docker yet). On an existing install an unset key
+means the Compose default, and a different value is reported as a conflict. If
+Docker already uses the values in effect for something setup cannot prove is
+this install (every container of the project started from this deploy
+directory), setup stops before writing anything, lists what uses them, and asks
+for both values.
 
 Secrets are never flags. `--secret NAME=FILE` reads a file on the host, and
 `--secret NAME=-` asks without echo. The values go to the container on standard

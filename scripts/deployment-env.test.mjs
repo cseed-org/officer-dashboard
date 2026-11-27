@@ -90,7 +90,8 @@ test("every env key `dashboard setup host` writes is documented and templated", 
     "dashboard.env": template,
     "backup.env": backupTemplate,
   };
-  const written = [...host.matchAll(/Key: "([A-Z][A-Z0-9_]+)"/g)].map((m) => m[1]);
+  const written = [...host.matchAll(/(?:Key: |\{)"([A-Z][A-Z0-9_]+)"/g)].map((m) => m[1]);
+  assert.ok(written.includes("COMPOSE_PROJECT_NAME") && written.includes("TUNNEL_NET"), "the Compose keys setup may write are extracted too");
   assert.ok(written.length >= 8, "the keys setup writes should be extracted from host.go");
   const all = Object.values(templates).join("\n");
   assert.deepEqual(written.filter((key) => !configuration.includes(`\`${key}\``)), [], "document in docs/configuration.md");

@@ -149,12 +149,22 @@ Run as root, from any directory. Read the plan first, then write it:
 
 ```sh
 <install-dir>/scripts/setup check --image ghcr.io/cseed-org/officer-dashboard
-<install-dir>/scripts/setup host --dry-run --image ghcr.io/cseed-org/officer-dashboard   --app-url https://officers.example.org --discord-client-id <client id>   --owner-discord-id <your Discord user ID> --owner-name "<your name>"   --age-recipient <age1… public recipient from step 4>
-<install-dir>/scripts/setup host --yes --image ghcr.io/cseed-org/officer-dashboard   --app-url https://officers.example.org --discord-client-id <client id>   --owner-discord-id <your Discord user ID> --owner-name "<your name>"   --age-recipient <age1… public recipient from step 4>   --secret discord-client-secret=/root/setup/discord-client-secret   --secret tunnel-token=/root/setup/tunnel-token   --secret backup-access-client-id=/root/setup/backup-access-client-id   --secret backup-access-client-secret=/root/setup/backup-access-client-secret
+<install-dir>/scripts/setup host --dry-run --image ghcr.io/cseed-org/officer-dashboard \
+  --app-url https://officers.example.org --discord-client-id <client id> \
+  --owner-discord-id <your Discord user ID> --owner-name "<your name>" \
+  --age-recipient <age1… public recipient from step 4>
+<install-dir>/scripts/setup host --yes --image ghcr.io/cseed-org/officer-dashboard \
+  --app-url https://officers.example.org --discord-client-id <client id> \
+  --owner-discord-id <your Discord user ID> --owner-name "<your name>" \
+  --age-recipient <age1… public recipient from step 4> \
+  --secret discord-client-secret=/root/setup/discord-client-secret \
+  --secret tunnel-token=/root/setup/tunnel-token \
+  --secret backup-access-client-id=/root/setup/backup-access-client-id \
+  --secret backup-access-client-secret=/root/setup/backup-access-client-secret
 ```
 
 `--image` names the image to use, and setup pins its approved `:prod` digest
-in `prod-image.env`. A maintainer must approve the image first; see the
+in `prod-image.env` once the files are written. A maintainer must approve the image first; see the
 [approval workflow](#github-approval-gate-repository-settings-requires-approval).
 Setup never replaces an existing pin.
 
@@ -167,10 +177,17 @@ Setup leaves alone any key or file you already have, and reports it. Lines marke
 `missing` name the flag that supplies the value. Run setup again with that flag;
 the steps already done are kept.
 
-If another install on the host already uses the default Compose project name
-or tunnel subnet, setup picks free ones and writes them to `.env`. The `check`
-step stops on rootless Docker, `userns-remap` and SELinux enforcing; each
-message says what to change.
+Setup never chooses the Compose project name or the tunnel subnet. If Docker
+already uses the defaults (`officer-dashboard` and `10.250.89`) for something
+setup cannot prove is this install, it stops before writing anything and shows
+what uses them. For a second install on the host, pass a free name and subnet
+with `--compose-project-name` and `--tunnel-net`; setup writes them into the
+new `.env`. If the resources are this install's own, for example after moving
+the checkout, pass its current values to confirm; nothing is renamed. Setup
+never changes either value on an existing install.
+
+The `check` step stops on rootless Docker, `userns-remap` and SELinux
+enforcing; each message says what to change.
 
 Delete the files in your private directory afterwards. Then continue at step 6.
 For every option, see

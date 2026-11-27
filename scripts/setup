@@ -24,6 +24,7 @@ from shutil import which
 import subprocess
 import sys
 
+sys.dont_write_bytecode = True  # never leave __pycache__ in the deploy checkout
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hostlib import PINNED, dotenv, persist, repository, run  # noqa: E402  (shared with scripts/update)
 
@@ -31,7 +32,8 @@ SELINUX_ENFORCE = Path('/sys/fs/selinux/enforce')
 DEFAULT_PROJECT = 'officer-dashboard'  # compose.cloudflare.yml: name: ${COMPOSE_PROJECT_NAME:-officer-dashboard}
 DEFAULT_NET = '10.250.89'              # compose.cloudflare.yml: ${TUNNEL_NET:-10.250.89}
 CONTAINER_DEPLOY = '/deploy'
-CONTAINER_TOKEN = '/run/setup/cloudflare-token'
+CONTAINER_TUNNEL_TOKEN = '/run/setup/tunnel-token'
+CLOUDFLARED_IDS = '65532:65532'  # compose.cloudflare.yml, cloudflared: user: "65532:65532"
 UPDATE_UNITS = ['officer-dashboard-update.service', 'officer-dashboard-update.timer']
 
 ROOTLESS = ('Docker runs rootless on this host. The containers read files owned by UID 10001 (dashboard and '
@@ -107,9 +109,9 @@ def check(deploy):
                          'or run the scripts/setup inside that checkout.')
 
 
-def image_pin(deploy, image, write):
-    """The pinned image from prod-image.env; when there is none, pin --image (resolving its
-    approved :prod digest) and, if write, save it. An existing pin is never replaced."""
+def image_pin(deploy, image):
+    """The image to run and, when prod-image.env does not exist yet, the pin to write once
+    setup has succeeded: (image, new_pin or None). An existing pin is never replaced."""
     state = deploy / 'prod-image.env'
     if state.exists():
         current = dotenv(state).get('DASHBOARD_IMAGE', '')
@@ -118,7 +120,7 @@ def image_pin(deploy, image, write):
                              'a pin: fix it by hand (docs/deploy/fresh-install.md step 5).')
         if image and image != current:
             print(f'Keeping the existing pin {current} (prod-image.env); --image is ignored.')
-        return current
+        return current, None
     if not image:
         raise SetupError('No image pin yet (prod-image.env). Pass --image <registry>/<name> to pin its approved '
                          ':prod digest, or --image <registry>/<name>@sha256:<digest>.')
@@ -134,14 +136,15 @@ def image_pin(deploy, image, write):
                              'production image has been approved.') from None
         if not PINNED.fullmatch(pinned):
             raise SetupError(f'{repo}:prod did not resolve to an image digest.')
-    if write:
-        if state.exists():
-            raise SetupError(f'{state} appeared while setup ran; it was left alone. Run setup again.')
-        persist(state, 'DASHBOARD_IMAGE=' + pinned + '\n', mode=0o600)
-        print(f'Pinned {pinned} in prod-image.env.')
-    else:
-        print(f'Would pin {pinned} in prod-image.env (not written).')
-    return pinned
+    return pinned, pinned
+
+
+def write_pin(deploy, pinned):
+    state = deploy / 'prod-image.env'
+    if state.exists():
+        raise SetupError(f'{state} appeared while setup ran; it was left alone. Run setup again.')
+    persist(state, 'DASHBOARD_IMAGE=' + pinned + '\n', mode=0o600)
+    print(f'Pinned {pinned} in prod-image.env.')
 
 
 def mount(source, target, readonly):
@@ -155,22 +158,17 @@ def mount(source, target, readonly):
     return out.getvalue()
 
 
-def container(image, deploy, setup_args, *, write, network, env=(), mounts=(), stdin=None, tty=False):
-    """Run `dashboard setup <setup_args>` from image with the deploy directory at /deploy.
-
-    It runs as root but with every capability dropped except what the phase needs: a phase
-    that writes host files gets CHOWN, DAC_OVERRIDE and FOWNER (create files for UIDs 10001
-    and 65532 and link them into their directories) and a writable mount; anything else
-    gets DAC_READ_SEARCH only (read the 0400 secrets to compare) and a read-only mount.
-    Secrets reach it only on stdin or as a read-only file mount, never in argv or env."""
-    args = ['docker', 'run', '--rm', '--network', 'bridge' if network else 'none',
-            '--user', '0:0', '--cap-drop', 'ALL']
-    for cap in (['CHOWN', 'DAC_OVERRIDE', 'FOWNER'] if write else ['DAC_READ_SEARCH']):
+def container(image, setup_args, *, user, caps, network, mounts, env=(), stdin=None, tty=False):
+    """Run `dashboard setup <setup_args>` from image. Every phase starts from nothing:
+    --cap-drop ALL, read-only root filesystem, no-new-privileges, and only the mounts and
+    capabilities the caller names. Secrets reach it only on stdin or as a read-only file
+    mount, never in argv or the environment. mounts: (source, target, readonly)."""
+    args = ['docker', 'run', '--rm', '--network', 'bridge' if network else 'none', '--user', user, '--cap-drop', 'ALL']
+    for cap in caps:
         args += ['--cap-add', cap]
-    args += ['--security-opt', 'no-new-privileges:true', '--read-only',
-             '--mount', mount(deploy, CONTAINER_DEPLOY, readonly=not write)]
-    for source, target in mounts:
-        args += ['--mount', mount(source, target, readonly=True)]
+    args += ['--security-opt', 'no-new-privileges:true', '--read-only']
+    for source, target, readonly in mounts:
+        args += ['--mount', mount(source, target, readonly=readonly)]
     for pair in env:
         args += ['-e', pair]
     if stdin is not None:
@@ -179,6 +177,14 @@ def container(image, deploy, setup_args, *, write, network, env=(), mounts=(), s
         args += ['-i', '-t']
     args += ['--entrypoint', '/app/dashboard', image, 'setup'] + list(setup_args)
     return interactive(args, input=stdin)
+
+
+# The host phase writes files for UIDs 10001 and 65532 and links them into their
+# directories: root with CHOWN, DAC_OVERRIDE and FOWNER, nothing else. A host dry run only
+# reads them to compare (DAC_READ_SEARCH), on a read-only mount, and prints a plan that
+# never holds a value. Neither has network.
+WRITE_CAPS = ['CHOWN', 'DAC_OVERRIDE', 'FOWNER']
+READ_CAPS = ['DAC_READ_SEARCH']
 
 
 def container_path(deploy, path):
@@ -190,52 +196,91 @@ def container_path(deploy, path):
         return None
 
 
-def compose_isolation(deploy):
-    """Flags for `setup host` that give this install its own Compose project name and
-    tunnel subnet when another install on the host already uses the defaults. Values
-    already in .env are kept (and so are the defaults when they are free)."""
-    env = dotenv(deploy / '.env')
-    flags = []
-    project = env.get('COMPOSE_PROJECT_NAME', '')
-    if not project:
-        compose_file = str((deploy / 'compose.cloudflare.yml').resolve())
-        projects = json.loads(run(['docker', 'compose', 'ls', '--all', '--format', 'json']) or '[]')
-        def ours(files):
-            # Compose joins a project's files with commas, and a path may hold a comma too.
-            return files == compose_file or (',' + files + ',').find(',' + compose_file + ',') >= 0
-        others = {p.get('Name') for p in projects if not ours(p.get('ConfigFiles') or '')}
-        project, n = DEFAULT_PROJECT, 2
-        while project in others:
-            project, n = f'{DEFAULT_PROJECT}-{n}', n + 1
-        if project != DEFAULT_PROJECT:
-            print(f'Another install uses the Compose project {DEFAULT_PROJECT!r}; this one will be {project!r}.')
-            flags += ['--compose-project-name', project]
-    if not env.get('TUNNEL_NET'):
-        used = []
-        ids = run(['docker', 'network', 'ls', '-q']).split()
-        if ids:
-            for line in run(['docker', 'network', 'inspect', *ids, '--format', '{{json .}}']).splitlines():
-                network = json.loads(line)
-                if (network.get('Labels') or {}).get('com.docker.compose.project') == project:
-                    continue  # this install's own network
-                for config in (network.get('IPAM') or {}).get('Config') or []:
-                    try:
-                        used.append(ipaddress.ip_network(config['Subnet'], strict=False))
-                    except (KeyError, TypeError, ValueError):
-                        pass
+def same_dir(recorded, deploy):
+    """Whether Compose's recorded working directory is this deploy directory, by file
+    identity (device and inode), so a symlinked or differently spelled path still
+    matches. A path that no longer exists (a moved checkout) proves nothing."""
+    try:
+        return os.path.samefile(recorded, deploy)
+    except (OSError, ValueError):
+        return False
 
-        def free(prefix):
-            subnet = ipaddress.ip_network(prefix + '.0/28')
-            return not any(u.version == 4 and subnet.overlaps(u) for u in used)
-        if not free(DEFAULT_NET):
-            for third in range(90, 256):
-                candidate = f'10.250.{third}'
-                if free(candidate):
-                    print(f'The subnet {DEFAULT_NET}.0/28 is in use; this install will use {candidate}.0/28 (TUNNEL_NET).')
-                    flags += ['--tunnel-net', candidate]
-                    break
-            else:
-                raise SetupError('No free 10.250.x.0/28 subnet for the tunnel network: set TUNNEL_NET in .env by hand.')
+
+def docker_lines(args):
+    return [line for line in run(args).splitlines() if line.strip()]
+
+
+def compose_check(deploy, project_flag, net_flag):
+    """Decide what to tell `setup host` about the Compose project name and tunnel subnet.
+
+    setup never picks either. The values in effect are the flag, else .env's own, else the
+    Compose default. When a value nobody chose (the default) is already used in Docker by
+    something setup cannot prove is this install, setup stops before writing anything and
+    asks for both values. Proof is file identity: every container of the project was
+    started from this deploy directory. Returns the flags for `dashboard setup host`:
+    the admin's own values, and --install-exists when Docker already has containers or
+    volumes for the project (then setup host never writes either key)."""
+    settings = dotenv(deploy / '.env')
+    project = project_flag or settings.get('COMPOSE_PROJECT_NAME') or DEFAULT_PROJECT
+    net = net_flag or settings.get('TUNNEL_NET') or DEFAULT_NET
+    project_chosen = bool(project_flag or settings.get('COMPOSE_PROJECT_NAME'))
+    net_chosen = bool(net_flag or settings.get('TUNNEL_NET'))
+    label = 'label=com.docker.compose.project=' + project
+
+    ids = docker_lines(['docker', 'ps', '-a', '-q', '--filter', label])
+    workdirs = []
+    if ids:
+        for line in docker_lines(['docker', 'inspect', *ids, '--format', '{{json .Config.Labels}}']):
+            workdirs.append((json.loads(line) or {}).get('com.docker.compose.project.working_dir', ''))
+    volumes = docker_lines(['docker', 'volume', 'ls', '-q', '--filter', label])
+    ours = bool(workdirs) and all(same_dir(w, deploy) for w in workdirs)
+
+    in_use = []
+    project_networks = []
+    try:
+        subnet = ipaddress.ip_network(net + '.0/28')
+    except ValueError:
+        raise SetupError(f'TUNNEL_NET {net!r} is not three numbers such as 10.250.89') from None
+    network_ids = docker_lines(['docker', 'network', 'ls', '-q'])
+    if network_ids:
+        for line in docker_lines(['docker', 'network', 'inspect', *network_ids, '--format', '{{json .}}']):
+            network = json.loads(line)
+            belongs = (network.get('Labels') or {}).get('com.docker.compose.project') == project
+            if belongs:
+                project_networks.append(network.get('Name', '?'))
+            for config in (network.get('IPAM') or {}).get('Config') or []:
+                try:
+                    other = ipaddress.ip_network(config['Subnet'], strict=False)
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if other.version == 4 and subnet.overlaps(other) and not (belongs and ours) and not net_chosen:
+                    in_use.append(f'network {network.get("Name", "?")!r} uses {other}, which overlaps {subnet}')
+    if (workdirs or volumes or project_networks) and not ours and not project_chosen:
+        where = sorted({w or '(unknown)' for w in workdirs})
+        parts = []
+        if workdirs:
+            parts.append(f'{len(workdirs)} container(s) started from ' + ', '.join(where))
+        if volumes:
+            parts.append('volume(s) ' + ', '.join(volumes))
+        if project_networks and not workdirs:
+            parts.append('network(s) ' + ', '.join(project_networks))
+        in_use.insert(0, f'Compose project {project!r}: ' + '; '.join(parts))
+    if in_use:
+        raise SetupError(
+            'Docker already uses the default Compose project name or tunnel subnet, and setup cannot prove it is '
+            'this install:\n  ' + '\n  '.join(in_use) + '\n'
+            'setup never picks these itself, and nothing was written. Pass both explicitly:\n'
+            '  --compose-project-name <name> --tunnel-net <first three numbers>\n'
+            f'If they are this install\'s own (for example after moving the checkout), pass its current values '
+            f'({project} and {net}) to confirm; nothing is renamed. For a second install, choose a name and a '
+            'subnet nothing above uses.')
+    flags = []
+    if project_flag:
+        flags += ['--compose-project-name', project_flag]
+    if net_flag:
+        flags += ['--tunnel-net', net_flag]
+    if workdirs or volumes:
+        flags.append('--install-exists')
     return flags
 
 
@@ -266,45 +311,65 @@ def read_secrets(pairs):
 
 def cmd_host(deploy, opts, rest):
     check(deploy)
-    image = image_pin(deploy, opts.image, write=opts.yes)
     go = ['host', '--deploy-dir', CONTAINER_DEPLOY]
     go += ['--dry-run'] if opts.dry_run else []
     go += ['--yes'] if opts.yes else []
-    go += compose_isolation(deploy)
+    go += compose_check(deploy, opts.compose_project_name, opts.tunnel_net)
+    image, new_pin = image_pin(deploy, opts.image)
+    if new_pin and not opts.yes:
+        print(f'Would pin {new_pin} in prod-image.env (not written).')
     stdin = None
     if opts.secret:
         stdin = json.dumps(read_secrets(opts.secret))
         go.append('--secrets-stdin')
-    return container(image, deploy, go + rest, write=opts.yes, network=False, stdin=stdin)
+    code = container(image, go + rest, user='0:0', caps=WRITE_CAPS if opts.yes else READ_CAPS, network=False,
+                     mounts=[(deploy, CONTAINER_DEPLOY, not opts.yes)], stdin=stdin)
+    if code == 0 and opts.yes and new_pin:
+        write_pin(deploy, new_pin)
+    return code
 
 
 def cmd_preview(deploy, opts, rest):
+    """The read-only Cloudflare preview. It talks to Cloudflare, so it gets the least:
+    cloudflared's UID with no capabilities, the non-secret settings as environment values,
+    the tunnel token file alone (for the tunnel ID), and the API token on stdin. Neither
+    the deploy directory nor secrets/ is mounted."""
     check(deploy)
-    image = image_pin(deploy, opts.image, write=False)
+    image, _ = image_pin(deploy, opts.image)
     settings, backup = dotenv(deploy / '.env'), dotenv(deploy / 'backup.env')
     env = [f'{key}={source[key]}' for key, source in (('APP_URL', settings), ('BACKUP_SINK_URL', backup)) if source.get(key)]
-    if settings.get('TUNNEL_TOKEN_FILE'):
-        inside = container_path(deploy, settings['TUNNEL_TOKEN_FILE'])
-        if inside:
-            env.append('TUNNEL_TOKEN_FILE=' + inside)
     mounts = []
+    tunnel = settings.get('TUNNEL_TOKEN_FILE')
+    if tunnel and (deploy / tunnel).is_file():
+        mounts.append((deploy / tunnel, CONTAINER_TUNNEL_TOKEN, True))
+        env.append('TUNNEL_TOKEN_FILE=' + CONTAINER_TUNNEL_TOKEN)
+    stdin = None
     token = opts.token_file or settings.get('CLOUDFLARE_SETUP_TOKEN_FILE')
     if token:
-        token = (deploy / token).resolve()
-        if not token.is_file():
-            raise SetupError(f'Cloudflare token file {token} does not exist')
-        mounts.append((token, CONTAINER_TOKEN))
-        env.append('CLOUDFLARE_SETUP_TOKEN_FILE=' + CONTAINER_TOKEN)
-    return container(image, deploy, ['--dry-run'] + rest, write=False, network=True, env=env, mounts=mounts,
-                     tty=not token and stdin_is_tty())
+        try:
+            stdin = (deploy / token).read_text()
+        except OSError as error:
+            raise SetupError(f'cannot read the Cloudflare token file {deploy / token}: {error.strerror}') from None
+        env.append('CLOUDFLARE_SETUP_TOKEN_FILE=/dev/stdin')
+    return container(image, ['--dry-run'] + rest, user=CLOUDFLARED_IDS, caps=[], network=True, mounts=mounts,
+                     env=env, stdin=stdin, tty=stdin is None and stdin_is_tty())
 
 
 def check_unit_path(install):
     if not install.startswith('/'):
         raise SetupError(f'the install directory must be an absolute path, not {install!r}')
-    if any(ord(c) < 0x20 or c in '"\\' for c in install):
-        raise SetupError('the install directory contains a quote, backslash or control character, which a systemd '
-                         'unit cannot hold; move the checkout to a plainer path (spaces are fine)')
+    if any(ord(c) < 0x20 or c in '"\\$' for c in install):
+        raise SetupError('the install directory contains a quote, backslash, $ or control character, which a '
+                         'systemd unit cannot hold safely; move the checkout to a plainer path (spaces are fine)')
+
+
+def unit_body(text):
+    """A unit without its leading comment block, for comparing a rendered unit with one an
+    admin rendered by hand from the documented sed (which keeps the template's comments)."""
+    lines = text.splitlines(keepends=True)
+    while lines and (lines[0].startswith('#') or not lines[0].strip()):
+        lines.pop(0)
+    return ''.join(lines)
 
 
 def render_unit(text, install):
@@ -335,7 +400,7 @@ def cmd_install_units(deploy, opts):
             content = render_unit(content, install)
         dest = unit_dir / name
         if dest.exists():
-            if dest.read_text() == content:
+            if unit_body(dest.read_text()) == unit_body(content):
                 print(f'  exists    {dest}')
             else:
                 print(f'  conflict  {dest} differs from what setup would write; left alone. Compare it with '
@@ -378,6 +443,8 @@ def parser():
     mode.add_argument('--dry-run', action='store_true', help='print the plan; read-only mount')
     mode.add_argument('--yes', action='store_true', help='write the planned files (and prod-image.env)')
     h.add_argument('--image', help='image to pin when prod-image.env does not exist yet')
+    h.add_argument('--compose-project-name', help='Compose project name for a new install (never picked by setup)')
+    h.add_argument('--tunnel-net', help='first three numbers of the tunnel subnet for a new install, such as 10.250.90')
     h.add_argument('--secret', action='append', default=[], metavar='NAME=FILE',
                    help='a secret value from a file on this host, or NAME=- to type it (repeatable)')
     v = sub.add_parser('preview', allow_abbrev=False, help='read-only Cloudflare preview (dashboard setup --dry-run)')
@@ -403,7 +470,7 @@ def main(argv=None):
     try:
         if opts.command == 'check':
             check(deploy)
-            image_pin(deploy, opts.image, write=False)
+            image_pin(deploy, opts.image)
             print('The host is ready for scripts/setup.')
             return 0
         if opts.command == 'host':
