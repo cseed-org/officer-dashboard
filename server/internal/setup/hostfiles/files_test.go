@@ -236,3 +236,34 @@ func read(t *testing.T, path string) []byte {
 	}
 	return b
 }
+
+// A wanted key with no value is required input nobody gave: missing unless the file
+// already has a real value, which is kept.
+func TestEnvPlanKeyWithoutValue(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "dashboard.env.example"), "DISCORD_CLIENT_ID=\nAPP_URL=https://officers.example.org\n")
+	write(t, filepath.Join(dir, "dashboard.env"), "DISCORD_CLIENT_ID=\nAPP_URL=https://officers.example.org\nBOOTSTRAP_OWNER_DISCORD_ID=123\n")
+	pl := NewPlanner(dir, newFakeOwner())
+	pl.Hint("DISCORD_CLIENT_ID", "pass --discord-client-id")
+	pl.Env("dashboard.env", "dashboard.env.example", []KV{{"DISCORD_CLIENT_ID", ""}, {"APP_URL", ""}, {"BOOTSTRAP_OWNER_DISCORD_ID", ""}})
+	p, err := pl.Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Action{}
+	for _, a := range p.Actions {
+		got[a.Key] = a
+	}
+	if got["DISCORD_CLIENT_ID"].Kind != Missing || !strings.Contains(got["DISCORD_CLIENT_ID"].Detail, "--discord-client-id") {
+		t.Errorf("DISCORD_CLIENT_ID %+v", got["DISCORD_CLIENT_ID"])
+	}
+	if got["APP_URL"].Kind != Missing {
+		t.Errorf("a template example is not a value: %+v", got["APP_URL"])
+	}
+	if got["BOOTSTRAP_OWNER_DISCORD_ID"].Kind != Exists {
+		t.Errorf("admin's value: %+v", got["BOOTSTRAP_OWNER_DISCORD_ID"])
+	}
+	if len(p.steps) != 0 {
+		t.Error("missing values planned a write")
+	}
+}

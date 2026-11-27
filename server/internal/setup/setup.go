@@ -1,7 +1,13 @@
-// Package setup is the `dashboard setup` command. This version has only the read-only
-// preview, --dry-run: it reads a Cloudflare account, compares it with what
-// docs/deploy/cloudflare.md and docs/deploy/fresh-install.md describe, and prints the
-// difference. It writes nothing, locally or remotely.
+// Package setup is the `dashboard setup` command.
+//
+//   - `dashboard setup --dry-run` is the read-only Cloudflare preview: it reads a
+//     Cloudflare account, compares it with what docs/deploy/cloudflare.md and
+//     docs/deploy/fresh-install.md describe, and prints the difference. It writes
+//     nothing, locally or remotely.
+//   - `dashboard setup host` plans the deployment's host files (env files, secret
+//     directories and files) and writes them only with --yes. It has no network code.
+//
+// scripts/setup runs both from the pinned image on the host.
 package setup
 
 import (
@@ -21,6 +27,7 @@ import (
 
 	"officerdashboard/internal/setup/cfapi"
 	"officerdashboard/internal/setup/cfprovision"
+	"officerdashboard/internal/setup/hostfiles"
 	"officerdashboard/internal/setup/plan"
 )
 
@@ -28,6 +35,7 @@ import (
 const TokenFileEnv = "CLOUDFLARE_SETUP_TOKEN_FILE"
 
 const usage = `usage: dashboard setup --dry-run [flags]
+       dashboard setup host [--dry-run | --yes] [flags]   (see dashboard setup host -h)
 
 Reads your Cloudflare account and prints what the dashboard still needs. Nothing is
 changed. The Cloudflare API token is read from the file named by
@@ -47,6 +55,10 @@ type Deps struct {
 	IsTerminal   func(fd int) bool
 	ReadPassword func(fd int) ([]byte, error)
 	NewReader    func(token string) cfapi.Reader
+	// Used by `setup host` only.
+	Stdin  io.Reader
+	Owner  hostfiles.Owner // nil: the real chown and stat
+	Random io.Reader       // nil: crypto/rand
 }
 
 // Main runs the command with the real process environment and terminal.
@@ -60,11 +72,15 @@ func Main(args []string, getenv func(string) string, stdout, stderr io.Writer) i
 		IsTerminal:   term.IsTerminal,
 		ReadPassword: term.ReadPassword,
 		NewReader:    func(token string) cfapi.Reader { return cfapi.New(token) },
+		Stdin:        os.Stdin,
 	})
 }
 
 // Run parses args and runs the preview. Exit codes: 0 done, 1 failed, 2 usage.
 func Run(ctx context.Context, args []string, deps Deps) int {
+	if len(args) > 0 && args[0] == "host" {
+		return runHost(ctx, args[1:], deps)
+	}
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	fs.SetOutput(deps.Stderr)
 	fs.Usage = func() {

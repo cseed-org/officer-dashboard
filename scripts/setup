@@ -1,0 +1,414 @@
+#!/usr/bin/env python3
+"""Set up the officer dashboard on this Linux host. Python 3.11+, standard library only.
+
+  scripts/setup check [--image IMAGE]
+  scripts/setup host [--dry-run | --yes] [--image IMAGE] [--secret NAME=FILE | NAME=-]... [flags]
+  scripts/setup preview [--image IMAGE] [--token-file FILE] [flags]
+  scripts/setup install-units [--enable-updates | --no-enable-updates]
+
+`host` and `preview` run `dashboard setup` from the pinned image with the deploy
+directory mounted; any flags this launcher does not know are passed on to it (see
+`scripts/setup host --yes -h`). Run as root. Works from any directory: the deploy
+directory defaults to the one beside this script (--deploy-dir to choose another).
+"""
+import argparse
+import csv
+import getpass
+import io
+import ipaddress
+import json
+import os
+from pathlib import Path
+from shutil import which
+import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from hostlib import PINNED, dotenv, persist, repository, run  # noqa: E402  (shared with scripts/update)
+
+SELINUX_ENFORCE = Path('/sys/fs/selinux/enforce')
+DEFAULT_PROJECT = 'officer-dashboard'  # compose.cloudflare.yml: name: ${COMPOSE_PROJECT_NAME:-officer-dashboard}
+DEFAULT_NET = '10.250.89'              # compose.cloudflare.yml: ${TUNNEL_NET:-10.250.89}
+CONTAINER_DEPLOY = '/deploy'
+CONTAINER_TOKEN = '/run/setup/cloudflare-token'
+UPDATE_UNITS = ['officer-dashboard-update.service', 'officer-dashboard-update.timer']
+
+ROOTLESS = ('Docker runs rootless on this host. The containers read files owned by UID 10001 (dashboard and '
+            'backup) and 65532 (cloudflared), and rootless Docker maps those IDs to other host IDs, so the '
+            'secret files would be unreadable inside them. Use rootful Docker (the standard system service, '
+            'https://docs.docker.com/engine/install/), then run scripts/setup again as root.')
+USERNS = ('Docker runs with user-namespace remapping ("userns-remap" in /etc/docker/daemon.json). Container '
+          'UIDs 10001 and 65532 then map to different host UIDs, so files written for them would be '
+          'unreadable inside the containers. Remove "userns-remap" from /etc/docker/daemon.json and restart '
+          'Docker (systemctl restart docker), then run scripts/setup again.')
+SELINUX = ('SELinux is enforcing on this host. compose.cloudflare.yml bind-mounts the secret directories without '
+           'an SELinux label, so the containers could not read them, and setup does not relabel your files. '
+           'The supported setup is rootful Docker without SELinux enforcing: switch it to permissive '
+           '(setenforce 0, and SELINUX=permissive in /etc/selinux/config), or label the mounts yourself.')
+
+
+class SetupError(Exception):
+    """A problem the admin can fix; the message says how."""
+
+
+def is_linux():
+    return sys.platform.startswith('linux')
+
+
+def is_root():
+    return os.geteuid() == 0
+
+
+def stdin_is_tty():
+    return sys.stdin.isatty()
+
+
+def interactive(args, input=None):
+    """Run a container with the terminal attached; its output is the user's to read."""
+    return subprocess.run(args, input=input, text=True).returncode
+
+
+def selinux_enforcing():
+    try:
+        return SELINUX_ENFORCE.read_text().strip() == '1'
+    except OSError:
+        return False
+
+
+def check(deploy):
+    if not is_linux():
+        raise SetupError('scripts/setup runs on the Linux host that will run the dashboard (64-bit Linux with Docker Engine).')
+    if not is_root():
+        raise SetupError('run it as root: `sudo -i`, then run scripts/setup again. It writes files for the '
+                         'container users (UID 10001 and 65532) and runs Docker.')
+    if not which('docker'):
+        raise SetupError('Docker is not installed. Install Docker Engine and its Compose plugin: https://docs.docker.com/engine/install/')
+    try:
+        info = json.loads(run(['docker', 'info', '--format', '{{json .}}']))
+    except (subprocess.CalledProcessError, ValueError):
+        raise SetupError('Docker is installed but its daemon does not answer. Start it with `systemctl start docker`, '
+                         'then check `docker info`.') from None
+    options = ' '.join(info.get('SecurityOptions') or [])
+    if 'name=rootless' in options:
+        raise SetupError(ROOTLESS)
+    if 'name=userns' in options:
+        raise SetupError(USERNS)
+    try:
+        run(['docker', 'compose', 'version'])
+    except subprocess.CalledProcessError:
+        raise SetupError('The Docker Compose plugin is missing. Install it (package docker-compose-plugin), '
+                         'then check `docker compose version`.') from None
+    if selinux_enforcing():
+        raise SetupError(SELINUX)
+    if not (deploy / 'compose.cloudflare.yml').is_file():
+        raise SetupError(f'{deploy} has no compose.cloudflare.yml. Pass --deploy-dir <install-dir>/server/deploy, '
+                         'or run the scripts/setup inside that checkout.')
+
+
+def image_pin(deploy, image, write):
+    """The pinned image from prod-image.env; when there is none, pin --image (resolving its
+    approved :prod digest) and, if write, save it. An existing pin is never replaced."""
+    state = deploy / 'prod-image.env'
+    if state.exists():
+        current = dotenv(state).get('DASHBOARD_IMAGE', '')
+        if not PINNED.fullmatch(current):
+            raise SetupError(f'{state} exists but DASHBOARD_IMAGE is not pinned by digest. setup never replaces '
+                             'a pin: fix it by hand (docs/deploy/fresh-install.md step 5).')
+        if image and image != current:
+            print(f'Keeping the existing pin {current} (prod-image.env); --image is ignored.')
+        return current
+    if not image:
+        raise SetupError('No image pin yet (prod-image.env). Pass --image <registry>/<name> to pin its approved '
+                         ':prod digest, or --image <registry>/<name>@sha256:<digest>.')
+    if PINNED.fullmatch(image):
+        pinned = image
+    else:
+        repo = repository(image)
+        try:
+            inspection = json.loads(run(['docker', 'buildx', 'imagetools', 'inspect', repo + ':prod', '--format', '{{json .Manifest}}']))
+            pinned = repo + '@' + inspection['digest']
+        except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+            raise SetupError(f'Cannot resolve {repo}:prod. Check `docker login` for its registry and that a '
+                             'production image has been approved.') from None
+        if not PINNED.fullmatch(pinned):
+            raise SetupError(f'{repo}:prod did not resolve to an image digest.')
+    if write:
+        if state.exists():
+            raise SetupError(f'{state} appeared while setup ran; it was left alone. Run setup again.')
+        persist(state, 'DASHBOARD_IMAGE=' + pinned + '\n', mode=0o600)
+        print(f'Pinned {pinned} in prod-image.env.')
+    else:
+        print(f'Would pin {pinned} in prod-image.env (not written).')
+    return pinned
+
+
+def mount(source, target, readonly):
+    """A --mount value. Docker reads it as CSV, so a path with a comma or quote is quoted."""
+    source = str(source)
+    if any(c in source for c in '\r\n\0'):
+        raise SetupError(f'cannot mount {source!r}: the path contains a line break')
+    fields = ['type=bind', 'source=' + source, 'target=' + target] + (['readonly'] if readonly else [])
+    out = io.StringIO()
+    csv.writer(out, lineterminator='').writerow(fields)
+    return out.getvalue()
+
+
+def container(image, deploy, setup_args, *, write, network, env=(), mounts=(), stdin=None, tty=False):
+    """Run `dashboard setup <setup_args>` from image with the deploy directory at /deploy.
+
+    It runs as root but with every capability dropped except what the phase needs: a phase
+    that writes host files gets CHOWN, DAC_OVERRIDE and FOWNER (create files for UIDs 10001
+    and 65532 and link them into their directories) and a writable mount; anything else
+    gets DAC_READ_SEARCH only (read the 0400 secrets to compare) and a read-only mount.
+    Secrets reach it only on stdin or as a read-only file mount, never in argv or env."""
+    args = ['docker', 'run', '--rm', '--network', 'bridge' if network else 'none',
+            '--user', '0:0', '--cap-drop', 'ALL']
+    for cap in (['CHOWN', 'DAC_OVERRIDE', 'FOWNER'] if write else ['DAC_READ_SEARCH']):
+        args += ['--cap-add', cap]
+    args += ['--security-opt', 'no-new-privileges:true', '--read-only',
+             '--mount', mount(deploy, CONTAINER_DEPLOY, readonly=not write)]
+    for source, target in mounts:
+        args += ['--mount', mount(source, target, readonly=True)]
+    for pair in env:
+        args += ['-e', pair]
+    if stdin is not None:
+        args.append('-i')
+    elif tty:
+        args += ['-i', '-t']
+    args += ['--entrypoint', '/app/dashboard', image, 'setup'] + list(setup_args)
+    return interactive(args, input=stdin)
+
+
+def container_path(deploy, path):
+    """Where a host path inside the deploy directory appears in the container, else None."""
+    host = (deploy / path).resolve()
+    try:
+        return CONTAINER_DEPLOY + '/' + host.relative_to(deploy.resolve()).as_posix()
+    except ValueError:
+        return None
+
+
+def compose_isolation(deploy):
+    """Flags for `setup host` that give this install its own Compose project name and
+    tunnel subnet when another install on the host already uses the defaults. Values
+    already in .env are kept (and so are the defaults when they are free)."""
+    env = dotenv(deploy / '.env')
+    flags = []
+    project = env.get('COMPOSE_PROJECT_NAME', '')
+    if not project:
+        compose_file = str((deploy / 'compose.cloudflare.yml').resolve())
+        projects = json.loads(run(['docker', 'compose', 'ls', '--all', '--format', 'json']) or '[]')
+        others = {p.get('Name') for p in projects if compose_file not in (p.get('ConfigFiles') or '').split(',')}
+        project, n = DEFAULT_PROJECT, 2
+        while project in others:
+            project, n = f'{DEFAULT_PROJECT}-{n}', n + 1
+        if project != DEFAULT_PROJECT:
+            print(f'Another install uses the Compose project {DEFAULT_PROJECT!r}; this one will be {project!r}.')
+            flags += ['--compose-project-name', project]
+    if not env.get('TUNNEL_NET'):
+        used = []
+        ids = run(['docker', 'network', 'ls', '-q']).split()
+        if ids:
+            for line in run(['docker', 'network', 'inspect', *ids, '--format', '{{json .}}']).splitlines():
+                network = json.loads(line)
+                if (network.get('Labels') or {}).get('com.docker.compose.project') == project:
+                    continue  # this install's own network
+                for config in (network.get('IPAM') or {}).get('Config') or []:
+                    try:
+                        used.append(ipaddress.ip_network(config['Subnet'], strict=False))
+                    except (KeyError, TypeError, ValueError):
+                        pass
+
+        def free(prefix):
+            subnet = ipaddress.ip_network(prefix + '.0/28')
+            return not any(u.version == 4 and subnet.overlaps(u) for u in used)
+        if not free(DEFAULT_NET):
+            for third in range(90, 256):
+                candidate = f'10.250.{third}'
+                if free(candidate):
+                    print(f'The subnet {DEFAULT_NET}.0/28 is in use; this install will use {candidate}.0/28 (TUNNEL_NET).')
+                    flags += ['--tunnel-net', candidate]
+                    break
+            else:
+                raise SetupError('No free 10.250.x.0/28 subnet for the tunnel network: set TUNNEL_NET in .env by hand.')
+    return flags
+
+
+def read_secrets(pairs):
+    """NAME=FILE reads the file on this host; NAME=- asks without echo."""
+    values = {}
+    for pair in pairs:
+        name, sep, source = pair.partition('=')
+        if not sep or not name or not source:
+            raise SetupError(f'--secret {name or pair}: expected NAME=FILE or NAME=-')
+        if name in values:
+            raise SetupError(f'--secret {name} given twice')
+        if source == '-':
+            if not stdin_is_tty():
+                raise SetupError(f'--secret {name}=- needs a terminal to type it; give a file instead')
+            value = getpass.getpass(f'{name} (input hidden): ')
+        else:
+            try:
+                value = Path(source).read_text()
+            except OSError as error:
+                raise SetupError(f'--secret {name}: cannot read {source}: {error.strerror}') from None
+        value = value.rstrip('\r\n')
+        if not value.strip():
+            raise SetupError(f'--secret {name}: the value is empty')
+        values[name] = value
+    return values
+
+
+def cmd_host(deploy, opts, rest):
+    check(deploy)
+    image = image_pin(deploy, opts.image, write=opts.yes)
+    go = ['host', '--deploy-dir', CONTAINER_DEPLOY]
+    go += ['--dry-run'] if opts.dry_run else []
+    go += ['--yes'] if opts.yes else []
+    go += compose_isolation(deploy)
+    stdin = None
+    if opts.secret:
+        stdin = json.dumps(read_secrets(opts.secret))
+        go.append('--secrets-stdin')
+    return container(image, deploy, go + rest, write=opts.yes, network=False, stdin=stdin)
+
+
+def cmd_preview(deploy, opts, rest):
+    check(deploy)
+    image = image_pin(deploy, opts.image, write=False)
+    settings, backup = dotenv(deploy / '.env'), dotenv(deploy / 'backup.env')
+    env = [f'{key}={source[key]}' for key, source in (('APP_URL', settings), ('BACKUP_SINK_URL', backup)) if source.get(key)]
+    if settings.get('TUNNEL_TOKEN_FILE'):
+        inside = container_path(deploy, settings['TUNNEL_TOKEN_FILE'])
+        if inside:
+            env.append('TUNNEL_TOKEN_FILE=' + inside)
+    mounts = []
+    token = opts.token_file or settings.get('CLOUDFLARE_SETUP_TOKEN_FILE')
+    if token:
+        token = (deploy / token).resolve()
+        if not token.is_file():
+            raise SetupError(f'Cloudflare token file {token} does not exist')
+        mounts.append((token, CONTAINER_TOKEN))
+        env.append('CLOUDFLARE_SETUP_TOKEN_FILE=' + CONTAINER_TOKEN)
+    return container(image, deploy, ['--dry-run'] + rest, write=False, network=True, env=env, mounts=mounts,
+                     tty=not token and stdin_is_tty())
+
+
+def check_unit_path(install):
+    if not install.startswith('/'):
+        raise SetupError(f'the install directory must be an absolute path, not {install!r}')
+    if any(ord(c) < 0x20 or c in '"\\' for c in install):
+        raise SetupError('the install directory contains a quote, backslash or control character, which a systemd '
+                         'unit cannot hold; move the checkout to a plainer path (spaces are fine)')
+
+
+def render_unit(text, install):
+    """Fill @INSTALL_DIR@ for systemd: % is its specifier character, so it is doubled. The
+    template's leading how-to-render comments are replaced by a note saying where it came from."""
+    lines = text.splitlines(keepends=True)
+    if lines and lines[0].startswith('#'):
+        while lines and lines[0].startswith('#'):
+            lines.pop(0)
+        lines.insert(0, '# Rendered by scripts/setup install-units from server/deploy; re-run it rather than editing.\n')
+    return ''.join(lines).replace('@INSTALL_DIR@', install.replace('%', '%%'))
+
+
+def cmd_install_units(deploy, opts):
+    if not is_linux() or not is_root():
+        raise SetupError('install-units runs as root on the Linux host (sudo -i).')
+    if not which('systemctl'):
+        raise SetupError('systemctl not found: this host does not run systemd. Schedule scripts/update another way.')
+    install = opts.install_dir or str(deploy.resolve().parents[1])
+    check_unit_path(install)
+    if not opts.install_dir and deploy.resolve() != Path(install) / 'server/deploy':
+        raise SetupError('the updater unit expects <install-dir>/server/deploy; pass --install-dir for another layout')
+    unit_dir = Path(opts.unit_dir)
+    changed = False
+    for name in UPDATE_UNITS:
+        content = (deploy / name).read_text()
+        if name.endswith('.service'):
+            content = render_unit(content, install)
+        dest = unit_dir / name
+        if dest.exists():
+            if dest.read_text() == content:
+                print(f'  exists    {dest}')
+            else:
+                print(f'  conflict  {dest} differs from what setup would write; left alone. Compare it with '
+                      f'server/deploy/{name} and replace it by hand if the new one is right.')
+            continue
+        persist(dest, content, mode=0o644)
+        changed = True
+        print(f'  create    {dest}')
+    if changed:
+        run(['systemctl', 'daemon-reload'])
+    enable = opts.enable
+    if enable is None and stdin_is_tty():
+        answer = input('Turn on automatic updates? The timer installs each newly approved :prod image within '
+                       'five minutes. [y/N] ')
+        enable = answer.strip().lower() in ('y', 'yes')
+    if enable:
+        run(['systemctl', 'enable', '--now', 'officer-dashboard-update.timer'])
+        print('Automatic updates are on (officer-dashboard-update.timer).')
+    else:
+        print('Automatic updates stay off. Run `systemctl start officer-dashboard-update.service` once and check '
+              'its journal, then turn them on with `scripts/setup install-units --enable-updates`.')
+    return 0
+
+
+def parser():
+    p = argparse.ArgumentParser(prog='scripts/setup', allow_abbrev=False,
+                                description='Set up the officer dashboard on this Linux host (run as root).')
+    p.add_argument('--deploy-dir', default=str(Path(__file__).resolve().parents[1] / 'server/deploy'),
+                   help='the deployment directory (default: server/deploy beside this script)')
+    sub = p.add_subparsers(dest='command', required=True)
+    c = sub.add_parser('check', allow_abbrev=False, help='check the host prerequisites and image pin')
+    c.add_argument('--image', help='image to pin when prod-image.env does not exist yet')
+    h = sub.add_parser('host', allow_abbrev=False, help='plan, and with --yes write, the env and secret files')
+    mode = h.add_mutually_exclusive_group()
+    mode.add_argument('--dry-run', action='store_true', help='print the plan; read-only mount')
+    mode.add_argument('--yes', action='store_true', help='write the planned files (and prod-image.env)')
+    h.add_argument('--image', help='image to pin when prod-image.env does not exist yet')
+    h.add_argument('--secret', action='append', default=[], metavar='NAME=FILE',
+                   help='a secret value from a file on this host, or NAME=- to type it (repeatable)')
+    v = sub.add_parser('preview', allow_abbrev=False, help='read-only Cloudflare preview (dashboard setup --dry-run)')
+    v.add_argument('--image', help='image to use when prod-image.env does not exist yet')
+    v.add_argument('--token-file', help='file holding the Cloudflare API token (default: CLOUDFLARE_SETUP_TOKEN_FILE '
+                                        'from .env; else it is asked for)')
+    u = sub.add_parser('install-units', allow_abbrev=False, help='install the systemd updater units')
+    u.add_argument('--unit-dir', default='/etc/systemd/system')
+    u.add_argument('--install-dir', help='the checkout the units run from (default: two levels above --deploy-dir)')
+    enable = u.add_mutually_exclusive_group()
+    enable.add_argument('--enable-updates', dest='enable', action='store_const', const=True, help='turn the update timer on')
+    enable.add_argument('--no-enable-updates', dest='enable', action='store_const', const=False, help='leave it off without asking')
+    return p
+
+
+def main(argv=None):
+    p = parser()
+    opts, rest = p.parse_known_args(argv)
+    if rest and opts.command not in ('host', 'preview'):
+        p.error('unrecognized arguments: ' + ' '.join(rest))
+    deploy = Path(opts.deploy_dir).resolve()
+    os.umask(0o077)
+    try:
+        if opts.command == 'check':
+            check(deploy)
+            image_pin(deploy, opts.image, write=False)
+            print('The host is ready for scripts/setup.')
+            return 0
+        if opts.command == 'host':
+            return cmd_host(deploy, opts, rest)
+        if opts.command == 'preview':
+            return cmd_preview(deploy, opts, rest)
+        return cmd_install_units(deploy, opts)
+    except SetupError as error:
+        print('setup: ' + str(error), file=sys.stderr)
+        return 1
+    except (subprocess.CalledProcessError, OSError) as error:
+        # Neither carries a secret: commands never hold one, and paths are not secret.
+        print(f'setup failed: {type(error).__name__}: {error}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

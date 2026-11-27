@@ -23,3 +23,15 @@ func TestSetupRunsBeforeSecretFiles(t *testing.T) {
 		t.Fatalf("version with a missing secret file: exit %d", code)
 	}
 }
+
+func TestSetupHostRunsBeforeSecretFiles(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "not-created-yet")
+	env := map[string]string{"DISCORD_CLIENT_SECRET_FILE": missing}
+	var out, errb bytes.Buffer
+	if code := run([]string{"setup", "host", "-h"}, func(k string) string { return env[k] }, &out, &errb); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb.String())
+	}
+	if !strings.Contains(errb.String(), "dashboard setup host") {
+		t.Fatalf("host usage not shown: %q", errb.String())
+	}
+}

@@ -14,6 +14,9 @@
 //	dashboard setup --dry-run
 //	                       read the Cloudflare account and print what the install still needs
 //	                       (read-only; the token comes from CLOUDFLARE_SETUP_TOKEN_FILE or a prompt)
+//	dashboard setup host [--dry-run|--yes]
+//	                       plan the deployment's env and secret files; write them only with --yes
+//	                       (scripts/setup runs it from the pinned image)
 //	dashboard version
 package main
 

@@ -15,6 +15,9 @@ import (
 // .github/workflows/security.yml runs it as root.
 func TestRealOwnershipAsRoot(t *testing.T) {
 	if os.Geteuid() != 0 {
+		if os.Getenv("HOSTFILES_REQUIRE_ROOT") != "" {
+			t.Fatal("HOSTFILES_REQUIRE_ROOT is set but the test is not running as root")
+		}
 		t.Skip("needs root (real chown); run as root, as the security workflow's Docker job does")
 	}
 	dir := t.TempDir()

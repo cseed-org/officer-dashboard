@@ -95,7 +95,8 @@ func (p *Plan) Count(k Kind) int {
 
 // WriteText prints the plan, one action per line, then a summary.
 func (p *Plan) WriteText(w io.Writer) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	var table bytes.Buffer
+	tw := tabwriter.NewWriter(&table, 0, 0, 2, ' ', 0)
 	for _, a := range p.Actions {
 		target := a.Path
 		if a.Key != "" {
@@ -105,6 +106,15 @@ func (p *Plan) WriteText(w io.Writer) error {
 	}
 	if err := tw.Flush(); err != nil {
 		return err
+	}
+	// tabwriter pads a row's last cell when other rows go on; drop that padding.
+	for _, line := range strings.SplitAfter(table.String(), "\n") {
+		if line == "" {
+			continue
+		}
+		if _, err := io.WriteString(w, strings.TrimRight(line, " \n")+"\n"); err != nil {
+			return err
+		}
 	}
 	var parts []string
 	for _, k := range []Kind{Create, Update, Exists, Conflict, Missing} {
@@ -205,9 +215,10 @@ func processIDs() IDs { return IDs{os.Geteuid(), os.Getegid()} }
 // Planner builds a Plan by reading the files under Root. Planning writes nothing. The
 // first error stops planning and is returned by Plan.
 type Planner struct {
-	root string
-	plan Plan
-	err  error
+	root  string
+	plan  Plan
+	err   error
+	hints map[string]string
 }
 
 // NewPlanner plans files under root, reading and changing ownership through o.
@@ -222,6 +233,14 @@ func (pl *Planner) Plan() (*Plan, error) {
 	}
 	p := pl.plan
 	return &p, nil
+}
+
+// Hint is shown beside env key when it is missing: how to supply it.
+func (pl *Planner) Hint(key, hint string) {
+	if pl.hints == nil {
+		pl.hints = map[string]string{}
+	}
+	pl.hints[key] = hint
 }
 
 func (pl *Planner) add(kind Kind, rel, key, detail string) {
@@ -283,11 +302,18 @@ func (pl *Planner) Env(rel, template string, values []KV) {
 	changed := create
 	for _, kv := range values {
 		cur, ok := f.Get(kv.Key)
+		kept := ok && cur != "" && !isExample(examples, kv.Key, cur)
 		switch {
+		case kv.Value == "" && kept:
+			pl.add(Exists, rel, kv.Key, "")
+			continue
+		case kv.Value == "":
+			pl.add(Missing, rel, kv.Key, strings.TrimSuffix("no value given; "+pl.hints[kv.Key], "; "))
+			continue
 		case ok && cur == kv.Value:
 			pl.add(Exists, rel, kv.Key, "")
 			continue
-		case ok && cur != "" && !isExample(examples, kv.Key, cur):
+		case kept:
 			pl.add(Conflict, rel, kv.Key, fmt.Sprintf("is %q, setup would write %q; kept", cur, kv.Value))
 			continue
 		}
