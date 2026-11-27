@@ -250,12 +250,18 @@ not built yet.
 | --- | --- | --- | --- |
 | `CLOUDFLARE_SETUP_TOKEN_FILE` | optional | – | file holding a Cloudflare API token for setup. Unset: setup asks for the token without echo. Never a flag, never logged. Separate from `CLOUDFLARE_API_TOKEN` |
 | `APP_URL` | **required** | – | the dashboard origin to check, also `--app-url` |
-| `BACKUP_SINK_URL` | optional | `backups.<parent domain>` | its host is the backup Worker hostname, also `--backup-hostname` |
-| `TUNNEL_TOKEN_FILE` | optional | – | if readable, setup takes only the tunnel ID from it to find the tunnel, also `--tunnel-token-file` |
+| `BACKUP_SINK_URL` | optional | `backups.<parent domain>` | its host is the backup Worker hostname, also `--backup-hostname`. Setup says when it falls back to the default |
+| `TUNNEL_TOKEN_FILE` | optional | – | if readable, setup takes only the tunnel ID from it to find the tunnel, also `--tunnel-token-file` or `--tunnel-id` |
+
+Setup finds the tunnel by the ID from the host's tunnel token, then by the tunnel the
+dashboard hostname's DNS record points at, then by the name `officer-dashboard`, and
+reports any of these that disagree.
 
 Other flags: `--officers-group` and `--launchpad-group` (empty for no Launchpad
-group), `--name-prefix` (prefix every resource name, for a staging install
-beside the real one) and `--json`. It exits 0 when it printed the plan, whatever
+group), `--name-prefix` and `--json`. `--name-prefix` prefixes every resource
+name, for a staging install beside the real one. A staging install also needs its
+own `APP_URL`: on the real install's hostname, setup finds the real install's
+applications, rules and tunnel, marks them as drift and prints a warning. It exits 0 when it printed the plan, whatever
 the plan says; 1 when it could not read the account (a bad token, two resources
 matching one name, a Cloudflare error); and 2 for a usage error.
 
@@ -272,11 +278,15 @@ A missing permission shows as `unknowable` on the lines it affects. Delete the
 token and its file when you are done.
 
 On the host, from `server/deploy`, Compose passes `APP_URL` and gives a terminal
-for the token prompt:
+for the token prompt. The `dashboard` service sees neither `backup.env` nor the
+tunnel token file, so pass the backup hostname (the host in `BACKUP_SINK_URL`)
+yourself. Without a tunnel ID, setup finds the tunnel through the hostname's DNS
+record; add `--tunnel-id <id>` (Zero Trust → Networking → Tunnels) to match by ID.
 
 ```sh
 docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml \
-  run --rm --no-deps --entrypoint /app/dashboard dashboard setup --dry-run
+  run --rm --no-deps --entrypoint /app/dashboard dashboard \
+  setup --dry-run --backup-hostname backups.example.org
 ```
 
 ## Owner integration setup
