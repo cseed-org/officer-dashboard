@@ -146,10 +146,10 @@ volume, then restart. The first-ever initialization above is deliberately explic
 
 Repository Settings → Environments → New environment → name exactly `production` →
 Required reviewers → add the maintainer (or review team) → Deployment branches/tags →
-protected branches only (or selected branches → `main` only) → Save. With a sole
-maintainer, Prevent self-review stays off so the maintainer can approve their own
-dispatch (decision D-15); once a second reviewer exists, enable Prevent self-review and
-disable administrator bypass where available. Verify these protections **before enabling
+protected branches only (or selected branches with `main` as the only branch
+policy) → Save. With a sole maintainer, Prevent self-review stays off so the
+maintainer can approve their own dispatch (decision D-15); once a second reviewer
+exists, enable Prevent self-review and disable administrator bypass where available. Verify these protections **before enabling
 promotion**; an Environment without required reviewers provides no approval gate. Confirm
 the package is private and the repository has write access to it. Do not change visibility
 implicitly.

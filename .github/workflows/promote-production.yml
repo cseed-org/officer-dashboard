@@ -42,9 +42,14 @@ jobs:
           # on the environment, and require .prevent_self_review == true here.
           env_json=$(gh api "repos/$GITHUB_REPOSITORY/environments/production")
           jq -e 'any(.protection_rules[]?; .type == "required_reviewers" and (.reviewers | length) > 0)' <<<"$env_json" >/dev/null
+          # Selected-branches fallback: custom branch policies must be enabled
+          # and the complete paginated policy list must be exactly one
+          # branch-type policy named main; anything else fails closed.
           if ! jq -e '.deployment_branch_policy.protected_branches == true' <<<"$env_json" >/dev/null; then
-            gh api "repos/$GITHUB_REPOSITORY/environments/production/deployment-branch-policies" \
-              --jq '[.branch_policies[].name] | any(. == "main")' | grep -qx true
+            jq -e '.deployment_branch_policy.custom_branch_policies == true' <<<"$env_json" >/dev/null
+            gh api --paginate "repos/$GITHUB_REPOSITORY/environments/production/deployment-branch-policies" \
+              --jq '.branch_policies[] | {name, type}' \
+              | jq -se '. == [{name: "main", type: "branch"}]' >/dev/null
           fi
           [[ "$COMMIT" =~ ^[a-f0-9]{40}$ ]]
           git merge-base --is-ancestor "$COMMIT" origin/main
