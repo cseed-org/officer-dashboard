@@ -1,6 +1,6 @@
 // npm run test:scripts (node --test "scripts/*.test.mjs")
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -142,4 +142,155 @@ test("checkFiles skips external links and rejects escapes", () => {
   const { checked, failures } = checkFiles(root, ["README.md"]);
   assert.equal(checked, 1);
   assert.deepEqual(failures.map((f) => f.problem), ["link escapes the repository: ../outside.md"]);
+});
+test("checkFiles validates the target file of line and text fragments", () => {
+  const root = fixture({
+    "README.md": [
+      "[line](docs/guide.md#L12) [range](docs/guide.md#L1-L2) [text](docs/guide.md#:~:text=Install)",
+      "[missing](docs/nope.md#L12)",
+      "[escape](../outside.md#L1)",
+      "[missing-text](docs/nope.md#:~:text=hello)",
+    ].join("\n"),
+    "docs/guide.md": "# Guide\n## Install\n",
+  });
+  const { checked, failures } = checkFiles(root, ["README.md"]);
+  assert.equal(checked, 6);
+  assert.deepEqual(
+    failures.map(({ file, line, problem }) => `${file}:${line}: ${problem}`),
+    [
+      "README.md:2: broken link (no such file): docs/nope.md#L12",
+      "README.md:3: link escapes the repository: ../outside.md#L1",
+      "README.md:4: broken link (no such file): docs/nope.md#:~:text=hello",
+    ],
+  );
+});
+
+test("checkFiles rejects links escaping through directory junctions", (t) => {
+  const outside = fixture({ "guide.md": "# Outside\n" });
+  const root = fixture({
+    "README.md": "[out](linked/guide.md#outside) [in](alias/guide.md#inside)\n",
+    "docs/guide.md": "# Guide\n## Inside\n",
+  });
+  const linkType = process.platform === "win32" ? "junction" : "dir";
+  try {
+    symlinkSync(outside, path.join(root, "linked"), linkType);
+    symlinkSync(path.join(root, "docs"), path.join(root, "alias"), linkType);
+  } catch (error) {
+    t.skip(`cannot create directory links: ${error.message}`);
+    return;
+  }
+  const { checked, failures } = checkFiles(root, ["README.md"]);
+  assert.equal(checked, 2);
+  // The junction to an outside directory is rejected before it is read; the
+  // junction that stays inside the repository keeps working.
+  assert.deepEqual(
+    failures.map((f) => f.problem),
+    ["link escapes the repository: linked/guide.md#outside"],
+  );
+});
+
+test("extractLinks finds images inside link labels and HTML hrefs", () => {
+  const links = extractLinks([
+    "[![shot](img/badge.png)](https://example.org)",
+    '<a href="docs/guide.md">go</a> <a href="https://example.org/x">web</a>',
+  ].join("\n"));
+  const targets = links.map((link) => link.target);
+  for (const expected of [
+    "img/badge.png", "https://example.org", "docs/guide.md", "https://example.org/x",
+  ]) {
+    assert.ok(targets.includes(expected), `missing ${expected}`);
+  }
+  assert.equal(links[0].line, 1);
+  assert.equal(links[2].line, 2);
+});
+
+test("checkFiles validates nested-label images and relative HTML hrefs", () => {
+  const root = fixture({
+    "README.md": [
+      "[![shot](missing.png)](https://example.org)",
+      '<a href="missing.md">go</a>',
+      "[ok](docs/guide.md)",
+    ].join("\n"),
+    "docs/guide.md": "# Guide\n",
+  });
+  const { checked, failures } = checkFiles(root, ["README.md"]);
+  assert.equal(checked, 3);
+  assert.deepEqual(
+    failures.map(({ file, line, problem }) => `${file}:${line}: ${problem}`),
+    [
+      "README.md:1: broken link (no such file): missing.png",
+      "README.md:2: broken link (no such file): missing.md",
+    ],
+  );
+});
+
+test("extractLinks ignores CRLF front matter and longer code fences", () => {
+  const crlf = extractLinks("---\r\nexample: [example](missing.md)\r\n---\r\n[ok](ok.md)\r\n");
+  assert.deepEqual(crlf, [{ target: "ok.md", line: 4 }]);
+  const nested = extractLinks([
+    "````",
+    "```",
+    "[inside](missing.md)",
+    "```",
+    "````",
+    "[after](ok.md)",
+  ].join("\n"));
+  assert.deepEqual(nested, [{ target: "ok.md", line: 6 }]);
+});
+
+test("checkFiles accepts CRLF front matter and nested fence examples", () => {
+  const root = fixture({
+    "README.md": [
+      "---",
+      "title: [x](missing.md)",
+      "---",
+      "````",
+      "```",
+      "[y](missing2.md)",
+      "```",
+      "````",
+      "[ok](docs/guide.md)",
+      "",
+    ].join("\r\n"),
+    "docs/guide.md": "# Guide\n",
+  });
+  const { failures } = checkFiles(root, ["README.md"]);
+  assert.deepEqual(failures, []);
+});
+
+test("markdownAnchors ignores anchors and headings in code and comments", () => {
+  // Built from char codes so the fixture source carries no comment-end tag.
+  const commentEnd = String.fromCharCode(45, 45, 62);
+  const anchors = markdownAnchors([
+    "```html",
+    '<a id="fake"></a>',
+    "```",
+    "<!--",
+    "# Ghost",
+    '<a name="hidden"></a>',
+    commentEnd,
+    "# Real",
+  ].join("\n"));
+  assert.ok(!anchors.has("fake"));
+  assert.ok(!anchors.has("hidden"));
+  assert.ok(!anchors.has("ghost"));
+  assert.ok(anchors.has("real"));
+});
+
+test("checkFiles rejects anchors that only exist in code or comments", () => {
+  const root = fixture({
+    "README.md": [
+      "[go](#fake)",
+      "```html",
+      '<a id="fake"></a>',
+      "```",
+      `<!-- # Ghost ${String.fromCharCode(45, 45, 62)}`,
+      "[ghost](#ghost)",
+    ].join("\n"),
+  });
+  const { failures } = checkFiles(root, ["README.md"]);
+  assert.deepEqual(
+    failures.map((f) => f.problem),
+    ["broken anchor (no such heading): #fake", "broken anchor (no such heading): #ghost"],
+  );
 });

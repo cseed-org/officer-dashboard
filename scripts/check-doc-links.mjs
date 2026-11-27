@@ -1,13 +1,15 @@
 // Offline Markdown link check for tracked docs: every relative file link must
-// resolve inside the repository and every #fragment must match a GitHub-style
-// heading slug or explicit HTML anchor in the target file. External (scheme or
+// resolve inside the repository (after resolving symlinks and junctions) and
+// every #fragment must match a GitHub-style heading slug or explicit HTML
+// anchor in the target file. Source-line (#L1, #L1-L2) and text (#:~:text=)
+// fragments only require the target file to exist. External (scheme or
 // protocol-relative) links are skipped by design.
 //
 // Usage: node scripts/check-doc-links.mjs [file.md ...]
 // With no arguments it checks every tracked **/*.md file (git ls-files).
 // Exits 1 and prints file:line for each broken link.
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,10 +57,17 @@ function headingText(raw) {
   return stripHtmlTags(withoutMarkup).trim();
 }
 
+// Replace HTML comments with spaces (keeping every newline): comment markup
+// is not rendered, so it is neither a link, a heading nor an anchor.
+const blankHtmlComments = (text) =>
+  text.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, " "));
+
 // Anchor ids GitHub exposes for a rendered Markdown file: slugified ATX
 // headings (duplicates get -1, -2, ...) plus explicit <a id>/<a name> anchors.
+// Fenced code, front matter and HTML comments are blanked first so example
+// markup never counts as a live heading or anchor.
 export function markdownAnchors(markdown) {
-  const text = blankBlocks(markdown);
+  const text = blankHtmlComments(blankBlocks(markdown));
   const anchors = new Set();
   const seen = new Map();
   for (const match of text.matchAll(/^ {0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/gm)) {
@@ -67,7 +76,7 @@ export function markdownAnchors(markdown) {
     seen.set(base, count + 1);
     anchors.add(count === 0 ? base : `${base}-${count}`);
   }
-  for (const match of markdown.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) {
+  for (const match of text.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) {
     anchors.add(match[1]);
   }
   return anchors;
@@ -83,18 +92,20 @@ export function blankBlocks(markdown) {
   const lines = markdown.split("\n");
   let offset = 0;
   let fence = null;
-  let inFrontMatter = lines[0] === "---";
+  let inFrontMatter = /^---\s*$/.test(lines[0]);
   for (const line of lines) {
     const fenceMatch = /^ {0,3}(```+|~~~+)/.exec(line);
     if (inFrontMatter) {
       blank(offset, offset + line.length);
-      if (offset !== 0 && /^(---|\.\.\.)\s*$/.test(line)) inFrontMatter = false;
+      if (offset !== 0 && /^(?:---|\.\.\.)\s*$/.test(line)) inFrontMatter = false;
     } else if (fence === null && fenceMatch) {
-      fence = fenceMatch[1][0].repeat(3);
+      // Keep the real opening fence run: a 4+ backtick/tilde fence is only
+      // closed by a run at least as long, so shorter fences inside stay code.
+      fence = fenceMatch[1];
       blank(offset, offset + line.length);
     } else if (fence !== null) {
       blank(offset, offset + line.length);
-      const closer = fence[0] === "`" ? "`" : "~";
+      const closer = fence[0];
       if (new RegExp(`^ {0,3}${closer}{${fence.length},}\\s*$`).test(line)) fence = null;
     }
     offset += line.length + 1;
@@ -104,9 +115,8 @@ export function blankBlocks(markdown) {
 
 // blankBlocks plus inline code spans and HTML comments, for link extraction.
 export function blankCodeAndComments(markdown) {
-  return blankBlocks(markdown)
-    .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (m) => m.replace(/[^\n]/g, " "))
-    .replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, " "));
+  return blankHtmlComments(blankBlocks(markdown))
+    .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (m) => m.replace(/[^\n]/g, " "));
 }
 
 const normalizeLabel = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
@@ -151,8 +161,9 @@ function parseInlineDestination(text, start) {
   return { dest, end: m + 1 };
 }
 
-// Inline links, images, reference links (full/collapsed/shortcut) and HTML
-// src/srcset file references. Returns [{target, line}].
+// Inline links, images, reference links (full/collapsed/shortcut), images and
+// links nested inside link labels ([![alt](img.png)](page)), and HTML
+// src/srcset/href file references. Returns [{target, line}].
 export function extractLinks(markdown) {
   const text = blankCodeAndComments(markdown);
   const lineOf = (index) => {
@@ -166,53 +177,69 @@ export function extractLinks(markdown) {
     const raw = match[2];
     definitions.set(normalizeLabel(match[1]), raw.startsWith("<") ? raw.slice(1, -1) : raw);
   }
-  let i = 0;
-  while (i < text.length) {
-    const open = text[i] === "!" && text[i + 1] === "[" ? i + 1 : text[i] === "[" ? i : -1;
-    if (open === -1) { i++; continue; }
-    let depth = 0;
-    let close = -1;
-    for (let j = open; j < text.length; j++) {
-      const c = text[j];
-      if (c === "\\") { j++; continue; }
-      if (c === "[") depth++;
-      else if (c === "]") { depth--; if (depth === 0) { close = j; break; } }
-    }
-    if (close === -1) { i = open + 1; continue; }
-    const labelText = text.slice(open + 1, close);
-    const after = text[close + 1];
-    if (after === "(") {
-      const parsed = parseInlineDestination(text, close + 2);
-      if (parsed) {
-        links.push({ target: parsed.dest, line: lineOf(open) });
-        i = parsed.end;
+  // Scan one text segment; recurses into bracket labels so an image or link
+  // nested inside a link label is still extracted, while the scanner skips
+  // past the outer destination and never double-counts it.
+  const scan = (segment, baseLine) => {
+    const lineAt = (index) => {
+      let line = baseLine;
+      for (let i = 0; i < index; i++) if (segment[i] === "\n") line++;
+      return line;
+    };
+    let i = 0;
+    while (i < segment.length) {
+      const open = segment[i] === "!" && segment[i + 1] === "[" ? i + 1 : segment[i] === "[" ? i : -1;
+      if (open === -1) { i++; continue; }
+      let depth = 0;
+      let close = -1;
+      for (let j = open; j < segment.length; j++) {
+        const c = segment[j];
+        if (c === "\\") { j++; continue; }
+        if (c === "[") depth++;
+        else if (c === "]") { depth--; if (depth === 0) { close = j; break; } }
+      }
+      if (close === -1) { i = open + 1; continue; }
+      const labelText = segment.slice(open + 1, close);
+      scan(labelText, lineAt(open));
+      const after = segment[close + 1];
+      if (after === "(") {
+        const parsed = parseInlineDestination(segment, close + 2);
+        if (parsed) {
+          links.push({ target: parsed.dest, line: lineAt(open) });
+          i = parsed.end;
+          continue;
+        }
+        i = close + 1;
         continue;
       }
-      i = close + 1;
-      continue;
-    }
-    if (after === "[") {
-      const end = text.indexOf("]", close + 2);
-      if (end !== -1) {
-        const ref = text.slice(close + 2, end) || labelText;
-        const target = definitions.get(normalizeLabel(ref));
-        if (target !== undefined) links.push({ target, line: lineOf(open) });
-        i = end + 1;
+      if (after === "[") {
+        const end = segment.indexOf("]", close + 2);
+        if (end !== -1) {
+          const ref = segment.slice(close + 2, end) || labelText;
+          const target = definitions.get(normalizeLabel(ref));
+          if (target !== undefined) links.push({ target, line: lineAt(open) });
+          i = end + 1;
+          continue;
+        }
+        i = close + 1;
         continue;
       }
+      if (after !== ":" && labelText && definitions.has(normalizeLabel(labelText))) {
+        links.push({ target: definitions.get(normalizeLabel(labelText)), line: lineAt(open) });
+      }
       i = close + 1;
-      continue;
     }
-    if (after !== ":" && labelText && definitions.has(normalizeLabel(labelText))) {
-      links.push({ target: definitions.get(normalizeLabel(labelText)), line: lineOf(open) });
-    }
-    i = close + 1;
-  }
+  };
+  scan(text, 1);
   for (const match of text.matchAll(/<(?:img|source)\s[^>]*?(?:src|srcset)="([^"]+)"/g)) {
     for (const candidate of match[1].split(",")) {
       const url = candidate.trim().split(/\s+/)[0];
       if (url) links.push({ target: url, line: lineOf(match.index) });
     }
+  }
+  for (const match of text.matchAll(/<a\s[^>]*?href="([^"]+)"/g)) {
+    const url = match[1].trim();
+    if (url) links.push({ target: url, line: lineOf(match.index) });
   }
   return links;
 }
@@ -242,12 +269,11 @@ function caseSensitiveExists(root, relPosix) {
   return true;
 }
 
-export function checkLink(root, fromFile, target, anchorsCache) {
+export function checkLink(root, realRoot, fromFile, target, anchorsCache) {
   if (!target || SCHEME.test(target) || target.startsWith("//")) return null;
   const hashIndex = target.indexOf("#");
   const rawPath = hashIndex === -1 ? target : target.slice(0, hashIndex);
   const rawFragment = hashIndex === -1 ? "" : target.slice(hashIndex + 1);
-  if (rawFragment.startsWith(":~:text=") || LINE_ANCHOR.test(rawFragment)) return null;
   const filePart = decode(rawPath.split("?")[0]);
   const fragment = decode(rawFragment);
   const targetRel = (
@@ -258,13 +284,28 @@ export function checkLink(root, fromFile, target, anchorsCache) {
   if (targetRel === ".." || targetRel.startsWith("../") || path.posix.isAbsolute(targetRel)) {
     return `link escapes the repository: ${target}`;
   }
+  // Containment is checked on real paths, not lexically: a symlink or junction
+  // inside the checkout can point outside it, and such a target is neither
+  // tracked content nor present on GitHub.
+  let realTarget;
+  try {
+    realTarget = realpathSync(path.join(root, targetRel));
+  } catch {
+    return `broken link (no such file): ${target}`;
+  }
+  if (realTarget !== realRoot && !realTarget.startsWith(realRoot + path.sep)) {
+    return `link escapes the repository: ${target}`;
+  }
   if (!caseSensitiveExists(root, targetRel)) {
     return `broken link (no such file): ${target}`;
   }
-  if (!fragment) return null;
+  // Source-line (#L1, #L1-L2) and text (#:~:text=) fragments are resolved by
+  // the forge, not the Markdown renderer: the target file must exist and stay
+  // inside the repository, but there is no heading anchor to validate.
+  if (!fragment || LINE_ANCHOR.test(rawFragment) || rawFragment.startsWith(":~:text=")) return null;
   if (!targetRel.toLowerCase().endsWith(".md")) return null;
   if (!anchorsCache.has(targetRel)) {
-    anchorsCache.set(targetRel, markdownAnchors(readFileSync(path.join(root, targetRel), "utf8")));
+    anchorsCache.set(targetRel, markdownAnchors(readFileSync(realTarget, "utf8")));
   }
   if (!anchorsCache.get(targetRel).has(fragment)) {
     return `broken anchor (no such heading): ${target}`;
@@ -273,6 +314,7 @@ export function checkLink(root, fromFile, target, anchorsCache) {
 }
 
 export function checkFiles(root, relFiles) {
+  const realRoot = realpathSync(root);
   const anchorsCache = new Map();
   const failures = [];
   let checked = 0;
@@ -281,7 +323,7 @@ export function checkFiles(root, relFiles) {
     for (const link of extractLinks(markdown)) {
       if (!link.target || SCHEME.test(link.target) || link.target.startsWith("//")) continue;
       checked++;
-      const problem = checkLink(root, relFile, link.target, anchorsCache);
+      const problem = checkLink(root, realRoot, relFile, link.target, anchorsCache);
       if (problem) failures.push({ file: relFile, line: link.line, problem });
     }
   }
