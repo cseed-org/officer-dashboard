@@ -1,7 +1,11 @@
 // Package cffake is a small fake of the Cloudflare v4 API for setup tests. It serves
 // fixed results by path, pages list results by page/per_page, answers unknown paths
 // with a Cloudflare-shaped 404, and records every request so a test can assert that
-// only GET was ever sent. It is not stateful: a fuller fake is planned separately.
+// only GET was ever sent.
+//
+// Start gives a read-only fake that refuses every write. NewAccount (account.go) gives
+// a stateful one that accepts the writes setup's apply engine sends, stores them and
+// serves them back to discovery, with failure injection.
 //
 // The fixtures' names, paths and expressions are written out literally from
 // docs/deploy/cloudflare.md and docs/deploy/fresh-install.md, not built from
@@ -12,6 +16,7 @@ package cffake
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -28,14 +33,15 @@ type Response struct {
 	Result  any
 }
 
-// Request is one request the fake received.
-type Request struct{ Method, Path, Query string }
+// Request is one request the fake received. Body is the request body as sent.
+type Request struct{ Method, Path, Query, Body string }
 
 type Server struct {
 	*httptest.Server
 	mu       sync.Mutex
 	routes   map[string]Response
 	requests []Request
+	acct     *accountState // nil for the read-only fake
 }
 
 // Start serves routes, keyed by URL path (no query), until Close.
@@ -71,15 +77,22 @@ func (s *Server) Set(path string, r Response) {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	req := Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw)}
 	s.mu.Lock()
-	s.requests = append(s.requests, Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery})
-	route, ok := s.routes[r.URL.Path]
+	s.requests = append(s.requests, req)
 	s.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	fail := func(status, code int, msg string) {
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "errors": []any{map[string]any{"code": code, "message": msg}}, "messages": []any{}, "result": nil})
 	}
+	if s.acct != nil && s.acct.intercept(s, req, w, fail) {
+		return
+	}
+	s.mu.Lock()
+	route, ok := s.routes[r.URL.Path]
+	s.mu.Unlock()
 	switch {
 	case r.Method != http.MethodGet:
 		fail(http.StatusMethodNotAllowed, 10000, "the fake Cloudflare API is read-only")
@@ -167,6 +180,13 @@ func policy(id, name, decision string, include ...any) map[string]any {
 }
 
 func group(id string) any { return map[string]any{"group": map[string]any{"id": id}} }
+
+// withCount is a reusable policy as the policies list returns it, with app_count.
+func withCount(p map[string]any, n int) map[string]any {
+	p["app_count"] = n
+	delete(p, "precedence")
+	return p
+}
 func token(id string) any { return map[string]any{"service_token": map[string]any{"token_id": id}} }
 
 func serviceToken(id, name, expires string) map[string]any {
@@ -199,6 +219,7 @@ func Fresh() map[string]Response {
 		acct("/access/groups"):         {Result: []any{map[string]any{"id": "g-x", "name": "Officers (old club)"}}},
 		acct("/access/service_tokens"): {Result: []any{}},
 		acct("/access/apps"):           {Result: []any{app("app-x", "Wiki", nil, []any{}, "wiki.example.org")}},
+		acct("/access/policies"):       {Result: []any{}},
 		zone("/bot_management"):        {Result: map[string]any{"enable_js": false, "fight_mode": false, "ai_bots_protection": "disabled", "using_latest_model": true}},
 		acct("/d1/database"):           {Result: []any{map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3}}},
 		acct("/workers/scripts"):       {Result: []any{map[string]any{"id": "something-else", "has_modules": true}}},
@@ -252,6 +273,12 @@ func Live() map[string]Response {
 	r[acct("/access/apps")] = Response{Result: []any{
 		app("app-backups", "Backup sink", nil, []any{policy("pol-backups", "backup host only", "non_identity", token("st-backups"))}, Backup),
 	}}
+	// The live account had two reusable Service Auth policies: one used by the backup
+	// app, one used by no application.
+	r[acct("/access/policies")] = Response{Result: []any{
+		withCount(policy("pol-backups", "backup host only", "non_identity", token("st-backups")), 1),
+		withCount(policy("pol-spare", "<name>", "non_identity", token("st-old")), 0),
+	}}
 	r[zone("/bot_management")] = Response{Result: map[string]any{"enable_js": true, "fight_mode": true, "ai_bots_protection": "disabled",
 		"ai_agents": map[string]any{"anthropic_agent": "disabled", "openai_agent": "disabled"}, "using_latest_model": true}}
 	r[zone("/rulesets/phases/http_request_cache_settings/entrypoint")] = noEntrypoint("http_request_cache_settings")
@@ -287,6 +314,12 @@ func Complete() map[string]Response {
 		app("app-services", "Officer Dashboard: services (service token)", map[string]any{"service_auth_401_redirect": true},
 			[]any{policy("pol-services", "Service token", "non_identity", token("st-services"))}, Host+"/api/ingest", Host+"/api/agent"),
 		app("app-backups", "Backup sink", nil, []any{policy("pol-backups", "backup host only", "non_identity", token("st-backups"))}, Backup),
+	}}
+	r[acct("/access/policies")] = Response{Result: []any{
+		withCount(policy("pol-site", "Officers and Launchpad", "allow", group("g-officers"), group("g-launchpad")), 1),
+		withCount(policy("pol-agents", "Bypass", "bypass", map[string]any{"everyone": map[string]any{}}), 1),
+		withCount(policy("pol-services", "Service token", "non_identity", token("st-services")), 1),
+		withCount(policy("pol-backups", "backup host only", "non_identity", token("st-backups")), 1),
 	}}
 	r[zone("/rulesets/phases/http_request_firewall_custom/entrypoint")] = Response{Result: map[string]any{"id": "rs-fw", "phase": "http_request_firewall_custom", "rules": []any{
 		map[string]any{"id": "r-skip", "description": "Agents and services: skip bot checks", "expression": agentExpr, "action": "skip",
