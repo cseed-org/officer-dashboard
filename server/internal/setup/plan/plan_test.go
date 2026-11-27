@@ -21,8 +21,10 @@ func no() *bool  { b := false; return &b }
 // Zero Trust is open.
 func fresh() Observed {
 	return Observed{
-		Zone: Zone{Seen: Seen{Found: true, ID: "zone1"}, Name: "example.org", Status: "active", AccountID: "acct1"},
-		Org:  Org{Seen: Seen{Found: true}, AuthDomain: "club.cloudflareaccess.com", SessionDuration: "24h"},
+		Zone:  Zone{Seen: Seen{Found: true, ID: "zone1"}, Name: "example.org", Status: "active", AccountID: "acct1"},
+		Token: Token{Seen: Seen{Found: true}, Status: "active", ExpiresOn: "2026-12-01T00:00:00Z"},
+		// A live organization without a global session duration omits the key.
+		Org: Org{Seen: Seen{Found: true}, AuthDomain: "club.cloudflareaccess.com"},
 		// A fresh Free zone reports Bot Fight Mode off.
 		BotFightMode: BotFightMode{Seen: Seen{Found: true}, On: no()},
 	}
@@ -88,18 +90,14 @@ func byID(actions []Action) map[string]Action {
 func TestDiffFreshAccountCreatesEverything(t *testing.T) {
 	got := Diff(desired(t), fresh())
 	s := Summary(got)
-	if s[Drift] != 1 || s[Manual] != 0 || s[Unknowable] != 0 {
+	if s[Drift] != 0 || s[Manual] != 0 || s[Unknowable] != 0 {
 		t.Fatalf("summary %v", s)
 	}
 	for _, a := range got {
 		want := Create
 		switch a.ID {
-		case "zone":
+		case "zone", "token", "zero_trust", "zone.bot_fight_mode":
 			want = OK
-		case "zone.bot_fight_mode":
-			want = OK
-		case "zero_trust":
-			want = Drift // global session duration 24h
 		}
 		if a.Kind != want {
 			t.Errorf("%s: %s, want %s (%v)", a.ID, a.Kind, want, a.Detail)
@@ -152,6 +150,14 @@ func TestDiffTable(t *testing.T) {
 		detail string // substring of some detail line
 	}{
 		{"no zero trust", func(o *Observed) { o.Org = Org{} }, "zero_trust", Manual, "team name"},
+		{"global session set to 24h", func(o *Observed) { o.Org.SessionDuration = "24h" }, "zero_trust.session", Drift, "never changes a global value"},
+		{"global session unset", func(o *Observed) { o.Org.SessionDuration = "" }, "zero_trust.session", Create, "not set"},
+		{"global session 730h written as minutes", func(o *Observed) { o.Org.SessionDuration = "43800m" }, "zero_trust.session", OK, ""},
+		{"token not verified", func(o *Observed) { o.Token = Token{} }, "token", Unknowable, "verify"},
+		{"token disabled", func(o *Observed) { o.Token.Status = "disabled" }, "token", Drift, "disabled"},
+		{"tunnel inactive", func(o *Observed) { o.Tunnel.Status = "inactive" }, "tunnel", OK, "no cloudflared connector"},
+		{"routed hostname without site app", func(o *Observed) { delete(o.Apps, AppSite) }, "access.app.site", Create, "WARNING: the tunnel already routes this hostname"},
+		{"empty rule phase", func(o *Observed) { o.Rules[RuleConfig] = Rule{PhaseEmpty: true} }, "rule.config.consent", Create, "no http_config_settings ruleset yet"},
 		{"tunnel route to wrong service", func(o *Observed) { o.Tunnel.Ingress[0].Service = "http://localhost:8090" }, "tunnel.route", Drift, "routes officers.example.org to http://localhost:8090"},
 		{"tunnel route missing", func(o *Observed) { o.Tunnel.Ingress = o.Tunnel.Ingress[1:] }, "tunnel.route", Create, ""},
 		{"locally managed tunnel", func(o *Observed) { o.Tunnel.ConfigSrc = "local" }, "tunnel.route", Unknowable, "local cloudflared file"},
@@ -161,7 +167,7 @@ func TestDiffTable(t *testing.T) {
 		}, "dns", Drift, "a A record to 192.0.2.1 already exists"},
 		{"CNAME to another tunnel", func(o *Observed) { o.DNS.Records[0].Content = "other.cfargotunnel.com" }, "dns", Drift, "already exists"},
 		{"CNAME not proxied", func(o *Observed) { o.DNS.Records[0].Proxied = no() }, "dns", Drift, "not proxied"},
-		{"DNS proxied unknown", func(o *Observed) { o.DNS.Records[0].Proxied = nil }, "dns", Unknowable, "proxied"},
+		{"DNS proxied missing means false", func(o *Observed) { o.DNS.Records[0].Proxied = nil }, "dns", Drift, "not proxied"},
 		{"no one-time PIN", func(o *Observed) { o.IdP = Seen{} }, "access.idp", Create, ""},
 		{"site app allows another IdP", func(o *Observed) {
 			a := o.Apps[AppSite]
@@ -216,7 +222,7 @@ func TestDiffTable(t *testing.T) {
 		{"worker bound to other D1", func(o *Observed) { o.Worker.D1BindingID = "other" }, "worker", Drift, "bound to D1 database other"},
 		{"worker without binding", func(o *Observed) { o.Worker.D1BindingID = "" }, "worker", Drift, "no D1 binding named BACKUPS"},
 		{"workers.dev on", func(o *Observed) { o.Worker.WorkersDev = yes() }, "worker", Drift, "workers.dev URL is on"},
-		{"preview urls unreported", func(o *Observed) { o.Worker.PreviewURLs = nil }, "worker", Unknowable, "preview URLs"},
+		{"preview urls missing means off", func(o *Observed) { o.Worker.PreviewURLs = nil }, "worker", OK, ""},
 		{"no D1 means migrations create", func(o *Observed) { o.D1 = Seen{} }, "d1.migrations", Create, ""},
 		{"worker secret missing", func(o *Observed) { o.Worker.Secrets = nil }, "worker.secret", Create, ""},
 		{"no worker means secret create", func(o *Observed) { o.Worker = Worker{} }, "worker.secret", Create, ""},

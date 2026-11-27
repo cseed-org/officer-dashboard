@@ -10,10 +10,25 @@
       "existing_id": "zone-1"
     },
     {
+      "id": "token",
+      "kind": "ok",
+      "resource": "Setup token",
+      "name": "active",
+      "detail": [
+        "expires 2026-12-04T00:00:00Z; revoke it when setup is done"
+      ]
+    },
+    {
       "id": "zero_trust",
       "kind": "ok",
       "resource": "Zero Trust organization",
       "name": "club.cloudflareaccess.com"
+    },
+    {
+      "id": "zero_trust.session",
+      "kind": "ok",
+      "resource": "Global session duration",
+      "name": "730h (1 month)"
     },
     {
       "id": "tunnel",
@@ -89,7 +104,7 @@
       "name": "dashboard-backups-host",
       "existing_id": "st-backups",
       "detail": [
-        "expires 2027-11-21T00:00:00Z"
+        "expires 2126-11-20T00:00:00Z"
       ]
     },
     {
@@ -130,7 +145,7 @@
       "name": "Dashboard backups (service token)",
       "existing_id": "app-backups",
       "detail": [
-        "named \"Backups\" (matched by hostname and paths)"
+        "named \"Backup sink\" (matched by hostname and paths)"
       ]
     },
     {
@@ -204,7 +219,7 @@
     "create": 0,
     "drift": 0,
     "manual": 0,
-    "ok": 21,
+    "ok": 23,
     "unknowable": 4
   }
 }

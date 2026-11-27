@@ -25,7 +25,7 @@ func discover(t *testing.T, routes map[string]cffake.Response, d plan.Desired) (
 	t.Helper()
 	srv := cffake.Start(routes)
 	t.Cleanup(srv.Close)
-	o, err := Discover(context.Background(), cfapi.New("test-token", cfapi.WithBaseURL(srv.URL)), d)
+	o, err := Discover(context.Background(), cfapi.New("test-token", cfapi.WithBaseURL(srv.URL), cfapi.WithRetry()), d)
 	if bad := srv.NonGET(); len(bad) != 0 {
 		t.Fatalf("discovery sent non-GET requests: %+v", bad)
 	}
@@ -52,7 +52,7 @@ func TestDiscoverFreshAccount(t *testing.T) {
 	if !o.Zone.Found || o.Zone.ID != cffake.ZoneID || o.Zone.AccountID != cffake.AccountID {
 		t.Fatalf("zone %+v", o.Zone)
 	}
-	if !o.Org.Found || o.Org.SessionDuration != "24h" {
+	if !o.Org.Found || o.Org.SessionDuration != "" || !o.Token.Found || o.Token.Status != "active" {
 		t.Fatalf("org %+v", o.Org)
 	}
 	if o.Tunnel.Found || o.IdP.Found || o.Groups[plan.GroupOfficers].Found || o.Apps[plan.AppSite].Found || o.D1.Found || o.Worker.Found {
@@ -65,7 +65,7 @@ func TestDiscoverFreshAccount(t *testing.T) {
 		t.Fatalf("bot fight mode %+v", o.BotFightMode)
 	}
 	for id, k := range kinds(plan.Diff(d, o)) {
-		if k != plan.Create && id != "zone" && id != "zero_trust" && id != "zone.bot_fight_mode" {
+		if k != plan.Create && id != "zone" && id != "token" && id != "zero_trust" && id != "zone.bot_fight_mode" {
 			t.Errorf("%s: %s, want create", id, k)
 		}
 	}
@@ -94,7 +94,7 @@ func TestDiscoverWithPrefixIgnoresTheRealInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	shared := map[string]bool{"zone": true, "zero_trust": true, "access.idp": true, "zone.bot_fight_mode": true,
+	shared := map[string]bool{"zone": true, "token": true, "zero_trust": true, "zero_trust.session": true, "access.idp": true, "zone.bot_fight_mode": true,
 		// Apps and rules match by hostname or expression first, so a staging install
 		// needs its own hostname as well as a prefix; on the same hostname they match.
 		"access.app.site": true, "access.app.agents": true, "access.app.services": true, "access.app.backups": true,
@@ -209,5 +209,95 @@ func TestDiscoverZoneMissingStopsEarly(t *testing.T) {
 	// officers.example.org, then example.org; never the bare TLD.
 	if n := len(srv.Requests()); n != 2 {
 		t.Fatalf("requests %+v", srv.Requests())
+	}
+}
+
+func TestDiscoverLiveAccountShape(t *testing.T) {
+	// The partial setup a live account had: tunnel and backups present, the rest missing.
+	d := desired(t, "")
+	o, err := discover(t, cffake.Live(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Tunnel.Status != "inactive" || !o.Rules[plan.RuleSkip].PhaseEmpty || o.IdP.Found || o.Org.SessionDuration != "" {
+		t.Fatalf("observed %+v", o)
+	}
+	want := map[string]plan.Kind{
+		"tunnel": plan.OK, "tunnel.route": plan.OK, "dns": plan.OK, "access.idp": plan.Create,
+		"access.group.officers": plan.Create, "access.app.site": plan.Create, "access.app.backups": plan.OK,
+		"access.service_token.services": plan.Create, "access.service_token.backups": plan.OK,
+		"zero_trust.session": plan.Create, "rule.firewall.skip": plan.Create, "zone.bot_fight_mode": plan.Drift,
+		"d1": plan.OK, "worker": plan.OK, "worker.domain": plan.OK,
+	}
+	got := kinds(plan.Diff(d, o))
+	for id, k := range want {
+		if got[id] != k {
+			t.Errorf("%s: %s, want %s", id, got[id], k)
+		}
+	}
+}
+
+func TestDiscoverTokenVerifyFallsBackToUser(t *testing.T) {
+	routes := cffake.Complete()
+	delete(routes, "/accounts/"+cffake.AccountID+"/tokens/verify") // 404 from the fake
+	routes["/user/tokens/verify"] = cffake.Response{Result: map[string]any{"id": "u", "status": "active", "expires_on": "2027-01-01T00:00:00Z"}}
+	o, err := discover(t, routes, desired(t, ""))
+	if err != nil || !o.Token.Found || o.Token.ExpiresOn != "2027-01-01T00:00:00Z" {
+		t.Fatalf("token %+v, err %v", o.Token, err)
+	}
+	routes["/user/tokens/verify"] = cffake.Response{Status: 401, Code: 1000}
+	o, err = discover(t, routes, desired(t, ""))
+	if err != nil || o.Token.Unknown == "" {
+		t.Fatalf("token %+v, err %v", o.Token, err)
+	}
+}
+
+func TestDiscoverInvalidTokenStops(t *testing.T) {
+	routes := cffake.Complete()
+	routes["/zones"] = cffake.Response{Status: 401, Code: 1000, Message: "Invalid API Token"}
+	_, err := discover(t, routes, desired(t, ""))
+	if !cfapi.IsInvalidToken(err) {
+		t.Fatalf("err = %v, want an invalid-token error", err)
+	}
+	// 401 code 1001 is a missing permission, reported per resource.
+	routes = cffake.Complete()
+	routes["/accounts/"+cffake.AccountID+"/access/service_tokens"] = cffake.Response{Status: 401, Code: 1001, Message: "Not authorized"}
+	o, err := discover(t, routes, desired(t, ""))
+	if err != nil || o.ServiceTokens[plan.TokenServices].Unknown == "" {
+		t.Fatalf("tokens %+v, err %v", o.ServiceTokens, err)
+	}
+}
+
+func TestDiscoverReadsPoliciesWhenNotEmbedded(t *testing.T) {
+	routes := cffake.Complete()
+	routes["/accounts/"+cffake.AccountID+"/access/apps"] = cffake.Response{Result: []any{
+		map[string]any{"id": "app-agents", "name": "Officer Dashboard: agents (bypass)", "type": "self_hosted", "destinations": []any{
+			map[string]any{"type": "public", "uri": cffake.Host + "/mcp"}, map[string]any{"type": "public", "uri": cffake.Host + "/oauth/register"},
+			map[string]any{"type": "public", "uri": cffake.Host + "/oauth/token"}, map[string]any{"type": "public", "uri": cffake.Host + "/.well-known/oauth-protected-resource"},
+			map[string]any{"type": "public", "uri": cffake.Host + "/.well-known/oauth-protected-resource/mcp"}, map[string]any{"type": "public", "uri": cffake.Host + "/.well-known/oauth-authorization-server"},
+		}},
+	}}
+	routes["/accounts/"+cffake.AccountID+"/access/apps/app-agents/policies"] = cffake.Response{Result: []any{
+		map[string]any{"id": "p", "name": "Bypass", "decision": "bypass", "include": []any{map[string]any{"everyone": map[string]any{}}}},
+	}}
+	o, err := discover(t, routes, desired(t, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := o.Apps[plan.AppAgents].Policies; len(p) != 1 || p[0].Decision != "bypass" {
+		t.Fatalf("policies %+v", p)
+	}
+}
+
+func TestDiscoverMatchesOnDestinationsNotDeprecatedDomains(t *testing.T) {
+	// self_hosted_domains is deprecated; when destinations is present it alone decides.
+	routes := cffake.Complete()
+	routes["/accounts/"+cffake.AccountID+"/access/apps"] = cffake.Response{Result: []any{
+		map[string]any{"id": "a-1", "name": "Other", "destinations": []any{map[string]any{"type": "public", "uri": "other.example.org"}},
+			"self_hosted_domains": []any{cffake.Host}, "policies": []any{}},
+	}}
+	o, err := discover(t, routes, desired(t, ""))
+	if err != nil || o.Apps[plan.AppSite].Found {
+		t.Fatalf("site app %+v, err %v", o.Apps[plan.AppSite], err)
 	}
 }

@@ -44,7 +44,9 @@ type Seen struct {
 }
 
 type Observed struct {
+	hostname      string // set by Diff for routed
 	Zone          Zone
+	Token         Token
 	Org           Org
 	Tunnel        Tunnel
 	DNS           DNS
@@ -63,14 +65,24 @@ type Zone struct {
 	Name, Status, AccountID string
 }
 
+// Token is the setup token's own status, from Cloudflare's verify endpoint.
+type Token struct {
+	Seen
+	Status, ExpiresOn string
+}
+
 type Org struct {
 	Seen
-	AuthDomain, SessionDuration string
+	AuthDomain string
+	// SessionDuration is the global session duration; empty when the organization does
+	// not set one (a live account omitted the key).
+	SessionDuration string
 }
 
 type Tunnel struct {
 	Seen
 	Name, ConfigSrc string
+	Status          string // inactive, degraded, healthy, down
 	MatchedBy       string // "id" or "name"
 	Ingress         []Ingress
 	IngressUnknown  string
@@ -126,6 +138,9 @@ type Rule struct {
 	Action      string
 	Enabled     *bool
 	Params      map[string]any
+	// PhaseEmpty means the zone has no entry point ruleset for the phase yet (404, code
+	// 10003 on a live account), so the first write creates the ruleset itself.
+	PhaseEmpty bool
 }
 
 type BotFightMode struct {
@@ -196,6 +211,7 @@ func (c *check) seen(s Seen) bool {
 
 // Diff lists one action per desired resource, in a fixed order.
 func Diff(d Desired, o Observed) []Action {
+	o.hostname = d.Hostname
 	var out []Action
 	add := func(c *check) { out = append(out, c.done()) }
 
@@ -220,6 +236,22 @@ func Diff(d Desired, o Observed) []Action {
 		return out
 	}
 
+	tok := &check{a: Action{ID: "token", Resource: "Setup token", Name: "Cloudflare API token"}}
+	switch {
+	case o.Token.Unknown != "":
+		tok.unknownf("%s", o.Token.Unknown)
+	case !o.Token.Found:
+		tok.unknownf("Cloudflare's verify endpoints did not answer for this token")
+	case o.Token.Status != "active":
+		tok.driftf("token status is %q, not active", o.Token.Status)
+	default:
+		tok.a.Name = "active"
+		if o.Token.ExpiresOn != "" {
+			tok.notef("expires %s; revoke it when setup is done", o.Token.ExpiresOn)
+		}
+	}
+	add(tok)
+
 	org := &check{a: Action{ID: "zero_trust", Resource: "Zero Trust organization", Name: "team"}}
 	switch {
 	case o.Org.Unknown != "":
@@ -229,16 +261,30 @@ func Diff(d Desired, o Observed) []Action {
 		org.notef("Zero Trust is not set up: open it and choose a team name (docs/deploy/cloudflare.md step 0.3)")
 	default:
 		org.a.Name = o.Org.AuthDomain
-		if !sameDuration(o.Org.SessionDuration, d.OrgSessionDuration) {
-			org.driftf("global session duration is %s, docs ask for %s (1 month); setup never changes the global value", orNone(o.Org.SessionDuration), d.OrgSessionDuration)
-		}
 	}
 	add(org)
 
+	ses := &check{a: Action{ID: "zero_trust.session", Resource: "Global session duration", Name: d.OrgSessionDuration + " (1 month)"}}
+	switch {
+	case o.Org.Unknown != "" || !o.Org.Found:
+		ses.unknownf("needs the Zero Trust organization")
+	case o.Org.SessionDuration == "":
+		ses.create = true
+		ses.notef("not set (Cloudflare's default is 24h)")
+	case !sameDuration(o.Org.SessionDuration, d.OrgSessionDuration):
+		ses.driftf("set to %s; setup never changes a global value that is already set", o.Org.SessionDuration)
+	}
+	add(ses)
+
 	// Tunnel and its route.
 	tun := &check{a: Action{ID: "tunnel", Resource: "Tunnel", Name: d.Tunnel.Name}}
-	if tun.seen(o.Tunnel.Seen) && o.Tunnel.Name != d.Tunnel.Name {
-		tun.notef("named %q (matched by tunnel ID)", o.Tunnel.Name)
+	if tun.seen(o.Tunnel.Seen) {
+		if o.Tunnel.Name != d.Tunnel.Name {
+			tun.notef("named %q (matched by tunnel ID)", o.Tunnel.Name)
+		}
+		if o.Tunnel.Status == "inactive" || o.Tunnel.Status == "down" {
+			tun.notef("%s: no cloudflared connector is running", o.Tunnel.Status)
+		}
 	}
 	add(tun)
 
@@ -286,9 +332,7 @@ func Diff(d Desired, o Observed) []Action {
 			switch {
 			case r.Type != "CNAME" || target == "" || !strings.EqualFold(strings.TrimSuffix(r.Content, "."), target):
 				dns.driftf("a %s record to %s already exists; setup will not replace it", r.Type, orNone(r.Content))
-			case r.Proxied == nil:
-				dns.unknownf("Cloudflare did not report whether the record is proxied")
-			case !*r.Proxied:
+			case r.Proxied == nil || !*r.Proxied: // a missing boolean is false
 				dns.driftf("CNAME is not proxied")
 			}
 		}
@@ -378,13 +422,11 @@ func Diff(d Desired, o Observed) []Action {
 		switch {
 		case o.Worker.SubdomainUnknown != "":
 			w.unknownf("%s", o.Worker.SubdomainUnknown)
-		case o.Worker.WorkersDev == nil || o.Worker.PreviewURLs == nil:
-			w.unknownf("Cloudflare did not report whether workers.dev and preview URLs are on")
-		default:
-			if *o.Worker.WorkersDev {
+		default: // a missing boolean is false
+			if o.Worker.WorkersDev != nil && *o.Worker.WorkersDev {
 				w.driftf("the workers.dev URL is on; docs ask for workers_dev disabled")
 			}
-			if *o.Worker.PreviewURLs {
+			if o.Worker.PreviewURLs != nil && *o.Worker.PreviewURLs {
 				w.driftf("preview URLs are on; docs ask for preview_urls disabled")
 			}
 		}
@@ -419,6 +461,9 @@ func diffApp(spec AppSpec, o Observed) Action {
 	app := o.Apps[spec.Key]
 	c := &check{a: Action{ID: "access.app." + spec.Key, Resource: "Access application", Name: spec.Name}}
 	if !c.seen(app.Seen) {
+		if spec.Key == AppSite && !app.Seen.Found && app.Unknown == "" && routed(o) {
+			c.notef("WARNING: the tunnel already routes this hostname; when cloudflared connects, the dashboard is public without the Access sign-in until this application exists")
+		}
 		return c.done()
 	}
 	switch app.MatchedBy {
@@ -509,6 +554,9 @@ func includeKeys(inc []Include) []string {
 func diffRule(spec RuleSpec, r Rule) Action {
 	c := &check{a: Action{ID: "rule." + spec.Key, Resource: "Rule (" + spec.Phase + ")", Name: spec.Description}}
 	if !c.seen(r.Seen) {
+		if r.PhaseEmpty {
+			c.notef("the zone has no %s ruleset yet; the first write creates it", spec.Phase)
+		}
 		return c.done()
 	}
 	if r.MatchedBy == "expression" {
@@ -566,6 +614,19 @@ func paramMatches(want, got any) bool {
 		}
 	}
 	return true
+}
+
+// routed reports whether the tunnel's routes send the dashboard hostname anywhere.
+func routed(o Observed) bool {
+	if !o.Tunnel.Found {
+		return false
+	}
+	for _, in := range o.Tunnel.Ingress {
+		if in.Hostname != "" && strings.Trim(in.Path, "/") == "" && strings.EqualFold(in.Hostname, o.hostname) {
+			return true
+		}
+	}
+	return false
 }
 
 func sameDuration(a, b string) bool {

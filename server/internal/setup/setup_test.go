@@ -50,7 +50,7 @@ func runSetup(t *testing.T, routes map[string]cffake.Response, env map[string]st
 		ReadPassword: func(int) ([]byte, error) { return nil, errors.New("no terminal") },
 		NewReader: func(tok string) cfapi.Reader {
 			seen = tok
-			return cfapi.New(tok, cfapi.WithBaseURL(srv.URL))
+			return cfapi.New(tok, cfapi.WithBaseURL(srv.URL), cfapi.WithRetry())
 		},
 	})
 	if bad := srv.NonGET(); len(bad) > 0 {
@@ -105,6 +105,30 @@ func TestDryRunCompleteAccount(t *testing.T) {
 		t.Fatalf("exit %d: %s", j.code, j.stderr)
 	}
 	golden(t, "dry-run-complete.json", j.stdout)
+}
+
+// TestDryRunLiveShapedAccount uses the partial setup a live account had during the
+// read-only spike: it must report creates, one drift and the unprotected-route warning.
+func TestDryRunLiveShapedAccount(t *testing.T) {
+	r := runSetup(t, cffake.Live(), nil, "--dry-run")
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	golden(t, "dry-run-live.txt", r.stdout)
+	for _, want := range []string{"drift       Bot Fight Mode", "WARNING: the tunnel already routes this hostname", "no cloudflared connector is running"} {
+		if !strings.Contains(r.stdout, want) {
+			t.Errorf("output lacks %q", want)
+		}
+	}
+}
+
+func TestInvalidTokenMessage(t *testing.T) {
+	routes := cffake.Complete()
+	routes["/zones"] = cffake.Response{Status: 401, Code: 1000, Message: "Invalid API Token"}
+	r := runSetup(t, routes, nil, "--dry-run")
+	if r.code != 1 || !strings.Contains(r.stderr, "does not accept this API token") || r.stdout != "" {
+		t.Fatalf("exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
 }
 
 func TestDryRunUsesTunnelIDFromTokenFile(t *testing.T) {
@@ -205,7 +229,10 @@ func TestTokenSources(t *testing.T) {
 		ReadFile:     os.ReadFile,
 		IsTerminal:   func(int) bool { return true },
 		ReadPassword: func(int) ([]byte, error) { return []byte(" " + token + " "), nil },
-		NewReader:    func(tok string) cfapi.Reader { seen = tok; return cfapi.New(tok, cfapi.WithBaseURL(srv.URL)) },
+		NewReader: func(tok string) cfapi.Reader {
+			seen = tok
+			return cfapi.New(tok, cfapi.WithBaseURL(srv.URL), cfapi.WithRetry())
+		},
 	})
 	if code != 0 || seen != token || !strings.Contains(errb.String(), "input hidden") || strings.Contains(out.String()+errb.String(), token) {
 		t.Fatalf("exit %d, token %q, stderr %q", code, seen, errb.String())

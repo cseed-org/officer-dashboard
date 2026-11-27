@@ -117,6 +117,10 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	observed, err := cfprovision.Discover(ctx, deps.NewReader(token), desired)
+	if cfapi.IsInvalidToken(err) {
+		fmt.Fprintln(deps.Stderr, "setup: Cloudflare does not accept this API token (code 1000): check it was copied whole and is still active")
+		return 1
+	}
 	if err != nil {
 		fmt.Fprintln(deps.Stderr, "setup: reading Cloudflare failed:", scrub(err.Error(), token))
 		return 1

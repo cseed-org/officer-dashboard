@@ -10,6 +10,7 @@ package cfprovision
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"slices"
@@ -52,6 +53,7 @@ func Discover(ctx context.Context, api cfapi.Reader, d plan.Desired) (plan.Obser
 		return o, nil
 	}
 	steps := []func() error{
+		func() (err error) { o.Token, err = x.token(ctx); return },
 		func() (err error) { o.Org, err = x.org(ctx); return },
 		func() (err error) { o.Tunnel, err = x.tunnel(ctx); return },
 		func() (err error) { o.DNS, err = x.dns(ctx); return },
@@ -134,10 +136,38 @@ func (x *discovery) zone(ctx context.Context) (plan.Zone, error) {
 	return plan.Zone{}, nil
 }
 
+// token: GET /accounts/{account_id}/tokens/verify, then GET /user/tokens/verify.
+// An account-owned token can only be verified at the account endpoint, which needs the
+// account ID from the zone; a live /user/tokens/verify answered 401 code 1000 for one.
+// Fields: id, status, expires_on.
+func (x *discovery) token(ctx context.Context) (plan.Token, error) {
+	var r struct {
+		Status    string `json:"status"`
+		ExpiresOn string `json:"expires_on"`
+	}
+	err := x.api.Get(ctx, x.accountPath("/tokens/verify"), nil, &r)
+	if err != nil && isClientError(err) {
+		err = x.api.Get(ctx, "/user/tokens/verify", nil, &r)
+		if err != nil && isClientError(err) {
+			return plan.Token{Seen: plan.Seen{Unknown: "neither the account nor the user verify endpoint accepted the token"}}, nil
+		}
+	}
+	if err != nil {
+		return plan.Token{}, err
+	}
+	return plan.Token{Seen: plan.Seen{Found: true}, Status: r.Status, ExpiresOn: r.ExpiresOn}, nil
+}
+
+func isClientError(err error) bool {
+	var e *cfapi.Error
+	return errors.As(err, &e) && e.Status >= 400 && e.Status < 500
+}
+
 // org: GET /accounts/{account_id}/access/organizations
 // https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/list/
 // Fields: auth_domain, name, session_duration. The reference does not say what an
 // account without Zero Trust returns; a 404 or an empty auth_domain is taken as "not set up".
+// A live organization without a global session duration omitted session_duration.
 func (x *discovery) org(ctx context.Context) (plan.Org, error) {
 	var r struct {
 		AuthDomain      string `json:"auth_domain"`
@@ -166,6 +196,7 @@ func (x *discovery) tunnel(ctx context.Context) (plan.Tunnel, error) {
 	type tunnel struct {
 		ID        string  `json:"id"`
 		Name      string  `json:"name"`
+		Status    string  `json:"status"`
 		DeletedAt *string `json:"deleted_at"`
 		ConfigSrc string  `json:"config_src"`
 	}
@@ -206,7 +237,7 @@ func (x *discovery) tunnel(ctx context.Context) (plan.Tunnel, error) {
 		return plan.Tunnel{}, ambiguous("tunnel", x.d.Tunnel.Name, ids)
 	}
 	t := hits[0]
-	out := plan.Tunnel{Seen: plan.Seen{Found: true, ID: t.ID}, Name: t.Name, ConfigSrc: t.ConfigSrc, MatchedBy: matched}
+	out := plan.Tunnel{Seen: plan.Seen{Found: true, ID: t.ID}, Name: t.Name, ConfigSrc: t.ConfigSrc, Status: t.Status, MatchedBy: matched}
 	if t.ConfigSrc == "local" {
 		return out, nil
 	}
@@ -351,9 +382,12 @@ func (x *discovery) serviceTokens(ctx context.Context, out map[string]plan.Servi
 // Self-hosted fields: id, name, domain, destinations[] {type "public", uri},
 // self_hosted_domains (deprecated), session_duration, allowed_idps,
 // auto_redirect_to_identity, service_auth_401_redirect.
-// Policies: GET /accounts/{account_id}/access/apps/{app_id}/policies
+// A live account returned both destinations and the deprecated self_hosted_domains; the
+// match uses destinations, and self_hosted_domains or domain only when destinations is
+// empty. It also embedded each app's policies (id, name, decision, include, precedence,
+// reusable) in the list. When an app has no policies key, they are read from
+// GET /accounts/{account_id}/access/apps/{app_id}/policies
 // https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/subresources/policies/methods/list/
-// Fields: id, name, decision, include[], precedence.
 func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 	type app struct {
 		ID           string `json:"id"`
@@ -363,11 +397,12 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 			Type string `json:"type"`
 			URI  string `json:"uri"`
 		} `json:"destinations"`
-		SelfHostedDomains []string `json:"self_hosted_domains"`
-		SessionDuration   string   `json:"session_duration"`
-		AllowedIdPs       []string `json:"allowed_idps"`
-		AutoRedirect      *bool    `json:"auto_redirect_to_identity"`
-		ServiceAuth401    *bool    `json:"service_auth_401_redirect"`
+		SelfHostedDomains []string     `json:"self_hosted_domains"`
+		SessionDuration   string       `json:"session_duration"`
+		AllowedIdPs       []string     `json:"allowed_idps"`
+		AutoRedirect      *bool        `json:"auto_redirect_to_identity"`
+		ServiceAuth401    *bool        `json:"service_auth_401_redirect"`
+		Policies          *[]apiPolicy `json:"policies"`
 	}
 	all, err := cfapi.ListAll[app](ctx, x.api, x.accountPath("/access/apps"), nil)
 	if err != nil {
@@ -431,8 +466,9 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 		a := all[hits[0]]
 		got := plan.App{Seen: plan.Seen{Found: true, ID: a.ID}, Name: a.Name, MatchedBy: matched, Destinations: dests[hits[0]],
 			SessionDuration: a.SessionDuration, AllowedIdPs: a.AllowedIdPs, AutoRedirect: a.AutoRedirect, ServiceAuth401: a.ServiceAuth401}
-		got.Policies, got.PoliciesUnknown, err = x.appPolicies(ctx, a.ID)
-		if err != nil {
+		if a.Policies != nil {
+			got.Policies = convertPolicies(*a.Policies)
+		} else if got.Policies, got.PoliciesUnknown, err = x.appPolicies(ctx, a.ID); err != nil {
 			return err
 		}
 		out[spec.Key] = got
@@ -440,19 +476,24 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 	return nil
 }
 
+type apiPolicy struct {
+	ID       string                       `json:"id"`
+	Name     string                       `json:"name"`
+	Decision string                       `json:"decision"`
+	Include  []map[string]json.RawMessage `json:"include"`
+}
+
 func (x *discovery) appPolicies(ctx context.Context, appID string) ([]plan.Policy, string, error) {
-	type policy struct {
-		ID       string                       `json:"id"`
-		Name     string                       `json:"name"`
-		Decision string                       `json:"decision"`
-		Include  []map[string]json.RawMessage `json:"include"`
-	}
-	all, err := cfapi.ListAll[policy](ctx, x.api, x.accountPath("/access/apps/"+url.PathEscape(appID)+"/policies"), nil)
+	all, err := cfapi.ListAll[apiPolicy](ctx, x.api, x.accountPath("/access/apps/"+url.PathEscape(appID)+"/policies"), nil)
 	if err != nil {
 		why, err := unreadable("the application's policies", err)
 		return nil, why, err
 	}
-	var out []plan.Policy
+	return convertPolicies(all), "", nil
+}
+
+func convertPolicies(all []apiPolicy) []plan.Policy {
+	out := []plan.Policy{}
 	for _, p := range all {
 		pol := plan.Policy{ID: p.ID, Name: p.Name, Decision: p.Decision}
 		for _, rule := range p.Include {
@@ -460,7 +501,7 @@ func (x *discovery) appPolicies(ctx context.Context, appID string) ([]plan.Polic
 		}
 		out = append(out, pol)
 	}
-	return out, "", nil
+	return out
 }
 
 // parseInclude reads one Access rule: {"group":{"id":…}}, {"everyone":{}} or
@@ -491,7 +532,8 @@ func parseInclude(rule map[string]json.RawMessage) plan.Include {
 // https://developers.cloudflare.com/api/resources/rulesets/subresources/phases/methods/get/
 // Fields: id, rules[] {id, description, expression, action, action_parameters, enabled}.
 // A 404 means the zone has no entry point ruleset for the phase yet
-// (https://developers.cloudflare.com/waf/custom-rules/create-api/).
+// (https://developers.cloudflare.com/waf/custom-rules/create-api/); a live zone answered
+// all three phases with 404 code 10003, "could not find entrypoint ruleset".
 func (x *discovery) rules(ctx context.Context, out map[string]plan.Rule) error {
 	type rule struct {
 		ID          string         `json:"id"`
@@ -507,6 +549,7 @@ func (x *discovery) rules(ctx context.Context, out map[string]plan.Rule) error {
 	}
 	phases := map[string]*ruleset{}
 	unknown := map[string]string{}
+	empty := map[string]bool{}
 	for _, spec := range x.d.Rules {
 		rs, seen := phases[spec.Phase]
 		if !seen {
@@ -514,6 +557,7 @@ func (x *discovery) rules(ctx context.Context, out map[string]plan.Rule) error {
 			err := x.api.Get(ctx, x.zonePath("/rulesets/phases/"+url.PathEscape(spec.Phase)+"/entrypoint"), nil, &r)
 			switch {
 			case cfapi.IsNotFound(err):
+				empty[spec.Phase] = true
 			case err != nil:
 				why, err := unreadable("the "+spec.Phase+" rules", err)
 				if err != nil {
@@ -530,7 +574,7 @@ func (x *discovery) rules(ctx context.Context, out map[string]plan.Rule) error {
 			continue
 		}
 		if rs == nil {
-			out[spec.Key] = plan.Rule{}
+			out[spec.Key] = plan.Rule{PhaseEmpty: empty[spec.Phase]}
 			continue
 		}
 		var hits []int
@@ -570,8 +614,9 @@ func (x *discovery) rules(ctx context.Context, out map[string]plan.Rule) error {
 
 // botFightMode: GET /zones/{zone_id}/bot_management
 // https://developers.cloudflare.com/api/resources/bot_management/methods/get/
-// Field: fight_mode (BotFightModeConfiguration). Other plans return other shapes,
-// which leave On nil.
+// Field: fight_mode (BotFightModeConfiguration; present on a live Free zone). Unlike
+// other booleans, a missing fight_mode stays unknown rather than false: the reference
+// says Super Bot Fight Mode plans return other shapes, where false would be a guess.
 func (x *discovery) botFightMode(ctx context.Context) (plan.BotFightMode, error) {
 	var r struct {
 		FightMode *bool `json:"fight_mode"`

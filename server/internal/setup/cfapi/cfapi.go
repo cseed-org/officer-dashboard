@@ -83,9 +83,31 @@ func (e *Error) Error() string {
 // IsNotFound reports whether err is a Cloudflare 404.
 func IsNotFound(err error) bool { return statusIs(err, http.StatusNotFound) }
 
-// IsForbidden reports whether err is a Cloudflare 401 or 403: the token lacks a permission.
+// IsForbidden reports whether err is a Cloudflare 401 or 403 for a valid token: the
+// token lacks a permission. A live account answered a missing permission with 401 code
+// 1001, and an invalid token with 401 code 1000, which IsInvalidToken reports instead.
 func IsForbidden(err error) bool {
-	return statusIs(err, http.StatusForbidden) || statusIs(err, http.StatusUnauthorized)
+	return (statusIs(err, http.StatusForbidden) || statusIs(err, http.StatusUnauthorized)) && !IsInvalidToken(err)
+}
+
+// CodeInvalidToken is Cloudflare's error code for a token it does not accept.
+const CodeInvalidToken = 1000
+
+// IsInvalidToken reports whether Cloudflare rejected the token itself (code 1000).
+func IsInvalidToken(err error) bool { return HasCode(err, CodeInvalidToken) }
+
+// HasCode reports whether err is a Cloudflare error carrying code.
+func HasCode(err error, code int) bool {
+	var e *Error
+	if !errors.As(err, &e) {
+		return false
+	}
+	for _, c := range e.Codes {
+		if c == code {
+			return true
+		}
+	}
+	return false
 }
 
 func statusIs(err error, status int) bool {
@@ -100,6 +122,7 @@ type Client struct {
 	token    string
 	http     *http.Client
 	maxPages int
+	retries  []time.Duration
 }
 
 // Option configures a Client.
@@ -112,9 +135,15 @@ func WithBaseURL(u string) Option { return func(c *Client) { c.baseURL = strings
 // only GET requests leave the process, and redirects are still refused.
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
 
+// WithRetry sets the waits before each retry of a request that failed with a 5xx, a
+// 429 or a transport error. The default is 0.5s, 1s, 2s; no waits means no retry.
+// Retrying is safe because every request is a GET.
+func WithRetry(waits ...time.Duration) Option { return func(c *Client) { c.retries = waits } }
+
 // New returns a read-only client authenticated with an API token.
 func New(token string, opts ...Option) *Client {
-	c := &Client{baseURL: DefaultBaseURL, token: token, http: &http.Client{Timeout: 30 * time.Second}, maxPages: 200}
+	c := &Client{baseURL: DefaultBaseURL, token: token, http: &http.Client{Timeout: 30 * time.Second}, maxPages: 200,
+		retries: []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second}}
 	for _, o := range opts {
 		o(c)
 	}
@@ -182,7 +211,8 @@ func (c *Client) Get(ctx context.Context, path string, query url.Values, out any
 }
 
 // List implements Reader. It pages with page/per_page, which every list endpoint used
-// by setup accepts (per_page 50 is inside every endpoint's documented range), and
+// by setup accepts. per_page 20 is inside every endpoint's documented range (zones allow
+// 5-50, D1 10-10000) and small, because a live Access apps list answered 504 at 50. It
 // stops when result_info says there are no more pages, or when there is no result_info.
 func (c *Client) List(ctx context.Context, path string, query url.Values, each func(json.RawMessage) error) error {
 	q := url.Values{}
@@ -190,7 +220,7 @@ func (c *Client) List(ctx context.Context, path string, query url.Values, each f
 		q[k] = append([]string(nil), v...)
 	}
 	if q.Get("per_page") == "" {
-		q.Set("per_page", "50")
+		q.Set("per_page", "20")
 	}
 	seen := 0
 	for page := 1; ; page++ {
@@ -237,8 +267,26 @@ func (c *Client) List(ctx context.Context, path string, query url.Values, each f
 }
 
 func (c *Client) get(ctx context.Context, path string, query url.Values) (*envelope, error) {
+	for attempt := 0; ; attempt++ {
+		env, retry, err := c.getOnce(ctx, path, query)
+		if !retry || attempt >= len(c.retries) {
+			return env, err
+		}
+		t := time.NewTimer(c.retries[attempt])
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return nil, fmt.Errorf("cloudflare: GET %s: %w", path, ctx.Err())
+		case <-t.C:
+		}
+	}
+}
+
+// getOnce sends one request. retry is true for a failure worth repeating: a 5xx, a 429
+// or a transport error.
+func (c *Client) getOnce(ctx context.Context, path string, query url.Values) (env *envelope, retry bool, err error) {
 	if !strings.HasPrefix(path, "/") {
-		return nil, fmt.Errorf("cloudflare: path %q must start with /", path)
+		return nil, false, fmt.Errorf("cloudflare: path %q must start with /", path)
 	}
 	u := c.baseURL + path
 	if len(query) > 0 {
@@ -246,7 +294,7 @@ func (c *Client) get(ctx context.Context, path string, query url.Values) (*envel
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return nil, fmt.Errorf("cloudflare: GET %s: invalid request", path)
+		return nil, false, fmt.Errorf("cloudflare: GET %s: invalid request", path)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
@@ -254,21 +302,21 @@ func (c *Client) get(ctx context.Context, path string, query url.Values) (*envel
 	res, err := c.http.Do(req)
 	if err != nil {
 		if errors.Is(err, ErrNotReadOnly) {
-			return nil, ErrNotReadOnly
+			return nil, false, ErrNotReadOnly
 		}
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("cloudflare: GET %s: %w", path, ctxErr)
+			return nil, false, fmt.Errorf("cloudflare: GET %s: %w", path, ctxErr)
 		}
 		// Do not wrap err: it holds the full URL and transport detail; keep the message plain.
-		return nil, fmt.Errorf("cloudflare: GET %s: request failed", path)
+		return nil, true, fmt.Errorf("cloudflare: GET %s: request failed", path)
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 16<<20))
 	if err != nil {
-		return nil, fmt.Errorf("cloudflare: GET %s: reading the response failed", path)
+		return nil, true, fmt.Errorf("cloudflare: GET %s: reading the response failed", path)
 	}
-	var env envelope
-	jsonErr := json.Unmarshal(raw, &env)
+	env = &envelope{}
+	jsonErr := json.Unmarshal(raw, env)
 	if res.StatusCode < 200 || res.StatusCode >= 300 || jsonErr != nil || !env.Success {
 		e := &Error{Method: http.MethodGet, Path: path}
 		if res.StatusCode < 200 || res.StatusCode >= 300 {
@@ -282,9 +330,9 @@ func (c *Client) get(ctx context.Context, path string, query url.Values) (*envel
 		} else if e.Status == 0 {
 			e.Messages = []string{"response was not valid JSON"}
 		}
-		return nil, e
+		return nil, e.Status >= 500 || e.Status == http.StatusTooManyRequests, e
 	}
-	return &env, nil
+	return env, false, nil
 }
 
 func (c *Client) scrub(s string) string {

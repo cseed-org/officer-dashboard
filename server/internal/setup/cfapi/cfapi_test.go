@@ -173,7 +173,7 @@ func TestErrorsNeverContainTheToken(t *testing.T) {
 	for name, h := range cases {
 		t.Run(name, func(t *testing.T) {
 			s, methods := server(t, h)
-			err := New(secretToken, WithBaseURL(s.URL)).Get(context.Background(), "/zones", nil, &struct{}{})
+			err := New(secretToken, WithBaseURL(s.URL), WithRetry()).Get(context.Background(), "/zones", nil, &struct{}{})
 			if err == nil {
 				t.Fatal("expected an error")
 			}
@@ -188,7 +188,7 @@ func TestErrorsNeverContainTheToken(t *testing.T) {
 	t.Run("transport failure", func(t *testing.T) {
 		s := httptest.NewServer(http.NotFoundHandler())
 		s.Close()
-		err := New(secretToken, WithBaseURL(s.URL)).Get(context.Background(), "/zones", nil, nil)
+		err := New(secretToken, WithBaseURL(s.URL), WithRetry()).Get(context.Background(), "/zones", nil, nil)
 		if err == nil || strings.Contains(err.Error(), secretToken) {
 			t.Fatalf("err = %v", err)
 		}
@@ -207,5 +207,49 @@ func TestForbiddenIsRecognised(t *testing.T) {
 	err := New(secretToken, WithBaseURL(s.URL)).List(context.Background(), "/zones", nil, func(json.RawMessage) error { return nil })
 	if !IsForbidden(err) || IsNotFound(err) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRetriesServerErrorsThenSucceeds(t *testing.T) {
+	// A live Access apps list answered 504 with an empty body once, then 200.
+	calls := 0
+	s, methods := server(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		switch calls {
+		case 1:
+			w.WriteHeader(504)
+		case 2:
+			w.WriteHeader(429)
+		default:
+			fmt.Fprint(w, `{"success":true,"result":[{"id":"a"}]}`)
+		}
+	})
+	got, err := ListAll[struct{ ID string }](context.Background(), New(secretToken, WithBaseURL(s.URL), WithRetry(0, 0, 0)), "/accounts/a/access/apps", nil)
+	if err != nil || len(got) != 1 || len(*methods) != 3 {
+		t.Fatalf("got %v, %v after %v", got, err, *methods)
+	}
+}
+
+func TestRetryGivesUpAndNeverRetriesClientErrors(t *testing.T) {
+	for status, want := range map[int]int{502: 3, 404: 1, 403: 1} {
+		s, methods := server(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) })
+		err := New(secretToken, WithBaseURL(s.URL), WithRetry(0, 0)).Get(context.Background(), "/zones", nil, nil)
+		if err == nil || len(*methods) != want {
+			t.Fatalf("HTTP %d: %d requests (want %d), err %v", status, len(*methods), want, err)
+		}
+	}
+}
+
+func TestInvalidTokenIsNotAPermissionGap(t *testing.T) {
+	// Live: an invalid token is 401 code 1000; a missing permission is 401 code 1001.
+	for code, invalid := range map[int]bool{1000: true, 1001: false} {
+		s, _ := server(t, func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(401)
+			fmt.Fprintf(w, `{"success":false,"errors":[{"code":%d,"message":"x"}]}`, code)
+		})
+		err := New(secretToken, WithBaseURL(s.URL)).Get(context.Background(), "/zones", nil, nil)
+		if IsInvalidToken(err) != invalid || IsForbidden(err) == invalid {
+			t.Fatalf("code %d: invalid=%v forbidden=%v", code, IsInvalidToken(err), IsForbidden(err))
+		}
 	}
 }

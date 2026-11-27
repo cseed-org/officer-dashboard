@@ -3,9 +3,10 @@
 // with a Cloudflare-shaped 404, and records every request so a test can assert that
 // only GET was ever sent. It is not stateful: a fuller fake is planned separately.
 //
-// The fixtures are written out literally from docs/deploy/cloudflare.md and
-// docs/deploy/fresh-install.md, not built from plan.Desired, so tests compare the
-// code against an independent copy of the docs.
+// The fixtures' names, paths and expressions are written out literally from
+// docs/deploy/cloudflare.md and docs/deploy/fresh-install.md, not built from
+// plan.Desired, so tests compare the code against an independent copy of the docs.
+// Their response shapes follow a live read-only run (spike stage 2, 2026-11-27).
 package cffake
 
 import (
@@ -21,9 +22,10 @@ import (
 // Response is what one path returns. Result is encoded as the envelope's "result";
 // a slice is paged. A non-zero Status with Code makes the request fail.
 type Response struct {
-	Status int
-	Code   int
-	Result any
+	Status  int
+	Code    int
+	Message string
+	Result  any
 }
 
 // Request is one request the fake received.
@@ -86,7 +88,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusNotFound, 7003, "Could not route to "+r.URL.Path)
 		return
 	case route.Status != 0:
-		fail(route.Status, route.Code, fmt.Sprintf("HTTP %d from the fake", route.Status))
+		msg := route.Message
+		if msg == "" {
+			msg = fmt.Sprintf("HTTP %d from the fake", route.Status)
+		}
+		fail(route.Status, route.Code, msg)
 		return
 	}
 	body := map[string]any{"success": true, "errors": []any{}, "messages": []any{}, "result": route.Result}
@@ -118,85 +124,170 @@ const (
 func acct(p string) string { return "/accounts/" + AccountID + p }
 func zone(p string) string { return "/zones/" + ZoneID + p }
 
+// Response shapes follow what a live, read-only run returned on 2026-11-27 (spike stage
+// 2): keys a live response carried are included, so decoding is tested against them.
+
+func noEntrypoint(phase string) Response {
+	return Response{Status: 404, Code: 10003, Message: "could not find entrypoint ruleset in the " + phase + " phase", Result: map[string]any{}}
+}
+
+func pub(uris ...string) []any {
+	out := make([]any, len(uris))
+	for i, u := range uris {
+		out[i] = map[string]any{"type": "public", "uri": u}
+	}
+	return out
+}
+
+// app is a self-hosted Access application as the live list returned it: destinations
+// plus the deprecated self_hosted_domains, and its policies embedded.
+func app(id, name string, extra map[string]any, policies []any, uris ...string) map[string]any {
+	a := map[string]any{"id": id, "uid": id, "type": "self_hosted", "name": name, "aud": "aud-" + id,
+		"domain": uris[0], "self_hosted_domains": append([]any(nil), toAny(uris)...), "destinations": pub(uris...),
+		"app_launcher_visible": true, "allowed_idps": []any{}, "tags": []any{}, "auto_redirect_to_identity": false,
+		"policies": policies, "session_duration": "24h", "enable_binding_cookie": false, "http_only_cookie_attribute": false,
+		"options_preflight_bypass": false, "eager_redirect_cookie_setting": true}
+	for k, v := range extra {
+		a[k] = v
+	}
+	return a
+}
+
+func toAny(s []string) []any {
+	out := make([]any, len(s))
+	for i, v := range s {
+		out[i] = v
+	}
+	return out
+}
+
+func policy(id, name, decision string, include ...any) map[string]any {
+	return map[string]any{"id": id, "uid": id, "name": name, "decision": decision, "include": include, "exclude": []any{}, "require": []any{},
+		"connection_rules": map[string]any{"rdp": map[string]any{}}, "reusable": true, "precedence": 1}
+}
+
+func group(id string) any { return map[string]any{"group": map[string]any{"id": id}} }
+func token(id string) any { return map[string]any{"service_token": map[string]any{"token_id": id}} }
+
+func serviceToken(id, name, expires string) map[string]any {
+	return map[string]any{"id": id, "name": name, "client_id": id + ".access", "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+		"expires_at": expires, "duration": "8760h", "client_secret_version": 1, "enabled": true, "tags": map[string]any{}}
+}
+
+func tunnel(id, name, status string) map[string]any {
+	return map[string]any{"id": id, "account_tag": AccountID, "name": name, "deleted_at": nil, "connections": []any{}, "tun_type": "cfd_tunnel",
+		"metadata": map[string]any{}, "status": status, "remote_config": true, "config_src": "cloudflare"}
+}
+
 // Fresh is an account where only the manual steps are done: example.org is an active
-// zone and Zero Trust is open with its default 24h session. Nothing else exists, and a
-// few unrelated resources are present to make sure they are not matched.
+// zone and Zero Trust is open without a global session duration. Nothing else exists;
+// a few unrelated resources are present to make sure they are not matched.
 func Fresh() map[string]Response {
 	return map[string]Response{
 		"/zones": {Result: []any{
 			map[string]any{"id": "zone-other", "name": "other.org", "status": "active", "account": map[string]any{"id": AccountID}},
-			map[string]any{"id": ZoneID, "name": "example.org", "status": "active", "account": map[string]any{"id": AccountID, "name": "Club"}},
+			map[string]any{"id": ZoneID, "name": "example.org", "status": "active", "paused": false, "type": "full",
+				"account": map[string]any{"id": AccountID, "name": "Club"}, "permissions": []any{"#zone:read"}, "plan": map[string]any{"legacy_id": "free"}},
 		}},
-		acct("/access/organizations"):      {Result: map[string]any{"auth_domain": "club.cloudflareaccess.com", "name": "club", "session_duration": "24h"}},
-		acct("/cfd_tunnel"):                {Result: []any{map[string]any{"id": "tun-other", "name": "homelab", "config_src": "cloudflare", "deleted_at": nil}}},
-		zone("/dns_records"):               {Result: []any{}},
-		acct("/access/identity_providers"): {Result: []any{}},
-		acct("/access/groups"):             {Result: []any{map[string]any{"id": "g-x", "name": "Officers (old club)"}}},
-		acct("/access/service_tokens"):     {Result: []any{}},
-		acct("/access/apps"):               {Result: []any{map[string]any{"id": "app-x", "name": "Wiki", "type": "self_hosted", "domain": "wiki.example.org", "destinations": []any{map[string]any{"type": "public", "uri": "wiki.example.org"}}}}},
-		zone("/bot_management"):            {Result: map[string]any{"fight_mode": false, "enable_js": false}},
-		acct("/d1/database"):               {Result: []any{map[string]any{"uuid": "d1-members", "name": "membership"}}},
-		acct("/workers/scripts"):           {Result: []any{map[string]any{"id": "something-else"}}},
-		acct("/workers/domains"):           {Result: []any{}},
+		acct("/tokens/verify"):        {Result: map[string]any{"id": "tok-1", "status": "active", "expires_on": "2026-12-04T00:00:00Z"}},
+		"/user/tokens/verify":         {Status: 401, Code: 1000, Message: "Invalid API Token"},
+		acct("/access/organizations"): {Result: map[string]any{"auth_domain": "club.cloudflareaccess.com", "name": "club", "is_ui_read_only": false, "strict_service_token_auth": true}},
+		acct("/cfd_tunnel"):           {Result: []any{tunnel("tun-other", "homelab", "healthy")}},
+		zone("/dns_records"):          {Result: []any{}},
+		acct("/access/identity_providers"): {Result: []any{map[string]any{"id": "idp-cf", "type": "cloudflare", "name": "Cloudflare",
+			"config": map[string]any{"restrict_to_account_members": true}}}},
+		acct("/access/groups"):         {Result: []any{map[string]any{"id": "g-x", "name": "Officers (old club)"}}},
+		acct("/access/service_tokens"): {Result: []any{}},
+		acct("/access/apps"):           {Result: []any{app("app-x", "Wiki", nil, []any{}, "wiki.example.org")}},
+		zone("/bot_management"):        {Result: map[string]any{"enable_js": false, "fight_mode": false, "ai_bots_protection": "disabled", "using_latest_model": true}},
+		acct("/d1/database"):           {Result: []any{map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3}}},
+		acct("/workers/scripts"):       {Result: []any{map[string]any{"id": "something-else", "has_modules": true}}},
+		acct("/workers/domains"):       {Result: []any{}},
+		zone("/rulesets/phases/http_request_firewall_custom/entrypoint"): noEntrypoint("http_request_firewall_custom"),
 		zone("/rulesets/phases/http_request_cache_settings/entrypoint"): {Result: map[string]any{"id": "rs-cache", "phase": "http_request_cache_settings", "rules": []any{
 			map[string]any{"id": "r-img", "description": "Cache images", "expression": `(http.request.uri.path.extension eq "png")`, "action": "set_cache_settings", "action_parameters": map[string]any{"cache": true}, "enabled": true},
 		}}},
-		// http_request_firewall_custom and http_config_settings have no entry point: 404.
+		zone("/rulesets/phases/http_config_settings/entrypoint"): noEntrypoint("http_config_settings"),
 	}
 }
 
 // agentExpr is the expression in docs/deploy/cloudflare.md step 6.2, for Host.
 const agentExpr = `(http.host eq "officers.example.org" and (http.request.uri.path eq "/mcp" or starts_with(http.request.uri.path, "/mcp/") or http.request.uri.path in {"/oauth/register" "/oauth/token" "/.well-known/oauth-authorization-server"} or starts_with(http.request.uri.path, "/.well-known/oauth-protected-resource") or starts_with(http.request.uri.path, "/api/ingest/") or starts_with(http.request.uri.path, "/api/agent/")))`
 
+// tunnelAndBackups adds what both Live and Complete have: the tunnel, its route and
+// CNAME, the backup D1 database and Worker, and the backup service token.
+func tunnelAndBackups(r map[string]Response) {
+	r[acct("/cfd_tunnel")] = Response{Result: []any{tunnel("tun-other", "homelab", "healthy"), tunnel(TunnelID, "officer-dashboard", "healthy")}}
+	r[acct("/cfd_tunnel/"+TunnelID+"/configurations")] = Response{Result: map[string]any{"tunnel_id": TunnelID, "source": "cloudflare", "version": 1, "config": map[string]any{
+		"ingress":      []any{map[string]any{"service": "http://dashboard:8090", "hostname": Host}, map[string]any{"service": "http_status:404"}},
+		"warp-routing": map[string]any{"enabled": false},
+	}}}
+	r[zone("/dns_records")] = Response{Result: []any{map[string]any{"id": "dns-1", "name": Host, "type": "CNAME", "content": TunnelID + ".cfargotunnel.com",
+		"proxiable": true, "proxied": true, "ttl": 1, "settings": map[string]any{"flatten_cname": false}, "meta": map[string]any{}, "comment": nil, "tags": []any{}}}}
+	r[acct("/d1/database")] = Response{Result: []any{
+		map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3},
+		map[string]any{"uuid": "d1-backups", "name": "dashboard-backups", "version": "production", "jurisdiction": nil, "num_tables": 2, "file_size": 49152},
+	}}
+	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "something-else"}, map[string]any{"id": "dashboard-backup-sink", "has_modules": true, "usage_model": "standard"}}}
+	r[acct("/workers/scripts/dashboard-backup-sink/settings")] = Response{Result: map[string]any{"bindings": []any{
+		map[string]any{"type": "d1", "name": "BACKUPS", "database_id": "d1-backups"},
+		map[string]any{"type": "secret_text", "name": "BACKUP_BEARER_SECRET"},
+	}}}
+	r[acct("/workers/scripts/dashboard-backup-sink/secrets")] = Response{Result: []any{map[string]any{"name": "BACKUP_BEARER_SECRET", "type": "secret_text"}}}
+	r[acct("/workers/scripts/dashboard-backup-sink/subdomain")] = Response{Result: map[string]any{"enabled": false, "previews_enabled": false}}
+	r[acct("/workers/domains")] = Response{Result: []any{map[string]any{"id": "wd-1", "zone_id": ZoneID, "zone_name": "example.org", "hostname": Backup,
+		"service": "dashboard-backup-sink", "environment": "production", "cert_id": "c-1", "previews_enabled": false, "enabled": true}}}
+}
+
+// Live is the partial setup a live account had during spike stage 2: the tunnel (no
+// connector running), its route and CNAME, and everything for backups exist; the
+// one-time PIN provider, the groups, the three dashboard Access applications, the
+// services token, the global session duration and the three rules do not, and Bot Fight
+// Mode is on. Its backup Access app and policy carry names the docs do not give.
+func Live() map[string]Response {
+	r := Fresh()
+	tunnelAndBackups(r)
+	r[acct("/cfd_tunnel")] = Response{Result: []any{tunnel(TunnelID, "officer-dashboard", "inactive")}}
+	r[acct("/access/service_tokens")] = Response{Result: []any{serviceToken("st-backups", "dashboard-backups-host", "2126-11-20T00:00:00Z")}}
+	r[acct("/access/apps")] = Response{Result: []any{
+		app("app-backups", "Backup sink", nil, []any{policy("pol-backups", "backup host only", "non_identity", token("st-backups"))}, Backup),
+	}}
+	r[zone("/bot_management")] = Response{Result: map[string]any{"enable_js": true, "fight_mode": true, "ai_bots_protection": "disabled",
+		"ai_agents": map[string]any{"anthropic_agent": "disabled", "openai_agent": "disabled"}, "using_latest_model": true}}
+	r[zone("/rulesets/phases/http_request_cache_settings/entrypoint")] = noEntrypoint("http_request_cache_settings")
+	return r
+}
+
 // Complete is an account set up exactly as the docs describe, by hand in the dashboard.
 func Complete() map[string]Response {
 	r := Fresh()
+	tunnelAndBackups(r)
 	r[acct("/access/organizations")] = Response{Result: map[string]any{"auth_domain": "club.cloudflareaccess.com", "name": "club", "session_duration": "730h"}}
-	r[acct("/cfd_tunnel")] = Response{Result: []any{
-		map[string]any{"id": "tun-other", "name": "homelab", "config_src": "cloudflare", "deleted_at": nil},
-		map[string]any{"id": TunnelID, "name": "officer-dashboard", "config_src": "cloudflare", "deleted_at": nil, "status": "healthy"},
+	r[acct("/access/identity_providers")] = Response{Result: []any{
+		map[string]any{"id": "idp-cf", "type": "cloudflare", "name": "Cloudflare", "config": map[string]any{}},
+		map[string]any{"id": "idp-otp", "name": "One-time PIN login", "type": "onetimepin", "config": map[string]any{}},
 	}}
-	r[acct("/cfd_tunnel/"+TunnelID+"/configurations")] = Response{Result: map[string]any{"tunnel_id": TunnelID, "source": "cloudflare", "version": 3, "config": map[string]any{"ingress": []any{
-		map[string]any{"hostname": Host, "service": "http://dashboard:8090"},
-		map[string]any{"service": "http_status:404"},
-	}}}}
-	r[zone("/dns_records")] = Response{Result: []any{map[string]any{"id": "dns-1", "name": Host, "type": "CNAME", "content": TunnelID + ".cfargotunnel.com", "proxied": true}}}
-	r[acct("/access/identity_providers")] = Response{Result: []any{map[string]any{"id": "idp-otp", "name": "One-time PIN", "type": "onetimepin", "config": map[string]any{}}}}
 	r[acct("/access/groups")] = Response{Result: []any{
 		map[string]any{"id": "g-x", "name": "Officers (old club)"},
 		map[string]any{"id": "g-officers", "name": "Officers", "include": []any{map[string]any{"email": map[string]any{"email": "a@example.org"}}}},
 		map[string]any{"id": "g-launchpad", "name": "Launchpad"},
 	}}
 	r[acct("/access/service_tokens")] = Response{Result: []any{
-		map[string]any{"id": "st-services", "name": "officer-dashboard services", "client_id": "abc.access", "expires_at": "2027-11-20T00:00:00Z"},
-		map[string]any{"id": "st-backups", "name": "dashboard-backups-host", "client_id": "def.access", "expires_at": "2027-11-21T00:00:00Z"},
+		serviceToken("st-services", "officer-dashboard services", "2027-11-20T00:00:00Z"),
+		serviceToken("st-backups", "dashboard-backups-host", "2126-11-20T00:00:00Z"),
 	}}
-	pub := func(uris ...string) []any {
-		out := make([]any, len(uris))
-		for i, u := range uris {
-			out[i] = map[string]any{"type": "public", "uri": u}
-		}
-		return out
-	}
 	r[acct("/access/apps")] = Response{Result: []any{
-		map[string]any{"id": "app-x", "name": "Wiki", "type": "self_hosted", "domain": "wiki.example.org", "destinations": pub("wiki.example.org")},
-		map[string]any{"id": "app-site", "name": "Officer Dashboard", "type": "self_hosted", "domain": Host, "destinations": pub(Host),
-			"session_duration": "730h", "allowed_idps": []any{"idp-otp"}, "auto_redirect_to_identity": true},
-		map[string]any{"id": "app-agents", "name": "Officer Dashboard: agents (bypass)", "type": "self_hosted", "domain": Host + "/mcp",
-			"destinations": pub(Host+"/mcp", Host+"/oauth/register", Host+"/oauth/token", Host+"/.well-known/oauth-protected-resource",
-				Host+"/.well-known/oauth-protected-resource/mcp", Host+"/.well-known/oauth-authorization-server")},
-		map[string]any{"id": "app-services", "name": "Officer Dashboard: services (service token)", "type": "self_hosted", "domain": Host + "/api/ingest",
-			"destinations": pub(Host+"/api/ingest", Host+"/api/agent"), "service_auth_401_redirect": true},
-		map[string]any{"id": "app-backups", "name": "Backups", "type": "self_hosted", "domain": Backup, "destinations": pub(Backup)},
+		app("app-x", "Wiki", nil, []any{}, "wiki.example.org"),
+		app("app-site", "Officer Dashboard", map[string]any{"session_duration": "730h", "allowed_idps": []any{"idp-otp"}, "auto_redirect_to_identity": true},
+			[]any{policy("pol-site", "Officers and Launchpad", "allow", group("g-officers"), group("g-launchpad"))}, Host),
+		app("app-agents", "Officer Dashboard: agents (bypass)", nil,
+			[]any{policy("pol-agents", "Bypass", "bypass", map[string]any{"everyone": map[string]any{}})},
+			Host+"/mcp", Host+"/oauth/register", Host+"/oauth/token", Host+"/.well-known/oauth-protected-resource",
+			Host+"/.well-known/oauth-protected-resource/mcp", Host+"/.well-known/oauth-authorization-server"),
+		app("app-services", "Officer Dashboard: services (service token)", map[string]any{"service_auth_401_redirect": true},
+			[]any{policy("pol-services", "Service token", "non_identity", token("st-services"))}, Host+"/api/ingest", Host+"/api/agent"),
+		app("app-backups", "Backup sink", nil, []any{policy("pol-backups", "backup host only", "non_identity", token("st-backups"))}, Backup),
 	}}
-	r[acct("/access/apps/app-site/policies")] = Response{Result: []any{map[string]any{"id": "pol-site", "name": "Officers and Launchpad", "decision": "allow", "precedence": 1,
-		"include": []any{map[string]any{"group": map[string]any{"id": "g-officers"}}, map[string]any{"group": map[string]any{"id": "g-launchpad"}}}}}}
-	r[acct("/access/apps/app-agents/policies")] = Response{Result: []any{map[string]any{"id": "pol-agents", "name": "Bypass", "decision": "bypass", "precedence": 1,
-		"include": []any{map[string]any{"everyone": map[string]any{}}}}}}
-	r[acct("/access/apps/app-services/policies")] = Response{Result: []any{map[string]any{"id": "pol-services", "name": "Service token", "decision": "non_identity", "precedence": 1,
-		"include": []any{map[string]any{"service_token": map[string]any{"token_id": "st-services"}}}}}}
-	r[acct("/access/apps/app-backups/policies")] = Response{Result: []any{map[string]any{"id": "pol-backups", "name": "Backup host", "decision": "non_identity", "precedence": 1,
-		"include": []any{map[string]any{"service_token": map[string]any{"token_id": "st-backups"}}}}}}
 	r[zone("/rulesets/phases/http_request_firewall_custom/entrypoint")] = Response{Result: map[string]any{"id": "rs-fw", "phase": "http_request_firewall_custom", "rules": []any{
 		map[string]any{"id": "r-skip", "description": "Agents and services: skip bot checks", "expression": agentExpr, "action": "skip",
 			"action_parameters": map[string]any{"products": []any{"bic", "securityLevel"}}, "enabled": true, "logging": map[string]any{"enabled": true}},
@@ -210,17 +301,5 @@ func Complete() map[string]Response {
 		map[string]any{"id": "r-config", "description": "Consent page: no rewriting", "expression": `(http.host eq "officers.example.org" and http.request.uri.path eq "/oauth/authorize")`,
 			"action": "set_config", "action_parameters": map[string]any{"rocket_loader": false, "email_obfuscation": false}, "enabled": true},
 	}}}
-	r[acct("/d1/database")] = Response{Result: []any{
-		map[string]any{"uuid": "d1-members", "name": "membership"},
-		map[string]any{"uuid": "d1-backups", "name": "dashboard-backups"},
-	}}
-	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "something-else"}, map[string]any{"id": "dashboard-backup-sink"}}}
-	r[acct("/workers/scripts/dashboard-backup-sink/settings")] = Response{Result: map[string]any{"bindings": []any{
-		map[string]any{"type": "d1", "name": "BACKUPS", "database_id": "d1-backups"},
-		map[string]any{"type": "secret_text", "name": "BACKUP_BEARER_SECRET"},
-	}}}
-	r[acct("/workers/scripts/dashboard-backup-sink/secrets")] = Response{Result: []any{map[string]any{"name": "BACKUP_BEARER_SECRET", "type": "secret_text"}}}
-	r[acct("/workers/scripts/dashboard-backup-sink/subdomain")] = Response{Result: map[string]any{"enabled": false, "previews_enabled": false}}
-	r[acct("/workers/domains")] = Response{Result: []any{map[string]any{"id": "wd-1", "hostname": Backup, "service": "dashboard-backup-sink", "zone_id": ZoneID, "environment": "production"}}}
 	return r
 }
