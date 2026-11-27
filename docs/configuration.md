@@ -261,9 +261,11 @@ Other flags: `--officers-group` and `--launchpad-group` (empty for no Launchpad
 group), `--name-prefix` and `--json`. `--name-prefix` prefixes every resource
 name, for a staging install beside the real one. A staging install also needs its
 own `APP_URL`: on the real install's hostname, setup finds the real install's
-applications, rules and tunnel, marks them as drift and prints a warning. It exits 0 when it printed the plan, whatever
-the plan says; 1 when it could not read the account (a bad token, two resources
-matching one name, a Cloudflare error); and 2 for a usage error.
+applications, rules and tunnel, marks them as drift and prints a warning.
+
+It exits 0 when it printed the plan, whatever the plan says; 1 when it could not read the account (a bad token, two resources
+matching one name, a network failure); and 2 for a usage error. A Cloudflare
+error on one resource makes only that line `unknowable`.
 
 Create a token for it under **Manage account** → **Account API tokens**, limited to
 the dashboard's account and its one zone, with a short expiry and these read
