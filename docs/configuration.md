@@ -60,7 +60,7 @@ Each is off until set; the log says "not configured" at startup for each one tha
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | – | SMTP sign-in |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | – | the membership mirror and analytics widgets, from Cloudflare's API. Only for these widgets: backups don't use them |
 | `CLOUDFLARE_ZONE_ID` | – | limits analytics to one domain |
-| `D1_DATABASE_ID` | – | the existing membership D1 database to mirror (read only; the dashboard never creates or changes it, and it is not the backup) |
+| `D1_DATABASE_ID` | – | the existing membership D1 database, separate from backups. Sync reads it; director-authorized member edits update its `People` rows. The dashboard does not create this database. Use a token with D1 Edit permission when enabling member edits |
 | `AGENT_SETTLEMENT_TOLERANCE_PERCENT`, `AGENT_SETTLEMENT_TOLERANCE_CENTS` | `10`, `2500` | the purchasing agent's hold ceiling: the larger of estimate × 1.10 and estimate + $25 |
 | `STATIC_DIR` (`-static`) | the built-in front end | serve the front end from this folder instead. Only release builds (`embedweb`, as in the image) have one built in |
 | `STATIC_FALLBACK` (`-static-fallback`), `STATIC_FALLBACK_STATUS` (`-static-fallback-status`) | `404.html`, `404` | page for unknown non-API paths. An alternative single-page front end can set `200.html`, `200` |
@@ -92,6 +92,8 @@ local data volume stores the database. Set all backup credentials before enablin
 | `BACKUP_AGE_RECIPIENT` | empty | public age recipient; private identity remains offline |
 | `BACKUP_MEMBERSHIP_ACCOUNT_ID`, `BACKUP_MEMBERSHIP_DATABASE_ID` | empty | account and membership D1 database for weekly SQL export |
 | `BACKUP_MEMBERSHIP_API_TOKEN` | empty | account-scoped D1 Edit token; can modify all account D1 databases, never given to the sink |
+| `DB_PATH` | `/data/dashboard.db` | database read by the backup helper; Compose gives app and backup the same path and volume |
+| `DISCORD_WEBHOOK_URL` | empty | backup failure alerts; configure separately in `backup.env` (normally via `_FILE`) |
 
 The same ciphertext also goes to Google Drive: once per UTC day the sidecar publishes
 `dashboard-<date>.db.gz.age` plus a sha256 manifest to `drive-outbox/` beside the database,
@@ -115,6 +117,8 @@ Read by `scripts/backup` and its timer.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `BACKUP_DIR` | required absolute path | where backups are written (the unit sets `/var/lib/officer-dashboard/backups`) |
+| `DB_PATH` | `./data/dashboard.db` | SQLite source; the unit sets `/var/lib/officer-dashboard/dashboard.db` |
+| `BACKUP_AGE_RECIPIENT` | required | public age recipient used to encrypt each backup; keep the private identity off-host |
 | `KEEP` | `30` | how many backups to keep |
 | `BACKUP_REMOTE` | – | an executable hook receiving the encrypted `.age` path as its single argument |
 
@@ -135,6 +139,10 @@ don't belong in `dashboard.env`.
 | `API_ORIGIN` | `http://localhost:8090` | the web dev server's API backend; must match the Go server's `APP_URL`, including scheme, hostname and port |
 | `WEB_PORT` | `4340` | Playwright's dev-server port |
 | `WEB_ORIGIN` | `http://localhost:${WEB_PORT}` | an existing UI for Playwright; setting it skips starting a dev server |
+| `DOCKER_DEV_AUTH_KEY` | `local-docker-development-only` | Compose-only override for the app's `DEV_AUTH_KEY` and the test runner's `E2E_DEV_AUTH_KEY` |
+| `E2E_DEV_AUTH_KEY` | empty | Playwright's developer-login key for a keyed test deployment |
+| `DEV_ALLOWED_HOSTS` | empty | comma-separated extra hostnames for Astro/Vite's dev server; Compose sets `dashboard` |
+| `INTRO_FRAMES` | empty | output directory for the onboarding intro frame captures |
 | `SHOTS` | – | turns on screenshot capture in the shots tests |
 | `BENCH_LATENCY` | – | turns on the Go latency-report test |
 

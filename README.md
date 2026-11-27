@@ -10,8 +10,9 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/cseed-org/officer-dashboard/ci.yml?branch=main&label=CI)](https://github.com/cseed-org/officer-dashboard/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Go](https://img.shields.io/github/go-mod/go-version/cseed-org/officer-dashboard?filename=server%2Fgo.mod)](server/go.mod)
-[![Node](https://img.shields.io/badge/node-%3E%3D22.23.4-339933?logo=node.js)](package.json)
-[![Astro](https://img.shields.io/badge/Astro-7.4.13-BC52EE?logo=astro)](web/package.json)
+[![Node](https://img.shields.io/github/package-json/engines/cseed-org/officer-dashboard?logo=node.js)](package.json)
+[![Astro](https://img.shields.io/github/package-json/dependency-version/cseed-org/officer-dashboard/astro?filename=web%2Fpackage.json&logo=astro)](web/package.json)
+[![Release](https://img.shields.io/github/v/release/cseed-org/officer-dashboard)](https://github.com/cseed-org/officer-dashboard/releases)
 [![Last commit](https://img.shields.io/github/last-commit/cseed-org/officer-dashboard)](https://github.com/cseed-org/officer-dashboard/commits/main)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
@@ -47,7 +48,7 @@ Discord sign-in with leadership, director, and officer roles, plus explicit owne
 
 ## Screenshots
 
-Existing V0.3 design captures; GitHub chooses the light or dark version to match your theme.
+Design captures; GitHub chooses the light or dark version to match your theme.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="web/design/shots/v04/home-grid-1440-dark.png">
@@ -83,13 +84,29 @@ flowchart LR
   API --> Receipts[Google Drive / local receipts]
 ```
 
-The Go server serves the static front end and JSON API from one origin. SQLite is the primary database; D1 supplies the membership mirror. Run on a Raspberry Pi or a single container with durable replication. See [architecture](docs/architecture.md). To deploy, follow [Deploy the dashboard, step by step](docs/deploy/README.md).
+The Go server serves the static front end and JSON API from one origin. SQLite is the primary database; D1 supplies the membership mirror. Run on a Raspberry Pi or a single container with encrypted off-box backups. See [architecture](docs/architecture.md). To deploy, follow [Fresh install](docs/deploy/fresh-install.md).
 
 [Back to top](#top)
 
 ## Quick start
 
-Install Go 1.24+, a C compiler for SQLite/cgo, Make, and Node ≥22.23.4 (from `package.json`; this repo has no `.nvmrc`). From the repository root:
+Clone the repository and enter it first:
+
+```sh
+git clone https://github.com/cseed-org/officer-dashboard.git
+cd officer-dashboard
+```
+
+For the Docker dev stack, install Docker with Compose v2 and run
+`docker compose -f compose.dev.yaml up -d --build --wait`. Open
+<http://localhost:4340/login?key=local-docker-development-only>.
+This resets sample data on every app start; stop with
+`docker compose -f compose.dev.yaml down`. See [development](docs/development.md#run-it-in-docker).
+
+For a local build, install Go matching [server/go.mod](server/go.mod) (minimum 1.26;
+its `toolchain` directive selects the build toolchain), a C compiler for SQLite/cgo,
+GNU Make, a POSIX shell, and Node ≥22.23.4 (from `package.json`). Use Bash/WSL on Windows;
+the commands below use POSIX environment assignments. From the repository root:
 
 ```sh
 (cd web && npm ci && npm run build)
@@ -108,7 +125,7 @@ See [development](docs/development.md) for live front-end development, seeding, 
 
 ## Deploy
 
-To run the dashboard for real, follow **[Deploy the dashboard, step by step](docs/deploy/README.md)**. It takes you from an empty Raspberry Pi 5 (or any 64-bit Linux machine) to a running dashboard: Docker with the published image, a Cloudflare Tunnel and Access sign-in, backups to Cloudflare R2, and the org Google calendar.
+To run the dashboard for real, follow **[Fresh install](docs/deploy/fresh-install.md)**. This operator runbook assumes a 64-bit Linux host with Docker/Compose, buildx, Python 3.11+ and deployment credentials. The GHCR image is private; follow the [read-only registry login steps](docs/deploy/fresh-install.md#sign-in-to-the-private-image-registry) before pulling it. The runbook covers the published image, a Cloudflare Tunnel and Access sign-in, encrypted backups to Cloudflare D1 and Google Drive, and links to Google setup. See [deployment](docs/deployment.md) for image and release details.
 
 [Back to top](#top)
 
@@ -138,9 +155,9 @@ Run from the repository root:
 | Go vet and tests, including dev login | `cd server && make vet && make test` |
 | API contracts | `npm ci && npm run contract-check` |
 | Web build and types | `cd web && npm ci && npm run build && npm run check` |
-| Playwright (local, seeded backend required) | `cd web && API_ORIGIN=http://localhost:8090 npm run test:e2e` |
+| Playwright (local, seeded backend required) | `cd web && npx playwright install chromium && API_ORIGIN=http://localhost:8090 npm run test:e2e` |
 
-[CI](.github/workflows/ci.yml) runs Go, contract, and web jobs on PRs and pushes to `main`. Playwright runs locally. [Test details](docs/development.md).
+[CI](.github/workflows/ci.yml) runs Go, contract, web, release-smoke and Compose browser checks on PRs and pushes to `main`. The full Playwright suite can also run locally. [Docs CI](.github/workflows/docs.yml) checks Markdown links. [Test details](docs/development.md).
 
 [Back to top](#top)
 

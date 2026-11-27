@@ -49,12 +49,66 @@ Keep the existing remote-managed Tunnel and Access configuration from
 
 ## Bootstrap the host
 
-Use a Linux host with Docker Compose v2, buildx and Python 3.11+. Give its dedicated
-deployment user a GHCR credential with **read:packages only**, through Docker's credential
-helper. Do not put it in compose, the image or Git. Package visibility changes require
-separate approval. The deployment user can control Docker and must be trusted accordingly.
+Prepare [Cloudflare Tunnel and Access](cloudflare.md), steps 1–8 and 10, and
+[create the Discord app](README.md#3-create-the-discord-app). Set the redirect URI
+to `${APP_URL}/auth/callback` and obtain the first owner's Discord ID as described
+in [owner bootstrap](../configuration.md#core). The Discord client secret belongs
+in `secrets/app/discord-client-secret`, referenced by `DISCORD_CLIENT_SECRET_FILE`.
 
-Copy `.env.example` to `.env`, `dashboard.env.example` to `dashboard.env`, and `backup.env.example` to `backup.env` in `server/deploy`. Keep only paths to secrets in these files. Create `secrets/app` and `secrets/backup` owned by uid 10001 with mode 0700. Put each required credential in its named file (mode 0400, uid 10001). Comment out unused optional `_FILE` entries rather than making empty files. The tunnel token is a separate mode-0400 file owned by uid 65532; set its host path as `TUNNEL_TOKEN_FILE` in `.env`. Protect the env files with mode 0600. The dashboard gets only the app directory, the backup service only the backup directory, and cloudflared only the tunnel token file. Backup settings never belong in `dashboard.env`. Resolve the
+Use a Linux host with Docker Compose v2, buildx and Python 3.11+. The deployment user
+can control Docker and must be trusted accordingly.
+
+### Sign in to the private image registry
+
+The GHCR image is **private**. A public source checkout does not grant image access.
+Use the same OS identity for registry login, Compose and the image updater. The supplied
+`officer-dashboard-update.service` runs as **root**: for that default setup, enter a root
+shell with `sudo -i` before configuring the helper, logging in and running the host
+Compose commands below. This uses root's Docker configuration and credential store.
+If you customize the unit to use a different user, configure that user's `HOME`,
+`DOCKER_CONFIG` and helper `PATH` consistently before logging in.
+
+1. **Create the token.** A package administrator grants **Read** access to the GitHub
+   account used for deployment. A direct grant on this private organization package
+   requires that account to be an organization member (or receive access through an
+   organization team); see [package access settings](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility#configuring-access-to-packages-for-an-organization).
+   The operator of that GitHub account opens **Settings →
+   Developer settings → Personal access tokens → Tokens (classic) → Generate new token
+   (classic)**. Select **`read:packages` only**, choose an expiry and record its renewal
+   date. Do not select `repo`, `write:packages` or `delete:packages`. Authorize the token
+   for the organization if it requires SSO. GHCR requires a classic token for this host
+   login; see [GitHub's registry authentication instructions](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic).
+2. **Prepare the credential helper before logging in.** Follow Docker's
+   [credential-store setup](https://docs.docker.com/reference/cli/docker/login/#credential-stores)
+   to install and initialize a helper for that OS user. For example, `pass` needs an
+   initialized GPG/password store and `docker-credential-pass` on `PATH`; its per-registry
+   configuration in `~/.docker/config.json` is:
+   ```json
+   {"credHelpers": {"ghcr.io": "pass"}}
+   ```
+   If already logged in to GHCR, run `docker logout ghcr.io` before switching helpers.
+   Merge this entry into the existing JSON; preserve other settings. If Docker Desktop
+   already uses its configured system credential store, keep that working configuration.
+   Confirm the chosen helper and its backing store are ready before the next step:
+   without a helper Docker may store the token unencrypted in `config.json`.
+3. **Log in as the deployment OS user**, using the GitHub username that owns the token:
+   ```sh
+   docker login ghcr.io --username YOUR_GITHUB_USERNAME
+   ```
+   At the **Password** prompt paste the token, not the GitHub account password. Docker
+   stores it through the configured helper. Expect `Login Succeeded`. Run later pulls
+   as this same OS user so Docker can find the saved login. Never put the token in
+   Compose/env files, command arguments, the image or Git. If a pull returns `denied`
+   or `unauthorized`, check package access, token expiry and SSO authorization, then log
+   in again with a replacement read-only token. Renew before the recorded expiry date.
+   An expiry does not stop the running app;
+   it prevents the next image download.
+
+### Prepare the deployment files
+
+Clone the repository if needed, then enter `server/deploy` from its root. All host
+Compose commands below run in that directory; use your actual checkout location.
+Copy `.env.example` to `.env`, `dashboard.env.example` to `dashboard.env`, and `backup.env.example` to `backup.env`. Keep only paths to secrets in these files. Create `secrets/app` and `secrets/backup` owned by uid 10001 with mode 0700. Put each required credential in its named file (mode 0400, uid 10001). Comment out unused optional `_FILE` entries rather than making empty files. The tunnel token is a separate mode-0400 file owned by uid 65532; set its host path as `TUNNEL_TOKEN_FILE` in `.env`. Protect the env files with mode 0600. The dashboard gets only the app directory, the backup service only the backup directory, and cloudflared only the tunnel token file. Backup settings never belong in `dashboard.env`. Resolve the
 approved image with `docker buildx imagetools inspect ghcr.io/cseed-org/officer-dashboard:prod`.
 Write its immutable reference to `prod-image.env`:
 
@@ -65,7 +119,6 @@ DASHBOARD_IMAGE=ghcr.io/cseed-org/officer-dashboard@sha256:<approved digest>
 Run compose with both env files on **every** invocation:
 
 ```sh
-cd /opt/officer-dashboard/server/deploy
 docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
 ```
 
@@ -77,6 +130,11 @@ docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.y
   run --rm --no-deps --entrypoint /bin/sh dashboard -c 'umask 077; exec /app/dashboard migrate'
 docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
 ```
+
+Once healthy, open `APP_URL`, complete Cloudflare Access and sign in with Discord as
+the configured bootstrap owner. Connect the [org Google calendar](google-calendar.md)
+and complete the [Google Shared Drive setup](../deployment.md#file-storage-the-google-shared-drive-person-only-setup)
+before expecting Google invites, file uploads or the independent Drive backup copy.
 
 If any previous installation existed, restore its DB instead. With backups configured,
 the app refuses to start on a missing DB; the separate backup service downloads `<DB_PATH>.recovery.age`. **An unattended
@@ -99,10 +157,13 @@ whose main CI publish passed. The reviewer checks that SHA and approves the pend
 then retags `sha-<first 7 characters>` by its digest as `:prod`.
 
 Install `officer-dashboard-update.service` and `.timer` from `server/deploy` into
-`/etc/systemd/system`; adjust `/opt/officer-dashboard` if necessary. Run `systemctl daemon-reload`
-and `systemctl enable --now officer-dashboard-update.timer`. Authenticate GHCR as the service's
-user (root in the supplied unit), using the read-only credential. Check the journal and run
-the first update manually. Tunnel and Access remain remote-managed; neither is reprovisioned.
+`/etc/systemd/system`; adjust `/opt/officer-dashboard` if necessary. Run `systemctl daemon-reload`.
+The updater uses root in the supplied unit, matching the registry login above. Ensure its
+helper and backing store work unattended in the service environment, including `HOME`,
+`DOCKER_CONFIG` and helper `PATH`; an interactive login alone does not prove timer access.
+Run `systemctl start officer-dashboard-update.service`, inspect its journal for a successful
+first update, and only then run `systemctl enable --now officer-dashboard-update.timer`.
+Tunnel and Access remain remote-managed; neither is reprovisioned.
 
 The app/backup containers run with all capabilities dropped, read-only root filesystems,
 bounded tmpfs `/tmp` and memory/PID limits. Their shared `/data` is writable for SQLite

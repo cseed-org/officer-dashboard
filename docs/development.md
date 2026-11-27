@@ -2,14 +2,17 @@
 
 ## Quick start
 
-Needs Go 1.24+ with a C compiler (cgo, for SQLite) and Node ≥ 22.23.4.
+Needs Go matching [server/go.mod](../server/go.mod) (minimum 1.26, with the build
+toolchain selected by its `toolchain` directive), a C compiler (cgo, for SQLite),
+GNU Make, a POSIX shell and Node ≥ 22.23.4. On Windows use Bash/WSL for these shell
+commands, or use the Docker stack below to build Go and SQLite inside Linux.
 
 ```sh
 (cd web && npm ci && npm run build)   # static front end -> web/dist
 cd server && make dev                 # seeds ./data/dev.db, serves with the dev login
 ```
 
-See [Deploy the dashboard, step by step](deploy/README.md) and [configuration](configuration.md) for deployment and settings, and
+See [Fresh install](deploy/fresh-install.md) and [configuration](configuration.md) for deployment and settings, and
 [front-end guide](frontend.md) for the front-end dev server.
 
 ## Run it in Docker
@@ -40,7 +43,7 @@ the stack. The Go server's static build updates on rebuild; Astro updates live.
 The web service also mounts the current tests and TypeScript configuration. To
 check them without restarting the running stack, use
 `docker compose -f compose.dev.yaml run --rm --no-deps web npm run check`.
-Playwright 1.65.0 and its matching browser image write traces and failure artifacts
+Playwright and its matching browser image (pinned in [compose.dev.yaml](../compose.dev.yaml)) write traces and failure artifacts
 to `test-results/docker/`. Every Playwright run clears its output directory.
 Use `run --rm --no-deps e2e` against the running stack so testing does not restart
 or reseed the services. Concurrent runs must choose distinct paths, e.g. append
@@ -73,23 +76,26 @@ the development database, dependencies and cache.
 
 | Check | Command |
 | --- | --- |
-| Go vet + tests | `cd server && go vet ./... && go test ./...` |
+| Go vet + tests (including dev sign-in) | `cd server && make vet && make test` |
 | API contract | `npm ci && npm run contract-check` (builds and runs the Go server itself) |
 | Front end build + types | `cd web && npm ci && npm run build && npx astro check` |
-| Front end e2e (local only) | `cd web && API_ORIGIN=http://localhost:8090 npm run test:e2e` (Playwright; not run in CI) |
+| Front end e2e | `cd web && npx playwright install chromium && API_ORIGIN=http://localhost:8090 npm run test:e2e` (full local Playwright suite) |
 
-CI (`.github/workflows/ci.yml`) runs the `go`, `contract` and `web` jobs on every push to
-`main` and every pull request.
+CI ([ci.yml](../.github/workflows/ci.yml)) runs Go, contract and web checks, plus release
+smoke tests and a selected Compose Playwright suite, on pushes to `main` and pull requests.
+Markdown changes also run [docs.yml](../.github/workflows/docs.yml):
+`scripts/check-doc-links.mjs` verifies every relative file link and section anchor
+offline (external links are skipped), using only first-party GitHub actions.
 
 ## Run it
 
-Go 1.24+, a C compiler (cgo, for SQLite). From `server/`:
+Use the Go toolchain, C compiler and POSIX shell described above. From `server/`:
 
 ```sh
 make dev                 # seeds ./data/dev.db, serves on :8090 with the dev login
 # or by hand:
-go run -tags dev ./cmd/dashboard seed -reset
-DEV_AUTH=1 STATIC_DIR=../web/dist go run -tags dev ./cmd/dashboard serve
+CGO_ENABLED=1 DB_PATH=./data/dev.db go run -tags dev ./cmd/dashboard seed -reset
+CGO_ENABLED=1 DEV_AUTH=1 DB_PATH=./data/dev.db STATIC_DIR=../web/dist go run -tags dev ./cmd/dashboard serve
 ```
 
 Open <http://localhost:8090/auth/dev?as=director> (or `as=officer`, `as=leadership`) and press
@@ -104,6 +110,7 @@ build looks like production everywhere else.
 A shared test deployment can run the dev build so testers skip Discord, gated by a secret:
 
 ```sh
+make build-dev
 APP_URL=https://test.example.org ADDR=:8090 DEV_AUTH=1 DEV_AUTH_KEY=$(openssl rand -hex 24) ./bin/dashboard-dev serve
 ```
 
@@ -186,6 +193,7 @@ Open <http://127.0.0.1:4340/login>. The dev proxy forwards `/api` and `/auth`, r
 From `web/`, with a seeded backend:
 
 ```sh
+npx playwright install chromium
 API_ORIGIN=http://localhost:8090 npm run test:e2e
 ```
 
