@@ -59,8 +59,8 @@ type Observed struct {
 	D1            Seen
 	Worker        Worker
 	// AppsCoveringHost lists every Access application with a destination equal to the
-	// bare dashboard hostname, whatever it is named or matched as.
-	AppsCoveringHost []string
+	// bare dashboard hostname, with its policies, whatever it is named or matched as.
+	AppsCoveringHost []App
 }
 
 type Zone struct {
@@ -91,10 +91,11 @@ type Tunnel struct {
 	IngressUnknown  string
 	// The three matching keys, in order: the tunnel ID from the host's token, the
 	// tunnel ID in the hostname's CNAME target, and the doc name. TokenID and CNAMEID
-	// are the IDs looked for; ByToken, ByCNAME and ByName are the tunnels each key
-	// found in the account ("" for none).
-	TokenID, CNAMEID         string
-	ByToken, ByCNAME, ByName string
+	// are the IDs looked for; ByToken and ByCNAME are the tunnels those keys found in
+	// the account ("" for none), and ByName lists every tunnel with the doc name.
+	TokenID, CNAMEID string
+	ByToken, ByCNAME string
+	ByName           []string
 }
 
 type Ingress struct{ Hostname, Path, Service string }
@@ -478,15 +479,20 @@ func diffTunnel(d Desired, t Tunnel) Action {
 	if t.TokenID != "" && t.ByToken == "" {
 		c.driftf("the host's tunnel token names tunnel %s, which is not in this account; tunnel %s was matched by %s instead", t.TokenID, t.ID, by)
 	}
+	if t.CNAMEID != "" && t.ByCNAME == "" {
+		c.driftf("the hostname's CNAME points at tunnel %s, which is not in this account; tunnel %s was matched by %s instead", t.CNAMEID, t.ID, by)
+	}
 	if t.ByCNAME != "" && t.ByCNAME != t.ID {
 		c.driftf("the hostname's CNAME points at tunnel %s, not at %s", t.ByCNAME, t.ID)
 	}
-	if t.ByName != "" && t.ByName != t.ID {
-		c.driftf("tunnel %s is named %q but is not the tunnel matched by %s", t.ByName, d.Tunnel.Name, by)
+	for _, id := range t.ByName {
+		if id != t.ID {
+			c.driftf("tunnel %s is named %q but is not the tunnel matched by %s", id, d.Tunnel.Name, by)
+		}
 	}
 	if t.Name != d.Tunnel.Name {
 		c.notef("named %q (matched by %s)", t.Name, by)
-		prefixCheck(c, d, t.Name)
+		prefixCheck(c, d, t.Name, d.Tunnel.Name)
 	}
 	if t.Status == "inactive" || t.Status == "down" {
 		c.notef("%s: no cloudflared connector is running", t.Status)
@@ -498,8 +504,13 @@ func diffTunnel(d Desired, t Tunnel) Action {
 // run's --name-prefix: on the real install's hostname, a prefixed run finds the real install.
 const prefixNote = "lacks the name prefix"
 
-func prefixCheck(c *check, d Desired, name string) {
-	if d.NamePrefix != "" && !strings.HasPrefix(name, d.NamePrefix) {
+// prefixCheck flags name, found by hostname, CNAME or expression for a resource whose
+// desired (prefixed) name is want. Besides a missing prefix it catches the real
+// install's own name when the prefix happens to begin it: with prefix "officer-" the
+// real tunnel "officer-dashboard" starts with the prefix but is the unprefixed name.
+func prefixCheck(c *check, d Desired, name, want string) {
+	p := d.NamePrefix
+	if p != "" && (!strings.HasPrefix(name, p) || name == strings.TrimPrefix(want, p)) {
 		c.driftf("matched %q, which %s %q: this hostname belongs to another install; a staging install needs its own hostname", name, prefixNote, d.NamePrefix)
 	}
 }
@@ -524,7 +535,9 @@ func diffApp(d Desired, spec AppSpec, o Observed) Action {
 	app := o.Apps[spec.Key]
 	c := &check{a: Action{ID: "access.app." + spec.Key, Resource: "Access application", Name: spec.Name}}
 	if !c.seen(app.Seen) {
-		if spec.Key == AppSite && !app.Seen.Found && app.Unknown == "" && routed(o) && len(o.AppsCoveringHost) == 0 {
+		// Any app with the bare hostname as a destination would have matched the site
+		// spec (exactly or as "covers"), so reaching here means none covers the host.
+		if spec.Key == AppSite && !app.Seen.Found && app.Unknown == "" && routed(o) {
 			c.notef("WARNING: the tunnel already routes this hostname and no Access application covers it; when cloudflared connects, the dashboard is public without the Access sign-in")
 		}
 		return c.done()
@@ -546,7 +559,28 @@ func diffApp(d Desired, spec AppSpec, o Observed) Action {
 		c.driftf("covers %s, docs ask for %s", list(app.Destinations), list(spec.Destinations))
 	}
 	if app.MatchedBy != "name" {
-		prefixCheck(c, d, app.Name)
+		prefixCheck(c, d, app.Name, spec.Name)
+	}
+	if spec.Key == AppSite {
+		// Another application on the same bare hostname may decide its traffic too, so
+		// it is named and its policies get the same public-access checks.
+		for _, other := range o.AppsCoveringHost {
+			if other.ID == app.ID {
+				continue
+			}
+			c.driftf("application %q (%s) also covers %s; its policies may apply to the dashboard", other.Name, other.ID, o.hostname)
+			if other.PoliciesUnknown != "" {
+				c.unknownf("%s", other.PoliciesUnknown)
+			}
+			for _, p := range other.Policies {
+				if p.Decision == "bypass" {
+					c.driftf("its policy %q is bypass: requests skip the Access sign-in", p.Name)
+				}
+				if p.Decision != "deny" && slices.ContainsFunc(p.Include, func(in Include) bool { return in.Type == "everyone" }) {
+					c.driftf("its policy %q lets Everyone through: the hostname may be public", p.Name)
+				}
+			}
+		}
 	}
 	if spec.SessionDuration != "" && !sameDuration(app.SessionDuration, spec.SessionDuration) {
 		c.driftf("session duration is %s, docs ask for %s", orNone(app.SessionDuration), spec.SessionDuration)
@@ -672,7 +706,7 @@ func diffRule(d Desired, spec RuleSpec, r Rule) Action {
 	}
 	if r.MatchedBy == "expression" {
 		c.notef("described as %q (matched by expression)", r.Description)
-		prefixCheck(c, d, r.Description)
+		prefixCheck(c, d, r.Description, spec.Description)
 	}
 	if r.Expression != spec.Expression {
 		c.driftf("expression differs from docs/deploy/cloudflare.md")

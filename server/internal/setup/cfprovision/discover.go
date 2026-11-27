@@ -212,11 +212,11 @@ func (x *discovery) tunnel(ctx context.Context, dns plan.DNS) (plan.Tunnel, erro
 		ConfigSrc string  `json:"config_src"`
 	}
 	found := map[string]tunnel{}
-	find := func(q url.Values, keep func(tunnel) bool, label string) (string, error) {
+	find := func(q url.Values, keep func(tunnel) bool) ([]string, error) {
 		q.Set("is_deleted", "false")
 		all, err := cfapi.ListAll[tunnel](ctx, x.api, x.accountPath("/cfd_tunnel"), q)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		var ids []string
 		for _, t := range all {
@@ -225,13 +225,13 @@ func (x *discovery) tunnel(ctx context.Context, dns plan.DNS) (plan.Tunnel, erro
 				found[t.ID] = t
 			}
 		}
-		switch len(ids) {
-		case 0:
-			return "", nil
-		case 1:
-			return ids[0], nil
+		return ids, nil
+	}
+	one := func(ids []string, err error) (string, error) {
+		if err != nil || len(ids) == 0 {
+			return "", err
 		}
-		return "", ambiguous("tunnel", label, ids)
+		return ids[0], nil // an ID matches at most one tunnel
 	}
 	byID := func(id string) func(tunnel) bool {
 		return func(t tunnel) bool { return strings.EqualFold(t.ID, id) }
@@ -239,17 +239,13 @@ func (x *discovery) tunnel(ctx context.Context, dns plan.DNS) (plan.Tunnel, erro
 	out := plan.Tunnel{TokenID: x.d.TunnelID, CNAMEID: cnameTunnelID(dns)}
 	var err error
 	if out.TokenID != "" {
-		out.ByToken, err = find(url.Values{"uuid": {out.TokenID}}, byID(out.TokenID), out.TokenID)
+		out.ByToken, err = one(find(url.Values{"uuid": {out.TokenID}}, byID(out.TokenID)))
 	}
 	if err == nil && out.CNAMEID != "" {
-		out.ByCNAME, err = find(url.Values{"uuid": {out.CNAMEID}}, byID(out.CNAMEID), out.CNAMEID)
+		out.ByCNAME, err = one(find(url.Values{"uuid": {out.CNAMEID}}, byID(out.CNAMEID)))
 	}
 	if err == nil {
-		out.ByName, err = find(url.Values{"name": {x.d.Tunnel.Name}}, func(t tunnel) bool { return t.Name == x.d.Tunnel.Name }, x.d.Tunnel.Name)
-	}
-	var amb *AmbiguousError
-	if errors.As(err, &amb) {
-		return plan.Tunnel{}, err
+		out.ByName, err = find(url.Values{"name": {x.d.Tunnel.Name}}, func(t tunnel) bool { return t.Name == x.d.Tunnel.Name })
 	}
 	if err != nil {
 		why, err := unreadable("tunnels", err)
@@ -260,8 +256,17 @@ func (x *discovery) tunnel(ctx context.Context, dns plan.DNS) (plan.Tunnel, erro
 		out.ID, out.MatchedBy = out.ByToken, "id"
 	case out.ByCNAME != "":
 		out.ID, out.MatchedBy = out.ByCNAME, "cname"
-	case out.ByName != "":
-		out.ID, out.MatchedBy = out.ByName, "name"
+	case len(out.ByName) == 1:
+		out.ID, out.MatchedBy = out.ByName[0], "name"
+	case len(out.ByName) > 1:
+		// Same-named tunnels are ambiguous only when no earlier key decided; otherwise
+		// plan.Diff reports the extra ones as drift.
+		return plan.Tunnel{}, ambiguous("tunnel", x.d.Tunnel.Name, out.ByName)
+	case dns.Unknown != "":
+		// Without the DNS record the CNAME key is missing, so a renamed tunnel would look
+		// absent; say that rather than suggest creating a second one.
+		out.Unknown = "the hostname's DNS record could not be read, so the tunnel could not be matched by its CNAME"
+		return out, nil
 	default:
 		return out, nil
 	}
@@ -435,7 +440,7 @@ func (x *discovery) serviceTokens(ctx context.Context, out map[string]plan.Servi
 // An app is matched by the exact set of its destinations, then by a superset (an app
 // that covers the desired destinations and others), then by name. The second list it
 // returns holds every app with a destination equal to the bare dashboard hostname.
-func (x *discovery) apps(ctx context.Context, out map[string]plan.App) ([]string, error) {
+func (x *discovery) apps(ctx context.Context, out map[string]plan.App) ([]plan.App, error) {
 	type app struct {
 		ID           string `json:"id"`
 		Name         string `json:"name"`
@@ -481,11 +486,24 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) ([]string
 		sort.Strings(ds)
 		dests[i] = ds
 	}
-	var covering []string
-	for i, a := range all {
-		if slices.Contains(dests[i], x.d.Hostname) {
-			covering = append(covering, a.ID)
+	policies := map[string]*plan.App{} // policies per app ID, read once
+	readPolicies := func(i int) (plan.App, error) {
+		a := all[i]
+		if got, ok := policies[a.ID]; ok {
+			return *got, nil
 		}
+		got := plan.App{Seen: plan.Seen{Found: true, ID: a.ID}, Name: a.Name, Destinations: dests[i],
+			SessionDuration: a.SessionDuration, AllowedIdPs: a.AllowedIdPs, AutoRedirect: a.AutoRedirect, ServiceAuth401: a.ServiceAuth401}
+		if a.Policies != nil {
+			got.Policies = convertPolicies(*a.Policies)
+		} else {
+			var err error
+			if got.Policies, got.PoliciesUnknown, err = x.appPolicies(ctx, a.ID); err != nil {
+				return plan.App{}, err
+			}
+		}
+		policies[a.ID] = &got
+		return got, nil
 	}
 	for _, spec := range x.d.Apps {
 		want := append([]string(nil), spec.Destinations...)
@@ -524,15 +542,23 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) ([]string
 			}
 			return nil, ambiguous("Access application", spec.Name, ids)
 		}
-		a := all[hits[0]]
-		got := plan.App{Seen: plan.Seen{Found: true, ID: a.ID}, Name: a.Name, MatchedBy: matched, Destinations: dests[hits[0]],
-			SessionDuration: a.SessionDuration, AllowedIdPs: a.AllowedIdPs, AutoRedirect: a.AutoRedirect, ServiceAuth401: a.ServiceAuth401}
-		if a.Policies != nil {
-			got.Policies = convertPolicies(*a.Policies)
-		} else if got.Policies, got.PoliciesUnknown, err = x.appPolicies(ctx, a.ID); err != nil {
+		got, err := readPolicies(hits[0])
+		if err != nil {
 			return nil, err
 		}
+		got.MatchedBy = matched
 		out[spec.Key] = got
+	}
+	// After matching, so a two-match error is raised before any extra policy reads.
+	var covering []plan.App
+	for i := range all {
+		if slices.Contains(dests[i], x.d.Hostname) {
+			got, err := readPolicies(i)
+			if err != nil {
+				return nil, err
+			}
+			covering = append(covering, got)
+		}
 	}
 	return covering, nil
 }

@@ -4,6 +4,7 @@ package cfprovision
 // reviewer's repro, failing on 442676f, and now states the expected outcome.
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -252,4 +253,92 @@ func TestReviewPrefixOnRealHostnameIsFlagged(t *testing.T) {
 	if !plan.PrefixConflict(d, plan.Diff(d, o)) {
 		t.Fatal("PrefixConflict = false")
 	}
+}
+
+// Follow-up review at 7f28920 (findings F-12 to F-16).
+
+const otherTunnel = "99999999-8888-7777-6666-555555555555"
+
+func cname(target string) cffake.Response {
+	return cffake.Response{Result: []any{map[string]any{"id": "dns-1", "name": cffake.Host, "type": "CNAME", "content": target, "proxied": true}}}
+}
+
+// F-12: the hostname's CNAME names a tunnel that is not in the account.
+func TestFollowupCNAMEToMissingTunnelIsDrift(t *testing.T) {
+	routes := cffake.Complete()
+	routes["/zones/"+cffake.ZoneID+"/dns_records"] = cname(otherTunnel + ".cfargotunnel.com")
+	d := desired(t, "")
+	o, err := discover(t, routes, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, action(t, d, o, "tunnel"), plan.Drift, "the hostname's CNAME points at tunnel "+otherTunnel+", which is not in this account")
+}
+
+// F-13: a second app covering the dashboard host is named, and its public policy flagged.
+func TestFollowupSecondAppCoveringHostIsDrift(t *testing.T) {
+	routes := cffake.Complete()
+	apps := append([]any(nil), routes[acctP+"/access/apps"].Result.([]any)...)
+	open := siteApp([]any{pol("p-open", "bypass", everyone)}, cffake.Host, "status.example.org")
+	open["id"], open["name"] = "app-open", "Status pages"
+	routes[acctP+"/access/apps"] = cffake.Response{Result: append(apps, open)}
+	d := desired(t, "")
+	o, err := discover(t, routes, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := action(t, d, o, "access.app.site")
+	expect(t, a, plan.Drift, `application "Status pages" (app-open) also covers officers.example.org`)
+	expect(t, a, plan.Drift, `its policy "p-open" lets Everyone through`)
+}
+
+// F-14: duplicate doc names do not abort when the token ID (or CNAME) already decided.
+func TestFollowupDuplicateNamesAfterIDMatchAreDrift(t *testing.T) {
+	routes := cffake.Complete()
+	routes[acctP+"/cfd_tunnel"] = cffake.Response{Result: []any{
+		map[string]any{"id": cffake.TunnelID, "name": "officer-dashboard", "status": "healthy", "config_src": "cloudflare"},
+		map[string]any{"id": otherTunnel, "name": "officer-dashboard", "status": "inactive", "config_src": "cloudflare"},
+	}}
+	d := desired(t, "")
+	d.TunnelID = cffake.TunnelID
+	o, err := discover(t, routes, d)
+	if err != nil {
+		t.Fatalf("err = %v, want a report", err)
+	}
+	if o.Tunnel.ID != cffake.TunnelID {
+		t.Fatalf("matched %s", o.Tunnel.ID)
+	}
+	expect(t, action(t, d, o, "tunnel"), plan.Drift, "tunnel "+otherTunnel+` is named "officer-dashboard"`)
+
+	// With no ID and no CNAME, two same-named tunnels are still ambiguous.
+	routes["/zones/"+cffake.ZoneID+"/dns_records"] = cffake.Response{Result: []any{}}
+	d.TunnelID = ""
+	_, err = discover(t, routes, d)
+	var amb *AmbiguousError
+	if !errors.As(err, &amb) {
+		t.Fatalf("err = %v, want AmbiguousError", err)
+	}
+}
+
+// F-15: with DNS unreadable, a tunnel no key found is unknowable, not create.
+func TestFollowupDNSFailureMakesTunnelUnknowable(t *testing.T) {
+	routes := cffake.Complete()
+	routes["/zones/"+cffake.ZoneID+"/dns_records"] = cffake.Response{Status: 503, Code: 1}
+	routes[acctP+"/cfd_tunnel"] = cffake.Response{Result: []any{map[string]any{"id": cffake.TunnelID, "name": "club-tunnel", "status": "healthy", "config_src": "cloudflare"}}}
+	d := desired(t, "")
+	o, err := discover(t, routes, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, action(t, d, o, "tunnel"), plan.Unknowable, "DNS record could not be read")
+}
+
+// F-16: a prefix the real names already start with must not pass the real tunnel.
+func TestFollowupPrefixThatPrefixesRealNames(t *testing.T) {
+	d := desired(t, "officer-")
+	o, err := discover(t, cffake.Complete(), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expect(t, action(t, d, o, "tunnel"), plan.Drift, `lacks the name prefix "officer-"`)
 }

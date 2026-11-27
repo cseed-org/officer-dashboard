@@ -263,9 +263,11 @@ name, for a staging install beside the real one. A staging install also needs it
 own `APP_URL`: on the real install's hostname, setup finds the real install's
 applications, rules and tunnel, marks them as drift and prints a warning.
 
-It exits 0 when it printed the plan, whatever the plan says; 1 when it could not read the account (a bad token, two resources
-matching one name, a network failure); and 2 for a usage error. A Cloudflare
-error on one resource makes only that line `unknowable`.
+It exits 0 when it printed the plan, whatever the plan says; 1 when it could not
+read the account (a bad token, two resources matching one name, a network failure,
+or a Cloudflare error other than the two below); and 2 for a usage error. A missing permission (401 or 403) or a Cloudflare
+server error (5xx or 429, after retries) on one resource makes only that line
+`unknowable`.
 
 Create a token for it under **Manage account** → **Account API tokens**, limited to
 the dashboard's account and its one zone, with a short expiry and these read
