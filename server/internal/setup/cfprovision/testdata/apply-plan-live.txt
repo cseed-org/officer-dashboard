@@ -1,0 +1,17 @@
+Cloudflare apply plan for officers.example.org
+
+  WARNING: officers.example.org is already published (tunnel route or DNS record exists) but no Access application protects it. Setup creates the Access applications first, before anything else. Do not start cloudflared until this run reports done.
+
+   1. set the global session duration to 730h
+   2. add the One-time PIN identity provider
+   3. create Access group Officers
+   4. create Access group Launchpad
+   5. create service token officer-dashboard services
+   6. create Access application Officer Dashboard with policy Officers and Launchpad
+   7. create Access application Officer Dashboard: agents (bypass) with policy Everyone (bypass)
+   8. create Access application Officer Dashboard: services (service token) with policy Service token
+   9. add rule "Agents and services: skip bot checks" to http_request_firewall_custom (create the phase's ruleset with it)
+  10. add rule "Agents and services: bypass cache" to http_request_cache_settings (create the phase's ruleset with it)
+  11. add rule "Consent page: no rewriting" to http_config_settings (create the phase's ruleset with it)
+  12. fetch the token of tunnel 6ff42ae2-765d-4adf-8112-31c55c1551ef (the host has none)
+  manual: Bot Fight Mode is on for the whole zone. Setup leaves it, because it also affects the zone's other hostnames. In the Cloudflare dashboard, open the domain → Security → Settings → filter Bot traffic → Bot Fight Mode → Off (docs/deploy/cloudflare.md step 6.1)
