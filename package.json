@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "version": "0.0.1",
-  "description": "Repo-root tooling for the API contract check. The app is server/ (Go) + web/ (Astro).",
+  "description": "Repository tooling for API contract checks, MCP tool generation, script tests, and documentation link checks.",
   "engines": {
-    "node": ">=22.23.4"
+    "node": "^24.0.0"
   },
   "scripts": {
     "test": "npm run test:scripts",
@@ -22,9 +22,6 @@
     "mdast-util-from-markdown": "2.1.0",
     "mdast-util-gfm": "3.1.0",
     "micromark-extension-gfm": "3.0.0",
-    "yaml": "^2.9.1"
-  },
-  "allowScripts": {
-    "esbuild@0.28.2": true
+    "yaml": "2.9.1"
   }
 }

@@ -12,7 +12,7 @@ Start with [development setup](docs/development.md) for prerequisites, local ser
 
 ## Checks
 
-These are the exact commands in [CI](.github/workflows/ci.yml). Run each block from the indicated directory. Go requires cgo and a C compiler for SQLite. CI uses Node 24 and the Go version in `server/go.mod`.
+These are the core checks in [CI](.github/workflows/ci.yml). Run each block from the indicated directory. Go requires cgo and a C compiler for SQLite. CI uses Node 24 and the Go version in `server/go.mod`.
 
 From `server/` (Bash; set `GITHUB_SHA` to the commit SHA when running the release build locally):
 
@@ -31,6 +31,7 @@ From `web/`:
 npm ci
 npm run build
 npx astro check
+node --test integrations/astro-config.test.mjs
 ```
 
 From the repository root:
@@ -40,9 +41,16 @@ npm ci
 node scripts/gen-mcp-tools.mjs --check
 npm run test:scripts
 node scripts/contract-check.mjs
+node scripts/check-doc-links.mjs
 ```
 
-`npm run contract-check` is the root script alias for the last command. It builds the Go server, seeds a temporary database and validates API behavior against the zod contracts.
+`npm run contract-check` is the root script alias for `node scripts/contract-check.mjs`. It builds the Go server, seeds a temporary database and validates API behavior against the zod contracts.
+
+For updater and offline-restore changes, install Python 3.11+ and also run the CI fault-regression suite from the root:
+
+```sh
+python3 -m unittest discover -s scripts -p "test_*.py" -v
+```
 
 ## Database and API changes
 
@@ -55,15 +63,24 @@ node scripts/contract-check.mjs
 
 Follow the [design specification](web/design/spec.md). Include screenshots at desktop 1440px and phone 390px in both light and dark themes.
 
-Playwright lives in `web/tests/` and runs locally, outside CI. After following the development guide to start a seeded backend and configure the frontend proxy, run from `web/`:
+Playwright lives in `web/tests/`. CI runs browser-independent unit/security-link tests and selected Compose unit/Home speed tests; run the full suite locally. After following the development guide to start a seeded backend and configure the frontend proxy, run from `web/`:
 
 ```sh
+npm ci --prefix ..
+npm ci
+npx playwright install chromium
 npm run test:e2e
 ```
 
-The config starts or reuses the web dev server; it does not start the backend. It covers phone, tablet and desktop; tests exercise light and dark themes. Use a disposable local database because lifecycle tests create records.
+The config starts or reuses the web dev server; it does not start the backend. It covers phone, tablet and desktop; tests exercise light and dark themes. Use a disposable local database because lifecycle tests create records. The default Astro run skips CSP, production module-preload and Go redirect checks. After building `web/dist` and starting the seeded Go dev server, run a second pass from `web/`:
 
-The CSEED name, logos and brand imagery are reserved. Forks must replace the brand assets; see [TRADEMARKS.md](TRADEMARKS.md).
+```sh
+WEB_ORIGIN=http://localhost:8090 npm run test:e2e
+```
+
+This targets the built Go-served site. See the [Docker CSP recipe](docs/development.md#run-it-in-docker) for a focused container run.
+
+The CSEED name, logos and brand imagery are reserved. Before deploying a fork, replace the brand assets; see [TRADEMARKS.md](TRADEMARKS.md).
 
 ## Good first areas
 
@@ -77,7 +94,7 @@ For questions and reports, see [SUPPORT.md](SUPPORT.md).
 ## Releases and dependency updates
 
 Every push to `main` runs the pinned release-please CLI with a GitHub App
-token. It maintains one
+token, using `release-please-config.json` and `.release-please-manifest.json`. It maintains one
 release PR containing `CHANGELOG.md`, `version.txt`, the release manifest, and both
 Node package versions and lockfiles. The first release is `0.15.0`. Only `feat`,
 `fix`, `perf` and `deps` commits propose a release or appear in its notes;
@@ -116,7 +133,7 @@ patch PRs are queued into GitHub's auto-merge queue pinned to the inspected head
 commit; they still need every required check and any required approval
 to pass. Major updates receive the
 `major-update` label — created on the fly if missing — and require manual review
-and merging. PRs with missing, incomplete or unrecognized metadata are left alone.
+and merging. PRs with missing, incomplete or unrecognized metadata are left alone. Node upgrades stay on LTS majors; odd-numbered Node majors are excluded from automatic dependency updates.
 
 Maintainers must enable repository auto-merge and require the `pr-title` check
 alongside existing checks.
@@ -129,16 +146,17 @@ Missing App secrets fail explicitly. Repository settings, secrets, rulesets and
 the protected `production` environment require maintainer setup; workflows do not
 create them.
 
-Merging the automation PR activates these workflows immediately. They use only
-GitHub-owned actions and the already-allowed `docker/*` actions, all pinned by
-full SHA, so the selected-action policy needs no changes. Before merging,
-configure the App and tag-creation bypass and enable auto-merge.
-Once `pr-title` has run successfully, add it to required checks. Without App
-setup, every main push fails release-please; other CI still runs. Before merging
-the first release PR, review its notes and supplement them manually if context
-from the pre-Conventional-Commits history matters.
+The release workflows are active on `main`. The `cseed-release` GitHub App exists
+and is installed on this repository only. Keep its secrets and tag-creation bypass
+configured; without them, release-please fails while other CI still runs. Before
+merging the first release PR, review its notes and supplement them manually if
+context from the pre-Conventional-Commits history matters.
 
 ### One-time release App setup
+
+**Repository administrators only.** Ordinary contributions need no App or secrets
+setup. The upstream App already exists; these instructions are for initial setup
+on another repository or recovery by its administrators.
 
 Run this **once per repository, not per server**, from a machine with Node and
 authenticated GitHub CLI (`gh auth login`). The person running it needs permission
@@ -150,7 +168,10 @@ node scripts/setup-release-app.mjs --org cseed-org --repo officer-dashboard --dr
 ```
 
 When ready, run the same command without `--dry-run`. Open the printed loopback
-URL and approve GitHub's App manifest form. The helper saves `RELEASE_APP_ID` and
+URL in a **normal desktop browser on the same machine** and approve GitHub's App
+manifest form. Embedded browsers that drop cross-site POST bodies, including
+Pane's browser in the observed setup, cannot submit this manifest form; use a
+normal desktop browser or the manual fallback below. The helper saves `RELEASE_APP_ID` and
 `RELEASE_APP_PRIVATE_KEY` through `gh secret set` using stdin; it never prints or
 writes the private key to disk. Follow the printed installation link, select
 **Only select repositories**, and select **officer-dashboard** only. The helper
@@ -172,3 +193,30 @@ does not add the bypass: finish installing that App and add its creation bypass
 manually, rather than creating another App. Check the terminal's completion message
 before merging a release PR. This helper does not enable auto-merge, change the
 action allowlist, create labels, or configure the production environment.
+
+#### Manual fallback
+
+Use this if the manifest form cannot be submitted. If `cseed-release` already
+exists, finish or repair its setup instead of creating a duplicate.
+
+1. Open the organization's **Settings > Developer settings > GitHub Apps > New GitHub App**
+   ([organization App form](https://github.com/organizations/cseed-org/settings/apps/new))
+   in a normal desktop browser. Set the App name to `cseed-release` and the homepage
+   to this repository. Disable the webhook. Under repository permissions, grant
+   **Contents: Read and write** and **Pull requests: Read and write**; metadata read
+   access is automatic. Restrict installation to this organization.
+2. Create the App, record its **App ID** (not client ID), and generate a private key.
+   Keep the downloaded PEM file private. Install the App using **Only select repositories**,
+   selecting **officer-dashboard** only.
+3. Save both repository secrets with authenticated GitHub CLI. The first command
+   prompts for the App ID; the second reads the PEM file through stdin (Bash):
+
+   ```sh
+   gh secret set RELEASE_APP_ID --repo cseed-org/officer-dashboard
+   gh secret set RELEASE_APP_PRIVATE_KEY --repo cseed-org/officer-dashboard < /path/to/private-key.pem
+   ```
+
+4. In repository **Settings > Rules > Rulesets > Version tags - owners create**,
+   add this App to the bypass list with **Always allow**, preserving existing actors.
+   Keep **Version tags - immutable** unchanged. Verify both secret names are present
+   and the App installation lists only this repository before merging a release PR.

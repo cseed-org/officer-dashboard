@@ -105,7 +105,7 @@ This resets sample data on every app start; stop with
 
 For a local build, install Go matching [server/go.mod](server/go.mod) (minimum 1.26;
 its `toolchain` directive selects the build toolchain), a C compiler for SQLite/cgo,
-GNU Make, a POSIX shell, and Node ≥22.23.4 (from `package.json`). Use Bash/WSL on Windows;
+GNU Make, a POSIX shell, and Node 24 LTS (matching `package.json` and CI). Use Bash/WSL on Windows;
 the commands below use POSIX environment assignments. From the repository root:
 
 ```sh
@@ -125,7 +125,7 @@ See [development](docs/development.md) for live front-end development, seeding, 
 
 ## Deploy
 
-To run the dashboard for real, follow **[Fresh install](docs/deploy/fresh-install.md)**. This operator runbook assumes a 64-bit Linux host with Docker/Compose, buildx, Python 3.11+ and deployment credentials. The GHCR image is private; follow the [read-only registry login steps](docs/deploy/fresh-install.md#sign-in-to-the-private-image-registry) before pulling it. The runbook covers the published image, a Cloudflare Tunnel and Access sign-in, encrypted backups to Cloudflare D1 and Google Drive, and links to Google setup. See [deployment](docs/deployment.md) for image and release details.
+To run the dashboard for real, follow **[Fresh install](docs/deploy/fresh-install.md)**. This operator runbook assumes a 64-bit Linux host with Docker/Compose, buildx, Python 3.11+ and deployment credentials. The GHCR image is private; follow the [read-only registry login steps](docs/deploy/fresh-install.md#sign-in-to-the-private-image-registry) before pulling it. The runbook covers the published image, a Cloudflare Tunnel and Access sign-in, encrypted backups to Cloudflare D1 and Google Drive, and links to Google setup. Release images promote the exact CI-built digest to version tags and include verifiable provenance; see [deployment](docs/deployment.md#release-images-and-verification) for image tags and verification.
 
 [Back to top](#top)
 
@@ -153,11 +153,12 @@ Run from the repository root:
 | Check | Command |
 | --- | --- |
 | Go vet and tests, including dev login | `cd server && make vet && make test` |
+| Root script tests and docs links | `npm ci && npm run test:scripts && node scripts/check-doc-links.mjs` |
 | API contracts | `npm ci && npm run contract-check` |
 | Web build and types | `cd web && npm ci && npm run build && npm run check` |
-| Playwright (local, seeded backend required) | `cd web && npx playwright install chromium && API_ORIGIN=http://localhost:8090 npm run test:e2e` |
+| Playwright (local, seeded backend required) | `npm ci && cd web && npm ci && npx playwright install chromium && API_ORIGIN=http://localhost:8090 npm run test:e2e` |
 
-[CI](.github/workflows/ci.yml) runs Go, contract, web, release-smoke and Compose browser checks on PRs and pushes to `main`. The full Playwright suite can also run locally. [Docs CI](.github/workflows/docs.yml) checks Markdown links. [Test details](docs/development.md).
+[CI](.github/workflows/ci.yml) runs Go, contract, web, release-smoke and Compose browser checks on PRs and pushes to `main`. Run the local suite against Astro, then against the built Go-served site for CSP and production asset checks; see [Playwright setup](CONTRIBUTING.md#ui-changes). [Docs CI](.github/workflows/docs.yml) checks Markdown links. [Test details](docs/development.md).
 
 [Back to top](#top)
 
@@ -169,7 +170,7 @@ Run from the repository root:
 | [web/](web/README.md) | Static Astro + Preact UI, design references, Playwright tests. |
 | [src/core/contracts.ts](src/core/contracts.ts) | Canonical zod API schemas; enums in `src/core/domain.ts`. |
 | [web/src/lib/contracts.ts](web/src/lib/contracts.ts) | Front-end contract schemas. |
-| [scripts/contract-check.mjs](scripts/contract-check.mjs) | Seed a temporary Go server and validate API contracts. |
+| [scripts/](scripts/) | Contract checks, MCP tool generation, script tests, documentation links and release tooling. |
 | [docs/](docs/README.md) | Guides and API reference. |
 
 The original TypeScript / Cloudflare Workers / D1 application is in git history before the v1-cleanup PR. The design follows [cseed.co](https://cseed.co): paper and ink, Playfair Display, Poppins, and Anonymous Pro.
