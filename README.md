@@ -125,6 +125,22 @@ See [development](docs/development.md) for live front-end development, seeding, 
 
 ## Deploy
 
+### Install and update at a glance
+
+Runs on any 64-bit Linux host with Docker + Compose and git: VPS, home server or Raspberry Pi (`linux/amd64` and `linux/arm64`). Nothing depends on the developer's machine. Allow outgoing internet, including TCP/UDP port 7844 for the Cloudflare tunnel.
+
+**Install:** run `git clone https://github.com/cseed-org/officer-dashboard.git && cd officer-dashboard/server/deploy`, then prepare `.env`, `dashboard.env`, `backup.env`, secret files and the approved digest in `prod-image.env` using [Fresh install](docs/deploy/fresh-install.md#prepare-the-deployment-files). The private image requires `docker login ghcr.io` with a `read:packages` token ([registry setup](docs/deploy/fresh-install.md#sign-in-to-the-private-image-registry)). Then run the commands below; use the migration command only for a brand-new database (restore an existing installation instead):
+
+```sh
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml run --rm --no-deps --entrypoint /bin/sh dashboard -c 'umask 077; exec /app/dashboard migrate'
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
+```
+
+- **Update:** merge to `main` → CI builds, tests and attests the image → a maintainer approves it in GitHub **Actions > Approve production image** (environment `production`) → the installed `officer-dashboard-update.timer` resolves `:prod`, pulls its digest and restarts safely. Production uses published images; `git pull` only refreshes the checkout's deployment/Compose files. See [approval and timer setup](docs/deploy/fresh-install.md#github-approval-gate-repository-settings-requires-approval) and [update/rollback behavior](docs/deploy/upgrade-existing.md).
+- **Manual alternative:** after backing up and updating `prod-image.env` to the approved digest, run `docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull && docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d` from `server/deploy`; this bypasses the timer's backup/rollback safeguards.
+- **Local development:** from the repository root, `git pull` followed by `docker compose -f compose.dev.yaml up -d --build` rebuilds the local app ([development](docs/development.md#run-it-in-docker)).
+
 To run the dashboard for real, follow **[Fresh install](docs/deploy/fresh-install.md)**. This operator runbook assumes a 64-bit Linux host with Docker/Compose, buildx, Python 3.11+ and deployment credentials. The GHCR image is private; follow the [read-only registry login steps](docs/deploy/fresh-install.md#sign-in-to-the-private-image-registry) before pulling it. The runbook covers the published image, a Cloudflare Tunnel and Access sign-in, encrypted backups to Cloudflare D1 and Google Drive, and links to Google setup. Release images promote the exact CI-built digest to version tags and include verifiable provenance; see [deployment](docs/deployment.md#release-images-and-verification) for image tags and verification.
 
 [Back to top](#top)
