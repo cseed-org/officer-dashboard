@@ -255,15 +255,28 @@ not built yet.
 
 Other flags: `--officers-group` and `--launchpad-group` (empty for no Launchpad
 group), `--name-prefix` (prefix every resource name, for a staging install
-beside the real one) and `--json`. Use a short-lived token limited to the
-dashboard's account and zone with read permissions only; the minimum list is
-still being confirmed. Delete the token file afterwards.
+beside the real one) and `--json`. It exits 0 when it printed the plan, whatever
+the plan says; 1 when it could not read the account (a bad token, two resources
+matching one name, a Cloudflare error); and 2 for a usage error.
+
+Create a token for it under **Manage account** → **Account API tokens**, limited to
+the dashboard's account and its one zone, with a short expiry and these read
+permissions:
+
+- Account: Cloudflare Tunnel, Access: Apps, Access: Policies, Access: Groups,
+  Access: Identity Providers, Access: Organizations, Access: Service Tokens, D1,
+  Workers Scripts.
+- Zone: Zone, DNS, Zone WAF, Cache Rules, Config Rules, Bot Management.
+
+A missing permission shows as `unknowable` on the lines it affects. Delete the
+token and its file when you are done.
 
 On the host, from `server/deploy`, Compose passes `APP_URL` and gives a terminal
 for the token prompt:
 
 ```sh
-docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml   run --rm --no-deps --entrypoint /app/dashboard dashboard setup --dry-run
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml \
+  run --rm --no-deps --entrypoint /app/dashboard dashboard setup --dry-run
 ```
 
 ## Owner integration setup
