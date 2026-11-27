@@ -15,6 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Parse with the trusted base-branch copy of the script, never the PR's.
+          ref: ${{ github.event.pull_request.base.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
       - name: Read the highest semver update type from Dependabot commit metadata
         id: update
         env:
@@ -29,54 +37,13 @@ jobs:
           jq -c '[.commits[].messageBody // ""]' pr.json > bodies.json
           # Parse Dependabot's structured metadata trailer — the YAML
           # updated-dependencies block after the final "---" of each commit
-          # body — and fail closed: unless every commit lists at least one
-          # dependency and every listed dependency carries a recognized semver
-          # update-type, report none and leave the PR to a person.
-          highest=$(python3 - <<'PY'
-          import json, yaml
-
-          recognized = {
-              "version-update:semver-major": 3,
-              "version-update:semver-minor": 2,
-              "version-update:semver-patch": 1,
-          }
-
-          def trailer(body):
-              lines = body.splitlines()
-              for i in range(len(lines) - 1, -1, -1):
-                  if lines[i].strip() == "---":
-                      try:
-                          data = yaml.safe_load("\n".join(lines[i + 1:]))
-                      except yaml.YAMLError:
-                          return None
-                      return data if isinstance(data, dict) else None
-              return None
-
-          def highest():
-              bodies = json.load(open("bodies.json", encoding="utf-8"))
-              if not bodies:
-                  return "none"
-              best, rank = "none", 0
-              for body in bodies:
-                  data = trailer(body if isinstance(body, str) else "")
-                  if data is None:
-                      return "none"
-                  deps = data.get("updated-dependencies")
-                  if not isinstance(deps, list) or not deps:
-                      return "none"
-                  for entry in deps:
-                      if not isinstance(entry, dict):
-                          return "none"
-                      update = entry.get("update-type")
-                      if update not in recognized:
-                          return "none"
-                      if recognized[update] > rank:
-                          rank, best = recognized[update], update
-              return best
-
-          print(highest())
-          PY
-          )
+          # body — with the dependency-free script under scripts/ (covered by
+          # scripts/dependabot-update-type.test.mjs), and fail closed: unless
+          # every commit lists at least one dependency and every listed
+          # dependency carries a recognized semver update-type, report none
+          # and leave the PR to a person.
+          highest=$(node scripts/dependabot-update-type.mjs < bodies.json)
+          [[ "$highest" =~ ^version-update:semver-(major|minor|patch)$ ]] || highest=none
           echo "Highest Dependabot update type: $highest"
           echo "highest=$highest" >> "$GITHUB_OUTPUT"
           echo "head=$head" >> "$GITHUB_OUTPUT"

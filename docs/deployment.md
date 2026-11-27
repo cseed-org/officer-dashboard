@@ -9,14 +9,16 @@ plus an independent daily/monthly copy in Google Drive ([below](#a-second-indepe
 
 CI on `main` builds `ghcr.io/cseed-org/officer-dashboard:main` and
 `:sha-<7-character commit>` with SBOM and build provenance, and records the
-pushed digest as a run-scoped CI artifact. A published stable
+pushed digest as a run-scoped CI artifact named for the run attempt. A
+published stable
 GitHub Release such as `v0.15.0` promotes that recorded multi-platform
 digest to `:0.15.0`, `:0.15` and `:latest`. Releases at major version 1 and later
 also update `:1` (or the corresponding major); there is no `:0` alias. Prereleases
 are excluded. The exact version always (re)points at the recorded digest —
 promotion fails rather than replace a different build — while `latest` and the
 minor/major aliases advance only when the release is the highest published
-stable version in their scope, so rerunning an older release leaves newer
+stable version in their scope (comparing published, non-draft, non-prerelease
+GitHub Releases, never bare tags), so rerunning an older release leaves newer
 aliases alone. Version aliases and `latest` can move: pin deployments by digest.
 The image's binary version remains the source commit's short SHA because release
 promotion never rebuilds it.
@@ -24,7 +26,11 @@ promotion never rebuilds it.
 The release workflow requires a successful `main` CI run, including its `publish`
 job, for the tag's resolved commit; it waits up to 75 minutes for that run, then
 redeems the digest that exact run attempt recorded — never the mutable
-`:sha-<commit>` source tag, which a rerun could have replaced. It
+`:sha-<commit>` source tag, which a rerun could have replaced. The digest
+artifact is kept for 90 days, so promotion, including idempotent reruns of the
+release workflow, must happen within 90 days of the CI run that built the
+image; after the artifact expires the workflow fails closed rather than fall
+back to the mutable source tag. It
 checks that the image revision matches the
 full commit and that all promoted tags keep the same digest. It adds a GitHub
 artifact attestation (Sigstore-backed) for the promoted digest using GitHub's

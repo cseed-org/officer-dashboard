@@ -98,13 +98,18 @@ jobs:
           set -euo pipefail
           # The digest comes only from the exact run attempt just validated,
           # never from a mutable tag: a later CI rerun of the same commit can
-          # build a different digest before its own checks have finished.
-          artifacts=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/attempts/$RUN_ATTEMPT/artifacts?per_page=100")
-          artifact_id=$(jq -s -r '[.[].artifacts[] | select(.name == "image-digest" and (.expired | not))] | first | .id // empty' <<< "$artifacts")
-          if [[ -z "$artifact_id" ]]; then
-            echo '::error::The validated CI run attempt recorded no image-digest artifact; refusing promotion.'
+          # build a different digest before its own checks have finished. The
+          # artifacts API is run-scoped (no per-attempt route exists), so the
+          # attempt is pinned in the artifact name at upload time; require
+          # exactly one non-expired artifact of the validated attempt.
+          name="image-digest-$RUN_ATTEMPT"
+          artifacts=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts?per_page=100")
+          matches=$(jq -s --arg name "$name" '[.[].artifacts[] | select(.name == $name and (.expired | not))]' <<< "$artifacts")
+          if [[ $(jq 'length' <<< "$matches") != 1 ]]; then
+            echo "::error::Expected exactly one non-expired $name artifact in the validated CI run, found $(jq 'length' <<< "$matches"); refusing promotion."
             exit 1
           fi
+          artifact_id=$(jq -r '.[0].id' <<< "$matches")
           gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" > image-digest.zip
           digest=$(unzip -p image-digest.zip image-digest.txt | tr -d '[:space:]')
           if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
@@ -126,7 +131,25 @@ jobs:
           [[ "$revision" == "$COMMIT" ]]
           # Never replace a different build: an existing exact-version tag must
           # already point at the recorded digest (idempotent reruns only).
-          existing=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}' 2>/dev/null || true)
+          # Distinguish a confirmed-absent tag from lookup failures: retry
+          # transient registry errors with backoff, and fail closed when the
+          # lookup never resolves — only a confirmed-absent tag may be created
+          # without comparing digests.
+          existing=""
+          for try in 1 2 3 4; do
+            if out=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}' 2>&1); then
+              existing=$out
+              break
+            fi
+            if grep -qiE 'not found|manifest unknown' <<< "$out"; then
+              break
+            fi
+            if (( try == 4 )); then
+              echo "::error::Could not resolve $IMAGE:$VERSION after $try attempts ($out); refusing to promote without knowing whether the tag already exists."
+              exit 1
+            fi
+            sleep $((try * 10))
+          done
           if [[ -n "$existing" && "$existing" != "$DIGEST" ]]; then
             echo "::error::$IMAGE:$VERSION already points to $existing, not the recorded $DIGEST; refusing to replace a different build."
             exit 1
@@ -135,11 +158,14 @@ jobs:
           tags=(--tag "$IMAGE:$VERSION")
           # The exact version always (re)points at the recorded digest. Moving
           # aliases advance only: point one at this digest only when no
-          # strictly newer published stable vX.Y.Z tag falls in its scope
+          # strictly newer published stable vX.Y.Z release falls in its scope
           # (latest: every stable release; minor: same major.minor; major:
           # same major), so rerunning an older release leaves newer aliases
-          # alone. sort -V compares semver.
-          published=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name')
+          # alone. Candidates are published, non-draft, non-prerelease GitHub
+          # Releases (paginated): bare tags and GitHub prereleases never
+          # qualified for promotion, so they must not block aliases either.
+          # sort -V compares semver.
+          published=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select((.draft | not) and (.prerelease | not)) | .tag_name')
           alias_blocked() { # $1 = all, a major, or a major.minor scope
             local scope=$1 other
             while IFS= read -r tag; do

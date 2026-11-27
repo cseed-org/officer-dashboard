@@ -75,7 +75,8 @@ test('publish records the pushed digest in a run-scoped artifact for release pro
   assert.match(record.run, /\^sha256:\[a-f0-9\]\{64\}\$/);
   const uploads = ci.jobs.publish.steps.filter((step) => step.uses?.startsWith('actions/upload-artifact@'));
   assert.equal(uploads.length, 1);
-  assert.equal(uploads[0].with.name, 'image-digest');
+  assert.equal(uploads[0].with.name, 'image-digest-${{ github.run_attempt }}', 'the artifact name pins the run attempt');
   assert.equal(uploads[0].with.path, 'image-digest.txt');
   assert.equal(uploads[0].with['if-no-files-found'], 'error');
+  assert.equal(uploads[0].with['retention-days'], 90, 'promotion window documented in docs/deployment.md');
 });
