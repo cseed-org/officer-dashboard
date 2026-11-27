@@ -8,7 +8,7 @@ database. Production runs on a 64-bit Linux host, usually in Docker.
 
 ```
 server/
-  cmd/dashboard        main: serve | seed | migrate | provision-leadership | healthcheck | mcp-check | drive-backup | version
+  cmd/dashboard        main: serve | seed | migrate | provision-leadership | healthcheck | mcp-check | drive-backup | setup | version
   internal/api         HTTP handlers, middleware, sessions, routes
   internal/store       every SQL statement; embedded migrations 0000 onward
   internal/accounting  posting engine, journal validation, financial reports, CSV export
@@ -20,6 +20,7 @@ server/
   internal/cfsync      membership D1 mirror and synchronization jobs
   internal/cloudflare  Cloudflare D1 and GraphQL analytics client
   internal/mcpcheck    the mcp-check deployment reachability checks
+  internal/setup       dashboard setup: read-only Cloudflare preview (plan, cfapi, cfprovision, cffake)
   internal/files       receipts: Google Drive (shared drive) and local disk
   internal/drivebackup uploads the sidecar's encrypted snapshots to Drive (daily + monthly) and restores them
   internal/driveexport hourly readable event/program snapshots in Drive; content hashes skip unchanged files

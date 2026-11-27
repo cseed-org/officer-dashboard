@@ -237,6 +237,35 @@ reviewed immutable digest, and use the protected production promotion workflow a
 
 Cloudflared uses its documented [`TUNNEL_TOKEN_FILE`](https://developers.cloudflare.com/tunnel/reference/run-parameters/#token-file) support. Runtime restrictions use the [Compose service controls](https://docs.docker.com/reference/compose-file/services/).
 
+## Setup preview (`dashboard setup --dry-run`)
+
+`dashboard setup --dry-run` reads your Cloudflare account and lists, for each piece
+of [Cloudflare setup](deploy/cloudflare.md) and the backup Worker, whether it is
+`ok`, would be created (`create`), differs from the docs (`drift`), cannot be read
+(`unknowable`, for example a secret Cloudflare never returns), or needs a person
+(`manual`). It sends only `GET` requests and writes no files. Applying the plan is
+not built yet.
+
+| Variable | Needed? | Default | Meaning |
+| --- | --- | --- | --- |
+| `CLOUDFLARE_SETUP_TOKEN_FILE` | optional | – | file holding a Cloudflare API token for setup. Unset: setup asks for the token without echo. Never a flag, never logged. Separate from `CLOUDFLARE_API_TOKEN` |
+| `APP_URL` | **required** | – | the dashboard origin to check, also `--app-url` |
+| `BACKUP_SINK_URL` | optional | `backups.<parent domain>` | its host is the backup Worker hostname, also `--backup-hostname` |
+| `TUNNEL_TOKEN_FILE` | optional | – | if readable, setup takes only the tunnel ID from it to find the tunnel, also `--tunnel-token-file` |
+
+Other flags: `--officers-group` and `--launchpad-group` (empty for no Launchpad
+group), `--name-prefix` (prefix every resource name, for a staging install
+beside the real one) and `--json`. Use a short-lived token limited to the
+dashboard's account and zone with read permissions only; the minimum list is
+still being confirmed. Delete the token file afterwards.
+
+On the host, from `server/deploy`, Compose passes `APP_URL` and gives a terminal
+for the token prompt:
+
+```sh
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml   run --rm --no-deps --entrypoint /app/dashboard dashboard setup --dry-run
+```
+
 ## Owner integration setup
 
 Owners open `/setup` to connect Google Drive and the org Google Calendar, check the

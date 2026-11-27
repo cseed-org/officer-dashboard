@@ -1,0 +1,25 @@
+package main
+
+import (
+	"bytes"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// setup runs on hosts that are not set up yet, where *_FILE targets may not exist, so it
+// must be dispatched before fileSettings would refuse them.
+func TestSetupRunsBeforeSecretFiles(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "not-created-yet")
+	env := map[string]string{"DISCORD_CLIENT_SECRET_FILE": missing, "CLOUDFLARE_API_TOKEN_FILE": missing}
+	var out, errb bytes.Buffer
+	code := run([]string{"setup"}, func(k string) string { return env[k] }, &out, &errb)
+	if code != 2 || !strings.Contains(errb.String(), "apply is not built yet") {
+		t.Fatalf("exit %d, stderr %q", code, errb.String())
+	}
+	// Other commands still refuse the missing file.
+	errb.Reset()
+	if code := run([]string{"version"}, func(k string) string { return env[k] }, &out, &errb); code != 1 {
+		t.Fatalf("version with a missing secret file: exit %d", code)
+	}
+}

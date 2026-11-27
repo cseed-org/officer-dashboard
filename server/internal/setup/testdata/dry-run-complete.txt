@@ -1,0 +1,38 @@
+Cloudflare setup for officers.example.org (dry run: nothing was changed)
+
+  ok          Zone                                 example.org  [zone-1]
+  ok          Zero Trust organization              club.cloudflareaccess.com
+  ok          Tunnel                               officer-dashboard  [6ff42ae2-765d-4adf-8112-31c55c1551ef]
+  ok          Tunnel route                         officers.example.org → http://dashboard:8090
+  ok          DNS record                           officers.example.org  [dns-1]
+  ok          Identity provider                    One-time PIN  [idp-otp]
+  ok          Access group                         Officers  [g-officers]
+                                                     - membership is never compared or changed
+  ok          Access group                         Launchpad  [g-launchpad]
+                                                     - membership is never compared or changed
+  ok          Service token                        officer-dashboard services  [st-services]
+                                                     - expires 2027-11-20T00:00:00Z
+  unknowable  Service token secret                 officer-dashboard services  [st-services]
+                                                     - Cloudflare never returns the client secret, and it has no host file; setup will offer --rotate if the bots lost it
+  ok          Service token                        dashboard-backups-host  [st-backups]
+                                                     - expires 2027-11-21T00:00:00Z
+  unknowable  Service token secret                 dashboard-backups-host  [st-backups]
+                                                     - Cloudflare never returns the client secret; setup will trust secrets/backup/access-client-secret if present, else offer --rotate
+  ok          Access application                   Officer Dashboard  [app-site]
+  ok          Access application                   Officer Dashboard: agents (bypass)  [app-agents]
+  ok          Access application                   Officer Dashboard: services (service token)  [app-services]
+  ok          Access application                   Dashboard backups (service token)  [app-backups]
+                                                     - named "Backups" (matched by hostname and paths)
+  ok          Rule (http_request_firewall_custom)  Agents and services: skip bot checks  [r-skip]
+  ok          Rule (http_request_cache_settings)   Agents and services: bypass cache  [r-cache]
+  ok          Rule (http_config_settings)          Consent page: no rewriting  [r-config]
+  ok          Bot Fight Mode                       off
+  ok          D1 database                          dashboard-backups  [d1-backups]
+  unknowable  D1 migrations                        dashboard-backups
+                                                     - reading the d1_migrations table needs a D1 query (POST); a dry run sends only GET
+  ok          Worker                               dashboard-backup-sink  [dashboard-backup-sink]
+  unknowable  Worker secret                        BACKUP_BEARER_SECRET
+                                                     - set, but Cloudflare never returns its value; setup will trust secrets/backup/bearer if present, else offer --rotate
+  ok          Worker custom domain                 backups.example.org  [wd-1]
+
+21 ok, 0 create, 0 drift, 4 unknowable, 0 manual

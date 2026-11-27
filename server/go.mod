@@ -7,6 +7,7 @@ toolchain go1.27.4
 require (
 	filippo.io/age v1.3.2
 	github.com/mattn/go-sqlite3 v1.14.53
+	golang.org/x/term v0.47.0
 )
 
 require (
