@@ -28,6 +28,7 @@ unless you configure an off-site copy.
 
 Replace `<install-dir>` with your absolute binary installation directory. Render
 the unit templates with that path using the `sed` commands below.
+For these manual rendering commands, choose a path without `&`, `|`, `\`, `%` or `"`; spaces are supported.
 
 1. **Tools:** `sudo apt install git build-essential sqlite3`, Go matching
    [server/go.mod](../../server/go.mod) from
@@ -170,16 +171,17 @@ docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile \
   --build-arg VERSION="$(git describe --always --dirty)" -t "$IMAGE" --push .
 DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | \
   python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
-printf 'DASHBOARD_IMAGE=%s@%s\n' "${IMAGE%:*}" "$DIGEST" > server/deploy/prod-image.env
+printf 'DASHBOARD_IMAGE=%s@%s\n' "$IMAGE" "$DIGEST" > server/deploy/prod-image.env
 cd server/deploy
 docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
 ```
 
 Use the explicit database initialization in [Fresh install](fresh-install.md) before
 `up` on a new host. On an existing host, take the verified backup and follow
-[Upgrade an existing host](upgrade-existing.md) before changing its pin. The approved
-`:prod` updater applies only to the project's published GHCR images; keep it disabled
-for a separately managed registry. Both platforms build without emulation.
+[Upgrade an existing host](upgrade-existing.md) before changing its pin. The updater
+follows the repository in `prod-image.env` and expects a `:prod` tag there. Keep the
+timer disabled unless your pipeline moves `:prod` only after approval.
+Both platforms build without emulation.
 
 After initialization or the upgrade procedure, start the stack:
 

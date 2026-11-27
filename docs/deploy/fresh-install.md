@@ -33,6 +33,7 @@ cd <install-dir>/server/deploy
 
 All host Compose commands below run from this directory. Render the systemd
 updater template with the same installation path before enabling it.
+For these manual rendering commands, choose a path without `&`, `|`, `\`, `%` or `"`; spaces are supported.
 
 ## 2. Set up Cloudflare
 

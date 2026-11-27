@@ -66,3 +66,4 @@ server/deploy/prod-image.env
 server/deploy/rejected-prod-image
 server/deploy/.update.lock
 server/deploy/setup-state.json
+server/deploy/*.next

@@ -1,4 +1,4 @@
-# Template: replace <install-dir> with your absolute install directory.
+# Template: replace <install-dir> in the command below; it fills in @INSTALL_DIR@.
 # Render from this directory (quote paths containing spaces):
 #   sed 's|@INSTALL_DIR@|<install-dir>|g' dashboard-backup.service | sudo tee /etc/systemd/system/dashboard-backup.service > /dev/null
 [Unit]

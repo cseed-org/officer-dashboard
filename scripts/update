@@ -104,10 +104,12 @@ def main():
         state = deploy / 'prod-image.env'
         if not state.exists():
             raise ValueError('initialize prod-image.env with the currently running immutable image')
-        previous = dotenv(state)['DASHBOARD_IMAGE']
+        previous = dotenv(state).get('DASHBOARD_IMAGE', '')
         if not re.fullmatch(r'[a-zA-Z0-9./:_-]+@sha256:[a-f0-9]{64}', previous):
             raise ValueError('previous image must be pinned by digest')
-        image_name = previous.partition('@')[0] or 'ghcr.io/cseed-org/officer-dashboard'
+        image_name = previous.partition('@')[0]
+        registry, separator, name = image_name.rpartition('/')
+        image_name = registry + separator + name.partition(':')[0]
         if args.image:
             candidate = args.image
         else:
