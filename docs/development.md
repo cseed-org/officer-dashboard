@@ -4,7 +4,7 @@
 
 Needs Go matching [server/go.mod](../server/go.mod) (minimum 1.26, with the build
 toolchain selected by its `toolchain` directive), a C compiler (cgo, for SQLite),
-GNU Make, a POSIX shell and Node ≥ 22.23.4. On Windows use Bash/WSL for these shell
+GNU Make, a POSIX shell and Node 24 LTS. On Windows use Bash/WSL for these shell
 commands, or use the Docker stack below to build Go and SQLite inside Linux.
 
 ```sh
@@ -79,7 +79,7 @@ the development database, dependencies and cache.
 | Go vet + tests (including dev sign-in) | `cd server && make vet && make test` |
 | API contract | `npm ci && npm run contract-check` (builds and runs the Go server itself) |
 | Front end build + types | `cd web && npm ci && npm run build && npx astro check` |
-| Front end e2e | `cd web && npx playwright install chromium && API_ORIGIN=http://localhost:8090 npm run test:e2e` (full local Playwright suite) |
+| Front end e2e | `npm ci && cd web && npm ci && npx playwright install chromium && API_ORIGIN=http://localhost:8090 npm run test:e2e` (Astro; [built-site pass](../CONTRIBUTING.md#ui-changes) also required for CSP/production checks) |
 
 CI ([ci.yml](../.github/workflows/ci.yml)) runs Go, contract and web checks, plus release
 smoke tests and a selected Compose Playwright suite, on pushes to `main` and pull requests.

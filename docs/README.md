@@ -7,7 +7,7 @@
 | [Development](development.md) | Quick start, live development, seed data, tests, contract checks, Playwright. |
 | [Configuration](configuration.md) | Every setting: required or optional, defaults, compose and backup settings, club location/time zone. |
 | [Fresh install](deploy/fresh-install.md) | **Start here to deploy.** Docker on a Pi 5 or Linux box, private GHCR access, encrypted D1 and Drive backups, and approved image updates. See [Upgrade/restore](deploy/upgrade-existing.md), [Cloudflare setup](deploy/cloudflare.md), [Google calendar setup](deploy/google-calendar.md) and [Other setups](deploy/other-setups.md). The [original deployment walkthrough](deploy/README.md) retains historical R2/Litestream instructions. |
-| [Deployment](deployment.md) | Backup sizing, recovery, integration setup and links to the deployment runbooks. |
+| [Deployment](deployment.md) | Release image tags and provenance verification, backup sizing, recovery, integration setup and deployment runbooks. |
 | [Architecture](architecture.md) | Go packages, SQLite transactions, authentication, API contracts. |
 | [Buildspace + Launchpad](buildspace.md) | Builder register, permissions, draft assumptions and Discord check-in ingestion. |
 | [Launchpad cohorts](launchpad-cohorts.md) | Cohorts, email invites, builder/mentor portals, identity and security model, auto-assign. |
