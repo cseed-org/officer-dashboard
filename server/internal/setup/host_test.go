@@ -467,3 +467,37 @@ func TestHostRefusesAProjectThatIsNotThisDirectorys(t *testing.T) {
 		t.Fatal(".env was written")
 	}
 }
+
+// Review T-1 (S6): a stopped install A left its volume; fresh checkout B copied A's .env
+// but has no pin, and "confirms" A's values. Any install that ever ran Compose has a pin,
+// so --install-exists without prod-image.env is refused, whether or not .env exists.
+func TestReviewCopiedEnvNoPinConfirmsStoppedInstall(t *testing.T) {
+	dir := deployDir(t)
+	raw, _ := os.ReadFile(filepath.Join(dir, ".env.example"))
+	os.WriteFile(filepath.Join(dir, ".env"), raw, 0o600)
+	r := hostCmd(t, &memOwner{}, freshSecrets, append([]string{"--yes", "--deploy-dir", dir, "--secrets-stdin",
+		"--compose-project-name", "officer-dashboard", "--tunnel-net", "10.250.89", "--install-exists"}, freshArgs...)...)
+	if r.code == 0 {
+		t.Fatalf("a checkout with no pin joined an existing Compose project:\n%s", r.stdout)
+	}
+	if !strings.Contains(r.stderr, "prod-image.env") {
+		t.Fatalf("stderr %q", r.stderr)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, ".env")); string(got) != string(raw) {
+		t.Fatal(".env changed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "secrets")); err == nil {
+		t.Fatal("secrets were written")
+	}
+}
+
+// The legitimate stopped or moved install carries its pin: --install-exists with .env and
+// pin, confirming its own values, completes with nothing renamed.
+func TestReviewStoppedInstallWithPinCompletes(t *testing.T) {
+	dir, o := fullInstall(t)
+	os.WriteFile(filepath.Join(dir, "prod-image.env"), []byte("DASHBOARD_IMAGE=r.example/c/d@sha256:"+strings.Repeat("a", 64)+"\n"), 0o600)
+	r := hostCmd(t, o, "", "--yes", "--deploy-dir", dir, "--compose-project-name", "officer-dashboard", "--tunnel-net", "10.250.89", "--install-exists")
+	if r.code != 0 || !strings.Contains(r.stdout, "nothing to do") {
+		t.Fatalf("a stopped or moved install that confirms its own values must complete: exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+}

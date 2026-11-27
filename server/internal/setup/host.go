@@ -114,9 +114,12 @@ func runHost(_ context.Context, args []string, deps Deps) int {
 			return usageErr("%s must be %s", c.flag, c.want)
 		}
 	}
-	if installExists && !exists(filepath.Join(dir, ".env")) && !exists(filepath.Join(dir, "prod-image.env")) {
-		fmt.Fprintln(deps.Stderr, "setup host: Docker already has containers or volumes for this Compose project, but this directory has no install"+
-			" (no .env, no prod-image.env): the project belongs to another install. Choose a project name and subnet nothing else uses.")
+	// Every install that has ever run Compose has an image pin (compose.cloudflare.yml
+	// needs DASHBOARD_IMAGE, passed with --env-file prod-image.env), and a moved or
+	// stopped install keeps it. A .env alone proves nothing: it may be copied.
+	if installExists && !exists(filepath.Join(dir, "prod-image.env")) {
+		fmt.Fprintln(deps.Stderr, "setup host: Docker already has containers or volumes for this Compose project, but this directory has no install that ever ran it"+
+			" (no prod-image.env): the project belongs to another install. Choose a project name and subnet nothing else uses.")
 		return 1
 	}
 	secrets := map[string][]byte{}

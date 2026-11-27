@@ -475,6 +475,20 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.launch('host', '--yes', '--compose-project-name', 'officer-dashboard', '--tunnel-net', '10.250.89'), 0, self.err)
         self.assertIn('--install-exists', self.container()[0])
 
+    def test_copied_env_beside_a_stopped_install_reaches_go_as_an_existing_project(self):
+        # Review T-1 (S6): A is stopped (volume and network, no containers); B has A's
+        # .env copied but no pin, and confirms A's values. The launcher cannot tell A from
+        # B, so it must hand Go --install-exists, which Go refuses without prod-image.env.
+        self.docker.volumes.append({'com.docker.compose.project': 'officer-dashboard'})
+        self.docker.networks.append({'Name': 'officer-dashboard_tunnel', 'Labels': {'com.docker.compose.project': 'officer-dashboard'},
+                                     'IPAM': {'Config': [{'Subnet': '10.250.89.0/28'}]}})
+        (self.deploy / '.env').write_text('APP_URL=https://club-a.example\n')
+        self.docker.exit = 1  # what dashboard setup host answers
+        code = self.launch('host', '--yes', '--image', PIN, '--compose-project-name', 'officer-dashboard', '--tunnel-net', '10.250.89')
+        self.assertEqual(code, 1)
+        self.assertIn('--install-exists', self.container()[0])
+        self.assertFalse((self.deploy / 'prod-image.env').exists(), 'pin written although setup failed')
+
     def test_lan_subnet_asks_for_a_free_value(self):
         self.pin()
         self.docker.networks.append({'Name': 'lan', 'Labels': {}, 'IPAM': {'Config': [{'Subnet': '10.250.89.0/24'}]}})
