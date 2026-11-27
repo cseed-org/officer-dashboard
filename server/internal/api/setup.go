@@ -11,8 +11,11 @@ import (
 	"officerdashboard/internal/drivebackup"
 )
 
-// SetupConfig records presence, never credential values or secret file paths.
-type SetupConfig struct{ BootstrapOwner, DiscordWebhook bool }
+// SetupConfig records integration presence and the public documentation URL, never credentials or secret file paths.
+type SetupConfig struct {
+	BootstrapOwner, DiscordWebhook bool
+	DocsURL                        string
+}
 
 type setupIntegration struct {
 	Key    string `json:"key"`
@@ -30,6 +33,10 @@ func (c *Ctx) setupStatus() error {
 		return err
 	}
 	s := c.S
+	docsURL := strings.TrimSpace(s.cfg.Setup.DocsURL)
+	if docsURL == "" {
+		docsURL = setupDocs
+	}
 	history, err := s.db.Read().SetupHistory(c.Context())
 	if err != nil {
 		return err
@@ -40,7 +47,7 @@ func (c *Ctx) setupStatus() error {
 		if present {
 			state = "configured"
 		}
-		entries = append(entries, setupIntegration{key, label, state, hint, "env", setupDocs})
+		entries = append(entries, setupIntegration{key, label, state, hint, "env", docsURL})
 	}
 	drive := s.driveStatusBody(c.Context(), false)
 	driveEmail, _ := drive["email"].(string)
@@ -80,7 +87,7 @@ func (c *Ctx) setupStatus() error {
 	detail += " ; Last export: " + lastExport
 	// The uploader verifies uploads but does not persist their timestamps.
 	detail += " ; Last verified backup upload: managed by the backup container ; " + setupOutbox(drivebackup.OutboxDir(s.db.Path))
-	entries = append(entries, setupIntegration{"drive", "Google Drive", state, detail, "connect", setupDocs})
+	entries = append(entries, setupIntegration{"drive", "Google Drive", state, detail, "connect", docsURL})
 	email, reconnect, last, err := c.orgGoogleState()
 	if err != nil {
 		return err
@@ -103,14 +110,14 @@ func (c *Ctx) setupStatus() error {
 			state, detail = "missing", "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET_FILE in host configuration."
 		}
 	}
-	entries = append(entries, setupIntegration{"org-calendar", "Org Google Calendar", state, detail, "connect", setupDocs})
+	entries = append(entries, setupIntegration{"org-calendar", "Org Google Calendar", state, detail, "connect", docsURL})
 	add("discord-login", "Discord login", s.cfg.Discord != nil, "Set DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET_FILE in host configuration.")
 	add("discord-bot", "Discord bot", s.cfg.DM != nil, "Set DISCORD_BOT_TOKEN_FILE in host secrets.")
 	add("discord-webhook", "Discord notifications", s.cfg.Setup.DiscordWebhook, "Set DISCORD_WEBHOOK_URL_FILE in host secrets.")
 	add("smtp", "SMTP email", s.cfg.Mailer != nil, "Set SMTP_HOST and SMTP_FROM; use SMTP_USERNAME_FILE and SMTP_PASSWORD_FILE in host secrets.")
 	cf := s.cfg.Cloudflare != nil && s.cfg.Cloudflare.Client != nil && s.cfg.Cloudflare.Client.Config.Token != ""
 	add("cloudflare", "Cloudflare sync", cf, "Set CLOUDFLARE_API_TOKEN_FILE in host secrets and the account/resource IDs. Last sync: "+setupRun(history.LastCloudflare))
-	entries = append(entries, setupIntegration{"d1-backups", "D1 backups", "configured", "Managed by the backup container. Last D1 upload: unavailable in dashboard status.", "none", setupDocs})
+	entries = append(entries, setupIntegration{"d1-backups", "D1 backups", "configured", "Managed by the backup container. Last D1 upload: unavailable in dashboard status.", "none", docsURL})
 	add("bootstrap-owner", "Bootstrap owner", s.cfg.Setup.BootstrapOwner, "Set BOOTSTRAP_OWNER_DISCORD_ID and BOOTSTRAP_OWNER_NAME in host configuration. Existing ownership survives restarts.")
 	add("sealing-key", "OAuth sealing key", s.sealer != nil, "Derived from GOOGLE_OAUTH_CLIENT_SECRET_FILE in host secrets; keep it stable across restarts.")
 	c.W.Header().Set("Cache-Control", "no-store")

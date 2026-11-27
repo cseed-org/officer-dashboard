@@ -305,7 +305,7 @@ Run this after [installation verification](fresh-install.md#8-verify-the-install
 It needs the dashboard running.
 
 `mcp-check`, built into the dashboard, calls your site the way agents and bots do and reports any
-Cloudflare setting that gets in the way. On the server, in `/opt/officer-dashboard/server/deploy`
+Cloudflare setting that gets in the way. On the server, in `<install-dir>/server/deploy`
 (or your chosen checkout location):
 
 ```sh

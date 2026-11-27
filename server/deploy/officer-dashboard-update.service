@@ -1,3 +1,6 @@
+# Template: replace <install-dir> with your absolute install directory.
+# Render from this directory (quote paths containing spaces):
+#   sed 's|@INSTALL_DIR@|<install-dir>|g' officer-dashboard-update.service | sudo tee /etc/systemd/system/officer-dashboard-update.service > /dev/null
 [Unit]
 Description=Apply an approved dashboard prod digest
 Requires=docker.service
@@ -5,7 +8,7 @@ After=docker.service network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/opt/officer-dashboard/server/deploy
-ExecStart=/usr/bin/python3 /opt/officer-dashboard/scripts/update
+WorkingDirectory="@INSTALL_DIR@/server/deploy"
+ExecStart=/usr/bin/python3 "@INSTALL_DIR@/scripts/update"
 UMask=0077
 TimeoutStartSec=15min

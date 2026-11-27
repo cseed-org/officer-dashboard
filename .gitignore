@@ -60,3 +60,9 @@ web/design/shots/**/*.png
 !web/design/shots/design-v04-1440-dark.png
 !web/design/shots/design-v04-390-light.png
 !web/design/shots/design-v04-390-dark.png
+
+# Host-local deployment state (scripts/update and setup).
+server/deploy/prod-image.env
+server/deploy/rejected-prod-image
+server/deploy/.update.lock
+server/deploy/setup-state.json

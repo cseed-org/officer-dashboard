@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -342,5 +343,18 @@ func TestSeedRefusesALiveDatabase(t *testing.T) {
 	}
 	if code := run([]string{"seed", "-reset", "-force"}, e, &out, &errb); (code == 0) != (testDBCommand == "seed") {
 		t.Fatalf("seed -reset -force has wrong availability → %d %s", code, errb.String())
+	}
+}
+
+func TestServeLogsAbsoluteDatabasePath(t *testing.T) {
+	// Stop before opening a database, but after startup resolves its path.
+	var out, errb bytes.Buffer
+	code := run([]string{"serve", "-db", "./data/dashboard.db", "-app-url", "http://invalid.example.org"}, env(nil), &out, &errb)
+	want, err := filepath.Abs("./data/dashboard.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 1 || !strings.Contains(errb.String(), "database path") || (!strings.Contains(errb.String(), want) && !strings.Contains(errb.String(), strconv.Quote(want))) {
+		t.Fatalf("startup did not log absolute database path %q: %s", want, errb.String())
 	}
 }

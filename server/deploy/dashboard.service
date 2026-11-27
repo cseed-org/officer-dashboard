@@ -1,10 +1,13 @@
+# Template: replace <install-dir> with your absolute install directory.
+# Render from this directory (quote paths containing spaces):
+#   sed 's|@INSTALL_DIR@|<install-dir>|g' dashboard.service | sudo tee /etc/systemd/system/dashboard.service > /dev/null
 # Raspberry Pi 5 (or any systemd Linux box).
 #
 #   sudo useradd --system --home /var/lib/officer-dashboard --shell /usr/sbin/nologin dashboard
-#   sudo install -m 0755 bin/dashboard /opt/officer-dashboard/dashboard
+#   sudo install -m 0755 bin/dashboard @INSTALL_DIR@/dashboard
 #   sudo install -d -m 0750 -o root -g dashboard /etc/officer-dashboard
 #   sudo install -m 0640 -g dashboard deploy/dashboard.env.example /etc/officer-dashboard/env   # then edit it
-#   sudo install -m 0644 deploy/dashboard.service /etc/systemd/system/
+#   # Render the template with sed as shown above.
 #   sudo systemctl daemon-reload && sudo systemctl enable --now dashboard
 #   journalctl -u dashboard -f
 [Unit]
@@ -19,7 +22,7 @@ Group=dashboard
 EnvironmentFile=/etc/officer-dashboard/env
 Environment=ADDR=127.0.0.1:8090
 Environment=DB_PATH=/var/lib/officer-dashboard/dashboard.db
-ExecStart=/opt/officer-dashboard/dashboard serve
+ExecStart="@INSTALL_DIR@/dashboard" serve
 Restart=on-failure
 RestartSec=2s
 # SIGTERM gets 15 s (cmd/dashboard ShutdownBudget) to drain in-flight requests and let the

@@ -1,7 +1,7 @@
 # Production: immutable approved digest, separate app/backup secret mounts.
 # See docs/deploy/fresh-install.md. Every compose invocation uses both env files:
 # docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d
-name: officer-dashboard
+name: ${COMPOSE_PROJECT_NAME:-officer-dashboard}
 
 x-dashboard-runtime: &dashboard-runtime
   image: ${DASHBOARD_IMAGE:?set DASHBOARD_IMAGE to an approved image@sha256:digest}

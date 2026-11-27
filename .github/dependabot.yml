@@ -88,3 +88,13 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /server/deploy/backup-sink
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]

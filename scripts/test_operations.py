@@ -80,6 +80,23 @@ class UpdateTests(unittest.TestCase):
         finally:
             os.chdir(cwd)
 
+    def test_poll_uses_pinned_repository_and_project_env_file(self):
+        self.state.write_text('DASHBOARD_IMAGE=registry.example.org/club/dashboard@sha256:' + 'a' * 64 + '\n')
+        self.deploy.joinpath('.env').write_text('COMPOSE_PROJECT_NAME=another-club\nTUNNEL_NET=10.250.90\n')
+        def command(args, env=None):
+            if args[:3] == ['docker', 'buildx', 'imagetools']:
+                self.assertEqual(args[4], 'registry.example.org/club/dashboard:prod')
+                return '{"digest":"sha256:' + 'b' * 64 + '"}'
+            self.assertEqual(args[2:8], ['--env-file', str(self.deploy / '.env'), '--env-file', str(self.state), '-f', str(self.deploy / 'compose.cloudflare.yml')])
+            return ''
+        cwd = Path.cwd()
+        try:
+            with patch.object(update, 'run', command), patch.object(update, 'notify'), patch('sys.argv', ['update', '--deploy-dir', str(self.deploy)]):
+                update.main()
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(update.dotenv(self.state)['DASHBOARD_IMAGE'], 'registry.example.org/club/dashboard@sha256:' + 'b' * 64)
+
     def test_two_polls_after_failed_rollback_preserve_checkpoint(self):
         self.failure = 'startup'
         self.rollback_failure = True
