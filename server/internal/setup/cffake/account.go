@@ -26,14 +26,19 @@ type Account struct {
 //   - Status != 0: answer with that error and do not apply the write (unless Apply).
 //   - Result != nil: apply the write, then answer success with Result instead of the
 //     normal response (a create that returns a different shape).
+//   - After != nil: apply the write, then call After before answering; a test uses
+//     it to change what is stored (Set), so a read-back sees something else.
 //
-// Times is how many requests it affects (0 means one).
+// Skip lets that many matching requests through untouched first. Times is how many
+// requests it then affects (0 means one).
 type Injection struct {
 	Method, Path string
 	Status, Code int
 	Message      string
 	Apply        bool
 	Result       any
+	After        func()
+	Skip         int
 	Times        int
 }
 
@@ -46,6 +51,9 @@ type accountState struct {
 	// guide's example shows; the reference schema lists no token.
 	tokenInCreate bool
 	secrets       []string
+	// putReplaces makes the organization and Bot Management PUTs replace every writable
+	// field: a field the body omits is reset. The reference does not say which it is.
+	putReplaces bool
 }
 
 // NewAccount starts a stateful fake from routes.
@@ -87,6 +95,14 @@ func (a *Account) TunnelTokenInCreate(on bool) {
 	a.acct.tokenInCreate = on
 }
 
+// PutReplaces switches the organization and Bot Management PUTs from merging the body
+// (the default) to replacing every writable field, so an omitted field is reset.
+func (a *Account) PutReplaces(on bool) {
+	a.acct.mu.Lock()
+	defer a.acct.mu.Unlock()
+	a.acct.putReplaces = on
+}
+
 // Secrets returns every secret value the fake has handed out (tunnel tokens, client
 // secrets), so a test can check none of them reached output, errors or logs.
 func (a *Account) Secrets() []string {
@@ -111,6 +127,10 @@ func (st *accountState) injection(req Request) *Injection {
 	defer st.mu.Unlock()
 	for _, in := range st.injections {
 		if in.Times > 0 && in.Method == req.Method && in.Path == req.Path {
+			if in.Skip > 0 {
+				in.Skip--
+				continue
+			}
 			in.Times--
 			return in
 		}
@@ -184,6 +204,9 @@ func (st *accountState) intercept(s *Server, req Request, w http.ResponseWriter,
 		if hook != nil {
 			hook(req)
 		}
+		if in != nil && in.After != nil {
+			in.After()
+		}
 	}
 	if in != nil {
 		if in.Status != 0 {
@@ -225,6 +248,16 @@ func (st *accountState) write(s *Server, req Request, body map[string]any) (any,
 		case p == acct("/cfd_tunnel"):
 			return st.createTunnel(s, body)
 		case p == zone("/dns_records"):
+			// The reference: content "Must not match the record's name"; a CNAME cannot
+			// share its name with any other record.
+			if fmt.Sprint(body["content"]) == fmt.Sprint(body["name"]) {
+				return nil, &errReply{http.StatusBadRequest, 9039, "content must not match the record's name"}
+			}
+			for _, r := range s.list(p) {
+				if m, ok := r.(map[string]any); ok && strings.EqualFold(fmt.Sprint(m["name"]), fmt.Sprint(body["name"])) {
+					return nil, &errReply{http.StatusBadRequest, 81053, "An A, AAAA, or CNAME record with that host already exists."}
+				}
+			}
 			rec := map[string]any{"id": st.id("dns"), "name": body["name"], "type": body["type"], "content": body["content"],
 				"proxiable": true, "proxied": body["proxied"], "ttl": body["ttl"], "settings": map[string]any{"flatten_cname": false},
 				"meta": map[string]any{}, "comment": nil, "tags": []any{}, "created_on": "2026-11-27T00:00:00Z", "modified_on": "2026-11-27T00:00:00Z"}
@@ -247,6 +280,10 @@ func (st *accountState) write(s *Server, req Request, body map[string]any) (any,
 			stored := serviceToken(id, fmt.Sprint(body["name"]), "2027-11-27T00:00:00Z")
 			if d, ok := body["duration"].(string); ok {
 				stored["duration"] = d
+				if d == "forever" {
+					// A live "forever" token listed an expiry 100 years out.
+					stored["expires_at"] = "2126-11-27T00:00:00Z"
+				}
 			}
 			s.appendTo(p, stored)
 			// The create response carries client_secret; the list never does.
@@ -258,6 +295,15 @@ func (st *accountState) write(s *Server, req Request, body map[string]any) (any,
 			resp["client_secret"] = st.secret("FAKE-CLIENT-SECRET")
 			return resp, nil
 		case p == acct("/access/policies"):
+			// decision is one of "allow", "deny", "non_identity", "bypass"; include is required.
+			switch body["decision"] {
+			case "allow", "deny", "non_identity", "bypass":
+			default:
+				return nil, &errReply{http.StatusBadRequest, 12130, "invalid decision"}
+			}
+			if inc, _ := body["include"].([]any); len(inc) == 0 {
+				return nil, &errReply{http.StatusBadRequest, 12130, "include is required"}
+			}
 			pol := map[string]any{"id": st.id("pol"), "uid": "u", "name": body["name"], "decision": body["decision"], "include": body["include"],
 				"exclude": orEmpty(body["exclude"]), "require": orEmpty(body["require"]), "connection_rules": map[string]any{"rdp": map[string]any{}},
 				"reusable": true, "app_count": 0, "created_at": "2026-11-27T00:00:00Z", "updated_at": "2026-11-27T00:00:00Z"}
@@ -290,6 +336,9 @@ func (st *accountState) write(s *Server, req Request, body map[string]any) (any,
 			cur, _ := s.routes[p].Result.(map[string]any)
 			next := map[string]any{}
 			for k, v := range cur {
+				if st.putReplaces && writableOn(p)[k] {
+					continue // replace semantics: an omitted writable field is reset
+				}
 				next[k] = v
 			}
 			for k, v := range body {
@@ -348,6 +397,10 @@ func (st *accountState) createTunnel(s *Server, body map[string]any) (any, *errR
 // createApp stores a self-hosted app in the shape the live list returned, with its
 // reusable policies embedded and their precedence, and bumps each policy's app_count.
 func (st *accountState) createApp(s *Server, body map[string]any) (any, *errReply) {
+	// SelfHostedApplication: domain is unmarked (required) and type is "self_hosted".
+	if body["type"] != "self_hosted" || orStr(body["domain"]) == "" {
+		return nil, &errReply{http.StatusBadRequest, 12130, "type self_hosted and domain are required"}
+	}
 	id := st.id("app")
 	dests, _ := body["destinations"].([]any)
 	var uris []any
@@ -364,6 +417,9 @@ func (st *accountState) createApp(s *Server, body map[string]any) (any, *errRepl
 	pols := s.list(acct("/access/policies"))
 	for _, l := range links {
 		link, _ := l.(map[string]any)
+		if _, ok := link["precedence"].(float64); !ok {
+			return nil, &errReply{http.StatusBadRequest, 12130, "each policy link needs a precedence"}
+		}
 		var found map[string]any
 		for _, p := range pols {
 			if m, ok := p.(map[string]any); ok && m["id"] == link["id"] {
@@ -442,6 +498,9 @@ func (st *accountState) createRuleset(s *Server, body map[string]any) (any, *err
 		return nil, &errReply{http.StatusBadRequest, 20217, "a zone entry point ruleset already exists for " + phase}
 	}
 	rules, _ := body["rules"].([]any)
+	if lim, ok := freeLimit[phase]; ok && len(rules) > lim {
+		return nil, &errReply{http.StatusBadRequest, 20200, "rule limit reached for " + phase}
+	}
 	rs := map[string]any{"id": st.id("rs"), "name": body["name"], "kind": "zone", "phase": phase, "version": "1",
 		"last_updated": "2026-11-27T00:00:00Z", "description": orStr(body["description"]), "source": "firewall_custom"}
 	var stored []any
@@ -475,6 +534,9 @@ func (st *accountState) addRule(s *Server, id string, body map[string]any) (any,
 			continue
 		}
 		rules, _ := rs["rules"].([]any)
+		if lim, ok := freeLimit[fmt.Sprint(rs["phase"])]; ok && len(rules)+1 > lim {
+			return nil, &errReply{http.StatusBadRequest, 20200, "rule limit reached"}
+		}
 		rule := st.storeRule(body)
 		at := len(rules)
 		if pos, ok := body["position"].(map[string]any); ok {
@@ -495,4 +557,28 @@ func (st *accountState) addRule(s *Server, id string, body map[string]any) (any,
 		return cp, nil
 	}
 	return nil, &errReply{http.StatusNotFound, 10003, "ruleset not found"}
+}
+
+// freeLimit are the Free-plan rule slots per phase (every fixture zone is Free).
+var freeLimit = map[string]int{"http_request_firewall_custom": 5, "http_request_cache_settings": 10, "http_config_settings": 10}
+
+// writableOn are the documented writable fields of the organization and of Bot
+// Management (BotFightModeConfiguration), from their update reference pages. Under
+// PutReplaces these are reset when a PUT omits them; read-only fields are kept.
+func writableOn(path string) map[string]bool {
+	fields := []string{"allow_authenticate_via_warp", "auth_domain", "auto_redirect_to_identity", "custom_pages",
+		"deny_unmatched_requests", "deny_unmatched_requests_exempted_zone_names", "disable_end_user_app_creation",
+		"is_ui_read_only", "login_design", "mfa_config", "mfa_piv_key_requirements", "mfa_required_for_all_apps", "name",
+		"service_token_inactivity", "session_duration", "strict_service_token_auth", "ui_read_only_toggle_reason",
+		"user_seat_expiration_inactive_time", "warp_auth_non_browser_401", "warp_auth_session_duration"}
+	if path == zone("/bot_management") {
+		fields = []string{"ai_agents", "ai_bots_migration_opt_out", "ai_bots_protection", "ai_search", "ai_training",
+			"ai_user", "bot_preference_sync_enabled", "cf_robots_variant", "content_bots_protection", "crawler_protection",
+			"enable_js", "fight_mode", "is_robots_txt_managed", "jsd_api_results_enabled"}
+	}
+	m := map[string]bool{}
+	for _, f := range fields {
+		m[f] = true
+	}
+	return m
 }

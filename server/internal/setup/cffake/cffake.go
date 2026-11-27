@@ -229,6 +229,7 @@ func Fresh() map[string]Response {
 			map[string]any{"id": "r-img", "description": "Cache images", "expression": `(http.request.uri.path.extension eq "png")`, "action": "set_cache_settings", "action_parameters": map[string]any{"cache": true}, "enabled": true},
 		}}},
 		zone("/rulesets/phases/http_config_settings/entrypoint"): noEntrypoint("http_config_settings"),
+		zone("/rulesets/phases/http_ratelimit/entrypoint"):       noEntrypoint("http_ratelimit"),
 	}
 }
 
@@ -282,6 +283,9 @@ func Live() map[string]Response {
 	r[zone("/bot_management")] = Response{Result: map[string]any{"enable_js": true, "fight_mode": true, "ai_bots_protection": "disabled",
 		"ai_agents": map[string]any{"anthropic_agent": "disabled", "openai_agent": "disabled"}, "using_latest_model": true}}
 	r[zone("/rulesets/phases/http_request_cache_settings/entrypoint")] = noEntrypoint("http_request_cache_settings")
+	// The live zone had its own zone:http_ratelimit ruleset.
+	r[zone("/rulesets/phases/http_ratelimit/entrypoint")] = Response{Result: map[string]any{"id": "rs-rl", "phase": "http_ratelimit", "kind": "zone",
+		"rules": []any{map[string]any{"id": "r-rl", "description": "<name>", "expression": "true", "action": "block", "enabled": true}}}}
 	return r
 }
 
