@@ -5,6 +5,13 @@
 // fragments only require the target file to exist. External (scheme or
 // protocol-relative) links are skipped by design.
 //
+// Markdown is parsed with a real CommonMark/GFM parser (micromark/mdast), not
+// a hand-written tokenizer: code spans, fenced code, HTML comments, reference
+// definitions, nested image/link labels and front matter are all recognized
+// with their actual Markdown contexts, so markup inside code or comments can
+// never be mistaken for a live link, heading or anchor. Heading anchors are
+// derived from the rendered heading text with github-slugger semantics.
+//
 // Usage: node scripts/check-doc-links.mjs [file.md ...]
 // With no arguments it checks every tracked **/*.md file (git ls-files).
 // Exits 1 and prints file:line for each broken link.
@@ -12,235 +19,151 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import GithubSlugger, { slug as githubSlug } from "github-slugger";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmFromMarkdown } from "mdast-util-gfm";
+import { gfm } from "micromark-extension-gfm";
 
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
 const LINE_ANCHOR = /^L\d+(?:-L\d+)?$/;
 
-// GitHub heading slugs (github-slugger semantics): lowercase, drop everything
-// that is not a letter, mark, number, connector punctuation, hyphen or space,
-// then turn spaces into hyphens without collapsing them.
-export function githubSlug(text) {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}\p{Pc}\- ]/gu, "")
-    .replace(/ /g, "-");
-}
+export { githubSlug };
 
-// Remove HTML tags without a sanitizing regex: only "<" followed by a tag
-// open (letter, "/" or "!") starts a tag, and plain text resumes after ">".
-function stripHtmlTags(text) {
-  let out = "";
-  let i = 0;
-  while (i < text.length) {
-    if (text[i] === "<" && /[A-Za-z/!]/.test(text[i + 1] ?? "")) {
-      const end = text.indexOf(">", i + 1);
-      if (end === -1) break;
-      i = end + 1;
-      continue;
-    }
-    out += text[i];
-    i++;
-  }
-  return out;
-}
-
-function headingText(raw) {
-  const withoutMarkup = raw
-    .replace(/`([^`]*)`/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, "$1")
-    .replace(/(\*\*|__)(.*?)\1/g, "$2")
-    .replace(/(\*|~~)(.*?)\1/g, "$2")
-    .replace(/_([^_]+)_/g, "$1");
-  return stripHtmlTags(withoutMarkup).trim();
-}
-
-// Replace HTML comments with spaces (keeping every newline): comment markup
-// is not rendered, so it is neither a link, a heading nor an anchor.
-const blankHtmlComments = (text) =>
-  text.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, " "));
-
-// Anchor ids GitHub exposes for a rendered Markdown file: slugified ATX
-// headings (duplicates get -1, -2, ...) plus explicit <a id>/<a name> anchors.
-// Fenced code, front matter and HTML comments are blanked first so example
-// markup never counts as a live heading or anchor.
-export function markdownAnchors(markdown) {
-  const text = blankHtmlComments(blankBlocks(markdown));
-  const anchors = new Set();
-  const seen = new Map();
-  for (const match of text.matchAll(/^ {0,3}#{1,6}[ \t]+(.+?)[ \t#]*$/gm)) {
-    const base = githubSlug(headingText(match[1]));
-    const count = seen.get(base) ?? 0;
-    seen.set(base, count + 1);
-    anchors.add(count === 0 ? base : `${base}-${count}`);
-  }
-  for (const match of text.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) {
-    anchors.add(match[1]);
-  }
-  return anchors;
-}
-
-// Replace fenced code and front matter with spaces (keeping every newline) so
-// example content is never parsed as links or headings and line numbers survive.
-export function blankBlocks(markdown) {
-  const chars = [...markdown];
-  const blank = (from, to) => {
-    for (let i = from; i < to; i++) if (chars[i] !== "\n") chars[i] = " ";
-  };
+// Blank YAML front matter with spaces (keeping every newline) so its content
+// is never parsed as Markdown and line numbers survive. A document whose
+// opening delimiter is never closed stays fully blank, as before.
+function blankFrontMatter(markdown) {
   const lines = markdown.split("\n");
+  if (!/^---\s*$/.test(lines[0])) return markdown;
+  const chars = [...markdown];
   let offset = 0;
-  let fence = null;
-  let inFrontMatter = /^---\s*$/.test(lines[0]);
   for (const line of lines) {
-    const fenceMatch = /^ {0,3}(```+|~~~+)/.exec(line);
-    if (inFrontMatter) {
-      blank(offset, offset + line.length);
-      if (offset !== 0 && /^(?:---|\.\.\.)\s*$/.test(line)) inFrontMatter = false;
-    } else if (fence === null && fenceMatch) {
-      // Keep the real opening fence run: a 4+ backtick/tilde fence is only
-      // closed by a run at least as long, so shorter fences inside stay code.
-      fence = fenceMatch[1];
-      blank(offset, offset + line.length);
-    } else if (fence !== null) {
-      blank(offset, offset + line.length);
-      const closer = fence[0];
-      if (new RegExp(`^ {0,3}${closer}{${fence.length},}\\s*$`).test(line)) fence = null;
+    for (let i = offset; i < offset + line.length; i++) {
+      if (chars[i] !== "\n") chars[i] = " ";
     }
+    if (offset !== 0 && /^(?:---|\.\.\.)\s*$/.test(line)) break;
     offset += line.length + 1;
   }
   return chars.join("");
 }
 
-// blankBlocks plus inline code spans and HTML comments, for link extraction.
-export function blankCodeAndComments(markdown) {
-  return blankHtmlComments(blankBlocks(markdown))
-    .replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (m) => m.replace(/[^\n]/g, " "));
+function parse(markdown) {
+  return fromMarkdown(blankFrontMatter(markdown), {
+    extensions: [gfm()],
+    mdastExtensions: [gfmFromMarkdown()],
+  });
 }
 
-const normalizeLabel = (label) => label.trim().replace(/\s+/g, " ").toLowerCase();
-
-function parseInlineDestination(text, start) {
-  let k = start;
-  while (k < text.length && /[ \t\n]/.test(text[k])) k++;
-  let dest;
-  if (text[k] === "<") {
-    const end = text.indexOf(">", k + 1);
-    if (end === -1) return null;
-    dest = text.slice(k + 1, end);
-    k = end + 1;
-  } else {
-    const begin = k;
-    let depth = 0;
-    for (; k < text.length; k++) {
-      const c = text[k];
-      if (c === "\\") { k++; continue; }
-      if (c === "(") depth++;
-      else if (c === ")") { if (depth === 0) break; depth--; }
-      else if (/[ \t\n]/.test(c) && depth === 0) break;
+// Rendered text of a heading, matching what GitHub shows: code spans keep
+// their contents, images degrade to their alt text, and raw HTML (tags and
+// comments alike) contributes nothing because its inner text, when any, is a
+// separate text sibling.
+function renderedText(node) {
+  let out = "";
+  const visit = (current) => {
+    if (current.type === "text" || current.type === "inlineCode") {
+      out += current.value;
+    } else if (current.type === "image" || current.type === "imageReference") {
+      out += current.alt ?? "";
+    } else if (current.type === "html") {
+      return;
+    } else if (current.type === "break") {
+      out += " ";
     }
-    dest = text.slice(begin, k);
-  }
-  let m = k;
-  while (m < text.length && /[ \t\n]/.test(text[m])) m++;
-  if (text[m] !== ")") {
-    const quote = text[m];
-    if (quote !== '"' && quote !== "'" && quote !== "(") return null;
-    const closer = quote === "(" ? ")" : quote;
-    let end = m + 1;
-    for (; end < text.length; end++) {
-      if (text[end] === "\\") { end++; continue; }
-      if (text[end] === closer) break;
-    }
-    if (end >= text.length) return null;
-    m = end + 1;
-    while (m < text.length && /[ \t\n]/.test(text[m])) m++;
-    if (text[m] !== ")") return null;
-  }
-  return { dest, end: m + 1 };
+    for (const child of current.children ?? []) visit(child);
+  };
+  visit(node);
+  return out;
 }
 
-// Inline links, images, reference links (full/collapsed/shortcut), images and
-// links nested inside link labels ([![alt](img.png)](page)), and HTML
-// src/srcset/href file references. Returns [{target, line}].
+// HTML comment markup is not rendered, so hrefs, srcs and anchors inside a
+// comment never count; strip comments before scanning raw HTML.
+const stripHtmlComments = (value) => value.replace(/<!--[\s\S]*?-->/g, "");
+
+const lineInHtml = (node, index) => {
+  let line = node.position.start.line;
+  for (let i = 0; i < index; i++) if (node.value[i] === "\n") line++;
+  return line;
+};
+
+// Anchor ids GitHub exposes for a rendered Markdown file: slugified headings
+// (duplicates get -1, -2, ...) plus explicit <a id>/<a name> anchors. Headings
+// and anchors that exist only in code, front matter or HTML comments are never
+// part of the parse tree used here.
+export function markdownAnchors(markdown) {
+  const tree = parse(markdown);
+  const slugger = new GithubSlugger();
+  const anchors = new Set();
+  const visit = (node) => {
+    if (node.type === "heading") {
+      anchors.add(slugger.slug(renderedText(node)));
+    } else if (node.type === "html") {
+      const html = stripHtmlComments(node.value);
+      for (const match of html.matchAll(/<a\s+(?:id|name)="([^"]+)"/g)) {
+        anchors.add(match[1]);
+      }
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(tree);
+  return anchors;
+}
+
+// Inline links, images, reference links (full/collapsed/shortcut), images
+// nested inside link labels ([![alt](img.png)](page)), and HTML src/srcset/
+// href file references. Returns [{target, line}] in document order, with the
+// contents of a link label reported before the label's own destination. An
+// image description is alt text, not navigation: link syntax inside it is not
+// a rendered link and its children are never scanned.
 export function extractLinks(markdown) {
-  const text = blankCodeAndComments(markdown);
-  const lineOf = (index) => {
-    let line = 1;
-    for (let i = 0; i < index; i++) if (text[i] === "\n") line++;
-    return line;
-  };
-  const links = [];
+  const tree = parse(markdown);
   const definitions = new Map();
-  for (const match of text.matchAll(/^ {0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|\S+).*$/gm)) {
-    const raw = match[2];
-    definitions.set(normalizeLabel(match[1]), raw.startsWith("<") ? raw.slice(1, -1) : raw);
-  }
-  // Scan one text segment; recurses into bracket labels so an image or link
-  // nested inside a link label is still extracted, while the scanner skips
-  // past the outer destination and never double-counts it.
-  const scan = (segment, baseLine) => {
-    const lineAt = (index) => {
-      let line = baseLine;
-      for (let i = 0; i < index; i++) if (segment[i] === "\n") line++;
-      return line;
-    };
-    let i = 0;
-    while (i < segment.length) {
-      const open = segment[i] === "!" && segment[i + 1] === "[" ? i + 1 : segment[i] === "[" ? i : -1;
-      if (open === -1) { i++; continue; }
-      let depth = 0;
-      let close = -1;
-      for (let j = open; j < segment.length; j++) {
-        const c = segment[j];
-        if (c === "\\") { j++; continue; }
-        if (c === "[") depth++;
-        else if (c === "]") { depth--; if (depth === 0) { close = j; break; } }
+  const collect = (node) => {
+    if (node.type === "definition") definitions.set(node.identifier, node.url);
+    for (const child of node.children ?? []) collect(child);
+  };
+  collect(tree);
+  const links = [];
+  const htmlRefs = (node) => {
+    const html = stripHtmlComments(node.value);
+    for (const match of html.matchAll(/<(?:img|source)\s[^>]*?(?:src|srcset)="([^"]+)"/g)) {
+      for (const candidate of match[1].split(",")) {
+        const url = candidate.trim().split(/\s+/)[0];
+        if (url) links.push({ target: url, line: lineInHtml(node, match.index) });
       }
-      if (close === -1) { i = open + 1; continue; }
-      const labelText = segment.slice(open + 1, close);
-      scan(labelText, lineAt(open));
-      const after = segment[close + 1];
-      if (after === "(") {
-        const parsed = parseInlineDestination(segment, close + 2);
-        if (parsed) {
-          links.push({ target: parsed.dest, line: lineAt(open) });
-          i = parsed.end;
-          continue;
-        }
-        i = close + 1;
-        continue;
-      }
-      if (after === "[") {
-        const end = segment.indexOf("]", close + 2);
-        if (end !== -1) {
-          const ref = segment.slice(close + 2, end) || labelText;
-          const target = definitions.get(normalizeLabel(ref));
-          if (target !== undefined) links.push({ target, line: lineAt(open) });
-          i = end + 1;
-          continue;
-        }
-        i = close + 1;
-        continue;
-      }
-      if (after !== ":" && labelText && definitions.has(normalizeLabel(labelText))) {
-        links.push({ target: definitions.get(normalizeLabel(labelText)), line: lineAt(open) });
-      }
-      i = close + 1;
+    }
+    for (const match of html.matchAll(/<a\s[^>]*?href="([^"]+)"/g)) {
+      const url = match[1].trim();
+      if (url) links.push({ target: url, line: lineInHtml(node, match.index) });
     }
   };
-  scan(text, 1);
-  for (const match of text.matchAll(/<(?:img|source)\s[^>]*?(?:src|srcset)="([^"]+)"/g)) {
-    for (const candidate of match[1].split(",")) {
-      const url = candidate.trim().split(/\s+/)[0];
-      if (url) links.push({ target: url, line: lineOf(match.index) });
+  const visit = (node) => {
+    if (node.type === "image") {
+      links.push({ target: node.url, line: node.position.start.line });
+      return;
     }
-  }
-  for (const match of text.matchAll(/<a\s[^>]*?href="([^"]+)"/g)) {
-    const url = match[1].trim();
-    if (url) links.push({ target: url, line: lineOf(match.index) });
-  }
+    if (node.type === "imageReference") {
+      const target = definitions.get(node.identifier);
+      if (target !== undefined) {
+        links.push({ target, line: node.position.start.line });
+      }
+      return;
+    }
+    if (node.type === "link" || node.type === "linkReference") {
+      for (const child of node.children ?? []) visit(child);
+      const target = node.type === "link" ? node.url : definitions.get(node.identifier);
+      if (target !== undefined) {
+        links.push({ target, line: node.position.start.line });
+      }
+      return;
+    }
+    if (node.type === "html") {
+      htmlRefs(node);
+      return;
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(tree);
   return links;
 }
 

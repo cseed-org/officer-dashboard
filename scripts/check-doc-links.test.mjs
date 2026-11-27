@@ -55,6 +55,9 @@ test("extractLinks reads inline, image, reference and HTML source links", () => 
   const links = extractLinks([
     "[inline](docs/guide.md \"a title\") and ![shot](img/one.png)",
     "[full][ref] [collapsed][] [shortcut]",
+    // Blank line: reference definitions are block-level and cannot interrupt a
+    // paragraph, so without it the references above would render as plain text.
+    "",
     "[ref]: docs/ref.md",
     "[collapsed]: docs/collapsed.md",
     "[shortcut]: docs/shortcut.md",
@@ -275,6 +278,51 @@ test("markdownAnchors ignores anchors and headings in code and comments", () => 
   assert.ok(!anchors.has("hidden"));
   assert.ok(!anchors.has("ghost"));
   assert.ok(anchors.has("real"));
+});
+
+test("extractLinks keeps rendered links between comment delimiters in code spans", () => {
+  // The comment markers are inline code spans, so the link between them is
+  // rendered and must be checked; backticks inside a real comment stay inert.
+  const links = extractLinks([
+    "`<!--` [broken](missing.md) `-->`",
+    "<!-- `[hidden](also-missing.md)` -->",
+  ].join("\n"));
+  assert.deepEqual(links, [{ target: "missing.md", line: 1 }]);
+});
+
+test("checkFiles fails a rendered link hidden by code-span comment markers", () => {
+  const root = fixture({
+    "README.md": "`<!--` [broken](missing.md) `-->`\n",
+  });
+  const { checked, failures } = checkFiles(root, ["README.md"]);
+  assert.equal(checked, 1);
+  assert.deepEqual(
+    failures.map(({ file, line, problem }) => `${file}:${line}: ${problem}`),
+    ["README.md:1: broken link (no such file): missing.md"],
+  );
+});
+
+test("markdownAnchors derives heading slugs from rendered text without comments", () => {
+  const anchors = markdownAnchors("# Install <!-- note --> now\n");
+  assert.ok(anchors.has("install--now"));
+  const root = fixture({
+    "README.md": "# Install <!-- note --> now\n[go](#install--now)\n",
+  });
+  const { failures } = checkFiles(root, ["README.md"]);
+  assert.deepEqual(failures, []);
+});
+
+test("extractLinks does not treat link syntax in image alt text as navigation", () => {
+  // The alt text renders as plain text, so only the image itself is a target.
+  const links = extractLinks("![see [example](missing.md)](existing.png)");
+  assert.deepEqual(links, [{ target: "existing.png", line: 1 }]);
+  const root = fixture({
+    "README.md": "![see [example](missing.md)](existing.png)\n",
+    "existing.png": "png\n",
+  });
+  const { checked, failures } = checkFiles(root, ["README.md"]);
+  assert.equal(checked, 1);
+  assert.deepEqual(failures, []);
 });
 
 test("checkFiles rejects anchors that only exist in code or comments", () => {
