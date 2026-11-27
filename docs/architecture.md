@@ -97,13 +97,14 @@ is outside this event-and-cover cleanup.
 
 ## Stack, and why each dependency
 
-The module has **one** third-party dependency:
+The module has two direct third-party dependencies (see [go.mod](../server/go.mod)):
 
 | Dependency | Why |
 | --- | --- |
-| `github.com/mattn/go-sqlite3` | SQLite through cgo. It is the fastest binding and tracks upstream SQLite closely; the pure-Go ports were slower in the benchmarks people publish and add their own bug surface. Cost: a C compiler at build time (the Dockerfile cross-installs one). |
+| `github.com/mattn/go-sqlite3` | SQLite through cgo; requires a C compiler at build time (the Dockerfile cross-installs one). |
+| `filippo.io/age` | Encrypts the backup helper's snapshots to the offline recovery recipient; its cryptographic dependencies are recorded in `go.mod` and `go.sum`. |
 
-Everything else is the standard library: `net/http` method+path routing (Go 1.22), `database/sql`,
+The dashboard HTTP and application code otherwise uses the standard library: `net/http` method+path routing (Go 1.22), `database/sql`,
 `crypto/*` (sessions, tokens, RS256 for Google service accounts, PKCE), `encoding/json`,
 `log/slog`, `embed`, `time/tzdata` (Pacific time works without OS zoneinfo). Discord OAuth2 is
 a small standard-library implementation (`internal/auth/discord.go`) rather than an OAuth library.

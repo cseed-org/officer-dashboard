@@ -31,8 +31,7 @@ file on the Pi's own disk unless you add an off-site copy yourself.
 
 1. **Tools:** `sudo apt install git build-essential sqlite3`, Go matching
    [server/go.mod](../../server/go.mod) from
-   [go.dev/dl](https://go.dev/dl/) (`linux-arm64`; Debian's Go is too old), and Node 22.23.4 or
-   newer from [nodejs.org](https://nodejs.org/en/download).
+   [go.dev/dl](https://go.dev/dl/) (`linux-arm64`; Debian's Go is too old), and Node 24 LTS from [nodejs.org](https://nodejs.org/en/download).
 2. **Cloudflare:** do [Cloudflare setup](cloudflare.md) with two differences in step 1: pick
    **Debian** and **run** Cloudflare's install command on the Pi, and set the Service URL to
    `http://127.0.0.1:8090`. Skip step 9 (R2) unless you want it for `BACKUP_REMOTE`.
