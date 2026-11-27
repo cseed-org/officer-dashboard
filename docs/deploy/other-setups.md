@@ -26,6 +26,10 @@ unless you configure an off-site copy.
 
 ### Install
 
+Replace `<install-dir>` with your absolute binary installation directory. Render
+the unit templates with that path using the `sed` commands below.
+For these manual rendering commands, choose a path without `&`, `|`, `\`, `%` or `"`; spaces are supported.
+
 1. **Tools:** `sudo apt install git build-essential sqlite3`, Go matching
    [server/go.mod](../../server/go.mod) from
    [go.dev/dl](https://go.dev/dl/) (`linux-arm64`; Debian's Go is too old), and Node 24 LTS from [nodejs.org](https://nodejs.org/en/download).
@@ -44,8 +48,8 @@ unless you configure an off-site copy.
 5. **Install** (this follows the header of `deploy/dashboard.service`):
    ```sh
    sudo useradd --system --home /var/lib/officer-dashboard --shell /usr/sbin/nologin dashboard
-   sudo install -d -m 0755 /opt/officer-dashboard
-   sudo install -m 0755 bin/dashboard /opt/officer-dashboard/dashboard
+   sudo install -d -m 0755 <install-dir>
+   sudo install -m 0755 bin/dashboard <install-dir>/dashboard
    sudo install -d -m 0750 -o root -g dashboard /etc/officer-dashboard
    sudo install -m 0640 -g dashboard deploy/dashboard.env.example /etc/officer-dashboard/env
    sudoedit /etc/officer-dashboard/env
@@ -66,7 +70,7 @@ unless you configure an off-site copy.
    itself, which is trusted by default.
 6. **Start:**
    ```sh
-   sudo install -m 0644 deploy/dashboard.service /etc/systemd/system/
+   sed 's|@INSTALL_DIR@|<install-dir>|g' deploy/dashboard.service | sudo tee /etc/systemd/system/dashboard.service > /dev/null
    sudo systemctl daemon-reload && sudo systemctl enable --now dashboard
    sudo journalctl -u dashboard -n 50 --no-pager
    ```
@@ -74,13 +78,14 @@ unless you configure an off-site copy.
    using [Fresh install](fresh-install.md#7-sign-in-and-connect-services). The checks differ:
    `curl -s http://127.0.0.1:8090/api/health` should print `{"db":true,"ok":true}`, and the
    migration count is
-   `sudo -u dashboard env DB_PATH=/var/lib/officer-dashboard/dashboard.db /opt/officer-dashboard/dashboard migrate`.
+   `sudo -u dashboard env DB_PATH=/var/lib/officer-dashboard/dashboard.db <install-dir>/dashboard migrate`.
    The outside check: `./bin/dashboard mcp-check https://<your-hostname>`, with the same two
    variables as [Cloudflare step 10](cloudflare.md#10-check-it-from-outside).
 7. **Nightly encrypted backup:** install the age CLI, then set the public `BACKUP_AGE_RECIPIENT` and an absolute `BACKUP_DIR` in the service env file. Keep its private identity off-host.
    ```sh
-   sudo install -m 0755 scripts/backup /opt/officer-dashboard/backup
-   sudo install -m 0644 deploy/dashboard-backup.service deploy/dashboard-backup.timer /etc/systemd/system/
+   sudo install -m 0755 scripts/backup <install-dir>/backup
+   sed 's|@INSTALL_DIR@|<install-dir>|g' deploy/dashboard-backup.service | sudo tee /etc/systemd/system/dashboard-backup.service > /dev/null
+   sudo install -m 0644 deploy/dashboard-backup.timer /etc/systemd/system/
    sudo systemctl daemon-reload && sudo systemctl enable --now dashboard-backup.timer
    sudo systemctl start dashboard-backup.service
    sudo journalctl -u dashboard-backup -n 20 --no-pager
@@ -120,12 +125,15 @@ back up, install, start. In `server/`:
    sudo systemctl stop dashboard
    sudo systemctl start dashboard-backup.service
    f=$(sudo sh -c 'ls -1t /var/lib/officer-dashboard/backups/dashboard-*.db.gz.age | head -1') && echo "$f"
-   sudo mkdir -p /opt/officer-dashboard/pre-upgrade
-   sudo cp -p /opt/officer-dashboard/dashboard /opt/officer-dashboard/backup /etc/systemd/system/dashboard.service \
-     /etc/systemd/system/dashboard-backup.service /etc/systemd/system/dashboard-backup.timer /opt/officer-dashboard/pre-upgrade/
-   sudo install -m 0755 bin/dashboard /opt/officer-dashboard/dashboard
-   sudo install -m 0755 scripts/backup /opt/officer-dashboard/backup
-   sudo install -m 0644 deploy/dashboard.service deploy/dashboard-backup.service deploy/dashboard-backup.timer /etc/systemd/system/
+   sudo mkdir -p <install-dir>/pre-upgrade
+   sudo cp -p <install-dir>/dashboard <install-dir>/backup /etc/systemd/system/dashboard.service \
+     /etc/systemd/system/dashboard-backup.service /etc/systemd/system/dashboard-backup.timer <install-dir>/pre-upgrade/
+   sudo install -m 0755 bin/dashboard <install-dir>/dashboard
+   sudo install -m 0755 scripts/backup <install-dir>/backup
+   for unit in dashboard.service dashboard-backup.service; do
+     sed 's|@INSTALL_DIR@|<install-dir>|g' "deploy/$unit" | sudo tee "/etc/systemd/system/$unit" > /dev/null
+   done
+   sudo install -m 0644 deploy/dashboard-backup.timer /etc/systemd/system/
    sudo systemctl daemon-reload && sudo systemctl start dashboard
    sudo journalctl -u dashboard -n 50 --no-pager
    ```
@@ -144,8 +152,8 @@ sudo systemctl stop dashboard
 sudo install -m 0600 -o dashboard -g dashboard /path/to/offbox-verified.db /var/lib/officer-dashboard/dashboard.db
 sudo rm -f /var/lib/officer-dashboard/dashboard.db-wal /var/lib/officer-dashboard/dashboard.db-shm
 sudo chown dashboard:dashboard /var/lib/officer-dashboard/dashboard.db
-p=/opt/officer-dashboard/pre-upgrade
-sudo install -m 0755 $p/dashboard $p/backup /opt/officer-dashboard/
+p=<install-dir>/pre-upgrade
+sudo install -m 0755 $p/dashboard $p/backup <install-dir>/
 sudo install -m 0644 $p/dashboard.service $p/dashboard-backup.service $p/dashboard-backup.timer /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl start dashboard
 ```
@@ -163,16 +171,17 @@ docker buildx build --platform linux/amd64,linux/arm64 -f server/Dockerfile \
   --build-arg VERSION="$(git describe --always --dirty)" -t "$IMAGE" --push .
 DIGEST=$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | \
   python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
-printf 'DASHBOARD_IMAGE=%s@%s\n' "${IMAGE%:*}" "$DIGEST" > server/deploy/prod-image.env
+printf 'DASHBOARD_IMAGE=%s@%s\n' "$IMAGE" "$DIGEST" > server/deploy/prod-image.env
 cd server/deploy
 docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml pull
 ```
 
 Use the explicit database initialization in [Fresh install](fresh-install.md) before
 `up` on a new host. On an existing host, take the verified backup and follow
-[Upgrade an existing host](upgrade-existing.md) before changing its pin. The approved
-`:prod` updater applies only to the project's published GHCR images; keep it disabled
-for a separately managed registry. Both platforms build without emulation.
+[Upgrade an existing host](upgrade-existing.md) before changing its pin. The updater
+follows the repository in `prod-image.env` and expects a `:prod` tag there. Keep the
+timer disabled unless your pipeline moves `:prod` only after approval.
+Both platforms build without emulation.
 
 After initialization or the upgrade procedure, start the stack:
 

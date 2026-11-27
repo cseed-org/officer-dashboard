@@ -465,3 +465,26 @@ func TestCloudflareClassification(t *testing.T) {
 		t.Errorf("bare 530: %+v", i)
 	}
 }
+
+func TestAuthorizeCheckDoesNotDependOnClubBranding(t *testing.T) {
+	for _, register := range []bool{false, true} {
+		ts := dashboard(t, "", func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/oauth/authorize" {
+					next.ServeHTTP(w, r)
+					return
+				}
+				if register {
+					io.WriteString(w, `<html><title>Other Club</title><form method="post" action="/oauth/authorize"></form></html>`)
+				} else {
+					w.WriteHeader(http.StatusBadRequest)
+					io.WriteString(w, `<html><title>Other Club</title><h1>Cannot connect this app</h1><p>This app is not registered with the dashboard.</p></html>`)
+				}
+			})
+		})
+		res, out, _ := check(t, ts.URL, register)
+		if find(res, "GET /oauth/authorize").Status != Pass {
+			t.Fatal(out)
+		}
+	}
+}

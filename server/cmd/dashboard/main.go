@@ -98,6 +98,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 type settings struct {
 	Cloudflare                       cloudflare.Config
 	Addr, DBPath, AppURL, StaticDir  string
+	SetupDocsURL                     string
 	AppURLSet                        bool // APP_URL came from the environment or a flag
 	StaticFallback                   string
 	StaticFallbackStatus             int
@@ -128,6 +129,7 @@ func loadSettings(fs *flag.FlagSet, args []string, getenv func(string) string) (
 		return def
 	}
 	s := settings{Cloudflare: cloudflare.FromEnv(getenv)}
+	s.SetupDocsURL = env("SETUP_DOCS_URL", "")
 	fs.StringVar(&s.Addr, "addr", env("ADDR", "127.0.0.1:8090"), "listen address (ADDR); bind beyond loopback only with APP_URL set")
 	fs.StringVar(&s.DBPath, "db", env("DB_PATH", "./data/dashboard.db"), "SQLite file (DB_PATH)")
 	fs.StringVar(&s.AppURL, "app-url", env("APP_URL", ""), "public origin, used for OAuth redirects and links (APP_URL)")
@@ -212,7 +214,7 @@ func buildServer(s settings, db *store.DB, log *slog.Logger) (*api.Server, error
 		return nil, err
 	}
 	cfg := api.Config{
-		Setup:          api.SetupConfig{BootstrapOwner: s.BootstrapDirector != "", DiscordWebhook: s.WebhookURL != ""},
+		Setup:          api.SetupConfig{BootstrapOwner: s.BootstrapDirector != "", DiscordWebhook: s.WebhookURL != "", DocsURL: s.SetupDocsURL},
 		Access:         access,
 		TrustedProxies: trusted,
 		Cloudflare:     &cfsync.Service{Client: cloudflare.New(s.Cloudflare), DB: db, Log: log},
@@ -303,6 +305,11 @@ func serve(args []string, getenv func(string) string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	s.DBPath, err = filepath.Abs(s.DBPath)
+	if err != nil {
+		return fmt.Errorf("resolve DB_PATH: %w", err)
+	}
+	log.Info("database path", "path", s.DBPath)
 	if err := validateAppURL(s.AppURL); err != nil {
 		return err
 	}

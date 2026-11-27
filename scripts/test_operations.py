@@ -80,6 +80,23 @@ class UpdateTests(unittest.TestCase):
         finally:
             os.chdir(cwd)
 
+    def test_poll_uses_pinned_repository_and_project_env_file(self):
+        self.state.write_text('DASHBOARD_IMAGE=registry.example.org/club/dashboard@sha256:' + 'a' * 64 + '\n')
+        self.deploy.joinpath('.env').write_text('COMPOSE_PROJECT_NAME=another-club\nTUNNEL_NET=10.250.90\n')
+        def command(args, env=None):
+            if args[:3] == ['docker', 'buildx', 'imagetools']:
+                self.assertEqual(args[4], 'registry.example.org/club/dashboard:prod')
+                return '{"digest":"sha256:' + 'b' * 64 + '"}'
+            self.assertEqual(args[2:8], ['--env-file', str(self.deploy / '.env'), '--env-file', str(self.state), '-f', str(self.deploy / 'compose.cloudflare.yml')])
+            return ''
+        cwd = Path.cwd()
+        try:
+            with patch.object(update, 'run', command), patch.object(update, 'notify'), patch('sys.argv', ['update', '--deploy-dir', str(self.deploy)]):
+                update.main()
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(update.dotenv(self.state)['DASHBOARD_IMAGE'], 'registry.example.org/club/dashboard@sha256:' + 'b' * 64)
+
     def test_two_polls_after_failed_rollback_preserve_checkpoint(self):
         self.failure = 'startup'
         self.rollback_failure = True
@@ -93,6 +110,42 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.db, 'migrated')
         self.assertTrue((self.deploy / 'update-recovery-required.json').exists())
         self.assertEqual(update.dotenv(self.state)['DASHBOARD_IMAGE'], OLD)
+
+    def test_poll_image_reference_forms(self):
+        digest = '@sha256:' + 'a' * 64
+        for pin, repository in [
+            ('repo' + digest, 'repo'),
+            ('repo:release' + digest, 'repo'),
+            ('host:5000/club/repo' + digest, 'host:5000/club/repo'),
+            ('host:5000/club/repo:release' + digest, 'host:5000/club/repo'),
+        ]:
+            with self.subTest(pin=pin):
+                self.state.write_text('DASHBOARD_IMAGE=' + pin + '\n')
+                def command(args, env=None):
+                    if args[:3] == ['docker', 'buildx', 'imagetools']:
+                        self.assertEqual(args[4], repository + ':prod')
+                        return '{"digest":"sha256:' + 'b' * 64 + '"}'
+                    return ''
+                cwd = Path.cwd()
+                try:
+                    with patch.object(update, 'run', command), patch.object(update, 'notify'), patch('sys.argv', ['update', '--deploy-dir', str(self.deploy)]):
+                        update.main()
+                finally:
+                    os.chdir(cwd)
+                self.assertEqual(update.dotenv(self.state)['DASHBOARD_IMAGE'], repository + '@sha256:' + 'b' * 64)
+
+    def test_poll_rejects_unpinned_or_missing_image_before_docker(self):
+        for contents in ['DASHBOARD_IMAGE=repo:prod\n', '', 'DASHBOARD_IMAGE=\n']:
+            with self.subTest(contents=contents):
+                self.state.write_text(contents)
+                cwd = Path.cwd()
+                try:
+                    with patch.object(update, 'run') as command, patch('sys.argv', ['update', '--deploy-dir', str(self.deploy)]):
+                        with self.assertRaisesRegex(ValueError, 'previous image must be pinned by digest'):
+                            update.main()
+                        command.assert_not_called()
+                finally:
+                    os.chdir(cwd)
 
     def test_sink_outage_retries_same_image_automatically(self):
         self.failure = 'backup'

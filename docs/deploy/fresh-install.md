@@ -22,16 +22,18 @@ and billing settings before creating resources. Allow the outbound traffic neede
 by the tunnel and integrations; Cloudflare Tunnel uses TCP/UDP port 7844.
 
 The supplied updater runs as root. For the default setup, enter a root shell with
-`sudo -i` and keep the checkout at `/opt/officer-dashboard`. Use the same OS
+`sudo -i`. Any directory works: replace `<install-dir>` in these commands with
+your absolute installation path, quoting it if it contains spaces. Use the same OS
 identity for registry login, Compose, and the updater.
 
 ```sh
-git clone https://github.com/cseed-org/officer-dashboard.git /opt/officer-dashboard
-cd /opt/officer-dashboard/server/deploy
+git clone https://github.com/cseed-org/officer-dashboard.git <install-dir>
+cd <install-dir>/server/deploy
 ```
 
-All host Compose commands below run from this directory. If you choose another
-checkout location, update the paths in the systemd updater unit too.
+All host Compose commands below run from this directory. Render the systemd
+updater template with the same installation path before enabling it.
+For these manual rendering commands, choose a path without `&`, `|`, `\`, `%` or `"`; spaces are supported.
 
 ## 2. Set up Cloudflare
 
@@ -136,7 +138,7 @@ command arguments, or Git. For access details, see
 
 ## 5. Prepare the deployment files
 
-On the host, from `/opt/officer-dashboard/server/deploy`:
+On the host, from `<install-dir>/server/deploy`:
 
 ```sh
 umask 077
@@ -270,7 +272,8 @@ not approve a production image.
 Once installation, backups, and recovery checks pass, install the updater units:
 
 ```sh
-install -m 0644 officer-dashboard-update.service officer-dashboard-update.timer /etc/systemd/system/
+sed 's|@INSTALL_DIR@|<install-dir>|g' officer-dashboard-update.service | tee /etc/systemd/system/officer-dashboard-update.service > /dev/null
+install -m 0644 officer-dashboard-update.timer /etc/systemd/system/
 systemctl daemon-reload
 systemctl start officer-dashboard-update.service
 journalctl -u officer-dashboard-update.service -n 50 --no-pager

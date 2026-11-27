@@ -502,9 +502,9 @@ func (c *checker) authorize(clientID string) {
 	switch {
 	case r.StatusCode == http.StatusFound && strings.HasPrefix(loc, "/login?next="):
 		detail = "the dashboard's sign-in (302 → /login), no Cloudflare Access in front"
-	case r.StatusCode == http.StatusOK && strings.Contains(html, "CSEED Officer Dashboard"):
+	case r.StatusCode == http.StatusOK && strings.Contains(html, `<form method="post" action="/oauth/authorize">`):
 		detail = "the dashboard's consent page, no Cloudflare Access in front"
-	case !registered && r.StatusCode == http.StatusBadRequest && strings.Contains(html, "CSEED Officer Dashboard") && strings.Contains(html, "not registered"):
+	case !registered && r.StatusCode == http.StatusBadRequest && strings.Contains(html, "<h1>Cannot connect this app</h1>") && strings.Contains(html, "not registered"):
 		detail = "the dashboard's own page (it refuses the check's unregistered client), no Cloudflare Access in front"
 	default:
 		c.fail(name, r, nil, "the dashboard's sign-in or a Cloudflare Access sign-in")

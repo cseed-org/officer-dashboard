@@ -43,7 +43,7 @@ func TestSetupStatusSafeConfiguredAndConnectedMetadata(t *testing.T) {
 	byKey := map[string]string{}
 	for _, i := range body.Integrations {
 		byKey[i.Key] = i.State
-		if i.Docs == "" || i.Detail == "" {
+		if i.Docs != "https://github.com/cseed-org/officer-dashboard/blob/main/docs/configuration.md" || i.Detail == "" {
 			t.Fatalf("incomplete entry: %s", i.Key)
 		}
 	}
@@ -255,4 +255,18 @@ func TestSetupDriveCardReportsServiceAccountStorage(t *testing.T) {
 		}
 	}
 	t.Fatal("no drive entry")
+}
+
+func TestSetupDocsURLCanBeConfigured(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.Setup.DocsURL = "https://club.example.org/docs/configuration" })
+	r := e.mustOK(e.get("/api/setup/status", e.as("user-leadership")))
+	var body struct{ Integrations []struct{ Docs string } }
+	if err := json.Unmarshal([]byte(r.Raw), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range body.Integrations {
+		if entry.Docs != "https://club.example.org/docs/configuration" {
+			t.Fatalf("unexpected docs URL: %s", entry.Docs)
+		}
+	}
 }
