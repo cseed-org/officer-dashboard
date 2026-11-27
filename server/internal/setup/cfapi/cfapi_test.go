@@ -253,3 +253,10 @@ func TestInvalidTokenIsNotAPermissionGap(t *testing.T) {
 		}
 	}
 }
+
+func TestNilHTTPClientKeepsTheDefault(t *testing.T) {
+	c := New(secretToken, WithHTTPClient(nil))
+	if c.http == nil || c.http.Transport == nil {
+		t.Fatal("WithHTTPClient(nil) left no client")
+	}
+}

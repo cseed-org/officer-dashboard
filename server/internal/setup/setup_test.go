@@ -122,6 +122,24 @@ func TestDryRunLiveShapedAccount(t *testing.T) {
 	}
 }
 
+func TestPrefixOnRealHostnameWarns(t *testing.T) {
+	r := runSetup(t, cffake.Complete(), map[string]string{"BACKUP_SINK_URL": "https://" + cffake.Backup}, "--dry-run", "--name-prefix", "stg-")
+	if r.code != 0 || !strings.Contains(r.stderr, `WARNING: --name-prefix "stg-" found resources without that prefix`) {
+		t.Fatalf("exit %d\n%s", r.code, r.stderr)
+	}
+	r = runSetup(t, cffake.Complete(), map[string]string{"BACKUP_SINK_URL": "https://" + cffake.Backup}, "--dry-run")
+	if strings.Contains(r.stderr, "WARNING") || strings.Contains(r.stderr, "assuming") {
+		t.Fatalf("unexpected warning without a prefix: %s", r.stderr)
+	}
+}
+
+func TestDefaultBackupHostnameIsAnnounced(t *testing.T) {
+	r := runSetup(t, cffake.Complete(), nil, "--dry-run")
+	if r.code != 0 || !strings.Contains(r.stderr, "assuming backups.example.org") {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+}
+
 func TestInvalidTokenMessage(t *testing.T) {
 	routes := cffake.Complete()
 	routes["/zones"] = cffake.Response{Status: 401, Code: 1000, Message: "Invalid API Token"}
@@ -142,7 +160,7 @@ func TestDryRunUsesTunnelIDFromTokenFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := runSetup(t, routes, map[string]string{"TUNNEL_TOKEN_FILE": path}, "--dry-run")
-	if r.code != 0 || !strings.Contains(r.stdout, `named "renamed-by-hand" (matched by tunnel ID)`) {
+	if r.code != 0 || !strings.Contains(r.stdout, `named "renamed-by-hand" (matched by the host's tunnel token)`) {
 		t.Fatalf("exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
 	}
 	if strings.Contains(r.stdout+r.stderr, "c2VjcmV0") || strings.Contains(r.stdout+r.stderr, tok) {

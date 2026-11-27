@@ -19,7 +19,7 @@ Cloudflare setup for officers.example.org (dry run: nothing was changed)
   unknowable  Service token secret                 dashboard-backups-host  [st-backups]
                                                      - Cloudflare never returns the client secret; setup will trust secrets/backup/access-client-secret if present, else offer --rotate
   create      Access application                   Officer Dashboard
-                                                     - WARNING: the tunnel already routes this hostname; when cloudflared connects, the dashboard is public without the Access sign-in until this application exists
+                                                     - WARNING: the tunnel already routes this hostname and no Access application covers it; when cloudflared connects, the dashboard is public without the Access sign-in
   create      Access application                   Officer Dashboard: agents (bypass)
   create      Access application                   Officer Dashboard: services (service token)
   ok          Access application                   Dashboard backups (service token)  [app-backups]

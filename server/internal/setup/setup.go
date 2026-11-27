@@ -109,6 +109,9 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 		fmt.Fprintln(deps.Stderr, "setup:", err)
 		return 2
 	}
+	if strings.TrimSpace(in.BackupHostname) == "" {
+		fmt.Fprintf(deps.Stderr, "setup: no backup hostname given (--backup-hostname, or BACKUP_SINK_URL from backup.env); assuming %s\n", desired.BackupHostname)
+	}
 	token, err := readToken(deps)
 	if err != nil {
 		fmt.Fprintln(deps.Stderr, "setup:", err)
@@ -134,6 +137,10 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 	if err != nil {
 		fmt.Fprintln(deps.Stderr, "setup:", err)
 		return 1
+	}
+	if plan.PrefixConflict(desired, report.Actions) {
+		fmt.Fprintf(deps.Stderr, "setup: WARNING: --name-prefix %q found resources without that prefix on %s (the drift lines say which).\n"+
+			"setup: This hostname belongs to another install. A staging install needs its own APP_URL as well as a prefix.\n", desired.NamePrefix, desired.Hostname)
 	}
 	return 0
 }

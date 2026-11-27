@@ -52,6 +52,27 @@ func TestDesiredMatchesTheDeployDocs(t *testing.T) {
 			"Keep `workers_dev` and `preview_urls` disabled",
 		},
 	}
+	// Values that are not names: each doc phrase is checked only while Desired still holds
+	// the value it stands for, so changing either side alone fails the test.
+	settings := []struct {
+		holds bool
+		line  string
+	}{
+		{paramMatches([]any{"bic", "securityLevel"}, d.Rules[0].Params["products"]), "Tick **Browser Integrity Check** and **Security Level**"},
+		{d.Rules[0].Position == "first", "move the rule to the **top** of the list"},
+		{d.Rules[1].Position == "last", "**Place at:** last"},
+		{d.Rules[1].Params["cache"] == false, "**Cache eligibility:** **Bypass cache**"},
+		{d.Rules[2].Params["rocket_loader"] == false && d.Rules[2].Params["email_obfuscation"] == false, "**Rocket Loader**: off and **Email Obfuscation**: off"},
+		{!d.BotFightMode, "**Bot Fight Mode: off**"},
+		{d.Apps[0].SessionDuration == "730h", "**Session Duration:** **1 month**"},
+		{d.OrgSessionDuration == "730h", "**Set your global session duration** → **Edit** → **1 month**"},
+	}
+	for _, s := range settings {
+		if !s.holds {
+			t.Errorf("plan/desired.go no longer holds the value behind %q", s.line)
+		}
+		want["cloudflare.md"] = append(want["cloudflare.md"], s.line)
+	}
 	for _, dest := range d.Apps[1].Destinations {
 		want["cloudflare.md"] = append(want["cloudflare.md"], "   - `"+strings.TrimPrefix(dest, host+"/")+"`")
 	}

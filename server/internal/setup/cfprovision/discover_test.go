@@ -88,18 +88,19 @@ func TestDiscoverCompleteAccount(t *testing.T) {
 	}
 }
 
-func TestDiscoverWithPrefixIgnoresTheRealInstall(t *testing.T) {
+func TestDiscoverWithPrefixDoesNotMatchRealNames(t *testing.T) {
 	d := desired(t, "stg-")
 	o, err := discover(t, cffake.Complete(), d)
 	if err != nil {
 		t.Fatal(err)
 	}
 	shared := map[string]bool{"zone": true, "token": true, "zero_trust": true, "zero_trust.session": true, "access.idp": true, "zone.bot_fight_mode": true,
-		// Apps and rules match by hostname or expression first, so a staging install
-		// needs its own hostname as well as a prefix; on the same hostname they match.
+		// The tunnel, apps and rules match by hostname, CNAME or expression first, so on
+		// the real install's hostname they find the real install; the plan flags that
+		// (TestReviewPrefixOnRealHostnameIsFlagged). Everything matched by name is new.
 		"access.app.site": true, "access.app.agents": true, "access.app.services": true, "access.app.backups": true,
 		"rule.firewall.skip": true, "rule.cache.bypass": true, "rule.config.consent": true,
-		"tunnel.route": true, "dns": true, "worker.domain": true}
+		"tunnel": true, "tunnel.route": true, "dns": true, "worker.domain": true}
 	for _, a := range plan.Diff(d, o) {
 		if !shared[a.ID] && a.Kind != plan.Create {
 			t.Errorf("%s: %s, want create (prefixed name must not match the real one)", a.ID, a.Kind)
@@ -190,11 +191,21 @@ func TestDiscoverPermissionGapsAreUnknowable(t *testing.T) {
 	}
 }
 
-func TestDiscoverServerErrorStops(t *testing.T) {
+func TestDiscoverServerErrorIsUnknowable(t *testing.T) {
+	// A 5xx that outlasts the retries marks that one resource unknowable (review F-8).
 	routes := cffake.Complete()
 	routes["/accounts/"+cffake.AccountID+"/d1/database"] = cffake.Response{Status: 500, Code: 1}
-	_, err := discover(t, routes, desired(t, ""))
-	if err == nil || !strings.Contains(err.Error(), "HTTP 500") {
+	o, err := discover(t, routes, desired(t, ""))
+	if err != nil || !strings.Contains(o.D1.Unknown, "HTTP 500") {
+		t.Fatalf("d1 %+v, err %v", o.D1, err)
+	}
+}
+
+func TestDiscoverTransportFailureStops(t *testing.T) {
+	srv := cffake.Start(cffake.Complete())
+	srv.Close()
+	_, err := Discover(context.Background(), cfapi.New("t", cfapi.WithBaseURL(srv.URL), cfapi.WithRetry()), desired(t, ""))
+	if err == nil || !strings.Contains(err.Error(), "request failed") {
 		t.Fatalf("err = %v", err)
 	}
 }

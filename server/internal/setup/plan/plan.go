@@ -58,6 +58,9 @@ type Observed struct {
 	BotFightMode  BotFightMode
 	D1            Seen
 	Worker        Worker
+	// AppsCoveringHost lists every Access application with a destination equal to the
+	// bare dashboard hostname, whatever it is named or matched as.
+	AppsCoveringHost []string
 }
 
 type Zone struct {
@@ -83,9 +86,15 @@ type Tunnel struct {
 	Seen
 	Name, ConfigSrc string
 	Status          string // inactive, degraded, healthy, down
-	MatchedBy       string // "id" or "name"
+	MatchedBy       string // "id", "cname" or "name"
 	Ingress         []Ingress
 	IngressUnknown  string
+	// The three matching keys, in order: the tunnel ID from the host's token, the
+	// tunnel ID in the hostname's CNAME target, and the doc name. TokenID and CNAMEID
+	// are the IDs looked for; ByToken, ByCNAME and ByName are the tunnels each key
+	// found in the account ("" for none).
+	TokenID, CNAMEID         string
+	ByToken, ByCNAME, ByName string
 }
 
 type Ingress struct{ Hostname, Path, Service string }
@@ -108,7 +117,7 @@ type ServiceToken struct {
 type App struct {
 	Seen
 	Name            string
-	MatchedBy       string // "destinations" or "name"
+	MatchedBy       string // "destinations" (exact set), "covers" (a superset) or "name"
 	Destinations    []string
 	SessionDuration string
 	AllowedIdPs     []string
@@ -121,6 +130,9 @@ type App struct {
 type Policy struct {
 	ID, Name, Decision string
 	Include            []Include
+	// Conditions is true when the policy also has require or exclude rules, which
+	// setup does not compare (they can only narrow who passes).
+	Conditions bool
 }
 
 // Include is one include rule: Type "group" or "service_token" with an ID, or
@@ -277,16 +289,7 @@ func Diff(d Desired, o Observed) []Action {
 	add(ses)
 
 	// Tunnel and its route.
-	tun := &check{a: Action{ID: "tunnel", Resource: "Tunnel", Name: d.Tunnel.Name}}
-	if tun.seen(o.Tunnel.Seen) {
-		if o.Tunnel.Name != d.Tunnel.Name {
-			tun.notef("named %q (matched by tunnel ID)", o.Tunnel.Name)
-		}
-		if o.Tunnel.Status == "inactive" || o.Tunnel.Status == "down" {
-			tun.notef("%s: no cloudflared connector is running", o.Tunnel.Status)
-		}
-	}
-	add(tun)
+	out = append(out, diffTunnel(d, o.Tunnel))
 
 	route := &check{a: Action{ID: "tunnel.route", Resource: "Tunnel route", Name: d.Hostname + " → " + d.Tunnel.Service}}
 	switch {
@@ -320,6 +323,8 @@ func Diff(d Desired, o Observed) []Action {
 		dns.unknownf("%s", o.DNS.Unknown)
 	case len(o.DNS.Records) == 0:
 		dns.create = true
+	case o.Tunnel.Unknown != "":
+		dns.unknownf("the tunnel could not be read, so the CNAME target cannot be checked")
 	default:
 		target := ""
 		if o.Tunnel.Found && o.Tunnel.Unknown == "" {
@@ -371,11 +376,11 @@ func Diff(d Desired, o Observed) []Action {
 	}
 
 	for _, spec := range d.Apps {
-		out = append(out, diffApp(spec, o))
+		out = append(out, diffApp(d, spec, o))
 	}
 
 	for _, spec := range d.Rules {
-		out = append(out, diffRule(spec, o.Rules[spec.Key]))
+		out = append(out, diffRule(d, spec, o.Rules[spec.Key]))
 	}
 
 	bfm := &check{a: Action{ID: "zone.bot_fight_mode", Resource: "Bot Fight Mode", Name: "off"}}
@@ -413,6 +418,8 @@ func Diff(d Desired, o Observed) []Action {
 			w.unknownf("%s", o.Worker.BindingUnknown)
 		case o.Worker.D1BindingID == "":
 			w.driftf("no D1 binding named %s", d.Worker.D1Binding)
+		case o.D1.Unknown != "":
+			w.unknownf("the D1 database could not be read, so the %s binding cannot be checked", d.Worker.D1Binding)
 		case !o.D1.Found:
 			w.driftf("%s is bound to D1 database %s, which is not %s", d.Worker.D1Binding, o.Worker.D1BindingID, d.D1Database)
 		case o.Worker.D1BindingID != o.D1.ID:
@@ -457,12 +464,68 @@ func Diff(d Desired, o Observed) []Action {
 	return out
 }
 
-func diffApp(spec AppSpec, o Observed) Action {
+// diffTunnel matches by the host's token ID, then the hostname's CNAME target, then the
+// doc name, and reports any key that points at another tunnel, or at none, as drift.
+func diffTunnel(d Desired, t Tunnel) Action {
+	c := &check{a: Action{ID: "tunnel", Resource: "Tunnel", Name: d.Tunnel.Name}}
+	if !c.seen(t.Seen) {
+		if t.Unknown == "" && t.TokenID != "" {
+			c.notef("the host's tunnel token names tunnel %s, which is not in this account", t.TokenID)
+		}
+		return c.done()
+	}
+	by := map[string]string{"id": "the host's tunnel token", "cname": "the hostname's CNAME record", "name": "name"}[t.MatchedBy]
+	if t.TokenID != "" && t.ByToken == "" {
+		c.driftf("the host's tunnel token names tunnel %s, which is not in this account; tunnel %s was matched by %s instead", t.TokenID, t.ID, by)
+	}
+	if t.ByCNAME != "" && t.ByCNAME != t.ID {
+		c.driftf("the hostname's CNAME points at tunnel %s, not at %s", t.ByCNAME, t.ID)
+	}
+	if t.ByName != "" && t.ByName != t.ID {
+		c.driftf("tunnel %s is named %q but is not the tunnel matched by %s", t.ByName, d.Tunnel.Name, by)
+	}
+	if t.Name != d.Tunnel.Name {
+		c.notef("named %q (matched by %s)", t.Name, by)
+		prefixCheck(c, d, t.Name)
+	}
+	if t.Status == "inactive" || t.Status == "down" {
+		c.notef("%s: no cloudflared connector is running", t.Status)
+	}
+	return c.done()
+}
+
+// prefixNote marks a resource matched by hostname or expression whose name lacks the
+// run's --name-prefix: on the real install's hostname, a prefixed run finds the real install.
+const prefixNote = "lacks the name prefix"
+
+func prefixCheck(c *check, d Desired, name string) {
+	if d.NamePrefix != "" && !strings.HasPrefix(name, d.NamePrefix) {
+		c.driftf("matched %q, which %s %q: this hostname belongs to another install; a staging install needs its own hostname", name, prefixNote, d.NamePrefix)
+	}
+}
+
+// PrefixConflict reports whether a --name-prefix run matched resources whose names lack
+// the prefix, which means it is looking at another install on the same hostname.
+func PrefixConflict(d Desired, actions []Action) bool {
+	if d.NamePrefix == "" {
+		return false
+	}
+	for _, a := range actions {
+		for _, line := range a.Detail {
+			if strings.Contains(line, prefixNote) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func diffApp(d Desired, spec AppSpec, o Observed) Action {
 	app := o.Apps[spec.Key]
 	c := &check{a: Action{ID: "access.app." + spec.Key, Resource: "Access application", Name: spec.Name}}
 	if !c.seen(app.Seen) {
-		if spec.Key == AppSite && !app.Seen.Found && app.Unknown == "" && routed(o) {
-			c.notef("WARNING: the tunnel already routes this hostname; when cloudflared connects, the dashboard is public without the Access sign-in until this application exists")
+		if spec.Key == AppSite && !app.Seen.Found && app.Unknown == "" && routed(o) && len(o.AppsCoveringHost) == 0 {
+			c.notef("WARNING: the tunnel already routes this hostname and no Access application covers it; when cloudflared connects, the dashboard is public without the Access sign-in")
 		}
 		return c.done()
 	}
@@ -471,8 +534,19 @@ func diffApp(spec AppSpec, o Observed) Action {
 		if app.Name != spec.Name {
 			c.notef("named %q (matched by hostname and paths)", app.Name)
 		}
+	case "covers":
+		var extra []string
+		for _, dest := range app.Destinations {
+			if !slices.Contains(spec.Destinations, dest) {
+				extra = append(extra, dest)
+			}
+		}
+		c.driftf("%q already covers %s along with %s; setup will not add another application", app.Name, list(spec.Destinations), list(extra))
 	case "name":
 		c.driftf("covers %s, docs ask for %s", list(app.Destinations), list(spec.Destinations))
+	}
+	if app.MatchedBy != "name" {
+		prefixCheck(c, d, app.Name)
 	}
 	if spec.SessionDuration != "" && !sameDuration(app.SessionDuration, spec.SessionDuration) {
 		c.driftf("session duration is %s, docs ask for %s", orNone(app.SessionDuration), spec.SessionDuration)
@@ -495,24 +569,61 @@ func diffApp(spec AppSpec, o Observed) Action {
 		c.unknownf("%s", app.PoliciesUnknown)
 		return c.done()
 	}
+	// Every policy is checked: Access lets a request through if any one policy admits
+	// it, so a single extra policy can open the application.
 	want := wantIncludes(spec.Policy, o)
-	matched := false
-	for _, p := range app.Policies {
+	matched := -1
+	for i, p := range app.Policies { // the doc's policy, exactly
+		if p.Decision == spec.Policy.Decision && reflect.DeepEqual(includeKeys(p.Include), want.keys) {
+			matched = i
+			break
+		}
+	}
+	if matched < 0 {
+		for i, p := range app.Policies { // else the first with the doc's decision
+			if p.Decision == spec.Policy.Decision {
+				matched = i
+				c.driftf("policy %q includes %s, docs ask for %s", p.Name, list(includeKeys(p.Include)), list(want.labels))
+				break
+			}
+		}
+	}
+	if matched < 0 {
+		c.driftf("no %s policy; docs ask for %q including %s", spec.Policy.Decision, spec.Policy.Name, list(want.labels))
+	}
+	for i, p := range app.Policies {
+		if p.Conditions {
+			c.notef("policy %q also has require or exclude rules, which setup does not compare", p.Name)
+		}
+		if i == matched {
+			continue
+		}
+		c.driftf("extra policy %q (%s) admits %s; docs ask for only %q", p.Name, p.Decision, list(includeLabels(p.Include)), spec.Policy.Name)
 		if slices.Contains(spec.ForbiddenDecisions, p.Decision) {
 			c.driftf("policy %q is %s; docs forbid a public %s policy here", p.Name, p.Decision, p.Decision)
 		}
-		if p.Decision != spec.Policy.Decision || matched {
-			continue
+		if p.Decision != "deny" && slices.ContainsFunc(p.Include, func(in Include) bool { return in.Type == "everyone" }) {
+			c.driftf("policy %q lets Everyone through: the application is public", p.Name)
 		}
-		matched = true
-		if got := includeKeys(p.Include); !reflect.DeepEqual(got, want.keys) {
-			c.driftf("policy %q includes %s, docs ask for %s", p.Name, list(got), list(want.labels))
-		}
-	}
-	if !matched {
-		c.driftf("no %s policy; docs ask for %q including %s", spec.Policy.Decision, spec.Policy.Name, list(want.labels))
 	}
 	return c.done()
+}
+
+func includeLabels(inc []Include) []string {
+	var out []string
+	for _, in := range inc {
+		switch in.Type {
+		case "everyone":
+			out = append(out, "Everyone")
+		case "group":
+			out = append(out, "group "+in.ID)
+		case "service_token":
+			out = append(out, "service token "+in.ID)
+		default:
+			out = append(out, "another selector")
+		}
+	}
+	return out
 }
 
 type includes struct{ keys, labels []string }
@@ -551,7 +662,7 @@ func includeKeys(inc []Include) []string {
 	return keys
 }
 
-func diffRule(spec RuleSpec, r Rule) Action {
+func diffRule(d Desired, spec RuleSpec, r Rule) Action {
 	c := &check{a: Action{ID: "rule." + spec.Key, Resource: "Rule (" + spec.Phase + ")", Name: spec.Description}}
 	if !c.seen(r.Seen) {
 		if r.PhaseEmpty {
@@ -561,6 +672,7 @@ func diffRule(spec RuleSpec, r Rule) Action {
 	}
 	if r.MatchedBy == "expression" {
 		c.notef("described as %q (matched by expression)", r.Description)
+		prefixCheck(c, d, r.Description)
 	}
 	if r.Expression != spec.Expression {
 		c.driftf("expression differs from docs/deploy/cloudflare.md")

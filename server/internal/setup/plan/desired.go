@@ -21,6 +21,7 @@ type Inputs struct {
 // Desired is what a complete Cloudflare setup for one dashboard looks like.
 type Desired struct {
 	Hostname       string
+	NamePrefix     string
 	BackupHostname string
 	TunnelID       string
 
@@ -135,6 +136,7 @@ func NewDesired(in Inputs) (Desired, error) {
 	d := Desired{
 		Hostname:       host,
 		BackupHostname: backup,
+		NamePrefix:     p,
 		TunnelID:       strings.ToLower(strings.TrimSpace(in.TunnelID)),
 		Tunnel: TunnelSpec{
 			// cloudflare.md §1.1: "Name it `officer-dashboard`"
@@ -210,6 +212,8 @@ func NewDesired(in Inputs) (Desired, error) {
 			// cloudflare.md §3.4: "**Include** → selector **Rule group** → `Officers`. Add a
 			// second include: **Rule group** → `Launchpad`."
 			Policy: PolicySpec{Name: n(sitePolicy), Decision: "allow", Groups: siteGroups},
+			// A bypass policy on the whole site would skip the sign-in for every page.
+			ForbiddenDecisions: []string{"bypass"},
 		},
 		{
 			// cloudflare.md §4.1: "**Application name:** `Officer Dashboard: agents (bypass)`."

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -55,12 +56,12 @@ func Discover(ctx context.Context, api cfapi.Reader, d plan.Desired) (plan.Obser
 	steps := []func() error{
 		func() (err error) { o.Token, err = x.token(ctx); return },
 		func() (err error) { o.Org, err = x.org(ctx); return },
-		func() (err error) { o.Tunnel, err = x.tunnel(ctx); return },
 		func() (err error) { o.DNS, err = x.dns(ctx); return },
+		func() (err error) { o.Tunnel, err = x.tunnel(ctx, o.DNS); return },
 		func() (err error) { o.IdP, err = x.idp(ctx); return },
 		func() error { return x.groups(ctx, o.Groups) },
 		func() error { return x.serviceTokens(ctx, o.ServiceTokens) },
-		func() error { return x.apps(ctx, o.Apps) },
+		func() (err error) { o.AppsCoveringHost, err = x.apps(ctx, o.Apps); return },
 		func() error { return x.rules(ctx, o.Rules) },
 		func() (err error) { o.BotFightMode, err = x.botFightMode(ctx); return },
 		func() (err error) { o.D1, err = x.d1(ctx); return },
@@ -83,10 +84,16 @@ type discovery struct {
 func (x *discovery) accountPath(p string) string { return "/accounts/" + url.PathEscape(x.acct) + p }
 func (x *discovery) zonePath(p string) string    { return "/zones/" + url.PathEscape(x.zoneID) + p }
 
-// unreadable turns a permission error into an Unknown reason; any other error is fatal.
+// unreadable turns a permission error, or a server error that outlasted the retries,
+// into an Unknown reason for that one resource. Anything else (an invalid token, a
+// transport failure, a cancelled context) stops discovery.
 func unreadable(what string, err error) (string, error) {
-	if cfapi.IsForbidden(err) {
+	var e *cfapi.Error
+	switch {
+	case cfapi.IsForbidden(err):
 		return fmt.Sprintf("the token cannot read %s (%v)", what, err), nil
+	case errors.As(err, &e) && (e.Status >= 500 || e.Status == 429):
+		return fmt.Sprintf("Cloudflare kept failing when reading %s (%v)", what, err), nil
 	}
 	return "", err
 }
@@ -188,11 +195,15 @@ func (x *discovery) org(ctx context.Context) (plan.Org, error) {
 
 // tunnel: GET /accounts/{account_id}/cfd_tunnel?uuid=…|name=…&is_deleted=false
 // https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/methods/list/
-// Fields: id, name, deleted_at, config_src ("local" or "cloudflare").
+// Fields: id, name, status, deleted_at, config_src ("local" or "cloudflare").
 // Ingress: GET /accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations
 // https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/subresources/configurations/methods/get/
 // Fields: config.ingress[].hostname, .service, .path.
-func (x *discovery) tunnel(ctx context.Context) (plan.Tunnel, error) {
+//
+// Three keys find the tunnel, in this order: the ID from the host's tunnel token, the ID
+// in the hostname's CNAME (<id>.cfargotunnel.com), and the doc name. Each key is looked
+// up on its own so that plan.Diff can report any that disagree.
+func (x *discovery) tunnel(ctx context.Context, dns plan.DNS) (plan.Tunnel, error) {
 	type tunnel struct {
 		ID        string  `json:"id"`
 		Name      string  `json:"name"`
@@ -200,44 +211,62 @@ func (x *discovery) tunnel(ctx context.Context) (plan.Tunnel, error) {
 		DeletedAt *string `json:"deleted_at"`
 		ConfigSrc string  `json:"config_src"`
 	}
-	find := func(q url.Values, keep func(tunnel) bool) ([]tunnel, error) {
+	found := map[string]tunnel{}
+	find := func(q url.Values, keep func(tunnel) bool, label string) (string, error) {
 		q.Set("is_deleted", "false")
 		all, err := cfapi.ListAll[tunnel](ctx, x.api, x.accountPath("/cfd_tunnel"), q)
-		var hits []tunnel
+		if err != nil {
+			return "", err
+		}
+		var ids []string
 		for _, t := range all {
 			if (t.DeletedAt == nil || *t.DeletedAt == "") && keep(t) {
-				hits = append(hits, t)
+				ids = append(ids, t.ID)
+				found[t.ID] = t
 			}
 		}
-		return hits, err
+		switch len(ids) {
+		case 0:
+			return "", nil
+		case 1:
+			return ids[0], nil
+		}
+		return "", ambiguous("tunnel", label, ids)
 	}
-	var hits []tunnel
+	byID := func(id string) func(tunnel) bool {
+		return func(t tunnel) bool { return strings.EqualFold(t.ID, id) }
+	}
+	out := plan.Tunnel{TokenID: x.d.TunnelID, CNAMEID: cnameTunnelID(dns)}
 	var err error
-	matched := "id"
-	if x.d.TunnelID != "" {
-		hits, err = find(url.Values{"uuid": {x.d.TunnelID}}, func(t tunnel) bool { return strings.EqualFold(t.ID, x.d.TunnelID) })
+	if out.TokenID != "" {
+		out.ByToken, err = find(url.Values{"uuid": {out.TokenID}}, byID(out.TokenID), out.TokenID)
 	}
-	if err == nil && len(hits) == 0 {
-		matched = "name"
-		hits, err = find(url.Values{"name": {x.d.Tunnel.Name}}, func(t tunnel) bool { return t.Name == x.d.Tunnel.Name })
+	if err == nil && out.CNAMEID != "" {
+		out.ByCNAME, err = find(url.Values{"uuid": {out.CNAMEID}}, byID(out.CNAMEID), out.CNAMEID)
+	}
+	if err == nil {
+		out.ByName, err = find(url.Values{"name": {x.d.Tunnel.Name}}, func(t tunnel) bool { return t.Name == x.d.Tunnel.Name }, x.d.Tunnel.Name)
+	}
+	var amb *AmbiguousError
+	if errors.As(err, &amb) {
+		return plan.Tunnel{}, err
 	}
 	if err != nil {
 		why, err := unreadable("tunnels", err)
 		return plan.Tunnel{Seen: plan.Seen{Unknown: why}}, err
 	}
-	switch len(hits) {
-	case 0:
-		return plan.Tunnel{}, nil
-	case 1:
+	switch {
+	case out.ByToken != "":
+		out.ID, out.MatchedBy = out.ByToken, "id"
+	case out.ByCNAME != "":
+		out.ID, out.MatchedBy = out.ByCNAME, "cname"
+	case out.ByName != "":
+		out.ID, out.MatchedBy = out.ByName, "name"
 	default:
-		ids := make([]string, len(hits))
-		for i, t := range hits {
-			ids[i] = t.ID
-		}
-		return plan.Tunnel{}, ambiguous("tunnel", x.d.Tunnel.Name, ids)
+		return out, nil
 	}
-	t := hits[0]
-	out := plan.Tunnel{Seen: plan.Seen{Found: true, ID: t.ID}, Name: t.Name, ConfigSrc: t.ConfigSrc, Status: t.Status, MatchedBy: matched}
+	t := found[out.ID]
+	out.Found, out.Name, out.ConfigSrc, out.Status = true, t.Name, t.ConfigSrc, t.Status
 	if t.ConfigSrc == "local" {
 		return out, nil
 	}
@@ -258,6 +287,20 @@ func (x *discovery) tunnel(ctx context.Context) (plan.Tunnel, error) {
 		out.Ingress = append(out.Ingress, plan.Ingress{Hostname: r.Hostname, Path: r.Path, Service: r.Service})
 	}
 	return out, nil
+}
+
+// A tunnel's public hostname is a CNAME to <tunnel-id>.cfargotunnel.com
+// (https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/dns/).
+var cnameTarget = regexp.MustCompile(`(?i)^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.cfargotunnel\.com\.?$`)
+
+// cnameTunnelID returns the tunnel ID the hostname's CNAME points at, if it points at one.
+func cnameTunnelID(dns plan.DNS) string {
+	for _, r := range dns.Records {
+		if m := cnameTarget.FindStringSubmatch(strings.TrimSpace(r.Content)); r.Type == "CNAME" && m != nil {
+			return strings.ToLower(m[1])
+		}
+	}
+	return ""
 }
 
 // dns: GET /zones/{zone_id}/dns_records?name.exact=<host>
@@ -388,7 +431,11 @@ func (x *discovery) serviceTokens(ctx context.Context, out map[string]plan.Servi
 // reusable) in the list. When an app has no policies key, they are read from
 // GET /accounts/{account_id}/access/apps/{app_id}/policies
 // https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/subresources/policies/methods/list/
-func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
+//
+// An app is matched by the exact set of its destinations, then by a superset (an app
+// that covers the desired destinations and others), then by name. The second list it
+// returns holds every app with a destination equal to the bare dashboard hostname.
+func (x *discovery) apps(ctx context.Context, out map[string]plan.App) ([]string, error) {
 	type app struct {
 		ID           string `json:"id"`
 		Name         string `json:"name"`
@@ -408,12 +455,12 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 	if err != nil {
 		why, err := unreadable("Access applications", err)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, spec := range x.d.Apps {
 			out[spec.Key] = plan.App{Seen: plan.Seen{Unknown: why}}
 		}
-		return nil
+		return nil, nil
 	}
 	dests := make([][]string, len(all))
 	for i, a := range all {
@@ -434,6 +481,12 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 		sort.Strings(ds)
 		dests[i] = ds
 	}
+	var covering []string
+	for i, a := range all {
+		if slices.Contains(dests[i], x.d.Hostname) {
+			covering = append(covering, a.ID)
+		}
+	}
 	for _, spec := range x.d.Apps {
 		want := append([]string(nil), spec.Destinations...)
 		sort.Strings(want)
@@ -442,6 +495,14 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 		for i := range all {
 			if slices.Equal(dests[i], want) {
 				hits = append(hits, i)
+			}
+		}
+		if len(hits) == 0 {
+			matched = "covers"
+			for i := range all {
+				if containsAll(dests[i], want) {
+					hits = append(hits, i)
+				}
 			}
 		}
 		if len(hits) == 0 {
@@ -461,7 +522,7 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 			for j, i := range hits {
 				ids[j] = all[i].ID
 			}
-			return ambiguous("Access application", spec.Name, ids)
+			return nil, ambiguous("Access application", spec.Name, ids)
 		}
 		a := all[hits[0]]
 		got := plan.App{Seen: plan.Seen{Found: true, ID: a.ID}, Name: a.Name, MatchedBy: matched, Destinations: dests[hits[0]],
@@ -469,11 +530,20 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) error {
 		if a.Policies != nil {
 			got.Policies = convertPolicies(*a.Policies)
 		} else if got.Policies, got.PoliciesUnknown, err = x.appPolicies(ctx, a.ID); err != nil {
-			return err
+			return nil, err
 		}
 		out[spec.Key] = got
 	}
-	return nil
+	return covering, nil
+}
+
+func containsAll(have, want []string) bool {
+	for _, w := range want {
+		if !slices.Contains(have, w) {
+			return false
+		}
+	}
+	return true
 }
 
 type apiPolicy struct {
@@ -481,6 +551,8 @@ type apiPolicy struct {
 	Name     string                       `json:"name"`
 	Decision string                       `json:"decision"`
 	Include  []map[string]json.RawMessage `json:"include"`
+	Require  []json.RawMessage            `json:"require"`
+	Exclude  []json.RawMessage            `json:"exclude"`
 }
 
 func (x *discovery) appPolicies(ctx context.Context, appID string) ([]plan.Policy, string, error) {
@@ -495,7 +567,7 @@ func (x *discovery) appPolicies(ctx context.Context, appID string) ([]plan.Polic
 func convertPolicies(all []apiPolicy) []plan.Policy {
 	out := []plan.Policy{}
 	for _, p := range all {
-		pol := plan.Policy{ID: p.ID, Name: p.Name, Decision: p.Decision}
+		pol := plan.Policy{ID: p.ID, Name: p.Name, Decision: p.Decision, Conditions: len(p.Require) > 0 || len(p.Exclude) > 0}
 		for _, rule := range p.Include {
 			pol.Include = append(pol.Include, parseInclude(rule))
 		}
@@ -528,12 +600,17 @@ func parseInclude(rule map[string]json.RawMessage) plan.Include {
 	return plan.Include{Type: "other"}
 }
 
+// codeNoEntrypoint is the error code a live zone returned with the 404 for a phase that
+// has no rules: "could not find entrypoint ruleset in the <phase> phase".
+const codeNoEntrypoint = 10003
+
 // rules: GET /zones/{zone_id}/rulesets/phases/{phase}/entrypoint
 // https://developers.cloudflare.com/api/resources/rulesets/subresources/phases/methods/get/
 // Fields: id, rules[] {id, description, expression, action, action_parameters, enabled}.
 // A 404 means the zone has no entry point ruleset for the phase yet
 // (https://developers.cloudflare.com/waf/custom-rules/create-api/); a live zone answered
-// all three phases with 404 code 10003, "could not find entrypoint ruleset".
+// all three phases with 404 code 10003. Only that code counts as "empty": any other 404
+// leaves the phase unknown.
 func (x *discovery) rules(ctx context.Context, out map[string]plan.Rule) error {
 	type rule struct {
 		ID          string         `json:"id"`
@@ -556,8 +633,10 @@ func (x *discovery) rules(ctx context.Context, out map[string]plan.Rule) error {
 			var r ruleset
 			err := x.api.Get(ctx, x.zonePath("/rulesets/phases/"+url.PathEscape(spec.Phase)+"/entrypoint"), nil, &r)
 			switch {
-			case cfapi.IsNotFound(err):
+			case cfapi.IsNotFound(err) && cfapi.HasCode(err, codeNoEntrypoint):
 				empty[spec.Phase] = true
+			case cfapi.IsNotFound(err):
+				unknown[spec.Phase] = fmt.Sprintf("Cloudflare answered 404 for the %s phase without code %d, which marks an empty phase (%v)", spec.Phase, codeNoEntrypoint, err)
 			case err != nil:
 				why, err := unreadable("the "+spec.Phase+" rules", err)
 				if err != nil {

@@ -133,7 +133,13 @@ func WithBaseURL(u string) Option { return func(c *Client) { c.baseURL = strings
 
 // WithHTTPClient replaces the HTTP client. Its transport is still wrapped so that
 // only GET requests leave the process, and redirects are still refused.
-func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.http = h } }
+func WithHTTPClient(h *http.Client) Option {
+	return func(c *Client) {
+		if h != nil {
+			c.http = h
+		}
+	}
+}
 
 // WithRetry sets the waits before each retry of a request that failed with a 5xx, a
 // 429 or a transport error. The default is 0.5s, 1s, 2s; no waits means no retry.
