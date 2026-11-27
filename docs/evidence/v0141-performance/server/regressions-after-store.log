@@ -1,8 +1,0 @@
-=== RUN   TestPerformanceQueryPlans
---- PASS: TestPerformanceQueryPlans (0.08s)
-=== RUN   TestAuditCursorParityAndFinanceHistory
---- PASS: TestAuditCursorParityAndFinanceHistory (0.09s)
-=== RUN   TestRequestCursorParityAndPlan
---- PASS: TestRequestCursorParityAndPlan (0.10s)
-PASS
-ok  	officerdashboard/internal/store	0.276s

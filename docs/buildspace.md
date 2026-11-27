@@ -1,14 +1,15 @@
-# Buildspace + Launchpad draft
+# Buildspace + Launchpad
 
-> **V0.12:** cohorts, builder and mentor portals with email invites, the mentor roster with auto-assign, archive/restore/delete and member auto-linking are described in [launchpad-cohorts.md](launchpad-cohorts.md). Where the two differ, that document wins.
+For cohorts, invitations, builder and mentor portals, and automatic assignments,
+see [Launchpad cohorts](launchpad-cohorts.md).
 
-Buildspace + Launchpad keeps the builder register, projects, mentor assignments and activity together at `/buildspace-launchpad`. All existing active officers, directors and leadership can read and edit it. Mentor contacts get no officer access by being assigned. Since V0.12 a mentor can be invited to the separate mentor portal, which shows only their assigned projects and entries whose visibility allows it.
+Buildspace + Launchpad keeps the builder register, projects, mentor assignments and activity together at `/buildspace-launchpad`. All existing active officers, directors and leadership can read and edit it. Mentor contacts get no officer access by being assigned. A mentor can be invited to the separate mentor portal, which shows only their assigned projects and entries whose visibility allows it.
 
 ## Working model
 
 Each builder belongs to one project. Track and the one or two assigned mentors follow that project; partners are its other builders. A project can temporarily have zero mentors and is flagged until someone assigns one. Tracks are exactly Software, Hardware, Creative and Extended Virtual Reality (XR). Mentors reuse External Contacts of type mentor/both. A mentor with no assignment stays visible in the Mentors table, so officers can spot spare capacity. Project creation and builder registration are separate, and projects can exist before their builders join.
 
-Builder records can link to a local Members mirror ID and a unique Discord user ID. The draft uses explicit IDs when linking existing members and Finance requests. Moving a builder with activity to another project is refused to preserve history; a future transfer flow needs a decision on historical membership. Project edits replace the full form and currently use last-write-wins semantics.
+Builder records can link to a local Members mirror ID and a unique Discord user ID. The API uses explicit IDs when linking existing members and Finance requests. Moving a builder with activity to another project is refused to preserve history; a future transfer flow needs a decision on historical membership. Project edits replace the full form and currently use last-write-wins semantics.
 
 The activity register supports weekly check-ins, mentor notes, general requests, purchase needs and absences. Entries can describe a whole project or a builder on it; weekly updates require a builder, and mentor check-ins require a currently assigned mentor. Person details include that person's entries plus project-wide activity, while project details include all activity. Entries are append-only, except that open, unlinked requests/purchase needs can be marked resolved. A linked Finance purchase reads its live title and status; Finance owns that lifecycle. Buildspace + Launchpad does not change the purchase's permissions or ledger.
 
@@ -67,15 +68,6 @@ The API derives builder and project from `discordId`; caller-supplied person/pro
 
 Manual check-ins use the drawer's Add entry section and share the same timeline. Bot secrets are never sent to the browser. Ingestion tokens can write weekly updates for any registered Discord ID, so scope the token to this bot and keep it out of client-side code.
 
-## Open decisions for iteration
-
-- Is one active project per builder correct, and how should project transfers preserve history?
-- Should excused absences suppress follow-up? (The weekly deadline is now a leadership setting.)
-- Should Finance linking use a search picker rather than explicit IDs?
-- Are absence date ranges and entry corrections/deletion needed next?
-
-Resolved in V0.12 ([launchpad-cohorts.md](launchpad-cohorts.md)): mentor-note privacy (per-entry visibility), cohort and archive management, and member linking (automatic by UW email at onboarding).
-
 ## Home calendar sources
 
 The Home calendar registry includes `buildspace-absences`, `buildspace-weekly` and `buildspace-mentor`. All three are **off by default**, including for new accounts and feed requests without an explicit source list. The current Home widget has no source controls and does not apply saved calendar-widget options; API clients can select these sources explicitly with the feed's `sources=` parameter.
@@ -86,9 +78,9 @@ Weekly due items follow the check-in schedule: one per builder on each week's du
 
 The loaders filter the requested exclusive date range in SQL; the registry controls metadata, validation and item presentation without another frontend source switch. Migration `0017_buildspace.sql` follows dashboard `0015` and calendar `0016`.
 
-## Motion (V0.6)
+## Motion
 
-Buildspace + Launchpad uses the shared V0.5 motion system (`docs/motion-performance-v05.md`) rather than one-offs: tokens from `tokens.css`, the page-content rise from the Gate, the `Async` skeleton crossfade, the first-eight `.motion-list` stagger (People/Projects/Mentors tables, card groups, board lanes, drawer timelines and partner lists, and the manual-entry/project/builder forms, so conditionally revealed fields enter too), the native drawer edge slide with backdrop fade, and the shared `Tabs` component for People/Projects/Mentors, whose single indicator slides with transform only (they are now a real tablist with arrow-key navigation). Drawer sections switch with the shared `.tab-panel` enter; the schedule popover uses the shared `pop-in` motion.
+Buildspace + Launchpad uses the shared motion system: tokens from `tokens.css`, the page-content rise from the Gate, the `Async` skeleton crossfade, the first-eight `.motion-list` stagger (People/Projects/Mentors tables, card groups, board lanes, drawer timelines and partner lists, and the manual-entry/project/builder forms, so conditionally revealed fields enter too), the native drawer edge slide with backdrop fade, and the shared `Tabs` component for People/Projects/Mentors, whose single indicator slides with transform only (they are now a real tablist with arrow-key navigation). Drawer sections switch with the shared `.tab-panel` enter; the schedule popover uses the shared `pop-in` motion.
 
 Two small shared helpers live in `web/src/ui/components/motion.ts`:
 
@@ -97,25 +89,10 @@ Two small shared helpers live in `web/src/ui/components/motion.ts`:
 
 Everything is transform/opacity, starts at non-zero opacity, and is disabled under `prefers-reduced-motion` (no overlay, no FLIP, no CSS animation). Browser checks in `web/tests/buildspace.spec.ts` cover the tablist and indicator, overlay inertness and stable height, the paintable first frame and eight-item cap, FLIP on filters and stage moves, the drawer slide, form field entry, reduced motion, the schedule popover permissions and save/cancel flow, and no horizontal overflow at desktop and phone widths in both themes.
 
-### Performance
-
-Measured with `web/scripts/performance.mjs` (`PERF_ROUTES=/buildspace-launchpad`, director, the standard throttled profile) against main `7ba453c`, alternating before/after run by run on the shared Raspberry Pi. The LCP element is the intro line “A little progress, every week.”. It previously waited for `/api/buildspace-launchpad`; the intro and its buttons now render before the register loads (the schedule button holds the same box while disabled), so it paints as soon as sign-in resolves.
-
-| Variant | LCP median (min–max) | CLS median | JS bytes |
-| --- | ---: | ---: | ---: |
-| main `7ba453c` | 2.080s (2.076–2.188) | 0 | 76,747 |
-| this branch | 1.716s (1.676–1.784) | 0 | 79,108 |
-
-Main was already over the 2s budget on this page; the branch meets LCP < 2s and CLS < 0.05 in these three lab samples, which are not a field guarantee. An earlier cut that kept the intro inside `Async` measured 2.172s median, against 2.176s for its own main baseline (`30b1a4b`) in the same batch: the motion itself costs no measurable LCP. Raw samples: [perf.json](evidence/buildspace-v06/perf.json).
-
-Screenshots (built site, leadership): [people desktop light](evidence/buildspace-v06/people-1440-light.png), [people phone dark](evidence/buildspace-v06/people-390-dark.png), [board desktop dark](evidence/buildspace-v06/board-1440-dark.png), [drawer phone light](evidence/buildspace-v06/drawer-390-light.png), [schedule desktop light](evidence/buildspace-v06/schedule-1440-light.png), [schedule phone dark](evidence/buildspace-v06/schedule-390-dark.png); all four theme/width combinations of each are in that folder.
-
 ## Rename compatibility
 
 Migration 0023 renames the five tables and recreates the three explicit indexes under `buildspace_launchpad_*`, preserving rows and foreign keys. API aliases retain old clients and ingest tokens (`ingest:buildspace`). Calendar source IDs and item IDs remain stable for saved preferences and feed consumers; titles and links use the new name and route. The legacy page redirects with 301 and keeps query parameters.
 
 Audit history retains its original identifiers: rows written before migration 0023 use `buildspace.*` actions and `buildspace_*` entities; new rows use `buildspace_launchpad.*` actions and `buildspace_launchpad_*` entities. Searches and exports spanning the rename must include both prefixes. Existing audit rows are not rewritten.
-
-Browser screenshots now write to `tmp/verify/launchpad/`; running the spec does not overwrite the historical V0.6 evidence linked above.
 
 The legacy page redirect is served by Go. On the standalone Astro development server, use `/buildspace-launchpad` directly; old `/buildspace` links return 404 there. Astro’s built-in static redirect is not configured because it discards deep-link query parameters. Summary tiles always link directly to the canonical route.

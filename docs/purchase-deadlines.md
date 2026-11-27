@@ -78,33 +78,5 @@ range query and the deadline sort.
   form validation and `min`, list hints and sort, director calendar chips and popovers, no
   calendar controls at 4×2/2×2/2×1, no layout shift on load, no overflow, phone month dots,
   inline edit, another officer can't edit, My actions hint, and the overdue state.
-  `DEADLINE_SHOTS=1` regenerates the screenshots below. The browser clock is fixed at
+  `DEADLINE_SHOTS=1` captures current screenshots for review. The browser clock is fixed at
   2026-11-04 (and 2026-11-08 for overdue).
-
-## Screenshots
-
-| | Light | Dark |
-| --- | --- | --- |
-| Calendar, desktop (historical controls) | ![calendar-desktop-light](evidence/purchase-deadlines/calendar-desktop-light.png) | ![calendar-desktop-dark](evidence/purchase-deadlines/calendar-desktop-dark.png) |
-| Calendar, phone | ![calendar-phone-light](evidence/purchase-deadlines/calendar-phone-light.png) | ![calendar-phone-dark](evidence/purchase-deadlines/calendar-phone-dark.png) |
-| Finance list, desktop | ![finance-desktop-light](evidence/purchase-deadlines/finance-desktop-light.png) | ![finance-desktop-dark](evidence/purchase-deadlines/finance-desktop-dark.png) |
-| Finance list, phone | ![finance-phone-light](evidence/purchase-deadlines/finance-phone-light.png) | ![finance-phone-dark](evidence/purchase-deadlines/finance-phone-dark.png) |
-| Overdue, desktop | ![overdue-desktop-light](evidence/purchase-deadlines/overdue-desktop-light.png) | ![overdue-desktop-dark](evidence/purchase-deadlines/overdue-desktop-dark.png) |
-| Overdue, phone | ![overdue-phone-light](evidence/purchase-deadlines/overdue-phone-light.png) | ![overdue-phone-dark](evidence/purchase-deadlines/overdue-phone-dark.png) |
-| Detail, desktop | ![detail-desktop-light](evidence/purchase-deadlines/detail-desktop-light.png) | ![detail-desktop-dark](evidence/purchase-deadlines/detail-desktop-dark.png) |
-| Detail, phone | ![detail-phone-light](evidence/purchase-deadlines/detail-phone-light.png) | ![detail-phone-dark](evidence/purchase-deadlines/detail-phone-dark.png) |
-
-### Calendar legend at each size
-
-**Historical V0.6 controls:** these captures show the former legend and **Sources** menu.
-The current widget has no legend, Sources menu or other controls; the screenshots are retained
-as design history, not current UI instructions.
-
-| | Light | Dark |
-| --- | --- | --- |
-| 4×2, desktop | ![legend-4x2-desktop-light](evidence/purchase-deadlines/legend-4x2-desktop-light.png) | ![legend-4x2-desktop-dark](evidence/purchase-deadlines/legend-4x2-desktop-dark.png) |
-| 4×2, phone | ![legend-4x2-phone-light](evidence/purchase-deadlines/legend-4x2-phone-light.png) | ![legend-4x2-phone-dark](evidence/purchase-deadlines/legend-4x2-phone-dark.png) |
-| 2×2 (menu open), desktop | ![legend-2x2-desktop-light](evidence/purchase-deadlines/legend-2x2-desktop-light.png) | ![legend-2x2-desktop-dark](evidence/purchase-deadlines/legend-2x2-desktop-dark.png) |
-| 2×2 (menu open), phone | ![legend-2x2-phone-light](evidence/purchase-deadlines/legend-2x2-phone-light.png) | ![legend-2x2-phone-dark](evidence/purchase-deadlines/legend-2x2-phone-dark.png) |
-| 2×1 (menu open), desktop | ![legend-2x1-desktop-light](evidence/purchase-deadlines/legend-2x1-desktop-light.png) | ![legend-2x1-desktop-dark](evidence/purchase-deadlines/legend-2x1-desktop-dark.png) |
-| 2×1 (menu open), phone | ![legend-2x1-phone-light](evidence/purchase-deadlines/legend-2x1-phone-light.png) | ![legend-2x1-phone-dark](evidence/purchase-deadlines/legend-2x1-phone-dark.png) |

@@ -1,7 +1,5 @@
 # Other setups
 
-> For the recommended production Docker deployment, use [Fresh install](fresh-install.md)
-> and [Upgrade/restore](upgrade-existing.md). Litestream is no longer shipped.
 
 
 The [fresh-install guide](fresh-install.md) covers the recommended setup: the published image in Docker, behind
@@ -10,14 +8,13 @@ main guide.
 
 - [Pi under systemd, without Docker](#pi-under-systemd-without-docker)
 - [Build the image yourself](#build-the-image-yourself)
-- [Practice run on a quick tunnel](#practice-run-on-a-quick-tunnel)
 - [What's in the image](#whats-in-the-image)
 
 ## Pi under systemd, without Docker
 
 The dashboard runs as a normal program (`dashboard serve`) under systemd, the service manager
-built into Linux. You build it on the Pi. **There is no Litestream here**: backups are a nightly
-file on the Pi's own disk unless you add an off-site copy yourself.
+built into Linux. You build it on the Pi. Backups are encrypted nightly files on the host
+unless you configure an off-site copy.
 
 | | Docker (main guide) | systemd |
 | --- | --- | --- |
@@ -34,8 +31,8 @@ file on the Pi's own disk unless you add an off-site copy yourself.
    [go.dev/dl](https://go.dev/dl/) (`linux-arm64`; Debian's Go is too old), and Node 24 LTS from [nodejs.org](https://nodejs.org/en/download).
 2. **Cloudflare:** do [Cloudflare setup](cloudflare.md) with two differences in step 1: pick
    **Debian** and **run** Cloudflare's install command on the Pi, and set the Service URL to
-   `http://127.0.0.1:8090`. Skip step 9 (R2) unless you want it for `BACKUP_REMOTE`.
-3. **Discord:** [deploy guide step 3](README.md#3-create-the-discord-app).
+   `http://127.0.0.1:8090`. Configure a separate off-site destination for `BACKUP_REMOTE`.
+3. **Discord:** [Discord setup](fresh-install.md#3-create-the-discord-app).
 4. **Build**, from the repository root, after checking out your reviewed release tag or commit:
    ```sh
    (cd web && npm ci && npm run build)
@@ -73,7 +70,8 @@ file on the Pi's own disk unless you add an off-site copy yourself.
    sudo systemctl daemon-reload && sudo systemctl enable --now dashboard
    sudo journalctl -u dashboard -n 50 --no-pager
    ```
-   You should see `msg=listening`. Then do deploy guide steps 6 to 8. The checks differ:
+   You should see `msg=listening`. Then sign in as owner, connect services, and verify the installation
+   using [Fresh install](fresh-install.md#7-sign-in-and-connect-services). The checks differ:
    `curl -s http://127.0.0.1:8090/api/health` should print `{"db":true,"ok":true}`, and the
    migration count is
    `sudo -u dashboard env DB_PATH=/var/lib/officer-dashboard/dashboard.db /opt/officer-dashboard/dashboard migrate`.
@@ -102,7 +100,7 @@ while stopped and restart. Never copy the age private identity onto the service 
 
 ### Upgrade under systemd
 
-The same order as [Upgrade](upgrade.md): build while the old one serves, test on a copy, stop,
+Use this order: build while the old one serves, test on a copy, stop,
 back up, install, start. In `server/`:
 
 1. **Build:**
@@ -191,20 +189,12 @@ docker compose -f compose.dev.yaml up -d --build
 This stack is for development with sample data and developer sign-in. The optional
 `compose.build.yml` override is build-only and cannot turn a local tag into a production pin.
 
-## Practice run on a quick tunnel
-
-The historical [`compose.quicktunnel.yml`](../../server/deploy/compose.quicktunnel.yml)
-is currently incompatible with the production Compose file's required image pin,
-secret-file mounts and backup service. Its header commands do not work with the current
-stack. Use the [local development stack](../development.md#run-it-in-docker) for sample
-data and developer sign-in; use [Fresh install](fresh-install.md) for a deployment.
-
 ## What's in the image
 
 - **Platforms:** 64-bit x86 (`linux/amd64`) and 64-bit ARM (`linux/arm64`, a Pi 5).
 - **Contents:** the static `dashboard` server with the web front end built in, and the
   `dashboard-backup` helper, on BusyBox musl. It runs as user `dashboard` (uid 10001)
-  and keeps its data in `/data`. Litestream and Python are not shipped.
+  and keeps its data in `/data`. The runtime contains no Python interpreter.
 - **Listens** on port 8090 inside the container (`ADDR=:8090`, `DB_PATH=/data/dashboard.db`).
   Because it listens beyond its own machine, it refuses to start without `APP_URL`.
 - **Starts** through `server/deploy/entrypoint.sh`. With `BACKUP_REQUIRED=1`, a missing

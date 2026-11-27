@@ -1,5 +1,0 @@
-{"run": 1, "startedAt": "2026-11-18T17:59:15.735889835Z", "started_to_healthy_ms": 1996, "server_startup_ms": 88}
-{"run": 2, "startedAt": "2026-11-18T17:59:21.654668303Z", "started_to_healthy_ms": 2006, "server_startup_ms": 66}
-{"run": 3, "startedAt": "2026-11-18T17:59:27.51039324Z", "started_to_healthy_ms": 1989, "server_startup_ms": 76}
-{"run": 4, "startedAt": "2026-11-18T17:59:33.516627242Z", "started_to_healthy_ms": 1984, "server_startup_ms": 77}
-{"run": 5, "startedAt": "2026-11-18T17:59:39.373006214Z", "started_to_healthy_ms": 1997, "server_startup_ms": 72}

@@ -72,7 +72,7 @@ test("static container backup settings are documented without an interpreter run
 
 test("self-build production recipe publishes and pins before startup", () => {
   const docs = read('docs/deploy/other-setups.md');
-  const recipe = docs.slice(docs.indexOf('## Build the image yourself'), docs.indexOf('## Practice run'));
+  const recipe = docs.slice(docs.indexOf('## Build the image yourself'), docs.indexOf("## What's in the image"));
   assert.ok(recipe.includes('--push'));
   assert.ok(recipe.includes('imagetools inspect'));
   assert.ok(recipe.includes('server/deploy/prod-image.env'));

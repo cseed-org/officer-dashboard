@@ -1,6 +1,0 @@
-=== RUN   TestCSVUnquotedAllocationBudget
-    csv_performance_test.go:18: plain fields allocated: 8012
---- FAIL: TestCSVUnquotedAllocationBudget (0.00s)
-FAIL
-FAIL	officerdashboard/internal/luma	0.006s
-FAIL

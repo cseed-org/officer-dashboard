@@ -1,9 +1,0 @@
-=== RUN   TestAgentJobsAllocationBudget
-    queue_portal_budget_test.go:85: AgentJobs retained growing per-request work: 47492 allocations
---- FAIL: TestAgentJobsAllocationBudget (0.17s)
-=== RUN   TestPortalBuilderAllocationBudget
-    queue_portal_budget_test.go:100: PortalBuilder retained growing per-request work: 172821 allocations
---- FAIL: TestPortalBuilderAllocationBudget (0.27s)
-FAIL
-FAIL	officerdashboard/internal/api	0.454s
-FAIL

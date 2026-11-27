@@ -1,31 +1,17 @@
 # Cloudflare setup
 
-> Current Free-plan image: use [Fresh install](fresh-install.md) and
-> [Upgrade/restore](upgrade-existing.md). R2/Litestream commands below apply only
-> to the previous image; Litestream is no longer shipped. Tunnel/Access steps remain useful.
+Use this alongside [Fresh install](fresh-install.md). Complete steps 0-8 before
+starting the dashboard; step 10 verifies the running site. Backup storage and its
+separate protected hostname are covered in [backup setup](fresh-install.md#4-prepare-encrypted-backups).
 
+- **Tunnel:** an outgoing connection from `cloudflared` to your dashboard container.
+- **Access:** a sign-in layer in front of the dashboard, allowing the emails you list.
+- **Policy:** a rule specifying who can access an application or path.
+- **WAF:** the web application firewall, which filters requests.
 
-You come here from [step 2 of the deploy guide](README.md#2-set-up-cloudflare). Do steps 0 to 9
-in order, then go back. Step 10 runs later, once the dashboard is up.
-
-**What Cloudflare does for the dashboard:**
-
-- **Tunnel:** a program on your server (`cloudflared`) opens an outgoing connection to Cloudflare,
-  and Cloudflare sends your hostname's visitors through it. Your server opens no ports.
-- **Access:** a sign-in page Cloudflare shows before anyone reaches the dashboard. People type
-  their email and get a one-time PIN. Only emails you list get one.
-- **R2:** cloud file storage, where the database backup lives.
-
-A few words you'll meet: an **Access application** is one protected address (or a set of paths
-under it); a **policy** says who gets in, and how; a **rule group** is a reusable list of emails.
-**WAF** (web application firewall) is Cloudflare's set of filters that block suspicious requests.
-
-Throughout, `<your-hostname>` is your dashboard's address (for example `officers.example.org`),
-`<subdomain>` its first part (`officers`) and `<your-domain>` the rest (`example.org`).
-
-**Menu names.** Cloudflare renames menus often. The click paths below were checked against
-Cloudflare's own docs on 2026-11-24; each step links the page. If a menu looks different, the
-linked page has the current name. Nothing here was tried on a live account.
+Replace `<your-hostname>` with the dashboard address (for example
+`officers.example.org`), `<subdomain>` with `officers`, and `<your-domain>` with
+`example.org`. Provider menus can change; each section links the official reference.
 
 ## 0. Put your domain on Cloudflare and open Zero Trust
 
@@ -43,13 +29,14 @@ domain) Cloudflare runs. That is why the domain's nameservers move to Cloudflare
    you bought the domain), replace the domain's nameservers with those two. If DNSSEC is on at the
    registrar, turn it off first. Cloudflare emails you when the domain is active; this can take
    from minutes to a day. Steps 1 and 3 to 8 need the domain **Active**: they use its name or
-   its settings. Meanwhile you can do item 3, step 2 and step 9 here, and steps 1 and 3 of the
-   deploy guide.
+   its settings. Meanwhile, open Zero Trust and prepare Discord and backup credentials
+   using the fresh-install guide.
 3. **Open Zero Trust** ([docs](https://developers.cloudflare.com/cloudflare-one/setup/)). In the
    Cloudflare dashboard, select **Zero Trust** in the left menu. On first use it asks for a
    **team name**. Pick something short, like your club's name: your sign-in page will be
    `<team>.cloudflareaccess.com`. Choose the **Free** plan. It asks for payment details even on
-   the Free plan; you are not charged.
+   that plan; review the account
+   subscription and billing terms before continuing.
 
 You should see the domain as **Active** under **Domains**, and the Zero Trust home page.
 
@@ -79,11 +66,13 @@ You should see the domain as **Active** under **Domains**, and the Zero Trust ho
 
    **Add route**. Cloudflare creates the DNS record for `<your-hostname>` itself.
 
-You should see the tunnel in the list. It shows as down until the dashboard starts in step 5 of
-the deploy guide. That is expected.
+You should see the tunnel in the list. It shows as down until you start the dashboard in the
+fresh-install guide. That is expected.
 
 **If the token leaks:** open the tunnel → **Overview** → **Refresh token**, put the new token in
-`.env`, and run `docker compose -f compose.cloudflare.yml up -d`
+the host file selected by `TUNNEL_TOKEN_FILE`, preserve UID 65532 and mode 0400,
+and recreate cloudflared with
+`docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d --force-recreate cloudflared`
 ([docs](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/remote-tunnel-permissions/)).
 
 ## 2. Turn on one-time PIN and create the groups
@@ -310,49 +299,19 @@ under **Speed** → **Settings** → **Content Optimization**
 Email Address Obfuscation under **Security** → **Settings**, filter **Client-side abuse**
 ([docs](https://developers.cloudflare.com/waf/tools/scrape-shield/email-address-obfuscation/)).
 
-## 9. Create the R2 bucket for backups
-
-Litestream, built into the dashboard image, copies the database to this bucket every second.
-
-1. **Turn on R2** ([docs](https://developers.cloudflare.com/r2/get-started/)): in the Cloudflare
-   dashboard, **Storage & databases** → **R2** → **Overview**. The first time, it asks you to add
-   the R2 subscription through a checkout. The free tier (10 GB of storage a month) is far more
-   than the dashboard needs.
-2. **Create the bucket:** **Create bucket**. Name it `cseed-dashboard-db` (any name of lowercase
-   letters, numbers and hyphens). Location: automatic. Leave public access off. Save the name.
-3. **Save your account ID:** it is shown under **Account Details** on the R2 overview page (or
-   press Ctrl+K and search for `Copy account ID`,
-   [docs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/)).
-   Your R2 endpoint is `https://<account ID>.r2.cloudflarestorage.com`.
-4. **Create a key for this bucket only** ([docs](https://developers.cloudflare.com/r2/api/tokens/)):
-   on the R2 overview, under **Account Details**, **Manage** next to **API Tokens** → **Create
-   Account API token**.
-   - **Permissions:** **Object Read & Write**.
-   - Scope it to **specific buckets only** → your bucket.
-   - **Create Account API token**. The next page shows several values. Copy the **Access Key ID**
-     and the **Secret Access Key** now: the secret is shown only once. You don't need the others
-     (the token value and the endpoints); your endpoint is the one from item 3. If you lose the
-     secret, make a new token the same way and delete the old one.
-
-You should have the bucket name, the account ID and the two keys.
-
-Use a key for this bucket only, never an account-wide one: anyone with the key can read or
-overwrite the database.
-
-**← [Back to step 2 of the deploy guide](README.md#2-set-up-cloudflare)**
-
 ## 10. Check it from outside
 
-**Do this later**, when [step 8 of the deploy guide](README.md#8-check-that-it-works) sends you
-here. It needs the dashboard running.
+Run this after [installation verification](fresh-install.md#8-verify-the-installation).
+It needs the dashboard running.
 
 `mcp-check`, built into the dashboard, calls your site the way agents and bots do and reports any
-Cloudflare setting that gets in the way. On the server, in `~/officer-dashboard/server/deploy`:
+Cloudflare setting that gets in the way. On the server, in `/opt/officer-dashboard/server/deploy`
+(or your chosen checkout location):
 
 ```sh
-export CF_ACCESS_CLIENT_ID=<service token Client ID>
+export CF_ACCESS_CLIENT_ID='replace-with-service-token-client-id'
 read -rs CF_ACCESS_CLIENT_SECRET && export CF_ACCESS_CLIENT_SECRET   # paste the secret, press Enter
-docker compose -f compose.cloudflare.yml run --rm --no-deps \
+docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml run --rm --no-deps \
   -e CF_ACCESS_CLIENT_ID -e CF_ACCESS_CLIENT_SECRET --entrypoint /app/dashboard dashboard \
   mcp-check https://<your-hostname>
 ```
@@ -373,4 +332,4 @@ Then connect an agent as an officer, for example with Claude Code:
 `claude mcp add --transport http cseed https://<your-hostname>/mcp`. The browser shows the PIN
 sign-in, then the dashboard's sign-in, then **Allow** ([MCP agents](../mcp.md#connecting)).
 
-**← [Back to step 8 of the deploy guide](README.md#8-check-that-it-works)**
+[Return to installation verification](fresh-install.md#8-verify-the-installation).

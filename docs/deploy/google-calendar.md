@@ -63,7 +63,7 @@ You should have a Client ID ending in `.apps.googleusercontent.com` and a Client
 
 1. In your checkout's `server/deploy`, save the Client Secret in
    `secrets/app/google-oauth-client-secret`, readable by uid 10001 with mode 0400,
-   following [Fresh install](fresh-install.md#bootstrap-the-host). Edit `dashboard.env`
+   following [Fresh install](fresh-install.md#5-prepare-the-deployment-files). Edit `dashboard.env`
    and enable these lines:
    ```dotenv
    GOOGLE_OAUTH_CLIENT_ID=<Client ID>
