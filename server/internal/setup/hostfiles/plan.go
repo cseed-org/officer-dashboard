@@ -145,19 +145,41 @@ func (p *Plan) Apply() error {
 func (p *Plan) apply(s step) error {
 	switch s.kind {
 	case stepDir:
-		if err := os.Mkdir(s.path, 0o700); err != nil {
+		// Build the directory under a temporary name and rename it into place, so a failure
+		// part way never leaves a directory with the wrong mode or owner behind.
+		tmp, err := os.MkdirTemp(filepath.Dir(s.path), "."+filepath.Base(s.path)+".tmp-*")
+		if err != nil {
 			return fmt.Errorf("%s: cannot create directory: %w", s.path, pathless(err))
 		}
-		if err := os.Chmod(s.path, s.mode); err != nil {
+		done := false
+		defer func() {
+			if !done {
+				os.Remove(tmp)
+			}
+		}()
+		if err := os.Chmod(tmp, s.mode); err != nil {
 			return fmt.Errorf("%s: cannot set mode %04o: %w", s.path, s.mode, pathless(err))
 		}
-		if err := p.owner.Chown(s.path, s.ids); err != nil {
+		if err := p.owner.Chown(tmp, s.ids); err != nil {
 			return fmt.Errorf("%s: cannot set owner %d:%d: %w", s.path, s.ids.UID, s.ids.GID, pathless(err))
+		}
+		if _, err := os.Lstat(s.path); !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("%s appeared after setup checked it; kept it, run setup again", s.path)
+		}
+		if err := os.Rename(tmp, s.path); err != nil {
+			return fmt.Errorf("%s: cannot create directory: %w", s.path, pathless(err))
+		}
+		done = true
+		if err := syncDir(filepath.Dir(s.path)); err != nil {
+			return fmt.Errorf("%s: created, but flushing its parent failed: %w", s.path, pathless(err))
 		}
 		return p.verify(s.path, s.mode, s.ids)
 	case stepEnv:
 		if s.create {
 			return createAtomic(s.path, s.data, s.mode, nil, p.owner)
+		}
+		if info, err := os.Lstat(s.path); err != nil || !info.Mode().IsRegular() {
+			return fmt.Errorf("%s changed after setup read it; run setup again", s.path)
 		}
 		now, err := os.ReadFile(s.path)
 		if err != nil {
@@ -170,7 +192,8 @@ func (p *Plan) apply(s step) error {
 		if err != nil {
 			return fmt.Errorf("%s: cannot read its owner: %w", s.path, pathless(err))
 		}
-		// Keep the file's owner: rewriting it must not hand it to whoever runs setup.
+		// Keep the file's owner and mode (s.mode is the mode it had when planned): rewriting
+		// it must not hand it to whoever runs setup or change who can read it.
 		var keep *IDs
 		if ids != processIDs() {
 			keep = &ids
@@ -184,7 +207,7 @@ func (p *Plan) apply(s step) error {
 			err = WriteFileAtomic(s.path, s.data, s.mode, &s.ids, p.owner)
 		}
 		if errors.Is(err, fs.ErrExist) {
-			return fmt.Errorf("%s appeared after setup checked it; kept it, run setup again", s.path)
+			return fmt.Errorf("%s appeared after setup checked it; kept it, run setup again: %w", s.path, fs.ErrExist)
 		}
 		if err != nil {
 			return err
@@ -243,6 +266,16 @@ func (pl *Planner) Hint(key, hint string) {
 	pl.hints[key] = hint
 }
 
+// Report adds a line to the plan that writes nothing: an Exists, Conflict or Missing
+// finding the caller worked out itself.
+func (pl *Planner) Report(kind Kind, rel, key, detail string) {
+	if kind == Create || kind == Update {
+		pl.fail(fmt.Errorf("Report cannot add a %s action", kind))
+		return
+	}
+	pl.add(kind, rel, key, detail)
+}
+
 func (pl *Planner) add(kind Kind, rel, key, detail string) {
 	pl.plan.Actions = append(pl.plan.Actions, Action{Kind: kind, Path: filepath.ToSlash(rel), Key: key, Detail: detail})
 }
@@ -259,13 +292,32 @@ func (pl *Planner) fail(err error) {
 // a key that is missing, commented out, empty, or still the template's example value is
 // set; a key with any other value is reported as a conflict and left alone.
 //
+// An existing file keeps its mode and owner. A symlink (or anything but a regular file)
+// is reported as a conflict and left alone: replacing it would leave the admin's real
+// file unchanged.
+//
 // Env files hold settings, not secrets (secrets are always *_FILE paths), so the report
 // shows values.
 func (pl *Planner) Env(rel, template string, values []KV) {
 	if pl.err != nil {
 		return
 	}
+	if err := pl.noSymlinkAbove(rel); err != nil {
+		pl.fail(err)
+		return
+	}
 	path := filepath.Join(pl.root, rel)
+	mode := EnvMode
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() {
+			pl.add(Conflict, rel, "", "is a symlink or not a regular file; setup does not write through it, left alone")
+			return
+		}
+		mode = info.Mode().Perm()
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		pl.fail(fmt.Errorf("%s: %w", rel, pathless(err)))
+		return
+	}
 	var examples *EnvFile
 	if template != "" {
 		if raw, err := os.ReadFile(filepath.Join(pl.root, template)); err == nil {
@@ -325,8 +377,43 @@ func (pl *Planner) Env(rel, template string, values []KV) {
 		pl.add(Update, rel, kv.Key, "= "+kv.Value)
 	}
 	if changed {
-		pl.plan.steps = append(pl.plan.steps, step{kind: stepEnv, path: path, data: f.Bytes(), orig: orig, create: create, mode: EnvMode})
+		pl.plan.steps = append(pl.plan.steps, step{kind: stepEnv, path: path, data: f.Bytes(), orig: orig, create: create, mode: mode})
 	}
+}
+
+// noSymlinkAbove refuses rel when a directory between the root and rel is a symlink (or
+// not a directory): writing below it would land outside the deploy directory's layout.
+func (pl *Planner) noSymlinkAbove(rel string) error {
+	return noSymlinkAbove(pl.root, rel)
+}
+
+func noSymlinkAbove(root, rel string) error {
+	dir := filepath.Dir(filepath.Clean(rel))
+	if dir == "." {
+		return nil
+	}
+	walked := root
+	for _, part := range strings.Split(filepath.ToSlash(dir), "/") {
+		walked = filepath.Join(walked, part)
+		info, err := os.Lstat(walked)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("%s: %w", walked, pathless(err))
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return symlinkError(walked)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("%s exists and is not a directory", walked)
+		}
+	}
+	return nil
+}
+
+func symlinkError(path string) error {
+	return fmt.Errorf("%s is a symlink; setup does not write through symlinks. Replace it with a real directory, or set these files up by hand", path)
 }
 
 func isExample(examples *EnvFile, key, value string) bool {

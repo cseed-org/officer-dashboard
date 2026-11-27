@@ -37,11 +37,13 @@ func writeAtomic(path string, data []byte, mode os.FileMode, ids *IDs, o Owner, 
 			os.Remove(name)
 		}
 	}()
-	if _, err := tmp.Write(data); err != nil {
-		return fmt.Errorf("%s: write failed: %w", path, pathless(err))
-	}
+	// Set the final mode before writing, so the content is never readable more widely
+	// than the finished file.
 	if err := tmp.Chmod(mode); err != nil {
 		return fmt.Errorf("%s: cannot set mode %04o: %w", path, mode, pathless(err))
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("%s: write failed: %w", path, pathless(err))
 	}
 	if err := tmp.Sync(); err != nil {
 		return fmt.Errorf("%s: flush failed: %w", path, pathless(err))

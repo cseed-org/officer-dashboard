@@ -66,6 +66,10 @@ func (pl *Planner) Secret(s Secret) {
 	if pl.err != nil {
 		return
 	}
+	if err := pl.noSymlinkAbove(s.Path); err != nil {
+		pl.fail(err)
+		return
+	}
 	path := filepath.Join(pl.root, s.Path)
 	want := fmt.Sprintf("mode %04o, owner %d:%d", SecretMode, s.Owner.UID, s.Owner.GID)
 	if s.Value != nil {
@@ -107,6 +111,10 @@ func (pl *Planner) Dir(rel string, mode os.FileMode, ids IDs) {
 	if pl.err != nil {
 		return
 	}
+	if err := pl.noSymlinkAbove(rel); err != nil {
+		pl.fail(err)
+		return
+	}
 	path := filepath.Join(pl.root, rel)
 	info, err := os.Lstat(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -116,6 +124,10 @@ func (pl *Planner) Dir(rel string, mode os.FileMode, ids IDs) {
 	}
 	if err != nil {
 		pl.fail(fmt.Errorf("%s: %w", rel, pathless(err)))
+		return
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		pl.fail(symlinkError(rel))
 		return
 	}
 	if !info.IsDir() {
