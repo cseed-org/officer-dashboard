@@ -68,11 +68,24 @@ func complete(d Desired) Observed {
 	o.D1 = Seen{Found: true, ID: "d1-uuid"}
 	// An apply lists the tables (a D1 query); Wrangler's migrations add d1_migrations.
 	o.D1Tables = Tables{Read: true, Names: []string{"_cf_KV", "budgets", "chunks", "d1_migrations", "snapshots", "sqlite_sequence"},
-		Triggers: []string{"reserve"}, Applied: []string{"0001.sql"}}
+		Triggers: []string{"reserve"}, Applied: []string{"0001.sql"}, Definitions: migratedDefinitions(d)}
 	o.Worker = Worker{Seen: Seen{Found: true, ID: d.Worker.Script}, D1BindingID: "d1-uuid", Secrets: []string{"BACKUP_BEARER_SECRET"}, WorkersDev: no(), PreviewURLs: no(),
+		CompatibilityDate: d.Worker.CompatibilityDate, CompatibilityFlags: d.Worker.CompatibilityFlags, HasModules: yes(),
 		Revision: "2", SetupUpload: true,
 		Domain: WorkerDomain{Seen: Seen{Found: true, ID: "wd1"}, Service: d.Worker.Script}}
 	return o
+}
+
+// migratedDefinitions is sqlite_master's sql for a database the Worker's migration made.
+func migratedDefinitions(d Desired) map[string]string {
+	defs := map[string]string{}
+	for k, v := range d.D1TableDefs {
+		defs[k] = v
+	}
+	for k, v := range d.D1TriggerDefs {
+		defs[k] = v
+	}
+	return defs
 }
 
 func copyParams(p map[string]any) map[string]any {
@@ -236,7 +249,7 @@ func TestDiffTable(t *testing.T) {
 		{"workers.dev switches unreadable", func(o *Observed) { o.Worker.SubdomainUnknown = "no permission" }, "worker.subdomain", Unknowable, "no permission"},
 		{"no worker means subdomain create", func(o *Observed) { o.Worker = Worker{} }, "worker.subdomain", Create, ""},
 		{"no worker means version create", func(o *Observed) { o.Worker = Worker{} }, "worker.version", Create, ""},
-		{"worker deployed without setup's label", func(o *Observed) { o.Worker.Revision = "" }, "worker.version", Unknowable, "alerts when it is older"},
+		{"worker deployed without setup's label", func(o *Observed) { o.Worker.Revision = "" }, "worker.version", Unknowable, "alerts if the Worker is ever too old"},
 		{"worker older than this image", func(o *Observed) { o.Worker.Revision = "1" }, "worker.version", Drift, "never uploads over an existing Worker"},
 		{"worker newer than this image", func(o *Observed) { o.Worker.Revision = "3" }, "worker.version", Drift, "newer than"},
 		{"worker label not a number", func(o *Observed) { o.Worker.Revision = "x" }, "worker.version", Drift, "not a revision"},
@@ -251,8 +264,17 @@ func TestDiffTable(t *testing.T) {
 			o.D1Tables = Tables{Read: true, Names: []string{"d1_migrations", "snapshots"}}
 		}, "d1.migrations", Drift, "budgets, chunks"},
 		{"D1 migrated without Wrangler's record", func(o *Observed) {
-			o.D1Tables = Tables{Read: true, Names: []string{"budgets", "chunks", "snapshots"}, Triggers: []string{"reserve"}}
+			o.D1Tables = Tables{Read: true, Names: []string{"budgets", "chunks", "snapshots"}, Triggers: []string{"reserve"}, Definitions: o.D1Tables.Definitions}
 		}, "d1.migrations", OK, "no d1_migrations table"},
+		// The person's request (fix round 1 of #129): the right name with another shape is drift.
+		{"D1 table of another shape", func(o *Observed) {
+			o.D1Tables.Definitions["budgets"] = "create table budgets(day text primary key,writes integer)"
+		}, "d1.migrations", Drift, `table budgets is defined as "create table budgets(day text primary key,writes integer)"`},
+		{"D1 trigger of another shape", func(o *Observed) {
+			o.D1Tables.Definitions["reserve"] = "create trigger reserve before insert on snapshots begin select 1;end"
+		}, "d1.migrations", Drift, "trigger reserve is defined as"},
+		{"D1 table without a definition", func(o *Observed) { delete(o.D1Tables.Definitions, "chunks") }, "d1.migrations", Drift, `table chunks is defined as "(none)"`},
+		{"D1 extra table is a note", func(o *Observed) { o.D1Tables.Names = append(o.D1Tables.Names, "members") }, "d1.migrations", OK, "tables the Worker does not use (members)"},
 		// Review F-2 of #129: a migration applied only in part is never ok.
 		{"D1 without the budget trigger", func(o *Observed) { o.D1Tables.Triggers = nil }, "d1.migrations", Drift, "lacks triggers reserve"},
 		{"D1 without Wrangler's row", func(o *Observed) { o.D1Tables.Applied = nil }, "d1.migrations", Drift, "lacks d1_migrations rows 0001.sql"},
@@ -270,7 +292,15 @@ func TestDiffTable(t *testing.T) {
 		{"no custom domain means create", func(o *Observed) { o.Worker.Domain = WorkerDomain{} }, "worker.domain", Create, ""},
 		{"worker secret missing", func(o *Observed) { o.Worker.Secrets = nil }, "worker.secret", Create, ""},
 		{"no worker means secret create", func(o *Observed) { o.Worker = Worker{} }, "worker.secret", Create, ""},
-		{"custom domain serves another Worker", func(o *Observed) { o.Worker.Domain.Service = "other" }, "worker.domain", Drift, `serves Worker "other"`},
+		{"custom domain serves another Worker", func(o *Observed) { o.Worker.Domain.Service = "other" }, "worker.domain", Drift, `serving Worker "other"`},
+		// The person's request (fix round 1 of #129): an existing Worker of another format is drift, naming the field.
+		{"Worker on another compatibility date", func(o *Observed) { o.Worker.CompatibilityDate = "2024-01-01" }, "worker", Drift, "found compatibility date 2024-01-01; expected 2026-07-30"},
+		{"Worker without nodejs_compat", func(o *Observed) { o.Worker.CompatibilityFlags = []string{} }, "worker", Drift, "found compatibility flags (none); expected nodejs_compat"},
+		{"service-worker script", func(o *Observed) { o.Worker.HasModules = no() }, "worker", Drift, "found a service-worker script; expected an ES module Worker with main module worker.js"},
+		{"Worker drift says what to do", func(o *Observed) { o.Worker.HasModules = no() }, "worker", Drift, "What to do: setup never changes an existing Worker"},
+		{"Worker fields Cloudflare does not show are not compared", func(o *Observed) {
+			o.Worker.CompatibilityDate, o.Worker.CompatibilityFlags, o.Worker.HasModules = "", nil, nil
+		}, "worker", OK, ""},
 	}
 	d := desired(t)
 	for _, tc := range cases {

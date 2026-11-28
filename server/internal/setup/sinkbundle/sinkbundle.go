@@ -66,11 +66,11 @@ const SetupUploadBinding = "DASHBOARD_SETUP_UPLOAD"
 
 // The only SQL setup sends to a D1 database besides the migration itself. Both only read.
 const (
-	// SchemaSQL lists a database's tables and triggers. The D1 list's num_tables is
+	// SchemaSQL lists a database's tables and triggers with their CREATE statements. The D1 list's num_tables is
 	// "Deprecated … This count is no longer accurate and should not be relied upon"
 	// (https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/list/),
 	// so whether a database is empty, or fully migrated, is decided by this query.
-	SchemaSQL = "SELECT type, name FROM sqlite_master WHERE type IN ('table', 'trigger') ORDER BY type, name"
+	SchemaSQL = "SELECT type, name, sql FROM sqlite_master WHERE type IN ('table', 'trigger') ORDER BY type, name"
 	// AppliedSQL lists the migrations Wrangler's d1_migrations table records.
 	AppliedSQL = `SELECT name FROM "d1_migrations" ORDER BY id`
 )

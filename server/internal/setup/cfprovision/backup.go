@@ -59,8 +59,9 @@ type queryResult struct {
 	Success *bool            `json:"success"`
 }
 
-// queryRow is one row of a read-only listing: its name, and its type for SchemaSQL.
-type queryRow struct{ Type, Name string }
+// queryRow is one row of a read-only listing: its name, and its type and CREATE statement
+// for SchemaSQL.
+type queryRow struct{ Type, Name, SQL string }
 
 // query runs one read-only statement (one of sinkbundle.ReadOnlySQL) and returns its rows.
 // It is a POST (the only way D1 runs SQL) but changes nothing, so it is not a write:
@@ -98,7 +99,11 @@ func (e *Engine) query(ctx context.Context, dbID, sql string) ([]queryRow, error
 			if sql == schemaSQL && (!ok || (typ != "table" && typ != "trigger")) {
 				return nil, errors.New("Cloudflare's D1 query answer has a row without a table or trigger type")
 			}
-			rows = append(rows, queryRow{Type: typ, Name: name})
+			def, isText := row["sql"].(string)
+			if v, present := row["sql"]; sql == schemaSQL && present && v != nil && !isText {
+				return nil, errors.New("Cloudflare's D1 query answer has a row whose sql is not text")
+			}
+			rows = append(rows, queryRow{Type: typ, Name: name, SQL: def})
 		}
 	}
 	return rows, nil
@@ -118,8 +123,9 @@ func (e *Engine) readSchema(ctx context.Context, dbID string) plan.Tables {
 	if err != nil {
 		return plan.Tables{Unknown: why("tables", err)}
 	}
-	t := plan.Tables{Read: true}
+	t := plan.Tables{Read: true, Definitions: map[string]string{}}
 	for _, r := range rows {
+		t.Definitions[r.Name] = sinkbundle.NormalizeSQL(r.SQL)
 		if r.Type == "trigger" {
 			t.Triggers = append(t.Triggers, r.Name)
 		} else {

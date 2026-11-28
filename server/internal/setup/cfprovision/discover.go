@@ -798,8 +798,13 @@ func (x *discovery) d1(ctx context.Context) (plan.Seen, error) {
 //     https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/list/
 func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 	var out plan.Worker
+	// The list items carry compatibility_date, compatibility_flags and has_modules (keys a
+	// live list showed).
 	type script struct {
-		ID string `json:"id"`
+		ID                 string   `json:"id"`
+		CompatibilityDate  string   `json:"compatibility_date"`
+		CompatibilityFlags []string `json:"compatibility_flags"`
+		HasModules         *bool    `json:"has_modules"`
 	}
 	scripts, err := cfapi.ListAll[script](ctx, x.api, x.accountPath("/workers/scripts"), nil)
 	if err != nil {
@@ -812,6 +817,7 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 		for _, s := range scripts {
 			if s.ID == x.d.Worker.Script {
 				out.Found, out.ID = true, s.ID
+				out.CompatibilityDate, out.CompatibilityFlags, out.HasModules = s.CompatibilityDate, s.CompatibilityFlags, s.HasModules
 			}
 		}
 	}

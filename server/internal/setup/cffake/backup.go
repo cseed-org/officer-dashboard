@@ -82,6 +82,7 @@ func (st *accountState) queryD1(s *Server, uuid string, body map[string]any) (an
 	tables, _ := s.routes[D1TablesKey(uuid)].Result.([]any)
 	triggers, _ := s.routes[D1TriggersKey(uuid)].Result.([]any)
 	applied, _ := s.routes[D1MigrationsKey(uuid)].Result.([]any)
+	defs, _ := s.routes[D1SQLKey(uuid)].Result.(map[string]any)
 	answer := func(rows []any) any {
 		return []any{map[string]any{"results": rows, "success": true, "meta": map[string]any{"changes": 0, "rows_read": len(rows), "rows_written": 0, "changed_db": false}}}
 	}
@@ -98,10 +99,10 @@ func (st *accountState) queryD1(s *Server, uuid string, body map[string]any) (an
 	case sql == sinkbundle.SchemaSQL:
 		rows := []any{}
 		for _, n := range sorted(tables) {
-			rows = append(rows, map[string]any{"type": "table", "name": n})
+			rows = append(rows, map[string]any{"type": "table", "name": n, "sql": defs[fmt.Sprint(n)]})
 		}
 		for _, n := range sorted(triggers) {
-			rows = append(rows, map[string]any{"type": "trigger", "name": n})
+			rows = append(rows, map[string]any{"type": "trigger", "name": n, "sql": defs[fmt.Sprint(n)]})
 		}
 		return answer(rows), nil
 	case sql == sinkbundle.AppliedSQL:
@@ -144,8 +145,19 @@ func (st *accountState) queryD1(s *Server, uuid string, body map[string]any) (an
 		}
 		applied = append(applied, m[1])
 	}
+	nextDefs := map[string]any{}
+	for k, v := range defs {
+		nextDefs[k] = v
+	}
+	tb, tr := sinkbundle.Definitions(sql) // sqlite_master keeps each statement's text
+	for _, m := range []map[string]string{tb, tr} {
+		for k, v := range m {
+			nextDefs[k] = v
+		}
+	}
 	s.routes[D1TablesKey(uuid)] = Response{Result: next}
 	s.routes[D1TriggersKey(uuid)] = Response{Result: nextTriggers}
+	s.routes[D1SQLKey(uuid)] = Response{Result: nextDefs}
 	s.routes[D1MigrationsKey(uuid)] = Response{Result: applied}
 	return []any{map[string]any{"results": []any{}, "success": true, "meta": map[string]any{"changes": len(created), "changed_db": true}}}, nil
 }

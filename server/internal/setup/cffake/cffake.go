@@ -160,7 +160,44 @@ func D1TablesKey(uuid string) string { return "fake:d1/" + uuid + "/tables" }
 // d1_migrations table, the same way.
 func D1TriggersKey(uuid string) string   { return "fake:d1/" + uuid + "/triggers" }
 func D1MigrationsKey(uuid string) string { return "fake:d1/" + uuid + "/migrations" }
-func zone(p string) string               { return "/zones/" + ZoneID + p }
+
+// D1SQLKey holds a database's CREATE statements by table or trigger name (a
+// map[string]any), as sqlite_master's sql column shows them.
+func D1SQLKey(uuid string) string { return "fake:d1/" + uuid + "/sql" }
+
+// MigratedBackupSQL is what sqlite_master shows for the backup tables and trigger after
+// `wrangler d1 migrations apply`: the statements of server/deploy/backup-sink/migrations/0001.sql,
+// written out here, not read from the file.
+func MigratedBackupSQL() map[string]any {
+	return map[string]any{
+		"snapshots": `CREATE TABLE snapshots (
+ id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('hourly','daily','d1-weekly')),
+ created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+ sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size BETWEEN 1 AND 24700000),
+ chunks INTEGER NOT NULL CHECK(chunks BETWEEN 1 AND 13), committed INTEGER NOT NULL DEFAULT 0,
+ allocation INTEGER NOT NULL, write_cost INTEGER NOT NULL
+)`,
+		"chunks": `CREATE TABLE chunks (
+ snapshot_id TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+ n INTEGER NOT NULL, blob BLOB NOT NULL CHECK(length(blob) BETWEEN 1 AND 1900000),
+ PRIMARY KEY(snapshot_id,n)
+)`,
+		"budgets": `CREATE TABLE budgets (day TEXT PRIMARY KEY, writes INTEGER NOT NULL DEFAULT 0, uploads INTEGER NOT NULL DEFAULT 0)`,
+		"reserve": `CREATE TRIGGER reserve BEFORE INSERT ON snapshots BEGIN
+ SELECT CASE WHEN (SELECT count(*) FROM snapshots) >= 100
+  OR COALESCE((SELECT sum(allocation) FROM snapshots),0) + NEW.allocation > 450000000
+  OR COALESCE((SELECT writes FROM budgets WHERE day=date('now')),0) + NEW.write_cost > 40000
+  OR COALESCE((SELECT uploads FROM budgets WHERE day=date('now')),0) >= 200
+  THEN RAISE(ABORT,'backup budget exhausted') END;
+ INSERT INTO budgets(day,writes,uploads) VALUES(date('now'),NEW.write_cost,1)
+ ON CONFLICT(day) DO UPDATE SET writes=writes+NEW.write_cost,uploads=uploads+1;
+END`,
+		"d1_migrations":   `CREATE TABLE d1_migrations( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL )`,
+		"sqlite_sequence": `CREATE TABLE sqlite_sequence(name,seq)`,
+		"_cf_KV":          `CREATE TABLE _cf_KV ( key TEXT PRIMARY KEY, value BLOB ) WITHOUT ROWID`,
+	}
+}
+func zone(p string) string { return "/zones/" + ZoneID + p }
 
 // Response shapes follow what a live, read-only run returned on 2026-11-27 (spike stage
 // 2): keys a live response carried are included, so decoding is tested against them.
@@ -280,8 +317,10 @@ func tunnelAndBackups(r map[string]Response) {
 	r[D1TablesKey("d1-backups")] = Response{Result: []any{"_cf_KV", "budgets", "chunks", "d1_migrations", "snapshots", "sqlite_sequence"}}
 	r[D1TriggersKey("d1-backups")] = Response{Result: []any{"reserve"}}
 	r[D1MigrationsKey("d1-backups")] = Response{Result: []any{"0001.sql"}}
+	r[D1SQLKey("d1-backups")] = Response{Result: MigratedBackupSQL()}
 	r[D1TablesKey("d1-members")] = Response{Result: []any{"_cf_KV", "members", "payments", "terms"}}
-	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "something-else"}, map[string]any{"id": "dashboard-backup-sink", "has_modules": true, "usage_model": "standard"}}}
+	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "something-else"}, map[string]any{"id": "dashboard-backup-sink", "has_modules": true, "usage_model": "standard",
+		"compatibility_date": "2026-07-30", "compatibility_flags": []any{"nodejs_compat"}}}}
 	r[acct("/workers/scripts/dashboard-backup-sink/settings")] = Response{Result: map[string]any{"bindings": []any{
 		map[string]any{"type": "d1", "name": "BACKUPS", "database_id": "d1-backups"},
 		map[string]any{"type": "secret_text", "name": "BACKUP_BEARER_SECRET"},
@@ -338,6 +377,7 @@ func LiveEmptyD1() map[string]Response {
 	r[D1TablesKey("d1-backups")] = Response{Result: []any{"_cf_KV"}}
 	r[D1TriggersKey("d1-backups")] = Response{Result: []any{}}
 	r[D1MigrationsKey("d1-backups")] = Response{Result: []any{}}
+	r[D1SQLKey("d1-backups")] = Response{Result: map[string]any{"_cf_KV": MigratedBackupSQL()["_cf_KV"]}}
 	return r
 }
 

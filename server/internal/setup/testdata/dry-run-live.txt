@@ -35,12 +35,15 @@ Cloudflare setup for officers.example.org (dry run: nothing was changed)
   ok          D1 database                          dashboard-backups  [d1-backups]
   unknowable  D1 migrations                        dashboard-backups
                                                      - listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables
+                                                     - What to do: run `scripts/setup apply` without --yes: it lists the tables, shows its plan and changes nothing until you confirm.
   ok          Worker                               dashboard-backup-sink  [dashboard-backup-sink]
   unknowable  Worker version                       revision 2
-                                                     - Cloudflare shows no SINK_REVISION binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here; the backup service asks the Worker on every run and alerts when it is older than revision 2
+                                                     - Cloudflare shows no SINK_REVISION binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here
+                                                     - What to do: nothing, unless you want setup to see the revision: backups keep working, and the backup service alerts if the Worker is ever too old for it. To label it, redeploy it with Wrangler adding --var SINK_REVISION:2.
   ok          workers.dev and preview URLs         off
   unknowable  Worker secret                        BACKUP_BEARER_SECRET
-                                                     - set, but Cloudflare never returns its value, and the preview cannot see the host's secret files: if the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer (docs/deploy/fresh-install.md step 4.5)
+                                                     - set, but Cloudflare never returns its value, and the preview cannot see the host's secret files
+                                                     - What to do: nothing while backups work. If the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer: set it with `npx wrangler secret put BACKUP_BEARER_SECRET` in server/deploy/backup-sink and paste that file's value (docs/deploy/fresh-install.md step 4.5).
   ok          Worker custom domain                 backups.example.org  [wd-1]
 
 12 ok, 10 create, 1 drift, 4 unknowable, 1 manual

@@ -350,7 +350,7 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 			case a.Kind == plan.OK:
 			case a.Kind == plan.Create && done[n]:
 			default:
-				p.Blockers = append(p.Blockers, fmt.Sprintf("%s needs %s %q, which is %s%s", s.Title, a.Resource, a.Name, a.Kind, firstDetail(a)))
+				p.Blockers = append(p.Blockers, fmt.Sprintf("%s needs %s %q, which is %s%s. Resolve that line first; its steps are listed with it", s.Title, a.Resource, a.Name, a.Kind, firstDetail(a)))
 			}
 		}
 		done[s.ActionID] = true

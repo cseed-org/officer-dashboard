@@ -39,7 +39,9 @@ type Desired struct {
 	D1Tables           []string // the tables the Worker's migrations create
 	D1Triggers         []string // the triggers they create
 	D1Migrations       []string // the names Wrangler records for them in d1_migrations
-	Worker             WorkerSpec
+	// D1TableDefs and D1TriggerDefs are their CREATE statements, normalized.
+	D1TableDefs, D1TriggerDefs map[string]string
+	Worker                     WorkerSpec
 }
 
 type TunnelSpec struct{ Name, Service string }
@@ -93,6 +95,10 @@ type WorkerSpec struct {
 	Script, Hostname, D1Binding, Secret string
 	// Revision is the Worker revision this image carries and would upload.
 	Revision int
+	// What setup would upload besides the bindings (sinkbundle, from wrangler.toml).
+	CompatibilityDate  string
+	CompatibilityFlags []string
+	MainModule         string
 }
 
 // WorkerRevisionBinding is the plain-text binding setup uploads with the Worker, holding
@@ -180,11 +186,18 @@ func NewDesired(in Inputs) (Desired, error) {
 			Secret: "BACKUP_BEARER_SECRET",
 			// The revision this image's Worker bundle carries (SINK_REVISION in src/index.ts).
 			Revision: sinkbundle.Revision,
+			// wrangler.toml: compatibility_date, compatibility_flags; main = "src/index.ts",
+			// bundled as one ES module.
+			CompatibilityDate:  sinkbundle.CompatibilityDate,
+			CompatibilityFlags: sinkbundle.CompatibilityFlags,
+			MainModule:         sinkbundle.MainModule,
 		},
 		// server/deploy/backup-sink/migrations/0001.sql: CREATE TABLE snapshots, chunks, budgets.
-		D1Tables:     sinkbundle.Tables,
-		D1Triggers:   sinkbundle.Triggers,
-		D1Migrations: sinkbundle.MigrationNames,
+		D1Tables:      sinkbundle.Tables,
+		D1Triggers:    sinkbundle.Triggers,
+		D1Migrations:  sinkbundle.MigrationNames,
+		D1TableDefs:   sinkbundle.TableDefinitions,
+		D1TriggerDefs: sinkbundle.TriggerDefinitions,
 	}
 
 	d.Groups = []GroupSpec{{Key: GroupOfficers, Name: n(officers)}}

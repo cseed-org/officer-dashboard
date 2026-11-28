@@ -146,3 +146,51 @@ func TestLoadAndCheck(t *testing.T) {
 		t.Fatal("a bundle without sources loads")
 	}
 }
+
+// The person's request in fix round 1 of #129: a table of the right name but another shape
+// is drift. The pinned definitions are the migration files' own, normalized.
+func TestDefinitionsMatchTheMigrations(t *testing.T) {
+	tables, triggers := map[string]string{}, map[string]string{}
+	for n, raw := range repoSources(t) {
+		if strings.HasPrefix(n, MigrationsDir+"/") {
+			tb, tr := Definitions(string(raw))
+			for k, v := range tb {
+				tables[k] = v
+			}
+			for k, v := range tr {
+				triggers[k] = v
+			}
+		}
+	}
+	for name, want := range TableDefinitions {
+		if tables[name] != want {
+			t.Errorf("table %s: the migration says\n%q\nsinkbundle pins\n%q", name, tables[name], want)
+		}
+	}
+	for name, want := range TriggerDefinitions {
+		if triggers[name] != want {
+			t.Errorf("trigger %s: the migration says\n%q\nsinkbundle pins\n%q", name, triggers[name], want)
+		}
+	}
+	if len(tables) != len(TableDefinitions) || len(triggers) != len(TriggerDefinitions) {
+		t.Errorf("the migrations define %d tables and %d triggers; sinkbundle pins %d and %d", len(tables), len(triggers), len(TableDefinitions), len(TriggerDefinitions))
+	}
+	for _, name := range Tables {
+		if TableDefinitions[name] == "" {
+			t.Errorf("no definition pinned for table %s", name)
+		}
+	}
+}
+
+// Spellings SQLite may store for the same statement normalize alike; a different column
+// does not.
+func TestNormalizeSQL(t *testing.T) {
+	a := NormalizeSQL("CREATE TABLE \"budgets\" (day TEXT PRIMARY KEY,\n  writes INTEGER NOT NULL DEFAULT 0, uploads INTEGER NOT NULL DEFAULT 0);")
+	b := NormalizeSQL("create table budgets(day text primary key, writes integer not null default 0 , uploads integer not null default 0)")
+	if a != b || a != TableDefinitions["budgets"] {
+		t.Fatalf("%q\n%q", a, b)
+	}
+	if NormalizeSQL("CREATE TABLE budgets (day TEXT PRIMARY KEY, writes INTEGER)") == a {
+		t.Fatal("a different shape normalizes to the same text")
+	}
+}
