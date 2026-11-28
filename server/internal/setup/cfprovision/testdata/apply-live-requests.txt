@@ -241,13 +241,7 @@
   ]
 }
 
-## 14. POST /accounts/acct-1/d1/database/d1-backups/query
-# ref: https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/
-{
-  "sql": "CREATE TABLE IF NOT EXISTS \"d1_migrations\"(\n\t\tid         INTEGER PRIMARY KEY AUTOINCREMENT,\n\t\tname       TEXT UNIQUE,\n\t\tapplied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n);\nCREATE TABLE snapshots (\n id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('hourly','daily','d1-weekly')),\n created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),\n sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size BETWEEN 1 AND 24700000),\n chunks INTEGER NOT NULL CHECK(chunks BETWEEN 1 AND 13), committed INTEGER NOT NULL DEFAULT 0,\n allocation INTEGER NOT NULL, write_cost INTEGER NOT NULL\n);\nCREATE TABLE chunks (\n snapshot_id TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,\n n INTEGER NOT NULL, blob BLOB NOT NULL CHECK(length(blob) BETWEEN 1 AND 1900000),\n PRIMARY KEY(snapshot_id,n)\n);\nCREATE TABLE budgets (day TEXT PRIMARY KEY, writes INTEGER NOT NULL DEFAULT 0, uploads INTEGER NOT NULL DEFAULT 0);\n-- Reserve a conservative lifetime write allowance, including cleanup, atomically.\n-- Half the account allowance belongs to membership and other workloads.\nCREATE TRIGGER reserve BEFORE INSERT ON snapshots BEGIN\n SELECT CASE WHEN (SELECT count(*) FROM snapshots) \u003e= 100\n  OR COALESCE((SELECT sum(allocation) FROM snapshots),0) + NEW.allocation \u003e 450000000\n  OR COALESCE((SELECT writes FROM budgets WHERE day=date('now')),0) + NEW.write_cost \u003e 40000\n  OR COALESCE((SELECT uploads FROM budgets WHERE day=date('now')),0) \u003e= 200\n  THEN RAISE(ABORT,'backup budget exhausted') END;\n INSERT INTO budgets(day,writes,uploads) VALUES(date('now'),NEW.write_cost,1)\n ON CONFLICT(day) DO UPDATE SET writes=writes+NEW.write_cost,uploads=uploads+1;\nEND;\nINSERT INTO \"d1_migrations\" (name)\nvalues ('0001.sql');"
-}
-
-## 15. PUT /accounts/acct-1/access/organizations
+## 14. PUT /accounts/acct-1/access/organizations
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/update/
 {
   "auth_domain": "club.cloudflareaccess.com",
@@ -257,7 +251,7 @@
   "strict_service_token_auth": true
 }
 
-## 16. PUT /zones/zone-1/bot_management
+## 15. PUT /zones/zone-1/bot_management
 # ref: https://developers.cloudflare.com/api/resources/bot_management/methods/update/
 {
   "ai_agents": {

@@ -59,22 +59,33 @@ const MainModule = "worker.js"
 // Revision as text.
 const RevisionBinding = "SINK_REVISION"
 
+// SetupUploadBinding marks a Worker that setup itself uploaded: a plain-text binding no
+// upgrade step tells anyone to set, so only setup's own upload carries it. Setup turns off
+// the workers.dev switches only on a Worker that carries it.
+const SetupUploadBinding = "DASHBOARD_SETUP_UPLOAD"
+
 // The only SQL setup sends to a D1 database besides the migration itself. Both only read.
 const (
-	// TablesSQL lists a database's tables. The D1 list's num_tables is "Deprecated … This
-	// count is no longer accurate and should not be relied upon"
+	// SchemaSQL lists a database's tables and triggers. The D1 list's num_tables is
+	// "Deprecated … This count is no longer accurate and should not be relied upon"
 	// (https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/list/),
-	// so whether a database is empty is decided by this query alone.
-	TablesSQL = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+	// so whether a database is empty, or fully migrated, is decided by this query.
+	SchemaSQL = "SELECT type, name FROM sqlite_master WHERE type IN ('table', 'trigger') ORDER BY type, name"
 	// AppliedSQL lists the migrations Wrangler's d1_migrations table records.
 	AppliedSQL = `SELECT name FROM "d1_migrations" ORDER BY id`
 )
 
 // ReadOnlySQL are the statements setup sends without changing a database.
-var ReadOnlySQL = []string{TablesSQL, AppliedSQL}
+var ReadOnlySQL = []string{SchemaSQL, AppliedSQL}
 
-// Tables are the tables the migrations create (TestTablesMatchTheMigration checks them).
-var Tables = []string{"budgets", "chunks", "snapshots"}
+// The schema the migrations make (TestSchemaMatchesTheMigrations checks each list against
+// the migration files): the tables, the triggers (reserve is the database-side budget),
+// and the names Wrangler records in d1_migrations.
+var (
+	Tables         = []string{"budgets", "chunks", "snapshots"}
+	Triggers       = []string{"reserve"}
+	MigrationNames = []string{"0001.sql"}
+)
 
 // Migration is one D1 migration file: Name is its path relative to migrations_dir, which
 // is how Wrangler records it in d1_migrations.
@@ -87,26 +98,48 @@ type Migration struct {
 type Bundle struct {
 	Script     []byte
 	Migrations []Migration
-	// Sources are the files the bundle was built from, by SourceFiles name, so the image
-	// build can check them against SourceDigest.
+	// Sources are the files the bundle was built from (ReadSources), so the image build
+	// can check them against SourceDigest.
 	Sources map[string][]byte
 }
 
-// SourceFiles names the files Digest covers, relative to server/deploy/backup-sink: the
-// Worker's code and settings and every migration. Development dependencies (the
-// lockfile) are left out, so a test-tool update needs no new revision.
-func SourceFiles(migrations []string) []string {
-	ms := append([]string(nil), migrations...)
-	sort.Strings(ms)
-	out := []string{"src/index.ts", "wrangler.toml"}
-	for _, m := range ms {
-		out = append(out, path.Join(MigrationsDir, m))
+// ReadSources reads the files Digest covers from a backup-sink directory (or a bundle
+// laid out like one): every file under src/ (esbuild bundles whatever index.ts imports),
+// wrangler.toml, and every migrations/*.sql. Development dependencies (the lockfile) are
+// left out, so a test-tool update needs no new revision.
+func ReadSources(fsys fs.FS) (map[string][]byte, error) {
+	out := map[string][]byte{}
+	err := fs.WalkDir(fsys, "src", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		out[p], err = fs.ReadFile(fsys, p)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("backup Worker sources: %w", err)
 	}
-	return out
+	if _, ok := out["src/index.ts"]; !ok {
+		return nil, errors.New("backup Worker sources: no src/index.ts")
+	}
+	if out["wrangler.toml"], err = fs.ReadFile(fsys, "wrangler.toml"); err != nil {
+		return nil, fmt.Errorf("backup Worker sources: %w", err)
+	}
+	ms, err := fs.Glob(fsys, MigrationsDir+"/*.sql")
+	if err != nil || len(ms) == 0 {
+		return nil, errors.New("backup Worker sources: no migrations")
+	}
+	for _, m := range ms {
+		if out[m], err = fs.ReadFile(fsys, m); err != nil {
+			return nil, fmt.Errorf("backup Worker sources: %w", err)
+		}
+	}
+	return out, nil
 }
 
-// Digest hashes files (by SourceFiles name) with line endings normalized to LF, so a
-// Windows checkout and a Linux build agree. Each file is framed by its name and length.
+// Digest hashes files (by their path in the backup-sink directory) with line endings
+// normalized to LF, so a Windows checkout and a Linux build agree. Each file is framed by
+// its name and length.
 func Digest(files map[string][]byte) string {
 	names := make([]string, 0, len(files))
 	for n := range files {
@@ -133,34 +166,26 @@ func SourceRevision(code []byte) int {
 	return -1
 }
 
-// Load reads a bundle laid out as the Dockerfile's sink stage writes it: worker.js, the
-// sources under their SourceFiles names, and migrations/*.sql.
+// Load reads a bundle laid out as the Dockerfile's sink stage writes it: worker.js plus
+// the sources as ReadSources finds them.
 func Load(fsys fs.FS) (Bundle, error) {
 	var b Bundle
 	var err error
 	if b.Script, err = fs.ReadFile(fsys, MainModule); err != nil {
 		return Bundle{}, fmt.Errorf("backup Worker bundle: %w", err)
 	}
-	names, err := fs.Glob(fsys, MigrationsDir+"/*.sql")
-	if err != nil || len(names) == 0 {
-		return Bundle{}, errors.New("backup Worker bundle: no migrations")
+	if b.Sources, err = ReadSources(fsys); err != nil {
+		return Bundle{}, err
+	}
+	var names []string
+	for n := range b.Sources {
+		if strings.HasPrefix(n, MigrationsDir+"/") {
+			names = append(names, n)
+		}
 	}
 	sort.Strings(names)
-	var bare []string
 	for _, n := range names {
-		raw, err := fs.ReadFile(fsys, n)
-		if err != nil {
-			return Bundle{}, fmt.Errorf("backup Worker bundle: %w", err)
-		}
-		name := strings.TrimPrefix(n, MigrationsDir+"/")
-		bare = append(bare, name)
-		b.Migrations = append(b.Migrations, Migration{Name: name, SQL: strings.ReplaceAll(string(raw), "\r\n", "\n")})
-	}
-	b.Sources = map[string][]byte{}
-	for _, n := range SourceFiles(bare) {
-		if b.Sources[n], err = fs.ReadFile(fsys, n); err != nil {
-			return Bundle{}, fmt.Errorf("backup Worker bundle: %w", err)
-		}
+		b.Migrations = append(b.Migrations, Migration{Name: path.Base(n), SQL: strings.ReplaceAll(string(b.Sources[n]), "\r\n", "\n")})
 	}
 	return b, nil
 }

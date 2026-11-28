@@ -15,19 +15,11 @@ func testBundle(t *testing.T) *sinkbundle.Bundle {
 	t.Helper()
 	dir := filepath.Join("..", "..", "deploy", "backup-sink")
 	fsys := fstest.MapFS{sinkbundle.MainModule: {Data: []byte("var SINK_REVISION = 2;\nexport default { fetch() { return new Response(null, {status: 401}) } };\n")}}
-	ms, err := filepath.Glob(filepath.Join(dir, sinkbundle.MigrationsDir, "*.sql"))
-	if err != nil || len(ms) == 0 {
-		t.Fatalf("no migrations (%v)", err)
+	src, err := sinkbundle.ReadSources(os.DirFS(dir))
+	if err != nil {
+		t.Fatal(err)
 	}
-	var bare []string
-	for _, m := range ms {
-		bare = append(bare, filepath.Base(m))
-	}
-	for _, n := range sinkbundle.SourceFiles(bare) {
-		raw, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(n)))
-		if err != nil {
-			t.Fatal(err)
-		}
+	for n, raw := range src {
 		fsys[n] = &fstest.MapFile{Data: raw}
 	}
 	b, err := sinkbundle.Load(fsys)

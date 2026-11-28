@@ -21,7 +21,7 @@ import (
 // Cloudflare; each body follows the reference page quoted beside it.
 
 const (
-	tablesSQL  = sinkbundle.TablesSQL
+	schemaSQL  = sinkbundle.SchemaSQL
 	appliedSQL = sinkbundle.AppliedSQL
 )
 
@@ -58,10 +58,18 @@ type queryResult struct {
 	Success *bool            `json:"success"`
 }
 
-// query runs one read-only statement (one of ReadOnlySQL) and returns the "name" column.
+// queryRow is one row of a read-only listing: its name, and its type for SchemaSQL.
+type queryRow struct{ Type, Name string }
+
+// query runs one read-only statement (one of sinkbundle.ReadOnlySQL) and returns its rows.
 // It is a POST (the only way D1 runs SQL) but changes nothing, so it is not a write:
 // Outputs.Writes does not list it.
-func (e *Engine) query(ctx context.Context, dbID, sql string) ([]string, error) {
+//
+// An answer in a shape setup does not know must never read as "no tables", which would
+// let the migration run on a database that has them: no result, success false, a missing
+// results list, or any row without a non-empty string name (or, for SchemaSQL, type) is
+// an error.
+func (e *Engine) query(ctx context.Context, dbID, sql string) ([]queryRow, error) {
 	if !slices.Contains(sinkbundle.ReadOnlySQL, sql) {
 		return nil, fmt.Errorf("refusing to send %q as a read-only query", sql)
 	}
@@ -69,12 +77,10 @@ func (e *Engine) query(ctx context.Context, dbID, sql string) ([]string, error) 
 	if err := e.write.Post(ctx, e.accountPath("/d1/database/"+url.PathEscape(dbID)+"/query"), map[string]any{"sql": sql}, &res); err != nil {
 		return nil, err
 	}
-	// An answer in a shape setup does not know must never read as "no tables": that would
-	// let the migration run on a database that has them.
 	if len(res) == 0 {
 		return nil, errors.New("Cloudflare answered the D1 query with no result")
 	}
-	var names []string
+	var rows []queryRow
 	for _, r := range res {
 		if r.Success != nil && !*r.Success {
 			return nil, errors.New("Cloudflare answered the D1 query with success false")
@@ -83,15 +89,55 @@ func (e *Engine) query(ctx context.Context, dbID, sql string) ([]string, error) 
 			return nil, errors.New("Cloudflare's D1 query answer has no results list")
 		}
 		for _, row := range r.Results {
-			if n, ok := row["name"].(string); ok {
-				names = append(names, n)
+			name, ok := row["name"].(string)
+			if !ok || name == "" {
+				return nil, errors.New("Cloudflare's D1 query answer has a row without a name")
 			}
+			typ, ok := row["type"].(string)
+			if sql == schemaSQL && (!ok || (typ != "table" && typ != "trigger")) {
+				return nil, errors.New("Cloudflare's D1 query answer has a row without a table or trigger type")
+			}
+			rows = append(rows, queryRow{Type: typ, Name: name})
 		}
 	}
-	return names, nil
+	return rows, nil
 }
 
-// d1Tables reads the backup database's tables (once per discovery round; see discover).
+// readSchema lists the database's tables and triggers and, when Wrangler's d1_migrations
+// table is there, the migrations it records.
+func (e *Engine) readSchema(ctx context.Context, dbID string) plan.Tables {
+	why := func(what string, err error) string {
+		perm := ""
+		if cfapi.IsForbidden(err) {
+			perm = " (the token needs D1 Edit)"
+		}
+		return fmt.Sprintf("setup could not list the database's %s%s: %v", what, perm, err)
+	}
+	rows, err := e.query(ctx, dbID, schemaSQL)
+	if err != nil {
+		return plan.Tables{Unknown: why("tables", err)}
+	}
+	t := plan.Tables{Read: true}
+	for _, r := range rows {
+		if r.Type == "trigger" {
+			t.Triggers = append(t.Triggers, r.Name)
+		} else {
+			t.Names = append(t.Names, r.Name)
+		}
+	}
+	if slices.Contains(t.Names, "d1_migrations") {
+		applied, err := e.query(ctx, dbID, appliedSQL)
+		if err != nil {
+			t.AppliedUnknown = why("d1_migrations rows", err)
+		}
+		for _, r := range applied {
+			t.Applied = append(t.Applied, r.Name)
+		}
+	}
+	return t
+}
+
+// d1Tables reads the backup database's schema (once per discovery round; see discover).
 func (e *Engine) d1Tables(ctx context.Context) plan.Tables {
 	if !e.o.D1.Found || e.o.D1.Unknown != "" {
 		return plan.Tables{}
@@ -99,15 +145,7 @@ func (e *Engine) d1Tables(ctx context.Context) plan.Tables {
 	if t, ok := e.tables[e.o.D1.ID]; ok {
 		return t
 	}
-	names, err := e.query(ctx, e.o.D1.ID, tablesSQL)
-	t := plan.Tables{Read: err == nil, Names: names}
-	if err != nil {
-		perm := ""
-		if cfapi.IsForbidden(err) {
-			perm = " (the token needs D1 Edit)"
-		}
-		t = plan.Tables{Unknown: fmt.Sprintf("setup could not list the database's tables%s: %v", perm, err)}
-	}
+	t := e.readSchema(ctx, e.o.D1.ID)
 	e.tables[e.o.D1.ID] = t
 	return t
 }
@@ -146,50 +184,53 @@ func (e *Engine) createD1(ctx context.Context, s Step) (string, error) {
 // POST /accounts/{account_id}/d1/database/{database_id}/query {"sql"}
 // https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/
 // ("Supports multiple statements, joined by semicolons, which will be executed as a
-// batch."). The tables are listed again right before, and the run stops if any is there:
-// setup never alters a database that has tables.
+// batch."). The schema is listed again right before, and the run stops if anything is
+// there: setup never alters a database that has tables.
 func (e *Engine) migrate(ctx context.Context, s Step) error {
 	if e.opt.Bundle == nil {
 		return &RejectedError{Step: s.Title, Method: "POST", Path: e.accountPath("/d1/database"), Cause: "this build carries no backup Worker bundle"}
 	}
 	id := e.o.D1.ID
 	path := e.accountPath("/d1/database/" + url.PathEscape(id) + "/query")
-	names, err := e.query(ctx, id, tablesSQL)
-	if err != nil {
-		return e.readErr("D1 Edit", "POST", path, err)
-	}
-	if have := userTables(names); len(have) > 0 {
+	before := e.readSchema(ctx, id)
+	switch {
+	case before.Unknown != "":
+		return fmt.Errorf("%s: %s", s.Title, before.Unknown)
+	case len(userTables(before.Names)) > 0 || len(before.Triggers) > 0:
 		return &RejectedError{Step: s.Title, Method: "POST", Path: path,
-			Cause: fmt.Sprintf("database %s now has tables (%s); setup never alters a database that has tables", id, strings.Join(have, ", "))}
+			Cause: fmt.Sprintf("database %s now has tables or triggers (%s); setup never alters a database that has tables", id,
+				strings.Join(append(userTables(before.Names), before.Triggers...), ", "))}
 	}
 	if err := e.send(ctx, s, "POST", path, "https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/",
 		"D1 Edit", map[string]any{"sql": migrationSQL(e.opt.Bundle)}, nil); err != nil {
 		return err
 	}
 	delete(e.tables, id)
-	// Read back: every table, and Wrangler's record of every migration.
-	names, err = e.query(ctx, id, tablesSQL)
-	if err != nil {
-		return fmt.Errorf("%s: the write succeeded, but listing the tables failed: %w", s.Title, err)
-	}
-	applied, err := e.query(ctx, id, appliedSQL)
-	if err != nil {
-		return fmt.Errorf("%s: the write succeeded, but reading d1_migrations failed: %w", s.Title, err)
+	// Read back: every table, every trigger, and Wrangler's record of every migration.
+	after := e.readSchema(ctx, id)
+	if after.Unknown != "" || after.AppliedUnknown != "" {
+		return fmt.Errorf("%s: the write succeeded, but reading the schema back failed: %s%s", s.Title, after.Unknown, after.AppliedUnknown)
 	}
 	var missing []string
 	for _, t := range append(append([]string(nil), e.d.D1Tables...), "d1_migrations") {
-		if !slices.Contains(names, t) {
+		if !slices.Contains(after.Names, t) {
 			missing = append(missing, "table "+t)
 		}
 	}
+	for _, t := range e.d.D1Triggers {
+		if !slices.Contains(after.Triggers, t) {
+			missing = append(missing, "trigger "+t)
+		}
+	}
 	for _, m := range e.opt.Bundle.Migrations {
-		if !slices.Contains(applied, m.Name) {
+		if !slices.Contains(after.Applied, m.Name) {
 			missing = append(missing, "d1_migrations row "+m.Name)
 		}
 	}
 	if len(missing) > 0 {
-		return &VerifyError{Step: s.Title, ResourceID: id, Expected: "the Worker's tables and Wrangler's record of its migrations",
-			Got: []string{"tables: " + strings.Join(names, ", "), "applied: " + strings.Join(applied, ", "), "missing: " + strings.Join(missing, ", ")}}
+		return &VerifyError{Step: s.Title, ResourceID: id, Expected: "the Worker's tables and triggers and Wrangler's record of its migrations",
+			Got: []string{"tables: " + strings.Join(after.Names, ", "), "triggers: " + strings.Join(after.Triggers, ", "),
+				"applied: " + strings.Join(after.Applied, ", "), "missing: " + strings.Join(missing, ", ")}}
 	}
 	return e.verify(ctx, s, "")
 }

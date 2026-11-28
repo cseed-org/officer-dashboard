@@ -141,7 +141,12 @@ func acct(p string) string { return "/accounts/" + AccountID + p }
 // strings), which the stateful fake's D1 query endpoint serves and its writes change. It
 // is no URL path, so no request can reach it.
 func D1TablesKey(uuid string) string { return "fake:d1/" + uuid + "/tables" }
-func zone(p string) string           { return "/zones/" + ZoneID + p }
+
+// D1TriggersKey and D1MigrationsKey hold a database's trigger names and the names in its
+// d1_migrations table, the same way.
+func D1TriggersKey(uuid string) string   { return "fake:d1/" + uuid + "/triggers" }
+func D1MigrationsKey(uuid string) string { return "fake:d1/" + uuid + "/migrations" }
+func zone(p string) string               { return "/zones/" + ZoneID + p }
 
 // Response shapes follow what a live, read-only run returned on 2026-11-27 (spike stage
 // 2): keys a live response carried are included, so decoding is tested against them.
@@ -259,6 +264,8 @@ func tunnelAndBackups(r map[string]Response) {
 	// What `wrangler d1 migrations apply` leaves (fresh-install.md §4.5): the three backup
 	// tables, Wrangler's d1_migrations with its AUTOINCREMENT sequence, and D1's own table.
 	r[D1TablesKey("d1-backups")] = Response{Result: []any{"_cf_KV", "budgets", "chunks", "d1_migrations", "snapshots", "sqlite_sequence"}}
+	r[D1TriggersKey("d1-backups")] = Response{Result: []any{"reserve"}}
+	r[D1MigrationsKey("d1-backups")] = Response{Result: []any{"0001.sql"}}
 	r[D1TablesKey("d1-members")] = Response{Result: []any{"_cf_KV", "members", "payments", "terms"}}
 	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "something-else"}, map[string]any{"id": "dashboard-backup-sink", "has_modules": true, "usage_model": "standard"}}}
 	r[acct("/workers/scripts/dashboard-backup-sink/settings")] = Response{Result: map[string]any{"bindings": []any{
@@ -293,16 +300,30 @@ func Live() map[string]Response {
 	r[zone("/bot_management")] = Response{Result: map[string]any{"enable_js": true, "fight_mode": true, "ai_bots_protection": "disabled",
 		"ai_agents": map[string]any{"anthropic_agent": "disabled", "openai_agent": "disabled"}, "using_latest_model": true}}
 	r[zone("/rulesets/phases/http_request_cache_settings/entrypoint")] = noEntrypoint("http_request_cache_settings")
-	// The live backup database listed num_tables 0 (a field the reference calls deprecated
-	// and inaccurate): here it really has no tables, as if the migration never ran.
+	// The live backup database listed num_tables 0, a field the reference calls deprecated
+	// and inaccurate. Its file_size, 49152 bytes (12 pages of 4 KiB), is that of the
+	// migrated schema with no data, so here it has the migrated tables (review F-4 of #129).
 	r[acct("/d1/database")] = Response{Result: []any{
 		map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3},
 		map[string]any{"uuid": "d1-backups", "name": "dashboard-backups", "version": "production", "jurisdiction": nil, "num_tables": 0, "file_size": 49152},
 	}}
-	r[D1TablesKey("d1-backups")] = Response{Result: []any{"_cf_KV"}}
 	// The live zone had its own zone:http_ratelimit ruleset.
 	r[zone("/rulesets/phases/http_ratelimit/entrypoint")] = Response{Result: map[string]any{"id": "rs-rl", "phase": "http_ratelimit", "kind": "zone",
 		"rules": []any{map[string]any{"id": "r-rl", "description": "<name>", "expression": "true", "action": "block", "enabled": true}}}}
+	return r
+}
+
+// LiveEmptyD1 is Live with a backup database that really has no tables, as if the
+// migration never ran (a file of about 3 pages).
+func LiveEmptyD1() map[string]Response {
+	r := Live()
+	r[acct("/d1/database")] = Response{Result: []any{
+		map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3},
+		map[string]any{"uuid": "d1-backups", "name": "dashboard-backups", "version": "production", "jurisdiction": nil, "num_tables": 0, "file_size": 12288},
+	}}
+	r[D1TablesKey("d1-backups")] = Response{Result: []any{"_cf_KV"}}
+	r[D1TriggersKey("d1-backups")] = Response{Result: []any{}}
+	r[D1MigrationsKey("d1-backups")] = Response{Result: []any{}}
 	return r
 }
 

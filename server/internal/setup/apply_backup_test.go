@@ -73,10 +73,10 @@ func TestApplyCreatesTheBackupPiecesAndTheDryRunAfterIsOK(t *testing.T) {
 	}
 }
 
-// The live-shaped account (Worker, D1 listing num_tables 0, custom domain and backup app
-// all present): the Worker is not uploaded again; the database, which really has no
-// tables, gets the migration once.
-func TestLiveAccountKeepsItsWorkerAndMigratesItsEmptyDatabase(t *testing.T) {
+// The live-shaped account (Worker, custom domain and backup app present, and a backup
+// database whose file size is that of the migrated schema): the Worker is not uploaded
+// again and the database gets no migration (review F-4 of #129).
+func TestLiveAccountKeepsItsWorkerAndDatabase(t *testing.T) {
 	r := newApplyRig(t, cffake.Live())
 	res := r.run(append([]string{"--yes"}, groupArgs...)...)
 	if res.code != 0 {
@@ -85,11 +85,14 @@ func TestLiveAccountKeepsItsWorkerAndMigratesItsEmptyDatabase(t *testing.T) {
 	if n := len(r.acct.Uploads()); n != 0 {
 		t.Fatalf("%d uploads over the live Worker", n)
 	}
-	if !strings.Contains(res.stdout, "create the backup tables in dashboard-backups") || r.creates("/d1/database/d1-backups/query") != 1 {
-		t.Fatalf("migration queries %d\n%s", r.creates("/d1/database/d1-backups/query"), res.stdout)
+	if n := r.creates("/d1/database/d1-backups/query"); n != 0 || strings.Contains(res.stdout, "create the backup tables") {
+		t.Fatalf("%d migration queries on the migrated database\n%s", n, res.stdout)
+	}
+	if !strings.Contains(res.stdout, "ok          D1 migrations                        dashboard-backups") {
+		t.Errorf("the migrated database is not ok:\n%s", res.stdout)
 	}
 	for _, w := range r.acct.Writes() {
-		if strings.Contains(w.Path, "/workers/") || strings.HasSuffix(w.Path, "/d1/database") {
+		if strings.Contains(w.Path, "/workers/") || strings.Contains(w.Path, "/d1/") {
 			t.Errorf("touched the live backup pieces: %s %s", w.Method, w.Path)
 		}
 	}
@@ -99,6 +102,18 @@ func TestLiveAccountKeepsItsWorkerAndMigratesItsEmptyDatabase(t *testing.T) {
 	}
 	if !strings.Contains(res.stdout, "unknowable: Worker version revision 2") {
 		t.Errorf("the Wrangler-made Worker's revision is not reported unknowable:\n%s", res.stdout)
+	}
+}
+
+// A backup database with no tables at all gets the migration once, through the command.
+func TestEmptyBackupDatabaseIsMigratedOnce(t *testing.T) {
+	r := newApplyRig(t, cffake.LiveEmptyD1())
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if res.code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", res.code, res.stdout, res.stderr)
+	}
+	if !strings.Contains(res.stdout, "create the backup tables in dashboard-backups") || r.creates("/d1/database/d1-backups/query") != 1 || len(r.acct.Uploads()) != 0 {
+		t.Fatalf("migration queries %d, uploads %d\n%s", r.creates("/d1/database/d1-backups/query"), len(r.acct.Uploads()), res.stdout)
 	}
 	if again := r.run(); again.code != 0 || r.creates("/d1/database/d1-backups/query") != 1 {
 		t.Fatalf("second run: exit %d, %d migrations", again.code, r.creates("/d1/database/d1-backups/query"))

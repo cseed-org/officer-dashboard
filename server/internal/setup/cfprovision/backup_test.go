@@ -223,10 +223,10 @@ func migrationQueries(r *rig) []cffake.Request {
 	return out
 }
 
-// The live account's backup database lists no tables: the migration is applied there once,
-// recorded as Wrangler records it, and never again.
+// A backup database that lists no tables gets the migration once, recorded as Wrangler
+// records it, and never again.
 func TestLiveEmptyDatabaseGetsTheMigrationOnce(t *testing.T) {
-	r := newRig(t, cffake.Live())
+	r := newRig(t, cffake.LiveEmptyD1())
 	out, err := r.apply(context.Background())
 	if err != nil {
 		t.Fatalf("%v\n%s", err, r.out.String())
@@ -238,6 +238,9 @@ func TestLiveEmptyDatabaseGetsTheMigrationOnce(t *testing.T) {
 		if !slices.Contains(tables(r, "d1-backups"), want) {
 			t.Errorf("no table %s after the run", want)
 		}
+	}
+	if trig, _ := r.acct.Route(cffake.D1TriggersKey("d1-backups")); fmt.Sprint(trig.Result) != "[reserve]" {
+		t.Errorf("triggers after the run: %v", trig.Result)
 	}
 	if a := byID(out.Final)["d1.migrations"]; a.Kind != plan.OK {
 		t.Fatalf("d1.migrations %s %v", a.Kind, a.Detail)
@@ -268,7 +271,7 @@ func TestDatabaseWithTablesIsNeverAltered(t *testing.T) {
 
 // A table that appears after the plan was made stops the run before the migration.
 func TestTableAppearingBeforeTheMigrationStopsIt(t *testing.T) {
-	r := newRig(t, cffake.Live())
+	r := newRig(t, cffake.LiveEmptyD1())
 	r.acct.OnWrite(func(req cffake.Request) {
 		if strings.HasSuffix(req.Path, "/access/identity_providers") {
 			setTables(r, "d1-backups", "_cf_KV", "someone_elses")
@@ -302,8 +305,8 @@ func TestEveryQueryIsReadOnlyOrTheMigration(t *testing.T) {
 				t.Errorf("%s: non-migration SQL sent as a write: %s", name, m.Body)
 			}
 		}
-		if name == "complete" && len(migrationQueries(r)) != 0 {
-			t.Errorf("complete: migrated a database that has its tables")
+		if name != "fresh" && len(migrationQueries(r)) != 0 {
+			t.Errorf("%s: migrated a database that has its tables", name)
 		}
 	}
 }
@@ -345,7 +348,7 @@ func TestBackupPrerequisitesBlockBeforeAnyWrite(t *testing.T) {
 		want   string
 	}{
 		"no bundle, fresh": {cffake.Fresh(), func(r *rig) { r.opt.Bundle = nil }, "carries no backup Worker bundle"},
-		"no bundle, live":  {cffake.Live(), func(r *rig) { r.opt.Bundle = nil }, "carries no backup Worker bundle"},
+		"no bundle, live":  {cffake.LiveEmptyD1(), func(r *rig) { r.opt.Bundle = nil }, "carries no backup Worker bundle"},
 		"no bearer":        {cffake.Fresh(), func(r *rig) { r.sink = &MemorySink{} }, "secrets/backup/bearer is missing: run `scripts/setup host --yes` first"},
 		"short bearer": {cffake.Fresh(), func(r *rig) {
 			_ = r.sink.Store(context.Background(), Secret{Name: SecretBackupBearer, Value: "short-bearer"})
@@ -417,8 +420,15 @@ func TestUnknownQueryShapeIsNotAnEmptyDatabase(t *testing.T) {
 		"no results key": []any{map[string]any{"success": true, "meta": map[string]any{}}},
 		"empty array":    []any{},
 		"not a list":     map[string]any{"rows": []any{}},
+		// Review F-3 and mutant M5 of #129.
+		"success false":     []any{map[string]any{"results": []any{}, "success": false}},
+		"upper-case column": []any{map[string]any{"results": []any{map[string]any{"TYPE": "table", "NAME": "snapshots"}}, "success": true}},
+		"null name":         []any{map[string]any{"results": []any{map[string]any{"type": "table", "name": nil}}, "success": true}},
+		"empty name":        []any{map[string]any{"results": []any{map[string]any{"type": "table", "name": ""}}, "success": true}},
+		"array rows":        []any{map[string]any{"results": []any{[]any{"table", "snapshots"}}, "success": true}},
+		"no type":           []any{map[string]any{"results": []any{map[string]any{"name": "snapshots"}}, "success": true}},
 	} {
-		r := newRig(t, cffake.Live())
+		r := newRig(t, cffake.LiveEmptyD1())
 		r.acct.Inject(cffake.Injection{Method: http.MethodPost, Path: acctP + "/d1/database/d1-backups/query", Result: result, Times: 100})
 		rev, err := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry()).Preview(context.Background())
 		if err != nil {
@@ -446,11 +456,11 @@ func TestUploadReadBackNeedsTheSwitchesOff(t *testing.T) {
 
 // The migration is read back with Wrangler's record of it (mutant B14).
 func TestMigrationReadBackNeedsWranglersRecord(t *testing.T) {
-	r := newRig(t, cffake.Live())
+	r := newRig(t, cffake.LiveEmptyD1())
 	r.acct.OnWrite(func(req cffake.Request) {
 		if strings.HasSuffix(req.Path, "/query") && strings.Contains(req.Body, "CREATE TABLE IF NOT EXISTS") {
 			// The tables are made, but the record is not (as a partly applied batch would).
-			r.acct.Set("fake:d1/d1-backups/migrations", cffake.Response{Result: []any{}})
+			r.acct.Set(cffake.D1MigrationsKey("d1-backups"), cffake.Response{Result: []any{}})
 		}
 	})
 	_, err := r.apply(context.Background())
@@ -478,5 +488,40 @@ func TestQuerySendsOnlyTheReadOnlyListings(t *testing.T) {
 	e := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry())
 	if _, err := e.query(context.Background(), "d1-backups", "DROP TABLE snapshots"); err == nil || len(r.acct.Requests()) != 0 {
 		t.Fatalf("err = %v, %d requests", err, len(r.acct.Requests()))
+	}
+}
+
+// Review F-2 of #129 (the reviewer's reproduction): a migration applied only in part fails
+// its read-back, and every later run reports drift with the manual step, never ok.
+func TestPartlyAppliedMigrationIsNeverOK(t *testing.T) {
+	for name, cut := range map[string]func(r *rig){
+		"no record":  func(r *rig) { r.acct.Set(cffake.D1MigrationsKey("d1-backups"), cffake.Response{Result: []any{}}) },
+		"no trigger": func(r *rig) { r.acct.Set(cffake.D1TriggersKey("d1-backups"), cffake.Response{Result: []any{}}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, cffake.LiveEmptyD1())
+			r.acct.OnWrite(func(req cffake.Request) {
+				if strings.HasSuffix(req.Path, "/query") && strings.Contains(req.Body, "CREATE TABLE IF NOT EXISTS") {
+					cut(r)
+				}
+			})
+			if _, err := r.apply(context.Background()); err == nil {
+				t.Fatal("the first run's read-back accepted a partial migration")
+			}
+			r.acct.OnWrite(nil)
+			for i := 0; i < 2; i++ {
+				rev, err := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry()).Preview(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				a := byID(rev.Actions)["d1.migrations"]
+				if a.Kind != plan.Drift || !strings.Contains(strings.Join(a.Detail, " "), "npx wrangler d1 execute") {
+					t.Fatalf("run %d: d1.migrations %s %v", i+2, a.Kind, a.Detail)
+				}
+			}
+			if n := len(migrationQueries(r)); n != 1 {
+				t.Fatalf("%d migrations sent", n)
+			}
+		})
 	}
 }

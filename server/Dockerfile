@@ -35,7 +35,7 @@ COPY server/deploy/backup-sink/wrangler.toml ./
 # runtime's own (nodejs_compat).
 RUN ./node_modules/.bin/esbuild src/index.ts --bundle --format=esm --platform=node --external:'node:*' --outfile=/out/worker.js \
  && mkdir -p /out/src /out/migrations \
- && cp src/index.ts /out/src/ && cp migrations/*.sql /out/migrations/ && cp wrangler.toml /out/
+ && cp -r src/. /out/src/ && cp migrations/*.sql /out/migrations/ && cp wrangler.toml /out/
 
 FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm@sha256:ce59b41415e2524ae99926fe1f37ce48ba8c194dcbd2a56a65436cdcefa2bd34 AS toolchain
 RUN apt-get update \

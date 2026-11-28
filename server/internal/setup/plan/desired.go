@@ -37,6 +37,8 @@ type Desired struct {
 	OrgSessionDuration string
 	D1Database         string
 	D1Tables           []string // the tables the Worker's migrations create
+	D1Triggers         []string // the triggers they create
+	D1Migrations       []string // the names Wrangler records for them in d1_migrations
 	Worker             WorkerSpec
 }
 
@@ -176,7 +178,9 @@ func NewDesired(in Inputs) (Desired, error) {
 			Revision: sinkbundle.Revision,
 		},
 		// server/deploy/backup-sink/migrations/0001.sql: CREATE TABLE snapshots, chunks, budgets.
-		D1Tables: sinkbundle.Tables,
+		D1Tables:     sinkbundle.Tables,
+		D1Triggers:   sinkbundle.Triggers,
+		D1Migrations: sinkbundle.MigrationNames,
 	}
 
 	d.Groups = []GroupSpec{{Key: GroupOfficers, Name: n(officers)}}

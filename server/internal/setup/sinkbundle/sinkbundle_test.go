@@ -2,6 +2,7 @@ package sinkbundle
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,26 +15,14 @@ import (
 // sinkDir is the Worker's source directory, seen from this package.
 var sinkDir = filepath.Join("..", "..", "..", "deploy", "backup-sink")
 
-// RepoSources reads the Worker's source files from the repository.
+// repoSources reads the Worker's source files from the repository.
 func repoSources(t *testing.T) map[string][]byte {
 	t.Helper()
-	ms, err := filepath.Glob(filepath.Join(sinkDir, MigrationsDir, "*.sql"))
-	if err != nil || len(ms) == 0 {
-		t.Fatalf("no migrations in %s (%v)", sinkDir, err)
+	src, err := ReadSources(os.DirFS(sinkDir))
+	if err != nil {
+		t.Fatal(err)
 	}
-	var bare []string
-	for _, m := range ms {
-		bare = append(bare, filepath.Base(m))
-	}
-	out := map[string][]byte{}
-	for _, n := range SourceFiles(bare) {
-		raw, err := os.ReadFile(filepath.Join(sinkDir, filepath.FromSlash(n)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		out[n] = raw
-	}
-	return out
+	return src
 }
 
 // The staleness check, source side: CI fails when the Worker's source changes without a
@@ -66,18 +55,41 @@ func TestWranglerSettingsMatch(t *testing.T) {
 	}
 }
 
-func TestTablesMatchTheMigration(t *testing.T) {
-	var got []string
+// The schema setup expects is the one the migration files make: their tables, their
+// triggers and their names (review F-2 of #129).
+func TestSchemaMatchesTheMigrations(t *testing.T) {
+	var tables, triggers, names []string
 	for n, raw := range repoSources(t) {
-		if strings.HasPrefix(n, MigrationsDir+"/") {
-			for _, m := range regexp.MustCompile(`(?i)CREATE TABLE (\w+)`).FindAllStringSubmatch(string(raw), -1) {
-				got = append(got, m[1])
-			}
+		if !strings.HasPrefix(n, MigrationsDir+"/") {
+			continue
+		}
+		names = append(names, path.Base(n))
+		for _, m := range regexp.MustCompile(`(?i)CREATE TABLE (\w+)`).FindAllStringSubmatch(string(raw), -1) {
+			tables = append(tables, m[1])
+		}
+		for _, m := range regexp.MustCompile(`(?i)CREATE TRIGGER (\w+)`).FindAllStringSubmatch(string(raw), -1) {
+			triggers = append(triggers, m[1])
 		}
 	}
-	sort.Strings(got)
-	if !slices.Equal(got, Tables) {
-		t.Fatalf("the migrations create %v, sinkbundle.Tables is %v", got, Tables)
+	for _, c := range []struct {
+		what      string
+		got, want []string
+	}{{"tables", tables, Tables}, {"triggers", triggers, Triggers}, {"migration names", names, MigrationNames}} {
+		sort.Strings(c.got)
+		if !slices.Equal(c.got, c.want) {
+			t.Errorf("the migrations make %s %v, sinkbundle lists %v", c.what, c.got, c.want)
+		}
+	}
+}
+
+// Review F-3 of #129: the backstop when a listing is wrong. Without IF NOT EXISTS, the
+// migration's first CREATE fails on a database that has the tables, so it can never alter
+// one.
+func TestMigrationsNeverUseIfNotExists(t *testing.T) {
+	for n, raw := range repoSources(t) {
+		if strings.HasPrefix(n, MigrationsDir+"/") && regexp.MustCompile(`(?i)IF\s+NOT\s+EXISTS`).Match(raw) {
+			t.Errorf("%s uses IF NOT EXISTS", n)
+		}
 	}
 }
 
@@ -101,11 +113,14 @@ func TestBuildWithoutTheBundleHasNone(t *testing.T) {
 
 // Load and Check on a bundle laid out as the Dockerfile writes it, from the repo sources.
 func TestLoadAndCheck(t *testing.T) {
-	fsys := fstest.MapFS{MainModule: {Data: []byte("var SINK_REVISION = 2;\nexport default {};\n")}}
-	for n, raw := range repoSources(t) {
-		fsys[n] = &fstest.MapFile{Data: raw}
+	bundleFS := func() fstest.MapFS {
+		fsys := fstest.MapFS{MainModule: {Data: []byte("var SINK_REVISION = 2;\nexport default {};\n")}}
+		for n, raw := range repoSources(t) {
+			fsys[n] = &fstest.MapFile{Data: raw}
+		}
+		return fsys
 	}
-	b, err := Load(fsys)
+	b, err := Load(bundleFS())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +130,19 @@ func TestLoadAndCheck(t *testing.T) {
 	if err := b.Check(); err != nil {
 		t.Fatal(err)
 	}
-	fsys["src/index.ts"] = &fstest.MapFile{Data: append([]byte("// edited\n"), repoSources(t)["src/index.ts"]...)}
-	if b, err := Load(fsys); err != nil || b.Check() == nil {
+	edited := bundleFS()
+	edited["src/index.ts"] = &fstest.MapFile{Data: append([]byte("// edited\n"), repoSources(t)["src/index.ts"]...)}
+	if b, err := Load(edited); err != nil || b.Check() == nil {
 		t.Fatalf("a bundle from changed sources passes the check (%v)", err)
 	}
+	// Review F-8 of #129: esbuild bundles whatever index.ts imports, so any new file
+	// under src/ is part of the digest.
+	extra := bundleFS()
+	extra["src/util.ts"] = &fstest.MapFile{Data: []byte("export const x = 1;\n")}
+	if b, err := Load(extra); err != nil || b.Check() == nil {
+		t.Fatalf("a bundle with a new source file passes the check (%v)", err)
+	}
 	if _, err := Load(fstest.MapFS{MainModule: {Data: []byte("var SINK_REVISION = 2;")}}); err == nil {
-		t.Fatal("a bundle without migrations loads")
+		t.Fatal("a bundle without sources loads")
 	}
 }

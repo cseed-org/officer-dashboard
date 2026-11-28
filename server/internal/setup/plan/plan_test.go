@@ -67,7 +67,8 @@ func complete(d Desired) Observed {
 	o.BotFightMode = BotFightMode{Seen: Seen{Found: true}, On: no()}
 	o.D1 = Seen{Found: true, ID: "d1-uuid"}
 	// An apply lists the tables (a D1 query); Wrangler's migrations add d1_migrations.
-	o.D1Tables = Tables{Read: true, Names: []string{"_cf_KV", "budgets", "chunks", "d1_migrations", "snapshots", "sqlite_sequence"}}
+	o.D1Tables = Tables{Read: true, Names: []string{"_cf_KV", "budgets", "chunks", "d1_migrations", "snapshots", "sqlite_sequence"},
+		Triggers: []string{"reserve"}, Applied: []string{"0001.sql"}}
 	o.Worker = Worker{Seen: Seen{Found: true, ID: d.Worker.Script}, D1BindingID: "d1-uuid", Secrets: []string{"BACKUP_BEARER_SECRET"}, WorkersDev: no(), PreviewURLs: no(),
 		Revision: "2",
 		Domain:   WorkerDomain{Seen: Seen{Found: true, ID: "wd1"}, Service: d.Worker.Script}}
@@ -250,8 +251,16 @@ func TestDiffTable(t *testing.T) {
 			o.D1Tables = Tables{Read: true, Names: []string{"d1_migrations", "snapshots"}}
 		}, "d1.migrations", Drift, "budgets, chunks"},
 		{"D1 migrated without Wrangler's record", func(o *Observed) {
-			o.D1Tables = Tables{Read: true, Names: []string{"budgets", "chunks", "snapshots"}}
+			o.D1Tables = Tables{Read: true, Names: []string{"budgets", "chunks", "snapshots"}, Triggers: []string{"reserve"}}
 		}, "d1.migrations", OK, "no d1_migrations table"},
+		// Review F-2 of #129: a migration applied only in part is never ok.
+		{"D1 without the budget trigger", func(o *Observed) { o.D1Tables.Triggers = nil }, "d1.migrations", Drift, "lacks triggers reserve"},
+		{"D1 without Wrangler's row", func(o *Observed) { o.D1Tables.Applied = nil }, "d1.migrations", Drift, "lacks d1_migrations rows 0001.sql"},
+		{"D1 partial migration names the manual step", func(o *Observed) { o.D1Tables.Applied = nil }, "d1.migrations", Drift, "npx wrangler d1 execute dashboard-backups --remote"},
+		{"D1 record unreadable", func(o *Observed) { o.D1Tables.AppliedUnknown = "d1_migrations could not be read" }, "d1.migrations", Unknowable, "d1_migrations could not be read"},
+		{"D1 with only a trigger is not empty", func(o *Observed) {
+			o.D1Tables = Tables{Read: true, Names: []string{"_cf_KV"}, Triggers: []string{"reserve"}}
+		}, "d1.migrations", Drift, "lacks tables budgets, chunks, snapshots"},
 		{"backup hostname has a CNAME", func(o *Observed) {
 			o.Worker.Domain = WorkerDomain{}
 			o.BackupDNS = DNS{Records: []DNSRecord{{ID: "dns9", Type: "CNAME", Content: "old.example.net"}}}

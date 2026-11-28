@@ -195,9 +195,14 @@ type Worker struct {
 // Tables is what a read-only D1 query showed: the names in sqlite_master (Read), or why it
 // could not be run (Unknown).
 type Tables struct {
-	Read    bool
-	Names   []string
-	Unknown string
+	Read     bool
+	Names    []string // tables
+	Triggers []string
+	Unknown  string
+	// Applied are the names in Wrangler's d1_migrations table, read when it exists;
+	// AppliedUnknown says why they could not be read.
+	Applied        []string
+	AppliedUnknown string
 }
 
 type WorkerDomain struct {
@@ -509,40 +514,75 @@ const wranglerMigrations = "d1_migrations"
 // database that has tables is never altered.
 func diffMigrations(d Desired, o Observed) Action {
 	mig := &check{a: Action{ID: "d1.migrations", Resource: "D1 migrations", Name: d.D1Database}}
+	t := o.D1Tables
 	switch {
 	case o.D1.Unknown != "":
 		mig.unknownf("D1 database could not be read")
 	case !o.D1.Found:
 		mig.create = true
-	case o.D1Tables.Unknown != "":
-		mig.unknownf("%s", o.D1Tables.Unknown)
-	case !o.D1Tables.Read:
+	case t.Unknown != "":
+		mig.unknownf("%s", t.Unknown)
+	case !t.Read:
 		mig.unknownf("listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables")
 	default:
 		var have []string
-		for _, n := range o.D1Tables.Names {
+		for _, n := range t.Names {
 			if !internalTable(n) {
 				have = append(have, n)
 			}
 		}
 		sort.Strings(have)
-		var missing []string
-		for _, t := range d.D1Tables {
-			if !slices.Contains(have, t) {
-				missing = append(missing, t)
-			}
-		}
-		switch {
-		case len(have) == 0:
+		if len(have) == 0 && len(t.Triggers) == 0 {
 			mig.create = true
 			mig.notef("the database has no tables; setup applies the Worker's migrations and records them in %s as Wrangler does", wranglerMigrations)
-		case len(missing) > 0:
-			mig.driftf("the database has tables %s but not %s; setup never alters a database that already has tables", list(have), list(missing))
-		case !slices.Contains(have, wranglerMigrations):
+			break
+		}
+		missing := func(want, got []string) []string {
+			var out []string
+			for _, w := range want {
+				if !slices.Contains(got, w) {
+					out = append(out, w)
+				}
+			}
+			return out
+		}
+		// A migration applied only in part (a batch that stopped between statements) leaves
+		// some of these out; only all of them is ok.
+		var gaps []string
+		if m := missing(d.D1Tables, have); len(m) > 0 {
+			gaps = append(gaps, "tables "+list(m))
+		}
+		if m := missing(d.D1Triggers, t.Triggers); len(m) > 0 {
+			gaps = append(gaps, "triggers "+list(m))
+		}
+		recorded := slices.Contains(have, wranglerMigrations)
+		switch {
+		case !recorded:
+		case t.AppliedUnknown != "":
+			mig.unknownf("%s", t.AppliedUnknown)
+		default:
+			if m := missing(d.D1Migrations, t.Applied); len(m) > 0 {
+				gaps = append(gaps, wranglerMigrations+" rows "+list(m))
+			}
+		}
+		if len(gaps) > 0 {
+			mig.driftf("the database has tables %s but lacks %s; setup never alters a database that already has tables. %s",
+				list(have), strings.Join(gaps, " and "), finishMigrationStep(d))
+			break
+		}
+		if !recorded {
 			mig.notef("no %s table: the tables were made without Wrangler's record, so `wrangler d1 migrations apply` would try them again and fail", wranglerMigrations)
 		}
 	}
 	return mig.done()
+}
+
+// finishMigrationStep is the manual step for a database whose migration is incomplete.
+func finishMigrationStep(d Desired) string {
+	return fmt.Sprintf("If the database holds no backups yet, delete it in the dashboard (Workers & Pages → D1 → %s → Settings) and run setup again; "+
+		"otherwise compare it with server/deploy/backup-sink/migrations and create what is missing with "+
+		"`npx wrangler d1 execute %s --remote --command \"…\"`, then record each migration with "+
+		"INSERT INTO d1_migrations (name) VALUES ('<file name>')", d.D1Database, d.D1Database)
 }
 
 // upgradeStep is how an admin moves an existing Worker to this image's revision.

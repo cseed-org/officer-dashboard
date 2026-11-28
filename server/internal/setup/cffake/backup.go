@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // The backup Worker's endpoints: D1 create and query, the Worker upload, its workers.dev
@@ -24,8 +26,6 @@ const (
 	d1FreeLimit     = 10
 	scriptFreeLimit = 100
 )
-
-func d1MigrationsKey(uuid string) string { return "fake:d1/" + uuid + "/migrations" }
 
 // createD1: POST /accounts/{a}/d1/database {"name"}. The result is one database object
 // whose ID is "uuid" (create reference page). A second database with the same name is
@@ -62,46 +62,57 @@ func (s *Server) hasD1(uuid string) bool {
 
 var (
 	createTable   = regexp.MustCompile(`(?i)CREATE TABLE (IF NOT EXISTS )?"?(\w+)"?`)
+	createTrigger = regexp.MustCompile(`(?i)CREATE TRIGGER (IF NOT EXISTS )?"?(\w+)"?`)
 	insertApplied = regexp.MustCompile(`(?i)INSERT INTO "?d1_migrations"? \(name\)\s*values \('([^']*)'\)`)
 	destructive   = regexp.MustCompile(`(?i)\b(DROP|ALTER)\s|\bDELETE\s+FROM\b`)
-	listTables    = regexp.MustCompile(`(?i)^\s*SELECT name FROM sqlite_master\b`)
-	listApplied   = regexp.MustCompile(`(?i)^\s*SELECT name FROM "?d1_migrations"?`)
 )
 
 // queryD1: POST /accounts/{a}/d1/database/{id}/query {"sql", "params"}. The result is an
 // array of QueryResult {results, success, meta} (query reference page). The fake models
-// only what setup sends: listing sqlite_master, listing d1_migrations, and a migration
-// (CREATE TABLE statements, a trigger, and Wrangler's d1_migrations record). It applies a
-// migration all or nothing; the reference says only that statements "will be executed as
-// a batch". Anything destructive is refused, so a test sees it.
+// only what setup sends: the schema listing and the d1_migrations listing (exactly
+// sinkbundle's SchemaSQL and AppliedSQL), and a migration (CREATE TABLE and CREATE
+// TRIGGER statements and Wrangler's d1_migrations record). It applies a migration all or
+// nothing; the reference says only that statements "will be executed as a batch".
+// Anything destructive is refused, so a test sees it.
 func (st *accountState) queryD1(s *Server, uuid string, body map[string]any) (any, *errReply) {
 	if !s.hasD1(uuid) {
 		return nil, &errReply{http.StatusNotFound, 7404, "database not found"}
 	}
 	sql := orStr(body["sql"])
 	tables, _ := s.routes[D1TablesKey(uuid)].Result.([]any)
-	applied, _ := s.routes[d1MigrationsKey(uuid)].Result.([]any)
-	rows := func(names []any) any {
-		out := []any{}
-		for _, n := range names {
-			out = append(out, map[string]any{"name": n})
-		}
-		return []any{map[string]any{"results": out, "success": true, "meta": map[string]any{"changes": 0, "rows_read": len(out), "rows_written": 0, "changed_db": false}}}
+	triggers, _ := s.routes[D1TriggersKey(uuid)].Result.([]any)
+	applied, _ := s.routes[D1MigrationsKey(uuid)].Result.([]any)
+	answer := func(rows []any) any {
+		return []any{map[string]any{"results": rows, "success": true, "meta": map[string]any{"changes": 0, "rows_read": len(rows), "rows_written": 0, "changed_db": false}}}
+	}
+	sorted := func(l []any) []any {
+		out := append([]any(nil), l...)
+		slices.SortFunc(out, func(a, b any) int { return strings.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
+		return out
 	}
 	switch {
 	case sql == "":
 		return nil, &errReply{http.StatusBadRequest, 7400, "sql is required"}
 	case destructive.MatchString(sql):
 		return nil, &errReply{http.StatusBadRequest, 7500, "the fake refuses destructive SQL"}
-	case listTables.MatchString(sql):
-		names := append([]any(nil), tables...)
-		slices.SortFunc(names, func(a, b any) int { return strings.Compare(fmt.Sprint(a), fmt.Sprint(b)) })
-		return rows(names), nil
-	case listApplied.MatchString(sql):
+	case sql == sinkbundle.SchemaSQL:
+		rows := []any{}
+		for _, n := range sorted(tables) {
+			rows = append(rows, map[string]any{"type": "table", "name": n})
+		}
+		for _, n := range sorted(triggers) {
+			rows = append(rows, map[string]any{"type": "trigger", "name": n})
+		}
+		return answer(rows), nil
+	case sql == sinkbundle.AppliedSQL:
 		if !slices.Contains(tables, any("d1_migrations")) {
 			return nil, &errReply{http.StatusBadRequest, 7500, "no such table: d1_migrations: SQLITE_ERROR"}
 		}
-		return rows(applied), nil
+		rows := []any{}
+		for _, n := range applied {
+			rows = append(rows, map[string]any{"name": n})
+		}
+		return answer(rows), nil
 	}
 	created := createTable.FindAllStringSubmatch(sql, -1)
 	if len(created) == 0 {
@@ -117,6 +128,13 @@ func (st *accountState) queryD1(s *Server, uuid string, body map[string]any) (an
 			next = append(next, m[2])
 		}
 	}
+	nextTriggers := append([]any(nil), triggers...)
+	for _, m := range createTrigger.FindAllStringSubmatch(sql, -1) {
+		if slices.Contains(nextTriggers, any(m[2])) {
+			return nil, &errReply{http.StatusBadRequest, 7500, "trigger " + m[2] + " already exists: SQLITE_ERROR"}
+		}
+		nextTriggers = append(nextTriggers, m[2])
+	}
 	if strings.Contains(sql, "AUTOINCREMENT") && !slices.Contains(next, any("sqlite_sequence")) {
 		next = append(next, "sqlite_sequence")
 	}
@@ -127,7 +145,8 @@ func (st *accountState) queryD1(s *Server, uuid string, body map[string]any) (an
 		applied = append(applied, m[1])
 	}
 	s.routes[D1TablesKey(uuid)] = Response{Result: next}
-	s.routes[d1MigrationsKey(uuid)] = Response{Result: applied}
+	s.routes[D1TriggersKey(uuid)] = Response{Result: nextTriggers}
+	s.routes[D1MigrationsKey(uuid)] = Response{Result: applied}
 	return []any{map[string]any{"results": []any{}, "success": true, "meta": map[string]any{"changes": len(created), "changed_db": true}}}, nil
 }
 
