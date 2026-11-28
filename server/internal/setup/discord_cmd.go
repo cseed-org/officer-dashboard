@@ -648,6 +648,7 @@ func pasteAndExchange(ctx context.Context, deps Deps, dc *discord.Client, cons *
 	expiredMsg := fmt.Sprintf("That link has expired (links work for %d minutes). Here is a new one:", int(auth.SetupStateTTL/time.Minute))
 	for attempt := 0; attempt < pasteAttempts; attempt++ {
 		if attempt > 0 {
+			fmt.Fprintln(deps.Stdout, "If you saw a sign-in error before you used the link yourself, someone else may have opened it. Tell the dashboard owner.")
 			why := "Here is a new link (the dashboard shows each setup code once):"
 			if !now().Before(links[len(links)-1].Expiry) {
 				why = expiredMsg

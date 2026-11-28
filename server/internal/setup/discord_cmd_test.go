@@ -877,7 +877,8 @@ func TestConnectPrintsANewLinkAfterAFailedPaste(t *testing.T) {
 		t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
 	}
 	links := linkRE.FindAllString(r.stdout, -1)
-	if len(links) != 2 || links[0] == links[1] || !strings.Contains(r.stdout, "Here is a new link (the dashboard shows each setup code once)") {
+	if len(links) != 2 || links[0] == links[1] || !strings.Contains(r.stdout, "Here is a new link (the dashboard shows each setup code once)") ||
+		!strings.Contains(r.stdout, "If you saw a sign-in error before you used the link yourself, someone else may have opened it. Tell the dashboard owner.") {
 		t.Fatalf("links %d\n%s", len(links), r.stdout)
 	}
 	if h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID") != h.f.UserID {
