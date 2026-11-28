@@ -502,7 +502,12 @@ sets and clears no cookie, writes nothing, and does not call Discord. The page i
 `no-store`, `no-referrer`, allows no script, and cannot be framed. Any other
 `setup.` state, whether made up, expired or signed with another secret, gets the
 normal sign-in error, and so does every callback when no client secret is
-configured. The page stays behind Cloudflare Access like the rest of `/auth/`.
+configured. The page shows each link's code once; a second visit gets the sign-in
+error, and `connect` prints a new link when needed. The page stays behind
+Cloudflare Access like the rest of `/auth/`. Two installs that share one Discord
+application also share the client secret, so a setup link from one works on the
+other for its 10 minutes: use one Discord application per install, staging
+included.
 
 **The code is a credential.** Whoever has it, together with a sign-in started on
 the dashboard, could sign in as the person who approved the link. Paste it only
@@ -513,8 +518,10 @@ else made never shows a code.
 Paste the line the page shows, or the page's whole address. A code from another
 link, a code already tried and a code Discord refuses are each turned down, and
 setup asks again, up to three times. Setup then shows the Discord account that
-approved the link (name, username and ID) and asks you to type `yes` before
-writing it as the first owner. Any other answer, or no terminal, writes no owner.
+approved the link (ID, name and username) and asks you to type `yes` before
+writing it as the first owner. It first discards anything already waiting on the
+terminal, so a line pasted together with the code cannot answer for you. Any
+other answer, or no terminal, writes no owner.
 What one consent gives is written before setup asks for more. If Discord leaves
 the webhook out of the answer to the combined consent, setup prints a second link
 for `webhook.incoming` alone.
