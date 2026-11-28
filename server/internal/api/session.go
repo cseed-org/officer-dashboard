@@ -105,6 +105,12 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// The setup relay page shows a code and nothing else: no session lookup, so no
+		// renewal write and no Set-Cookie (setuprelay.go).
+		if _, _, ok := setupRelay(r); ok {
+			next.ServeHTTP(w, r)
+			return
+		}
 		var p principal
 		agent, isAgent := r.Context().Value(agentPrincipalKey{}).(principal)
 		if isAgent {
