@@ -104,3 +104,19 @@ test('space pruning admits the next large copy below retention counts', async ()
  expect((await call('/snapshots','POST',{id:'next-large',kind:'hourly',size:20000000,chunks:11,sha256:'0'.repeat(64)})).status).toBe(201);
  expect((await call('/prune','POST',{reserve:50000001})).status).toBe(400);
 });
+test('reports its revision only to an authenticated caller, without touching storage', async () => {
+ // The revision is SINK_REVISION in src/index.ts; the Go side pins the same number
+ // (server/internal/setup/sinkbundle), so the backup service can tell an older Worker.
+ const revision=Number(/const SINK_REVISION = (\d+);/.exec(readFileSync('src/index.ts','utf8'))?.[1]);
+ expect(revision).toBeGreaterThanOrEqual(2);
+ expect((await mf.dispatchFetch('http://sink/version')).status).toBe(401);
+ const bundle=await build({entryPoints:['src/index.ts'],bundle:true,write:false,format:'esm',platform:'node',external:['node:crypto']});
+ // No D1 binding: the version answer must not need the database.
+ const bare=new Miniflare({modules:true,script:bundle.outputFiles[0].text,compatibilityDate:'2026-07-30',compatibilityFlags:['nodejs_compat'],bindings:{BACKUP_BEARER_SECRET:'test-secret-at-least-32-bytes-long'}});
+ try {
+  const res=await bare.dispatchFetch('http://sink/version',{headers:{Authorization:'Bearer test-secret-at-least-32-bytes-long'}});
+  expect(res.status).toBe(200);
+  expect(res.headers.get('Cache-Control')).toBe('no-store');
+  expect(await res.json()).toEqual({revision});
+ } finally {await bare.dispose();}
+});

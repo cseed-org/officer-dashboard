@@ -2,6 +2,12 @@ import { timingSafeEqual, createHash } from 'node:crypto';
 
 type Env = { BACKUPS: D1Database; BACKUP_BEARER_SECRET: string };
 const CHUNK = 1_900_000;
+// The Worker's revision. Raise it with every change to this Worker, its migrations or
+// its wrangler.toml settings, together with sinkbundle.Revision in
+// server/internal/setup/sinkbundle (a Go test fails until both match the source). The
+// backup service alerts when the Worker reports an older revision than it was built
+// with. 1 is every Worker deployed before this endpoint existed (GET /version is 404).
+const SINK_REVISION = 2;
 const json = (data: unknown, status = 200) => Response.json(data, {status, headers:{'Cache-Control':'no-store'}});
 const fail = (status: number, message: string): never => { throw Object.assign(new Error(message), {status}); };
 const sha = (s: string) => createHash('sha256').update(s).digest();
@@ -35,6 +41,7 @@ export default {
   if (!env.BACKUP_BEARER_SECRET || new TextEncoder().encode(env.BACKUP_BEARER_SECRET).length < 32 || !timingSafeEqual(sha(authorization),sha('Bearer '+env.BACKUP_BEARER_SECRET))) return json({error:'unauthorized'},401);
   try {
    const db = env.BACKUPS, path = new URL(request.url).pathname, method=request.method;
+   if (method==='GET' && path==='/version') return json({revision:SINK_REVISION});
    if (method==='GET' && path==='/usage') return json(await usage(db));
    if (method==='GET' && path==='/snapshots') return json((await db.prepare('SELECT id,kind,created_at,sha256,size,chunks FROM snapshots WHERE committed=1 ORDER BY created_at DESC,id DESC LIMIT 100').all()).results);
    if (method==='POST' && path==='/snapshots') {
