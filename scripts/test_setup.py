@@ -691,6 +691,57 @@ class ApplyTests(LauncherCase):
         self.assertIn('missing', self.err)
         self.assertEqual(self.docker.containers, [])
 
+    def test_refusals_match_every_spelling(self):
+        # Review N-1: Go's flag package also takes one dash and =value.
+        for flag in ['-dry-run', '--dry-run=true', '-json', '--json=1', '-deploy-dir=/elsewhere', '-tunnel-token-file=/x', '-image=x']:
+            self.docker.containers.clear()
+            self.assertEqual(self.launch('apply', '--yes', '--token-file', str(self.token), flag), 1, flag)
+            self.assertIn('apply does not take', self.err, flag)
+            self.assertEqual(self.docker.containers, [], flag)
+
+    def test_preview_refuses_any_dry_run_or_yes_spelling(self):
+        # Review N-1: `preview --dry-run=false` would otherwise reach Go's apply path.
+        for flag in ['--dry-run=false', '-dry-run=false', '--dry-run', '--yes', '-yes', '--yes=true']:
+            self.docker.containers.clear()
+            self.assertEqual(self.launch('preview', '--token-file', str(self.token), flag), 1, flag)
+            self.assertIn('preview does not take', self.err, flag)
+            self.assertEqual(self.docker.containers, [], flag)
+
+    def test_token_file_symlink_is_refused(self):
+        # Review N-2: Docker would mount whatever the link points at.
+        link = self.deploy.parent / 'token link'
+        link.symlink_to(self.token)
+        for command in ['apply', 'preview']:
+            self.assertEqual(self.launch(command, '--yes' if command == 'apply' else '--json', '--token-file', str(link)), 1, command)
+            self.assertIn('symbolic link', self.err)
+        self.assertEqual(self.docker.containers, [])
+
+    def test_token_file_readable_by_others_warns(self):
+        self.token.chmod(0o600)
+        self.assertEqual(self.launch('apply', '--yes', '--token-file', str(self.token)), 0, self.err)
+        self.assertNotIn('warning', self.err)
+        self.token.chmod(0o644)
+        self.assertEqual(self.launch('apply', '--yes', '--token-file', str(self.token)), 0, self.err)
+        self.assertIn('warning', self.err)
+        self.assertIn('0644', self.err)
+        self.assert_token_never_leaves_the_file()
+
+    def test_relative_token_file_is_relative_to_the_current_directory(self):
+        with contextlib.chdir(self.token.parent):
+            self.assertEqual(self.launch('apply', '--yes', '--token-file', self.token.name), 0, self.err)
+        args, _ = self.container()
+        mounts = [mount_fields(args[i + 1]) for i, a in enumerate(args) if a == '--mount']
+        self.assertEqual(mounts[1]['source'], str(self.token))
+
+    def test_token_file_from_env_is_relative_to_the_deploy_directory(self):
+        (self.deploy / 'cf-token').write_text(self.token_value + '\n')
+        with open(self.deploy / '.env', 'a') as env:
+            env.write('CLOUDFLARE_SETUP_TOKEN_FILE=cf-token\n')
+        self.assertEqual(self.launch('apply', '--yes'), 0, self.err)
+        args, _ = self.container()
+        mounts = [mount_fields(args[i + 1]) for i, a in enumerate(args) if a == '--mount']
+        self.assertEqual(mounts[1]['source'], str(self.deploy / 'cf-token'))
+
     def test_preview_is_unchanged_by_apply(self):
         # The dry run stays unprivileged and read-only: cloudflared's UID, no capabilities,
         # no deploy directory, token on stdin.
