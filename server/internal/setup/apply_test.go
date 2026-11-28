@@ -198,7 +198,7 @@ func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 		"secrets/tunnel-token",
 		"secrets/admin/services-access-client-id",
 		"secrets/admin/services-access-client-secret",
-		"Left for you:",
+		"Needs your attention (",
 		"Global session duration",
 		"Agents and services: bypass cache",
 		"Bot Fight Mode",
@@ -212,7 +212,7 @@ func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 	}
 	// The bearer was just uploaded from the host's file: the report says so, and does not
 	// call the Worker's secret unknowable.
-	left := res.stdout[strings.Index(res.stdout, "Left for you:"):]
+	left := res.stdout[strings.Index(res.stdout, "Needs your attention ("):]
 	if strings.Contains(left, "Worker secret") || !strings.Contains(res.stdout, "uploaded as the Worker's BACKUP_BEARER_SECRET") {
 		t.Errorf("the report doubts the bearer it just uploaded:\n%s", res.stdout)
 	}
@@ -712,10 +712,10 @@ func TestMissingClientIDIsReportedUntilItIsThere(t *testing.T) {
 
 func requireMissingClientID(t *testing.T, stdout string) {
 	t.Helper()
-	left := stdout[strings.Index(stdout, "Left for you:"):]
+	left := stdout[strings.Index(stdout, "Needs your attention ("):]
 	for _, want := range []string{"missing: secrets/admin/services-access-client-id", "Service Tokens → officer-dashboard services", "Client ID", "mode 0400"} {
 		if !strings.Contains(left, want) {
-			t.Errorf("\"Left for you\" lacks %q:\n%s", want, left)
+			t.Errorf("\"Needs your attention\" lacks %q:\n%s", want, left)
 		}
 	}
 	if strings.Contains(stdout, "every step read back ok") {
@@ -769,7 +769,7 @@ func TestClientIDWriteFailureHasItsOwnMessage(t *testing.T) {
 func TestClosingLineNeverOverstates(t *testing.T) {
 	r := newApplyRig(t, cffake.Fresh())
 	res := r.run(append([]string{"--yes"}, groupArgs...)...)
-	if res.code != 0 || !strings.Contains(res.stdout, "every step read back ok, except the items left for you above.") || !strings.Contains(res.stdout, "then start the stack") {
+	if res.code != 0 || !strings.Contains(res.stdout, "every step read back ok, except the items under Needs your attention above.") || !strings.Contains(res.stdout, "then start the stack") {
 		t.Fatalf("fresh: exit %d\n%s", res.code, res.stdout)
 	}
 

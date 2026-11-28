@@ -429,6 +429,8 @@ func TestUnknownQueryShapeIsNotAnEmptyDatabase(t *testing.T) {
 		"empty name":        []any{map[string]any{"results": []any{map[string]any{"type": "table", "name": ""}}, "success": true}},
 		"array rows":        []any{map[string]any{"results": []any{[]any{"table", "snapshots"}}, "success": true}},
 		"no type":           []any{map[string]any{"results": []any{map[string]any{"name": "snapshots"}}, "success": true}},
+		// The person's request: a definition that is not text is not "no definition".
+		"sql not text": []any{map[string]any{"results": []any{map[string]any{"type": "table", "name": "snapshots", "sql": 7}}, "success": true}},
 	} {
 		r := newRig(t, cffake.LiveEmptyD1())
 		r.acct.Inject(cffake.Injection{Method: http.MethodPost, Path: acctP + "/d1/database/d1-backups/query", Result: result, Times: 100})
@@ -615,5 +617,22 @@ func TestNoUploadWhileTheMigrationIsDrift(t *testing.T) {
 	var blocked *BlockedError
 	if !errors.As(err, &blocked) || !strings.Contains(err.Error(), "needs D1 migrations") || len(r.acct.Uploads()) != 0 || len(r.acct.Writes()) != 0 {
 		t.Fatalf("err = %v, %d uploads, %d writes", err, len(r.acct.Uploads()), len(r.acct.Writes()))
+	}
+}
+
+// Mutant R12 of #129's fix round: the migration step itself refuses a database that has
+// only a trigger (no tables), even if the plan were to let it run.
+func TestMigrationRefusesADatabaseWithATrigger(t *testing.T) {
+	routes := cffake.LiveEmptyD1()
+	routes[cffake.D1TriggersKey("d1-backups")] = cffake.Response{Result: []any{"reserve"}}
+	r := newRig(t, routes)
+	e := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry())
+	if err := e.discover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	err := e.migrate(context.Background(), Step{Kind: StepMigration, ActionID: "d1.migrations", Title: "migrate"})
+	var rej *RejectedError
+	if !errors.As(err, &rej) || !strings.Contains(err.Error(), "reserve") || len(r.acct.Writes()) != 0 {
+		t.Fatalf("err = %v, %d writes", err, len(r.acct.Writes()))
 	}
 }

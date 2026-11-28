@@ -331,6 +331,22 @@ func tunnelAndBackups(r map[string]Response) {
 		"service": "dashboard-backup-sink", "environment": "production", "cert_id": "c-1", "previews_enabled": false, "enabled": true}}}
 }
 
+// Mismatched is Live with backup pieces of another format: the budgets table has another
+// shape, and the Worker binds BACKUPS to another database on an older compatibility date.
+func Mismatched() map[string]Response {
+	r := Live()
+	defs := MigratedBackupSQL()
+	defs["budgets"] = "CREATE TABLE budgets (day TEXT PRIMARY KEY, writes INTEGER)"
+	r[D1SQLKey("d1-backups")] = Response{Result: defs}
+	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "dashboard-backup-sink", "has_modules": true, "usage_model": "standard",
+		"compatibility_date": "2025-01-01", "compatibility_flags": []any{"nodejs_compat"}}}}
+	r[acct("/workers/scripts/dashboard-backup-sink/settings")] = Response{Result: map[string]any{"bindings": []any{
+		map[string]any{"type": "d1", "name": "BACKUPS", "database_id": "d1-old"},
+		map[string]any{"type": "secret_text", "name": "BACKUP_BEARER_SECRET"},
+	}}}
+	return r
+}
+
 // Live is the partial setup a live account had during spike stage 2: the tunnel (no
 // connector running), its route and CNAME, and everything for backups exist; the
 // one-time PIN provider, the groups, the three dashboard Access applications, the

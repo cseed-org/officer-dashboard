@@ -65,6 +65,7 @@ var (
 	createTrigger = regexp.MustCompile(`(?i)CREATE TRIGGER (IF NOT EXISTS )?"?(\w+)"?`)
 	insertApplied = regexp.MustCompile(`(?i)INSERT INTO "?d1_migrations"? \(name\)\s*values \('([^']*)'\)`)
 	destructive   = regexp.MustCompile(`(?i)\b(DROP|ALTER)\s|\bDELETE\s+FROM\b`)
+	selectList    = regexp.MustCompile(`(?i)^SELECT (.+?) FROM `)
 )
 
 // queryD1: POST /accounts/{a}/d1/database/{id}/query {"sql", "params"}. The result is an
@@ -97,12 +98,28 @@ func (st *accountState) queryD1(s *Server, uuid string, body map[string]any) (an
 	case destructive.MatchString(sql):
 		return nil, &errReply{http.StatusBadRequest, 7500, "the fake refuses destructive SQL"}
 	case sql == sinkbundle.SchemaSQL:
+		// Like SQLite, a row holds only the columns the query selects.
+		cols := map[string]bool{}
+		if m := selectList.FindStringSubmatch(sql); m != nil {
+			for _, c := range strings.Split(m[1], ",") {
+				cols[strings.TrimSpace(c)] = true
+			}
+		}
+		row := func(typ string, n any) map[string]any {
+			out := map[string]any{}
+			for col, v := range map[string]any{"type": typ, "name": n, "sql": defs[fmt.Sprint(n)]} {
+				if cols[col] {
+					out[col] = v
+				}
+			}
+			return out
+		}
 		rows := []any{}
 		for _, n := range sorted(tables) {
-			rows = append(rows, map[string]any{"type": "table", "name": n, "sql": defs[fmt.Sprint(n)]})
+			rows = append(rows, row("table", n))
 		}
 		for _, n := range sorted(triggers) {
-			rows = append(rows, map[string]any{"type": "trigger", "name": n, "sql": defs[fmt.Sprint(n)]})
+			rows = append(rows, row("trigger", n))
 		}
 		return answer(rows), nil
 	case sql == sinkbundle.AppliedSQL:
@@ -149,7 +166,7 @@ func (st *accountState) queryD1(s *Server, uuid string, body map[string]any) (an
 	for k, v := range defs {
 		nextDefs[k] = v
 	}
-	tb, tr := sinkbundle.Definitions(sql) // sqlite_master keeps each statement's text
+	tb, tr := sinkbundle.Statements(sql) // sqlite_master keeps each statement's text as written
 	for _, m := range []map[string]string{tb, tr} {
 		for k, v := range m {
 			nextDefs[k] = v

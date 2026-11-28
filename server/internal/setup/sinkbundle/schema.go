@@ -46,9 +46,21 @@ var (
 )
 
 // Definitions returns the normalized CREATE TABLE and CREATE TRIGGER statements in sql,
-// by name: a table up to the parenthesis that closes its column list, a trigger up to its
-// END, as sqlite_master stores them.
+// by name.
 func Definitions(sql string) (tables, triggers map[string]string) {
+	tables, triggers = Statements(sql)
+	for _, m := range []map[string]string{tables, triggers} {
+		for k, v := range m {
+			m[k] = NormalizeSQL(v)
+		}
+	}
+	return tables, triggers
+}
+
+// Statements returns the CREATE TABLE and CREATE TRIGGER statements in sql as written,
+// by name: a table up to the parenthesis that closes its column list, a trigger up to its
+// END, as sqlite_master stores them (comments dropped).
+func Statements(sql string) (tables, triggers map[string]string) {
 	sql = sqlComment.ReplaceAllString(sql, " ")
 	tables, triggers = map[string]string{}, map[string]string{}
 	for _, m := range createTableAt.FindAllStringSubmatchIndex(sql, -1) {
@@ -65,11 +77,11 @@ func Definitions(sql string) (tables, triggers map[string]string) {
 		}
 		if end > 0 {
 			name := strings.ToLower(sql[m[2]:m[3]])
-			tables[name] = NormalizeSQL(sql[m[0]:end])
+			tables[name] = sql[m[0]:end]
 		}
 	}
 	for _, m := range createTriggerAt.FindAllStringSubmatch(sql, -1) {
-		triggers[strings.ToLower(m[1])] = NormalizeSQL(m[0])
+		triggers[strings.ToLower(m[1])] = m[0]
 	}
 	return tables, triggers
 }

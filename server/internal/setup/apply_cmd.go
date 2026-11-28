@@ -169,6 +169,19 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 		return failf("--name-prefix %q found resources without that prefix on %s (the drift lines say which): this hostname belongs to another install. "+
 			"A staging install needs its own APP_URL as well as a prefix. Nothing was changed", desired.NamePrefix, desired.Hostname)
 	}
+	// The preview closes with what needs the admin, before any confirmation; a run with
+	// no steps goes straight to finish, which prints it once.
+	if len(reviewed.Plan.Steps) > 0 || len(reviewed.Plan.Blockers) > 0 {
+		var items []plan.Attention
+		for _, b := range reviewed.Plan.Blockers {
+			items = append(items, plan.Attention{Kind: "blocker", Title: b})
+		}
+		for _, m := range reviewed.Plan.Manual {
+			items = append(items, plan.Attention{Kind: "manual", Title: m})
+		}
+		fmt.Fprintln(deps.Stdout)
+		plan.WriteAttention(deps.Stdout, append(items, plan.AttentionFrom(reviewed.Actions, false)...))
+	}
 	if len(reviewed.Plan.Blockers) > 0 {
 		for _, b := range reviewed.Plan.Blockers {
 			if strings.Contains(b, "the setup token lacks") {
@@ -210,6 +223,8 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 	out, err := eng.ApplyReviewed(actx, reviewed)
 	left := writeApplyReport(deps.Stdout, out, reviewed, sink)
 	if err != nil {
+		fmt.Fprintln(deps.Stdout)
+		plan.WriteAttention(deps.Stdout, left.attention)
 		code := stopped(err)
 		fmt.Fprintln(deps.Stderr, "setup: Setup stopped. Do not start cloudflared yet: fix the cause above and run setup again; it reads the account first and continues where it stopped.")
 		return code
@@ -261,13 +276,15 @@ func backupHostValues(deps Deps, dir string, owner hostfiles.Owner, d plan.Desir
 // and returns its exit code: 1 while a kept secret lacks a file, else 0. It tells the
 // admin to start the stack only when nothing left concerns Access or the hostname.
 func finish(deps Deps, hostname string, left leftover, sink *hostSecretSink) int {
+	fmt.Fprintln(deps.Stdout)
+	plan.WriteAttention(deps.Stdout, left.attention)
 	if len(sink.missing) > 0 {
 		fmt.Fprintf(deps.Stderr, "setup: a secret is only partly on the host (the \"missing\" line above); setup exits 1 until the file is there\n")
 		return 1
 	}
 	except := ""
-	if left.items > 0 {
-		except = ", except the items left for you above"
+	if len(left.attention) > 0 {
+		except = ", except the items under Needs your attention above"
 	}
 	fmt.Fprintf(deps.Stdout, "\nCloudflare is set up for %s: every step read back ok%s.\n", hostname, except)
 	if len(left.blocking) > 0 {
@@ -279,12 +296,12 @@ func finish(deps Deps, hostname string, left leftover, sink *hostSecretSink) int
 	return 0
 }
 
-// leftover is what the report listed for the admin: how many items, and the drift or
-// unknowable lines about Access or the hostname that must be resolved before the stack
-// starts.
+// leftover is what a run leaves for the admin: the items of its "Needs your attention"
+// section, and the drift or unknowable lines about Access or the hostname that must be
+// resolved before the stack starts.
 type leftover struct {
-	items    int
-	blocking []string
+	attention []plan.Attention
+	blocking  []string
 }
 
 // guardsTheHostname reports whether a plan line is part of what protects or publishes
@@ -336,8 +353,9 @@ func needsPermission(err error, msg string) bool {
 	return errors.As(err, &pe) || strings.Contains(msg, "the setup token lacks") || cfapi.IsForbidden(err)
 }
 
-// writeApplyReport prints what the run created, where the secrets are, what is left for
-// the admin, and the two settings setup cannot read back.
+// writeApplyReport prints what the run created, where the secrets are and the two
+// settings setup cannot read back, and returns what is left for the admin, which finish
+// prints last.
 func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision.Reviewed, sink *hostSecretSink) leftover {
 	var left leftover
 	var b strings.Builder
@@ -366,15 +384,11 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 	if len(final) == 0 {
 		final = reviewed.Actions // the run stopped: what the preview showed is still the best list
 	}
-	b.WriteString("\nLeft for you:\n")
-	n := 0
 	for _, m := range sink.missing {
-		fmt.Fprintf(&b, "  - missing: %s\n", m)
-		n++
+		left.attention = append(left.attention, plan.Attention{Kind: "missing", Title: m})
 	}
 	for _, m := range reviewed.Plan.Manual {
-		fmt.Fprintf(&b, "  - manual: %s\n", m)
-		n++
+		left.attention = append(left.attention, plan.Attention{Kind: "manual", Title: m})
 	}
 	for _, a := range final {
 		if a.Kind != plan.Drift && a.Kind != plan.Unknowable {
@@ -387,21 +401,10 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 			(a.ID == "worker.secret" && out.UploadedWorker) {
 			continue
 		}
-		fmt.Fprintf(&b, "  - %s: %s %s", a.Kind, a.Resource, a.Name)
-		if a.ExistingID != "" {
-			fmt.Fprintf(&b, " [%s]", a.ExistingID)
-		}
-		b.WriteByte('\n')
-		for _, d := range a.Detail {
-			fmt.Fprintf(&b, "      %s\n", d)
-		}
-		n++
+		left.attention = append(left.attention, plan.AttentionOf(a))
 		if guardsTheHostname(a.ID) {
 			left.blocking = append(left.blocking, fmt.Sprintf("%s %s %s", a.Kind, a.Resource, a.Name))
 		}
-	}
-	if n == 0 {
-		b.WriteString("  nothing\n")
 	}
 	b.WriteString("\nCheck these in the Cloudflare dashboard; setup cannot read them back:\n" +
 		"  - the cache rule \"Agents and services: bypass cache\" (your domain → Caching → Cache Rules) must say Bypass cache.\n" +
@@ -409,7 +412,6 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 		"  - Bot Fight Mode (your domain → Security → Settings → Bot traffic) must be Off, or bots and agents are challenged\n" +
 		"    (docs/deploy/cloudflare.md step 6.1). It is zone-wide, so setup leaves it unless --allow-bot-fight-mode-off is given.\n")
 	_, _ = io.WriteString(w, b.String())
-	left.items = n
 	return left
 }
 

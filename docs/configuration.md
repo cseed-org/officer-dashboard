@@ -383,10 +383,16 @@ If a service token's client secret is on the host but its client ID file
 for the backup token) is not, every run lists it as `missing`, with where to copy
 the client ID from, and exits 1 until the file is there.
 
-At the end it prints what it created, with IDs; what is left as `manual`,
-`drift`, `unknowable` or `missing`, with the step for each; where each secret is
-(paths only); and a reminder to check the cache rule (it must say **Bypass
-cache**) and Bot Fight Mode in the Cloudflare dashboard. It says to start the
+At the end it prints what it created, with IDs; where each secret is (paths
+only); a reminder to check the cache rule (it must say **Bypass cache**) and Bot
+Fight Mode in the Cloudflare dashboard; and, just before the closing line, one
+**Needs your attention** section listing every `blocker`, `manual`, `drift`,
+`unknowable` and `missing` item. Each item says what setup found, what it
+expected, why setup will not change it, and ends with **What to do:** and one or
+two ways forward (the Wrangler command or dashboard path, or a fresh install
+beside it with `--name-prefix` or `--backup-hostname`). The preview prints the
+same section before it asks for confirmation, and `--dry-run` prints it before
+its summary line. It says to start the
 stack only when no `drift` or `unknowable` line concerns Access or the
 hostname. It exits 0 only when every step was created and read back `ok` (or
 there was nothing to create) and no secret file is missing; 1 when it stopped,
@@ -424,17 +430,31 @@ other path) and which setup also uploads as the plain-text binding
   them with a read-only query first (the D1 list's table count is deprecated), and
   records the migration in `d1_migrations` as Wrangler does, so `wrangler d1
   migrations apply` later finds nothing to do. A database that has tables is never
-  altered: `ok` when they are the Worker's, `drift` when not. The preview cannot
-  send that query, so it shows the line as `unknowable`; `apply` decides it.
+  altered: `ok` only when every table and the `reserve` trigger are there with the
+  migration's own definitions (the `sql` column of `sqlite_master`, compared with
+  case, spacing, quotes and comments ignored) and `d1_migrations` records the
+  migration; `drift` otherwise, naming what is missing or which table has another
+  shape, with the steps to finish or replace it. A table the Worker does not use
+  is a note. A dry run cannot send that query, so it shows the line as
+  `unknowable`; the apply's preview decides it.
 - **The Worker** is uploaded only when no Worker of that name exists, bound to the
   database, with the bearer from `secrets/backup/bearer` as `BACKUP_BEARER_SECRET`
   (the only request that ever carries it), and its workers.dev URL and preview
   URLs are turned off in the next request. An existing Worker is never uploaded
-  again, because an upload replaces its whole script, bindings and secrets: its
-  revision is `ok`, `drift` (older or newer, with the upgrade step) or
-  `unknowable` (deployed with Wrangler, which uploads no revision label). An
-  existing Worker without the bearer is a `manual` step. Upgrading an existing
-  Worker is by hand in this release.
+  again, because an upload replaces its whole script, bindings and secrets. Setup
+  compares it with what it would upload: the `BACKUPS` binding and the database it
+  points at, the compatibility date and flags, and that it is an ES module Worker;
+  each difference is `drift`, naming the value found and the one expected. A
+  setting the scripts list does not show is not compared. Its revision is `ok`,
+  `drift` (older or newer, with the upgrade step) or `unknowable` (deployed with
+  Wrangler, which uploads no revision label). An existing Worker without the
+  bearer is a `manual` step. Upgrading an existing Worker is by hand in this
+  release. Before uploading, setup asks for the Worker's settings and uploads
+  only when Cloudflare answers 404 with code 10007 (Worker not found); any other
+  answer stops the run. It turns the workers.dev and preview URLs off only on a
+  Worker it uploaded itself, which carries the plain-text binding
+  `DASHBOARD_SETUP_UPLOAD`; on any other Worker they are `drift` with the
+  dashboard path.
 - **Custom domain.** Cloudflare refuses one on a hostname with a CNAME record, and
   setup never removes a record: any record on the backup hostname stops the run
   before the first write, with the step.

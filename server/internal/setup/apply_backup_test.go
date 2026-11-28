@@ -314,3 +314,30 @@ func TestHostSinkLoadsOnlyTheBearer(t *testing.T) {
 		t.Fatalf("the bearer did not load: %v", err)
 	}
 }
+
+// The person's request in fix round 1 of #129: a backup database and Worker that exist in
+// another format are reported with what was found, what was expected and what to do, and
+// the preview closes with one "Needs your attention" section.
+func TestPreviewOfMismatchedBackupPieces(t *testing.T) {
+	r := newApplyRig(t, cffake.Mismatched())
+	res := r.run(groupArgs...)
+	if res.code == 0 {
+		t.Fatalf("an unconfirmed preview exited 0\n%s", res.stdout)
+	}
+	att := res.stdout[strings.Index(res.stdout, "Needs your attention ("):]
+	for _, want := range []string{
+		`table budgets is defined as "create table budgets(day text primary key,writes integer)"`,
+		"found BACKUPS bound to D1 database d1-old; expected dashboard-backups (d1-backups)",
+		"found compatibility date 2025-01-01; expected 2026-07-30",
+		"What to do: setup never changes an existing Worker",
+		"--name-prefix",
+	} {
+		if !strings.Contains(att, want) {
+			t.Errorf("Needs your attention lacks %q", want)
+		}
+	}
+	if len(r.acct.Writes()) != 0 {
+		t.Errorf("an unconfirmed preview wrote: %v", r.acct.Writes())
+	}
+	golden(t, "apply-preview-mismatched.txt", strings.ReplaceAll(res.stdout, r.dir, "<deploy-dir>"))
+}

@@ -253,7 +253,14 @@ func (c *check) done() Action {
 	}
 	a.Detail = append(append(append(a.Detail, c.drift...), c.unknown...), c.notes...)
 	if len(c.todo) > 0 && (a.Kind == Drift || a.Kind == Unknowable || a.Kind == Manual) {
-		a.Detail = append(a.Detail, "What to do: "+strings.Join(c.todo, " Or: "))
+		steps := make([]string, len(c.todo))
+		for i, t := range c.todo {
+			steps[i] = t
+			if !strings.HasSuffix(t, ".") {
+				steps[i] += "."
+			}
+		}
+		a.Detail = append(a.Detail, "What to do: "+strings.Join(steps, " Or: "))
 	}
 	return a
 }
