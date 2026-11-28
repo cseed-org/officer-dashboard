@@ -70,6 +70,52 @@ Officers sign in using Discord. In the
 A bot token for invitation DMs is optional and separate from OAuth.
 See [Discord integration](../integrations.md#discord-sign-in-and-officer-invitations).
 
+### Discord with `scripts/setup`
+
+Steps 1 and 2 stay manual: Discord has no API to create an application or to
+register a redirect. `scripts/setup discord` does the rest of this step after
+step 5's host files exist. It replaces copying the values into files (step 3)
+and looking up your user ID (step 4).
+
+1. Save the Client ID, the Client Secret and, if you want invitation DMs, the
+   bot token (**Bot** → **Reset Token**) each in its own file in your private
+   directory. Or leave them out, and setup asks for each without showing what
+   you type.
+2. Check them with Discord, then store them:
+
+   ```sh
+   <install-dir>/scripts/setup discord --dry-run \
+     --client-id-file /root/setup/discord-client-id \
+     --client-secret-file /root/setup/discord-client-secret \
+     --bot-token-file /root/setup/discord-bot-token
+   <install-dir>/scripts/setup discord --yes \
+     --client-id-file /root/setup/discord-client-id \
+     --client-secret-file /root/setup/discord-client-secret \
+     --bot-token-file /root/setup/discord-bot-token
+   ```
+
+   It stops before writing anything if Discord refuses the secret, or if the
+   bot token belongs to another application. It prints the exact redirect for
+   step 2. With a bot token, it also reads the app's redirects and says whether
+   that redirect is registered. It also prints the link that adds the bot to
+   your server. The bot needs no permissions; it only has to share a server with
+   the people it sends invitations to.
+3. After step 6, with the dashboard running, run
+   `<install-dir>/scripts/setup discord connect`. It prints one Discord link.
+   Within 10 minutes, open it in a browser, sign in to Discord as yourself, pick
+   the channel for dashboard notifications, and approve. The dashboard then shows
+   a setup code. Paste it into that terminal, and never send it to anyone.
+   Setup shows the Discord account that approved the link and asks you to type
+   `yes`. It then writes your Discord user ID as
+   `BOOTSTRAP_OWNER_DISCORD_ID`, and the notification webhook into
+   `secrets/app/discord-webhook-url` and `secrets/backup/discord-webhook-url`.
+   It then prints the command that restarts the services that read them. If
+   Discord leaves the webhook out of that answer, setup prints a second link for
+   the webhook alone.
+
+Delete the value files afterwards. Details:
+[Discord setup](../configuration.md#discord-setup-scriptssetup-discord).
+
 ## 4. Prepare encrypted backups
 
 A snapshot is a consistent copy of the SQLite database. The backup service

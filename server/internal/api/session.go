@@ -105,6 +105,14 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// The setup relay page shows a code and nothing else: no session lookup, so no
+		// renewal write and no Set-Cookie (setuprelay.go).
+		// The claim is made here, once: a request that loses it to a simultaneous one gets the
+		// whole normal path below, session handling included.
+		if state, code, ok := s.setupRelay(r); ok && s.claimSetupRelay(state) {
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), relayPageKey{}, relayPage{state, code})))
+			return
+		}
 		var p principal
 		agent, isAgent := r.Context().Value(agentPrincipalKey{}).(principal)
 		if isAgent {
