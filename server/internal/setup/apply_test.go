@@ -20,6 +20,7 @@ import (
 	"officerdashboard/internal/setup/cfprovision"
 	"officerdashboard/internal/setup/hostfiles"
 	"officerdashboard/internal/setup/plan"
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // applyToken is the setup token the tests hand the command. It is built at run time so
@@ -38,6 +39,7 @@ type applyRig struct {
 	stdin     io.Reader
 	ctx       context.Context
 	engines   int
+	bundle    *sinkbundle.Bundle // the image's backup Worker, built from the repo's sources
 }
 
 type applyResult struct {
@@ -54,7 +56,7 @@ func newApplyRigOwned(t *testing.T, routes map[string]cffake.Response, owner hos
 	t.Helper()
 	acct := cffake.NewAccount(routes)
 	t.Cleanup(acct.Close)
-	r := &applyRig{t: t, acct: acct, dir: deployDir(t), owner: owner, ctx: context.Background()}
+	r := &applyRig{t: t, acct: acct, dir: deployDir(t), owner: owner, ctx: context.Background(), bundle: testBundle(t)}
 	var hout, herr bytes.Buffer
 	if code := Run(context.Background(), []string{"host", "--yes", "--deploy-dir", r.dir, "--app-url", "https://" + cffake.Host}, Deps{
 		Getenv: func(string) string { return "" }, Stdout: &hout, Stderr: &herr, ReadFile: os.ReadFile,
@@ -101,8 +103,9 @@ func (r *applyRig) run(args ...string) applyResult {
 			r.engines++
 			return cfprovision.NewEngine(tok, d, sink, w, opt, cfprovision.WithAPIBase(r.acct.URL), cfprovision.WithReadRetry())
 		},
-		Stdin: stdin,
-		Owner: r.owner,
+		Stdin:  stdin,
+		Owner:  r.owner,
+		Bundle: r.bundle,
 	})
 	res := applyResult{code, out.String(), errb.String()}
 	all := res.stdout + res.stderr
@@ -124,6 +127,22 @@ func (r *applyRig) creates(suffix string) int {
 	n := 0
 	for _, w := range r.acct.Writes() {
 		if w.Method == http.MethodPost && strings.HasSuffix(w.Path, suffix) {
+			n++
+		}
+	}
+	return n
+}
+
+// createsNamed counts the POSTs to a path ending in suffix whose body names name: since
+// the backup Worker apply there are two service tokens, so a count of one token's
+// creates must say which.
+func (r *applyRig) createsNamed(suffix, name string) int {
+	n := 0
+	for _, w := range r.acct.Writes() {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if w.Method == http.MethodPost && strings.HasSuffix(w.Path, suffix) && json.Unmarshal([]byte(w.Body), &body) == nil && body.Name == name {
 			n++
 		}
 	}
@@ -166,10 +185,6 @@ func (r *applyRig) requireSecretFile(rel string, ids hostfiles.IDs) {
 	}
 }
 
-// inScopeCreates are the dry run's create lines this version still leaves: the backup
-// Worker, D1 and the backup Access pieces come in a later release.
-var outOfScopeCreate = regexp.MustCompile(`^  create +(D1 database|D1 migrations|Worker|Worker secret|Worker custom domain|Access application +Dashboard backups|Service token +dashboard-backups-host)\b`)
-
 func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 	r := newApplyRig(t, cffake.Fresh())
 	res := r.run(append([]string{"--yes"}, groupArgs...)...)
@@ -195,6 +210,12 @@ func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 	if strings.Contains(res.stdout, "it has no host file") {
 		t.Error("the report says the services secret has no host file right after storing it")
 	}
+	// The bearer was just uploaded from the host's file: the report says so, and does not
+	// call the Worker's secret unknowable.
+	left := res.stdout[strings.Index(res.stdout, "Left for you:"):]
+	if strings.Contains(left, "Worker secret") || !strings.Contains(res.stdout, "uploaded as the Worker's BACKUP_BEARER_SECRET") {
+		t.Errorf("the report doubts the bearer it just uploaded:\n%s", res.stdout)
+	}
 	r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)
 	r.requireSecretFile("secrets/admin/services-access-client-id", hostfiles.Root)
 	r.requireSecretFile("secrets/admin/services-access-client-secret", hostfiles.Root)
@@ -214,7 +235,7 @@ func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 		t.Fatalf("dry run: exit %d, %d new writes\n%s", dry.code, r.writes()-writes, dry.stderr)
 	}
 	for _, line := range strings.Split(dry.stdout, "\n") {
-		if strings.HasPrefix(line, "  create ") && !outOfScopeCreate.MatchString(line) {
+		if strings.HasPrefix(line, "  create ") {
 			t.Errorf("the dry run after apply still wants: %s", line)
 		}
 		if strings.HasPrefix(line, "  drift ") {
@@ -379,8 +400,8 @@ func TestSinkFailureStopsTheRunAndARerunRecoversWithoutADuplicate(t *testing.T) 
 	if !strings.Contains(again.stdout, "fetch the token of tunnel") {
 		t.Errorf("the re-run did not fetch the token Cloudflare still has:\n%s", again.stdout)
 	}
-	if r.creates("/cfd_tunnel") != 1 || r.creates("/access/service_tokens") != 1 || r.creates("/dns_records") != 1 {
-		t.Fatalf("duplicates: tunnel %d, service token %d, DNS %d", r.creates("/cfd_tunnel"), r.creates("/access/service_tokens"), r.creates("/dns_records"))
+	if r.creates("/cfd_tunnel") != 1 || r.createsNamed("/access/service_tokens", "officer-dashboard services") != 1 || r.creates("/dns_records") != 1 {
+		t.Fatalf("duplicates: tunnel %d, service token %d, DNS %d", r.creates("/cfd_tunnel"), r.createsNamed("/access/service_tokens", "officer-dashboard services"), r.creates("/dns_records"))
 	}
 	r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)
 }
@@ -432,8 +453,8 @@ func TestExistingSecretFileIsKeptAndTheRunStops(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := r.run(append([]string{"--yes"}, groupArgs...)...)
-	if done.code != 0 || r.creates("/access/service_tokens") != 1 {
-		t.Fatalf("exit %d, %d service tokens\n%s", done.code, r.creates("/access/service_tokens"), done.stderr)
+	if done.code != 0 || r.createsNamed("/access/service_tokens", "officer-dashboard services") != 1 {
+		t.Fatalf("exit %d, %d service tokens\n%s", done.code, r.createsNamed("/access/service_tokens", "officer-dashboard services"), done.stderr)
 	}
 }
 
@@ -459,7 +480,7 @@ func TestInterruptedAfterACreateThenRerunMakesNoDuplicate(t *testing.T) {
 			if res.code != 0 {
 				t.Fatalf("re-run: exit %d\n%s\n%s", res.code, res.stdout, res.stderr)
 			}
-			if n := r.creates(suffix); n != 1 {
+			if n := r.createsNamed(suffix, map[string]string{"/access/service_tokens": "officer-dashboard services", "/cfd_tunnel": "officer-dashboard"}[suffix]); n != 1 {
 				t.Fatalf("%d creates of %s", n, suffix)
 			}
 			if suffix == "/access/service_tokens" && !strings.Contains(res.stdout, "Rotate") {
@@ -486,7 +507,7 @@ func TestApplyFlagsAreUsageErrorsWithDryRun(t *testing.T) {
 func TestApplyTokenPermissionsCoverWhatTheEngineCalls(t *testing.T) {
 	quoted := regexp.MustCompile(`"((?:Access: )?[A-Z][A-Za-z ]+ (?:Edit|Read))"`)
 	found := map[string]bool{}
-	for _, name := range []string{"apply.go", "discover.go"} {
+	for _, name := range []string{"apply.go", "backup.go", "discover.go"} {
 		raw, err := os.ReadFile(filepath.Join("cfprovision", name))
 		if err != nil {
 			t.Fatal(err)
@@ -731,8 +752,8 @@ func TestClientIDWriteFailureHasItsOwnMessage(t *testing.T) {
 	}
 	r.owner = mem
 	again := r.run(append([]string{"--yes"}, groupArgs...)...)
-	if again.code == 0 || r.creates("/access/service_tokens") != 1 {
-		t.Fatalf("re-run: exit %d, %d tokens\n%s", again.code, r.creates("/access/service_tokens"), again.stderr)
+	if again.code == 0 || r.createsNamed("/access/service_tokens", "officer-dashboard services") != 1 {
+		t.Fatalf("re-run: exit %d, %d tokens\n%s", again.code, r.createsNamed("/access/service_tokens", "officer-dashboard services"), again.stderr)
 	}
 	requireMissingClientID(t, again.stdout)
 }

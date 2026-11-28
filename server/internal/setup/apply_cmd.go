@@ -16,6 +16,7 @@ import (
 	"officerdashboard/internal/setup/cfprovision"
 	"officerdashboard/internal/setup/hostfiles"
 	"officerdashboard/internal/setup/plan"
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // ApplyPermissions is what the API token of an apply run needs, in the names the
@@ -26,17 +27,19 @@ import (
 // to your account and the dashboard's zone, give it a short expiry, and delete it after.
 const ApplyPermissions = `Account (your account only):
   Cloudflare Tunnel Edit            create the tunnel, fetch its token, route the hostname
-  Access: Apps Edit                 the three Access applications
+  Access: Apps Edit                 the four Access applications (three for the dashboard, one for backups)
   Access: Policies Edit             their reusable policies
   Access: Groups Edit               the Officers and Launchpad groups
   Access: Identity Providers Edit   the One-time PIN login
-  Access: Service Tokens Edit       the "officer-dashboard services" token
+  Access: Service Tokens Edit       the "officer-dashboard services" and "dashboard-backups-host" tokens
   Access: Organizations Read        the team domain and global session
                                     (Access: Organizations Edit only with --allow-org-session-write)
-  D1 Read, Workers Scripts Read     read only: this version does not create the backup Worker
+  D1 Edit                           the backup database and its tables (and list its tables)
+  Workers Scripts Edit              upload the backup Worker, turn off its workers.dev URL,
+                                    attach its custom domain
 Zone (the dashboard's zone only):
   Zone Read                         find the zone and its plan
-  DNS Edit                          the hostname's CNAME to the tunnel
+  DNS Edit                          the hostname's CNAME to the tunnel (and read the backup hostname's records)
   Zone WAF Edit                     the skip rule for agents and services
   Cache Rules Edit                  the cache bypass rule
   Config Rules Edit                 the consent page rule
@@ -83,6 +86,11 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 	if strings.TrimSpace(in.AppURL) == "" {
 		in.AppURL = envApp
 	}
+	// The backup hostname the host files already name, so the Worker's custom domain is
+	// the one the backup service calls.
+	if strings.TrimSpace(in.BackupHostname) == "" {
+		in.BackupHostname = backupHostDefault(realValue(a.dir, "backup.env", "BACKUP_SINK_URL"))
+	}
 	desired, err := plan.NewDesired(in)
 	if err != nil {
 		fmt.Fprintln(deps.Stderr, "setup:", err)
@@ -115,7 +123,14 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 	if owner == nil {
 		owner = hostfiles.SystemOwner()
 	}
-	sink := newHostSecretSink(a.dir, owner, servicesTokenName(desired))
+	sink := newHostSecretSink(a.dir, owner, map[cfprovision.SecretName]string{
+		cfprovision.SecretServicesToken: tokenName(desired, plan.TokenServices), cfprovision.SecretBackupsToken: tokenName(desired, plan.TokenBackups)})
+	bundle := deps.Bundle
+	if bundle == nil {
+		if b, ok := sinkbundle.Embedded(); ok {
+			bundle = &b
+		}
+	}
 	newEngine := deps.NewEngine
 	if newEngine == nil {
 		newEngine = defaultNewEngine
@@ -125,6 +140,7 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 		AllowBotFightModeOff: a.allowBotFightModeOff,
 		AllowOrgSessionWrite: a.allowOrgSessionWrite,
 		StateDir:             a.dir,
+		Bundle:               bundle,
 	})
 	stopped := func(err error) int {
 		msg := scrub(err.Error(), token)
@@ -163,7 +179,11 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 		return failf("nothing was changed")
 	}
 	if len(reviewed.Plan.Steps) == 0 {
-		left := writeApplyReport(deps.Stdout, cfprovision.Outputs{Final: reviewed.Actions}, reviewed, sink)
+		final := cfprovision.Outputs{Final: reviewed.Actions}
+		left := writeApplyReport(deps.Stdout, final, reviewed, sink)
+		if code := backupHostValues(deps, a.dir, owner, desired, final); code != 0 {
+			return code
+		}
 		return finish(deps, desired.Hostname, left, sink)
 	}
 
@@ -194,7 +214,47 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 		fmt.Fprintln(deps.Stderr, "setup: Setup stopped. Do not start cloudflared yet: fix the cause above and run setup again; it reads the account first and continues where it stopped.")
 		return code
 	}
+	if code := backupHostValues(deps, a.dir, owner, desired, out); code != 0 {
+		return code
+	}
 	return finish(deps, desired.Hostname, left, sink)
+}
+
+// backupHostValues writes the non-secret settings the backup sidecar needs into
+// backup.env, under the adopt rule (a key with another value is reported and left
+// alone), once the backup Worker's custom domain reads back ok. It never writes
+// BACKUP_AGE_RECIPIENT, and says that backups stay off until that is set.
+func backupHostValues(deps Deps, dir string, owner hostfiles.Owner, d plan.Desired, out cfprovision.Outputs) int {
+	ok := false
+	for _, a := range out.Final {
+		ok = ok || (a.ID == "worker.domain" && a.Kind == plan.OK)
+	}
+	if !ok {
+		return 0
+	}
+	pl := hostfiles.NewPlanner(dir, owner)
+	kvs := []hostfiles.KV{{Key: "BACKUP_SINK_URL", Value: "https://" + d.Worker.Hostname}}
+	for _, name := range []string{"backup-bearer", "backup-access-client-id", "backup-access-client-secret"} {
+		spec, _ := hostfiles.LookupSecret(name)
+		kvs = append(kvs, hostfiles.KV{Key: spec.EnvKey, Value: spec.EnvValue})
+	}
+	pl.Env("backup.env", "backup.env.example", kvs)
+	p, err := pl.Plan()
+	if err == nil && p.Changes() > 0 {
+		err = p.Apply()
+	}
+	if err != nil {
+		fmt.Fprintln(deps.Stderr, "setup: Cloudflare is set up, but writing backup.env failed:", err)
+		return 1
+	}
+	fmt.Fprintln(deps.Stdout, "\nBackup settings in backup.env (an existing value is kept, never replaced):")
+	_ = p.WriteText(deps.Stdout)
+	if realValue(dir, "backup.env", "BACKUP_AGE_RECIPIENT") == "" {
+		fmt.Fprintln(deps.Stdout, "Backups stay off until BACKUP_AGE_RECIPIENT is set in backup.env: the backup service cannot encrypt a snapshot without it, "+
+			"so it fails and alerts every hour. Setup does not write it here; make the age key on the recovery workstation and set it "+
+			"(docs/deploy/fresh-install.md step 4.1, or `scripts/setup host --age-recipient age1…`).")
+	}
+	return 0
 }
 
 // finish prints the closing lines of a run whose steps all read back ok (or that had none)
@@ -299,6 +359,9 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 	for _, k := range sink.kept {
 		fmt.Fprintf(&b, "  - %s\n", k)
 	}
+	if out.UploadedWorker {
+		b.WriteString("  - backup bearer: secrets/backup/bearer, uploaded as the Worker's BACKUP_BEARER_SECRET in the upload that created it\n")
+	}
 	final := out.Final
 	if len(final) == 0 {
 		final = reviewed.Actions // the run stopped: what the preview showed is still the best list
@@ -319,7 +382,9 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 		}
 		// The plan cannot see host files: its line says an apply reports the services
 		// secret. When the sink holds it, the secrets list above already says where it is.
-		if a.ID == "access.service_token."+plan.TokenServices+".secret" && sink.holds[cfprovision.SecretServicesToken] {
+		if (a.ID == "access.service_token."+plan.TokenServices+".secret" && sink.holds[cfprovision.SecretServicesToken]) ||
+			(a.ID == "access.service_token."+plan.TokenBackups+".secret" && sink.holds[cfprovision.SecretBackupsToken]) ||
+			(a.ID == "worker.secret" && out.UploadedWorker) {
 			continue
 		}
 		fmt.Fprintf(&b, "  - %s: %s %s", a.Kind, a.Resource, a.Name)
@@ -335,10 +400,6 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 			left.blocking = append(left.blocking, fmt.Sprintf("%s %s %s", a.Kind, a.Resource, a.Name))
 		}
 	}
-	for _, s := range reviewed.Plan.Skipped {
-		fmt.Fprintf(&b, "  - skipped: %s\n", s)
-		n++
-	}
 	if n == 0 {
 		b.WriteString("  nothing\n")
 	}
@@ -352,11 +413,11 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 	return left
 }
 
-func servicesTokenName(d plan.Desired) string {
+func tokenName(d plan.Desired, key string) string {
 	for _, t := range d.ServiceTokens {
-		if t.Key == plan.TokenServices {
+		if t.Key == key {
 			return t.Name
 		}
 	}
-	return plan.TokenServices
+	return key
 }

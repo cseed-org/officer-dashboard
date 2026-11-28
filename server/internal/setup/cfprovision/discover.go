@@ -66,6 +66,7 @@ func Discover(ctx context.Context, api cfapi.Reader, d plan.Desired) (plan.Obser
 		func() (err error) { o.BotFightMode, err = x.botFightMode(ctx); return },
 		func() (err error) { o.D1, err = x.d1(ctx); return },
 		func() (err error) { o.Worker, err = x.worker(ctx); return },
+		func() (err error) { o.BackupDNS, err = x.backupDNS(ctx, o.Worker, o.Zone.Name); return },
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
@@ -821,6 +822,7 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 				Name       string `json:"name"`
 				DatabaseID string `json:"database_id"`
 				ID         string `json:"id"`
+				Text       string `json:"text"`
 			} `json:"bindings"`
 		}
 		if err := x.api.Get(ctx, script+"/settings", nil, &settings); err != nil {
@@ -836,6 +838,11 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 				if out.D1BindingID == "" {
 					out.D1BindingID = b.ID
 				}
+			}
+			// The label setup uploads ({"type":"plain_text","name":…,"text":…}, the
+			// multipart-upload-metadata page); a plain-text value is not a secret.
+			if b.Type == "plain_text" && b.Name == plan.WorkerRevisionBinding {
+				out.Revision = strings.TrimSpace(b.Text)
 			}
 		}
 		var secrets []struct {
@@ -884,6 +891,36 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 	}
 	if len(ids) > 1 {
 		return out, ambiguous("Worker custom domain", x.d.Worker.Hostname, ids)
+	}
+	return out, nil
+}
+
+// backupDNS: GET /zones/{zone_id}/dns_records?name.exact=<backup hostname>, the records on
+// the backup hostname, read only while no custom domain holds it (Cloudflare creates the
+// custom domain's own record). "You cannot create a Custom Domain on a hostname with an
+// existing CNAME DNS record"
+// (https://developers.cloudflare.com/workers/configuration/routing/custom-domains/).
+func (x *discovery) backupDNS(ctx context.Context, w plan.Worker, zoneName string) (plan.DNS, error) {
+	host := x.d.Worker.Hostname
+	if w.Domain.Found || w.Domain.Unknown != "" || (host != strings.ToLower(zoneName) && !strings.HasSuffix(host, "."+strings.ToLower(zoneName))) {
+		return plan.DNS{}, nil
+	}
+	type record struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Type    string `json:"type"`
+		Content string `json:"content"`
+	}
+	recs, err := cfapi.ListAll[record](ctx, x.api, x.zonePath("/dns_records"), url.Values{"name.exact": {host}})
+	if err != nil {
+		why, err := unreadable("the backup hostname's DNS records", err)
+		return plan.DNS{Unknown: why}, err
+	}
+	var out plan.DNS
+	for _, r := range recs {
+		if strings.EqualFold(strings.TrimSuffix(r.Name, "."), host) {
+			out.Records = append(out.Records, plan.DNSRecord{ID: r.ID, Type: r.Type, Content: r.Content})
+		}
 	}
 	return out, nil
 }

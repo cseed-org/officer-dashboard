@@ -17,7 +17,17 @@ const (
 	// and client secret. Cloudflare shows the client secret only in the create response:
 	// "This is the only time you can get the Client Secret."
 	SecretServicesToken SecretName = "access-service-token/services"
+	// SecretBackupsToken is the "dashboard-backups-host" service token the backup service
+	// presents to the backup hostname's Access application; shown once, as above.
+	SecretBackupsToken SecretName = "access-service-token/backups"
+	// SecretBackupBearer is the backup Worker's bearer. `setup host` generates it into
+	// secrets/backup/bearer; the apply engine only reads it (Load), to upload it with the
+	// Worker it creates, and never stores, prints or regenerates it.
+	SecretBackupBearer SecretName = "backup-bearer"
 )
+
+// ErrNotKept is Load's answer for a secret the host does not hold.
+var ErrNotKept = errors.New("the host does not hold this secret")
 
 // Secret is one secret to keep. ResourceID is the Cloudflare ID it belongs to (the tunnel
 // or the service token); ClientID is set for a service token. Value is the secret itself.
@@ -47,6 +57,9 @@ type SecretSink interface {
 	// Has reports whether a secret is already kept, so a re-run after a crash can fetch a
 	// tunnel token Cloudflare still has, and can say which secrets need rotating.
 	Has(ctx context.Context, name SecretName) (bool, error)
+	// Load returns a secret the host already holds (only SecretBackupBearer is ever
+	// loaded), or ErrNotKept. Its error never includes the value.
+	Load(ctx context.Context, name SecretName) (string, error)
 }
 
 // MemorySink is a SecretSink in memory, for tests. FailStore makes Store fail for the
@@ -78,6 +91,16 @@ func (m *MemorySink) Has(_ context.Context, name SecretName) (bool, error) {
 	defer m.mu.Unlock()
 	_, ok := m.secrets[name]
 	return ok, nil
+}
+
+func (m *MemorySink) Load(_ context.Context, name SecretName) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s, ok := m.secrets[name]
+	if !ok {
+		return "", ErrNotKept
+	}
+	return s.Value, nil
 }
 
 // Get returns a stored secret (tests only).

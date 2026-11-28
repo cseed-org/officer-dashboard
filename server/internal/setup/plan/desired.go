@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // Inputs are the values an admin supplies. Everything else in Desired comes from
@@ -34,6 +36,7 @@ type Desired struct {
 	BotFightMode       bool
 	OrgSessionDuration string
 	D1Database         string
+	D1Tables           []string // the tables the Worker's migrations create
 	Worker             WorkerSpec
 }
 
@@ -86,7 +89,13 @@ type RuleSpec struct {
 
 type WorkerSpec struct {
 	Script, Hostname, D1Binding, Secret string
+	// Revision is the Worker revision this image carries and would upload.
+	Revision int
 }
+
+// WorkerRevisionBinding is the plain-text binding setup uploads with the Worker, holding
+// its revision, so a preview can read it from the script's settings.
+const WorkerRevisionBinding = sinkbundle.RevisionBinding
 
 // Stable keys used in action IDs.
 const (
@@ -163,7 +172,11 @@ func NewDesired(in Inputs) (Desired, error) {
 			D1Binding: "BACKUPS",
 			// fresh-install.md §4.5: "npx wrangler secret put BACKUP_BEARER_SECRET"
 			Secret: "BACKUP_BEARER_SECRET",
+			// The revision this image's Worker bundle carries (SINK_REVISION in src/index.ts).
+			Revision: sinkbundle.Revision,
 		},
+		// server/deploy/backup-sink/migrations/0001.sql: CREATE TABLE snapshots, chunks, budgets.
+		D1Tables: sinkbundle.Tables,
 	}
 
 	d.Groups = []GroupSpec{{Key: GroupOfficers, Name: n(officers)}}

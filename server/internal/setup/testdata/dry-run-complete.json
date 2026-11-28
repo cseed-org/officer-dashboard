@@ -188,7 +188,7 @@
       "resource": "D1 migrations",
       "name": "dashboard-backups",
       "detail": [
-        "reading the d1_migrations table needs a D1 query (POST); a dry run sends only GET"
+        "listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables"
       ]
     },
     {
@@ -197,6 +197,21 @@
       "resource": "Worker",
       "name": "dashboard-backup-sink",
       "existing_id": "dashboard-backup-sink"
+    },
+    {
+      "id": "worker.version",
+      "kind": "unknowable",
+      "resource": "Worker version",
+      "name": "revision 2",
+      "detail": [
+        "Cloudflare shows no SINK_REVISION binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here; the backup service asks the Worker on every run and alerts when it is older than revision 2"
+      ]
+    },
+    {
+      "id": "worker.subdomain",
+      "kind": "ok",
+      "resource": "workers.dev and preview URLs",
+      "name": "off"
     },
     {
       "id": "worker.secret",
@@ -219,7 +234,7 @@
     "create": 0,
     "drift": 0,
     "manual": 0,
-    "ok": 23,
-    "unknowable": 4
+    "ok": 24,
+    "unknowable": 5
   }
 }

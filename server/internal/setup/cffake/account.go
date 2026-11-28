@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
+
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // Account is a stateful fake account. It starts from a fixture (Fresh, Live, Complete),
@@ -55,6 +58,7 @@ type accountState struct {
 	// putReplaces makes the organization and Bot Management PUTs replace every writable
 	// field: a field the body omits is reset. The reference does not say which it is.
 	putReplaces bool
+	uploads     []Uploaded
 }
 
 // NewAccount starts a stateful fake from routes.
@@ -112,8 +116,44 @@ func (a *Account) Secrets() []string {
 	return append([]string(nil), a.acct.secrets...)
 }
 
-// Writes returns every request that was not a GET.
-func (a *Account) Writes() []Request { return a.NonGET() }
+// Writes returns every request that was not a GET, except the read-only D1 queries
+// (Queries): D1 runs SQL only through a POST, and listing a database's tables changes
+// nothing. A query counts as read-only only when its SQL is exactly one of
+// sinkbundle.ReadOnlySQL, the two listings the engine sends.
+func (a *Account) Writes() []Request {
+	var out []Request
+	for _, r := range a.NonGET() {
+		if !a.readOnlyQuery(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// Queries returns the read-only D1 queries (see Writes).
+func (a *Account) Queries() []Request {
+	var out []Request
+	for _, r := range a.NonGET() {
+		if a.readOnlyQuery(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (a *Account) readOnlyQuery(r Request) bool {
+	if r.Method != http.MethodPost || !strings.HasSuffix(r.Path, "/query") {
+		return false
+	}
+	var body struct {
+		SQL    string `json:"sql"`
+		Params []any  `json:"params"`
+	}
+	if json.Unmarshal([]byte(r.Body), &body) != nil || len(body.Params) > 0 {
+		return false
+	}
+	return slices.Contains(sinkbundle.ReadOnlySQL, body.SQL)
+}
 
 // Route returns the current result stored for a path (for assertions).
 func (a *Account) Route(path string) (Response, bool) {
@@ -188,13 +228,18 @@ func (st *accountState) intercept(s *Server, req Request, w http.ResponseWriter,
 		result = route.Result
 	} else {
 		var body map[string]any
-		if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		if strings.HasPrefix(req.ContentType, "multipart/form-data") {
+			s.mu.Lock()
+			result, bad = st.upload(s, req)
+			s.mu.Unlock()
+		} else if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 			fail(http.StatusBadRequest, 10026, "request body is not a JSON object")
 			return true
+		} else {
+			s.mu.Lock()
+			result, bad = st.write(s, req, body)
+			s.mu.Unlock()
 		}
-		s.mu.Lock()
-		result, bad = st.write(s, req, body)
-		s.mu.Unlock()
 		if bad != nil {
 			fail(bad.status, bad.code, bad.msg)
 			return true
@@ -316,6 +361,12 @@ func (st *accountState) write(s *Server, req Request, body map[string]any) (any,
 			return st.createRuleset(s, body)
 		case strings.HasPrefix(p, zone("/rulesets/")) && strings.HasSuffix(p, "/rules"):
 			return st.addRule(s, strings.TrimSuffix(strings.TrimPrefix(p, zone("/rulesets/")), "/rules"), body)
+		case p == acct("/d1/database"):
+			return st.createD1(s, body)
+		case strings.HasPrefix(p, acct("/d1/database/")) && strings.HasSuffix(p, "/query"):
+			return st.queryD1(s, strings.TrimSuffix(strings.TrimPrefix(p, acct("/d1/database/")), "/query"), body)
+		case strings.HasPrefix(p, acct("/workers/scripts/")) && strings.HasSuffix(p, "/subdomain"):
+			return st.subdomain(s, strings.TrimSuffix(strings.TrimPrefix(p, acct("/workers/scripts/")), "/subdomain"), body)
 		}
 	case http.MethodPut:
 		switch {
@@ -333,6 +384,8 @@ func (st *accountState) write(s *Server, req Request, body map[string]any) (any,
 			cfg := map[string]any{"tunnel_id": id, "version": version, "config": body["config"], "source": "cloudflare", "created_at": "2026-11-27T00:00:00Z"}
 			s.routes[p] = Response{Result: cfg}
 			return cfg, nil
+		case p == acct("/workers/domains"):
+			return st.attachDomain(s, body)
 		case p == acct("/access/organizations"), p == zone("/bot_management"):
 			cur, _ := s.routes[p].Result.(map[string]any)
 			next := map[string]any{}

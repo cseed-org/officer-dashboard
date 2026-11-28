@@ -33,6 +33,7 @@ import (
 	"officerdashboard/internal/setup/cfprovision"
 	"officerdashboard/internal/setup/hostfiles"
 	"officerdashboard/internal/setup/plan"
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // TokenFileEnv names the file holding the Cloudflare API token used by setup.
@@ -73,6 +74,9 @@ type Deps struct {
 	// NewEngine builds the apply engine (nil: the real one). Only an apply calls it, so
 	// a dry run never constructs the write client.
 	NewEngine NewEngineFunc
+	// Bundle is the backup Worker an apply uploads (nil: the one compiled into the
+	// binary, sinkbundle.Embedded; a build without it cannot create the Worker).
+	Bundle *sinkbundle.Bundle
 	// Used by `setup host` and by an apply (the confirmation and the secret files).
 	Stdin  io.Reader
 	Owner  hostfiles.Owner // nil: the real chown and stat

@@ -53,6 +53,20 @@ const MainModule = "worker.js"
 // Revision as text.
 const RevisionBinding = "SINK_REVISION"
 
+// The only SQL setup sends to a D1 database besides the migration itself. Both only read.
+const (
+	// TablesSQL lists a database's tables. The D1 list's num_tables is "Deprecated … This
+	// count is no longer accurate and should not be relied upon"
+	// (https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/list/),
+	// so whether a database is empty is decided by this query alone.
+	TablesSQL = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+	// AppliedSQL lists the migrations Wrangler's d1_migrations table records.
+	AppliedSQL = `SELECT name FROM "d1_migrations" ORDER BY id`
+)
+
+// ReadOnlySQL are the statements setup sends without changing a database.
+var ReadOnlySQL = []string{TablesSQL, AppliedSQL}
+
 // Tables are the tables the migrations create (TestTablesMatchTheMigration checks them).
 var Tables = []string{"budgets", "chunks", "snapshots"}
 

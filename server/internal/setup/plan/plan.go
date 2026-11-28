@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -57,7 +58,13 @@ type Observed struct {
 	Rules         map[string]Rule
 	BotFightMode  BotFightMode
 	D1            Seen
-	Worker        Worker
+	// D1Tables are the backup database's tables. Only an apply fills them: listing them
+	// needs a D1 query, which is a POST, so a dry run leaves Read false.
+	D1Tables Tables
+	Worker   Worker
+	// BackupDNS are the DNS records on the backup hostname, read when no Worker custom
+	// domain holds it: Cloudflare refuses a custom domain on a hostname with a CNAME.
+	BackupDNS DNS
 	// OtherApps lists, per hostname (the dashboard's and the backup Worker's), every
 	// Access application with a destination on that hostname, bare or with a path, that
 	// matched none of the documented applications. Each carries its policies.
@@ -178,7 +185,19 @@ type Worker struct {
 	// WorkersDev and PreviewURLs are the script's workers.dev subdomain switches.
 	WorkersDev, PreviewURLs *bool
 	SubdomainUnknown        string
-	Domain                  WorkerDomain
+	// Revision is the text of the plain-text binding setup uploads with the Worker
+	// (sinkbundle.RevisionBinding); "" when the Worker has none, because setup did not
+	// upload it.
+	Revision string
+	Domain   WorkerDomain
+}
+
+// Tables is what a read-only D1 query showed: the names in sqlite_master (Read), or why it
+// could not be run (Unknown).
+type Tables struct {
+	Read    bool
+	Names   []string
+	Unknown string
 }
 
 type WorkerDomain struct {
@@ -409,18 +428,7 @@ func Diff(d Desired, o Observed) []Action {
 	db.seen(o.D1)
 	add(db)
 
-	mig := &check{a: Action{ID: "d1.migrations", Resource: "D1 migrations", Name: d.D1Database}}
-	switch {
-	case o.D1.Unknown != "":
-		mig.unknownf("D1 database could not be read")
-	case !o.D1.Found:
-		mig.create = true
-	default:
-		// Wrangler records applied migrations in the d1_migrations table; reading it
-		// needs a D1 query, which is a POST, so a dry run cannot look.
-		mig.unknownf("reading the d1_migrations table needs a D1 query (POST); a dry run sends only GET")
-	}
-	add(mig)
+	out = append(out, diffMigrations(d, o))
 
 	w := &check{a: Action{ID: "worker", Resource: "Worker", Name: d.Worker.Script}}
 	if w.seen(o.Worker.Seen) {
@@ -436,20 +444,10 @@ func Diff(d Desired, o Observed) []Action {
 		case o.Worker.D1BindingID != o.D1.ID:
 			w.driftf("%s is bound to D1 database %s, not %s (%s)", d.Worker.D1Binding, o.Worker.D1BindingID, d.D1Database, o.D1.ID)
 		}
-		// fresh-install.md §4.6: "Keep `workers_dev` and `preview_urls` disabled."
-		switch {
-		case o.Worker.SubdomainUnknown != "":
-			w.unknownf("%s", o.Worker.SubdomainUnknown)
-		default: // a missing boolean is false
-			if o.Worker.WorkersDev != nil && *o.Worker.WorkersDev {
-				w.driftf("the workers.dev URL is on; docs ask for workers_dev disabled")
-			}
-			if o.Worker.PreviewURLs != nil && *o.Worker.PreviewURLs {
-				w.driftf("preview URLs are on; docs ask for preview_urls disabled")
-			}
-		}
 	}
 	add(w)
+	out = append(out, diffWorkerVersion(d, o.Worker))
+	out = append(out, diffWorkerSubdomain(o.Worker))
 
 	sec := &check{a: Action{ID: "worker.secret", Resource: "Worker secret", Name: d.Worker.Secret}}
 	switch {
@@ -470,10 +468,148 @@ func Diff(d Desired, o Observed) []Action {
 	dom := &check{a: Action{ID: "worker.domain", Resource: "Worker custom domain", Name: d.Worker.Hostname}}
 	if dom.seen(o.Worker.Domain.Seen) && o.Worker.Domain.Service != d.Worker.Script {
 		dom.driftf("serves Worker %q, not %q; setup will not move it", o.Worker.Domain.Service, d.Worker.Script)
+	} else if !o.Worker.Domain.Found && o.Worker.Domain.Unknown == "" {
+		zone := strings.ToLower(o.Zone.Name)
+		switch {
+		case d.Worker.Hostname != zone && !strings.HasSuffix(d.Worker.Hostname, "."+zone):
+			dom.manual = true
+			dom.notef("%s is not in the zone %s, which is the only zone setup works in: choose a backup hostname in it with --backup-hostname", d.Worker.Hostname, o.Zone.Name)
+		case o.BackupDNS.Unknown != "":
+			dom.create = false
+			dom.unknownf("%s; Cloudflare refuses a Worker custom domain on a hostname with a CNAME record, so setup must read them first", o.BackupDNS.Unknown)
+		case len(o.BackupDNS.Records) > 0:
+			// https://developers.cloudflare.com/workers/configuration/routing/custom-domains/:
+			// "You cannot create a Custom Domain on a hostname with an existing CNAME DNS record".
+			dom.manual = true
+			for _, r := range o.BackupDNS.Records {
+				dom.notef("%s already has a %s record to %s [%s]. Cloudflare refuses a Worker custom domain on a hostname with an existing CNAME record, "+
+					"and setup never removes a record: delete it in the dashboard (your domain → DNS → Records) if nothing uses it, or choose another hostname with --backup-hostname",
+					d.Worker.Hostname, r.Type, orNone(r.Content), r.ID)
+			}
+		}
 	}
 	add(dom)
 
 	return out
+}
+
+// internalTable reports whether a D1 table is SQLite's or Cloudflare's own, not the
+// database's content: sqlite_sequence and friends, and D1's _cf_ tables.
+func internalTable(name string) bool {
+	return strings.HasPrefix(name, "sqlite_") || strings.HasPrefix(name, "_cf_")
+}
+
+// wranglerMigrations is the table Wrangler records applied migrations in
+// (DEFAULT_MIGRATION_TABLE in packages/wrangler/src/d1/constants.ts, wrangler 4.168.0).
+const wranglerMigrations = "d1_migrations"
+
+// diffMigrations decides the backup database's schema line. Setup applies the Worker's
+// migrations only to a database with no tables (the D1 list's num_tables is "Deprecated
+// … no longer accurate and should not be relied upon", so only a query decides); a
+// database that has tables is never altered.
+func diffMigrations(d Desired, o Observed) Action {
+	mig := &check{a: Action{ID: "d1.migrations", Resource: "D1 migrations", Name: d.D1Database}}
+	switch {
+	case o.D1.Unknown != "":
+		mig.unknownf("D1 database could not be read")
+	case !o.D1.Found:
+		mig.create = true
+	case o.D1Tables.Unknown != "":
+		mig.unknownf("%s", o.D1Tables.Unknown)
+	case !o.D1Tables.Read:
+		mig.unknownf("listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables")
+	default:
+		var have []string
+		for _, n := range o.D1Tables.Names {
+			if !internalTable(n) {
+				have = append(have, n)
+			}
+		}
+		sort.Strings(have)
+		var missing []string
+		for _, t := range d.D1Tables {
+			if !slices.Contains(have, t) {
+				missing = append(missing, t)
+			}
+		}
+		switch {
+		case len(have) == 0:
+			mig.create = true
+			mig.notef("the database has no tables; setup applies the Worker's migrations and records them in %s as Wrangler does", wranglerMigrations)
+		case len(missing) > 0:
+			mig.driftf("the database has tables %s but not %s; setup never alters a database that already has tables", list(have), list(missing))
+		case !slices.Contains(have, wranglerMigrations):
+			mig.notef("no %s table: the tables were made without Wrangler's record, so `wrangler d1 migrations apply` would try them again and fail", wranglerMigrations)
+		}
+	}
+	return mig.done()
+}
+
+// upgradeStep is how an admin moves an existing Worker to this image's revision.
+func upgradeStep(rev int) string {
+	return fmt.Sprintf("setup never uploads over an existing Worker, because an upload replaces its whole script, bindings and secrets. "+
+		"To upgrade it, redeploy it from this release's server/deploy/backup-sink with Wrangler (docs/deploy/fresh-install.md step 4), "+
+		"adding --var %s:%d so setup can read the revision", WorkerRevisionBinding, rev)
+}
+
+// diffWorkerVersion compares the revision setup labelled the Worker with when it uploaded
+// it with the one this image carries.
+func diffWorkerVersion(d Desired, w Worker) Action {
+	c := &check{a: Action{ID: "worker.version", Resource: "Worker version", Name: fmt.Sprintf("revision %d", d.Worker.Revision)}}
+	switch {
+	case w.Unknown != "":
+		c.unknownf("Worker could not be read")
+	case !w.Found:
+		c.create = true
+	case w.BindingUnknown != "":
+		c.unknownf("%s", w.BindingUnknown)
+	case w.Revision == "":
+		c.unknownf("Cloudflare shows no %s binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here; "+
+			"the backup service asks the Worker on every run and alerts when it is older than revision %d", WorkerRevisionBinding, d.Worker.Revision)
+	default:
+		n, err := strconv.Atoi(w.Revision)
+		switch {
+		case err != nil:
+			c.driftf("its %s binding is %q, which is not a revision", WorkerRevisionBinding, w.Revision)
+		case n < d.Worker.Revision:
+			c.driftf("it runs revision %d; this image carries revision %d. %s", n, d.Worker.Revision, upgradeStep(d.Worker.Revision))
+		case n > d.Worker.Revision:
+			c.driftf("it runs revision %d, newer than this image's revision %d: update the image (scripts/update) rather than the Worker", n, d.Worker.Revision)
+		}
+	}
+	return c.done()
+}
+
+// diffWorkerSubdomain checks fresh-install.md §4.6: "Keep `workers_dev` and `preview_urls`
+// disabled." On a Worker setup uploaded (it carries setup's revision label), switches
+// still on mean an interrupted run, so turning them off completes setup's own create.
+func diffWorkerSubdomain(w Worker) Action {
+	c := &check{a: Action{ID: "worker.subdomain", Resource: "workers.dev and preview URLs", Name: "off"}}
+	switch {
+	case w.Unknown != "":
+		c.unknownf("Worker could not be read")
+	case !w.Found:
+		c.create = true
+	case w.SubdomainUnknown != "":
+		c.unknownf("%s", w.SubdomainUnknown)
+	default: // a missing boolean is false
+		dev := w.WorkersDev != nil && *w.WorkersDev
+		prev := w.PreviewURLs != nil && *w.PreviewURLs
+		switch {
+		case !dev && !prev:
+		case w.Revision != "":
+			c.create = true
+			c.notef("on (workers.dev %v, preview URLs %v), and setup uploaded this Worker: an interrupted run left them on, so setup turns them off", dev, prev)
+		default:
+			if dev {
+				c.driftf("the workers.dev URL is on; docs ask for workers_dev disabled")
+			}
+			if prev {
+				c.driftf("preview URLs are on; docs ask for preview_urls disabled")
+			}
+		}
+	}
+	return c.done()
 }
 
 // diffTunnel matches by the host's token ID, then the hostname's CNAME target, then the

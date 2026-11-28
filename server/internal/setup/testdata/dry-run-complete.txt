@@ -32,10 +32,13 @@ Cloudflare setup for officers.example.org (dry run: nothing was changed)
   ok          Bot Fight Mode                       off
   ok          D1 database                          dashboard-backups  [d1-backups]
   unknowable  D1 migrations                        dashboard-backups
-                                                     - reading the d1_migrations table needs a D1 query (POST); a dry run sends only GET
+                                                     - listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables
   ok          Worker                               dashboard-backup-sink  [dashboard-backup-sink]
+  unknowable  Worker version                       revision 2
+                                                     - Cloudflare shows no SINK_REVISION binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here; the backup service asks the Worker on every run and alerts when it is older than revision 2
+  ok          workers.dev and preview URLs         off
   unknowable  Worker secret                        BACKUP_BEARER_SECRET
                                                      - set, but Cloudflare never returns its value, and the preview cannot see the host's secret files: if the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer (docs/deploy/fresh-install.md step 4.5)
   ok          Worker custom domain                 backups.example.org  [wd-1]
 
-23 ok, 0 create, 0 drift, 4 unknowable, 0 manual
+24 ok, 0 create, 0 drift, 5 unknowable, 0 manual

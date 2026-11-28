@@ -42,7 +42,14 @@
   "name": "officer-dashboard services"
 }
 
-## 5. POST /accounts/acct-1/access/policies
+## 5. POST /accounts/acct-1/access/service_tokens
+# ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/service_tokens/methods/create/
+{
+  "duration": "forever",
+  "name": "dashboard-backups-host"
+}
+
+## 6. POST /accounts/acct-1/access/policies
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/policies/methods/create/
 {
   "decision": "allow",
@@ -61,7 +68,7 @@
   "name": "Officers and Launchpad"
 }
 
-## 6. POST /accounts/acct-1/access/apps
+## 7. POST /accounts/acct-1/access/apps
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/
 {
   "allowed_idps": [
@@ -78,7 +85,7 @@
   "name": "Officer Dashboard",
   "policies": [
     {
-      "id": "pol-7",
+      "id": "pol-9",
       "precedence": 1
     }
   ],
@@ -86,7 +93,7 @@
   "type": "self_hosted"
 }
 
-## 7. POST /accounts/acct-1/access/policies
+## 8. POST /accounts/acct-1/access/policies
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/policies/methods/create/
 {
   "decision": "bypass",
@@ -98,7 +105,7 @@
   "name": "Everyone (bypass)"
 }
 
-## 8. POST /accounts/acct-1/access/apps
+## 9. POST /accounts/acct-1/access/apps
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/
 {
   "destinations": [
@@ -131,14 +138,14 @@
   "name": "Officer Dashboard: agents (bypass)",
   "policies": [
     {
-      "id": "pol-9",
+      "id": "pol-11",
       "precedence": 1
     }
   ],
   "type": "self_hosted"
 }
 
-## 9. POST /accounts/acct-1/access/policies
+## 10. POST /accounts/acct-1/access/policies
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/policies/methods/create/
 {
   "decision": "non_identity",
@@ -152,7 +159,7 @@
   "name": "Service token"
 }
 
-## 10. POST /accounts/acct-1/access/apps
+## 11. POST /accounts/acct-1/access/apps
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/
 {
   "destinations": [
@@ -169,7 +176,7 @@
   "name": "Officer Dashboard: services (service token)",
   "policies": [
     {
-      "id": "pol-11",
+      "id": "pol-13",
       "precedence": 1
     }
   ],
@@ -177,7 +184,41 @@
   "type": "self_hosted"
 }
 
-## 11. POST /zones/zone-1/rulesets
+## 12. POST /accounts/acct-1/access/policies
+# ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/policies/methods/create/
+{
+  "decision": "non_identity",
+  "include": [
+    {
+      "service_token": {
+        "token_id": "st-7"
+      }
+    }
+  ],
+  "name": "Backup host token"
+}
+
+## 13. POST /accounts/acct-1/access/apps
+# ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/
+{
+  "destinations": [
+    {
+      "type": "public",
+      "uri": "backups.example.org"
+    }
+  ],
+  "domain": "backups.example.org",
+  "name": "Dashboard backups (service token)",
+  "policies": [
+    {
+      "id": "pol-15",
+      "precedence": 1
+    }
+  ],
+  "type": "self_hosted"
+}
+
+## 14. POST /zones/zone-1/rulesets
 # ref: https://developers.cloudflare.com/api/resources/rulesets/methods/create/
 {
   "kind": "zone",
@@ -202,7 +243,7 @@
   ]
 }
 
-## 12. POST /zones/zone-1/rulesets/rs-cache/rules
+## 15. POST /zones/zone-1/rulesets/rs-cache/rules
 # ref: https://developers.cloudflare.com/api/resources/rulesets/subresources/rules/methods/create/
 {
   "action": "set_cache_settings",
@@ -214,7 +255,7 @@
   "expression": "(http.host eq \"officers.example.org\" and (http.request.uri.path eq \"/mcp\" or starts_with(http.request.uri.path, \"/mcp/\") or http.request.uri.path in {\"/oauth/register\" \"/oauth/token\" \"/.well-known/oauth-authorization-server\"} or starts_with(http.request.uri.path, \"/.well-known/oauth-protected-resource\") or starts_with(http.request.uri.path, \"/api/ingest/\") or starts_with(http.request.uri.path, \"/api/agent/\")))"
 }
 
-## 13. POST /zones/zone-1/rulesets
+## 16. POST /zones/zone-1/rulesets
 # ref: https://developers.cloudflare.com/api/resources/rulesets/methods/create/
 {
   "kind": "zone",
@@ -234,14 +275,65 @@
   ]
 }
 
-## 14. POST /accounts/acct-1/cfd_tunnel
+## 17. POST /accounts/acct-1/d1/database
+# ref: https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/create/
+{
+  "name": "dashboard-backups"
+}
+
+## 18. POST /accounts/acct-1/d1/database/00000016-0000-4000-8000-000000000016/query
+# ref: https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/
+{
+  "sql": "CREATE TABLE IF NOT EXISTS \"d1_migrations\"(\n\t\tid         INTEGER PRIMARY KEY AUTOINCREMENT,\n\t\tname       TEXT UNIQUE,\n\t\tapplied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL\n);\nCREATE TABLE snapshots (\n id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('hourly','daily','d1-weekly')),\n created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),\n sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size BETWEEN 1 AND 24700000),\n chunks INTEGER NOT NULL CHECK(chunks BETWEEN 1 AND 13), committed INTEGER NOT NULL DEFAULT 0,\n allocation INTEGER NOT NULL, write_cost INTEGER NOT NULL\n);\nCREATE TABLE chunks (\n snapshot_id TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,\n n INTEGER NOT NULL, blob BLOB NOT NULL CHECK(length(blob) BETWEEN 1 AND 1900000),\n PRIMARY KEY(snapshot_id,n)\n);\nCREATE TABLE budgets (day TEXT PRIMARY KEY, writes INTEGER NOT NULL DEFAULT 0, uploads INTEGER NOT NULL DEFAULT 0);\n-- Reserve a conservative lifetime write allowance, including cleanup, atomically.\n-- Half the account allowance belongs to membership and other workloads.\nCREATE TRIGGER reserve BEFORE INSERT ON snapshots BEGIN\n SELECT CASE WHEN (SELECT count(*) FROM snapshots) \u003e= 100\n  OR COALESCE((SELECT sum(allocation) FROM snapshots),0) + NEW.allocation \u003e 450000000\n  OR COALESCE((SELECT writes FROM budgets WHERE day=date('now')),0) + NEW.write_cost \u003e 40000\n  OR COALESCE((SELECT uploads FROM budgets WHERE day=date('now')),0) \u003e= 200\n  THEN RAISE(ABORT,'backup budget exhausted') END;\n INSERT INTO budgets(day,writes,uploads) VALUES(date('now'),NEW.write_cost,1)\n ON CONFLICT(day) DO UPDATE SET writes=writes+NEW.write_cost,uploads=uploads+1;\nEND;\nINSERT INTO \"d1_migrations\" (name)\nvalues ('0001.sql');"
+}
+
+## 19. PUT /accounts/acct-1/workers/scripts/dashboard-backup-sink
+# ref: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/
+{
+  "multipart": {
+    "metadata": {
+      "bindings": [
+        {
+          "database_id": "00000016-0000-4000-8000-000000000016",
+          "name": "BACKUPS",
+          "type": "d1"
+        },
+        {
+          "name": "BACKUP_BEARER_SECRET",
+          "text": "\u003cthe value of secrets/backup/bearer\u003e",
+          "type": "secret_text"
+        },
+        {
+          "name": "SINK_REVISION",
+          "text": "2",
+          "type": "plain_text"
+        }
+      ],
+      "compatibility_date": "2026-07-30",
+      "compatibility_flags": [
+        "nodejs_compat"
+      ],
+      "main_module": "worker.js"
+    },
+    "module": "worker.js, application/javascript+module, 96 bytes"
+  }
+}
+
+## 20. POST /accounts/acct-1/workers/scripts/dashboard-backup-sink/subdomain
+# ref: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/methods/create/
+{
+  "enabled": false,
+  "previews_enabled": false
+}
+
+## 21. POST /accounts/acct-1/cfd_tunnel
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/methods/create/
 {
   "config_src": "cloudflare",
   "name": "officer-dashboard"
 }
 
-## 15. PUT /accounts/acct-1/cfd_tunnel/00000012-0000-4000-8000-000000000012/configurations
+## 22. PUT /accounts/acct-1/cfd_tunnel/00000017-0000-4000-8000-000000000017/configurations
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/subresources/configurations/methods/update/
 {
   "config": {
@@ -257,17 +349,25 @@
   }
 }
 
-## 16. POST /zones/zone-1/dns_records
+## 23. POST /zones/zone-1/dns_records
 # ref: https://developers.cloudflare.com/api/resources/dns/subresources/records/methods/create/
 {
-  "content": "00000012-0000-4000-8000-000000000012.cfargotunnel.com",
+  "content": "00000017-0000-4000-8000-000000000017.cfargotunnel.com",
   "name": "officers.example.org",
   "proxied": true,
   "ttl": 1,
   "type": "CNAME"
 }
 
-## 17. PUT /accounts/acct-1/access/organizations
+## 24. PUT /accounts/acct-1/workers/domains
+# ref: https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/update/
+{
+  "hostname": "backups.example.org",
+  "service": "dashboard-backup-sink",
+  "zone_id": "zone-1"
+}
+
+## 25. PUT /accounts/acct-1/access/organizations
 # ref: https://developers.cloudflare.com/api/resources/zero_trust/subresources/organizations/methods/update/
 {
   "auth_domain": "club.cloudflareaccess.com",
