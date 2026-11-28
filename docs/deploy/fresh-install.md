@@ -102,9 +102,11 @@ and looking up your user ID (step 4).
    the people it sends invitations to.
 3. After step 6, with the dashboard running, run
    `<install-dir>/scripts/setup discord connect`. It prints one Discord link.
-   Open it in any browser, sign in to Discord as yourself, pick the channel for
-   dashboard notifications, and approve. The dashboard then shows a setup code.
-   Paste it into the terminal. Setup writes your Discord user ID as
+   Within 10 minutes, open it in a browser, sign in to Discord as yourself, pick
+   the channel for dashboard notifications, and approve. The dashboard then shows
+   a setup code. Paste it into that terminal, and never send it to anyone.
+   Setup shows the Discord account that approved the link and asks you to type
+   `yes`. It then writes your Discord user ID as
    `BOOTSTRAP_OWNER_DISCORD_ID`, and the notification webhook into
    `secrets/app/discord-webhook-url` and `secrets/backup/discord-webhook-url`.
    It then prints the command that restarts the services that read them. If

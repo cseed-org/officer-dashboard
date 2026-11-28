@@ -492,26 +492,45 @@ is reported as `conflict` and left alone. To replace a secret on purpose, use
 **Connect.** The link asks for `identify` (your Discord user ID, for
 `BOOTSTRAP_OWNER_DISCORD_ID`) and `webhook.incoming` (a webhook in a channel you
 pick). It asks only for what is still missing, and does nothing when both are set.
-Its state starts with `setup.`, and it uses PKCE. When Discord sends the browser
-back to `/auth/callback` with such a state, the dashboard only shows the code: it
-signs nobody in, sets and clears no cookie, writes nothing, and does not call
-Discord. The page is `no-store`, `no-referrer`, allows no script, and cannot be
-framed. The code is useless without the client secret and the PKCE verifier,
-which only the terminal has. The page stays behind Cloudflare Access like the rest
-of `/auth/`.
+It uses PKCE, and its state is signed: `setup.` followed by an expiry, a random
+nonce and an HMAC-SHA256 under a key derived from the Discord client secret. A link
+works for 10 minutes; if you take longer, setup prints a new one.
+
+When Discord sends the browser back to `/auth/callback` with a state the dashboard
+verifies with its own client secret, it only shows the code: it signs nobody in,
+sets and clears no cookie, writes nothing, and does not call Discord. The page is
+`no-store`, `no-referrer`, allows no script, and cannot be framed. Any other
+`setup.` state, whether made up, expired or signed with another secret, gets the
+normal sign-in error, and so does every callback when no client secret is
+configured. The page stays behind Cloudflare Access like the rest of `/auth/`.
+
+**The code is a credential.** Whoever has it, together with a sign-in started on
+the dashboard, could sign in as the person who approved the link. Paste it only
+into the terminal that printed the link, and never send it to anyone. The page says
+so. Because only `connect` can make a state the dashboard accepts, a link someone
+else made never shows a code.
 
 Paste the line the page shows, or the page's whole address. A code from another
 link, a code already tried and a code Discord refuses are each turned down, and
-setup asks again, up to three times. What one consent gives is written before setup
-asks for more. If Discord leaves the webhook out of the answer to the combined
-consent, setup prints a second link for `webhook.incoming` alone. Each approved
-webhook link makes a new webhook in Discord. The webhook URL goes to
-`secrets/app/discord-webhook-url` and `secrets/backup/discord-webhook-url`, with
-`DISCORD_WEBHOOK_URL_FILE` in `dashboard.env` and `backup.env`. A
-`DISCORD_WEBHOOK_URL_FILE` that already points at another file is left alone.
+setup asks again, up to three times. Setup then shows the Discord account that
+approved the link (name, username and ID) and asks you to type `yes` before
+writing it as the first owner. Any other answer, or no terminal, writes no owner.
+What one consent gives is written before setup asks for more. If Discord leaves
+the webhook out of the answer to the combined consent, setup prints a second link
+for `webhook.incoming` alone.
 
-`connect` writes without `--yes`, since a code works only once, and it restarts
-nothing. It prints the command that recreates the services whose files changed
+Each approved webhook link makes a new webhook in Discord. Setup prints its name
+and channel. To delete one you did not mean to make, open that channel's settings
+and choose **Integrations** → **Webhooks**. The webhook URL goes to
+`secrets/app/discord-webhook-url` and `secrets/backup/discord-webhook-url`, with
+`DISCORD_WEBHOOK_URL_FILE` in `dashboard.env` and `backup.env`. When the app
+already has a webhook file but the backup service has none, `connect` copies the
+app's file without asking Discord. A `DISCORD_WEBHOOK_URL_FILE` that already
+points at another file is left alone.
+
+`connect` writes the webhook without `--yes`, since a code works only once. The
+owner needs the typed `yes` above. It restarts nothing, and prints the command that
+recreates the services whose files changed
 (`docker compose … up -d --force-recreate dashboard backup`). At start, the
 dashboard makes that Discord account the owner while it has no owner
 (`BOOTSTRAP_OWNER_DISCORD_ID`; see
