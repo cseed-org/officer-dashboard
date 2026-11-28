@@ -203,10 +203,10 @@ func (e *Engine) migrate(ctx context.Context, s Step) error {
 	switch {
 	case before.Unknown != "":
 		return fmt.Errorf("%s: %s", s.Title, before.Unknown)
-	case len(userTables(before.Names)) > 0 || len(before.Triggers) > 0:
+	case len(userTables(before.Names)) > 0 || len(userTables(before.Triggers)) > 0:
 		return &RejectedError{Step: s.Title, Method: "POST", Path: path,
 			Cause: fmt.Sprintf("database %s now has tables or triggers (%s); setup never alters a database that has tables", id,
-				strings.Join(append(userTables(before.Names), before.Triggers...), ", "))}
+				strings.Join(append(userTables(before.Names), userTables(before.Triggers)...), ", "))}
 	}
 	if err := e.send(ctx, s, "POST", path, "https://developers.cloudflare.com/api/resources/d1/subresources/database/methods/query/",
 		"D1 Edit", map[string]any{"sql": migrationSQL(e.opt.Bundle)}, nil); err != nil {

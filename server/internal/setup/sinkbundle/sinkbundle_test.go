@@ -194,3 +194,20 @@ func TestNormalizeSQL(t *testing.T) {
 		t.Fatal("a different shape normalizes to the same text")
 	}
 }
+
+// Review G-1 of #129 (second pass): text inside string literals is compared as written.
+func TestNormalizeSQLKeepsLiterals(t *testing.T) {
+	for _, c := range [][2]string{
+		{"CREATE TABLE s(kind TEXT CHECK(kind IN ('hourly','daily')))", "CREATE TABLE s(kind TEXT CHECK(kind IN ('HOURLY','DAILY')))"},
+		{"CREATE TABLE s(c TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))", "CREATE TABLE s(c TEXT DEFAULT (strftime('%y-%m-%dt%h:%m:%fz','now')))"},
+		{"CREATE TABLE t(x TEXT DEFAULT '--a', y INTEGER CHECK(y>0))", "CREATE TABLE t(x TEXT DEFAULT '--b', y TEXT)"},
+		{"CREATE TABLE t(x TEXT DEFAULT 'a  b')", "CREATE TABLE t(x TEXT DEFAULT 'a b')"},
+	} {
+		if NormalizeSQL(c[0]) == NormalizeSQL(c[1]) {
+			t.Errorf("%q and %q normalize alike: %q", c[0], c[1], NormalizeSQL(c[0]))
+		}
+	}
+	if got := NormalizeSQL("CREATE  TABLE t(x TEXT DEFAULT 'it''s -- here' , y INT) -- note\n;"); got != "create table t(x text default 'it''s -- here',y int)" {
+		t.Errorf("got %q", got)
+	}
+}

@@ -636,3 +636,18 @@ func TestMigrationRefusesADatabaseWithATrigger(t *testing.T) {
 		t.Fatalf("err = %v, %d writes", err, len(r.acct.Writes()))
 	}
 }
+
+// Review G-7 of #129: an internal trigger (sqlite_ or _cf_) does not make an empty
+// database look used, as internal tables do not.
+func TestInternalTriggerDoesNotBlockTheMigration(t *testing.T) {
+	routes := cffake.LiveEmptyD1()
+	routes[cffake.D1TriggersKey("d1-backups")] = cffake.Response{Result: []any{"_cf_internal"}}
+	r := newRig(t, routes)
+	e := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry())
+	if err := e.discover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.migrate(context.Background(), Step{Kind: StepMigration, ActionID: "d1.migrations", Title: "migrate"}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+}
