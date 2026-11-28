@@ -138,6 +138,63 @@ command arguments, or Git. For access details, see
 
 ## 5. Prepare the deployment files
 
+You can create these files with `scripts/setup` or by hand. The script writes the
+same files, with the same owners and modes, as the manual steps below.
+
+### With `scripts/setup`
+
+Save each secret value in its own file in a private directory, outside the
+install. The script reads the files, so the values never appear in a command.
+Run as root, from any directory. Read the plan first, then write it:
+
+```sh
+<install-dir>/scripts/setup check --image ghcr.io/cseed-org/officer-dashboard
+<install-dir>/scripts/setup host --dry-run --image ghcr.io/cseed-org/officer-dashboard \
+  --app-url https://officers.example.org --discord-client-id <client id> \
+  --owner-discord-id <your Discord user ID> --owner-name "<your name>" \
+  --age-recipient <age1… public recipient from step 4>
+<install-dir>/scripts/setup host --yes --image ghcr.io/cseed-org/officer-dashboard \
+  --app-url https://officers.example.org --discord-client-id <client id> \
+  --owner-discord-id <your Discord user ID> --owner-name "<your name>" \
+  --age-recipient <age1… public recipient from step 4> \
+  --secret discord-client-secret=/root/setup/discord-client-secret \
+  --secret tunnel-token=/root/setup/tunnel-token \
+  --secret backup-access-client-id=/root/setup/backup-access-client-id \
+  --secret backup-access-client-secret=/root/setup/backup-access-client-secret
+```
+
+`--image` names the image to use, and setup pins its approved `:prod` digest
+in `prod-image.env` once the files are written. A maintainer must approve the image first; see the
+[approval workflow](#github-approval-gate-repository-settings-requires-approval).
+Setup never replaces an existing pin.
+
+If you already made a bearer secret in step 4.5, add
+`--secret backup-bearer=<file>`. Otherwise setup generates one in
+`secrets/backup/bearer`. Store that value in the Worker with
+`npx wrangler secret put BACKUP_BEARER_SECRET` (step 4.5).
+
+Setup leaves alone any key or file you already have, and reports it. Lines marked
+`missing` name the flag that supplies the value. Run setup again with that flag;
+the steps already done are kept.
+
+Setup never chooses the Compose project name or the tunnel subnet. If Docker
+already uses the defaults (`officer-dashboard` and `10.250.89`) for something
+setup cannot prove is this install, it stops before writing anything and shows
+what uses them. For a second install on the host, pass a free name and subnet
+with `--compose-project-name` and `--tunnel-net`; setup writes them into the
+new `.env`. If the resources are this install's own, for example after moving
+the checkout, pass its current values to confirm; nothing is renamed. Setup
+never changes either value on an existing install.
+
+The `check` step stops on rootless Docker, `userns-remap` and SELinux
+enforcing; each message says what to change.
+
+Delete the files in your private directory afterwards. Then continue at step 6.
+For every option, see
+[Host files](../configuration.md#host-files-scriptssetup).
+
+### By hand
+
 On the host, from `<install-dir>/server/deploy`:
 
 ```sh
@@ -269,7 +326,10 @@ pending `production` deployment. The workflow checks ancestry, CI, and image
 revision, then publishes its digest as `:prod`. Release version tags alone do
 not approve a production image.
 
-Once installation, backups, and recovery checks pass, install the updater units:
+Once installation, backups, and recovery checks pass, install the updater units.
+`<install-dir>/scripts/setup install-units` renders the service for this
+checkout's path and installs both units. It then asks whether to enable the timer;
+the default is no. Or install the units by hand:
 
 ```sh
 sed 's|@INSTALL_DIR@|<install-dir>|g' officer-dashboard-update.service | tee /etc/systemd/system/officer-dashboard-update.service > /dev/null

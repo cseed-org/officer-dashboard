@@ -293,6 +293,67 @@ docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.y
   setup --dry-run --backup-hostname backups.example.org
 ```
 
+## Host files (`scripts/setup`)
+
+`scripts/setup` runs on the Linux host, as root, from any directory. It checks the
+host, pins the image, and runs `dashboard setup` from that image with
+`server/deploy` mounted. It needs only Python 3.11 and Docker on the host.
+
+| Command | What it does |
+| --- | --- |
+| `scripts/setup check [--image IMAGE]` | checks the host: Linux, root, Docker with the Compose plugin, the deploy directory and the image pin. Stops on rootless Docker, `userns-remap` and SELinux enforcing, which break the UID 10001 and 65532 file owners the containers need |
+| `scripts/setup host --dry-run` | prints what `host --yes` would write. The deploy directory is mounted read-only, and the container keeps only the read capability it needs to compare the secret files |
+| `scripts/setup host --yes [--secret NAME=FILE]…` | writes `prod-image.env` when it is missing, then the env files and secret files listed below. Only this phase can write: it runs as root in the container with just `CHOWN`, `DAC_OVERRIDE` and `FOWNER`, and no network |
+| `scripts/setup preview [--token-file FILE]` | the read-only [Cloudflare preview](#setup-preview-dashboard-setup---dry-run). It runs as cloudflared's UID 65532 with no capabilities, and sees only `APP_URL`, `BACKUP_SINK_URL` and the tunnel token file (read-only, for the tunnel ID); neither the deploy directory nor `secrets/` is mounted. The API token goes to it on standard input. Without a token file, setup asks for the token in a terminal |
+| `scripts/setup install-units [--enable-updates]` | installs the updater service, rendered for this checkout's path, and its timer. It does not turn on automatic updates unless you pass `--enable-updates` or answer yes |
+
+`host` takes the values for the env files as flags: `--app-url`,
+`--backup-hostname`, `--discord-client-id`, `--owner-discord-id`, `--owner-name`
+and `--age-recipient`. It writes the existing keys `APP_URL`, `TUNNEL_TOKEN_FILE`,
+`DISCORD_CLIENT_ID`, `BOOTSTRAP_OWNER_DISCORD_ID`, `BOOTSTRAP_OWNER_NAME`,
+`BACKUP_SINK_URL`, `BACKUP_AGE_RECIPIENT` and the `*_FILE` paths. Each env file
+is created from its `*.example` template when it is missing, with mode 0600; an
+existing file keeps its mode and owner. A symlinked env file, secret file or
+secret directory is reported and left alone.
+
+Setup never chooses `COMPOSE_PROJECT_NAME` or `TUNNEL_NET`: the project name
+selects the install's data volume. It writes them only when you pass
+`--compose-project-name` and `--tunnel-net` for a new install (no `.env`, no
+`prod-image.env`, nothing in Docker yet). On an existing install an unset key
+means the Compose default, and a different value is reported as a conflict. If
+Docker already uses the values in effect for something setup cannot prove is
+this install (every container of the project started from this deploy
+directory), setup stops before writing anything, lists what uses them, and asks
+for both values.
+
+Secrets are never flags. `--secret NAME=FILE` reads a file on the host, and
+`--secret NAME=-` asks without echo. The values go to the container on standard
+input.
+
+| Name | Host file | Owner |
+| --- | --- | --- |
+| `discord-client-secret` | `secrets/app/discord-client-secret` | 10001 |
+| `discord-webhook-url` (optional) | `secrets/app/discord-webhook-url` | 10001 |
+| `discord-bot-token` (optional) | `secrets/app/discord-bot-token` | 10001 |
+| `tunnel-token` | `secrets/tunnel-token` | 65532 |
+| `backup-bearer` | `secrets/backup/bearer` (generated: 32 random bytes, hex) | 10001 |
+| `backup-access-client-id` | `secrets/backup/access-client-id` | 10001 |
+| `backup-access-client-secret` | `secrets/backup/access-client-secret` | 10001 |
+
+Secret files get mode 0400. `secrets/` gets 0711 and is owned by root.
+`secrets/app` and `secrets/backup` get 0700 and are owned by 10001. An optional
+secret also enables its `*_FILE` line in `dashboard.env`. A secret that no
+container reads goes to `secrets/admin/` (root only), for you to pass on. The
+token that bots and agents use is an example.
+
+Setup never changes what you already have. A key with another value, or any
+existing secret file, shows as `conflict` or `exists` and is left alone. Each
+missing input is listed as `missing`, with the flag that supplies it. Run against
+a complete install, `host` prints `nothing to do` and changes no file. Pass
+`--rotate NAME` to replace one secret on purpose. It does not create the backup
+age key: pass the public recipient from `age-keygen` on the recovery workstation
+as `--age-recipient`.
+
 ## Owner integration setup
 
 Owners open `/setup` to connect Google Drive and the org Google Calendar, check the

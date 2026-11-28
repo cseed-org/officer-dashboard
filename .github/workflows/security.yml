@@ -37,6 +37,22 @@ jobs:
           docker build -f server/Dockerfile -t dashboard-backup-qa .
           docker build -f server/Dockerfile --target backup-test-image -t dashboard-backup-test .
           node scripts/backup-roundtrip.mjs
+      - name: Write host files through scripts/setup with real owners (root)
+        run: |
+          # The launcher runs only pinned images. Use the built image's digest reference,
+          # or push it to a throwaway local registry when the image store records none.
+          image="$(docker image inspect dashboard-backup-qa --format '{{index .RepoDigests 0}}' 2>/dev/null || true)"
+          if [ -z "$image" ]; then
+            docker run -d --rm --name setup-registry -p 127.0.0.1:5000:5000 registry:3@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+            docker tag dashboard-backup-qa localhost:5000/dashboard-setup-qa:e2e
+            docker push -q localhost:5000/dashboard-setup-qa:e2e
+            image="$(docker image inspect localhost:5000/dashboard-setup-qa:e2e --format '{{index .RepoDigests 0}}')"
+          fi
+          sudo python3 scripts/setup_e2e.py --image "$image"
+          # The hostfiles package's own real-chown test, as root, in the Dockerfile's Go image.
+          docker run --rm -e HOSTFILES_REQUIRE_ROOT=1 -v "$PWD/server:/src" -w /src \
+            golang:1.27.4-bookworm@sha256:ce59b41415e2524ae99926fe1f37ce48ba8c194dcbd2a56a65436cdcefa2bd34 \
+            go test -run 'TestRealOwnershipAsRoot|TestCompleteInstallIsANoOp' -v ./internal/setup/hostfiles/
 
   govulncheck:
     runs-on: ubuntu-latest
