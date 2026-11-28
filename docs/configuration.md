@@ -329,8 +329,11 @@ How it runs:
   with network, and with the deploy directory mounted read-write: the secrets
   Cloudflare hands out are written there before the next request. The token file
   is mounted read-only; the token is never in a command line, the environment or
-  the output. Without a token file it is asked for in the terminal. The launcher
-  stops on rootless Docker, `userns-remap` and SELinux enforcing, as `host` does.
+  the output. Without a token file it is asked for in the terminal. A relative
+  `--token-file` is relative to the current directory, and
+  `CLOUDFLARE_SETUP_TOKEN_FILE` in `.env` to the deploy directory. A symbolic link
+  is refused, and a file other users can read gets a warning. The launcher stops
+  on rootless Docker, `userns-remap` and SELinux enforcing, as `host` does.
 - **Options.** `--officers-email` and `--launchpad-email` (repeatable) are the
   members a group is created with; existing groups are never changed.
   `--name-prefix` works as in the preview, and refuses to apply on another
@@ -346,18 +349,36 @@ Where the secrets go (mode 0400; an existing file is never replaced):
 | services token client secret | `secrets/admin/services-access-client-secret` | root |
 
 The services token is for the Discord bot, the Luma import and the purchasing
-agent; no container reads it. If a file already exists, the new value is saved
-beside it as `secrets/admin/<name>.<UTC time>` and the run stops, because the
-install still reads the old file. Every later run refuses to start until you
-move the new file into place or delete it.
+agent; no container reads it. It does not expire (setup creates it with the
+longest duration, `forever`), so rotating it is your job: Zero Trust → Access
+controls → Service credentials → Service Tokens → `officer-dashboard services` →
+Rotate, then give the bots the new secret.
+
+Setup writes a secret file only when it creates or fetches the secret, so a new
+value is always the one Cloudflare now holds for that tunnel or service token. If
+its file already exists, the existing file is older: setup leaves it as it was,
+saves the new value beside it as `secrets/admin/<name>.<UTC time>`, and stops,
+because the install still reads the old file. The message names the tunnel or
+token the new value belongs to and gives the command that puts it in place, for
+example `mv secrets/admin/tunnel-token.<time> secrets/tunnel-token && chown
+65532:65532 secrets/tunnel-token`. Every later run refuses to start, with the
+same explanation, until the new file is in place.
+
+If the services token's client secret is on the host but its client ID file
+(`secrets/admin/services-access-client-id`) is not, every run lists it as
+`missing`, with where to copy the client ID from, and exits 1 until the file is
+there.
 
 At the end it prints what it created, with IDs; what is left as `manual`,
-`drift` or `unknowable`, with the step for each; where each secret is (paths
-only); and a reminder to check the cache rule (it must say **Bypass cache**) and
-Bot Fight Mode in the Cloudflare dashboard. It exits 0 only when every step was
-created and read back `ok` (or there was nothing to create), 1 when it stopped
-or was not confirmed, and 2 for a usage error. A stopped run is safe to start
-again: it reads the account first and creates no second copy.
+`drift`, `unknowable` or `missing`, with the step for each; where each secret is
+(paths only); and a reminder to check the cache rule (it must say **Bypass
+cache**) and Bot Fight Mode in the Cloudflare dashboard. It says to start the
+stack only when no `drift` or `unknowable` line concerns Access or the
+hostname. It exits 0 only when every step was created and read back `ok` (or
+there was nothing to create) and no secret file is missing; 1 when it stopped,
+was not confirmed, or a secret file is missing; and 2 for a usage error
+(including `--json`, which is for `--dry-run` only). A stopped run is safe to
+start again: it reads the account first and creates no second copy.
 
 The apply token needs Edit permissions; `dashboard setup -h` prints this list:
 
