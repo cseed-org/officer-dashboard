@@ -1,7 +1,7 @@
 {
   "name": "cseed-officer-dashboard-web",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.15.0",
   "private": true,
   "engines": {
     "node": "^24.0.0"
