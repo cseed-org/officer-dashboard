@@ -102,10 +102,12 @@ func TestUploadMetadata(t *testing.T) {
 		"BACKUPS":              {"type": "d1", "name": "BACKUPS", "database_id": d1},
 		"BACKUP_BEARER_SECRET": {"type": "secret_text", "name": "BACKUP_BEARER_SECRET", "text": testBearer},
 		"SINK_REVISION":        {"type": "plain_text", "name": "SINK_REVISION", "text": "2"},
+		// Review F-5 of #129: setup's own upload is marked, apart from the revision label.
+		"DASHBOARD_SETUP_UPLOAD": {"type": "plain_text", "name": "DASHBOARD_SETUP_UPLOAD", "text": "1"},
 	}
 	bindings := m["bindings"].([]any)
 	if len(bindings) != len(want) {
-		t.Fatalf("bindings %v", bindings)
+		t.Fatalf("%d bindings", len(bindings))
 	}
 	for _, b := range bindings {
 		got := b.(map[string]any)
@@ -521,6 +523,62 @@ func TestPartlyAppliedMigrationIsNeverOK(t *testing.T) {
 			}
 			if n := len(migrationQueries(r)); n != 1 {
 				t.Fatalf("%d migrations sent", n)
+			}
+		})
+	}
+}
+
+// Review F-5 of #129 (the reviewer's reproduction): a Wrangler-deployed Worker that followed
+// the printed upgrade step carries the revision label, but not setup's upload marker, so
+// its workers.dev switches are drift and never changed.
+func TestLabelledWranglerWorkerGetsNoSwitchOff(t *testing.T) {
+	c := cffake.Complete()
+	c[scriptP+"/settings"] = cffake.Response{Result: map[string]any{"bindings": []any{
+		map[string]any{"type": "d1", "name": "BACKUPS", "database_id": "d1-backups"},
+		map[string]any{"type": "secret_text", "name": "BACKUP_BEARER_SECRET"},
+		map[string]any{"type": "plain_text", "name": "SINK_REVISION", "text": "2"},
+	}}}
+	c[scriptP+"/subdomain"] = cffake.Response{Result: map[string]any{"enabled": true, "previews_enabled": false}}
+	r := newRig(t, c)
+	if _, err := r.apply(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if requestIndex(r.acct.Requests(), http.MethodPost, "/subdomain", "") >= 0 || byID(r.preview())["worker.subdomain"].Kind != plan.Drift {
+		t.Fatal("setup switched off workers.dev on a Worker it did not upload")
+	}
+}
+
+// Review F-6 of #129: the switch-off carries the API date Wrangler 4.168.0 sends with it.
+func TestSubdomainCallCarriesWranglersAPIDate(t *testing.T) {
+	r := newRig(t, cffake.Fresh())
+	if _, err := r.apply(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rs := r.acct.Requests()
+	i := requestIndex(rs, http.MethodPost, "/subdomain", "")
+	if i < 0 || rs[i].APIDate != "2025-08-01" {
+		t.Fatalf("subdomain request %+v", rs[max(i, 0)])
+	}
+}
+
+// Review F-7 of #129: the upload goes ahead only when the script's settings answer 404 with
+// Cloudflare's "Worker not found" code; any other answer stops the run before the PUT.
+func TestUploadNeedsWorkerNotFoundFromItsSettings(t *testing.T) {
+	for name, in := range map[string]cffake.Injection{
+		"settings answer 200": {Result: map[string]any{"bindings": []any{}}},
+		"another 404 code":    {Status: 404, Code: 7003, Message: "Could not route"},
+		"a server error":      {Status: 500, Code: 10013, Message: "internal"},
+		"permission refused":  {Status: 403, Code: 10000, Message: "forbidden"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t, cffake.Fresh())
+			in.Method, in.Path, in.Times = http.MethodGet, scriptP+"/settings", 100
+			if in.Result != nil {
+				in.Status = 0
+			}
+			r.acct.Inject(in)
+			if _, err := r.apply(context.Background()); err == nil || len(r.acct.Uploads()) != 0 {
+				t.Fatalf("err = %v, %d uploads", err, len(r.acct.Uploads()))
 			}
 		})
 	}

@@ -282,3 +282,23 @@ func TestBackupEnvReplacesTheTemplateExample(t *testing.T) {
 		t.Fatalf("BACKUP_SINK_URL = %q\n%s", v, res.stdout)
 	}
 }
+
+// Review F-14 of #129: a sink URL on workers.dev (or outside the zone) blocks the whole
+// run, and the message says how to go on.
+func TestBackupHostOutsideTheZoneBlocksWithTheFlag(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	path := filepath.Join(r.dir, "backup.env")
+	raw := strings.Replace(r.file("backup.env"), "BACKUP_SINK_URL=https://"+cffake.Backup, "BACKUP_SINK_URL=https://dashboard-backup-sink.club.workers.dev", 1)
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if res.code != 1 || r.writes() != 0 {
+		t.Fatalf("exit %d, %d writes\n%s", res.code, r.writes(), res.stdout)
+	}
+	for _, want := range []string{"dashboard-backup-sink.club.workers.dev is not in the zone example.org", "a workers.dev URL never is", "--backup-hostname backups.example.org"} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("output lacks %q:\n%s", want, res.stdout)
+		}
+	}
+}

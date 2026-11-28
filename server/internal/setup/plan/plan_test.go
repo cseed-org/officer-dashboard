@@ -70,8 +70,8 @@ func complete(d Desired) Observed {
 	o.D1Tables = Tables{Read: true, Names: []string{"_cf_KV", "budgets", "chunks", "d1_migrations", "snapshots", "sqlite_sequence"},
 		Triggers: []string{"reserve"}, Applied: []string{"0001.sql"}}
 	o.Worker = Worker{Seen: Seen{Found: true, ID: d.Worker.Script}, D1BindingID: "d1-uuid", Secrets: []string{"BACKUP_BEARER_SECRET"}, WorkersDev: no(), PreviewURLs: no(),
-		Revision: "2",
-		Domain:   WorkerDomain{Seen: Seen{Found: true, ID: "wd1"}, Service: d.Worker.Script}}
+		Revision: "2", SetupUpload: true,
+		Domain: WorkerDomain{Seen: Seen{Found: true, ID: "wd1"}, Service: d.Worker.Script}}
 	return o
 }
 
@@ -229,8 +229,8 @@ func TestDiffTable(t *testing.T) {
 		{"super bot fight mode shape", func(o *Observed) { o.BotFightMode.On = nil }, "zone.bot_fight_mode", Unknowable, "fight_mode"},
 		{"worker bound to other D1", func(o *Observed) { o.Worker.D1BindingID = "other" }, "worker", Drift, "bound to D1 database other"},
 		{"worker without binding", func(o *Observed) { o.Worker.D1BindingID = "" }, "worker", Drift, "no D1 binding named BACKUPS"},
-		{"workers.dev on, Worker not uploaded by setup", func(o *Observed) { o.Worker.WorkersDev = yes(); o.Worker.Revision = "" }, "worker.subdomain", Drift, "workers.dev URL is on"},
-		{"preview URLs on, Worker not uploaded by setup", func(o *Observed) { o.Worker.PreviewURLs = yes(); o.Worker.Revision = "" }, "worker.subdomain", Drift, "preview URLs are on"},
+		{"workers.dev on, Worker not uploaded by setup", func(o *Observed) { o.Worker.WorkersDev = yes(); o.Worker.SetupUpload = false }, "worker.subdomain", Drift, "workers.dev URL is on"},
+		{"preview URLs on, Worker not uploaded by setup", func(o *Observed) { o.Worker.PreviewURLs = yes(); o.Worker.SetupUpload = false }, "worker.subdomain", Drift, "preview URLs are on"},
 		{"workers.dev on, Worker setup uploaded", func(o *Observed) { o.Worker.WorkersDev = yes() }, "worker.subdomain", Create, "setup uploaded this Worker"},
 		{"preview urls missing means off", func(o *Observed) { o.Worker.PreviewURLs = nil }, "worker.subdomain", OK, ""},
 		{"workers.dev switches unreadable", func(o *Observed) { o.Worker.SubdomainUnknown = "no permission" }, "worker.subdomain", Unknowable, "no permission"},

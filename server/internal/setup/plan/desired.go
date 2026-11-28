@@ -99,6 +99,10 @@ type WorkerSpec struct {
 // its revision, so a preview can read it from the script's settings.
 const WorkerRevisionBinding = sinkbundle.RevisionBinding
 
+// WorkerSetupUploadBinding marks a Worker setup itself uploaded; no upgrade step tells
+// anyone to set it.
+const WorkerSetupUploadBinding = sinkbundle.SetupUploadBinding
+
 // Stable keys used in action IDs.
 const (
 	GroupOfficers  = "officers"

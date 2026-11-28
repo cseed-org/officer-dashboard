@@ -189,7 +189,10 @@ type Worker struct {
 	// (sinkbundle.RevisionBinding); "" when the Worker has none, because setup did not
 	// upload it.
 	Revision string
-	Domain   WorkerDomain
+	// SetupUpload is set when the Worker carries the marker binding only setup's own upload
+	// sets (sinkbundle.SetupUploadBinding).
+	SetupUpload bool
+	Domain      WorkerDomain
 }
 
 // Tables is what a read-only D1 query showed: the names in sqlite_master (Read), or why it
@@ -478,7 +481,8 @@ func Diff(d Desired, o Observed) []Action {
 		switch {
 		case d.Worker.Hostname != zone && !strings.HasSuffix(d.Worker.Hostname, "."+zone):
 			dom.manual = true
-			dom.notef("%s is not in the zone %s, which is the only zone setup works in: choose a backup hostname in it with --backup-hostname", d.Worker.Hostname, o.Zone.Name)
+			dom.notef("%s is not in the zone %s, which is the only zone setup works in (a workers.dev URL never is). Every step waits until it is: "+
+				"choose a backup hostname in the zone, for example --backup-hostname backups.%s", d.Worker.Hostname, o.Zone.Name, o.Zone.Name)
 		case o.BackupDNS.Unknown != "":
 			dom.create = false
 			dom.unknownf("%s; Cloudflare refuses a Worker custom domain on a hostname with a CNAME record, so setup must read them first", o.BackupDNS.Unknown)
@@ -621,8 +625,9 @@ func diffWorkerVersion(d Desired, w Worker) Action {
 }
 
 // diffWorkerSubdomain checks fresh-install.md §4.6: "Keep `workers_dev` and `preview_urls`
-// disabled." On a Worker setup uploaded (it carries setup's revision label), switches
-// still on mean an interrupted run, so turning them off completes setup's own create.
+// disabled." On a Worker setup uploaded (it carries setup's upload marker, which no
+// upgrade step sets), switches still on mean an interrupted run, so turning them off
+// completes setup's own create. On any other Worker they are drift.
 func diffWorkerSubdomain(w Worker) Action {
 	c := &check{a: Action{ID: "worker.subdomain", Resource: "workers.dev and preview URLs", Name: "off"}}
 	switch {
@@ -637,7 +642,7 @@ func diffWorkerSubdomain(w Worker) Action {
 		prev := w.PreviewURLs != nil && *w.PreviewURLs
 		switch {
 		case !dev && !prev:
-		case w.Revision != "":
+		case w.SetupUpload:
 			c.create = true
 			c.notef("on (workers.dev %v, preview URLs %v), and setup uploaded this Worker: an interrupted run left them on, so setup turns them off", dev, prev)
 		default:

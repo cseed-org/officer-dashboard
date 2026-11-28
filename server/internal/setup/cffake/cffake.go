@@ -20,6 +20,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strconv"
 	"sync"
 )
@@ -34,8 +35,9 @@ type Response struct {
 }
 
 // Request is one request the fake received. Body is the request body as sent;
-// ContentType is its Content-Type header (multipart for a Worker upload).
-type Request struct{ Method, Path, Query, Body, ContentType string }
+// ContentType is its Content-Type header (multipart for a Worker upload), and APIDate its
+// Cloudflare-Workers-Script-Api-Date header.
+type Request struct{ Method, Path, Query, Body, ContentType, APIDate string }
 
 type Server struct {
 	*httptest.Server
@@ -79,7 +81,8 @@ func (s *Server) Set(path string, r Response) {
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 4<<20))
-	req := Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw), ContentType: r.Header.Get("Content-Type")}
+	req := Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw), ContentType: r.Header.Get("Content-Type"),
+		APIDate: r.Header.Get("Cloudflare-Workers-Script-Api-Date")}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
 	s.mu.Unlock()
@@ -97,6 +100,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method != http.MethodGet:
 		fail(http.StatusMethodNotAllowed, 10000, "the fake Cloudflare API is read-only")
+		return
+	case !ok && workerSubresource.MatchString(r.URL.Path):
+		// A script's settings, secrets or subdomain when the script does not exist: the
+		// "Worker not found" error Wrangler checks (WORKER_NOT_FOUND_ERR_CODE = 10007).
+		fail(http.StatusNotFound, 10007, "This Worker does not exist on your account.")
 		return
 	case !ok:
 		fail(http.StatusNotFound, 7003, "Could not route to "+r.URL.Path)
@@ -125,6 +133,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewEncoder(w).Encode(body)
 }
+
+var workerSubresource = regexp.MustCompile(`^/accounts/[^/]+/workers/scripts/[^/]+/(settings|secrets|subdomain)$`)
 
 // Fixture IDs.
 const (

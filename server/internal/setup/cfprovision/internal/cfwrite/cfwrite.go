@@ -148,15 +148,26 @@ func (c *Client) PutModule(ctx context.Context, path string, metadata any, modul
 	return c.do(ctx, http.MethodPut, path, buf.Bytes(), mw.FormDataContentType(), out)
 }
 
-func (c *Client) send(ctx context.Context, method, path string, body, out any) error {
+// PostWithHeaders is Post with extra request headers, for the one call whose reference
+// client (Wrangler) pins an API date on it. Authorization and Content-Type cannot be set.
+func (c *Client) PostWithHeaders(ctx context.Context, path string, headers map[string]string, body, out any) error {
+	for k := range headers {
+		if k := http.CanonicalHeaderKey(k); k == "Authorization" || k == "Content-Type" {
+			return fmt.Errorf("cloudflare: POST %s: setup does not override %s", path, k)
+		}
+	}
+	return c.send(ctx, http.MethodPost, path, body, out, headers)
+}
+
+func (c *Client) send(ctx context.Context, method, path string, body, out any, headers ...map[string]string) error {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("cloudflare: %s %s: cannot encode the request body", method, path)
 	}
-	return c.do(ctx, method, path, raw, "application/json", out)
+	return c.do(ctx, method, path, raw, "application/json", out, headers...)
 }
 
-func (c *Client) do(ctx context.Context, method, path string, raw []byte, contentType string, out any) error {
+func (c *Client) do(ctx context.Context, method, path string, raw []byte, contentType string, out any, headers ...map[string]string) error {
 	if !strings.HasPrefix(path, "/") {
 		return fmt.Errorf("cloudflare: path %q must start with /", path)
 	}
@@ -166,6 +177,11 @@ func (c *Client) do(ctx context.Context, method, path string, raw []byte, conten
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", contentType)
+	for _, h := range headers {
+		for k, v := range h {
+			req.Header.Set(k, v)
+		}
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "officer-dashboard-setup")
 	res, err := c.http.Do(req)

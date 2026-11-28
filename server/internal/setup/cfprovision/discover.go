@@ -798,10 +798,11 @@ func (x *discovery) d1(ctx context.Context) (plan.Seen, error) {
 //     https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/list/
 func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 	var out plan.Worker
-	var scripts []struct {
+	type script struct {
 		ID string `json:"id"`
 	}
-	if err := x.api.Get(ctx, x.accountPath("/workers/scripts"), nil, &scripts); err != nil {
+	scripts, err := cfapi.ListAll[script](ctx, x.api, x.accountPath("/workers/scripts"), nil)
+	if err != nil {
 		why, err := unreadable("Workers scripts", err)
 		out.Unknown = why
 		if err != nil {
@@ -844,6 +845,10 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 			if b.Type == "plain_text" && b.Name == plan.WorkerRevisionBinding {
 				out.Revision = strings.TrimSpace(b.Text)
 			}
+			// The marker only setup's own upload carries (sinkbundle.SetupUploadBinding).
+			if b.Type == "plain_text" && b.Name == plan.WorkerSetupUploadBinding && strings.TrimSpace(b.Text) == "1" {
+				out.SetupUpload = true
+			}
 		}
 		var secrets []struct {
 			Name string `json:"name"`
@@ -876,7 +881,7 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 		Hostname string `json:"hostname"`
 		Service  string `json:"service"`
 	}
-	err := x.api.Get(ctx, x.accountPath("/workers/domains"), url.Values{"hostname": {x.d.Worker.Hostname}}, &domains)
+	err = x.api.Get(ctx, x.accountPath("/workers/domains"), url.Values{"hostname": {x.d.Worker.Hostname}}, &domains)
 	if err != nil {
 		why, err := unreadable("Workers custom domains", err)
 		out.Domain.Unknown = why

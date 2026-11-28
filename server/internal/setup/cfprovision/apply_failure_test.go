@@ -245,7 +245,11 @@ func requestsText(t *testing.T, r *rig, out Outputs, what string) string {
 			t.Fatalf("write %d body is not JSON: %v", i, err)
 		}
 		pretty, _ := json.MarshalIndent(v, "", "  ")
-		fmt.Fprintf(&b, "\n## %d. %s %s\n# ref: %s\n%s\n", i+1, w.Method, w.Path, out.Writes[i].Ref, pretty)
+		header := ""
+		if w.APIDate != "" {
+			header = "# header: Cloudflare-Workers-Script-Api-Date: " + w.APIDate + "\n"
+		}
+		fmt.Fprintf(&b, "\n## %d. %s %s\n# ref: %s\n%s%s\n", i+1, w.Method, w.Path, out.Writes[i].Ref, header, pretty)
 	}
 	return b.String()
 }

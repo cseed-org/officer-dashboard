@@ -2,6 +2,7 @@ package cfprovision
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -262,6 +263,9 @@ func (e *Engine) uploadWorker(ctx context.Context, s Step) (string, error) {
 		return "", &RejectedError{Step: s.Title, Method: "PUT", Path: script,
 			Cause: "a Worker named " + e.d.Worker.Script + " now exists; setup never uploads over a Worker, which would replace its script, bindings and secrets"}
 	}
+	if err := e.workerAbsent(ctx, s, script); err != nil {
+		return "", err
+	}
 	bearer, err := e.sink.Load(ctx, SecretBackupBearer)
 	if err != nil {
 		return "", fmt.Errorf("%s: cannot read the backup bearer from secrets/backup/bearer (%v); run `scripts/setup host --yes`, which generates it", s.Title, e.out.scrub(err.Error()))
@@ -275,6 +279,7 @@ func (e *Engine) uploadWorker(ctx context.Context, s Step) (string, error) {
 			map[string]any{"type": "d1", "name": e.d.Worker.D1Binding, "database_id": e.o.D1.ID},
 			map[string]any{"type": "secret_text", "name": e.d.Worker.Secret, "text": bearer},
 			map[string]any{"type": "plain_text", "name": plan.WorkerRevisionBinding, "text": strconv.Itoa(e.d.Worker.Revision)},
+			map[string]any{"type": "plain_text", "name": sinkbundle.SetupUploadBinding, "text": "1"},
 		},
 	}
 	e.outputs.Writes = append(e.outputs.Writes, Write{Method: "PUT", Path: script,
@@ -295,6 +300,29 @@ func (e *Engine) uploadWorker(ctx context.Context, s Step) (string, error) {
 	}
 	return e.d.Worker.Script, e.verify(ctx, s, "", "worker.version", "worker.subdomain")
 }
+
+// workerAbsent is the last check before the whole-script PUT, which would replace a Worker
+// that exists: GET …/workers/scripts/{script_name}/settings must answer 404 with code
+// 10007, the "Worker not found" error Wrangler 4.168.0 itself checks
+// (WORKER_NOT_FOUND_ERR_CODE in packages/deploy-helpers/src/deploy/helpers/worker-not-found-error.ts,
+// checked with status 404 in packages/deploy-helpers/src/triggers/subdomain.ts). Any other
+// answer, success included, stops the run: a scripts list can come back partial.
+func (e *Engine) workerAbsent(ctx context.Context, s Step, script string) error {
+	var settings json.RawMessage
+	err := e.read.Get(ctx, script+"/settings", nil, &settings)
+	switch {
+	case err == nil:
+		return &RejectedError{Step: s.Title, Method: "PUT", Path: script,
+			Cause: "Cloudflare shows settings for a Worker named " + e.d.Worker.Script + "; setup never uploads over a Worker, which would replace its script, bindings and secrets"}
+	case cfapi.IsNotFound(err) && cfapi.HasCode(err, workerNotFound):
+		return nil
+	}
+	return fmt.Errorf("%s: setup could not confirm that no Worker named %s exists (%v), so it does not upload one: an upload would replace an existing Worker whole",
+		s.Title, e.d.Worker.Script, err)
+}
+
+// workerNotFound is Cloudflare's "Worker not found" code (Wrangler's WORKER_NOT_FOUND_ERR_CODE).
+const workerNotFound = 10007
 
 func (e *Engine) scriptExists(ctx context.Context) (bool, error) {
 	path := e.accountPath("/workers/scripts")
@@ -319,11 +347,23 @@ func (e *Engine) scriptExists(ctx context.Context) (bool, error) {
 // ("enabled: Whether the Worker should be available on the workers.dev subdomain.";
 // "previews_enabled: Whether the Worker's Preview URLs should be available on the
 // workers.dev subdomain.")
+//
+// It carries the header Wrangler 4.168.0 sends on this exact call,
+// "Cloudflare-Workers-Script-Api-Date": "2025-08-01" (subdomainDeploy in
+// packages/deploy-helpers/src/triggers/deploy.ts); the reference page does not mention it.
 func (e *Engine) subdomainOff(ctx context.Context, s Step) error {
-	return e.send(ctx, s, "POST", e.accountPath("/workers/scripts/"+url.PathEscape(e.d.Worker.Script)+"/subdomain"),
-		"https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/methods/create/",
-		"Workers Scripts Edit", map[string]any{"enabled": false, "previews_enabled": false}, nil)
+	path := e.accountPath("/workers/scripts/" + url.PathEscape(e.d.Worker.Script) + "/subdomain")
+	e.outputs.Writes = append(e.outputs.Writes, Write{Method: "POST", Path: path,
+		Ref: "https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/methods/create/"})
+	fmt.Fprintf(e.out, "  POST %s\n", path)
+	err := e.write.PostWithHeaders(ctx, path, map[string]string{"Cloudflare-Workers-Script-Api-Date": wranglerScriptAPIDate},
+		map[string]any{"enabled": false, "previews_enabled": false}, nil)
+	return e.writeErr(s, "POST", path, "Workers Scripts Edit", err)
 }
+
+// wranglerScriptAPIDate is the Cloudflare-Workers-Script-Api-Date Wrangler 4.168.0 sends
+// with the subdomain call.
+const wranglerScriptAPIDate = "2025-08-01"
 
 // workerSubdomain finishes a Worker setup uploaded whose switches an interrupted run left on.
 func (e *Engine) workerSubdomain(ctx context.Context, s Step) error {

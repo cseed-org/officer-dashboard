@@ -307,6 +307,11 @@
           "name": "SINK_REVISION",
           "text": "2",
           "type": "plain_text"
+        },
+        {
+          "name": "DASHBOARD_SETUP_UPLOAD",
+          "text": "1",
+          "type": "plain_text"
         }
       ],
       "compatibility_date": "2026-07-30",
@@ -321,6 +326,7 @@
 
 ## 20. POST /accounts/acct-1/workers/scripts/dashboard-backup-sink/subdomain
 # ref: https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/methods/create/
+# header: Cloudflare-Workers-Script-Api-Date: 2025-08-01
 {
   "enabled": false,
   "previews_enabled": false

@@ -42,7 +42,7 @@ func TestMethodSetHasNoDelete(t *testing.T) {
 		got = append(got, ty.Method(i).Name)
 	}
 	sort.Strings(got)
-	if want := []string{"GoString", "Post", "Put", "PutModule", "String"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"GoString", "Post", "PostWithHeaders", "Put", "PutModule", "String"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Client methods = %v, want %v", got, want)
 	}
 }
@@ -185,5 +185,24 @@ func TestPutModuleErrorHasNoBody(t *testing.T) {
 	var ce *cfapi.Error
 	if !errors.As(err, &ce) || ce.Status != 400 || strings.Contains(err.Error(), "bearer-value") || strings.Contains(err.Error(), secretToken) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// PostWithHeaders adds its headers and cannot replace the token or the content type.
+func TestPostWithHeaders(t *testing.T) {
+	var got http.Header
+	s, _ := server(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		fmt.Fprint(w, `{"success":true,"errors":[],"result":{}}`)
+	})
+	c := New(secretToken, WithBaseURL(s.URL))
+	if err := c.PostWithHeaders(context.Background(), "/x", map[string]string{"Cloudflare-Workers-Script-Api-Date": "2025-08-01"}, map[string]any{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got.Get("Cloudflare-Workers-Script-Api-Date") != "2025-08-01" || got.Get("Authorization") != "Bearer "+secretToken {
+		t.Fatalf("headers %v", got)
+	}
+	if err := c.PostWithHeaders(context.Background(), "/x", map[string]string{"authorization": "Bearer other"}, map[string]any{}, nil); err == nil {
+		t.Fatal("the token could be replaced")
 	}
 }
