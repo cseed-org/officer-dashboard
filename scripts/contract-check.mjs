@@ -538,6 +538,15 @@ const invited = await call('inviteCreate', { who: directorA, body: { name:'New o
 const dmLess = await call('inviteCreate', { who: directorA, body: { name:'DM officer',discordId:'100000000000000089',subteamId:'team-build',method:'both' } });
 must(dmLess.json.dm.status === 'not_configured' && dmLess.json.link.includes('/login?invite='), 'no bot token falls back to copy-link');
 await call('inviteCreate', { who: directorA, body: { name:'Priya again',discordId:'100000000000000002',subteamId:'team-events' }, expect: 409 });
+// Access email (stored only; the Cloudflare sync is a later release): directors set it, officers never see it.
+const withAccess = await call('inviteCreate', { who: directorA, body: { name:'Access officer',discordId:'100000000000000090',subteamId:'team-events',method:'link',accessEmail:'Access.Officer@example.org' } });
+must(withAccess.json.invite.accessEmail === 'access.officer@example.org', 'invite access email stored lower-case', withAccess.json.invite);
+await call('adminUserUpdate', { who: directorA, params:{id:'user-marcus'}, body:{accessEmail:'access.officer@example.org'}, expect:409 });
+const marcusAccess = await call('adminUserUpdate', { who: directorA, params:{id:'user-marcus'}, body:{accessEmail:'marcus.access@example.org'} });
+must(marcusAccess.json.user.accessEmail === 'marcus.access@example.org', 'account access email set', marcusAccess.json.user);
+must((await call('officersList', { who: officer })).json.officers.every((o) => o.accessEmail === undefined), 'officers never see access emails');
+must((await call('officersList', { who: directorA })).json.officers.some((o) => o.accessEmail === 'marcus.access@example.org'), 'directors see access emails');
+await call('inviteUpdate', { who: directorA, params: { id: withAccess.json.invite.id }, body: { accessEmail: null } });
 must((await call('invitesList', { who: directorA })).json.invites.length >= 2, 'invites listed');
 await call('invitesList', { who: officer, expect: 403 });
 await call('inviteUpdate', { who: officer, params: { id: invited.json.invite.id }, body: { name: 'x' }, expect: 403 });

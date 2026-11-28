@@ -872,8 +872,15 @@ export type ChartOfAccountsResponse = z.infer<typeof ChartOfAccountsResponse>;
 
 // ───────────────────────────── Admin: users ─────────────────────────────
 
+/**
+ * Where Cloudflare Access will send this person's sign-in PIN once the Access sync is on
+ * (a later release; until then it is only stored). Director-set, stored trimmed and
+ * lower-case, unique across accounts and pending invites. Never shown to officers or agents.
+ */
+export const AccessEmail = z.email().max(254);
 export const AdminUser = CurrentUser.extend({
   email: z.string().nullable(),
+  accessEmail: z.string().nullable(),
   active: z.boolean(),
   lastLoginAt: IsoDateTime.nullable(),
   createdAt: IsoDateTime,
@@ -893,6 +900,8 @@ export const AdminUserCreateRequest = z.object({
   role: Role.default('officer'),
   title: z.string().trim().max(100).nullable().optional(),
   email: z.email().nullable().optional(),
+  /** 409 naming the holder when another account or pending invite has it. */
+  accessEmail: AccessEmail.nullable().optional(),
 });
 export type AdminUserCreateRequest = z.infer<typeof AdminUserCreateRequest>;
 
@@ -906,6 +915,8 @@ export const AdminUserUpdateRequest = z.object({
   active: z.boolean().optional(),
   title: z.string().trim().max(100).nullable().optional(),
   email: z.email().nullable().optional(),
+  /** Directors for officers, leadership for directors and leadership, owners for owners. */
+  accessEmail: AccessEmail.nullable().optional(),
 });
 export type AdminUserUpdateRequest = z.infer<typeof AdminUserUpdateRequest>;
 
@@ -1096,12 +1107,15 @@ export const CalendarEmailResponse = z.object({ email: CalendarEmail });
 export const CalendarEmailCreateRequest = z.object({ email: z.email().max(254), active: z.boolean().optional() });
 export const CalendarEmailUpdateRequest = CalendarEmailCreateRequest.partial();
 export const InviteMethod = z.enum(['dm', 'link', 'both']);
-export const InviteCreateRequest = z.object({ name: z.string().trim().min(1).max(100), discordId: DiscordId, subteamId: Id, method: InviteMethod.default('link') });
+/** A re-invite (same Discord ID) that leaves out accessEmail keeps the invite's current one. */
+export const InviteCreateRequest = z.object({ name: z.string().trim().min(1).max(100), discordId: DiscordId, subteamId: Id, method: InviteMethod.default('link'), accessEmail: AccessEmail.nullable().optional() });
 export const Invite = z.object({
   id: Id, name: z.string(), discordId: DiscordId, subteam: Subteam.nullable(), invitedBy: UserSummary.nullable(), method: InviteMethod,
   status: z.enum(['pending', 'expired', 'accepted', 'onboarded']),
   dmSentAt: IsoDateTime.nullable(), dmError: z.string().nullable(), createdAt: IsoDateTime, expiresAt: IsoDateTime.nullable(),
   acceptedAt: IsoDateTime.nullable(), onboardedAt: IsoDateTime.nullable(), userId: Id.nullable(),
+  /** Copied to the account when the invite is accepted. */
+  accessEmail: z.string().nullable(),
 });
 export type Invite = z.infer<typeof Invite>;
 export const DMResult = z.object({ status: z.enum(['sent', 'failed', 'not_configured', 'skipped']), sentAt: IsoDateTime.nullable(), message: z.string().nullable() });
@@ -1111,7 +1125,8 @@ export const InviteResponse = z.object({ invite: Invite, token: z.string(), link
 export type InviteResponse = z.infer<typeof InviteResponse>;
 export const InvitesResponse = z.object({ invites: z.array(Invite), dmConfigured: z.boolean() });
 /** PATCH /api/invites/:id — fix the details of an invite that hasn't finished onboarding. */
-export const InviteUpdateRequest = z.object({ name: z.string().trim().min(1).max(100).optional(), subteamId: Id.optional() });
+/** accessEmail can change only before the invite is accepted (409 after). */
+export const InviteUpdateRequest = z.object({ name: z.string().trim().min(1).max(100).optional(), subteamId: Id.optional(), accessEmail: AccessEmail.nullable().optional() });
 export const InviteUpdateResponse = z.object({ invite: Invite });
 
 /** Birthday is month-day (MM-DD); no year is collected. */
@@ -1125,6 +1140,8 @@ export const Officer = UserSummary.extend({
   profileComplete: z.boolean(),
   onboarding: z.enum(['none', 'pending', 'done']),
   lastLoginAt: IsoDateTime.nullable().optional(),
+  /** Director+ in the browser only, and only when set; never for officers or agents. */
+  accessEmail: z.string().optional(),
 });
 export type Officer = z.infer<typeof Officer>;
 export const OfficersResponse = z.object({ officers: z.array(Officer), subteams: z.array(Subteam), canManage: z.boolean(), canChangeRoles: z.boolean() });
