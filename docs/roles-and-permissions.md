@@ -100,6 +100,7 @@ Roles rank `leadership > director > officer`; unknown roles are denied. Owner is
 | Officers Access, service tokens, audit history | No | Yes | Yes | Yes |
 | Invite officers, fix a not-yet-onboarded invite's name/subteam, manage officer subteam/title | No | Yes, except leadership targets | Yes | Yes |
 | Change roles / director active status / edit leadership | No | No | Yes | Yes |
+| Set someone's Cloudflare sign-in email (stored only for now) | No | Officers only | Everyone except owners | Everyone, owners included |
 | Manage ownership or demote/deactivate owners | No | No | No | Yes, with last-owner protection |
 | Manage Google Drive and org Google Calendar sign-ins on Setup | No | No | No | Yes; connect, callback and disconnect enforce owner access server-side |
 | Launchpad: invite builders, resend/revoke builder invites, mentor availability/caps, auto-assign, archive/restore | Yes | Yes | Yes | Yes |

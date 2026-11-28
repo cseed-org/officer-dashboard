@@ -472,6 +472,32 @@ SHA-256 is stored. Invites expire after 7 days.
   must share a server with the invitee. Without the token, `dm.status` is
   `not_configured`.
 
+**Access email (Cloudflare sign-in email).** `accessEmail` is where Cloudflare Access will
+send a person's sign-in PIN once the dashboard manages the Access group, a later release.
+Until then it is only stored: setting it changes nothing in Cloudflare, so people are still
+added to the `Officers` group by hand ([Cloudflare setup](deploy/cloudflare.md#adding-someone-later)).
+
+- Set on POST `/api/admin/users`, PATCH `/api/admin/users/:id`, POST `/api/invites` and
+  PATCH `/api/invites/:id` (`null` clears it). Stored trimmed and lower-case. A re-invite
+  that leaves the field out keeps the invite's email. An invite's email can change only
+  before it is accepted (409 after); accepting copies it to the new account in the same
+  sign-in transaction.
+- Who may change it: directors for officers, leadership for directors and leadership (a
+  director's own included), and only an owner for an owner. Invites follow the invite rules.
+- One person per email: another account or a pending invite (expired ones included until
+  revoked) using it gets 409 naming that person or invite. Only directors and above reach
+  these routes, and they can already see every account and invite. Unique indexes and
+  triggers in the schema back this up.
+- Never filled in automatically: not from the calendar `email`, the profile's personal or
+  school email, or Discord. The Access tab's "add officer" form offers a button that copies
+  the calendar email on request.
+- Returned in `AdminUser` and `Invite` (both director-only routes) and, only for a
+  director or leadership in the browser, in `Officer` (`GET /api/officers`,
+  `GET /api/officers/:id`). Officers never receive it, their own included, and MCP agents
+  never do, even a director's (`list_officers`, `get_officer`, `update_officer`). Search
+  doesn't match it. Changes are audited in `user.created`, `user.updated`,
+  `invite.created`, `invite.reissued` and `invite.updated`.
+
 **Accepting.** Signing in with Discord as an account that has no user row but a pending,
 unexpired invite creates an active officer named as invited, marks the invite accepted,
 audits `user.created` and `invite.accepted` as the new user, and redirects to
