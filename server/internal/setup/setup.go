@@ -31,6 +31,7 @@ import (
 
 	"officerdashboard/internal/setup/cfapi"
 	"officerdashboard/internal/setup/cfprovision"
+	"officerdashboard/internal/setup/discord"
 	"officerdashboard/internal/setup/hostfiles"
 	"officerdashboard/internal/setup/plan"
 )
@@ -41,6 +42,7 @@ const TokenFileEnv = "CLOUDFLARE_SETUP_TOKEN_FILE"
 const usage = `usage: dashboard setup --dry-run [flags]
        dashboard setup [--yes] --deploy-dir DIR [flags]
        dashboard setup host [--dry-run | --yes] [flags]   (see dashboard setup host -h)
+       dashboard setup discord [connect] [flags]          (see dashboard setup discord -h)
 
 With --dry-run, reads your Cloudflare account and prints what the dashboard still
 needs. Nothing is changed. Run it first.
@@ -77,6 +79,8 @@ type Deps struct {
 	Stdin  io.Reader
 	Owner  hostfiles.Owner // nil: the real chown and stat
 	Random io.Reader       // nil: crypto/rand
+	// Used by `setup discord` (nil: the real Discord API).
+	Discord *discord.Client
 }
 
 // Main runs the command with the real process environment and terminal.
@@ -99,6 +103,9 @@ func Main(args []string, getenv func(string) string, stdout, stderr io.Writer) i
 func Run(ctx context.Context, args []string, deps Deps) int {
 	if len(args) > 0 && args[0] == "host" {
 		return runHost(ctx, args[1:], deps)
+	}
+	if len(args) > 0 && args[0] == "discord" {
+		return runDiscord(ctx, args[1:], deps)
 	}
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	fs.SetOutput(deps.Stderr)

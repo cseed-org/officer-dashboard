@@ -57,6 +57,10 @@ var Secrets = []SecretSpec{
 	{Name: "discord-client-secret", Path: "secrets/app/discord-client-secret", Owner: AppIDs, EnvFile: "dashboard.env", EnvKey: "DISCORD_CLIENT_SECRET_FILE", EnvValue: "/run/secrets/app/discord-client-secret"},
 	{Name: "discord-webhook-url", Path: "secrets/app/discord-webhook-url", Owner: AppIDs, EnvFile: "dashboard.env", EnvKey: "DISCORD_WEBHOOK_URL_FILE", EnvValue: "/run/secrets/app/discord-webhook-url", Optional: true},
 	{Name: "discord-bot-token", Path: "secrets/app/discord-bot-token", Owner: AppIDs, EnvFile: "dashboard.env", EnvKey: "DISCORD_BOT_TOKEN_FILE", EnvValue: "/run/secrets/app/discord-bot-token", Optional: true},
+	// backup.env.example: "#DISCORD_WEBHOOK_URL_FILE=/run/secrets/backup/discord-webhook-url",
+	// the backup sidecar's failure alerts; `setup discord connect` writes the same webhook
+	// here as for the app.
+	{Name: "backup-discord-webhook-url", Path: "secrets/backup/discord-webhook-url", Owner: AppIDs, EnvFile: "backup.env", EnvKey: "DISCORD_WEBHOOK_URL_FILE", EnvValue: "/run/secrets/backup/discord-webhook-url", Optional: true},
 	{Name: "backup-bearer", Path: "secrets/backup/bearer", Owner: AppIDs, EnvFile: "backup.env", EnvKey: "BACKUP_BEARER_SECRET_FILE", EnvValue: "/run/secrets/backup/bearer"},
 	{Name: "backup-access-client-id", Path: "secrets/backup/access-client-id", Owner: AppIDs, EnvFile: "backup.env", EnvKey: "BACKUP_ACCESS_CLIENT_ID_FILE", EnvValue: "/run/secrets/backup/access-client-id"},
 	{Name: "backup-access-client-secret", Path: "secrets/backup/access-client-secret", Owner: AppIDs, EnvFile: "backup.env", EnvKey: "BACKUP_ACCESS_CLIENT_SECRET_FILE", EnvValue: "/run/secrets/backup/access-client-secret"},

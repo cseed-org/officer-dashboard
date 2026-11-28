@@ -18,6 +18,9 @@ var talksHTTP = map[string]bool{
 	"cfapi":                        true,
 	"cfprovision/internal/cfwrite": true,
 	"cffake":                       true,
+	// Discord, not Cloudflare: the Discord client and its fake (setup discord).
+	"discord":             true,
+	"discord/discordfake": true,
 }
 
 // sourceFiles returns every non-test Go file under internal/setup, by package directory.
