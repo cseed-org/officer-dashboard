@@ -100,6 +100,12 @@ local data volume stores the database. Set all backup credentials before enablin
 | `DB_PATH` | `/data/dashboard.db` | database read by the backup helper; Compose gives app and backup the same path and volume |
 | `DISCORD_WEBHOOK_URL` | empty | backup failure alerts; configure separately in `backup.env` (normally via `_FILE`) |
 
+Each hourly run also asks the Worker its revision (`GET /version`). When the Worker
+is older than the revision the image was built with, the backup service alerts
+through `DISCORD_WEBHOOK_URL` once a day (it records the day in
+`.sink-revision-alert` beside the database); backups still run, since an older
+Worker takes the same uploads.
+
 The same ciphertext also goes to Google Drive: once per UTC day the sidecar publishes
 `dashboard-<date>.db.gz.age` plus a sha256 manifest to `drive-outbox/` beside the database,
 and the dashboard uploads it to `Backups/daily` (plus a first-of-month `Backups/monthly`
@@ -298,10 +304,11 @@ docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.y
 `dashboard setup` without `--dry-run` creates what the preview lists as `create`
 for the tunnel, its route, the DNS record, the One-time PIN login, the two Access
 groups, the `officer-dashboard services` service token, the three Access
-applications and the three zone rules. It never deletes anything, never changes
+applications, the three zone rules, and the off-site backup: its D1 database and
+tables, the backup Worker, the `dashboard-backups-host` service token, the backup
+hostname's Access application and the Worker's custom domain (see
+[The backup Worker](#the-backup-worker)). It never deletes anything, never changes
 what exists (`drift` is only reported), and never starts or restarts a service.
-The backup Worker, D1 and the backup Access pieces are listed as `skipped`: they
-stay manual in this version (fresh-install.md step 4).
 
 Run it through the launcher, after `scripts/setup host --yes`:
 
@@ -347,6 +354,12 @@ Where the secrets go (mode 0400; an existing file is never replaced):
 | tunnel token | `secrets/tunnel-token` | 65532 |
 | services token client ID | `secrets/admin/services-access-client-id` | root |
 | services token client secret | `secrets/admin/services-access-client-secret` | root |
+| backup token client ID | `secrets/backup/access-client-id` | 10001 |
+| backup token client secret | `secrets/backup/access-client-secret` | 10001 |
+
+The backup bearer (`secrets/backup/bearer`) is `scripts/setup host`'s: `apply`
+only reads it, never writes or regenerates it, and stops pointing at
+`scripts/setup host --yes` when it is missing.
 
 The services token is for the Discord bot, the Luma import and the purchasing
 agent; no container reads it. It does not expire (setup creates it with the
@@ -364,10 +377,10 @@ example `mv secrets/admin/tunnel-token.<time> secrets/tunnel-token && chown
 65532:65532 secrets/tunnel-token`. Every later run refuses to start, with the
 same explanation, until the new file is in place.
 
-If the services token's client secret is on the host but its client ID file
-(`secrets/admin/services-access-client-id`) is not, every run lists it as
-`missing`, with where to copy the client ID from, and exits 1 until the file is
-there.
+If a service token's client secret is on the host but its client ID file
+(`secrets/admin/services-access-client-id`, or `secrets/backup/access-client-id`
+for the backup token) is not, every run lists it as `missing`, with where to copy
+the client ID from, and exits 1 until the file is there.
 
 At the end it prints what it created, with IDs; what is left as `manual`,
 `drift`, `unknowable` or `missing`, with the step for each; where each secret is
@@ -385,13 +398,51 @@ The apply token needs Edit permissions; `dashboard setup -h` prints this list:
 - Account: Cloudflare Tunnel Edit, Access: Apps Edit, Access: Policies Edit,
   Access: Groups Edit, Access: Identity Providers Edit, Access: Service Tokens
   Edit, Access: Organizations Read (Edit only with `--allow-org-session-write`),
-  D1 Read, Workers Scripts Read.
+  D1 Edit, Workers Scripts Edit.
 - Zone: Zone Read, DNS Edit, Zone WAF Edit, Cache Rules Edit, Config Rules Edit,
   Bot Management Read (Edit only with `--allow-bot-fight-mode-off`).
 
 When a permission is missing, Cloudflare answers 401 with code 1001; setup stops,
 names the permission and prints the list. Limit the token to the dashboard's
 account and zone, give it a short expiry, and delete it when setup is done.
+
+### The backup Worker
+
+The image carries the Worker from `server/deploy/backup-sink`, bundled at build
+time, so the host needs no Node. Its version is a revision number (2 in this
+release), which the Worker reports on `GET /version` (with the bearer, like every
+other path) and which setup also uploads as the plain-text binding
+`SINK_REVISION`, so the preview can read it.
+
+- **Order.** The D1 database, then its tables, then the Worker, with the other
+  creates before the tunnel; the custom domain last, only after the backup
+  hostname's Access application and its service token read back `ok`, so the
+  backup hostname is never public without Access.
+- **D1.** `dashboard-backups` (with `--name-prefix`, prefixed) is created when
+  absent. Its tables are applied only to a database that has none: setup lists
+  them with a read-only query first (the D1 list's table count is deprecated), and
+  records the migration in `d1_migrations` as Wrangler does, so `wrangler d1
+  migrations apply` later finds nothing to do. A database that has tables is never
+  altered: `ok` when they are the Worker's, `drift` when not. The preview cannot
+  send that query, so it shows the line as `unknowable`; `apply` decides it.
+- **The Worker** is uploaded only when no Worker of that name exists, bound to the
+  database, with the bearer from `secrets/backup/bearer` as `BACKUP_BEARER_SECRET`
+  (the only request that ever carries it), and its workers.dev URL and preview
+  URLs are turned off in the next request. An existing Worker is never uploaded
+  again, because an upload replaces its whole script, bindings and secrets: its
+  revision is `ok`, `drift` (older or newer, with the upgrade step) or
+  `unknowable` (deployed with Wrangler, which uploads no revision label). An
+  existing Worker without the bearer is a `manual` step. Upgrading an existing
+  Worker is by hand in this release.
+- **Custom domain.** Cloudflare refuses one on a hostname with a CNAME record, and
+  setup never removes a record: any record on the backup hostname stops the run
+  before the first write, with the step.
+- **Limits.** Before any write it counts the account's D1 databases and Workers
+  against the Workers Free plan (10 and 100) and stops at the limit.
+- **`backup.env`.** Once the custom domain reads back `ok`, setup writes
+  `BACKUP_SINK_URL` and the three `*_FILE` keys under the adopt rule (an existing
+  value is reported and kept). It never writes `BACKUP_AGE_RECIPIENT`, and says
+  that backups stay off until it is set.
 
 ## Host files (`scripts/setup`)
 

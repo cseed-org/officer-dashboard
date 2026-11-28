@@ -47,7 +47,8 @@ With --dry-run, reads your Cloudflare account and prints what the dashboard stil
 needs. Nothing is changed. Run it first.
 
 Without --dry-run, it applies: it reads the account again, prints the plan, and creates
-the missing tunnel, DNS record, Access pieces and rules only once you confirm, by typing
+the missing tunnel, DNS record, Access pieces, rules and backup Worker (with its D1
+database and custom domain) only once you confirm, by typing
 the dashboard hostname at a terminal, or with --yes. Without a terminal and without
 --yes it changes nothing and exits 1. It writes the secrets Cloudflare hands out into
 --deploy-dir, so run ` + "`dashboard setup host --yes`" + ` there first. It never deletes, never
