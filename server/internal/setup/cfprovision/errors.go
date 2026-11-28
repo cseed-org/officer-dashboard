@@ -86,6 +86,38 @@ func (e *SinkError) Error() string {
 		e.Secret, e.ResourceID, e.Cause, e.Recovery)
 }
 
+// NotInPlaceError is a secret the sink kept durably, but not where the install reads it:
+// a file was already there, which the sink never replaces, so the new value was saved
+// beside it. The secret is not lost, but the install would run with the old file, so the
+// run stops before anything that depends on it. A SecretSink returns it with Detail set
+// (where the new value is, which file is older); the engine fills Secret and ResourceID.
+type NotInPlaceError struct {
+	Secret     SecretName
+	ResourceID string
+	Detail     string
+}
+
+func (e *NotInPlaceError) Error() string {
+	return fmt.Sprintf("the new %s for %s is kept on the host, but not where the install reads it. %s. Setup stopped here, so nothing that depends on it was changed; "+
+		"run setup again once the new value is in place (it refuses to start while a set-aside copy is there)",
+		e.Secret, orNone(e.ResourceID), e.Detail)
+}
+
+// IncompleteSecretError is a secret the sink kept in part: the part Cloudflare never
+// shows again is on the host, another part (one Cloudflare still shows) could not be
+// written. The secret is not lost, so this is not a SinkError; the run stops, and Detail
+// says how to add the missing part.
+type IncompleteSecretError struct {
+	Secret     SecretName
+	ResourceID string
+	Detail     string
+}
+
+func (e *IncompleteSecretError) Error() string {
+	return fmt.Sprintf("the %s for %s is kept on the host only in part: %s. Setup stopped here, so nothing that depends on it was changed",
+		e.Secret, orNone(e.ResourceID), e.Detail)
+}
+
 // ShapeError is a create whose response lacked a field setup depends on.
 type ShapeError struct {
 	Step, ResourceID, Missing, Recovery string

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -116,11 +117,42 @@ func NewEngine(token string, d plan.Desired, sink SecretSink, out io.Writer, opt
 // The returned error, and every error it wraps, is scrubbed of the secrets the run saw.
 // Print the returned error itself: it carries the whole explanation.
 func (e *Engine) Apply(ctx context.Context, actions []plan.Action) (Outputs, error) {
-	out, err := e.apply(ctx, actions)
+	out, err := e.apply(ctx, actions, nil)
 	return out, e.out.scrubErr(err)
 }
 
-func (e *Engine) apply(ctx context.Context, actions []plan.Action) (Outputs, error) {
+// Reviewed is a plan as Preview computed it: the plan lines and the apply steps the
+// person was shown before they confirmed.
+type Reviewed struct {
+	Actions []plan.Action
+	Plan    ApplyPlan
+}
+
+// Preview reads the account and the host's secret files and returns what Apply would do
+// now, blockers included. It writes nothing and prints nothing.
+func (e *Engine) Preview(ctx context.Context) (Reviewed, error) {
+	if err := e.discover(ctx); err != nil {
+		return Reviewed{}, e.out.scrubErr(err)
+	}
+	fresh := plan.Diff(e.d, e.o)
+	facts, err := e.facts(ctx, fresh)
+	if err != nil {
+		return Reviewed{Actions: fresh}, e.out.scrubErr(err)
+	}
+	ap := PlanApply(e.d, e.o, fresh, e.opt, facts)
+	ap.Blockers = append(ap.Blockers, e.preflight(ctx, ap)...)
+	return Reviewed{Actions: fresh, Plan: ap}, nil
+}
+
+// ApplyReviewed is Apply for a plan the person confirmed after Preview. Besides the plan
+// lines, the steps and warnings computed on the fresh discovery must be the ones they
+// were shown, or the run stops before the first write. It does not print the plan again.
+func (e *Engine) ApplyReviewed(ctx context.Context, r Reviewed) (Outputs, error) {
+	out, err := e.apply(ctx, r.Actions, &r.Plan)
+	return out, e.out.scrubErr(err)
+}
+
+func (e *Engine) apply(ctx context.Context, actions []plan.Action, reviewed *ApplyPlan) (Outputs, error) {
 	if err := e.discover(ctx); err != nil {
 		return e.outputs, err
 	}
@@ -134,7 +166,12 @@ func (e *Engine) apply(ctx context.Context, actions []plan.Action) (Outputs, err
 	}
 	ap := PlanApply(e.d, e.o, fresh, e.opt, facts)
 	ap.Blockers = append(ap.Blockers, e.preflight(ctx, ap)...)
-	if err := ap.WriteText(e.out); err != nil {
+	if reviewed != nil {
+		if changes := stepChanges(*reviewed, ap); len(changes) > 0 {
+			return e.outputs, &PlanChangedError{Changes: changes}
+		}
+		fmt.Fprintln(e.out, "Cloudflare still matches the plan above.")
+	} else if err := ap.WriteText(e.out); err != nil {
 		return e.outputs, err
 	}
 	if len(ap.Blockers) > 0 {
@@ -205,6 +242,25 @@ func planChanges(reviewed, fresh []plan.Action) []string {
 	}
 	if len(reviewed) == 0 {
 		out = append(out, "no reviewed plan was given")
+	}
+	return out
+}
+
+// stepChanges compares the steps and warnings the person was shown with fresh ones.
+func stepChanges(reviewed, fresh ApplyPlan) []string {
+	var out []string
+	for i := 0; i < max(len(reviewed.Steps), len(fresh.Steps)); i++ {
+		switch {
+		case i >= len(fresh.Steps):
+			out = append(out, fmt.Sprintf("step %d (%s) is no longer needed", i+1, reviewed.Steps[i].Title))
+		case i >= len(reviewed.Steps):
+			out = append(out, fmt.Sprintf("step %d (%s) is new", i+1, fresh.Steps[i].Title))
+		case !reflect.DeepEqual(reviewed.Steps[i], fresh.Steps[i]):
+			out = append(out, fmt.Sprintf("step %d was %q, now %q", i+1, reviewed.Steps[i].Title, fresh.Steps[i].Title))
+		}
+	}
+	if !slices.Equal(reviewed.Warnings, fresh.Warnings) {
+		out = append(out, "the warnings changed; now: "+strings.Join(fresh.Warnings, "; "))
 	}
 	return out
 }
@@ -403,6 +459,14 @@ func (e *Engine) verify(ctx context.Context, s Step, createdID string) error {
 func (e *Engine) keepSecret(ctx context.Context, sec Secret, recovery string) error {
 	e.out.add(sec.Value)
 	if err := e.sink.Store(ctx, sec); err != nil {
+		var nip *NotInPlaceError
+		if errors.As(err, &nip) {
+			return &NotInPlaceError{Secret: sec.Name, ResourceID: sec.ResourceID, Detail: e.out.scrub(nip.Detail)}
+		}
+		var inc *IncompleteSecretError
+		if errors.As(err, &inc) {
+			return &IncompleteSecretError{Secret: sec.Name, ResourceID: sec.ResourceID, Detail: e.out.scrub(inc.Detail)}
+		}
 		return &SinkError{Secret: sec.Name, ResourceID: sec.ResourceID, Cause: e.out.scrub(err.Error()), Recovery: recovery}
 	}
 	fmt.Fprintf(e.out, "  kept the %s on the host\n", sec.Name)

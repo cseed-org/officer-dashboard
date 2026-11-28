@@ -4,12 +4,14 @@
   scripts/setup check [--image IMAGE]
   scripts/setup host [--dry-run | --yes] [--image IMAGE] [--secret NAME=FILE | NAME=-]... [flags]
   scripts/setup preview [--image IMAGE] [--token-file FILE] [flags]
+  scripts/setup apply [--yes] [--token-file FILE] [flags]
   scripts/setup install-units [--enable-updates | --no-enable-updates]
 
-`host` and `preview` run `dashboard setup` from the pinned image with the deploy
-directory mounted; flags this launcher does not know are passed on to it (listed in
-`scripts/setup host -h` and docs/configuration.md, "Host files"). Run as root. Works
-from any directory: the deploy directory defaults to the one beside this script
+`host`, `preview` and `apply` run `dashboard setup` from the pinned image; flags this
+launcher does not know are passed on to it (listed in `scripts/setup host -h`,
+`scripts/setup apply -h` and docs/configuration.md, "Host files"). The order is host
+--yes, preview, apply; this launcher never starts or restarts a service. Run as root.
+Works from any directory: the deploy directory defaults to the one beside this script
 (--deploy-dir to choose another).
 """
 import argparse
@@ -33,6 +35,7 @@ DEFAULT_PROJECT = 'officer-dashboard'  # compose.cloudflare.yml: name: ${COMPOSE
 DEFAULT_NET = '10.250.89'              # compose.cloudflare.yml: ${TUNNEL_NET:-10.250.89}
 CONTAINER_DEPLOY = '/deploy'
 CONTAINER_TUNNEL_TOKEN = '/run/setup/tunnel-token'
+CONTAINER_CF_TOKEN = '/run/setup/cloudflare-token'
 CLOUDFLARED_IDS = '65532:65532'  # compose.cloudflare.yml, cloudflared: user: "65532:65532"
 UPDATE_UNITS = ['officer-dashboard-update.service', 'officer-dashboard-update.timer']
 
@@ -353,12 +356,46 @@ def cmd_host(deploy, opts, rest):
     return code
 
 
+def flag_name(arg):
+    """The flag an argument sets, as Go's flag package reads it: `-x`, `--x` and `--x=v`
+    all set --x. Anything that is not a flag gives ''."""
+    if not arg.startswith('-') or arg in ('-', '--'):
+        return ''
+    return '--' + arg.split('=', 1)[0].lstrip('-')
+
+
+def token_file(deploy, flag_value, settings):
+    """The Cloudflare API token file, or None. --token-file is relative to the current
+    directory; CLOUDFLARE_SETUP_TOKEN_FILE in .env, to the deploy directory. A symbolic
+    link is refused (Docker would mount whatever it points at), and a file other users
+    can read gets a warning."""
+    if flag_value:
+        path = Path(flag_value).absolute()
+    elif settings.get('CLOUDFLARE_SETUP_TOKEN_FILE'):
+        path = deploy / settings['CLOUDFLARE_SETUP_TOKEN_FILE']
+    else:
+        return None
+    if path.is_symlink():
+        raise SetupError(f'the Cloudflare token file {path} is a symbolic link; give the file itself')
+    if not path.is_file():
+        raise SetupError(f'cannot read the Cloudflare token file {path}: it is not a file')
+    mode = path.stat().st_mode & 0o777
+    if mode & 0o077:
+        print(f'setup: warning: the Cloudflare token file {path} can be read by other users (mode {mode:04o}); '
+              f'chmod 600 it, and delete it when setup is done', file=sys.stderr)
+    return path
+
+
 def cmd_preview(deploy, opts, rest):
     """The read-only Cloudflare preview. It talks to Cloudflare, so it gets the least:
     cloudflared's UID with no capabilities, the non-secret settings as environment values,
     the tunnel token file alone (for the tunnel ID), and the API token on stdin. Neither
     the deploy directory nor secrets/ is mounted."""
     check(deploy)
+    for arg in rest:
+        if flag_name(arg) in ('--dry-run', '--yes'):
+            raise SetupError(f'preview does not take {arg.split("=", 1)[0]}: it is always the read-only dry run. '
+                             'To change Cloudflare, use `scripts/setup apply`.')
     image, _ = image_pin(deploy, opts.image)
     settings, backup = dotenv(deploy / '.env'), dotenv(deploy / 'backup.env')
     env = [f'{key}={source[key]}' for key, source in (('APP_URL', settings), ('BACKUP_SINK_URL', backup)) if source.get(key)]
@@ -368,15 +405,56 @@ def cmd_preview(deploy, opts, rest):
         mounts.append((deploy / tunnel, CONTAINER_TUNNEL_TOKEN, True))
         env.append('TUNNEL_TOKEN_FILE=' + CONTAINER_TUNNEL_TOKEN)
     stdin = None
-    token = opts.token_file or settings.get('CLOUDFLARE_SETUP_TOKEN_FILE')
+    token = token_file(deploy, opts.token_file, settings)
     if token:
         try:
-            stdin = (deploy / token).read_text()
+            stdin = token.read_text()
         except OSError as error:
-            raise SetupError(f'cannot read the Cloudflare token file {deploy / token}: {error.strerror}') from None
+            raise SetupError(f'cannot read the Cloudflare token file {token}: {error.strerror}') from None
         env.append('CLOUDFLARE_SETUP_TOKEN_FILE=/dev/stdin')
     return container(image, ['--dry-run'] + rest, user=CLOUDFLARED_IDS, caps=[], network=True, mounts=mounts,
                      env=env, stdin=stdin, tty=stdin is None and stdin_is_tty())
+
+
+# Flags `apply` never passes on: each would turn it into another phase, point it at other
+# files, or change the image, which only `host --yes` pins.
+APPLY_REFUSED = {
+    '--dry-run': 'the read-only preview is `scripts/setup preview`, which runs unprivileged',
+    '--json': 'only the preview prints JSON (`scripts/setup preview --json`)',
+    '--deploy-dir': 'give --deploy-dir before `apply`; the container always sees it at /deploy',
+    '--tunnel-token-file': 'apply reads secrets/tunnel-token in the deploy directory, the file it writes',
+    '--image': 'apply runs the image pinned in prod-image.env, which only `scripts/setup host --yes` writes',
+}
+
+
+def cmd_apply(deploy, opts, rest):
+    """The Cloudflare apply: the one phase that writes to Cloudflare. The container runs as
+    root with the file capabilities of `host --yes` and network, because it writes the
+    secrets Cloudflare hands out into the deploy directory (mounted read-write) as soon as
+    they arrive. The API token reaches it only as a read-only file mount (or typed in the
+    container), never in argv, the environment or stdin, so a terminal stays free for the
+    confirmation. Go prints the plan and writes only after --yes or the hostname typed
+    at that terminal; it never starts a service."""
+    check(deploy)
+    for arg in rest:
+        if flag_name(arg) in APPLY_REFUSED:
+            raise SetupError(f'apply does not take {arg.split("=", 1)[0]}: {APPLY_REFUSED[flag_name(arg)]}.')
+    if not (deploy / 'prod-image.env').exists():
+        raise SetupError('No image pin yet (prod-image.env). Run `scripts/setup host --yes` first: it pins the image and '
+                         'writes the env files and secret directories the apply writes into (docs/deploy/fresh-install.md).')
+    image, _ = image_pin(deploy, None)
+    settings, backup = dotenv(deploy / '.env'), dotenv(deploy / 'backup.env')
+    env = [f'{key}={source[key]}' for key, source in (('APP_URL', settings), ('BACKUP_SINK_URL', backup)) if source.get(key)]
+    mounts = [(deploy, CONTAINER_DEPLOY, False)]
+    path = token_file(deploy, opts.token_file, settings)
+    if path:
+        mounts.append((path, CONTAINER_CF_TOKEN, True))
+        env.append('CLOUDFLARE_SETUP_TOKEN_FILE=' + CONTAINER_CF_TOKEN)
+    elif not stdin_is_tty():
+        raise SetupError('apply needs the Cloudflare API token: pass --token-file FILE (or set CLOUDFLARE_SETUP_TOKEN_FILE '
+                         'in .env), or run it in a terminal to type it.')
+    go = ['--deploy-dir', CONTAINER_DEPLOY] + (['--yes'] if opts.yes else []) + rest
+    return container(image, go, user='0:0', caps=WRITE_CAPS, network=True, mounts=mounts, env=env, tty=stdin_is_tty())
 
 
 def check_unit_path(install):
@@ -473,8 +551,18 @@ def parser():
                    help='a secret value from a file on this host, or NAME=- to type it (repeatable)')
     v = sub.add_parser('preview', allow_abbrev=False, help='read-only Cloudflare preview (dashboard setup --dry-run)')
     v.add_argument('--image', help='image to use when prod-image.env does not exist yet')
-    v.add_argument('--token-file', help='file holding the Cloudflare API token (default: CLOUDFLARE_SETUP_TOKEN_FILE '
-                                        'from .env; else it is asked for)')
+    v.add_argument('--token-file', help='file holding the Cloudflare API token, relative to the current directory (default: CLOUDFLARE_SETUP_TOKEN_FILE '
+                                        'from .env, relative to the deploy directory; else it is asked for)')
+    a = sub.add_parser('apply', allow_abbrev=False, help='create what the preview lists in Cloudflare (dashboard setup)',
+                       epilog='Run `scripts/setup host --yes` and `scripts/setup preview` first. Prints the plan, then '
+                              'writes only after --yes or the dashboard hostname typed at the terminal. Passed on to '
+                              '`dashboard setup`: --officers-email EMAIL and --launchpad-email EMAIL (repeatable; the '
+                              'groups\' members when setup creates them), --name-prefix P, --allow-bot-fight-mode-off, '
+                              '--allow-org-session-write. The token needs the permissions listed in '
+                              'docs/deploy/fresh-install.md and `dashboard setup -h`.')
+    a.add_argument('--yes', action='store_true', help='apply without asking (the plan is still printed first)')
+    a.add_argument('--token-file', help='file holding an edit-capable Cloudflare API token, relative to the current directory (default: CLOUDFLARE_SETUP_TOKEN_FILE '
+                                        'from .env, relative to the deploy directory; else it is asked for in the terminal)')
     u = sub.add_parser('install-units', allow_abbrev=False, help='install the systemd updater units')
     u.add_argument('--unit-dir', default='/etc/systemd/system')
     u.add_argument('--install-dir', help='the checkout the units run from (default: two levels above --deploy-dir)')
@@ -487,7 +575,7 @@ def parser():
 def main(argv=None):
     p = parser()
     opts, rest = p.parse_known_args(argv)
-    if rest and opts.command not in ('host', 'preview'):
+    if rest and opts.command not in ('host', 'preview', 'apply'):
         p.error('unrecognized arguments: ' + ' '.join(rest))
     deploy = Path(opts.deploy_dir).resolve()
     os.umask(0o077)
@@ -501,6 +589,8 @@ def main(argv=None):
             return cmd_host(deploy, opts, rest)
         if opts.command == 'preview':
             return cmd_preview(deploy, opts, rest)
+        if opts.command == 'apply':
+            return cmd_apply(deploy, opts, rest)
         return cmd_install_units(deploy, opts)
     except SetupError as error:
         print('setup: ' + str(error), file=sys.stderr)

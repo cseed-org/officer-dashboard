@@ -4,10 +4,14 @@
 //     Cloudflare account, compares it with what docs/deploy/cloudflare.md and
 //     docs/deploy/fresh-install.md describe, and prints the difference. It writes
 //     nothing, locally or remotely.
+//   - `dashboard setup` without --dry-run applies: it prints the same reading as a plan
+//     of steps, and creates the missing pieces through the cfprovision engine only once
+//     the admin confirms (--yes, or the hostname typed at a terminal). The secrets
+//     Cloudflare hands out go to the deploy directory's host files (apply_sink.go).
 //   - `dashboard setup host` plans the deployment's host files (env files, secret
 //     directories and files) and writes them only with --yes. It has no network code.
 //
-// scripts/setup runs both from the pinned image on the host.
+// scripts/setup runs them from the pinned image on the host, host first.
 package setup
 
 import (
@@ -35,12 +39,23 @@ import (
 const TokenFileEnv = "CLOUDFLARE_SETUP_TOKEN_FILE"
 
 const usage = `usage: dashboard setup --dry-run [flags]
+       dashboard setup [--yes] --deploy-dir DIR [flags]
        dashboard setup host [--dry-run | --yes] [flags]   (see dashboard setup host -h)
 
-Reads your Cloudflare account and prints what the dashboard still needs. Nothing is
-changed. The Cloudflare API token is read from the file named by
-CLOUDFLARE_SETUP_TOKEN_FILE, or asked for without echo when that is unset. It is
-never accepted as a flag and never printed.
+With --dry-run, reads your Cloudflare account and prints what the dashboard still
+needs. Nothing is changed. Run it first.
+
+Without --dry-run, it applies: it reads the account again, prints the plan, and creates
+the missing tunnel, DNS record, Access pieces and rules only once you confirm, by typing
+the dashboard hostname at a terminal, or with --yes. Without a terminal and without
+--yes it changes nothing and exits 1. It writes the secrets Cloudflare hands out into
+--deploy-dir, so run ` + "`dashboard setup host --yes`" + ` there first. It never deletes, never
+changes what exists, and never starts a service.
+
+The Cloudflare API token is read from the file named by CLOUDFLARE_SETUP_TOKEN_FILE,
+or asked for without echo when that is unset. It is never accepted as a flag and never
+printed. A dry run needs only read permissions; an apply needs:
+` + ApplyPermissions + `
 
 Flags:
 `
@@ -55,7 +70,10 @@ type Deps struct {
 	IsTerminal   func(fd int) bool
 	ReadPassword func(fd int) ([]byte, error)
 	NewReader    func(token string) cfapi.Reader
-	// Used by `setup host` only.
+	// NewEngine builds the apply engine (nil: the real one). Only an apply calls it, so
+	// a dry run never constructs the write client.
+	NewEngine NewEngineFunc
+	// Used by `setup host` and by an apply (the confirmation and the secret files).
 	Stdin  io.Reader
 	Owner  hostfiles.Owner // nil: the real chown and stat
 	Random io.Reader       // nil: crypto/rand
@@ -72,6 +90,7 @@ func Main(args []string, getenv func(string) string, stdout, stderr io.Writer) i
 		IsTerminal:   term.IsTerminal,
 		ReadPassword: term.ReadPassword,
 		NewReader:    func(token string) cfapi.Reader { return cfapi.New(token) },
+		NewEngine:    defaultNewEngine,
 		Stdin:        os.Stdin,
 	})
 }
@@ -90,7 +109,7 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 	var in plan.Inputs
 	var dryRun, asJSON bool
 	var tunnelTokenFile string
-	fs.BoolVar(&dryRun, "dry-run", false, "only read and report; required in this version")
+	fs.BoolVar(&dryRun, "dry-run", false, "only read and report; changes nothing. Without it, setup applies after you confirm")
 	fs.BoolVar(&asJSON, "json", false, "print the plan as JSON")
 	fs.StringVar(&in.AppURL, "app-url", deps.Getenv("APP_URL"), "dashboard origin, https://<hostname> (APP_URL)")
 	fs.StringVar(&in.BackupHostname, "backup-hostname", backupHostDefault(deps.Getenv("BACKUP_SINK_URL")), "backup Worker hostname (default: host of BACKUP_SINK_URL, else backups.<parent of the APP_URL host>)")
@@ -98,7 +117,20 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 	fs.StringVar(&in.LaunchpadGroup, "launchpad-group", "Launchpad", "Access group of Launchpad builders and mentors; empty for none")
 	fs.StringVar(&in.NamePrefix, "name-prefix", "", "prefix for every resource name, for a staging install beside the real one")
 	fs.StringVar(&in.TunnelID, "tunnel-id", "", "match the tunnel by this ID before its name")
-	fs.StringVar(&tunnelTokenFile, "tunnel-token-file", deps.Getenv("TUNNEL_TOKEN_FILE"), "read the tunnel ID from this tunnel token file (TUNNEL_TOKEN_FILE); only the ID is used")
+	fs.StringVar(&tunnelTokenFile, "tunnel-token-file", deps.Getenv("TUNNEL_TOKEN_FILE"), "read the tunnel ID from this tunnel token file (TUNNEL_TOKEN_FILE); only the ID is used. --dry-run only")
+	var ap applyArgs
+	fs.BoolVar(&ap.yes, "yes", false, "apply without asking (the plan is still printed first)")
+	fs.StringVar(&ap.dir, "deploy-dir", ".", "apply: the deployment directory (server/deploy) where `setup host --yes` ran; secrets and restore records go here")
+	fs.Func("officers-email", "apply: a member of the Officers group, when setup creates it (repeatable; include your own)", func(s string) error {
+		ap.officers = append(ap.officers, s)
+		return nil
+	})
+	fs.Func("launchpad-email", "apply: a member of the Launchpad group, when setup creates it (repeatable)", func(s string) error {
+		ap.launchpad = append(ap.launchpad, s)
+		return nil
+	})
+	fs.BoolVar(&ap.allowBotFightModeOff, "allow-bot-fight-mode-off", false, "apply: turn Bot Fight Mode off for the whole zone (default: print the manual step)")
+	fs.BoolVar(&ap.allowOrgSessionWrite, "allow-org-session-write", false, "apply: set the Zero Trust organization's global session duration when unset (default: print the manual step)")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -109,9 +141,17 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 		fmt.Fprintf(deps.Stderr, "setup: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
-	if !dryRun {
-		fmt.Fprintln(deps.Stderr, "setup: apply is not built yet; run `dashboard setup --dry-run` to preview")
+	if dryRun && ap.yes {
+		fmt.Fprintln(deps.Stderr, "setup: --dry-run and --yes contradict each other")
 		return 2
+	}
+	if !dryRun && asJSON {
+		fmt.Fprintln(deps.Stderr, "setup: --json is for --dry-run; an apply prints its plan and report as text")
+		return 2
+	}
+	if !dryRun {
+		fs.Visit(func(f *flag.Flag) { ap.tunnelTokenFileSet = ap.tunnelTokenFileSet || f.Name == "tunnel-token-file" })
+		return runApply(ctx, in, ap, deps)
 	}
 	if in.TunnelID == "" && tunnelTokenFile != "" {
 		if id, err := tunnelIDFromFile(deps.ReadFile, tunnelTokenFile); err != nil {

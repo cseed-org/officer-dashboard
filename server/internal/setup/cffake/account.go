@@ -1,6 +1,7 @@
 package cffake
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -64,7 +65,7 @@ func NewAccount(routes map[string]Response) *Account {
 	for _, t := range s.list(acct("/cfd_tunnel")) {
 		if m, ok := t.(map[string]any); ok {
 			id := fmt.Sprint(m["id"])
-			s.routes[acct("/cfd_tunnel/"+id+"/token")] = Response{Result: "eyJ" + s.acct.secret("FAKE-TUNNEL-TOKEN")}
+			s.routes[acct("/cfd_tunnel/"+id+"/token")] = Response{Result: s.acct.tunnelToken(id)}
 		}
 	}
 	return &Account{Server: s}
@@ -382,7 +383,7 @@ func (st *accountState) createTunnel(s *Server, body map[string]any) (any, *errR
 		t["remote_config"] = src == "cloudflare"
 	}
 	s.appendTo(acct("/cfd_tunnel"), t)
-	tok := "eyJ" + st.secret("FAKE-TUNNEL-TOKEN")
+	tok := st.tunnelToken(id)
 	s.routes[acct("/cfd_tunnel/"+id+"/token")] = Response{Result: tok}
 	resp := map[string]any{}
 	for k, v := range t {
@@ -581,4 +582,17 @@ func writableOn(path string) map[string]bool {
 		m[f] = true
 	}
 	return m
+}
+
+// tunnelToken is a tunnel token in the shape cloudflared takes and setup decodes for the
+// tunnel ID: base64 of {"a": account tag, "t": tunnel ID, "s": secret}. It is built at
+// run time, and both it and its secret part are recorded in Secrets.
+func (st *accountState) tunnelToken(id string) string {
+	s := st.secret("FAKE-TUNNEL-SECRET")
+	raw, _ := json.Marshal(map[string]string{"a": AccountID, "t": id, "s": s})
+	tok := base64.StdEncoding.EncodeToString(raw)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.secrets = append(st.secrets, tok)
+	return tok
 }

@@ -52,7 +52,7 @@ jobs:
           # The hostfiles package's own real-chown test, as root, in the Dockerfile's Go image.
           docker run --rm -e HOSTFILES_REQUIRE_ROOT=1 -v "$PWD/server:/src" -w /src \
             golang:1.27.4-bookworm@sha256:ce59b41415e2524ae99926fe1f37ce48ba8c194dcbd2a56a65436cdcefa2bd34 \
-            go test -run 'TestRealOwnershipAsRoot|TestCompleteInstallIsANoOp' -v ./internal/setup/hostfiles/
+            go test -run 'TestRealOwnershipAsRoot|TestCompleteInstallIsANoOp|TestApplyRealOwnershipAsRoot' -v ./internal/setup/hostfiles/ ./internal/setup/
 
   govulncheck:
     runs-on: ubuntu-latest

@@ -243,8 +243,8 @@ Cloudflared uses its documented [`TUNNEL_TOKEN_FILE`](https://developers.cloudfl
 of [Cloudflare setup](deploy/cloudflare.md) and the backup Worker, whether it is
 `ok`, would be created (`create`), differs from the docs (`drift`), cannot be read
 (`unknowable`, for example a secret Cloudflare never returns), or needs a person
-(`manual`). It sends only `GET` requests and writes no files. Applying the plan is
-not built yet.
+(`manual`). It sends only `GET` requests and writes no files. To create what it
+lists, see [Setup apply](#setup-apply-scriptssetup-apply).
 
 | Variable | Needed? | Default | Meaning |
 | --- | --- | --- | --- |
@@ -293,6 +293,106 @@ docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.y
   setup --dry-run --backup-hostname backups.example.org
 ```
 
+## Setup apply (`scripts/setup apply`)
+
+`dashboard setup` without `--dry-run` creates what the preview lists as `create`
+for the tunnel, its route, the DNS record, the One-time PIN login, the two Access
+groups, the `officer-dashboard services` service token, the three Access
+applications and the three zone rules. It never deletes anything, never changes
+what exists (`drift` is only reported), and never starts or restarts a service.
+The backup Worker, D1 and the backup Access pieces are listed as `skipped`: they
+stay manual in this version (fresh-install.md step 4).
+
+Run it through the launcher, after `scripts/setup host --yes`:
+
+```sh
+<install-dir>/scripts/setup preview --token-file /root/setup/cloudflare-token
+<install-dir>/scripts/setup apply --token-file /root/setup/cloudflare-token \
+  --officers-email you@example.org --launchpad-email mentor@example.org
+```
+
+How it runs:
+
+- **Order.** `host --yes` comes first: it pins the image and writes the env files
+  and the `secrets/` directories with their owners. `apply` refuses to start
+  without them, and without `TUNNEL_TOKEN_FILE=./secrets/tunnel-token` in `.env`.
+  Start the stack only after `apply` reports that every step read back `ok`: it
+  creates the Access applications before anything that publishes the hostname,
+  but cloudflared must not run before they exist.
+- **Confirmation.** It reads the account, prints the plan and the numbered
+  steps, and asks you to type the dashboard hostname. `--yes` skips the question
+  (the plan is still printed). Without a terminal and without `--yes` it changes
+  nothing and exits 1. Just before the first write it reads the account again;
+  if the plan, the steps or the warnings are not the ones you were shown, it
+  stops without writing.
+- **Container.** It runs as root with only `CHOWN`, `DAC_OVERRIDE` and `FOWNER`,
+  with network, and with the deploy directory mounted read-write: the secrets
+  Cloudflare hands out are written there before the next request. The token file
+  is mounted read-only; the token is never in a command line, the environment or
+  the output. Without a token file it is asked for in the terminal. A relative
+  `--token-file` is relative to the current directory, and
+  `CLOUDFLARE_SETUP_TOKEN_FILE` in `.env` to the deploy directory. A symbolic link
+  is refused, and a file other users can read gets a warning. The launcher stops
+  on rootless Docker, `userns-remap` and SELinux enforcing, as `host` does.
+- **Options.** `--officers-email` and `--launchpad-email` (repeatable) are the
+  members a group is created with; existing groups are never changed.
+  `--name-prefix` works as in the preview, and refuses to apply on another
+  install's hostname. Two zone- and account-wide settings stay manual unless you
+  allow them: `--allow-bot-fight-mode-off` and `--allow-org-session-write`.
+
+Where the secrets go (mode 0400; an existing file is never replaced):
+
+| Secret | Host file | Owner |
+| --- | --- | --- |
+| tunnel token | `secrets/tunnel-token` | 65532 |
+| services token client ID | `secrets/admin/services-access-client-id` | root |
+| services token client secret | `secrets/admin/services-access-client-secret` | root |
+
+The services token is for the Discord bot, the Luma import and the purchasing
+agent; no container reads it. It does not expire (setup creates it with the
+longest duration, `forever`), so rotating it is your job: Zero Trust → Access
+controls → Service credentials → Service Tokens → `officer-dashboard services` →
+Rotate, then give the bots the new secret.
+
+Setup writes a secret file only when it creates or fetches the secret, so a new
+value is always the one Cloudflare now holds for that tunnel or service token. If
+its file already exists, the existing file is older: setup leaves it as it was,
+saves the new value beside it as `secrets/admin/<name>.<UTC time>`, and stops,
+because the install still reads the old file. The message names the tunnel or
+token the new value belongs to and gives the command that puts it in place, for
+example `mv secrets/admin/tunnel-token.<time> secrets/tunnel-token && chown
+65532:65532 secrets/tunnel-token`. Every later run refuses to start, with the
+same explanation, until the new file is in place.
+
+If the services token's client secret is on the host but its client ID file
+(`secrets/admin/services-access-client-id`) is not, every run lists it as
+`missing`, with where to copy the client ID from, and exits 1 until the file is
+there.
+
+At the end it prints what it created, with IDs; what is left as `manual`,
+`drift`, `unknowable` or `missing`, with the step for each; where each secret is
+(paths only); and a reminder to check the cache rule (it must say **Bypass
+cache**) and Bot Fight Mode in the Cloudflare dashboard. It says to start the
+stack only when no `drift` or `unknowable` line concerns Access or the
+hostname. It exits 0 only when every step was created and read back `ok` (or
+there was nothing to create) and no secret file is missing; 1 when it stopped,
+was not confirmed, or a secret file is missing; and 2 for a usage error
+(including `--json`, which is for `--dry-run` only). A stopped run is safe to
+start again: it reads the account first and creates no second copy.
+
+The apply token needs Edit permissions; `dashboard setup -h` prints this list:
+
+- Account: Cloudflare Tunnel Edit, Access: Apps Edit, Access: Policies Edit,
+  Access: Groups Edit, Access: Identity Providers Edit, Access: Service Tokens
+  Edit, Access: Organizations Read (Edit only with `--allow-org-session-write`),
+  D1 Read, Workers Scripts Read.
+- Zone: Zone Read, DNS Edit, Zone WAF Edit, Cache Rules Edit, Config Rules Edit,
+  Bot Management Read (Edit only with `--allow-bot-fight-mode-off`).
+
+When a permission is missing, Cloudflare answers 401 with code 1001; setup stops,
+names the permission and prints the list. Limit the token to the dashboard's
+account and zone, give it a short expiry, and delete it when setup is done.
+
 ## Host files (`scripts/setup`)
 
 `scripts/setup` runs on the Linux host, as root, from any directory. It checks the
@@ -305,6 +405,7 @@ host, pins the image, and runs `dashboard setup` from that image with
 | `scripts/setup host --dry-run` | prints what `host --yes` would write. The deploy directory is mounted read-only, and the container keeps only the read capability it needs to compare the secret files |
 | `scripts/setup host --yes [--secret NAME=FILE]…` | writes `prod-image.env` when it is missing, then the env files and secret files listed below. Only this phase can write: it runs as root in the container with just `CHOWN`, `DAC_OVERRIDE` and `FOWNER`, and no network |
 | `scripts/setup preview [--token-file FILE]` | the read-only [Cloudflare preview](#setup-preview-dashboard-setup---dry-run). It runs as cloudflared's UID 65532 with no capabilities, and sees only `APP_URL`, `BACKUP_SINK_URL` and the tunnel token file (read-only, for the tunnel ID); neither the deploy directory nor `secrets/` is mounted. The API token goes to it on standard input. Without a token file, setup asks for the token in a terminal |
+| `scripts/setup apply [--yes] [--token-file FILE]` | the [Cloudflare apply](#setup-apply-scriptssetup-apply): prints the plan, then creates the missing Cloudflare pieces once you confirm. Runs as root with the `host --yes` capabilities and network, the deploy directory mounted read-write, and the token file read-only. Needs `host --yes` first |
 | `scripts/setup install-units [--enable-updates]` | installs the updater service, rendered for this checkout's path, and its timer. It does not turn on automatic updates unless you pass `--enable-updates` or answer yes |
 
 `host` takes the values for the env files as flags: `--app-url`,
