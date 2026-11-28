@@ -65,7 +65,7 @@ func TestDiscoverFreshAccount(t *testing.T) {
 		t.Fatalf("bot fight mode %+v", o.BotFightMode)
 	}
 	for id, k := range kinds(plan.Diff(d, o)) {
-		if k != plan.Create && id != "zone" && id != "token" && id != "zero_trust" && id != "zone.bot_fight_mode" {
+		if k != plan.Create && id != "zone" && id != "token" && id != "zero_trust" && id != "zone.bot_fight_mode" && !(id == "zero_trust.session" && k == plan.Manual) {
 			t.Errorf("%s: %s, want create", id, k)
 		}
 	}
@@ -237,7 +237,7 @@ func TestDiscoverLiveAccountShape(t *testing.T) {
 		"tunnel": plan.OK, "tunnel.route": plan.OK, "dns": plan.OK, "access.idp": plan.Create,
 		"access.group.officers": plan.Create, "access.app.site": plan.Create, "access.app.backups": plan.OK,
 		"access.service_token.services": plan.Create, "access.service_token.backups": plan.OK,
-		"zero_trust.session": plan.Create, "rule.firewall.skip": plan.Create, "zone.bot_fight_mode": plan.Drift,
+		"zero_trust.session": plan.Manual, "rule.firewall.skip": plan.Create, "zone.bot_fight_mode": plan.Drift,
 		"d1": plan.OK, "worker": plan.OK, "worker.domain": plan.OK,
 	}
 	got := kinds(plan.Diff(d, o))

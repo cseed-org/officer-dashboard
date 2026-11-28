@@ -20,7 +20,7 @@ server/
   internal/cfsync      membership D1 mirror and synchronization jobs
   internal/cloudflare  Cloudflare D1 and GraphQL analytics client
   internal/mcpcheck    the mcp-check deployment reachability checks
-  internal/setup       dashboard setup: read-only Cloudflare preview (plan, cfapi, cfprovision, cffake)
+  internal/setup       dashboard setup: Cloudflare preview and the apply engine (plan, cfapi, cfprovision, cffake); apply is not yet wired to the command
   internal/files       receipts: Google Drive (shared drive) and local disk
   internal/drivebackup uploads the sidecar's encrypted snapshots to Drive (daily + monthly) and restores them
   internal/driveexport hourly readable event/program snapshots in Drive; content hashes skip unchanged files

@@ -4,8 +4,8 @@ Cloudflare setup for officers.example.org (dry run: nothing was changed)
   ok          Setup token                          active
                                                      - expires 2026-12-04T00:00:00Z; revoke it when setup is done
   ok          Zero Trust organization              club.cloudflareaccess.com
-  create      Global session duration              730h (1 month)
-                                                     - not set (Cloudflare's default is 24h)
+  manual      Global session duration              730h (1 month)
+                                                     - not set (Cloudflare's default is 24h). Setup does not write the Zero Trust organization unless allowed. In Zero Trust: Access controls → Access settings → Set your global session duration → Edit → 1 month → Save (docs/deploy/cloudflare.md step 3)
   ok          Tunnel                               officer-dashboard  [6ff42ae2-765d-4adf-8112-31c55c1551ef]
                                                      - inactive: no cloudflared connector is running
   ok          Tunnel route                         officers.example.org → http://dashboard:8090
@@ -40,4 +40,4 @@ Cloudflare setup for officers.example.org (dry run: nothing was changed)
                                                      - set, but Cloudflare never returns its value; setup will trust secrets/backup/bearer if present, else offer --rotate
   ok          Worker custom domain                 backups.example.org  [wd-1]
 
-11 ok, 11 create, 1 drift, 3 unknowable, 0 manual
+11 ok, 10 create, 1 drift, 3 unknowable, 1 manual

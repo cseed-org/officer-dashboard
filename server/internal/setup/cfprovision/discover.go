@@ -105,11 +105,15 @@ func ambiguous(resource, name string, ids []string) error {
 
 // zone: GET /zones?name=<name>
 // https://developers.cloudflare.com/api/resources/zones/methods/list/
-// Fields: id, name, status (initializing, pending, active, moved), account.id.
+// Fields: id, name, status (initializing, pending, active, moved), account.id, and
+// plan.legacy_id ("free" on a live Free zone), used to count the free rule slots.
 func (x *discovery) zone(ctx context.Context) (plan.Zone, error) {
 	type zone struct {
 		ID, Name, Status string
 		Account          struct{ ID string } `json:"account"`
+		Plan             struct {
+			LegacyID string `json:"legacy_id"`
+		} `json:"plan"`
 	}
 	labels := strings.Split(x.d.Hostname, ".")
 	// Longest suffix first, stopping before the bare TLD: officers.example.org, example.org.
@@ -131,7 +135,7 @@ func (x *discovery) zone(ctx context.Context) (plan.Zone, error) {
 			continue
 		case 1:
 			z := hits[0]
-			return plan.Zone{Seen: plan.Seen{Found: true, ID: z.ID}, Name: z.Name, Status: z.Status, AccountID: z.Account.ID}, nil
+			return plan.Zone{Seen: plan.Seen{Found: true, ID: z.ID}, Name: z.Name, Status: z.Status, AccountID: z.Account.ID, Plan: z.Plan.LegacyID}, nil
 		default:
 			ids := make([]string, len(hits))
 			for i, z := range hits {
@@ -439,11 +443,13 @@ func (x *discovery) serviceTokens(ctx context.Context, out map[string]plan.Servi
 //
 // An app is matched by the exact set of its destinations, then by a superset (an app
 // that covers the desired destinations and others), then by name. It also returns, per
-// hostname, every unmatched app with a destination on the dashboard or backup hostname.
+// hostname, every unmatched app with a destination on the dashboard or backup hostname,
+// including one whose wildcard subdomain may cover it (F-17).
 func (x *discovery) apps(ctx context.Context, out map[string]plan.App) (map[string][]plan.App, error) {
 	type app struct {
 		ID           string `json:"id"`
 		Name         string `json:"name"`
+		AUD          string `json:"aud"`
 		Domain       string `json:"domain"`
 		Destinations []struct {
 			Type string `json:"type"`
@@ -492,7 +498,7 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) (map[stri
 		if got, ok := policies[a.ID]; ok {
 			return *got, nil
 		}
-		got := plan.App{Seen: plan.Seen{Found: true, ID: a.ID}, Name: a.Name, Destinations: dests[i],
+		got := plan.App{Seen: plan.Seen{Found: true, ID: a.ID}, Name: a.Name, AUD: a.AUD, Destinations: dests[i],
 			SessionDuration: a.SessionDuration, AllowedIdPs: a.AllowedIdPs, AutoRedirect: a.AutoRedirect, ServiceAuth401: a.ServiceAuth401}
 		if a.Policies != nil {
 			got.Policies = convertPolicies(*a.Policies)
@@ -564,7 +570,7 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) (map[stri
 			continue
 		}
 		for _, host := range []string{x.d.Hostname, x.d.BackupHostname} {
-			if !onHost(dests[i], host) {
+			if !slices.ContainsFunc(dests[i], func(dest string) bool { return plan.DestinationOnHost(dest, host) }) {
 				continue
 			}
 			got, err := readPolicies(i)
@@ -575,15 +581,6 @@ func (x *discovery) apps(ctx context.Context, out map[string]plan.App) (map[stri
 		}
 	}
 	return other, nil
-}
-
-func onHost(dests []string, host string) bool {
-	for _, d := range dests {
-		if d == host || strings.HasPrefix(d, host+"/") {
-			return true
-		}
-	}
-	return false
 }
 
 func containsAll(have, want []string) bool {
@@ -598,6 +595,7 @@ func containsAll(have, want []string) bool {
 type apiPolicy struct {
 	ID       string                       `json:"id"`
 	Name     string                       `json:"name"`
+	Reusable bool                         `json:"reusable"`
 	Decision string                       `json:"decision"`
 	Include  []map[string]json.RawMessage `json:"include"`
 	Require  []json.RawMessage            `json:"require"`
@@ -616,7 +614,7 @@ func (x *discovery) appPolicies(ctx context.Context, appID string) ([]plan.Polic
 func convertPolicies(all []apiPolicy) []plan.Policy {
 	out := []plan.Policy{}
 	for _, p := range all {
-		pol := plan.Policy{ID: p.ID, Name: p.Name, Decision: p.Decision, Conditions: len(p.Require) > 0 || len(p.Exclude) > 0}
+		pol := plan.Policy{ID: p.ID, Name: p.Name, Decision: p.Decision, Reusable: p.Reusable, Conditions: len(p.Require) > 0 || len(p.Exclude) > 0}
 		for _, rule := range p.Include {
 			pol.Include = append(pol.Include, parseInclude(rule))
 		}
@@ -722,7 +720,7 @@ func (x *discovery) rules(ctx context.Context, out map[string]plan.Rule) error {
 		}
 		switch len(hits) {
 		case 0:
-			out[spec.Key] = plan.Rule{}
+			out[spec.Key] = plan.Rule{RulesetID: rs.ID, Count: len(rs.Rules)}
 			continue
 		case 1:
 		default:

@@ -67,6 +67,9 @@ type Observed struct {
 type Zone struct {
 	Seen
 	Name, Status, AccountID string
+	// Plan is the zone's plan.legacy_id ("free", "pro", "business", "enterprise"), which a
+	// live Free zone returned; empty when Cloudflare did not return it.
+	Plan string
 }
 
 // Token is the setup token's own status, from Cloudflare's verify endpoint.
@@ -119,6 +122,7 @@ type ServiceToken struct {
 type App struct {
 	Seen
 	Name            string
+	AUD             string // the application audience tag (aud), which a live list returned
 	MatchedBy       string // "destinations" (exact set), "covers" (a superset) or "name"
 	Destinations    []string
 	SessionDuration string
@@ -132,6 +136,7 @@ type App struct {
 type Policy struct {
 	ID, Name, Decision string
 	Include            []Include
+	Reusable           bool
 	// Conditions is true when the policy also has require or exclude rules, which
 	// setup does not compare (they can only narrow who passes).
 	Conditions bool
@@ -143,9 +148,11 @@ type Include struct{ Type, ID string }
 
 type Rule struct {
 	Seen
-	RulesetID   string
-	MatchedBy   string // "description" or "expression"
-	Index       int
+	RulesetID string
+	MatchedBy string // "description" or "expression"
+	Index     int
+	// Count is the number of rules in the phase's entry point ruleset; it is set whether
+	// or not the rule was found, so the free rule slots can be counted.
 	Count       int
 	Description string
 	Expression  string
@@ -283,8 +290,11 @@ func Diff(d Desired, o Observed) []Action {
 	case o.Org.Unknown != "" || !o.Org.Found:
 		ses.unknownf("needs the Zero Trust organization")
 	case o.Org.SessionDuration == "":
-		ses.create = true
-		ses.notef("not set (Cloudflare's default is 24h)")
+		// The organization holds account-wide Access settings, so setup leaves this to
+		// the person unless the apply engine is explicitly allowed to write it.
+		ses.manual = true
+		ses.notef("not set (Cloudflare's default is 24h). Setup does not write the Zero Trust organization unless allowed. " +
+			"In Zero Trust: Access controls → Access settings → Set your global session duration → Edit → 1 month → Save (docs/deploy/cloudflare.md step 3)")
 	case !sameDuration(o.Org.SessionDuration, d.OrgSessionDuration):
 		ses.driftf("set to %s; setup never changes a global value that is already set", o.Org.SessionDuration)
 	}
@@ -535,10 +545,17 @@ func PrefixConflict(d Desired, actions []Action) bool {
 func diffApp(d Desired, spec AppSpec, o Observed) Action {
 	app := o.Apps[spec.Key]
 	c := &check{a: Action{ID: "access.app." + spec.Key, Resource: "Access application", Name: spec.Name}}
+	others := overlapping(spec, o)
 	if !c.seen(app.Seen) {
-		// Any app with the bare hostname as a destination would have matched the site
-		// spec (exactly or as "covers"), so reaching here means none covers the host.
-		if spec.Key == AppSite && !app.Seen.Found && app.Unknown == "" && routed(o) {
+		if app.Unknown == "" && len(others) > 0 {
+			// Another application already decides some of these requests (F-17, F-21):
+			// adding a second one would leave two applications on the same paths.
+			c.create = false
+			c.driftf("setup will not create %q while another application covers the same hostname or paths", spec.Name)
+			reportOthers(c, spec, others)
+			return c.done()
+		}
+		if spec.Key == AppSite && app.Unknown == "" && routed(o) {
 			c.notef("WARNING: the tunnel already routes this hostname and no Access application covers it; when cloudflared connects, the dashboard is public without the Access sign-in")
 		}
 		return c.done()
@@ -562,25 +579,9 @@ func diffApp(d Desired, spec AppSpec, o Observed) Action {
 	if app.MatchedBy != "name" {
 		prefixCheck(c, d, app.Name, spec.Name)
 	}
-	host := map[string]string{AppSite: d.Hostname, AppBackups: d.BackupHostname}[spec.Key]
-	if host != "" {
-		// Any other application on this hostname decides who reaches its paths, and
-		// the docs list none: they say every other path stays behind the PIN sign-in.
-		for _, other := range o.OtherApps[host] {
-			c.driftf("application %q (%s) also covers %s, which the docs do not list; its policies decide who reaches it", other.Name, other.ID, list(onHost(other.Destinations, host)))
-			if other.PoliciesUnknown != "" {
-				c.unknownf("%s", other.PoliciesUnknown)
-			}
-			for _, p := range other.Policies {
-				if p.Decision == "bypass" {
-					c.driftf("its policy %q is bypass: requests skip the Access sign-in", p.Name)
-				}
-				if p.Decision != "deny" && slices.ContainsFunc(p.Include, func(in Include) bool { return in.Type == "everyone" }) {
-					c.driftf("its policy %q lets Everyone through: those paths may be public", p.Name)
-				}
-			}
-		}
-	}
+	// Any other application on these destinations decides who reaches them, and the docs
+	// list none: they say every other path stays behind the PIN sign-in.
+	reportOthers(c, spec, others)
 	if spec.SessionDuration != "" && !sameDuration(app.SessionDuration, spec.SessionDuration) {
 		c.driftf("session duration is %s, docs ask for %s", orNone(app.SessionDuration), spec.SessionDuration)
 	}
@@ -761,15 +762,57 @@ func paramMatches(want, got any) bool {
 	return true
 }
 
-// onHost returns the destinations ("host" or "host/path") that are on host.
-func onHost(dests []string, host string) []string {
-	var out []string
-	for _, d := range dests {
-		if d == host || strings.HasPrefix(d, host+"/") {
-			out = append(out, d)
+// overlapping returns the applications that matched no documented application but have
+// a destination overlapping one of spec's: on the same path, above or below it, or
+// through a wildcard. For the whole-host specs (site, backups) that is every other
+// application on the hostname.
+func overlapping(spec AppSpec, o Observed) []App {
+	if len(spec.Destinations) == 0 {
+		return nil
+	}
+	host, _ := splitDest(spec.Destinations[0])
+	var out []App
+	for _, other := range o.OtherApps[host] {
+		if len(overlaps(other.Destinations, spec.Destinations)) > 0 {
+			out = append(out, other)
 		}
 	}
 	return out
+}
+
+// overlaps returns the destinations in have that overlap any destination in want.
+func overlaps(have, want []string) []string {
+	var out []string
+	for _, h := range have {
+		if slices.ContainsFunc(want, func(w string) bool { return DestinationsOverlap(h, w) }) {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+// reportOthers adds a drift line for each overlapping application, and for each of its
+// policies that would let a request past the sign-in.
+func reportOthers(c *check, spec AppSpec, others []App) {
+	for _, other := range others {
+		dests := overlaps(other.Destinations, spec.Destinations)
+		if slices.ContainsFunc(dests, IsWildcard) {
+			c.driftf("application %q (%s) has the wildcard destination %s, which may cover %s; Cloudflare's reference does not say which application decides when a wildcard and another application overlap", other.Name, other.ID, list(dests), list(spec.Destinations))
+		} else {
+			c.driftf("application %q (%s) also covers %s, which the docs do not list; its policies decide who reaches it", other.Name, other.ID, list(dests))
+		}
+		if other.PoliciesUnknown != "" {
+			c.unknownf("%s", other.PoliciesUnknown)
+		}
+		for _, p := range other.Policies {
+			if p.Decision == "bypass" {
+				c.driftf("its policy %q is bypass: requests skip the Access sign-in", p.Name)
+			}
+			if p.Decision != "deny" && slices.ContainsFunc(p.Include, func(in Include) bool { return in.Type == "everyone" }) {
+				c.driftf("its policy %q lets Everyone through: those paths may be public", p.Name)
+			}
+		}
+	}
 }
 
 // routed reports whether the tunnel's routes send the dashboard hostname anywhere.
