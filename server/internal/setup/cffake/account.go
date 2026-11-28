@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
+
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // Account is a stateful fake account. It starts from a fixture (Fresh, Live, Complete),
@@ -48,6 +51,8 @@ type accountState struct {
 	next       int
 	injections []*Injection
 	onWrite    func(Request)
+	// dropAnswer and refuse are the two crash modes (CrashAfterWrite).
+	dropAnswer, refuse func(Request) bool
 	// TunnelTokenInCreate makes a tunnel create answer include "token", as the
 	// guide's example shows; the reference schema lists no token.
 	tokenInCreate bool
@@ -55,6 +60,7 @@ type accountState struct {
 	// putReplaces makes the organization and Bot Management PUTs replace every writable
 	// field: a field the body omits is reset. The reference does not say which it is.
 	putReplaces bool
+	uploads     []Uploaded
 }
 
 // NewAccount starts a stateful fake from routes.
@@ -89,6 +95,77 @@ func (a *Account) OnWrite(f func(Request)) {
 	a.acct.onWrite = f
 }
 
+// CrashMode says where a simulated crash falls around one write.
+type CrashMode int
+
+const (
+	// AnswerLost: Cloudflare stores the write, but the connection drops before its answer,
+	// so a secret in that answer is lost for certain.
+	AnswerLost CrashMode = iota
+	// AfterAnswer: the write is answered in full, and the process dies before its next
+	// request reaches Cloudflare, so a secret in that answer was kept for certain.
+	AfterAnswer
+)
+
+// CrashAfterWrite simulates a crash around the n-th write (counted from 1, as Writes lists
+// them), in the given mode, with no race between the crash and the answer. Pass n = 0 to
+// stop crashing.
+func (a *Account) CrashAfterWrite(n int, mode CrashMode) {
+	if n == 0 {
+		a.CrashAt(nil, mode)
+		return
+	}
+	count := 0
+	a.CrashAt(func(Request) bool { count++; return count == n }, mode)
+}
+
+// CrashAt simulates a crash around the first write that at matches (the read-only D1
+// listings are not writes), in the given mode. A nil at stops crashing.
+func (a *Account) CrashAt(at func(Request) bool, mode CrashMode) {
+	a.acct.mu.Lock()
+	defer a.acct.mu.Unlock()
+	a.acct.dropAnswer, a.acct.refuse = nil, nil
+	if at == nil {
+		return
+	}
+	done, crashed := false, false
+	hit := func(r Request) bool {
+		if done || a.readOnlyQuery(r) || !at(r) {
+			return false
+		}
+		done = true
+		return true
+	}
+	switch mode {
+	case AnswerLost:
+		a.acct.dropAnswer = hit
+	case AfterAnswer:
+		a.acct.dropAnswer = func(r Request) bool {
+			crashed = crashed || hit(r)
+			return false
+		}
+		a.acct.refuse = func(Request) bool { return crashed }
+	}
+}
+
+func (st *accountState) refuses(req Request) bool {
+	st.mu.Lock()
+	f := st.refuse
+	st.mu.Unlock()
+	return f != nil && f(req)
+}
+
+// hangUp closes the connection without an answer.
+func hangUp(w http.ResponseWriter) {
+	if hj, ok := w.(http.Hijacker); ok {
+		if conn, _, err := hj.Hijack(); err == nil {
+			_ = conn.Close()
+			return
+		}
+	}
+	panic(http.ErrAbortHandler)
+}
+
 // TunnelTokenInCreate makes tunnel creates return the token in the create response.
 func (a *Account) TunnelTokenInCreate(on bool) {
 	a.acct.mu.Lock()
@@ -112,8 +189,44 @@ func (a *Account) Secrets() []string {
 	return append([]string(nil), a.acct.secrets...)
 }
 
-// Writes returns every request that was not a GET.
-func (a *Account) Writes() []Request { return a.NonGET() }
+// Writes returns every request that was not a GET, except the read-only D1 queries
+// (Queries): D1 runs SQL only through a POST, and listing a database's tables changes
+// nothing. A query counts as read-only only when its SQL is exactly one of
+// sinkbundle.ReadOnlySQL, the two listings the engine sends.
+func (a *Account) Writes() []Request {
+	var out []Request
+	for _, r := range a.NonGET() {
+		if !a.readOnlyQuery(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// Queries returns the read-only D1 queries (see Writes).
+func (a *Account) Queries() []Request {
+	var out []Request
+	for _, r := range a.NonGET() {
+		if a.readOnlyQuery(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (a *Account) readOnlyQuery(r Request) bool {
+	if r.Method != http.MethodPost || !strings.HasSuffix(r.Path, "/query") {
+		return false
+	}
+	var body struct {
+		SQL    string `json:"sql"`
+		Params []any  `json:"params"`
+	}
+	if json.Unmarshal([]byte(r.Body), &body) != nil || len(body.Params) > 0 {
+		return false
+	}
+	return slices.Contains(sinkbundle.ReadOnlySQL, body.SQL)
+}
 
 // Route returns the current result stored for a path (for assertions).
 func (a *Account) Route(path string) (Response, bool) {
@@ -188,13 +301,18 @@ func (st *accountState) intercept(s *Server, req Request, w http.ResponseWriter,
 		result = route.Result
 	} else {
 		var body map[string]any
-		if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
+		if strings.HasPrefix(req.ContentType, "multipart/form-data") {
+			s.mu.Lock()
+			result, bad = st.upload(s, req)
+			s.mu.Unlock()
+		} else if err := json.Unmarshal([]byte(req.Body), &body); err != nil {
 			fail(http.StatusBadRequest, 10026, "request body is not a JSON object")
 			return true
+		} else {
+			s.mu.Lock()
+			result, bad = st.write(s, req, body)
+			s.mu.Unlock()
 		}
-		s.mu.Lock()
-		result, bad = st.write(s, req, body)
-		s.mu.Unlock()
 		if bad != nil {
 			fail(bad.status, bad.code, bad.msg)
 			return true
@@ -207,6 +325,13 @@ func (st *accountState) intercept(s *Server, req Request, w http.ResponseWriter,
 		}
 		if in != nil && in.After != nil {
 			in.After()
+		}
+		st.mu.Lock()
+		drop := st.dropAnswer
+		st.mu.Unlock()
+		if drop != nil && drop(req) {
+			hangUp(w) // Cloudflare made the change, but its answer never arrives
+			return true
 		}
 	}
 	if in != nil {
@@ -316,6 +441,12 @@ func (st *accountState) write(s *Server, req Request, body map[string]any) (any,
 			return st.createRuleset(s, body)
 		case strings.HasPrefix(p, zone("/rulesets/")) && strings.HasSuffix(p, "/rules"):
 			return st.addRule(s, strings.TrimSuffix(strings.TrimPrefix(p, zone("/rulesets/")), "/rules"), body)
+		case p == acct("/d1/database"):
+			return st.createD1(s, body)
+		case strings.HasPrefix(p, acct("/d1/database/")) && strings.HasSuffix(p, "/query"):
+			return st.queryD1(s, strings.TrimSuffix(strings.TrimPrefix(p, acct("/d1/database/")), "/query"), body)
+		case strings.HasPrefix(p, acct("/workers/scripts/")) && strings.HasSuffix(p, "/subdomain"):
+			return st.subdomain(s, strings.TrimSuffix(strings.TrimPrefix(p, acct("/workers/scripts/")), "/subdomain"), body)
 		}
 	case http.MethodPut:
 		switch {
@@ -333,6 +464,8 @@ func (st *accountState) write(s *Server, req Request, body map[string]any) (any,
 			cfg := map[string]any{"tunnel_id": id, "version": version, "config": body["config"], "source": "cloudflare", "created_at": "2026-11-27T00:00:00Z"}
 			s.routes[p] = Response{Result: cfg}
 			return cfg, nil
+		case p == acct("/workers/domains"):
+			return st.attachDomain(s, body)
 		case p == acct("/access/organizations"), p == zone("/bot_management"):
 			cur, _ := s.routes[p].Result.(map[string]any)
 			next := map[string]any{}

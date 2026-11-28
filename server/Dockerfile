@@ -19,6 +19,24 @@ RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
+# The backup Worker (server/deploy/backup-sink), bundled with the esbuild version its
+# package-lock.json pins, so `dashboard setup` can deploy it without Node on the host. The
+# bundle, the sources it came from and the migrations become the embedded
+# internal/setup/sinkbundle/dist below. --ignore-scripts: only esbuild runs here, and its
+# platform binary is an ordinary optional dependency.
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS sink
+WORKDIR /src/sink
+COPY server/deploy/backup-sink/package.json server/deploy/backup-sink/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund --ignore-scripts
+COPY server/deploy/backup-sink/src ./src
+COPY server/deploy/backup-sink/migrations ./migrations
+COPY server/deploy/backup-sink/wrangler.toml ./
+# Bundled as the Worker tests bundle it (test/sink.test.ts); node:* is the Workers
+# runtime's own (nodejs_compat).
+RUN ./node_modules/.bin/esbuild src/index.ts --bundle --format=esm --platform=node --external:'node:*' --outfile=/out/worker.js \
+ && mkdir -p /out/src /out/migrations \
+ && cp -r src/. /out/src/ && cp migrations/*.sql /out/migrations/ && cp wrangler.toml /out/
+
 FROM --platform=$BUILDPLATFORM golang:1.27.4-bookworm@sha256:ce59b41415e2524ae99926fe1f37ce48ba8c194dcbd2a56a65436cdcefa2bd34 AS toolchain
 RUN apt-get update \
  && apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu gcc-x86-64-linux-gnu libc6-dev-arm64-cross libc6-dev-amd64-cross \
@@ -33,17 +51,25 @@ RUN go mod download
 COPY server/ ./
 # The front end built above becomes the embedded file system.
 COPY --from=web /src/web/dist ./internal/web/dist
+# The backup Worker bundle. The test is the staleness check: it fails the image build when
+# the bundle was not built from the Worker source and revision this binary pins.
+COPY --from=sink /out ./internal/setup/sinkbundle/dist
+RUN go test -count=1 -tags embedsink ./internal/setup/sinkbundle/
 RUN case "$TARGETARCH" in \
       arm64) export CC=aarch64-linux-gnu-gcc ;; \
       amd64) export CC=x86_64-linux-gnu-gcc ;; \
       *) echo "unsupported TARGETARCH $TARGETARCH" >&2; exit 1 ;; \
     esac \
  && CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH \
-    go build -trimpath -tags embedweb,release,osusergo,netgo,sqlite_omit_load_extension \
+    go build -trimpath -tags embedweb,embedsink,release,osusergo,netgo,sqlite_omit_load_extension \
     -ldflags "-s -w -X main.version=${VERSION} -extldflags '-static'" -o /out/dashboard ./cmd/dashboard \
  && CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH \
     go build -trimpath -tags release,osusergo,netgo,sqlite_omit_load_extension \
     -ldflags "-s -w -extldflags '-static'" -o /out/dashboard-backup ./cmd/dashboard-backup
+# The dashboard must carry the backup Worker bundle: fail the image if its build dropped
+# the embedsink tag (the test above sets the tag itself, so it cannot tell).
+RUN go version -m /out/dashboard | grep -q -- '-tags=.*embedsink' \
+ || { echo "the dashboard binary was built without -tags embedsink" >&2; exit 1; }
 
 # Test binary belongs only to the isolated rehearsal target, never the release image.
 FROM build AS backup-test

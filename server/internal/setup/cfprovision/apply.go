@@ -37,8 +37,11 @@ type Engine struct {
 	out   *redactor
 	opt   Options
 
-	o        plan.Observed // the account as last read
-	created  map[string]bool
+	o       plan.Observed // the account as last read
+	created map[string]bool
+	// tables caches the D1 table listing (a read-only query) per database for one
+	// discovery round: Preview and apply each start a new round, and a migration clears it.
+	tables   map[string]plan.Tables
 	outputs  Outputs
 	readOpts []cfapi.Option
 }
@@ -51,6 +54,15 @@ type Outputs struct {
 	ServicesAUD string `json:"services_aud,omitempty"`
 	// ServicesTokenExpiresAt is the services token's expires_at as Cloudflare lists it.
 	ServicesTokenExpiresAt string `json:"services_token_expires_at,omitempty"`
+	// The backup pieces: the D1 database, the Worker's revision as Cloudflare shows it,
+	// the backup service token's expiry, and the sink URL once its custom domain is up.
+	D1ID                  string `json:"d1_id,omitempty"`
+	WorkerRevision        string `json:"worker_revision,omitempty"`
+	BackupsTokenExpiresAt string `json:"backups_token_expires_at,omitempty"`
+	BackupSinkURL         string `json:"backup_sink_url,omitempty"`
+	// UploadedWorker is true once this run's upload created the Worker, carrying the
+	// host's bearer as its secret.
+	UploadedWorker bool `json:"uploaded_worker,omitempty"`
 	// Done lists each completed step and the ID it created or fetched for.
 	Done []Done `json:"done"`
 	// Writes lists every write sent, with the API reference page its body follows.
@@ -107,7 +119,7 @@ func NewEngine(token string, d plan.Desired, sink SecretSink, out io.Writer, opt
 		opt.ServiceTokenDuration = "forever"
 	}
 	return &Engine{d: d, read: cfapi.New(token, ro...), write: cfwrite.New(token, wo...), sink: sink,
-		out: &redactor{w: out}, opt: opt, created: map[string]bool{}}
+		out: &redactor{w: out}, opt: opt, created: map[string]bool{}, tables: map[string]plan.Tables{}}
 }
 
 // Apply runs the create actions of actions, the plan the person reviewed. It discovers
@@ -131,6 +143,7 @@ type Reviewed struct {
 // Preview reads the account and the host's secret files and returns what Apply would do
 // now, blockers included. It writes nothing and prints nothing.
 func (e *Engine) Preview(ctx context.Context) (Reviewed, error) {
+	e.tables = map[string]plan.Tables{}
 	if err := e.discover(ctx); err != nil {
 		return Reviewed{}, e.out.scrubErr(err)
 	}
@@ -153,6 +166,7 @@ func (e *Engine) ApplyReviewed(ctx context.Context, r Reviewed) (Outputs, error)
 }
 
 func (e *Engine) apply(ctx context.Context, actions []plan.Action, reviewed *ApplyPlan) (Outputs, error) {
+	e.tables = map[string]plan.Tables{} // a fresh listing, so a table added since the preview is seen
 	if err := e.discover(ctx); err != nil {
 		return e.outputs, err
 	}
@@ -200,6 +214,9 @@ func (e *Engine) discover(ctx context.Context) error {
 		return fmt.Errorf("reading Cloudflare failed: %w", err)
 	}
 	e.o = o
+	// Only the engine lists the backup database's tables: it is a D1 query (a POST that
+	// changes nothing), which the dry run's read-only client cannot send.
+	e.o.D1Tables = e.d1Tables(ctx)
 	return nil
 }
 
@@ -211,6 +228,16 @@ func (e *Engine) collect() {
 	e.outputs.SiteAUD = e.o.Apps[plan.AppSite].AUD
 	e.outputs.ServicesAUD = e.o.Apps[plan.AppServices].AUD
 	e.outputs.ServicesTokenExpiresAt = e.o.ServiceTokens[plan.TokenServices].ExpiresAt
+	e.outputs.BackupsTokenExpiresAt = e.o.ServiceTokens[plan.TokenBackups].ExpiresAt
+	if e.o.D1.Found {
+		e.outputs.D1ID = e.o.D1.ID
+	}
+	e.outputs.WorkerRevision = e.o.Worker.Revision
+	for _, a := range e.outputs.Final {
+		if a.ID == "worker.domain" && a.Kind == plan.OK {
+			e.outputs.BackupSinkURL = "https://" + e.d.Worker.Hostname
+		}
+	}
 }
 
 // planChanges compares the reviewed plan with a fresh one by ID, kind and existing ID.
@@ -274,6 +301,13 @@ func (e *Engine) facts(ctx context.Context, actions []plan.Action) (Facts, error
 	if f.ServicesSecretKept, err = e.sink.Has(ctx, SecretServicesToken); err != nil {
 		return f, fmt.Errorf("cannot check the host's secret files: %w", err)
 	}
+	if f.BackupsSecretKept, err = e.sink.Has(ctx, SecretBackupsToken); err != nil {
+		return f, fmt.Errorf("cannot check the host's secret files: %w", err)
+	}
+	if err := e.bearerFacts(ctx, &f); err != nil {
+		return f, err
+	}
+	e.backupCounts(ctx, &f, actions)
 	if f.PendingRestores, err = pendingRestores(e.opt.StateDir); err != nil {
 		return f, err
 	}
@@ -390,6 +424,16 @@ func (e *Engine) run(ctx context.Context, s Step) (string, error) {
 		return e.dns(ctx, s)
 	case StepBotFightMode:
 		return "", e.botFightMode(ctx, s)
+	case StepD1:
+		return e.createD1(ctx, s)
+	case StepMigration:
+		return "", e.migrate(ctx, s)
+	case StepWorker:
+		return e.uploadWorker(ctx, s)
+	case StepWorkerSubdomain:
+		return "", e.workerSubdomain(ctx, s)
+	case StepWorkerDomain:
+		return e.workerDomain(ctx, s)
 	}
 	return "", fmt.Errorf("unknown step %q", s.Kind)
 }
@@ -404,6 +448,11 @@ func (e *Engine) send(ctx context.Context, s Step, method, path, ref, perm strin
 	} else {
 		err = e.write.Post(ctx, path, body, out)
 	}
+	return e.writeErr(s, method, path, perm, err)
+}
+
+// writeErr maps a write's failure to a typed error (nil stays nil).
+func (e *Engine) writeErr(s Step, method, path, perm string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -429,12 +478,24 @@ func (e *Engine) readErr(perm, method, path string, err error) error {
 }
 
 // verify discovers the account again and requires the step's action to be ok, and to be
-// the resource the step created (when the step knows its ID).
-func (e *Engine) verify(ctx context.Context, s Step, createdID string) error {
+// the resource the step created (when the step knows its ID). The also lines (other
+// actions the same step fulfils) must be ok too.
+func (e *Engine) verify(ctx context.Context, s Step, createdID string, also ...string) error {
 	if err := e.discover(ctx); err != nil {
 		return fmt.Errorf("%s: the write succeeded, but reading it back failed: %w", s.Title, err)
 	}
-	for _, a := range plan.Diff(e.d, e.o) {
+	actions := plan.Diff(e.d, e.o)
+	for _, a := range actions {
+		if !slices.Contains(also, a.ID) || a.Kind == plan.OK {
+			continue
+		}
+		got := []string{fmt.Sprintf("%s %s %q [%s]", a.Kind, a.Resource, a.Name, a.ExistingID)}
+		for _, d := range a.Detail {
+			got = append(got, "- "+d)
+		}
+		return &VerifyError{Step: s.Title, ResourceID: createdID, Expected: "the " + a.Resource + " line to be ok", Got: got}
+	}
+	for _, a := range actions {
 		if a.ID != s.ActionID {
 			continue
 		}
@@ -673,16 +734,23 @@ func (e *Engine) serviceToken(ctx context.Context, s Step) (string, error) {
 		return "", err
 	}
 	rotate := fmt.Sprintf("Rotate its client secret: Zero Trust → Access controls → Service credentials → Service Tokens → %s → Rotate "+
-		"(API: POST %s), then give the new secret to the bots. This version of setup does not rotate it for you", name, e.accountPath("/access/service_tokens/"+orNone(r.ID)+"/rotate"))
+		"(API: POST %s), then give the new secret to %s. This version of setup does not rotate it for you", name, e.accountPath("/access/service_tokens/"+orNone(r.ID)+"/rotate"), tokenUser[s.Key])
 	if r.ID == "" || r.ClientID == "" || r.ClientSecret == "" {
 		e.out.add(r.ClientSecret)
 		return r.ID, &ShapeError{Step: s.Title, ResourceID: r.ID, Missing: "id, client_id and client_secret", Recovery: rotate}
 	}
-	if err := e.keepSecret(ctx, Secret{Name: SecretServicesToken, ResourceID: r.ID, ClientID: r.ClientID, Value: r.ClientSecret}, rotate); err != nil {
+	if err := e.keepSecret(ctx, Secret{Name: tokenSecrets[s.Key], ResourceID: r.ID, ClientID: r.ClientID, Value: r.ClientSecret}, rotate); err != nil {
 		return r.ID, err
 	}
 	return r.ID, e.verify(ctx, s, r.ID)
 }
+
+// tokenUser is who needs each service token's client secret.
+var tokenUser = map[string]string{plan.TokenServices: "the bots",
+	plan.TokenBackups: "the backup service (secrets/backup/access-client-secret, owner 10001, mode 0400)"}
+
+// tokenSecrets names the secret each service token's client secret is kept as.
+var tokenSecrets = map[string]SecretName{plan.TokenServices: SecretServicesToken, plan.TokenBackups: SecretBackupsToken}
 
 // policyBody is a reusable Access policy:
 // POST /accounts/{account_id}/access/policies {"name", "decision", "include"}

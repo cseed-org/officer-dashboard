@@ -66,6 +66,7 @@ func Discover(ctx context.Context, api cfapi.Reader, d plan.Desired) (plan.Obser
 		func() (err error) { o.BotFightMode, err = x.botFightMode(ctx); return },
 		func() (err error) { o.D1, err = x.d1(ctx); return },
 		func() (err error) { o.Worker, err = x.worker(ctx); return },
+		func() (err error) { o.BackupDNS, err = x.backupDNS(ctx, o.Worker, o.Zone.Name); return },
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
@@ -797,10 +798,17 @@ func (x *discovery) d1(ctx context.Context) (plan.Seen, error) {
 //     https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/list/
 func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 	var out plan.Worker
-	var scripts []struct {
-		ID string `json:"id"`
+	// The list items carry compatibility_date, compatibility_flags and has_modules (the
+	// item keys the live list showed in spike stage 2). The main module's name is not among
+	// them, so has_modules (an ES module Worker) stands in for it.
+	type script struct {
+		ID                 string   `json:"id"`
+		CompatibilityDate  string   `json:"compatibility_date"`
+		CompatibilityFlags []string `json:"compatibility_flags"`
+		HasModules         *bool    `json:"has_modules"`
 	}
-	if err := x.api.Get(ctx, x.accountPath("/workers/scripts"), nil, &scripts); err != nil {
+	scripts, err := cfapi.ListAll[script](ctx, x.api, x.accountPath("/workers/scripts"), nil)
+	if err != nil {
 		why, err := unreadable("Workers scripts", err)
 		out.Unknown = why
 		if err != nil {
@@ -810,6 +818,7 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 		for _, s := range scripts {
 			if s.ID == x.d.Worker.Script {
 				out.Found, out.ID = true, s.ID
+				out.CompatibilityDate, out.CompatibilityFlags, out.HasModules = s.CompatibilityDate, s.CompatibilityFlags, s.HasModules
 			}
 		}
 	}
@@ -821,6 +830,7 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 				Name       string `json:"name"`
 				DatabaseID string `json:"database_id"`
 				ID         string `json:"id"`
+				Text       string `json:"text"`
 			} `json:"bindings"`
 		}
 		if err := x.api.Get(ctx, script+"/settings", nil, &settings); err != nil {
@@ -836,6 +846,15 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 				if out.D1BindingID == "" {
 					out.D1BindingID = b.ID
 				}
+			}
+			// The label setup uploads ({"type":"plain_text","name":…,"text":…}, the
+			// multipart-upload-metadata page); a plain-text value is not a secret.
+			if b.Type == "plain_text" && b.Name == plan.WorkerRevisionBinding {
+				out.Revision = strings.TrimSpace(b.Text)
+			}
+			// The marker only setup's own upload carries (sinkbundle.SetupUploadBinding).
+			if b.Type == "plain_text" && b.Name == plan.WorkerSetupUploadBinding && strings.TrimSpace(b.Text) == "1" {
+				out.SetupUpload = true
 			}
 		}
 		var secrets []struct {
@@ -869,7 +888,7 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 		Hostname string `json:"hostname"`
 		Service  string `json:"service"`
 	}
-	err := x.api.Get(ctx, x.accountPath("/workers/domains"), url.Values{"hostname": {x.d.Worker.Hostname}}, &domains)
+	err = x.api.Get(ctx, x.accountPath("/workers/domains"), url.Values{"hostname": {x.d.Worker.Hostname}}, &domains)
 	if err != nil {
 		why, err := unreadable("Workers custom domains", err)
 		out.Domain.Unknown = why
@@ -884,6 +903,36 @@ func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 	}
 	if len(ids) > 1 {
 		return out, ambiguous("Worker custom domain", x.d.Worker.Hostname, ids)
+	}
+	return out, nil
+}
+
+// backupDNS: GET /zones/{zone_id}/dns_records?name.exact=<backup hostname>, the records on
+// the backup hostname, read only while no custom domain holds it (Cloudflare creates the
+// custom domain's own record). "You cannot create a Custom Domain on a hostname with an
+// existing CNAME DNS record"
+// (https://developers.cloudflare.com/workers/configuration/routing/custom-domains/).
+func (x *discovery) backupDNS(ctx context.Context, w plan.Worker, zoneName string) (plan.DNS, error) {
+	host := x.d.Worker.Hostname
+	if w.Domain.Found || w.Domain.Unknown != "" || (host != strings.ToLower(zoneName) && !strings.HasSuffix(host, "."+strings.ToLower(zoneName))) {
+		return plan.DNS{}, nil
+	}
+	type record struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Type    string `json:"type"`
+		Content string `json:"content"`
+	}
+	recs, err := cfapi.ListAll[record](ctx, x.api, x.zonePath("/dns_records"), url.Values{"name.exact": {host}})
+	if err != nil {
+		why, err := unreadable("the backup hostname's DNS records", err)
+		return plan.DNS{Unknown: why}, err
+	}
+	var out plan.DNS
+	for _, r := range recs {
+		if strings.EqualFold(strings.TrimSuffix(r.Name, "."), host) {
+			out.Records = append(out.Records, plan.DNSRecord{ID: r.ID, Type: r.Type, Content: r.Content})
+		}
 	}
 	return out, nil
 }

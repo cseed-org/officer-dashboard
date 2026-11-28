@@ -136,6 +136,13 @@ func (leakySink) Has(context.Context, SecretName) (bool, error) {
 	return false, nil
 }
 
+func (leakySink) Load(_ context.Context, name SecretName) (string, error) {
+	if name == SecretBackupBearer {
+		return testBearer, nil
+	}
+	return "", ErrNotKept
+}
+
 func TestWriteFailuresStopSafely(t *testing.T) {
 	acct := "/accounts/" + cffake.AccountID
 	cases := []struct {
@@ -232,13 +239,47 @@ func requestsText(t *testing.T, r *rig, out Outputs, what string) string {
 			t.Errorf("write %d has no API reference: %q", i, out.Writes[i].Ref)
 		}
 		var v any
-		if err := json.Unmarshal([]byte(w.Body), &v); err != nil {
+		if strings.HasPrefix(w.ContentType, "multipart/form-data") {
+			v = uploadSummary(t, r, w)
+		} else if err := json.Unmarshal([]byte(w.Body), &v); err != nil {
 			t.Fatalf("write %d body is not JSON: %v", i, err)
 		}
 		pretty, _ := json.MarshalIndent(v, "", "  ")
-		fmt.Fprintf(&b, "\n## %d. %s %s\n# ref: %s\n%s\n", i+1, w.Method, w.Path, out.Writes[i].Ref, pretty)
+		header := ""
+		if w.APIDate != "" {
+			header = "# header: Cloudflare-Workers-Script-Api-Date: " + w.APIDate + "\n"
+		}
+		fmt.Fprintf(&b, "\n## %d. %s %s\n# ref: %s\n%s%s\n", i+1, w.Method, w.Path, out.Writes[i].Ref, header, pretty)
 	}
 	return b.String()
+}
+
+// uploadSummary is a Worker upload as the golden pins it: the metadata part as sent, with
+// the bearer's text replaced by where it came from, and the module part's name, type and
+// size (its content is the bundle, pinned by sinkbundle).
+func uploadSummary(t *testing.T, r *rig, w cffake.Request) any {
+	t.Helper()
+	ups := r.acct.Uploads()
+	if len(ups) != 1 {
+		t.Fatalf("%d uploads", len(ups))
+	}
+	if !strings.Contains(w.Body, testBearer) {
+		t.Fatal("the upload does not carry the host's bearer")
+	}
+	meta := ups[0].Metadata
+	raw, _ := json.Marshal(meta)
+	var cp map[string]any
+	_ = json.Unmarshal(raw, &cp)
+	for _, b := range cp["bindings"].([]any) {
+		if m := b.(map[string]any); m["type"] == "secret_text" {
+			if m["text"] != testBearer {
+				t.Fatalf("secret_text %v is not the host's bearer", m["name"])
+			}
+			m["text"] = "<the value of secrets/backup/bearer>"
+		}
+	}
+	return map[string]any{"multipart": map[string]any{"metadata": cp,
+		"module": fmt.Sprintf("%s, application/javascript+module, %d bytes", meta["main_module"], len(ups[0].Module))}}
 }
 
 func golden(t *testing.T, name, got string) {

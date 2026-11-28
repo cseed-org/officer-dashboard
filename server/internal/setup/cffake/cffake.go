@@ -20,6 +20,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strconv"
 	"sync"
 )
@@ -33,8 +34,10 @@ type Response struct {
 	Result  any
 }
 
-// Request is one request the fake received. Body is the request body as sent.
-type Request struct{ Method, Path, Query, Body string }
+// Request is one request the fake received. Body is the request body as sent;
+// ContentType is its Content-Type header (multipart for a Worker upload), and APIDate its
+// Cloudflare-Workers-Script-Api-Date header.
+type Request struct{ Method, Path, Query, Body, ContentType, APIDate string }
 
 type Server struct {
 	*httptest.Server
@@ -77,8 +80,13 @@ func (s *Server) Set(path string, r Response) {
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
-	raw, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	req := Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw)}
+	raw, _ := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+	req := Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw), ContentType: r.Header.Get("Content-Type"),
+		APIDate: r.Header.Get("Cloudflare-Workers-Script-Api-Date")}
+	if s.acct != nil && s.acct.refuses(req) {
+		hangUp(w) // the process died before this request reached Cloudflare
+		return
+	}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
 	s.mu.Unlock()
@@ -96,6 +104,11 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method != http.MethodGet:
 		fail(http.StatusMethodNotAllowed, 10000, "the fake Cloudflare API is read-only")
+		return
+	case !ok && workerSubresource.MatchString(r.URL.Path):
+		// A script's settings, secrets or subdomain when the script does not exist: the
+		// "Worker not found" error Wrangler checks (WORKER_NOT_FOUND_ERR_CODE = 10007).
+		fail(http.StatusNotFound, 10007, "This Worker does not exist on your account.")
 		return
 	case !ok:
 		fail(http.StatusNotFound, 7003, "Could not route to "+r.URL.Path)
@@ -125,6 +138,8 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+var workerSubresource = regexp.MustCompile(`^/accounts/[^/]+/workers/scripts/[^/]+/(settings|secrets|subdomain)$`)
+
 // Fixture IDs.
 const (
 	Host      = "officers.example.org"
@@ -135,6 +150,53 @@ const (
 )
 
 func acct(p string) string { return "/accounts/" + AccountID + p }
+
+// D1TablesKey is the fake-only route that holds a D1 database's table names (a list of
+// strings), which the stateful fake's D1 query endpoint serves and its writes change. It
+// is no URL path, so no request can reach it.
+func D1TablesKey(uuid string) string { return "fake:d1/" + uuid + "/tables" }
+
+// D1TriggersKey and D1MigrationsKey hold a database's trigger names and the names in its
+// d1_migrations table, the same way.
+func D1TriggersKey(uuid string) string   { return "fake:d1/" + uuid + "/triggers" }
+func D1MigrationsKey(uuid string) string { return "fake:d1/" + uuid + "/migrations" }
+
+// D1SQLKey holds a database's CREATE statements by table or trigger name (a
+// map[string]any), as sqlite_master's sql column shows them.
+func D1SQLKey(uuid string) string { return "fake:d1/" + uuid + "/sql" }
+
+// MigratedBackupSQL is what sqlite_master shows for the backup tables and trigger after
+// `wrangler d1 migrations apply`: the statements of server/deploy/backup-sink/migrations/0001.sql,
+// written out here, not read from the file.
+func MigratedBackupSQL() map[string]any {
+	return map[string]any{
+		"snapshots": `CREATE TABLE snapshots (
+ id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('hourly','daily','d1-weekly')),
+ created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+ sha256 TEXT NOT NULL, size INTEGER NOT NULL CHECK(size BETWEEN 1 AND 24700000),
+ chunks INTEGER NOT NULL CHECK(chunks BETWEEN 1 AND 13), committed INTEGER NOT NULL DEFAULT 0,
+ allocation INTEGER NOT NULL, write_cost INTEGER NOT NULL
+)`,
+		"chunks": `CREATE TABLE chunks (
+ snapshot_id TEXT NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+ n INTEGER NOT NULL, blob BLOB NOT NULL CHECK(length(blob) BETWEEN 1 AND 1900000),
+ PRIMARY KEY(snapshot_id,n)
+)`,
+		"budgets": `CREATE TABLE budgets (day TEXT PRIMARY KEY, writes INTEGER NOT NULL DEFAULT 0, uploads INTEGER NOT NULL DEFAULT 0)`,
+		"reserve": `CREATE TRIGGER reserve BEFORE INSERT ON snapshots BEGIN
+ SELECT CASE WHEN (SELECT count(*) FROM snapshots) >= 100
+  OR COALESCE((SELECT sum(allocation) FROM snapshots),0) + NEW.allocation > 450000000
+  OR COALESCE((SELECT writes FROM budgets WHERE day=date('now')),0) + NEW.write_cost > 40000
+  OR COALESCE((SELECT uploads FROM budgets WHERE day=date('now')),0) >= 200
+  THEN RAISE(ABORT,'backup budget exhausted') END;
+ INSERT INTO budgets(day,writes,uploads) VALUES(date('now'),NEW.write_cost,1)
+ ON CONFLICT(day) DO UPDATE SET writes=writes+NEW.write_cost,uploads=uploads+1;
+END`,
+		"d1_migrations":   `CREATE TABLE d1_migrations( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL )`,
+		"sqlite_sequence": `CREATE TABLE sqlite_sequence(name,seq)`,
+		"_cf_KV":          `CREATE TABLE _cf_KV ( key TEXT PRIMARY KEY, value BLOB ) WITHOUT ROWID`,
+	}
+}
 func zone(p string) string { return "/zones/" + ZoneID + p }
 
 // Response shapes follow what a live, read-only run returned on 2026-11-27 (spike stage
@@ -250,7 +312,15 @@ func tunnelAndBackups(r map[string]Response) {
 		map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3},
 		map[string]any{"uuid": "d1-backups", "name": "dashboard-backups", "version": "production", "jurisdiction": nil, "num_tables": 2, "file_size": 49152},
 	}}
-	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "something-else"}, map[string]any{"id": "dashboard-backup-sink", "has_modules": true, "usage_model": "standard"}}}
+	// What `wrangler d1 migrations apply` leaves (fresh-install.md §4.5): the three backup
+	// tables, Wrangler's d1_migrations with its AUTOINCREMENT sequence, and D1's own table.
+	r[D1TablesKey("d1-backups")] = Response{Result: []any{"_cf_KV", "budgets", "chunks", "d1_migrations", "snapshots", "sqlite_sequence"}}
+	r[D1TriggersKey("d1-backups")] = Response{Result: []any{"reserve"}}
+	r[D1MigrationsKey("d1-backups")] = Response{Result: []any{"0001.sql"}}
+	r[D1SQLKey("d1-backups")] = Response{Result: MigratedBackupSQL()}
+	r[D1TablesKey("d1-members")] = Response{Result: []any{"_cf_KV", "members", "payments", "terms"}}
+	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "something-else"}, map[string]any{"id": "dashboard-backup-sink", "has_modules": true, "usage_model": "standard",
+		"compatibility_date": "2026-07-30", "compatibility_flags": []any{"nodejs_compat"}}}}
 	r[acct("/workers/scripts/dashboard-backup-sink/settings")] = Response{Result: map[string]any{"bindings": []any{
 		map[string]any{"type": "d1", "name": "BACKUPS", "database_id": "d1-backups"},
 		map[string]any{"type": "secret_text", "name": "BACKUP_BEARER_SECRET"},
@@ -259,6 +329,22 @@ func tunnelAndBackups(r map[string]Response) {
 	r[acct("/workers/scripts/dashboard-backup-sink/subdomain")] = Response{Result: map[string]any{"enabled": false, "previews_enabled": false}}
 	r[acct("/workers/domains")] = Response{Result: []any{map[string]any{"id": "wd-1", "zone_id": ZoneID, "zone_name": "example.org", "hostname": Backup,
 		"service": "dashboard-backup-sink", "environment": "production", "cert_id": "c-1", "previews_enabled": false, "enabled": true}}}
+}
+
+// Mismatched is Live with backup pieces of another format: the budgets table has another
+// shape, and the Worker binds BACKUPS to another database on an older compatibility date.
+func Mismatched() map[string]Response {
+	r := Live()
+	defs := MigratedBackupSQL()
+	defs["budgets"] = "CREATE TABLE budgets (day TEXT PRIMARY KEY, writes INTEGER)"
+	r[D1SQLKey("d1-backups")] = Response{Result: defs}
+	r[acct("/workers/scripts")] = Response{Result: []any{map[string]any{"id": "dashboard-backup-sink", "has_modules": true, "usage_model": "standard",
+		"compatibility_date": "2025-01-01", "compatibility_flags": []any{"nodejs_compat"}}}}
+	r[acct("/workers/scripts/dashboard-backup-sink/settings")] = Response{Result: map[string]any{"bindings": []any{
+		map[string]any{"type": "d1", "name": "BACKUPS", "database_id": "d1-old"},
+		map[string]any{"type": "secret_text", "name": "BACKUP_BEARER_SECRET"},
+	}}}
+	return r
 }
 
 // Live is the partial setup a live account had during spike stage 2: the tunnel (no
@@ -283,9 +369,31 @@ func Live() map[string]Response {
 	r[zone("/bot_management")] = Response{Result: map[string]any{"enable_js": true, "fight_mode": true, "ai_bots_protection": "disabled",
 		"ai_agents": map[string]any{"anthropic_agent": "disabled", "openai_agent": "disabled"}, "using_latest_model": true}}
 	r[zone("/rulesets/phases/http_request_cache_settings/entrypoint")] = noEntrypoint("http_request_cache_settings")
+	// The live backup database listed num_tables 0, a field the reference calls deprecated
+	// and inaccurate. Its file_size, 49152 bytes (12 pages of 4 KiB), is that of the
+	// migrated schema with no data, so here it has the migrated tables (review F-4 of #129).
+	r[acct("/d1/database")] = Response{Result: []any{
+		map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3},
+		map[string]any{"uuid": "d1-backups", "name": "dashboard-backups", "version": "production", "jurisdiction": nil, "num_tables": 0, "file_size": 49152},
+	}}
 	// The live zone had its own zone:http_ratelimit ruleset.
 	r[zone("/rulesets/phases/http_ratelimit/entrypoint")] = Response{Result: map[string]any{"id": "rs-rl", "phase": "http_ratelimit", "kind": "zone",
 		"rules": []any{map[string]any{"id": "r-rl", "description": "<name>", "expression": "true", "action": "block", "enabled": true}}}}
+	return r
+}
+
+// LiveEmptyD1 is Live with a backup database that really has no tables, as if the
+// migration never ran (a file of about 3 pages).
+func LiveEmptyD1() map[string]Response {
+	r := Live()
+	r[acct("/d1/database")] = Response{Result: []any{
+		map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3},
+		map[string]any{"uuid": "d1-backups", "name": "dashboard-backups", "version": "production", "jurisdiction": nil, "num_tables": 0, "file_size": 12288},
+	}}
+	r[D1TablesKey("d1-backups")] = Response{Result: []any{"_cf_KV"}}
+	r[D1TriggersKey("d1-backups")] = Response{Result: []any{}}
+	r[D1MigrationsKey("d1-backups")] = Response{Result: []any{}}
+	r[D1SQLKey("d1-backups")] = Response{Result: map[string]any{"_cf_KV": MigratedBackupSQL()["_cf_KV"]}}
 	return r
 }
 

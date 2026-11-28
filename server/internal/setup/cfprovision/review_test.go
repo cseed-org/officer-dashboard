@@ -225,7 +225,7 @@ func TestReviewOne5xxIsUnknowableNotFatal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err = %v, want a report", err)
 	}
-	expect(t, action(t, d, o, "worker"), plan.Unknowable, "HTTP 503")
+	expect(t, action(t, d, o, "worker.subdomain"), plan.Unknowable, "HTTP 503") // the switches have their own line since the backup Worker apply
 	expect(t, action(t, d, o, "d1"), plan.OK, "")
 }
 

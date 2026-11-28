@@ -67,6 +67,10 @@ func newSink() (*sink, error) {
 	return &sink{origin, &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 func (s *sink) request(path, method string, body any, result any) error {
+	return s.requestContext(operationContext, path, method, body, result)
+}
+
+func (s *sink) requestContext(ctx context.Context, path, method string, body any, result any) error {
 	var data []byte
 	if b, ok := body.([]byte); ok {
 		data = b
@@ -77,7 +81,7 @@ func (s *sink) request(path, method string, body any, result any) error {
 			return err
 		}
 	}
-	req, err := http.NewRequestWithContext(operationContext, method, s.origin+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, method, s.origin+path, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
@@ -91,7 +95,7 @@ func (s *sink) request(path, method string, body any, result any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("backup sink returned status %d", resp.StatusCode)
+		return statusError(resp.StatusCode)
 	}
 	if target, ok := result.(*[]byte); ok {
 		*target, err = io.ReadAll(io.LimitReader(resp.Body, chunkSize+1))
@@ -105,6 +109,12 @@ func (s *sink) request(path, method string, body any, result any) error {
 	}
 	return nil
 }
+
+// statusError is a sink answer outside 2xx.
+type statusError int
+
+func (e statusError) Error() string { return fmt.Sprintf("backup sink returned status %d", int(e)) }
+
 func (s *sink) list() ([]snapshot, error) {
 	var result []snapshot
 	err := s.request("/snapshots", "GET", nil, &result)
@@ -689,6 +699,9 @@ func scheduled() error {
 			}
 		}
 		return errors.New("no recovery snapshot available")
+	}
+	if s, err := newSink(); err == nil {
+		checkSinkRevision(s) // alerts only; never stops the backup
 	}
 	m, err := backupWithPublish(driveOutboxPublisher())
 	if err != nil {

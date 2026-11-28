@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -57,7 +58,13 @@ type Observed struct {
 	Rules         map[string]Rule
 	BotFightMode  BotFightMode
 	D1            Seen
-	Worker        Worker
+	// D1Tables are the backup database's tables. Only an apply fills them: listing them
+	// needs a D1 query, which is a POST, so a dry run leaves Read false.
+	D1Tables Tables
+	Worker   Worker
+	// BackupDNS are the DNS records on the backup hostname, read when no Worker custom
+	// domain holds it: Cloudflare refuses a custom domain on a hostname with a CNAME.
+	BackupDNS DNS
 	// OtherApps lists, per hostname (the dashboard's and the backup Worker's), every
 	// Access application with a destination on that hostname, bare or with a path, that
 	// matched none of the documented applications. Each carries its policies.
@@ -178,7 +185,35 @@ type Worker struct {
 	// WorkersDev and PreviewURLs are the script's workers.dev subdomain switches.
 	WorkersDev, PreviewURLs *bool
 	SubdomainUnknown        string
-	Domain                  WorkerDomain
+	// Revision is the text of the plain-text binding setup uploads with the Worker
+	// (sinkbundle.RevisionBinding); "" when the Worker has none, because setup did not
+	// upload it.
+	Revision string
+	// CompatibilityDate, CompatibilityFlags and HasModules are as the scripts list shows
+	// them ("" or nil when it does not).
+	CompatibilityDate  string
+	CompatibilityFlags []string
+	HasModules         *bool
+	// SetupUpload is set when the Worker carries the marker binding only setup's own upload
+	// sets (sinkbundle.SetupUploadBinding).
+	SetupUpload bool
+	Domain      WorkerDomain
+}
+
+// Tables is what a read-only D1 query showed: the names in sqlite_master (Read), or why it
+// could not be run (Unknown).
+type Tables struct {
+	Read     bool
+	Names    []string // tables
+	Triggers []string
+	Unknown  string
+	// Definitions are the CREATE statements of those tables and triggers, by name,
+	// normalized with sinkbundle.NormalizeSQL ("" when sqlite_master gave none).
+	Definitions map[string]string
+	// Applied are the names in Wrangler's d1_migrations table, read when it exists;
+	// AppliedUnknown says why they could not be read.
+	Applied        []string
+	AppliedUnknown string
 }
 
 type WorkerDomain struct {
@@ -191,7 +226,12 @@ type check struct {
 	a                      Action
 	drift, unknown, notes  []string
 	create, manual, absent bool
+	// todo are the ways forward, printed as one "What to do:" line when the action ends up
+	// drift, unknowable or manual.
+	todo []string
 }
+
+func (c *check) todof(f string, a ...any) { c.todo = append(c.todo, fmt.Sprintf(f, a...)) }
 
 func (c *check) driftf(f string, a ...any)   { c.drift = append(c.drift, fmt.Sprintf(f, a...)) }
 func (c *check) unknownf(f string, a ...any) { c.unknown = append(c.unknown, fmt.Sprintf(f, a...)) }
@@ -212,6 +252,16 @@ func (c *check) done() Action {
 		a.Kind = OK
 	}
 	a.Detail = append(append(append(a.Detail, c.drift...), c.unknown...), c.notes...)
+	if len(c.todo) > 0 && (a.Kind == Drift || a.Kind == Unknowable || a.Kind == Manual) {
+		steps := make([]string, len(c.todo))
+		for i, t := range c.todo {
+			steps[i] = t
+			if !strings.HasSuffix(t, ".") {
+				steps[i] += "."
+			}
+		}
+		a.Detail = append(a.Detail, "What to do: "+strings.Join(steps, " Or: "))
+	}
 	return a
 }
 
@@ -371,6 +421,9 @@ func Diff(d Desired, o Observed) []Action {
 	for _, t := range d.ServiceTokens {
 		ot := o.ServiceTokens[t.Key]
 		c := &check{a: Action{ID: "access.service_token." + t.Key, Resource: "Service token", Name: t.Name}}
+		if t.Key == TokenBackups {
+			c.todof("check that the setup token has Access: Service Tokens Edit (dashboard setup -h lists every permission), then run setup again.")
+		}
 		found := c.seen(ot.Seen)
 		if found && ot.ExpiresAt != "" {
 			c.notef("expires %s", ot.ExpiresAt)
@@ -378,11 +431,10 @@ func Diff(d Desired, o Observed) []Action {
 		add(c)
 		if found {
 			s := &check{a: Action{ID: "access.service_token." + t.Key + ".secret", Resource: "Service token secret", Name: t.Name, ExistingID: ot.ID}}
-			if t.SecretFile != "" {
-				s.unknownf("Cloudflare never returns the client secret; setup will trust %s if present, else offer --rotate", t.SecretFile)
-			} else {
-				s.unknownf("Cloudflare never returns the client secret, and it has no host file; setup will offer --rotate if the bots lost it")
-			}
+			// A preview mounts no secret directory, so it cannot tell whether the file is
+			// there; an apply, which has them, reports it.
+			s.unknownf("Cloudflare never returns the client secret, and the preview cannot see the host's secret files: "+
+				"an apply reports whether %s holds it. If it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → %s → Rotate", t.SecretFile, t.Name)
 			add(s)
 		}
 	}
@@ -408,20 +460,10 @@ func Diff(d Desired, o Observed) []Action {
 
 	db := &check{a: Action{ID: "d1", Resource: "D1 database", Name: d.D1Database}}
 	db.seen(o.D1)
+	db.todof("check that the setup token has D1 Edit (dashboard setup -h lists every permission), then run setup again.")
 	add(db)
 
-	mig := &check{a: Action{ID: "d1.migrations", Resource: "D1 migrations", Name: d.D1Database}}
-	switch {
-	case o.D1.Unknown != "":
-		mig.unknownf("D1 database could not be read")
-	case !o.D1.Found:
-		mig.create = true
-	default:
-		// Wrangler records applied migrations in the d1_migrations table; reading it
-		// needs a D1 query, which is a POST, so a dry run cannot look.
-		mig.unknownf("reading the d1_migrations table needs a D1 query (POST); a dry run sends only GET")
-	}
-	add(mig)
+	out = append(out, diffMigrations(d, o))
 
 	w := &check{a: Action{ID: "worker", Resource: "Worker", Name: d.Worker.Script}}
 	if w.seen(o.Worker.Seen) {
@@ -429,28 +471,30 @@ func Diff(d Desired, o Observed) []Action {
 		case o.Worker.BindingUnknown != "":
 			w.unknownf("%s", o.Worker.BindingUnknown)
 		case o.Worker.D1BindingID == "":
-			w.driftf("no D1 binding named %s", d.Worker.D1Binding)
+			w.driftf("found no D1 binding named %s; expected %s bound to %s", d.Worker.D1Binding, d.Worker.D1Binding, d.D1Database)
 		case o.D1.Unknown != "":
 			w.unknownf("the D1 database could not be read, so the %s binding cannot be checked", d.Worker.D1Binding)
 		case !o.D1.Found:
-			w.driftf("%s is bound to D1 database %s, which is not %s", d.Worker.D1Binding, o.Worker.D1BindingID, d.D1Database)
+			w.driftf("found %s bound to D1 database %s; expected %s, which does not exist", d.Worker.D1Binding, o.Worker.D1BindingID, d.D1Database)
 		case o.Worker.D1BindingID != o.D1.ID:
-			w.driftf("%s is bound to D1 database %s, not %s (%s)", d.Worker.D1Binding, o.Worker.D1BindingID, d.D1Database, o.D1.ID)
+			w.driftf("found %s bound to D1 database %s; expected %s (%s)", d.Worker.D1Binding, o.Worker.D1BindingID, d.D1Database, o.D1.ID)
 		}
-		// fresh-install.md §4.6: "Keep `workers_dev` and `preview_urls` disabled."
-		switch {
-		case o.Worker.SubdomainUnknown != "":
-			w.unknownf("%s", o.Worker.SubdomainUnknown)
-		default: // a missing boolean is false
-			if o.Worker.WorkersDev != nil && *o.Worker.WorkersDev {
-				w.driftf("the workers.dev URL is on; docs ask for workers_dev disabled")
-			}
-			if o.Worker.PreviewURLs != nil && *o.Worker.PreviewURLs {
-				w.driftf("preview URLs are on; docs ask for preview_urls disabled")
-			}
+		// The rest of what setup would upload (sinkbundle, from wrangler.toml), as the
+		// scripts list shows it. A field Cloudflare does not show is not compared.
+		if o.Worker.CompatibilityDate != "" && o.Worker.CompatibilityDate != d.Worker.CompatibilityDate {
+			w.driftf("found compatibility date %s; expected %s", o.Worker.CompatibilityDate, d.Worker.CompatibilityDate)
 		}
+		if o.Worker.CompatibilityFlags != nil && !sameSet(o.Worker.CompatibilityFlags, d.Worker.CompatibilityFlags) {
+			w.driftf("found compatibility flags %s; expected %s", list(o.Worker.CompatibilityFlags), list(d.Worker.CompatibilityFlags))
+		}
+		if o.Worker.HasModules != nil && !*o.Worker.HasModules {
+			w.driftf("found a service-worker script; expected an ES module Worker with main module %s", d.Worker.MainModule)
+		}
+		w.todof("%s", workerFix(d))
 	}
 	add(w)
+	out = append(out, diffWorkerVersion(d, o.Worker))
+	out = append(out, diffWorkerSubdomain(o.Worker))
 
 	sec := &check{a: Action{ID: "worker.secret", Resource: "Worker secret", Name: d.Worker.Secret}}
 	switch {
@@ -461,7 +505,9 @@ func Diff(d Desired, o Observed) []Action {
 	case o.Worker.SecretsUnknown != "":
 		sec.unknownf("%s", o.Worker.SecretsUnknown)
 	case slices.Contains(o.Worker.Secrets, d.Worker.Secret):
-		sec.unknownf("set, but Cloudflare never returns its value; setup will trust secrets/backup/bearer if present, else offer --rotate")
+		sec.unknownf("set, but Cloudflare never returns its value, and the preview cannot see the host's secret files")
+		sec.todof("nothing while backups work. If the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer: " +
+			"set it with `npx wrangler secret put BACKUP_BEARER_SECRET` in server/deploy/backup-sink and paste that file's value (docs/deploy/fresh-install.md step 4.5).")
 	default:
 		sec.create = true
 	}
@@ -469,11 +515,250 @@ func Diff(d Desired, o Observed) []Action {
 
 	dom := &check{a: Action{ID: "worker.domain", Resource: "Worker custom domain", Name: d.Worker.Hostname}}
 	if dom.seen(o.Worker.Domain.Seen) && o.Worker.Domain.Service != d.Worker.Script {
-		dom.driftf("serves Worker %q, not %q; setup will not move it", o.Worker.Domain.Service, d.Worker.Script)
+		dom.driftf("found the hostname serving Worker %q; expected Worker %q. Setup will not move a hostname another Worker uses", o.Worker.Domain.Service, d.Worker.Script)
+		dom.todof("if %q no longer needs it, remove the custom domain in the dashboard (Workers & Pages → %s → Settings → Domains & Routes) and run setup again; "+
+			"or choose another hostname with --backup-hostname, leaving this one as it is.", o.Worker.Domain.Service, o.Worker.Domain.Service)
+	} else if !o.Worker.Domain.Found && o.Worker.Domain.Unknown == "" {
+		zone := strings.ToLower(o.Zone.Name)
+		switch {
+		case d.Worker.Hostname != zone && !strings.HasSuffix(d.Worker.Hostname, "."+zone):
+			dom.manual = true
+			dom.notef("%s is not in the zone %s, which is the only zone setup works in (a workers.dev URL never is). Every step waits until it is: "+
+				"choose a backup hostname in the zone, for example --backup-hostname backups.%s", d.Worker.Hostname, o.Zone.Name, o.Zone.Name)
+		case o.BackupDNS.Unknown != "":
+			dom.create = false
+			dom.unknownf("%s; Cloudflare refuses a Worker custom domain on a hostname with a CNAME record, so setup must read them first", o.BackupDNS.Unknown)
+			dom.todof("check that the setup token has DNS Edit (dashboard setup -h lists every permission), then run setup again.")
+		case len(o.BackupDNS.Records) > 0:
+			// https://developers.cloudflare.com/workers/configuration/routing/custom-domains/:
+			// "You cannot create a Custom Domain on a hostname with an existing CNAME DNS record".
+			dom.manual = true
+			for _, r := range o.BackupDNS.Records {
+				dom.notef("%s already has a %s record to %s [%s]. Cloudflare refuses a Worker custom domain on a hostname with an existing CNAME record, "+
+					"and setup never removes a record: delete it in the dashboard (your domain → DNS → Records) if nothing uses it, or choose another hostname with --backup-hostname",
+					d.Worker.Hostname, r.Type, orNone(r.Content), r.ID)
+			}
+		}
 	}
 	add(dom)
 
 	return out
+}
+
+// internalTable reports whether a D1 table is SQLite's or Cloudflare's own, not the
+// database's content: sqlite_sequence and friends, and D1's _cf_ tables.
+func internalTable(name string) bool {
+	return strings.HasPrefix(name, "sqlite_") || strings.HasPrefix(name, "_cf_")
+}
+
+// wranglerMigrations is the table Wrangler records applied migrations in
+// (DEFAULT_MIGRATION_TABLE in packages/wrangler/src/d1/constants.ts, wrangler 4.168.0).
+const wranglerMigrations = "d1_migrations"
+
+// diffMigrations decides the backup database's schema line. Setup applies the Worker's
+// migrations only to a database with no tables (the D1 list's num_tables is "Deprecated
+// … no longer accurate and should not be relied upon", so only a query decides); a
+// database that has tables is never altered.
+func diffMigrations(d Desired, o Observed) Action {
+	mig := &check{a: Action{ID: "d1.migrations", Resource: "D1 migrations", Name: d.D1Database}}
+	t := o.D1Tables
+	switch {
+	case o.D1.Unknown != "":
+		mig.unknownf("D1 database could not be read")
+	case !o.D1.Found:
+		mig.create = true
+	case t.Unknown != "":
+		mig.unknownf("%s", t.Unknown)
+		mig.todof("check that the setup token has D1 Edit, then run setup again; or check the tables yourself with `npx wrangler d1 execute %s --remote --command \"SELECT type, name FROM sqlite_master\"`.", d.D1Database)
+	case !t.Read:
+		mig.unknownf("listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables")
+		mig.todof("run `scripts/setup apply` without --yes: it lists the tables, shows its plan and changes nothing until you confirm.")
+	default:
+		var have []string
+		for _, n := range t.Names {
+			if !internalTable(n) {
+				have = append(have, n)
+			}
+		}
+		sort.Strings(have)
+		if len(have) == 0 && len(t.Triggers) == 0 {
+			mig.create = true
+			mig.notef("the database has no tables; setup applies the Worker's migrations and records them in %s as Wrangler does", wranglerMigrations)
+			break
+		}
+		missing := func(want, got []string) []string {
+			var out []string
+			for _, w := range want {
+				if !slices.Contains(got, w) {
+					out = append(out, w)
+				}
+			}
+			return out
+		}
+		// A migration applied only in part (a batch that stopped between statements) leaves
+		// some of these out; only all of them is ok.
+		var gaps []string
+		if m := missing(d.D1Tables, have); len(m) > 0 {
+			gaps = append(gaps, "tables "+list(m))
+		}
+		if m := missing(d.D1Triggers, t.Triggers); len(m) > 0 {
+			gaps = append(gaps, "triggers "+list(m))
+		}
+		// A table or trigger of the right name but another shape (columns, types, keys,
+		// checks) is not the Worker's either.
+		var shapes []string
+		for _, set := range []struct {
+			kind  string
+			names []string
+			want  map[string]string
+		}{{"table", have, d.D1TableDefs}, {"trigger", t.Triggers, d.D1TriggerDefs}} {
+			for _, name := range set.names {
+				want, ok := set.want[name]
+				if got := t.Definitions[name]; ok && got != want {
+					shapes = append(shapes, fmt.Sprintf("%s %s is defined as %q; the Worker's migration defines it as %q", set.kind, name, orNone(got), want))
+				}
+			}
+		}
+		if len(shapes) > 0 {
+			gaps = append(gaps, "the Worker's shape ("+strings.Join(shapes, "; ")+")")
+		}
+		var extra []string
+		for _, n := range have {
+			if _, ok := d.D1TableDefs[n]; !ok && n != wranglerMigrations {
+				extra = append(extra, n)
+			}
+		}
+		if len(extra) > 0 {
+			mig.notef("it also has tables the Worker does not use (%s); setup leaves them as they are", list(extra))
+		}
+		recorded := slices.Contains(have, wranglerMigrations)
+		switch {
+		case !recorded:
+		case t.AppliedUnknown != "":
+			mig.unknownf("%s", t.AppliedUnknown)
+		default:
+			if m := missing(d.D1Migrations, t.Applied); len(m) > 0 {
+				gaps = append(gaps, wranglerMigrations+" rows "+list(m))
+			}
+		}
+		if len(gaps) > 0 {
+			mig.driftf("found tables %s; expected the Worker's schema, but it lacks %s. Setup never alters a database that already has tables, so it cannot lose data",
+				list(have), strings.Join(gaps, " and "))
+			mig.todof("%s", finishMigrationStep(d))
+			mig.todof("leave it and start a separate install beside it with --name-prefix and its own hostname, which makes a fresh database.")
+			break
+		}
+		if !recorded {
+			mig.notef("no %s table: the tables were made without Wrangler's record, so `wrangler d1 migrations apply` would try them again and fail", wranglerMigrations)
+		}
+	}
+	return mig.done()
+}
+
+// finishMigrationStep is the manual step for a database whose migration is incomplete.
+func finishMigrationStep(d Desired) string {
+	return fmt.Sprintf("if the database holds no backups yet, delete it in the dashboard (Workers & Pages → D1 → %s → Settings) and run setup again; "+
+		"otherwise compare it with server/deploy/backup-sink/migrations and create what is missing with "+
+		"`npx wrangler d1 execute %s --remote --command \"…\"`, then record each migration with "+
+		"INSERT INTO d1_migrations (name) VALUES ('<file name>')", d.D1Database, d.D1Database)
+}
+
+func nameOfToken(d Desired, key string) string {
+	for _, t := range d.ServiceTokens {
+		if t.Key == key {
+			return t.Name
+		}
+	}
+	return key
+}
+
+func sameSet(a, b []string) bool {
+	x, y := append([]string(nil), a...), append([]string(nil), b...)
+	sort.Strings(x)
+	sort.Strings(y)
+	return slices.Equal(x, y)
+}
+
+// workerFix is the way forward for an existing Worker that differs from what setup would
+// upload: setup itself never uploads over it.
+func workerFix(d Desired) string {
+	return fmt.Sprintf("setup never changes an existing Worker, because an upload replaces its whole script, bindings and secrets. "+
+		"Redeploy it with Wrangler from this release's server/deploy/backup-sink, whose wrangler.toml holds the expected settings "+
+		"(docs/deploy/fresh-install.md step 4); or delete it in the dashboard (Workers & Pages → %s → Settings → Delete) and run setup again, "+
+		"which uploads it as expected with the bearer in secrets/backup/bearer; "+
+		"or leave it and start a separate install beside it with --name-prefix and its own hostname.", d.Worker.Script)
+}
+
+// upgradeStep is how an admin moves an existing Worker to this image's revision.
+func upgradeStep(rev int) string {
+	return fmt.Sprintf("setup never uploads over an existing Worker, because an upload replaces its whole script, bindings and secrets. "+
+		"To upgrade it, redeploy it from this release's server/deploy/backup-sink with Wrangler (docs/deploy/fresh-install.md step 4), "+
+		"adding --var %s:%d so setup can read the revision", WorkerRevisionBinding, rev)
+}
+
+// diffWorkerVersion compares the revision setup labelled the Worker with when it uploaded
+// it with the one this image carries.
+func diffWorkerVersion(d Desired, w Worker) Action {
+	c := &check{a: Action{ID: "worker.version", Resource: "Worker version", Name: fmt.Sprintf("revision %d", d.Worker.Revision)}}
+	switch {
+	case w.Unknown != "":
+		c.unknownf("Worker could not be read")
+	case !w.Found:
+		c.create = true
+	case w.BindingUnknown != "":
+		c.unknownf("%s", w.BindingUnknown)
+	case w.Revision == "":
+		c.unknownf("Cloudflare shows no %s binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here", WorkerRevisionBinding)
+		c.todof("nothing, unless you want setup to see the revision: backups keep working, and the backup service alerts if the Worker is ever too old for it. "+
+			"To label it, redeploy it with Wrangler adding --var %s:%d.", WorkerRevisionBinding, d.Worker.Revision)
+	default:
+		n, err := strconv.Atoi(w.Revision)
+		switch {
+		case err != nil:
+			c.driftf("its %s binding is %q, which is not a revision", WorkerRevisionBinding, w.Revision)
+		case n < d.Worker.Revision:
+			c.driftf("it runs revision %d; this image carries revision %d. %s", n, d.Worker.Revision, upgradeStep(d.Worker.Revision))
+		case n > d.Worker.Revision:
+			c.driftf("it runs revision %d, newer than this image's revision %d: update the image (scripts/update) rather than the Worker", n, d.Worker.Revision)
+		}
+	}
+	return c.done()
+}
+
+// diffWorkerSubdomain checks fresh-install.md §4.6: "Keep `workers_dev` and `preview_urls`
+// disabled." On a Worker setup uploaded (it carries setup's upload marker, which no
+// upgrade step sets), switches still on mean an interrupted run, so turning them off
+// completes setup's own create. On any other Worker they are drift.
+func diffWorkerSubdomain(w Worker) Action {
+	c := &check{a: Action{ID: "worker.subdomain", Resource: "workers.dev and preview URLs", Name: "off"}}
+	switch {
+	case w.Unknown != "":
+		c.unknownf("Worker could not be read")
+	case !w.Found:
+		c.create = true
+	case w.SubdomainUnknown != "":
+		c.unknownf("%s", w.SubdomainUnknown)
+	default: // a missing boolean is false
+		dev := w.WorkersDev != nil && *w.WorkersDev
+		prev := w.PreviewURLs != nil && *w.PreviewURLs
+		switch {
+		case !dev && !prev:
+		case w.SetupUpload:
+			c.create = true
+			c.notef("on (workers.dev %v, preview URLs %v), and setup uploaded this Worker: an interrupted run left them on, so setup turns them off", dev, prev)
+		default:
+			if dev {
+				c.driftf("the workers.dev URL is on; docs ask for workers_dev disabled")
+			}
+			if prev {
+				c.driftf("preview URLs are on; docs ask for preview_urls disabled")
+			}
+			c.todof("setup changes switches only on a Worker it uploaded itself. Turn them off in the dashboard: Workers & Pages → the Worker → Settings → " +
+				"Domains & Routes → workers.dev → Disable, and Preview URLs → Disable; or redeploy it with Wrangler from server/deploy/backup-sink, " +
+				"whose wrangler.toml keeps both off.")
+		}
+	}
+	return c.done()
 }
 
 // diffTunnel matches by the host's token ID, then the hostname's CNAME target, then the
@@ -545,6 +830,11 @@ func PrefixConflict(d Desired, actions []Action) bool {
 func diffApp(d Desired, spec AppSpec, o Observed) Action {
 	app := o.Apps[spec.Key]
 	c := &check{a: Action{ID: "access.app." + spec.Key, Resource: "Access application", Name: spec.Name}}
+	if spec.Key == AppBackups {
+		c.todof("setup never edits an Access application. Fix it in Zero Trust → Access controls → Applications → the application on %s: "+
+			"its only policy should be Service Auth for the service token %s, with no Allow or Bypass policy (docs/deploy/fresh-install.md step 4.4).", spec.Destinations[0], nameOfToken(d, spec.Policy.ServiceToken))
+		c.todof("protect a new hostname instead with --backup-hostname, leaving this application as it is.")
+	}
 	others := overlapping(spec, o)
 	if !c.seen(app.Seen) {
 		if app.Unknown == "" && len(others) > 0 {

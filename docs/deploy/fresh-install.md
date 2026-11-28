@@ -77,6 +77,14 @@ compresses and encrypts it before uploading it to a dedicated Cloudflare D1
 database through a Worker (a small hosted API). The private decryption key stays
 on the recovery workstation, never on the production server.
 
+**With `scripts/setup`**, do only step 1 here. In step 5,
+[Cloudflare with `scripts/setup`](#cloudflare-with-scriptssetup) does steps 2–6 for
+you: it creates the D1 database and its tables, the `dashboard-backups-host` token
+(into `secrets/backup/`), the backup hostname's Access application, and the Worker
+with the bearer `scripts/setup host` generated, with workers.dev and preview URLs
+off and its custom domain attached last. No Node is needed on any machine. Step 7's
+checks still apply. The steps below stay the way to do it by hand.
+
 1. On the recovery workstation, run `age-keygen -o dashboard.agekey`.
    Save the private identity in offline recovery storage with a second offline copy.
    Copy only its printed `age1…` public recipient into `BACKUP_AGE_RECIPIENT`.
@@ -204,9 +212,11 @@ see [Host files](../configuration.md#host-files-scriptssetup).
 
 ### Cloudflare with `scripts/setup`
 
-This replaces [Cloudflare setup](cloudflare.md) steps 1–8, which stay the manual
+This replaces [Cloudflare setup](cloudflare.md) steps 1–8 and steps 2–6 of
+[Prepare encrypted backups](#4-prepare-encrypted-backups), which stay the manual
 way to do the same. It needs step 0 done by hand, and the host files above
-written: it puts the tunnel token and the services token into `secrets/`.
+written: it puts the tunnel token, the services token and the backup token into
+`secrets/`, and uploads the backup bearer from `secrets/backup/bearer`.
 
 Create an API token under **Manage account** → **Account API tokens**, limited
 to the dashboard's account and its one zone, with a short expiry and these
@@ -214,7 +224,7 @@ permissions:
 
 - Account: Cloudflare Tunnel Edit, Access: Apps Edit, Access: Policies Edit,
   Access: Groups Edit, Access: Identity Providers Edit, Access: Service Tokens
-  Edit, Access: Organizations Read, D1 Read, Workers Scripts Read.
+  Edit, Access: Organizations Read, D1 Edit, Workers Scripts Edit.
 - Zone: Zone Read, DNS Edit, Zone WAF Edit, Cache Rules Edit, Config Rules Edit,
   Bot Management Read.
 
@@ -236,6 +246,12 @@ it finishes it lists what it created, where it put each secret, and what is left
 for you, with the dashboard step for each. Two things it cannot read back, so
 check them in the Cloudflare dashboard: the cache rule must say **Bypass cache**,
 and Bot Fight Mode must be **Off** (cloudflare.md steps 6.1 and 7).
+
+It also writes `BACKUP_SINK_URL` into `backup.env` once the backup Worker's custom
+domain is up, and leaves `BACKUP_AGE_RECIPIENT` to you: backups stay off until it
+is set (step 4.1). A record already on the backup hostname stops it before any
+change, because Cloudflare refuses a Worker custom domain there; setup never
+removes one.
 
 Do not start the stack until `apply` exits 0 and says every step read back
 `ok`. If it stops, fix what it names and run it again: it continues where it

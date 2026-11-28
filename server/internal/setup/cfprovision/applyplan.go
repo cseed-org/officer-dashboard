@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"officerdashboard/internal/setup/plan"
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // Options are the apply engine's choices. The command fills them; nothing here is read
@@ -36,6 +37,9 @@ type Options struct {
 	// same directory (the install's deploy directory). Every run refuses to start while
 	// a record is there.
 	StateDir string
+	// Bundle is the backup Worker the image carries (sinkbundle.Embedded). Without it the
+	// Worker and its migration are never created: a run that needs them is blocked.
+	Bundle *sinkbundle.Bundle
 }
 
 // StepKind is what one apply step does.
@@ -53,6 +57,12 @@ const (
 	StepRoute        StepKind = "route"
 	StepDNS          StepKind = "dns"
 	StepBotFightMode StepKind = "bot_fight_mode"
+	// The backup Worker's pieces.
+	StepD1              StepKind = "d1"
+	StepMigration       StepKind = "d1_migration"
+	StepWorker          StepKind = "worker"
+	StepWorkerSubdomain StepKind = "worker_subdomain"
+	StepWorkerDomain    StepKind = "worker_domain"
 )
 
 // Step is one write (or, for StepTunnelToken, one secret fetch) the engine performs,
@@ -64,6 +74,9 @@ type Step struct {
 	Key      string   `json:"key,omitempty"`
 	Title    string   `json:"title"`
 	Needs    []string `json:"needs,omitempty"`
+	// Fulfils are other plan actions the same step creates (the Worker upload also sets
+	// its secret, its revision label and its workers.dev switches).
+	Fulfils []string `json:"fulfils,omitempty"`
 }
 
 // ApplyPlan is what an apply run will do, and why it may refuse to start.
@@ -74,8 +87,8 @@ type ApplyPlan struct {
 	Blockers []string
 	// Warnings are printed loudly before the steps.
 	Warnings []string
-	// Manual are steps a person must do; Skipped are creates this version does not make.
-	Manual, Skipped []string
+	// Manual are steps a person must do.
+	Manual []string
 }
 
 // Facts are what PlanApply needs beyond the plan: things the engine reads from the host
@@ -94,7 +107,27 @@ type Facts struct {
 	// RateLimitUnknown says why it could not be read.
 	RateLimitRules   int
 	RateLimitUnknown string
+	// BackupsSecretKept is true when the host already holds the backup token's client secret.
+	BackupsSecretKept bool
+	// BearerKept is true when secrets/backup/bearer exists; BearerProblem says why its
+	// value cannot be uploaded.
+	BearerKept    bool
+	BearerProblem string
+	// D1Count and ScriptCount are the account's D1 databases and Workers, read only when
+	// one is to be created, to check the Free-plan limits first.
+	D1Count, ScriptCount               int
+	D1CountUnknown, ScriptCountUnknown string
 }
+
+// Free-plan limits: "Free: 10" D1 databases per account
+// (https://developers.cloudflare.com/d1/platform/limits/) and "Workers per account | 100"
+// (https://developers.cloudflare.com/workers/platform/limits/). Workers Paid allows more,
+// but the token cannot tell the account's Workers plan, so setup stops at the Free limit
+// and says how to go on.
+const (
+	freeD1Databases = 10
+	freeWorkers     = 100
+)
 
 // freeLimits are the rule slots per phase by zone plan, from the product pages quoted
 // in the spike report: custom rules "5 | 20 | 100 | 1,000"
@@ -105,13 +138,6 @@ var ruleLimits = map[string]map[string]int{
 	"http_request_firewall_custom": {"free": 5, "pro": 20, "business": 100, "enterprise": 1000},
 	"http_request_cache_settings":  {"free": 10, "pro": 25, "business": 50, "enterprise": 300},
 	"http_config_settings":         {"free": 10, "pro": 25, "business": 50, "enterprise": 300},
-}
-
-// outOfScope are creates the plan lists that this version does not make: the backup
-// Worker, D1 and the backup Access pieces come in a later release.
-var outOfScope = map[string]bool{
-	"d1": true, "d1.migrations": true, "worker": true, "worker.secret": true, "worker.domain": true,
-	"access.app." + plan.AppBackups: true, "access.service_token." + plan.TokenBackups: true,
 }
 
 // PlanApply decides the steps for the create actions, in an order that never publishes
@@ -171,22 +197,26 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 	if creating(tokenID) {
 		add(Step{Kind: StepServiceToken, ActionID: tokenID, Key: plan.TokenServices, Title: "create service token " + nameOf(d, plan.TokenServices)})
 	}
+	backupTokenID := "access.service_token." + plan.TokenBackups
+	if creating(backupTokenID) {
+		add(Step{Kind: StepServiceToken, ActionID: backupTokenID, Key: plan.TokenBackups, Title: "create service token " + nameOf(d, plan.TokenBackups) + " for the backup service"})
+	}
 
 	// 2. The Access applications, each with its reusable policy.
 	// The agents (bypass) and services apps carve paths out of the site app, so they
 	// wait for it: it must be ok already, or created and read back earlier in this run.
 	siteID := "access.app." + plan.AppSite
-	appNeeds := map[string][]string{plan.AppSite: {"access.idp"}, plan.AppAgents: {siteID}, plan.AppServices: {tokenID, siteID}}
+	backupAppID := "access.app." + plan.AppBackups
+	appNeeds := map[string][]string{plan.AppSite: {"access.idp"}, plan.AppAgents: {siteID}, plan.AppServices: {tokenID, siteID}, plan.AppBackups: {backupTokenID}}
 	for _, g := range d.Groups {
 		appNeeds[plan.AppSite] = append(appNeeds[plan.AppSite], "access.group."+g.Key)
 	}
 	publishNeeds := []string{"tunnel"}
 	for _, spec := range d.Apps {
 		id := "access.app." + spec.Key
-		if outOfScope[id] {
-			continue
+		if id != backupAppID { // the backup app guards the backup hostname, not the dashboard's
+			publishNeeds = append(publishNeeds, id)
 		}
-		publishNeeds = append(publishNeeds, id)
 		if creating(id) {
 			add(Step{Kind: StepApp, ActionID: id, Key: spec.Key, Title: "create Access application " + spec.Name + " with policy " + spec.Policy.Name, Needs: appNeeds[spec.Key]})
 		}
@@ -213,7 +243,53 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 		}
 	}
 
-	// 4. Publication last: the tunnel, its route and the DNS record that put the
+	// 4. The backup storage: the D1 database, its tables and the Worker. None of these is
+	// on a hostname yet; the Worker's custom domain comes with the publication steps.
+	if creating("d1") {
+		add(Step{Kind: StepD1, ActionID: "d1", Title: "create D1 database " + d.D1Database})
+		switch {
+		case f.D1CountUnknown != "":
+			p.Blockers = append(p.Blockers, "cannot count the account's D1 databases before creating one ("+f.D1CountUnknown+")")
+		case f.D1Count >= freeD1Databases:
+			p.Blockers = append(p.Blockers, fmt.Sprintf("the account has %d D1 databases, the Workers Free plan's limit of %d; delete one you do not use, "+
+				"or, on Workers Paid, create %s in the dashboard yourself (docs/deploy/fresh-install.md step 4.2) and run setup again: it adopts it", f.D1Count, freeD1Databases, d.D1Database))
+		}
+	}
+	if creating("d1.migrations") {
+		add(Step{Kind: StepMigration, ActionID: "d1.migrations", Title: "create the backup tables in " + d.D1Database + " (the Worker's migrations, recorded in d1_migrations)", Needs: []string{"d1"}})
+		if opt.Bundle == nil {
+			p.Blockers = append(p.Blockers, noBundle)
+		}
+	}
+	if creating("worker") {
+		add(Step{Kind: StepWorker, ActionID: "worker", Title: fmt.Sprintf("upload Worker %s (revision %d) bound to %s, then turn off its workers.dev and preview URLs", d.Worker.Script, d.Worker.Revision, d.D1Database),
+			Needs: []string{"d1", "d1.migrations"}, Fulfils: []string{"worker.secret", "worker.version", "worker.subdomain"}})
+		switch {
+		case opt.Bundle == nil:
+			p.Blockers = append(p.Blockers, noBundle)
+		case !f.BearerKept:
+			p.Blockers = append(p.Blockers, "secrets/backup/bearer is missing: run `scripts/setup host --yes` first, which generates the backup bearer; "+
+				"setup uploads that file's value with the Worker and never makes one itself")
+		case f.BearerProblem != "":
+			p.Blockers = append(p.Blockers, f.BearerProblem)
+		}
+		switch {
+		case f.ScriptCountUnknown != "":
+			p.Blockers = append(p.Blockers, "cannot count the account's Workers before creating one ("+f.ScriptCountUnknown+")")
+		case f.ScriptCount >= freeWorkers:
+			p.Blockers = append(p.Blockers, fmt.Sprintf("the account has %d Workers, the Workers Free plan's limit of %d; delete one you do not use first", f.ScriptCount, freeWorkers))
+		}
+	} else if kind("worker") == plan.OK {
+		if creating("worker.subdomain") {
+			add(Step{Kind: StepWorkerSubdomain, ActionID: "worker.subdomain", Title: "turn off the workers.dev and preview URLs of Worker " + d.Worker.Script + " (an earlier run left them on)"})
+		}
+		if creating("worker.secret") {
+			p.Manual = append(p.Manual, fmt.Sprintf("Worker %s has no %s. Setup sends the bearer only in the upload that creates the Worker, so set it yourself "+
+				"to the value in secrets/backup/bearer: in server/deploy/backup-sink, npx wrangler secret put %s (docs/deploy/fresh-install.md step 4.5)", d.Worker.Script, d.Worker.Secret, d.Worker.Secret))
+		}
+	}
+
+	// 5. Publication last: the tunnel, its route and the DNS record that put the
 	// hostname on the internet, only once every Access application exists.
 	if creating("tunnel") {
 		add(Step{Kind: StepTunnel, ActionID: "tunnel", Title: "create tunnel " + d.Tunnel.Name + " and keep its token"})
@@ -232,8 +308,16 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 	if creating("dns") {
 		add(Step{Kind: StepDNS, ActionID: "dns", Title: "create the proxied CNAME " + d.Hostname + " → <tunnel>.cfargotunnel.com", Needs: append([]string{"tunnel.route"}, publishNeeds...)})
 	}
+	// The backup hostname goes public only behind its Access application, read back ok.
+	if creating("worker.domain") {
+		add(Step{Kind: StepWorkerDomain, ActionID: "worker.domain", Title: "attach the custom domain " + d.Worker.Hostname + " to Worker " + d.Worker.Script,
+			Needs: []string{backupAppID, "worker"}})
+	}
+	if a := by["worker.domain"]; a.Kind == plan.Manual {
+		p.Blockers = append(p.Blockers, fmt.Sprintf("%s %s cannot be created%s", a.Resource, a.Name, firstDetail(a)))
+	}
 
-	// 5. Opt-in writes to account-wide and zone-wide settings, last of all: neither
+	// 6. Opt-in writes to account-wide and zone-wide settings, last of all: neither
 	// protects the hostname, so a refused or damaging write never delays what does.
 	// The dry run reports an unset global session as manual; only the option writes it.
 	sessionStep := false
@@ -266,10 +350,13 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 			case a.Kind == plan.OK:
 			case a.Kind == plan.Create && done[n]:
 			default:
-				p.Blockers = append(p.Blockers, fmt.Sprintf("%s needs %s %q, which is %s%s", s.Title, a.Resource, a.Name, a.Kind, firstDetail(a)))
+				p.Blockers = append(p.Blockers, fmt.Sprintf("%s needs %s %q, which is %s%s. Resolve that line first; its steps are listed with it", s.Title, a.Resource, a.Name, a.Kind, firstDetail(a)))
 			}
 		}
 		done[s.ActionID] = true
+		for _, id := range s.Fulfils {
+			done[id] = true
+		}
 	}
 
 	// The live account's state: published, but no Access application in front of it.
@@ -297,19 +384,25 @@ func PlanApply(d plan.Desired, o plan.Observed, actions []plan.Action, opt Optio
 	}
 
 	for _, a := range actions {
-		switch {
-		case a.Kind == plan.Manual && !(a.ID == "zero_trust.session" && sessionStep):
+		if a.Kind == plan.Manual && !(a.ID == "zero_trust.session" && sessionStep) && a.ID != "worker.domain" {
 			p.Manual = append(p.Manual, a.Resource+" "+a.Name+firstDetail(a))
-		case a.Kind == plan.Create && outOfScope[a.ID]:
-			p.Skipped = append(p.Skipped, fmt.Sprintf("%s %s: not created by this version (the backup Worker comes later)", a.Resource, a.Name))
 		}
 	}
 	if kind(tokenID+".secret") == plan.Unknowable && kind(tokenID) == plan.OK && !f.ServicesSecretKept {
 		p.Manual = append(p.Manual, "the host has no client secret for service token "+nameOf(d, plan.TokenServices)+
 			"; if the bots lost it, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → "+nameOf(d, plan.TokenServices)+" → Rotate")
 	}
+	if kind(backupTokenID+".secret") == plan.Unknowable && kind(backupTokenID) == plan.OK && !f.BackupsSecretKept {
+		p.Manual = append(p.Manual, "the host has no client secret for service token "+nameOf(d, plan.TokenBackups)+" in secrets/backup/access-client-secret; "+
+			"if it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → "+nameOf(d, plan.TokenBackups)+
+			" → Rotate, then write the new secret and its Client ID to secrets/backup/access-client-secret and secrets/backup/access-client-id (owner 10001, mode 0400)")
+	}
 	return p
 }
+
+// noBundle blocks a run that would create the Worker or its tables in a build without the
+// embedded bundle.
+const noBundle = "this build of setup carries no backup Worker bundle (it was built without the embedsink tag), so it cannot create the Worker or its tables: run setup from the release image (scripts/setup)"
 
 func nameOf(d plan.Desired, tokenKey string) string {
 	for _, t := range d.ServiceTokens {
@@ -346,9 +439,6 @@ func (p ApplyPlan) WriteText(w io.Writer) error {
 	}
 	for _, s := range p.Manual {
 		fmt.Fprintf(&b, "  manual: %s\n", s)
-	}
-	for _, s := range p.Skipped {
-		fmt.Fprintf(&b, "  skipped: %s\n", s)
 	}
 	if len(p.Blockers) > 0 {
 		b.WriteString("\n  Setup will not start, and has changed nothing:\n")

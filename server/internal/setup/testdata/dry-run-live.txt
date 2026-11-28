@@ -17,7 +17,7 @@ Cloudflare setup for officers.example.org (dry run: nothing was changed)
   ok          Service token                        dashboard-backups-host  [st-backups]
                                                      - expires 2126-11-20T00:00:00Z
   unknowable  Service token secret                 dashboard-backups-host  [st-backups]
-                                                     - Cloudflare never returns the client secret; setup will trust secrets/backup/access-client-secret if present, else offer --rotate
+                                                     - Cloudflare never returns the client secret, and the preview cannot see the host's secret files: an apply reports whether secrets/backup/access-client-secret holds it. If it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → dashboard-backups-host → Rotate
   create      Access application                   Officer Dashboard
                                                      - WARNING: the tunnel already routes this hostname and no Access application covers it; when cloudflared connects, the dashboard is public without the Access sign-in
   create      Access application                   Officer Dashboard: agents (bypass)
@@ -34,10 +34,33 @@ Cloudflare setup for officers.example.org (dry run: nothing was changed)
                                                      - Bot Fight Mode is on for the whole zone; agents cannot pass its challenges (docs/deploy/cloudflare.md step 6.1)
   ok          D1 database                          dashboard-backups  [d1-backups]
   unknowable  D1 migrations                        dashboard-backups
-                                                     - reading the d1_migrations table needs a D1 query (POST); a dry run sends only GET
+                                                     - listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables
+                                                     - What to do: run `scripts/setup apply` without --yes: it lists the tables, shows its plan and changes nothing until you confirm.
   ok          Worker                               dashboard-backup-sink  [dashboard-backup-sink]
+  unknowable  Worker version                       revision 2
+                                                     - Cloudflare shows no SINK_REVISION binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here
+                                                     - What to do: nothing, unless you want setup to see the revision: backups keep working, and the backup service alerts if the Worker is ever too old for it. To label it, redeploy it with Wrangler adding --var SINK_REVISION:2.
+  ok          workers.dev and preview URLs         off
   unknowable  Worker secret                        BACKUP_BEARER_SECRET
-                                                     - set, but Cloudflare never returns its value; setup will trust secrets/backup/bearer if present, else offer --rotate
+                                                     - set, but Cloudflare never returns its value, and the preview cannot see the host's secret files
+                                                     - What to do: nothing while backups work. If the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer: set it with `npx wrangler secret put BACKUP_BEARER_SECRET` in server/deploy/backup-sink and paste that file's value (docs/deploy/fresh-install.md step 4.5).
   ok          Worker custom domain                 backups.example.org  [wd-1]
 
-11 ok, 10 create, 1 drift, 3 unknowable, 1 manual
+Needs your attention (6):
+  - manual: Global session duration 730h (1 month)
+      not set (Cloudflare's default is 24h). Setup does not write the Zero Trust organization unless allowed. In Zero Trust: Access controls → Access settings → Set your global session duration → Edit → 1 month → Save (docs/deploy/cloudflare.md step 3)
+  - unknowable: Service token secret dashboard-backups-host [st-backups]
+      Cloudflare never returns the client secret, and the preview cannot see the host's secret files: an apply reports whether secrets/backup/access-client-secret holds it. If it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → dashboard-backups-host → Rotate
+  - drift: Bot Fight Mode off
+      Bot Fight Mode is on for the whole zone; agents cannot pass its challenges (docs/deploy/cloudflare.md step 6.1)
+  - unknowable: D1 migrations dashboard-backups
+      listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables
+      What to do: run `scripts/setup apply` without --yes: it lists the tables, shows its plan and changes nothing until you confirm.
+  - unknowable: Worker version revision 2
+      Cloudflare shows no SINK_REVISION binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here
+      What to do: nothing, unless you want setup to see the revision: backups keep working, and the backup service alerts if the Worker is ever too old for it. To label it, redeploy it with Wrangler adding --var SINK_REVISION:2.
+  - unknowable: Worker secret BACKUP_BEARER_SECRET
+      set, but Cloudflare never returns its value, and the preview cannot see the host's secret files
+      What to do: nothing while backups work. If the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer: set it with `npx wrangler secret put BACKUP_BEARER_SECRET` in server/deploy/backup-sink and paste that file's value (docs/deploy/fresh-install.md step 4.5).
+
+12 ok, 10 create, 1 drift, 4 unknowable, 1 manual

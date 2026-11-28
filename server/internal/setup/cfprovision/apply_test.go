@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,7 +34,12 @@ func newRig(t *testing.T, routes map[string]cffake.Response) *rig {
 	r := &rig{t: t, acct: cffake.NewAccount(routes), sink: &MemorySink{}, d: desired(t, ""), opt: Options{
 		GroupEmails: map[string][]string{plan.GroupOfficers: {"president@example.org"}, plan.GroupLaunchpad: {"mentor@example.org"}},
 		StateDir:    t.TempDir(),
+		Bundle:      testBundle(t),
 	}}
+	// `setup host` generated the backup bearer before any apply.
+	if err := r.sink.Store(context.Background(), Secret{Name: SecretBackupBearer, Value: testBearer}); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		r.acct.Close()
 		// Setup never deletes and never patches: no request may use another method.
@@ -63,7 +69,14 @@ func (r *rig) preview() []plan.Action {
 func (r *rig) apply(ctx context.Context) (Outputs, error) {
 	r.t.Helper()
 	e := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry())
-	return e.Apply(ctx, r.preview())
+	// The plan the person reviews is the engine's own preview, as the command shows it:
+	// only the engine lists the backup database's tables (a read-only D1 query), so a dry
+	// run's d1.migrations line differs from it by design.
+	rev, err := e.Preview(context.Background())
+	if err != nil {
+		return Outputs{}, err
+	}
+	return e.Apply(ctx, rev.Actions)
 }
 
 func byID(actions []plan.Action) map[string]plan.Action {
@@ -79,12 +92,16 @@ func byID(actions []plan.Action) map[string]plan.Action {
 // organization (TestOrgSessionIsManualByDefault).
 var inScope = []string{"access.idp", "access.group.officers", "access.group.launchpad",
 	"access.service_token.services", "access.app.site", "access.app.agents", "access.app.services",
-	"rule.firewall.skip", "rule.cache.bypass", "rule.config.consent", "tunnel", "tunnel.route", "dns"}
+	"rule.firewall.skip", "rule.cache.bypass", "rule.config.consent", "tunnel", "tunnel.route", "dns",
+	"access.service_token.backups", "access.app.backups", "d1", "worker", "worker.version", "worker.subdomain", "worker.domain"}
 
-func requireAllOK(t *testing.T, actions []plan.Action) {
+func requireAllOK(t *testing.T, actions []plan.Action, except ...string) {
 	t.Helper()
 	m := byID(actions)
 	for _, id := range inScope {
+		if slices.Contains(except, id) {
+			continue
+		}
 		if a := m[id]; a.Kind != plan.OK {
 			t.Errorf("%s: %s %v, want ok", id, a.Kind, a.Detail)
 		}
@@ -105,11 +122,20 @@ func TestApplyFreshAccountEndsAllOK(t *testing.T) {
 			t.Errorf("%s: %s", id, m[id].Kind)
 		}
 	}
-	// The backup pieces are not in this version and stay create.
-	for id := range outOfScope {
-		if m[id].Kind != plan.Create {
-			t.Errorf("%s: %s, want create (not built in this version)", id, m[id].Kind)
-		}
+	// What only the engine can see: the tables (a D1 query) read back ok. The Worker's
+	// secret stays unknowable, as Cloudflare never returns it.
+	fin := byID(out.Final)
+	if a := fin["d1.migrations"]; a.Kind != plan.OK {
+		t.Errorf("d1.migrations after the run: %s %v", a.Kind, a.Detail)
+	}
+	if a := m["worker.secret"]; a.Kind != plan.Unknowable {
+		t.Errorf("worker.secret: %s %v", a.Kind, a.Detail)
+	}
+	if st, ok := r.sink.Get(SecretBackupsToken); !ok || st.ClientID == "" || st.Value == "" || st.ResourceID != m["access.service_token.backups"].ExistingID {
+		t.Errorf("backup token not kept: %v", st)
+	}
+	if out.BackupSinkURL != "https://"+cffake.Backup || out.D1ID == "" || out.WorkerRevision != "2" {
+		t.Errorf("backup outputs %+v", out)
 	}
 	if tok, ok := r.sink.Get(SecretTunnelToken); !ok || tok.ResourceID != out.TunnelID || !strings.HasPrefix(tok.Value, "eyJ") {
 		t.Errorf("tunnel token not kept: %v", tok)
@@ -163,8 +189,8 @@ func TestApplyNeverPublishesBeforeAccess(t *testing.T) {
 			}
 		}
 	}
-	if apps != 3 {
-		t.Errorf("%d applications created, want 3", apps)
+	if apps != 4 {
+		t.Errorf("%d applications created, want 4 (three for the dashboard, one for backups)", apps)
 	}
 }
 
@@ -190,7 +216,8 @@ func TestApplyLiveAccountCreatesAccessFirstAndSaysSo(t *testing.T) {
 		}
 	}
 	after := byID(r.preview())
-	requireAllOK(t, r.preview())
+	// The live Worker was deployed with Wrangler, so it carries no revision label.
+	requireAllOK(t, r.preview(), "worker.version")
 	// Bot Fight Mode is zone-wide: left on, with the manual step printed.
 	if after["zone.bot_fight_mode"].Kind != plan.Drift || !strings.Contains(text, "manual: Bot Fight Mode is on") || !strings.Contains(text, "Bot Fight Mode → Off") {
 		t.Errorf("bot fight mode %s; output:\n%s", after["zone.bot_fight_mode"].Kind, text)
@@ -241,11 +268,15 @@ func requireNoDuplicates(t *testing.T, a *cffake.Account, d plan.Desired) {
 		{"/zones/" + cffake.ZoneID + "/dns_records", "name", d.Hostname},
 		{acct + "/access/identity_providers", "type", "onetimepin"},
 		{acct + "/access/service_tokens", "name", "officer-dashboard services"},
+		{acct + "/access/service_tokens", "name", "dashboard-backups-host"},
+		{acct + "/d1/database", "name", d.D1Database},
+		{acct + "/workers/scripts", "id", d.Worker.Script},
+		{acct + "/workers/domains", "hostname", d.Worker.Hostname},
 	}
 	for _, g := range d.Groups {
 		checks = append(checks, struct{ path, field, value string }{acct + "/access/groups", "name", g.Name})
 	}
-	for _, spec := range d.Apps[:3] {
+	for _, spec := range d.Apps {
 		checks = append(checks, struct{ path, field, value string }{acct + "/access/apps", "name", spec.Name},
 			struct{ path, field, value string }{acct + "/access/policies", "name", spec.Policy.Name})
 	}
@@ -270,38 +301,55 @@ func TestApplyInterruptedAfterAnyWriteIsSafeToRerun(t *testing.T) {
 	if total < 15 {
 		t.Fatalf("only %d writes in a full run", total)
 	}
-	for k := 1; k <= total; k++ {
-		t.Run(fmt.Sprintf("crash after write %d", k), func(t *testing.T) {
-			r := newRig(t, cffake.Fresh())
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			n := 0
-			var crashed cffake.Request
-			r.acct.OnWrite(func(req cffake.Request) {
-				if n++; n == k {
-					crashed = req
-					cancel() // the process dies with this write stored by Cloudflare
+	// Review F-12 of #129: two crash modes, so neither outcome depends on a race. When the
+	// answer is lost, a secret in it is lost and must be reported for rotation; when the
+	// crash comes after the answer, every secret received must have been kept.
+	writes := full.acct.Writes()
+	for _, mode := range []struct {
+		name string
+		mode cffake.CrashMode
+	}{{"answer lost", cffake.AnswerLost}, {"after the answer", cffake.AfterAnswer}} {
+		for k := 1; k <= total; k++ {
+			crashed := writes[k-1]
+			t.Run(fmt.Sprintf("%s, write %d", mode.name, k), func(t *testing.T) {
+				r := newRig(t, cffake.Fresh())
+				r.acct.CrashAfterWrite(k, mode.mode)
+				if _, err := r.apply(context.Background()); err == nil {
+					t.Fatalf("run 1 survived the crash at %s %s", crashed.Method, crashed.Path)
+				}
+				r.acct.CrashAfterWrite(0, 0)
+				if _, err := r.apply(context.Background()); err != nil {
+					t.Fatalf("re-run after a crash at %s %s: %v\n%s", crashed.Method, crashed.Path, err, r.out.String())
+				}
+				requireAllOK(t, r.preview())
+				requireNoDuplicates(t, r.acct, r.d)
+				if _, ok := r.sink.Get(SecretTunnelToken); !ok {
+					t.Error("the re-run did not recover the tunnel token")
+				}
+				// The backup Worker is uploaded once, whatever the crash; the host's bearer
+				// is never rewritten.
+				if n := len(r.acct.Uploads()); n != 1 {
+					t.Errorf("%d Worker uploads", n)
+				}
+				if b, _ := r.sink.Load(context.Background(), SecretBackupBearer); b != testBearer {
+					t.Error("the host's bearer changed")
+				}
+				for _, tok := range []struct {
+					name   string
+					secret SecretName
+				}{{"officer-dashboard services", SecretServicesToken}, {"dashboard-backups-host", SecretBackupsToken}} {
+					_, kept := r.sink.Get(tok.secret)
+					lost := mode.mode == cffake.AnswerLost && strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, tok.name)
+					switch {
+					case lost && (kept || !strings.Contains(r.out.String(), "rotate it") || !strings.Contains(r.out.String(), tok.name)):
+						// The client secret existed only in the lost answer: say to rotate it.
+						t.Errorf("lost client secret of %s not reported:\n%s", tok.name, r.out.String())
+					case !lost && !kept:
+						t.Errorf("the client secret of %s was lost", tok.name)
+					}
 				}
 			})
-			if _, err := r.apply(ctx); err == nil {
-				t.Fatalf("run 1 survived the crash after %s %s", crashed.Method, crashed.Path)
-			}
-			r.acct.OnWrite(nil)
-			if _, err := r.apply(context.Background()); err != nil {
-				t.Fatalf("re-run after a crash at %s %s: %v\n%s", crashed.Method, crashed.Path, err, r.out.String())
-			}
-			requireAllOK(t, r.preview())
-			requireNoDuplicates(t, r.acct, r.d)
-			if _, ok := r.sink.Get(SecretTunnelToken); !ok {
-				t.Error("the re-run did not recover the tunnel token")
-			}
-			if strings.HasSuffix(crashed.Path, "/access/service_tokens") {
-				// The client secret existed only in the crashed process: say to rotate it.
-				if _, ok := r.sink.Get(SecretServicesToken); ok || !strings.Contains(r.out.String(), "rotate it") {
-					t.Errorf("lost client secret not reported:\n%s", r.out.String())
-				}
-			}
-		})
+		}
 	}
 }
 

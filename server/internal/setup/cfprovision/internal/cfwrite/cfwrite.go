@@ -2,7 +2,8 @@
 // account. It is internal to cfprovision, so nothing else can import it: discovery,
 // the plan and the command depend on cfapi.Reader, which can only GET.
 //
-// The client sends POST and PUT and nothing else. It has no method for any other verb,
+// The client sends POST and PUT and nothing else (PutModule is a PUT whose body is a Worker
+// upload, multipart instead of JSON). It has no method for any other verb,
 // and its transport refuses any other verb, so a DELETE (or a PATCH, which no create in
 // this version needs) cannot leave the process. Writes are never retried: a POST that
 // failed with a 5xx may still have created the resource, and the next setup run finds
@@ -19,7 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strings"
 	"time"
 
@@ -97,20 +100,88 @@ type envelope struct {
 	Result json.RawMessage `json:"result"`
 }
 
-func (c *Client) send(ctx context.Context, method, path string, body, out any) error {
-	if !strings.HasPrefix(path, "/") {
-		return fmt.Errorf("cloudflare: path %q must start with /", path)
+// Module is one file part of a Worker upload.
+type Module struct {
+	Name        string // the part and file name, which metadata main_module names
+	ContentType string // "application/javascript+module" for an ES module
+	Body        []byte
+}
+
+// PutModule uploads a Worker: one PUT of multipart/form-data with a JSON "metadata" part
+// and one part per module ("use multipart/form-data with a JSON metadata part whose
+// main_module field names the entrypoint file. Upload each module as a separate file
+// part; JavaScript ES module parts use the application/javascript+module content type":
+// https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/update/).
+// The metadata can hold a secret binding, so, as for every write, no error ever includes
+// the body.
+func (c *Client) PutModule(ctx context.Context, path string, metadata any, modules []Module, out any) error {
+	meta, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("cloudflare: PUT %s: cannot encode the metadata", path)
 	}
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition", `form-data; name="metadata"`)
+	h.Set("Content-Type", "application/json")
+	part, err := mw.CreatePart(h)
+	if err == nil {
+		_, err = part.Write(meta)
+	}
+	for _, m := range modules {
+		if err != nil {
+			break
+		}
+		h := textproto.MIMEHeader{}
+		h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, m.Name, m.Name))
+		h.Set("Content-Type", m.ContentType)
+		if part, err = mw.CreatePart(h); err == nil {
+			_, err = part.Write(m.Body)
+		}
+	}
+	if err == nil {
+		err = mw.Close()
+	}
+	if err != nil {
+		return fmt.Errorf("cloudflare: PUT %s: cannot encode the upload", path)
+	}
+	return c.do(ctx, http.MethodPut, path, buf.Bytes(), mw.FormDataContentType(), out)
+}
+
+// PostWithHeaders is Post with extra request headers, for the one call whose reference
+// client (Wrangler) pins an API date on it. Authorization and Content-Type cannot be set.
+func (c *Client) PostWithHeaders(ctx context.Context, path string, headers map[string]string, body, out any) error {
+	for k := range headers {
+		if k := http.CanonicalHeaderKey(k); k == "Authorization" || k == "Content-Type" {
+			return fmt.Errorf("cloudflare: POST %s: setup does not override %s", path, k)
+		}
+	}
+	return c.send(ctx, http.MethodPost, path, body, out, headers)
+}
+
+func (c *Client) send(ctx context.Context, method, path string, body, out any, headers ...map[string]string) error {
 	raw, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("cloudflare: %s %s: cannot encode the request body", method, path)
+	}
+	return c.do(ctx, method, path, raw, "application/json", out, headers...)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, raw []byte, contentType string, out any, headers ...map[string]string) error {
+	if !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("cloudflare: path %q must start with /", path)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(raw))
 	if err != nil {
 		return fmt.Errorf("cloudflare: %s %s: invalid request", method, path)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", contentType)
+	for _, h := range headers {
+		for k, v := range h {
+			req.Header.Set(k, v)
+		}
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "officer-dashboard-setup")
 	res, err := c.http.Do(req)

@@ -33,6 +33,7 @@ import (
 	"officerdashboard/internal/setup/cfprovision"
 	"officerdashboard/internal/setup/hostfiles"
 	"officerdashboard/internal/setup/plan"
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // TokenFileEnv names the file holding the Cloudflare API token used by setup.
@@ -46,7 +47,8 @@ With --dry-run, reads your Cloudflare account and prints what the dashboard stil
 needs. Nothing is changed. Run it first.
 
 Without --dry-run, it applies: it reads the account again, prints the plan, and creates
-the missing tunnel, DNS record, Access pieces and rules only once you confirm, by typing
+the missing tunnel, DNS record, Access pieces, rules and backup Worker (with its D1
+database and custom domain) only once you confirm, by typing
 the dashboard hostname at a terminal, or with --yes. Without a terminal and without
 --yes it changes nothing and exits 1. It writes the secrets Cloudflare hands out into
 --deploy-dir, so run ` + "`dashboard setup host --yes`" + ` there first. It never deletes, never
@@ -73,6 +75,9 @@ type Deps struct {
 	// NewEngine builds the apply engine (nil: the real one). Only an apply calls it, so
 	// a dry run never constructs the write client.
 	NewEngine NewEngineFunc
+	// Bundle is the backup Worker an apply uploads (nil: the one compiled into the
+	// binary, sinkbundle.Embedded; a build without it cannot create the Worker).
+	Bundle *sinkbundle.Bundle
 	// Used by `setup host` and by an apply (the confirmation and the secret files).
 	Stdin  io.Reader
 	Owner  hostfiles.Owner // nil: the real chown and stat

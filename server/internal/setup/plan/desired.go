@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // Inputs are the values an admin supplies. Everything else in Desired comes from
@@ -34,7 +36,12 @@ type Desired struct {
 	BotFightMode       bool
 	OrgSessionDuration string
 	D1Database         string
-	Worker             WorkerSpec
+	D1Tables           []string // the tables the Worker's migrations create
+	D1Triggers         []string // the triggers they create
+	D1Migrations       []string // the names Wrangler records for them in d1_migrations
+	// D1TableDefs and D1TriggerDefs are their CREATE statements, normalized.
+	D1TableDefs, D1TriggerDefs map[string]string
+	Worker                     WorkerSpec
 }
 
 type TunnelSpec struct{ Name, Service string }
@@ -45,7 +52,7 @@ type GroupSpec struct{ Key, Name string }
 
 type ServiceTokenSpec struct {
 	Key, Name string
-	// SecretFile is the host file that holds the client secret, when there is one.
+	// SecretFile is the host file an apply keeps the client secret in.
 	SecretFile string
 }
 
@@ -86,7 +93,21 @@ type RuleSpec struct {
 
 type WorkerSpec struct {
 	Script, Hostname, D1Binding, Secret string
+	// Revision is the Worker revision this image carries and would upload.
+	Revision int
+	// What setup would upload besides the bindings (sinkbundle, from wrangler.toml).
+	CompatibilityDate  string
+	CompatibilityFlags []string
+	MainModule         string
 }
+
+// WorkerRevisionBinding is the plain-text binding setup uploads with the Worker, holding
+// its revision, so a preview can read it from the script's settings.
+const WorkerRevisionBinding = sinkbundle.RevisionBinding
+
+// WorkerSetupUploadBinding marks a Worker setup itself uploaded; no upgrade step tells
+// anyone to set it.
+const WorkerSetupUploadBinding = sinkbundle.SetupUploadBinding
 
 // Stable keys used in action IDs.
 const (
@@ -163,7 +184,20 @@ func NewDesired(in Inputs) (Desired, error) {
 			D1Binding: "BACKUPS",
 			// fresh-install.md §4.5: "npx wrangler secret put BACKUP_BEARER_SECRET"
 			Secret: "BACKUP_BEARER_SECRET",
+			// The revision this image's Worker bundle carries (SINK_REVISION in src/index.ts).
+			Revision: sinkbundle.Revision,
+			// wrangler.toml: compatibility_date, compatibility_flags; main = "src/index.ts",
+			// bundled as one ES module.
+			CompatibilityDate:  sinkbundle.CompatibilityDate,
+			CompatibilityFlags: sinkbundle.CompatibilityFlags,
+			MainModule:         sinkbundle.MainModule,
 		},
+		// server/deploy/backup-sink/migrations/0001.sql: CREATE TABLE snapshots, chunks, budgets.
+		D1Tables:      sinkbundle.Tables,
+		D1Triggers:    sinkbundle.Triggers,
+		D1Migrations:  sinkbundle.MigrationNames,
+		D1TableDefs:   sinkbundle.TableDefinitions,
+		D1TriggerDefs: sinkbundle.TriggerDefinitions,
 	}
 
 	d.Groups = []GroupSpec{{Key: GroupOfficers, Name: n(officers)}}
@@ -175,8 +209,9 @@ func NewDesired(in Inputs) (Desired, error) {
 	}
 
 	d.ServiceTokens = []ServiceTokenSpec{
-		// cloudflare.md §5.1: "Name it `officer-dashboard services`." It has no host file.
-		{Key: TokenServices, Name: n("officer-dashboard services")},
+		// cloudflare.md §5.1: "Name it `officer-dashboard services`." No container reads it:
+		// an apply keeps it in secrets/admin/ for the admin to hand on to the bots.
+		{Key: TokenServices, Name: n("officer-dashboard services"), SecretFile: "secrets/admin/services-access-client-secret"},
 		// fresh-install.md §4.3: "Create a Cloudflare Access service token named `dashboard-backups-host`."
 		{Key: TokenBackups, Name: n("dashboard-backups-host"), SecretFile: "secrets/backup/access-client-secret"},
 	}

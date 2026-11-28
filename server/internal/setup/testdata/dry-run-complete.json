@@ -94,7 +94,7 @@
       "name": "officer-dashboard services",
       "existing_id": "st-services",
       "detail": [
-        "Cloudflare never returns the client secret, and it has no host file; setup will offer --rotate if the bots lost it"
+        "Cloudflare never returns the client secret, and the preview cannot see the host's secret files: an apply reports whether secrets/admin/services-access-client-secret holds it. If it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → officer-dashboard services → Rotate"
       ]
     },
     {
@@ -114,7 +114,7 @@
       "name": "dashboard-backups-host",
       "existing_id": "st-backups",
       "detail": [
-        "Cloudflare never returns the client secret; setup will trust secrets/backup/access-client-secret if present, else offer --rotate"
+        "Cloudflare never returns the client secret, and the preview cannot see the host's secret files: an apply reports whether secrets/backup/access-client-secret holds it. If it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → dashboard-backups-host → Rotate"
       ]
     },
     {
@@ -188,7 +188,8 @@
       "resource": "D1 migrations",
       "name": "dashboard-backups",
       "detail": [
-        "reading the d1_migrations table needs a D1 query (POST); a dry run sends only GET"
+        "listing its tables needs a D1 query (a POST), which a dry run does not send; an apply lists them first and applies the Worker's migrations only if the database has no tables",
+        "What to do: run `scripts/setup apply` without --yes: it lists the tables, shows its plan and changes nothing until you confirm."
       ]
     },
     {
@@ -199,12 +200,29 @@
       "existing_id": "dashboard-backup-sink"
     },
     {
+      "id": "worker.version",
+      "kind": "unknowable",
+      "resource": "Worker version",
+      "name": "revision 2",
+      "detail": [
+        "Cloudflare shows no SINK_REVISION binding on it (it was deployed with Wrangler, or before this version of setup), so its revision is not known here",
+        "What to do: nothing, unless you want setup to see the revision: backups keep working, and the backup service alerts if the Worker is ever too old for it. To label it, redeploy it with Wrangler adding --var SINK_REVISION:2."
+      ]
+    },
+    {
+      "id": "worker.subdomain",
+      "kind": "ok",
+      "resource": "workers.dev and preview URLs",
+      "name": "off"
+    },
+    {
       "id": "worker.secret",
       "kind": "unknowable",
       "resource": "Worker secret",
       "name": "BACKUP_BEARER_SECRET",
       "detail": [
-        "set, but Cloudflare never returns its value; setup will trust secrets/backup/bearer if present, else offer --rotate"
+        "set, but Cloudflare never returns its value, and the preview cannot see the host's secret files",
+        "What to do: nothing while backups work. If the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer: set it with `npx wrangler secret put BACKUP_BEARER_SECRET` in server/deploy/backup-sink and paste that file's value (docs/deploy/fresh-install.md step 4.5)."
       ]
     },
     {
@@ -219,7 +237,7 @@
     "create": 0,
     "drift": 0,
     "manual": 0,
-    "ok": 23,
-    "unknowable": 4
+    "ok": 24,
+    "unknowable": 5
   }
 }

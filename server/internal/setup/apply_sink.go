@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 
 	"officerdashboard/internal/setup/cfprovision"
@@ -24,8 +26,11 @@ type hostSecretFile struct {
 // order they are written. The tunnel token goes to secrets/tunnel-token, owned by UID
 // 65532, which cloudflared reads (fresh-install.md step 5). The services token is for the
 // bots and agents, not for a container, so its client ID and secret go to secrets/admin/
-// (root only) for the admin to hand on. The client secret is written first: Cloudflare
-// shows it only once, while the client ID stays on the token's dashboard page.
+// (root only) for the admin to hand on. The backup token goes where compose.cloudflare.yml
+// mounts it for the backup sidecar, secrets/backup/, owned by UID 10001 (backup.env's
+// BACKUP_ACCESS_CLIENT_*_FILE). The client secret is written first: Cloudflare shows it
+// only once, while the client ID stays on the token's dashboard page. The backup bearer
+// is `setup host`'s; the engine only reads it (Load), so it is never stored here.
 var engineSecretFiles = map[cfprovision.SecretName][]hostSecretFile{
 	cfprovision.SecretTunnelToken: {
 		{"tunnel-token", "tunnel token", func(s cfprovision.Secret) string { return s.Value }},
@@ -34,7 +39,17 @@ var engineSecretFiles = map[cfprovision.SecretName][]hostSecretFile{
 		{"services-access-client-secret", "services token client secret", func(s cfprovision.Secret) string { return s.Value }},
 		{"services-access-client-id", "services token client ID", func(s cfprovision.Secret) string { return s.ClientID }},
 	},
+	cfprovision.SecretBackupsToken: {
+		{"backup-access-client-secret", "backup token client secret", func(s cfprovision.Secret) string { return s.Value }},
+		{"backup-access-client-id", "backup token client ID", func(s cfprovision.Secret) string { return s.ClientID }},
+	},
+	cfprovision.SecretBackupBearer: {
+		{"backup-bearer", "backup bearer", nil},
+	},
 }
+
+// tokenLabels name each service token as the missing-file lines say it.
+var tokenLabels = map[cfprovision.SecretName]string{cfprovision.SecretServicesToken: "services token", cfprovision.SecretBackupsToken: "backup token"}
 
 // hostSecretSink is the engine's SecretSink (Store, Has) on top of hostfiles.HostSink
 // (StoreSecret), so the engine and the host files each keep their own interface:
@@ -57,8 +72,8 @@ var engineSecretFiles = map[cfprovision.SecretName][]hostSecretFile{
 //     (the client ID): the command reports it and exits 1 until it is there.
 type hostSecretSink struct {
 	host *hostfiles.HostSink
-	// servicesName is the services token's name in Cloudflare, for the copy steps.
-	servicesName string
+	// tokenNames are the service tokens' names in Cloudflare, for the copy steps.
+	tokenNames map[cfprovision.SecretName]string
 	// kept are the report lines: where each secret is, paths only.
 	kept []string
 	// missing are files a kept secret still lacks, each with the step that adds it.
@@ -67,8 +82,8 @@ type hostSecretSink struct {
 	holds map[cfprovision.SecretName]bool
 }
 
-func newHostSecretSink(root string, owner hostfiles.Owner, servicesName string) *hostSecretSink {
-	return &hostSecretSink{host: &hostfiles.HostSink{Root: root, Owner: owner}, servicesName: servicesName}
+func newHostSecretSink(root string, owner hostfiles.Owner, tokenNames map[cfprovision.SecretName]string) *hostSecretSink {
+	return &hostSecretSink{host: &hostfiles.HostSink{Root: root, Owner: owner}, tokenNames: tokenNames}
 }
 
 // resource names what a secret belongs to, as the notes and messages say it.
@@ -76,7 +91,19 @@ func (s *hostSecretSink) resource(sec cfprovision.Secret) string {
 	if sec.Name == cfprovision.SecretTunnelToken {
 		return "tunnel " + sec.ResourceID
 	}
-	return fmt.Sprintf("service token %s (%s)", sec.ResourceID, s.servicesName)
+	return fmt.Sprintf("service token %s (%s)", sec.ResourceID, s.tokenNames[sec.Name])
+}
+
+// noteShape is the only note text a later run prints: what resource() writes. A note is a
+// root-only file, but it is printed into a message beside a command to run, so anything
+// else (a second line, control characters) reads as not recorded.
+var noteShape = regexp.MustCompile(`^(tunnel [A-Za-z0-9-]+|service token [A-Za-z0-9-]+ \([^\x00-\x1f\x7f()]*\))$`)
+
+func recordedNote(note string) string {
+	if !noteShape.MatchString(note) {
+		return ""
+	}
+	return note
 }
 
 // putInPlace is the command, run in the deploy directory, that moves a set-aside file
@@ -111,14 +138,20 @@ func asideGuidance(label, resource, aside, main string) string {
 		"Put the new one in place, from the deploy directory: %s", aside, label, resource, main, main, putInPlace(aside, main))
 }
 
-func (s *hostSecretSink) copyIDStep(rel string) string {
+func (s *hostSecretSink) copyIDStep(name cfprovision.SecretName, rel string) string {
+	_, owner := hostSecretOwner(rel)
+	if owner == hostfiles.Root {
+		return fmt.Sprintf("copy the Client ID from Zero Trust → Access controls → Service credentials → Service Tokens → %s into %s in the deploy directory, "+
+			"mode 0400, owner root: (umask 377; cat > %s), paste it, then press Ctrl-D", s.tokenNames[name], rel, rel)
+	}
 	return fmt.Sprintf("copy the Client ID from Zero Trust → Access controls → Service credentials → Service Tokens → %s into %s in the deploy directory, "+
-		"mode 0400, owner root: (umask 377; cat > %s), paste it, then press Ctrl-D", s.servicesName, rel, rel)
+		"mode 0400, owner %d:%d: (umask 377; cat > %s), paste it, press Ctrl-D, then chown %d:%d %s",
+		s.tokenNames[name], rel, owner.UID, owner.GID, rel, owner.UID, owner.GID, rel)
 }
 
 func (s *hostSecretSink) Store(_ context.Context, sec cfprovision.Secret) error {
 	files, ok := engineSecretFiles[sec.Name]
-	if !ok {
+	if !ok || sec.Name == cfprovision.SecretBackupBearer {
 		return fmt.Errorf("setup has no host file for the %s", sec.Name)
 	}
 	var aside []string
@@ -131,13 +164,15 @@ func (s *hostSecretSink) Store(_ context.Context, sec cfprovision.Secret) error 
 			got := s.rel(sa.Path)
 			_ = s.host.NoteAside(sa.Path, s.resource(sec)) // informational: the value itself is kept
 			aside = append(aside, asideGuidance(f.label, s.resource(sec), got, rel))
+			// The file Has found is not "left as it was" any more: it is the older one.
+			s.unnote(fmt.Sprintf("%s: %s (already on the host, left as it was)", f.label, rel))
 			s.note(fmt.Sprintf("%s: %s (set aside: %s is older and still the one in use)", f.label, got, rel))
 		case err != nil && i == 0:
 			return err // nothing kept: the engine reports the secret as lost
 		case err != nil:
 			// The client secret is kept; only the client ID, which the dashboard still
 			// shows, is missing. The secret is not lost, so this is not a sink failure.
-			s.miss(rel)
+			s.miss(sec.Name, rel)
 			// HostSink's wrapper says "keep the value and retry", which the admin cannot do
 			// here; its cause (path and reason, never the value) is what helps.
 			cause := err
@@ -145,12 +180,13 @@ func (s *hostSecretSink) Store(_ context.Context, sec cfprovision.Secret) error 
 				cause = inner
 			}
 			detail := fmt.Sprintf("the %s could not be written (%v). The %s is in %s; %s",
-				f.label, cause, files[0].label, mustRel(files[0].name), s.copyIDStep(rel))
+				f.label, cause, files[0].label, mustRel(files[0].name), s.copyIDStep(sec.Name, rel))
 			if len(aside) > 0 {
 				return &cfprovision.NotInPlaceError{Detail: strings.Join(append(aside, detail), ". ")}
 			}
 			return &cfprovision.IncompleteSecretError{Detail: detail}
 		default:
+			s.unmiss(rel) // Has may have found it missing before this run wrote it
 			s.note(fmt.Sprintf("%s: %s (owner %d:%d, mode 0400)", f.label, rel, owner.UID, owner.GID))
 		}
 	}
@@ -175,7 +211,7 @@ func (s *hostSecretSink) Has(_ context.Context, name cfprovision.SecretName) (bo
 			rel, _ := hostfiles.SecretPath(f.name)
 			var why []string
 			for _, a := range found {
-				why = append(why, asideGuidance(f.label, hostfiles.AsideNote(s.host.Root, a), a, rel))
+				why = append(why, asideGuidance(f.label, recordedNote(hostfiles.AsideNote(s.host.Root, a)), a, rel))
 			}
 			return false, errors.New(strings.Join(why, ". "))
 		}
@@ -194,12 +230,37 @@ func (s *hostSecretSink) Has(_ context.Context, name cfprovision.SecretName) (bo
 			return false, err
 		}
 		if !found {
-			s.miss(rel)
+			s.miss(name, rel)
 		}
 	}
 	s.note(fmt.Sprintf("%s: %s (already on the host, left as it was)", files[0].label, main))
 	s.hold(name)
 	return true, nil
+}
+
+// Load returns the backup bearer `setup host` generated, trimmed as the backup service
+// reads it (dashboard-backup trims its secret files). Nothing else is ever loaded.
+func (s *hostSecretSink) Load(_ context.Context, name cfprovision.SecretName) (string, error) {
+	if name != cfprovision.SecretBackupBearer {
+		return "", fmt.Errorf("setup never reads the %s back from the host", name)
+	}
+	rel := mustRel("backup-bearer")
+	switch found, err := s.regular(rel); {
+	case err != nil:
+		return "", err
+	case !found:
+		return "", cfprovision.ErrNotKept
+	}
+	raw, err := os.ReadFile(filepath.Join(s.host.Root, rel))
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", rel, unwrapPath(err))
+	}
+	v := strings.TrimSpace(string(raw))
+	if v == "" {
+		return "", fmt.Errorf("%s is empty; run `scripts/setup host --yes --rotate backup-bearer`", rel)
+	}
+	s.note(fmt.Sprintf("backup bearer: %s (written by setup host; setup only reads it)", rel))
+	return v, nil
 }
 
 // regular reports whether rel exists as a regular file; anything else in its place is
@@ -217,16 +278,25 @@ func (s *hostSecretSink) regular(rel string) (bool, error) {
 	return true, nil
 }
 
-// miss records a file a kept secret lacks, with the step that adds it. Only the client
-// ID can be missing this way.
-func (s *hostSecretSink) miss(rel string) {
-	line := fmt.Sprintf("%s. The services token's client secret is kept, but its client ID is not: %s. Setup exits 1 until the file is there", rel, s.copyIDStep(rel))
+// miss records a file a kept secret lacks, with the step that adds it. Only a token's
+// client ID can be missing this way.
+func (s *hostSecretSink) miss(name cfprovision.SecretName, rel string) {
+	line := fmt.Sprintf("%s. The %s's client secret is kept, but its client ID is not: %s. Setup exits 1 until the file is there", rel, tokenLabels[name], s.copyIDStep(name, rel))
 	for _, l := range s.missing {
 		if l == line {
 			return
 		}
 	}
 	s.missing = append(s.missing, line)
+}
+
+// unmiss drops the missing line for rel, once Store has written that file.
+func (s *hostSecretSink) unmiss(rel string) {
+	s.missing = slices.DeleteFunc(s.missing, func(l string) bool { return strings.HasPrefix(l, rel+". ") })
+}
+
+func (s *hostSecretSink) unnote(line string) {
+	s.kept = slices.DeleteFunc(s.kept, func(l string) bool { return l == line })
 }
 
 func (s *hostSecretSink) note(line string) {

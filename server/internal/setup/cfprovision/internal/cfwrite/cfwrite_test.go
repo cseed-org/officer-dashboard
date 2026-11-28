@@ -3,6 +3,7 @@ package cfwrite
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,7 +42,7 @@ func TestMethodSetHasNoDelete(t *testing.T) {
 		got = append(got, ty.Method(i).Name)
 	}
 	sort.Strings(got)
-	if want := []string{"GoString", "Post", "Put", "String"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"GoString", "Post", "PostWithHeaders", "Put", "PutModule", "String"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Client methods = %v, want %v", got, want)
 	}
 }
@@ -135,5 +136,73 @@ func TestErrorsNeverContainTheTokenOrBody(t *testing.T) {
 	c := New(secretToken)
 	if s := fmt.Sprintf("%v %+v %#v %s", c, c, c, c); strings.Contains(s, secretToken) {
 		t.Fatalf("formatting the client leaks the token: %s", s)
+	}
+}
+
+// PutModule is the Worker upload: one PUT of multipart/form-data with a JSON "metadata"
+// part and one part per module, as the multipart-upload-metadata page describes.
+func TestPutModuleSendsMultipart(t *testing.T) {
+	var gotMeta map[string]any
+	var gotModule, gotType, gotAuth, gotMethod string
+	s, _ := server(t, func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotAuth = r.Method, r.Header.Get("Authorization")
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("not multipart: %v", err)
+		}
+		if err := json.Unmarshal([]byte(r.FormValue("metadata")), &gotMeta); err != nil {
+			t.Errorf("metadata: %v", err)
+		}
+		f, h, err := r.FormFile("worker.js")
+		if err != nil {
+			t.Fatalf("module part: %v", err)
+		}
+		raw, _ := io.ReadAll(f)
+		gotModule, gotType = string(raw), h.Header.Get("Content-Type")
+		fmt.Fprint(w, `{"success":true,"errors":[],"result":{"id":"dashboard-backup-sink","etag":"e"}}`)
+	})
+	c := New(secretToken, WithBaseURL(s.URL))
+	var out struct{ ID string }
+	err := c.PutModule(context.Background(), "/accounts/a/workers/scripts/dashboard-backup-sink",
+		map[string]any{"main_module": "worker.js"}, []Module{{Name: "worker.js", ContentType: "application/javascript+module", Body: []byte("export default {}")}}, &out)
+	if err != nil || out.ID != "dashboard-backup-sink" {
+		t.Fatalf("err %v, out %+v", err, out)
+	}
+	if gotMethod != http.MethodPut || gotAuth != "Bearer "+secretToken || gotMeta["main_module"] != "worker.js" ||
+		gotModule != "export default {}" || gotType != "application/javascript+module" {
+		t.Fatalf("method %s auth set %v meta %v module %q type %q", gotMethod, gotAuth != "", gotMeta, gotModule, gotType)
+	}
+}
+
+// A refused upload is a *cfapi.Error like any write, and never echoes the request body.
+func TestPutModuleErrorHasNoBody(t *testing.T) {
+	s, _ := server(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"success":false,"errors":[{"code":10021,"message":"Uncaught SyntaxError"}],"result":null}`)
+	})
+	c := New(secretToken, WithBaseURL(s.URL))
+	err := c.PutModule(context.Background(), "/x", map[string]any{"bindings": []any{map[string]any{"type": "secret_text", "text": "bearer-value-0123456789"}}},
+		[]Module{{Name: "worker.js", ContentType: "application/javascript+module", Body: []byte("x")}}, nil)
+	var ce *cfapi.Error
+	if !errors.As(err, &ce) || ce.Status != 400 || strings.Contains(err.Error(), "bearer-value") || strings.Contains(err.Error(), secretToken) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// PostWithHeaders adds its headers and cannot replace the token or the content type.
+func TestPostWithHeaders(t *testing.T) {
+	var got http.Header
+	s, _ := server(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		fmt.Fprint(w, `{"success":true,"errors":[],"result":{}}`)
+	})
+	c := New(secretToken, WithBaseURL(s.URL))
+	if err := c.PostWithHeaders(context.Background(), "/x", map[string]string{"Cloudflare-Workers-Script-Api-Date": "2025-08-01"}, map[string]any{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got.Get("Cloudflare-Workers-Script-Api-Date") != "2025-08-01" || got.Get("Authorization") != "Bearer "+secretToken {
+		t.Fatalf("headers %v", got)
+	}
+	if err := c.PostWithHeaders(context.Background(), "/x", map[string]string{"authorization": "Bearer other"}, map[string]any{}, nil); err == nil {
+		t.Fatal("the token could be replaced")
 	}
 }

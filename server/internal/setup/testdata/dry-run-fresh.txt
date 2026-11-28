@@ -27,7 +27,13 @@ Cloudflare setup for officers.example.org (dry run: nothing was changed)
   create      D1 database                          dashboard-backups
   create      D1 migrations                        dashboard-backups
   create      Worker                               dashboard-backup-sink
+  create      Worker version                       revision 2
+  create      workers.dev and preview URLs         off
   create      Worker secret                        BACKUP_BEARER_SECRET
   create      Worker custom domain                 backups.example.org
 
-4 ok, 20 create, 0 drift, 0 unknowable, 1 manual
+Needs your attention (1):
+  - manual: Global session duration 730h (1 month)
+      not set (Cloudflare's default is 24h). Setup does not write the Zero Trust organization unless allowed. In Zero Trust: Access controls → Access settings → Set your global session duration → Edit → 1 month → Save (docs/deploy/cloudflare.md step 3)
+
+4 ok, 22 create, 0 drift, 0 unknowable, 1 manual

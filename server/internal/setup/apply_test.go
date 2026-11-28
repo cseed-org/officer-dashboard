@@ -20,6 +20,7 @@ import (
 	"officerdashboard/internal/setup/cfprovision"
 	"officerdashboard/internal/setup/hostfiles"
 	"officerdashboard/internal/setup/plan"
+	"officerdashboard/internal/setup/sinkbundle"
 )
 
 // applyToken is the setup token the tests hand the command. It is built at run time so
@@ -38,6 +39,7 @@ type applyRig struct {
 	stdin     io.Reader
 	ctx       context.Context
 	engines   int
+	bundle    *sinkbundle.Bundle // the image's backup Worker, built from the repo's sources
 }
 
 type applyResult struct {
@@ -54,7 +56,7 @@ func newApplyRigOwned(t *testing.T, routes map[string]cffake.Response, owner hos
 	t.Helper()
 	acct := cffake.NewAccount(routes)
 	t.Cleanup(acct.Close)
-	r := &applyRig{t: t, acct: acct, dir: deployDir(t), owner: owner, ctx: context.Background()}
+	r := &applyRig{t: t, acct: acct, dir: deployDir(t), owner: owner, ctx: context.Background(), bundle: testBundle(t)}
 	var hout, herr bytes.Buffer
 	if code := Run(context.Background(), []string{"host", "--yes", "--deploy-dir", r.dir, "--app-url", "https://" + cffake.Host}, Deps{
 		Getenv: func(string) string { return "" }, Stdout: &hout, Stderr: &herr, ReadFile: os.ReadFile,
@@ -101,8 +103,9 @@ func (r *applyRig) run(args ...string) applyResult {
 			r.engines++
 			return cfprovision.NewEngine(tok, d, sink, w, opt, cfprovision.WithAPIBase(r.acct.URL), cfprovision.WithReadRetry())
 		},
-		Stdin: stdin,
-		Owner: r.owner,
+		Stdin:  stdin,
+		Owner:  r.owner,
+		Bundle: r.bundle,
 	})
 	res := applyResult{code, out.String(), errb.String()}
 	all := res.stdout + res.stderr
@@ -124,6 +127,22 @@ func (r *applyRig) creates(suffix string) int {
 	n := 0
 	for _, w := range r.acct.Writes() {
 		if w.Method == http.MethodPost && strings.HasSuffix(w.Path, suffix) {
+			n++
+		}
+	}
+	return n
+}
+
+// createsNamed counts the POSTs to a path ending in suffix whose body names name: since
+// the backup Worker apply there are two service tokens, so a count of one token's
+// creates must say which.
+func (r *applyRig) createsNamed(suffix, name string) int {
+	n := 0
+	for _, w := range r.acct.Writes() {
+		var body struct {
+			Name string `json:"name"`
+		}
+		if w.Method == http.MethodPost && strings.HasSuffix(w.Path, suffix) && json.Unmarshal([]byte(w.Body), &body) == nil && body.Name == name {
 			n++
 		}
 	}
@@ -166,10 +185,6 @@ func (r *applyRig) requireSecretFile(rel string, ids hostfiles.IDs) {
 	}
 }
 
-// inScopeCreates are the dry run's create lines this version still leaves: the backup
-// Worker, D1 and the backup Access pieces come in a later release.
-var outOfScopeCreate = regexp.MustCompile(`^  create +(D1 database|D1 migrations|Worker|Worker secret|Worker custom domain|Access application +Dashboard backups|Service token +dashboard-backups-host)\b`)
-
 func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 	r := newApplyRig(t, cffake.Fresh())
 	res := r.run(append([]string{"--yes"}, groupArgs...)...)
@@ -183,7 +198,7 @@ func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 		"secrets/tunnel-token",
 		"secrets/admin/services-access-client-id",
 		"secrets/admin/services-access-client-secret",
-		"Left for you:",
+		"Needs your attention (",
 		"Global session duration",
 		"Agents and services: bypass cache",
 		"Bot Fight Mode",
@@ -194,6 +209,12 @@ func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 	}
 	if strings.Contains(res.stdout, "it has no host file") {
 		t.Error("the report says the services secret has no host file right after storing it")
+	}
+	// The bearer was just uploaded from the host's file: the report says so, and does not
+	// call the Worker's secret unknowable.
+	left := res.stdout[strings.Index(res.stdout, "Needs your attention ("):]
+	if strings.Contains(left, "Worker secret") || !strings.Contains(res.stdout, "uploaded as the Worker's BACKUP_BEARER_SECRET") {
+		t.Errorf("the report doubts the bearer it just uploaded:\n%s", res.stdout)
 	}
 	r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)
 	r.requireSecretFile("secrets/admin/services-access-client-id", hostfiles.Root)
@@ -214,7 +235,7 @@ func TestApplyFreshAccountWithYesThenDryRunHasNothingToCreate(t *testing.T) {
 		t.Fatalf("dry run: exit %d, %d new writes\n%s", dry.code, r.writes()-writes, dry.stderr)
 	}
 	for _, line := range strings.Split(dry.stdout, "\n") {
-		if strings.HasPrefix(line, "  create ") && !outOfScopeCreate.MatchString(line) {
+		if strings.HasPrefix(line, "  create ") {
 			t.Errorf("the dry run after apply still wants: %s", line)
 		}
 		if strings.HasPrefix(line, "  drift ") {
@@ -379,8 +400,8 @@ func TestSinkFailureStopsTheRunAndARerunRecoversWithoutADuplicate(t *testing.T) 
 	if !strings.Contains(again.stdout, "fetch the token of tunnel") {
 		t.Errorf("the re-run did not fetch the token Cloudflare still has:\n%s", again.stdout)
 	}
-	if r.creates("/cfd_tunnel") != 1 || r.creates("/access/service_tokens") != 1 || r.creates("/dns_records") != 1 {
-		t.Fatalf("duplicates: tunnel %d, service token %d, DNS %d", r.creates("/cfd_tunnel"), r.creates("/access/service_tokens"), r.creates("/dns_records"))
+	if r.creates("/cfd_tunnel") != 1 || r.createsNamed("/access/service_tokens", "officer-dashboard services") != 1 || r.creates("/dns_records") != 1 {
+		t.Fatalf("duplicates: tunnel %d, service token %d, DNS %d", r.creates("/cfd_tunnel"), r.createsNamed("/access/service_tokens", "officer-dashboard services"), r.creates("/dns_records"))
 	}
 	r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)
 }
@@ -432,43 +453,49 @@ func TestExistingSecretFileIsKeptAndTheRunStops(t *testing.T) {
 		t.Fatal(err)
 	}
 	done := r.run(append([]string{"--yes"}, groupArgs...)...)
-	if done.code != 0 || r.creates("/access/service_tokens") != 1 {
-		t.Fatalf("exit %d, %d service tokens\n%s", done.code, r.creates("/access/service_tokens"), done.stderr)
+	if done.code != 0 || r.createsNamed("/access/service_tokens", "officer-dashboard services") != 1 {
+		t.Fatalf("exit %d, %d service tokens\n%s", done.code, r.createsNamed("/access/service_tokens", "officer-dashboard services"), done.stderr)
 	}
 }
 
 // A run interrupted right after a create (the response never arrives) is re-run through
 // the command: it matches what the first run made and creates no second copy.
 func TestInterruptedAfterACreateThenRerunMakesNoDuplicate(t *testing.T) {
-	for _, suffix := range []string{"/access/service_tokens", "/cfd_tunnel"} {
-		t.Run(strings.TrimPrefix(suffix, "/"), func(t *testing.T) {
-			r := newApplyRig(t, cffake.Fresh())
-			ctx, cancel := context.WithCancel(context.Background())
-			r.ctx = ctx
-			r.acct.OnWrite(func(req cffake.Request) {
-				if req.Method == http.MethodPost && strings.HasSuffix(req.Path, suffix) {
-					cancel()
+	// Review F-12 of #129: the crash comes either before the create's answer (a secret in
+	// it is lost for certain) or right after it (kept for certain), never by a race.
+	for _, mode := range []struct {
+		name string
+		mode cffake.CrashMode
+	}{{"answer lost", cffake.AnswerLost}, {"after the answer", cffake.AfterAnswer}} {
+		for _, suffix := range []string{"/access/service_tokens", "/cfd_tunnel"} {
+			t.Run(mode.name+strings.ReplaceAll(suffix, "/", " "), func(t *testing.T) {
+				r := newApplyRig(t, cffake.Fresh())
+				r.acct.CrashAt(func(req cffake.Request) bool {
+					return req.Method == http.MethodPost && strings.HasSuffix(req.Path, suffix)
+				}, mode.mode)
+				if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code == 0 {
+					t.Fatal("the interrupted run exited 0")
+				}
+				r.acct.CrashAt(nil, 0)
+				res := r.run(append([]string{"--yes"}, groupArgs...)...)
+				if res.code != 0 {
+					t.Fatalf("re-run: exit %d\n%s\n%s", res.code, res.stdout, res.stderr)
+				}
+				if n := r.createsNamed(suffix, map[string]string{"/access/service_tokens": "officer-dashboard services", "/cfd_tunnel": "officer-dashboard"}[suffix]); n != 1 {
+					t.Fatalf("%d creates of %s", n, suffix)
+				}
+				switch {
+				case suffix != "/access/service_tokens":
+				case mode.mode == cffake.AnswerLost && !strings.Contains(res.stdout, "Rotate"):
+					t.Errorf("the lost client secret is not reported as a manual rotation:\n%s", res.stdout)
+				case mode.mode == cffake.AfterAnswer && !r.isSecretFromCloudflare(r.file("secrets/admin/services-access-client-secret")):
+					t.Error("the client secret the crashed run received is gone")
+				}
+				if suffix == "/cfd_tunnel" {
+					r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)
 				}
 			})
-			if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code == 0 {
-				t.Fatal("the interrupted run exited 0")
-			}
-			r.acct.OnWrite(nil)
-			r.ctx = context.Background()
-			res := r.run(append([]string{"--yes"}, groupArgs...)...)
-			if res.code != 0 {
-				t.Fatalf("re-run: exit %d\n%s\n%s", res.code, res.stdout, res.stderr)
-			}
-			if n := r.creates(suffix); n != 1 {
-				t.Fatalf("%d creates of %s", n, suffix)
-			}
-			if suffix == "/access/service_tokens" && !strings.Contains(res.stdout, "Rotate") {
-				t.Errorf("the lost client secret is not reported as a manual rotation:\n%s", res.stdout)
-			}
-			if suffix == "/cfd_tunnel" {
-				r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)
-			}
-		})
+		}
 	}
 }
 
@@ -486,7 +513,7 @@ func TestApplyFlagsAreUsageErrorsWithDryRun(t *testing.T) {
 func TestApplyTokenPermissionsCoverWhatTheEngineCalls(t *testing.T) {
 	quoted := regexp.MustCompile(`"((?:Access: )?[A-Z][A-Za-z ]+ (?:Edit|Read))"`)
 	found := map[string]bool{}
-	for _, name := range []string{"apply.go", "discover.go"} {
+	for _, name := range []string{"apply.go", "backup.go", "discover.go"} {
 		raw, err := os.ReadFile(filepath.Join("cfprovision", name))
 		if err != nil {
 			t.Fatal(err)
@@ -685,10 +712,10 @@ func TestMissingClientIDIsReportedUntilItIsThere(t *testing.T) {
 
 func requireMissingClientID(t *testing.T, stdout string) {
 	t.Helper()
-	left := stdout[strings.Index(stdout, "Left for you:"):]
+	left := stdout[strings.Index(stdout, "Needs your attention ("):]
 	for _, want := range []string{"missing: secrets/admin/services-access-client-id", "Service Tokens → officer-dashboard services", "Client ID", "mode 0400"} {
 		if !strings.Contains(left, want) {
-			t.Errorf("\"Left for you\" lacks %q:\n%s", want, left)
+			t.Errorf("\"Needs your attention\" lacks %q:\n%s", want, left)
 		}
 	}
 	if strings.Contains(stdout, "every step read back ok") {
@@ -731,8 +758,8 @@ func TestClientIDWriteFailureHasItsOwnMessage(t *testing.T) {
 	}
 	r.owner = mem
 	again := r.run(append([]string{"--yes"}, groupArgs...)...)
-	if again.code == 0 || r.creates("/access/service_tokens") != 1 {
-		t.Fatalf("re-run: exit %d, %d tokens\n%s", again.code, r.creates("/access/service_tokens"), again.stderr)
+	if again.code == 0 || r.createsNamed("/access/service_tokens", "officer-dashboard services") != 1 {
+		t.Fatalf("re-run: exit %d, %d tokens\n%s", again.code, r.createsNamed("/access/service_tokens", "officer-dashboard services"), again.stderr)
 	}
 	requireMissingClientID(t, again.stdout)
 }
@@ -742,7 +769,7 @@ func TestClientIDWriteFailureHasItsOwnMessage(t *testing.T) {
 func TestClosingLineNeverOverstates(t *testing.T) {
 	r := newApplyRig(t, cffake.Fresh())
 	res := r.run(append([]string{"--yes"}, groupArgs...)...)
-	if res.code != 0 || !strings.Contains(res.stdout, "every step read back ok, except the items left for you above.") || !strings.Contains(res.stdout, "then start the stack") {
+	if res.code != 0 || !strings.Contains(res.stdout, "every step read back ok, except the items under Needs your attention above.") || !strings.Contains(res.stdout, "then start the stack") {
 		t.Fatalf("fresh: exit %d\n%s", res.code, res.stdout)
 	}
 
@@ -783,5 +810,72 @@ func TestTunnelIDThatDisagreesWithTheHostTokenStops(t *testing.T) {
 	r.requireRefusedBeforeCloudflare("--tunnel-id "+other+" disagrees with secrets/tunnel-token, which names tunnel "+cffake.TunnelID, "--tunnel-id", other)
 	if res := r.run("--tunnel-id", cffake.TunnelID); res.code != 0 {
 		t.Fatalf("the same ID: exit %d\n%s", res.code, res.stderr)
+	}
+}
+
+// Review S-1 of #127: a client secret left over from an earlier install, with no ID file,
+// on an account that has no services token. The run creates the token, sets the new
+// secret aside and writes the new client ID in place. The report must not then call the
+// ID file missing, nor call the old secret "already on the host, left as it was" next to
+// the set-aside line.
+func TestLeftoverSecretWithoutIDReportsOnlyWhatIsTrue(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	main := filepath.Join(r.dir, "secrets/admin/services-access-client-secret")
+	if err := os.MkdirAll(filepath.Dir(main), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(main, []byte("old-services-secret-"+strings.Repeat("y", 12)), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if res.code == 0 {
+		t.Fatalf("exit 0\n%s", res.stdout)
+	}
+	if !strings.HasSuffix(r.file("secrets/admin/services-access-client-id"), ".access") {
+		t.Fatal("the new client ID was not written in place")
+	}
+	if strings.Contains(res.stdout, "missing: secrets/admin/services-access-client-id") {
+		t.Errorf("the report calls the client ID file missing right after writing it:\n%s", res.stdout)
+	}
+	if strings.Contains(res.stdout, "services token client secret: secrets/admin/services-access-client-secret (already on the host, left as it was)") {
+		t.Errorf("the report calls the set-aside secret kept:\n%s", res.stdout)
+	}
+	if !strings.Contains(res.stdout, "set aside") {
+		t.Errorf("the report does not say the new secret was set aside:\n%s", res.stdout)
+	}
+}
+
+// Review S-2 of #127: a set-aside note is printed only when it is one line of the shape
+// setup writes ("tunnel <id>" or "service token <id> (<name>)"); anything else reads as
+// "(not recorded)".
+func TestAsideNoteIsPrintedOnlyInItsOwnShape(t *testing.T) {
+	for _, tc := range []struct {
+		note, want string
+		bad        []string
+	}{
+		{"service token st-5 (officer-dashboard services)", "service token st-5 (officer-dashboard services)", nil},
+		{"tunnel SOMEONE-ELSES\nrm -rf /", "(not recorded)", []string{"rm -rf", "SOMEONE-ELSES"}},
+		{"service token st-5 (x)\x1b[2J", "(not recorded)", []string{"\x1b"}},
+		{"anything else", "(not recorded)", []string{"anything else"}},
+	} {
+		r := newApplyRig(t, cffake.Fresh())
+		aside := "secrets/admin/services-access-client-secret.20260101T000000.000000000Z"
+		if err := os.MkdirAll(filepath.Join(r.dir, "secrets/admin"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range map[string]string{aside: "set-aside-secret-" + strings.Repeat("z", 12), aside + ".about": tc.note} {
+			if err := os.WriteFile(filepath.Join(r.dir, name), []byte(body), 0o400); err != nil {
+				t.Fatal(err)
+			}
+		}
+		res := r.run(append([]string{"--yes"}, groupArgs...)...)
+		if res.code == 0 || r.writes() != 0 || !strings.Contains(res.stderr, tc.want) {
+			t.Fatalf("note %q: exit %d, %d writes, want %q in:\n%s", tc.note, res.code, r.writes(), tc.want, res.stderr)
+		}
+		for _, b := range tc.bad {
+			if strings.Contains(res.stderr, b) {
+				t.Errorf("note %q: stderr prints %q:\n%s", tc.note, b, res.stderr)
+			}
+		}
 	}
 }
