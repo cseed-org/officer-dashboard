@@ -24,6 +24,7 @@ import io
 import ipaddress
 import json
 import os
+import re
 from pathlib import Path
 from shutil import which
 import subprocess
@@ -463,6 +464,8 @@ def cmd_apply(deploy, opts, rest):
 # `discord` passes nothing on unparsed: a Discord value must never be an argument (it would
 # show in the process list), so every flag it takes is declared below and the rest refused.
 DISCORD_FILES = ['client-id', 'client-secret', 'bot-token']
+# A flag name as people type them: dashes, then lower-case words joined by '-'.
+FLAG_NAME = re.compile(r'--?[a-z][a-z0-9]*(-[a-z0-9]+)*')
 
 
 def value_file(flag, value):
@@ -491,8 +494,11 @@ def cmd_discord(deploy, opts, rest):
         raise SetupError('discord takes one step name, connect, and no other argument. Discord values are read from '
                          'files (--client-id-file, --client-secret-file, --bot-token-file) or typed hidden.')
     if rest:
-        # Name a flag (without any =value); never repeat a bare argument, which may be a value.
-        what = rest[0].split('=', 1)[0] if rest[0].startswith('-') else 'an extra argument'
+        # Name it only when it looks like a flag name, and only up to '='. Anything else may
+        # be a value (a base64url secret can start with '-'), so it is never repeated.
+        name = rest[0].split('=', 1)[0]
+        # The length cap keeps out a 32-character client secret that happens to be lower case.
+        what = name if len(name) <= 30 and FLAG_NAME.fullmatch(name) else 'an extra argument'
         raise SetupError(f'discord does not take {what}: Discord values are read from files '
                          '(--client-id-file, --client-secret-file, --bot-token-file) or typed hidden, never given '
                          'as arguments. See `scripts/setup discord -h`.')

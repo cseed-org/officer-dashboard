@@ -840,11 +840,20 @@ class DiscordTests(LauncherCase):
     def test_a_value_typed_after_a_flag_is_never_repeated(self):
         value = 'SENTINEL-' + 'typed-' + 'Wq2' * 5
         for argv in (['discord', '--client-secret', value], ['discord', value], ['discord', 'connect', '--bot-token', value],
-                     ['discord', 'connect', value], ['discord', '--yes', value], ['discord', 'connect', '--x=' + value]):
+                     ['discord', 'connect', value], ['discord', '--yes', value], ['discord', 'connect', '--x=' + value],
+                     ['discord', 'connect', '-' + value], ['discord', '--' + value], ['discord', '-Xq9' + value[9:]],
+                     ['discord', 'connect', '-xq9abcdefghijk_' + value], ['discord', '-' + 'q' * 31]):
             self.docker.containers.clear()
             self.assertEqual(self.launch(*argv), 1, argv)
-            self.assertNotIn(value, self.out + self.err, argv)
+            self.assertNotIn(argv[-1].split('=', 1)[-1], self.out + self.err, argv)
             self.assertEqual(self.docker.containers, [], argv)
+
+    def test_a_refused_flag_is_named_without_its_value(self):
+        for argv, named in ((['discord', '--client-secret=abc'], '--client-secret'), (['discord', 'connect', '--bot-token'], '--bot-token'),
+                            (['discord', '-yes=false'], '-yes')):
+            self.assertEqual(self.launch(*argv), 1, argv)
+            self.assertIn('discord does not take ' + named + ':', self.err, argv)
+            self.assertNotIn('abc', self.err)
 
     def test_passes_on_the_flags_go_knows(self):
         self.assertEqual(self.launch('discord', '--dry-run', '--app-url', 'https://dash.club.example', '--no-bot-token', *self.file_args()), 0, self.err)
