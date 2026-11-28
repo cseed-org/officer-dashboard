@@ -3,6 +3,8 @@ package setup
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -413,12 +415,17 @@ func TestExistingSecretFileIsKeptAndTheRunStops(t *testing.T) {
 	if r.creates("/access/apps") != 0 || r.creates("/cfd_tunnel") != 0 {
 		t.Fatal("the run went on after the secret was kept aside")
 	}
+	// Review F-2: the message names the token the new value belongs to, says the existing
+	// file is the older one, and never offers deleting the new copy.
+	tokenID := serviceTokenID(t, r.run("--dry-run").stdout)
+	requireAsideGuidance(t, res.stderr, "service token "+tokenID, aside, "secrets/admin/services-access-client-secret")
 
 	writes := r.writes()
 	blocked := r.run(append([]string{"--yes"}, groupArgs...)...)
 	if blocked.code == 0 || r.writes() != writes || !strings.Contains(blocked.stderr, aside) {
 		t.Fatalf("re-run with the aside file: exit %d, %d writes\n%s", blocked.code, r.writes()-writes, blocked.stderr)
 	}
+	requireAsideGuidance(t, blocked.stderr, "service token "+tokenID, aside, "secrets/admin/services-access-client-secret")
 
 	// The admin keeps the new value.
 	if err := os.Rename(filepath.Join(r.dir, aside), main); err != nil {
@@ -495,5 +502,286 @@ func TestApplyTokenPermissionsCoverWhatTheEngineCalls(t *testing.T) {
 		if !strings.Contains(ApplyPermissions, perm) && !strings.Contains(ApplyPermissions, strings.TrimSuffix(perm, " Read")+" Edit") {
 			t.Errorf("the engine names %q, which the apply permission list lacks", perm)
 		}
+	}
+}
+
+// fakeTunnelToken is a token in the shape cloudflared takes (base64 JSON with the
+// account tag, tunnel ID and secret), built at run time.
+func fakeTunnelToken(t *testing.T, tunnelID string) string {
+	t.Helper()
+	raw, err := json.Marshal(map[string]string{"a": cffake.AccountID, "t": tunnelID, "s": "host-" + strings.Repeat("s3", 10)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+// Q-3: once apply wrote the token, a re-run finds the tunnel by the ID in it.
+func TestRerunMatchesTheTunnelByTheIDInItsToken(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code != 0 {
+		t.Fatalf("exit %d\n%s", res.code, res.stderr)
+	}
+	id, err := tunnelIDFromFile(os.ReadFile, filepath.Join(r.dir, "secrets/tunnel-token"))
+	if err != nil {
+		t.Fatalf("the token apply wrote does not name its tunnel: %v", err)
+	}
+	again := r.run()
+	if again.code != 0 || strings.Contains(again.stderr, "matching the tunnel by name") || !strings.Contains(again.stdout, "["+id+"]") {
+		t.Fatalf("exit %d, tunnel %s\n%s\n%s", again.code, id, again.stdout, again.stderr)
+	}
+}
+
+// Q-3: a host token for a tunnel this account does not have blocks the tunnel create.
+func TestHostTokenForAnotherTunnelBlocksBeforeAnyWrite(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	other := "0badc0de-0000-4000-8000-000000000001"
+	if err := os.WriteFile(filepath.Join(r.dir, "secrets/tunnel-token"), []byte(fakeTunnelToken(t, other)), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if res.code == 0 || r.writes() != 0 || !strings.Contains(res.stdout, "the host's tunnel token names tunnel "+other+", which is not in this account") {
+		t.Fatalf("exit %d, %d writes\n%s\n%s", res.code, r.writes(), res.stdout, res.stderr)
+	}
+}
+
+// requireRefusedBeforeCloudflare runs an apply that must stop before any request.
+func (r *applyRig) requireRefusedBeforeCloudflare(want string, args ...string) {
+	r.t.Helper()
+	res := r.run(append(append([]string{"--yes"}, groupArgs...), args...)...)
+	if res.code == 0 || len(r.acct.Requests()) != 0 || !strings.Contains(res.stderr, want) {
+		r.t.Fatalf("exit %d, %d requests, want stderr with %q:\n%s", res.code, len(r.acct.Requests()), want, res.stderr)
+	}
+}
+
+// Review M8: secrets for one install never go to another's deploy directory.
+func TestApplyRefusesAnAppURLThatIsNotThisInstalls(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	r.requireRefusedBeforeCloudflare("setup writes this install's secrets for its own hostname only", "--app-url", "https://staging.example.org")
+}
+
+// Review M6: the tunnel token goes only where cloudflared reads it.
+func TestApplyRefusesATunnelTokenFileElsewhere(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	envPath := filepath.Join(r.dir, ".env")
+	raw := strings.ReplaceAll(r.file(".env"), "TUNNEL_TOKEN_FILE=./secrets/tunnel-token", "TUNNEL_TOKEN_FILE=/etc/cloudflared/token")
+	if err := os.WriteFile(envPath, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.requireRefusedBeforeCloudflare(`TUNNEL_TOKEN_FILE in .env is "/etc/cloudflared/token"`)
+}
+
+// Review M7: secrets are written only into real directories.
+func TestApplyRefusesASymlinkedSecretsDirectory(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	app := filepath.Join(r.dir, "secrets/app")
+	if err := os.Remove(app); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), app); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	r.requireRefusedBeforeCloudflare("secrets/app is not a directory")
+}
+
+// Review M9: a staging prefix on the real install's hostname never applies.
+func TestApplyRefusesAPrefixOnAnotherInstallsHostname(t *testing.T) {
+	r := newApplyRig(t, cffake.Complete())
+	res := r.run(append([]string{"--yes", "--name-prefix", "staging-"}, groupArgs...)...)
+	if res.code == 0 || r.writes() != 0 || !strings.Contains(res.stderr, "this hostname belongs to another install") {
+		t.Fatalf("exit %d, %d writes\n%s", res.code, r.writes(), res.stderr)
+	}
+}
+
+// Review M12: a directory (or link) where a secret file belongs stops the run.
+func TestApplyRefusesASecretPathThatIsNotAFile(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	if err := os.Mkdir(filepath.Join(r.dir, "secrets/tunnel-token"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if res.code == 0 || r.writes() != 0 || !strings.Contains(res.stderr, "secrets/tunnel-token exists and is not a regular file") {
+		t.Fatalf("exit %d, %d writes\n%s", res.code, r.writes(), res.stderr)
+	}
+}
+
+// serviceTokenID is the ID of the "officer-dashboard services" token in a dry run's output.
+func serviceTokenID(t *testing.T, dryRun string) string {
+	t.Helper()
+	m := regexp.MustCompile(`Service token +officer-dashboard services +\[([^\]]+)\]`).FindStringSubmatch(dryRun)
+	if m == nil {
+		t.Fatalf("no services token in:\n%s", dryRun)
+	}
+	return m[1]
+}
+
+// requireAsideGuidance checks a set-aside message: it names the resource the new value
+// belongs to, calls the existing file the older one, gives the command that puts the new
+// file in place, and does not offer deleting the new copy as an equal choice.
+func requireAsideGuidance(t *testing.T, msg, resource, aside, main string) {
+	t.Helper()
+	for _, want := range []string{resource, "Cloudflare now holds", main + " is older", "mv " + aside + " " + main} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message lacks %q:\n%s", want, msg)
+		}
+	}
+	for _, bad := range []string{"delete", "Decide which"} {
+		if strings.Contains(msg, bad) {
+			t.Errorf("message says %q:\n%s", bad, msg)
+		}
+	}
+}
+
+// F-2 for the tunnel token: the aside file is root's, so putting it in place also gives
+// it to cloudflared's UID.
+func TestTunnelTokenKeptAsideSaysHowToPutItInPlace(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	if err := os.WriteFile(filepath.Join(r.dir, "secrets/tunnel-token"), []byte("not-a-token-"+strings.Repeat("q", 20)), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	aside := regexp.MustCompile(`secrets/admin/tunnel-token\.\d{8}T\d{6}\.\d{9}Z`).FindString(res.stderr)
+	if res.code == 0 || aside == "" || r.creates("/dns_records") != 0 {
+		t.Fatalf("exit %d, aside %q\n%s", res.code, aside, res.stderr)
+	}
+	id, err := tunnelIDFromFile(os.ReadFile, filepath.Join(r.dir, aside))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireAsideGuidance(t, res.stderr, "tunnel "+id, aside, "secrets/tunnel-token")
+	if !strings.Contains(res.stderr, "chown 65532:65532 secrets/tunnel-token") {
+		t.Errorf("no chown to cloudflared's UID:\n%s", res.stderr)
+	}
+}
+
+// Review F-1: a kept client secret without its client ID file is a half-stored
+// credential. Every run lists the missing file with the copy step and exits 1 until it
+// is there.
+func TestMissingClientIDIsReportedUntilItIsThere(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code != 0 {
+		t.Fatalf("exit %d\n%s", res.code, res.stderr)
+	}
+	idFile := filepath.Join(r.dir, "secrets/admin/services-access-client-id")
+	saved := r.file("secrets/admin/services-access-client-id")
+	if err := os.Remove(idFile); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		writes := r.writes()
+		res := r.run()
+		if res.code == 0 || r.writes() != writes {
+			t.Fatalf("run %d: exit %d, %d writes\n%s", i, res.code, r.writes()-writes, res.stdout)
+		}
+		requireMissingClientID(t, res.stdout)
+	}
+	if err := os.WriteFile(idFile, []byte(saved), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if res := r.run(); res.code != 0 || strings.Contains(res.stdout, "missing:") {
+		t.Fatalf("with the file back: exit %d\n%s", res.code, res.stdout)
+	}
+}
+
+func requireMissingClientID(t *testing.T, stdout string) {
+	t.Helper()
+	left := stdout[strings.Index(stdout, "Left for you:"):]
+	for _, want := range []string{"missing: secrets/admin/services-access-client-id", "Service Tokens → officer-dashboard services", "Client ID", "mode 0400"} {
+		if !strings.Contains(left, want) {
+			t.Errorf("\"Left for you\" lacks %q:\n%s", want, left)
+		}
+	}
+	if strings.Contains(stdout, "every step read back ok") {
+		t.Errorf("a half-stored credential reads as success:\n%s", stdout)
+	}
+}
+
+// pathRefusingOwner refuses chown for one file name, so only that write fails.
+type pathRefusingOwner struct {
+	*memOwner
+	part string
+}
+
+func (o pathRefusingOwner) Chown(path string, ids hostfiles.IDs) error {
+	if strings.Contains(filepath.Base(path), o.part) {
+		return &fs.PathError{Op: "lchown", Path: path, Err: errors.New("operation not permitted")}
+	}
+	return o.memOwner.Chown(path, ids)
+}
+
+// Review F-1: when only the client ID cannot be written, the message says so, with the
+// copy step, and nothing about set-aside copies; the next runs report the missing file.
+func TestClientIDWriteFailureHasItsOwnMessage(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	mem := r.owner.(*memOwner)
+	r.owner = pathRefusingOwner{mem, "services-access-client-id"}
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if res.code == 0 || r.creates("/access/apps") != 0 {
+		t.Fatalf("exit %d, %d app creates", res.code, r.creates("/access/apps"))
+	}
+	for _, want := range []string{"client ID could not be written", "secrets/admin/services-access-client-secret", "Service Tokens → officer-dashboard services"} {
+		if !strings.Contains(res.stderr, want) {
+			t.Errorf("stderr lacks %q:\n%s", want, res.stderr)
+		}
+	}
+	for _, bad := range []string{"aside", "Decide which", "now lost", "keep the value and retry"} {
+		if strings.Contains(res.stderr, bad) {
+			t.Errorf("stderr says %q:\n%s", bad, res.stderr)
+		}
+	}
+	r.owner = mem
+	again := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if again.code == 0 || r.creates("/access/service_tokens") != 1 {
+		t.Fatalf("re-run: exit %d, %d tokens\n%s", again.code, r.creates("/access/service_tokens"), again.stderr)
+	}
+	requireMissingClientID(t, again.stdout)
+}
+
+// Review N-5: the closing line admits what is left, and does not say to start the stack
+// while a drift line concerns Access or the hostname.
+func TestClosingLineNeverOverstates(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if res.code != 0 || !strings.Contains(res.stdout, "every step read back ok, except the items left for you above.") || !strings.Contains(res.stdout, "then start the stack") {
+		t.Fatalf("fresh: exit %d\n%s", res.code, res.stdout)
+	}
+
+	c := newApplyRig(t, cffake.Complete())
+	path := "/accounts/" + cffake.AccountID + "/access/apps"
+	cur, _ := c.acct.Route(path)
+	for _, a := range cur.Result.([]any) {
+		if m := a.(map[string]any); m["name"] == "Officer Dashboard" {
+			m["session_duration"] = "1h"
+		}
+	}
+	c.acct.Set(path, cur)
+	res = c.run(append([]string{"--yes"}, groupArgs...)...)
+	if !strings.Contains(res.stdout, "drift: Access application Officer Dashboard") {
+		t.Fatalf("the fixture change gave no drift:\n%s", res.stdout)
+	}
+	if strings.Contains(res.stdout, "then start the stack") || !strings.Contains(res.stdout, "Do not start the stack yet") || !strings.Contains(res.stdout, "drift Access application Officer Dashboard") {
+		t.Fatalf("exit %d\n%s", res.code, res.stdout)
+	}
+}
+
+// Review N-3: --json belongs to the dry run.
+func TestJSONWithoutDryRunIsAUsageError(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	if res := r.run("--json"); res.code != 2 || len(r.acct.Requests()) != 0 || !strings.Contains(res.stderr, "--json") {
+		t.Fatalf("exit %d, %d requests\n%s", res.code, len(r.acct.Requests()), res.stderr)
+	}
+}
+
+// Review N-3: when the host's tunnel token and --tunnel-id name different tunnels, setup
+// stops instead of picking one.
+func TestTunnelIDThatDisagreesWithTheHostTokenStops(t *testing.T) {
+	r := newApplyRig(t, cffake.Complete())
+	if err := os.WriteFile(filepath.Join(r.dir, "secrets/tunnel-token"), []byte(fakeTunnelToken(t, cffake.TunnelID)), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	other := "0badc0de-0000-4000-8000-000000000002"
+	r.requireRefusedBeforeCloudflare("--tunnel-id "+other+" disagrees with secrets/tunnel-token, which names tunnel "+cffake.TunnelID, "--tunnel-id", other)
+	if res := r.run("--tunnel-id", cffake.TunnelID); res.code != 0 {
+		t.Fatalf("the same ID: exit %d\n%s", res.code, res.stderr)
 	}
 }

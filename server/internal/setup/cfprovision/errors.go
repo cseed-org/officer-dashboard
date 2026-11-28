@@ -98,8 +98,23 @@ type NotInPlaceError struct {
 }
 
 func (e *NotInPlaceError) Error() string {
-	return fmt.Sprintf("the new %s for %s is kept on the host, but not where the install reads it: %s. Setup stopped here, so nothing that depends on it was changed. "+
-		"Decide which value is current and put it in place (or delete the copy you do not keep), then run setup again; it refuses to start while a set-aside copy is there",
+	return fmt.Sprintf("the new %s for %s is kept on the host, but not where the install reads it. %s. Setup stopped here, so nothing that depends on it was changed; "+
+		"run setup again once the new value is in place (it refuses to start while a set-aside copy is there)",
+		e.Secret, orNone(e.ResourceID), e.Detail)
+}
+
+// IncompleteSecretError is a secret the sink kept in part: the part Cloudflare never
+// shows again is on the host, another part (one Cloudflare still shows) could not be
+// written. The secret is not lost, so this is not a SinkError; the run stops, and Detail
+// says how to add the missing part.
+type IncompleteSecretError struct {
+	Secret     SecretName
+	ResourceID string
+	Detail     string
+}
+
+func (e *IncompleteSecretError) Error() string {
+	return fmt.Sprintf("the %s for %s is kept on the host only in part: %s. Setup stopped here, so nothing that depends on it was changed",
 		e.Secret, orNone(e.ResourceID), e.Detail)
 }
 

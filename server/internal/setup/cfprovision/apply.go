@@ -463,6 +463,10 @@ func (e *Engine) keepSecret(ctx context.Context, sec Secret, recovery string) er
 		if errors.As(err, &nip) {
 			return &NotInPlaceError{Secret: sec.Name, ResourceID: sec.ResourceID, Detail: e.out.scrub(nip.Detail)}
 		}
+		var inc *IncompleteSecretError
+		if errors.As(err, &inc) {
+			return &IncompleteSecretError{Secret: sec.Name, ResourceID: sec.ResourceID, Detail: e.out.scrub(inc.Detail)}
+		}
 		return &SinkError{Secret: sec.Name, ResourceID: sec.ResourceID, Cause: e.out.scrub(err.Error()), Recovery: recovery}
 	}
 	fmt.Fprintf(e.out, "  kept the %s on the host\n", sec.Name)

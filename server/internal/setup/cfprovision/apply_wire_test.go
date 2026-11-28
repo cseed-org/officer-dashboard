@@ -3,6 +3,7 @@ package cfprovision
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -85,5 +86,57 @@ func TestSecretKeptAsideStopsTheRun(t *testing.T) {
 	m := byID(r.preview())
 	if m["tunnel"].Kind != plan.OK || m["dns"].Kind != plan.Create {
 		t.Fatalf("tunnel %s, dns %s", m["tunnel"].Kind, m["dns"].Kind)
+	}
+}
+
+// Review M3: only a plan line's existing ID changes (the Officers group is replaced by
+// another of the same name) while the steps stay the same; the run still stops.
+func TestApplyReviewedStopsWhenOnlyAnExistingIDChanged(t *testing.T) {
+	r := newRig(t, cffake.Complete())
+	reviewed, err := r.engine().Preview(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.acct.Set("/accounts/"+cffake.AccountID+"/access/groups", cffake.Response{Result: []any{
+		map[string]any{"id": "g-officers-2", "name": "Officers", "include": []any{map[string]any{"email": map[string]any{"email": "a@example.org"}}}},
+		map[string]any{"id": "g-launchpad", "name": "Launchpad"},
+	}})
+	_, err = r.engine().ApplyReviewed(context.Background(), reviewed)
+	var pc *PlanChangedError
+	if !errors.As(err, &pc) || !strings.Contains(err.Error(), "access.group.officers: was ok g-officers, now ok g-officers-2") {
+		t.Fatalf("got %v, want a PlanChangedError naming the group", err)
+	}
+	if n := len(r.acct.Writes()); n != 0 {
+		t.Fatalf("%d writes", n)
+	}
+}
+
+// Review M3b: only a warning changes (the zone gains a hostname that turning Bot Fight
+// Mode off would also affect); the steps are the same, and the run still stops.
+func TestApplyReviewedStopsWhenOnlyAWarningChanged(t *testing.T) {
+	r := newRig(t, cffake.Live())
+	r.opt.AllowBotFightModeOff = true
+	reviewed, err := r.engine().Preview(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := "/zones/" + cffake.ZoneID + "/dns_records"
+	cur, _ := r.acct.Route(path)
+	recs := append(append([]any{}, cur.Result.([]any)...), map[string]any{"id": "dns-shop", "name": "shop.example.org", "type": "A", "content": "192.0.2.7", "proxied": true})
+	r.acct.Set(path, cffake.Response{Result: recs})
+	fresh, err := r.engine().Preview(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fresh.Plan.Steps, reviewed.Plan.Steps) {
+		t.Fatal("the steps changed too; this test needs a warnings-only change")
+	}
+	_, err = r.engine().ApplyReviewed(context.Background(), reviewed)
+	var pc *PlanChangedError
+	if !errors.As(err, &pc) || !strings.Contains(err.Error(), "shop.example.org") {
+		t.Fatalf("got %v, want a PlanChangedError naming the new warning", err)
+	}
+	if n := len(r.acct.Writes()); n != 0 {
+		t.Fatalf("%d writes", n)
 	}
 }

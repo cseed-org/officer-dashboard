@@ -109,7 +109,7 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 	var in plan.Inputs
 	var dryRun, asJSON bool
 	var tunnelTokenFile string
-	fs.BoolVar(&dryRun, "dry-run", false, "only read and report; required in this version")
+	fs.BoolVar(&dryRun, "dry-run", false, "only read and report; changes nothing. Without it, setup applies after you confirm")
 	fs.BoolVar(&asJSON, "json", false, "print the plan as JSON")
 	fs.StringVar(&in.AppURL, "app-url", deps.Getenv("APP_URL"), "dashboard origin, https://<hostname> (APP_URL)")
 	fs.StringVar(&in.BackupHostname, "backup-hostname", backupHostDefault(deps.Getenv("BACKUP_SINK_URL")), "backup Worker hostname (default: host of BACKUP_SINK_URL, else backups.<parent of the APP_URL host>)")
@@ -143,6 +143,10 @@ func Run(ctx context.Context, args []string, deps Deps) int {
 	}
 	if dryRun && ap.yes {
 		fmt.Fprintln(deps.Stderr, "setup: --dry-run and --yes contradict each other")
+		return 2
+	}
+	if !dryRun && asJSON {
+		fmt.Fprintln(deps.Stderr, "setup: --json is for --dry-run; an apply prints its plan and report as text")
 		return 2
 	}
 	if !dryRun {

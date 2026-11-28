@@ -95,6 +95,9 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 	if _, err := os.Lstat(tunnelFile); err == nil {
 		if id, err := tunnelIDFromFile(deps.ReadFile, tunnelFile); err != nil {
 			fmt.Fprintf(deps.Stderr, "setup: secrets/tunnel-token: %v; matching the tunnel by name\n", err)
+		} else if in.TunnelID != "" && !strings.EqualFold(in.TunnelID, id) {
+			return failf("--tunnel-id %s disagrees with secrets/tunnel-token, which names tunnel %s; setup will not pick one. "+
+				"Leave out --tunnel-id to use the host's token, or move that file aside if it belongs to another tunnel", in.TunnelID, id)
 		} else {
 			in.TunnelID = id
 			if desired, err = plan.NewDesired(in); err != nil {
@@ -112,7 +115,7 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 	if owner == nil {
 		owner = hostfiles.SystemOwner()
 	}
-	sink := newHostSecretSink(a.dir, owner)
+	sink := newHostSecretSink(a.dir, owner, servicesTokenName(desired))
 	newEngine := deps.NewEngine
 	if newEngine == nil {
 		newEngine = defaultNewEngine
@@ -160,8 +163,8 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 		return failf("nothing was changed")
 	}
 	if len(reviewed.Plan.Steps) == 0 {
-		writeApplyReport(deps.Stdout, cfprovision.Outputs{Final: reviewed.Actions}, reviewed, sink)
-		return 0
+		left := writeApplyReport(deps.Stdout, cfprovision.Outputs{Final: reviewed.Actions}, reviewed, sink)
+		return finish(deps, desired.Hostname, left, sink)
 	}
 
 	// 3. Confirmation: --yes, or the hostname typed at a terminal.
@@ -185,15 +188,58 @@ func runApply(ctx context.Context, in plan.Inputs, a applyArgs, deps Deps) int {
 	actx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	out, err := eng.ApplyReviewed(actx, reviewed)
-	writeApplyReport(deps.Stdout, out, reviewed, sink)
+	left := writeApplyReport(deps.Stdout, out, reviewed, sink)
 	if err != nil {
 		code := stopped(err)
 		fmt.Fprintln(deps.Stderr, "setup: Setup stopped. Do not start cloudflared yet: fix the cause above and run setup again; it reads the account first and continues where it stopped.")
 		return code
 	}
-	fmt.Fprintf(deps.Stdout, "\nCloudflare is set up for %s: every step read back ok.\n"+
-		"Next: check the two items above in the dashboard, run `scripts/setup host --dry-run`, then start the stack (docs/deploy/fresh-install.md).\n", desired.Hostname)
+	return finish(deps, desired.Hostname, left, sink)
+}
+
+// finish prints the closing lines of a run whose steps all read back ok (or that had none)
+// and returns its exit code: 1 while a kept secret lacks a file, else 0. It tells the
+// admin to start the stack only when nothing left concerns Access or the hostname.
+func finish(deps Deps, hostname string, left leftover, sink *hostSecretSink) int {
+	if len(sink.missing) > 0 {
+		fmt.Fprintf(deps.Stderr, "setup: a secret is only partly on the host (the \"missing\" line above); setup exits 1 until the file is there\n")
+		return 1
+	}
+	except := ""
+	if left.items > 0 {
+		except = ", except the items left for you above"
+	}
+	fmt.Fprintf(deps.Stdout, "\nCloudflare is set up for %s: every step read back ok%s.\n", hostname, except)
+	if len(left.blocking) > 0 {
+		fmt.Fprintf(deps.Stdout, "Do not start the stack yet: these lines above concern Access or the hostname, so resolve them first (docs/deploy/cloudflare.md): %s.\n",
+			strings.Join(left.blocking, "; "))
+		return 0
+	}
+	fmt.Fprintln(deps.Stdout, "Next: check the two items above in the dashboard, run `scripts/setup host --dry-run`, then start the stack (docs/deploy/fresh-install.md).")
 	return 0
+}
+
+// leftover is what the report listed for the admin: how many items, and the drift or
+// unknowable lines about Access or the hostname that must be resolved before the stack
+// starts.
+type leftover struct {
+	items    int
+	blocking []string
+}
+
+// guardsTheHostname reports whether a plan line is part of what protects or publishes
+// the dashboard hostname. Secrets, the backup pieces and zone settings are not.
+func guardsTheHostname(id string) bool {
+	if strings.HasSuffix(id, ".secret") {
+		return false
+	}
+	for _, p := range []string{"zero_trust", "tunnel", "dns", "access.idp", "access.group.",
+		"access.app." + plan.AppSite, "access.app." + plan.AppAgents, "access.app." + plan.AppServices, "access.service_token." + plan.TokenServices} {
+		if id == p || strings.HasPrefix(id, p+".") || (strings.HasSuffix(p, ".") && strings.HasPrefix(id, p)) {
+			return true
+		}
+	}
+	return false
 }
 
 // hostReady checks that `setup host --yes` ran in dir and returns its .env: the apply
@@ -232,7 +278,8 @@ func needsPermission(err error, msg string) bool {
 
 // writeApplyReport prints what the run created, where the secrets are, what is left for
 // the admin, and the two settings setup cannot read back.
-func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision.Reviewed, sink *hostSecretSink) {
+func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision.Reviewed, sink *hostSecretSink) leftover {
+	var left leftover
 	var b strings.Builder
 	b.WriteString("\nCreated in Cloudflare:\n")
 	if len(out.Done) == 0 {
@@ -258,6 +305,10 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 	}
 	b.WriteString("\nLeft for you:\n")
 	n := 0
+	for _, m := range sink.missing {
+		fmt.Fprintf(&b, "  - missing: %s\n", m)
+		n++
+	}
 	for _, m := range reviewed.Plan.Manual {
 		fmt.Fprintf(&b, "  - manual: %s\n", m)
 		n++
@@ -280,6 +331,9 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 			fmt.Fprintf(&b, "      %s\n", d)
 		}
 		n++
+		if guardsTheHostname(a.ID) {
+			left.blocking = append(left.blocking, fmt.Sprintf("%s %s %s", a.Kind, a.Resource, a.Name))
+		}
 	}
 	for _, s := range reviewed.Plan.Skipped {
 		fmt.Fprintf(&b, "  - skipped: %s\n", s)
@@ -294,4 +348,15 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 		"  - Bot Fight Mode (your domain → Security → Settings → Bot traffic) must be Off, or bots and agents are challenged\n" +
 		"    (docs/deploy/cloudflare.md step 6.1). It is zone-wide, so setup leaves it unless --allow-bot-fight-mode-off is given.\n")
 	_, _ = io.WriteString(w, b.String())
+	left.items = n
+	return left
+}
+
+func servicesTokenName(d plan.Desired) string {
+	for _, t := range d.ServiceTokens {
+		if t.Key == plan.TokenServices {
+			return t.Name
+		}
+	}
+	return plan.TokenServices
 }

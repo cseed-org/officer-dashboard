@@ -134,6 +134,41 @@ func AsideFiles(root, name string) ([]string, error) {
 	return out, nil
 }
 
+// noteSuffix names the note beside a set-aside file. AsideFiles does not list notes.
+const noteSuffix = ".about"
+
+// NoteAside records, in <aside>.about beside a file StoreSecret set aside, what the value
+// belongs to (no secret: for example "service token st-5"), so a later run can say so.
+// It is created exclusively, mode 0400, owned by root, and read back.
+func (s *HostSink) NoteAside(aside, note string) error {
+	if !strings.HasPrefix(filepath.Clean(aside), filepath.Join(s.Root, AdminDir.Path)+string(filepath.Separator)) {
+		return fmt.Errorf("%s is not in %s", aside, AdminDir.Path)
+	}
+	if err := s.ensureDirs([]DirSpec{Dirs[0], AdminDir}); err != nil {
+		return err
+	}
+	path := aside + noteSuffix
+	p := &Plan{owner: s.Owner}
+	if err := p.apply(step{kind: stepSecret, path: path, data: []byte(note), create: true, mode: SecretMode, ids: Root}); err != nil {
+		return err
+	}
+	return sameContent(path, note)
+}
+
+// AsideNote returns the note NoteAside left for a set-aside file (rel is relative to
+// root), or "" when there is none or it cannot be read as a regular file.
+func AsideNote(root, rel string) string {
+	path := filepath.Join(root, rel+noteSuffix)
+	if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 // storeAside writes value to a new file secrets/admin/<name>.<UTC time>[-n], created
 // exclusively (an existing file is never replaced), and returns its path only once the
 // file is read back holding exactly value.
