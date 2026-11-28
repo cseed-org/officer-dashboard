@@ -472,8 +472,10 @@ func runDiscordConnect(ctx context.Context, args []string, deps Deps) int {
 			if contains(scopes, "webhook.incoming") {
 				fmt.Fprintln(deps.Stdout, "Discord asks you to pick the channel for dashboard notifications.")
 			}
-			fmt.Fprintf(deps.Stdout, "\n  %s\n\nThe link works for %d minutes. The dashboard then shows a setup code (behind the usual Cloudflare sign-in).\n"+
-				"Paste it here, and only here.\n", cons.URL, int(auth.SetupStateTTL/time.Minute))
+			fmt.Fprintf(deps.Stdout, "\n  %s\n\nThe link works for %d minutes. The dashboard then shows a setup code, once (behind the usual Cloudflare sign-in).\n"+
+				"Paste it here, and only here. If you lose the page, setup prints a new link.\n"+
+				"If the dashboard shows a sign-in error instead of a setup code: restart it so it reads the current client secret\n"+
+				"(docker compose … up -d --force-recreate dashboard), and check the host clock.\n", cons.URL, int(auth.SetupStateTTL/time.Minute))
 			return cons, nil
 		}
 		if round == 0 {
@@ -583,11 +585,13 @@ func printRestart(deps Deps, restart map[string]bool, ownerWritten bool, app str
 	}
 }
 
-// printable drops control characters from text Discord chose (names) before it is shown
-// or written.
+// printable drops control characters (Cc: escape sequences, bells) and format characters
+// (Cf: bidi overrides and isolates, zero-width spaces and joiners) from text Discord chose,
+// such as names, before it is shown or written: either kind could reorder, hide or forge
+// what the admin reads next to it (review of #128, S-2).
 func printable(s string) string {
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
 			return -1
 		}
 		return r
@@ -598,10 +602,24 @@ func printable(s string) string {
 // "yes" before it becomes the first owner (review of #128, F-2): the browser may have been
 // signed in to another account, and ownership cannot be taken back by configuration once
 // the dashboard has made it. No terminal, or anything but "yes", is a no.
+//
+// Input already waiting on the terminal is discarded first, so a second line pasted with
+// the setup code (perhaps text someone else supplied) can never answer the question
+// (review of #128, S-1). The answer is read from the same terminal (Stdin is StdinFD).
+// The ID, which Discord validates, comes first on its own line; names follow, stripped.
 func confirmOwner(deps Deps, u *discord.User) bool {
-	fmt.Fprintf(deps.Stdout, "Discord says this link was approved by %s (@%s, ID %s).\n", printable(u.DisplayName()), printable(u.Username), u.ID)
+	fmt.Fprintf(deps.Stdout, "Discord says this link was approved by this account:\n  ID:       %s\n  Name:     %s\n  Username: @%s\n",
+		u.ID, printable(u.DisplayName()), printable(u.Username))
 	if !deps.IsTerminal(deps.StdinFD) || deps.Stdin == nil {
 		fmt.Fprintln(deps.Stdout, "No terminal to confirm on, so no owner was written.")
+		return false
+	}
+	flush := deps.FlushInput
+	if flush == nil {
+		flush = flushInput
+	}
+	if err := flush(deps.StdinFD); err != nil {
+		fmt.Fprintf(deps.Stdout, "Could not clear what is waiting on the terminal (%v), so no owner was written.\n", err)
 		return false
 	}
 	fmt.Fprint(deps.Stderr, "Make this account the dashboard's first owner? Type yes: ")
@@ -610,20 +628,35 @@ func confirmOwner(deps Deps, u *discord.User) bool {
 }
 
 // pasteAndExchange asks for the setup code up to pasteAttempts times and trades the first
-// good one. A paste from another link (other state) or a code already tried is refused
-// without asking Discord. When the link has expired (the dashboard no longer shows its
-// code), it makes a new one with newLink and says so.
+// good one. The dashboard shows each link's code once, so after a paste that fails it
+// prints a new link (with newLink), and it still takes a code from any earlier link of this
+// round that has not expired. A paste from no link of this round (another state), a code
+// already tried, and a code from an expired link are refused without asking Discord.
 func pasteAndExchange(ctx context.Context, deps Deps, dc *discord.Client, cons *discord.Consent, newLink func() (*discord.Consent, error),
 	now func() time.Time, clientID string, secret discord.Secret, redirect string, used map[string]bool) (*discord.Token, bool) {
+	links := []*discord.Consent{cons}
+	another := func(why string) bool {
+		fmt.Fprintln(deps.Stdout, why)
+		next, err := newLink()
+		if err != nil {
+			fmt.Fprintln(deps.Stderr, "setup discord connect:", err)
+			return false
+		}
+		links = append(links, next)
+		return true
+	}
+	expiredMsg := fmt.Sprintf("That link has expired (links work for %d minutes). Here is a new one:", int(auth.SetupStateTTL/time.Minute))
 	for attempt := 0; attempt < pasteAttempts; attempt++ {
-		if !now().Before(cons.Expiry) {
-			fmt.Fprintf(deps.Stdout, "That link has expired (links work for %d minutes). Here is a new one:\n", int(auth.SetupStateTTL/time.Minute))
-			next, err := newLink()
-			if err != nil {
-				fmt.Fprintln(deps.Stderr, "setup discord connect:", err)
+		if attempt > 0 {
+			why := "Here is a new link (the dashboard shows each setup code once):"
+			if !now().Before(links[len(links)-1].Expiry) {
+				why = expiredMsg
+			}
+			if !another(why) {
 				return nil, false
 			}
-			cons = next
+		} else if !now().Before(cons.Expiry) && !another(expiredMsg) {
+			return nil, false
 		}
 		fmt.Fprint(deps.Stderr, "Setup code from the dashboard page (input hidden): ")
 		raw, err := deps.ReadPassword(deps.StdinFD)
@@ -637,22 +670,28 @@ func pasteAndExchange(ctx context.Context, deps Deps, dc *discord.Client, cons *
 			fmt.Fprintln(deps.Stderr, "setup discord connect:", err)
 			continue
 		}
-		if subtle.ConstantTimeCompare([]byte(state), []byte(cons.State)) != 1 {
-			fmt.Fprintln(deps.Stderr, "setup discord connect: that setup code is not from the link above (another state). Open the link above and paste what it shows.")
+		var match *discord.Consent
+		for _, l := range links {
+			if subtle.ConstantTimeCompare([]byte(state), []byte(l.State)) == 1 {
+				match = l
+			}
+		}
+		if match == nil {
+			fmt.Fprintln(deps.Stderr, "setup discord connect: that setup code is not from a link above (another state). Open the newest link above and paste what it shows.")
 			continue
 		}
-		if !now().Before(cons.Expiry) {
+		if !now().Before(match.Expiry) {
 			fmt.Fprintln(deps.Stderr, "setup discord connect: that code came after its link expired.")
-			continue // the top of the loop makes a new link
+			continue
 		}
 		if used[code] {
-			fmt.Fprintln(deps.Stderr, "setup discord connect: that code was already used. Open the link above again for a new one.")
+			fmt.Fprintln(deps.Stderr, "setup discord connect: that code was already used.")
 			continue
 		}
 		used[code] = true
-		tok, err := dc.ExchangeCode(ctx, clientID, secret, code, cons.Verifier(), redirect)
+		tok, err := dc.ExchangeCode(ctx, clientID, secret, code, match.Verifier(), redirect)
 		if discord.IsInvalidGrant(err) {
-			fmt.Fprintln(deps.Stderr, "setup discord connect: Discord refused that code: it was used already, has expired, or is from another link. Open the link above again.")
+			fmt.Fprintln(deps.Stderr, "setup discord connect: Discord refused that code: it was used already, has expired, or is from another link.")
 			continue
 		}
 		if discord.IsRejected(err) {

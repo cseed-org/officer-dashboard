@@ -35,12 +35,18 @@ type discordHarness struct {
 	owner   *memOwner
 	tty     bool
 	ttyFor  int    // when > 0, the terminal goes away after this many IsTerminal calls
-	stdin   string // typed at visible prompts (the owner question); default "yes"
-	now     time.Time
-	answers []func(printed string) string
-	prompts []string
-	waits   []time.Duration
-	pasted  []string // every value typed or pasted, for the no-secret-in-output check
+	stdin   string // typed at visible prompts (the owner question), after it is asked; default "yes"
+	// pending is input already queued on the terminal before the owner question, such as a
+	// second pasted line; a flush discards it.
+	pending    string
+	flushes    int
+	flushedErr error
+	askedFirst bool // the owner question was printed before a flush
+	now        time.Time
+	answers    []func(printed string) string
+	prompts    []string
+	waits      []time.Duration
+	pasted     []string // every value typed or pasted, for the no-secret-in-output check
 }
 
 func newDiscordHarness(t *testing.T) *discordHarness {
@@ -102,6 +108,7 @@ func (h *discordHarness) run(args ...string) hostResult {
 	c.BaseURL = h.f.URL + "/api"
 	c.Sleep = func(_ context.Context, d time.Duration) error { h.waits = append(h.waits, d); return nil }
 	calls := 0
+	in := &ttyInput{pending: strings.NewReader(h.pending), typed: strings.NewReader(h.stdin)}
 	code := Run(context.Background(), append([]string{"discord"}, args...), Deps{
 		Getenv:   func(string) string { return "" },
 		Stdout:   &out,
@@ -122,14 +129,37 @@ func (h *discordHarness) run(args ...string) hostResult {
 			h.pasted = append(h.pasted, v)
 			return []byte(v), nil
 		},
-		Stdin:   strings.NewReader(h.stdin),
+		Stdin:   in,
 		Owner:   h.owner,
 		Discord: c,
 		Now:     func() time.Time { return h.now },
+		FlushInput: func(int) error {
+			h.flushes++
+			h.askedFirst = h.askedFirst || strings.Contains(errb.String(), "Type yes")
+			if h.flushedErr != nil {
+				return h.flushedErr
+			}
+			in.flushed = true
+			return nil
+		},
 	})
 	r := hostResult{code, out.String(), errb.String()}
 	h.noSecretPrinted(r)
 	return r
+}
+
+// ttyInput is a terminal's input queue: what was already queued (pending) comes first,
+// unless a flush discarded it; then what is typed after the question.
+type ttyInput struct {
+	pending, typed *strings.Reader
+	flushed        bool
+}
+
+func (t *ttyInput) Read(b []byte) (int, error) {
+	if !t.flushed && t.pending.Len() > 0 {
+		return t.pending.Read(b)
+	}
+	return t.typed.Read(b)
 }
 
 func lastLine(s string) string {
@@ -460,8 +490,10 @@ func TestConnectOneConsentGivesOwnerAndWebhook(t *testing.T) {
 		h.env("backup.env", "DISCORD_WEBHOOK_URL_FILE") != "/run/secrets/backup/discord-webhook-url" {
 		t.Error("webhook file keys not set")
 	}
-	for _, want := range []string{"up -d --force-recreate dashboard backup", "approved by Club Admin (@admin, ID " + h.f.UserID + ")", "channel " + hooks[0].ChannelID,
-		`webhook named "dashboard"`, "Integrations → Webhooks", "Delete Webhook", "works for 10 minutes"} {
+	for _, want := range []string{"up -d --force-recreate dashboard backup", "  ID:       " + h.f.UserID + "\n  Name:     Club Admin\n  Username: @admin", "channel " + hooks[0].ChannelID,
+		`webhook named "dashboard"`, "Integrations → Webhooks", "Delete Webhook", "works for 10 minutes",
+		"shows a setup code, once", "If the dashboard shows a sign-in error instead of a setup code", "restart it so it reads the current client secret",
+		"check the host clock"} {
 		if !strings.Contains(r.stdout, want) {
 			t.Errorf("output lacks %q:\n%s", want, r.stdout)
 		}
@@ -558,7 +590,7 @@ func TestConnectRefusesAnotherStateAndAReusedCode(t *testing.T) {
 	if r.code != 0 {
 		t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
 	}
-	for _, want := range []string{"not from the link above", "already used", "Discord refused that code"} {
+	for _, want := range []string{"not from a link above", "already used", "Discord refused that code"} {
 		if !strings.Contains(r.stderr, want) {
 			t.Errorf("stderr lacks %q:\n%s", want, r.stderr)
 		}
@@ -639,7 +671,7 @@ func TestConnectAsksBeforeMakingTheOwner(t *testing.T) {
 			if got := h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID"); got != "" {
 				t.Errorf("owner written: %q", got)
 			}
-			if !strings.Contains(r.stdout, "approved by Club Admin (@admin, ID "+h.f.UserID+")") || !strings.Contains(strings.ToLower(r.stdout), "no owner was written") {
+			if !strings.Contains(r.stdout, "  ID:       "+h.f.UserID+"\n") || !strings.Contains(strings.ToLower(r.stdout), "no owner was written") {
 				t.Errorf("output:\n%s", r.stdout)
 			}
 			// The webhook Discord made is written anyway.
@@ -754,4 +786,131 @@ func TestConnectRefusesMalformedAnswers(t *testing.T) {
 			t.Errorf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
 		}
 	})
+}
+
+// Review S-1: input already waiting on the terminal (a second pasted line) never answers
+// the owner question. The flush comes before the question; the answer is read after it.
+func TestConnectOwnerQuestionIgnoresInputQueuedBeforeIt(t *testing.T) {
+	for name, tc := range map[string]struct {
+		pending, typed string
+		owner          bool
+	}{
+		"pasted yes, nothing typed": {"yes\n", "", false},
+		"pasted yes, typed no":      {"yes\nyes\n", "no\n", false},
+		"nothing pasted, typed yes": {"", "yes\n", true},
+		"pasted no, typed yes":      {"no\n", "yes\n", true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := connected(t)
+			h.pending, h.stdin = tc.pending, tc.typed
+			h.approve()
+			if r := h.run("connect", "--deploy-dir", h.dir); r.code != 0 {
+				t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
+			}
+			if got := h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID") != ""; got != tc.owner {
+				t.Errorf("owner written %v, want %v", got, tc.owner)
+			}
+			if h.flushes != 1 || h.askedFirst {
+				t.Errorf("flushes %d, question printed before the flush %v", h.flushes, h.askedFirst)
+			}
+		})
+	}
+	// If the pending input cannot be discarded, nobody is made owner.
+	h := connected(t)
+	h.flushedErr = errors.New("not a terminal")
+	h.approve()
+	r := h.run("connect", "--deploy-dir", h.dir)
+	if r.code != 0 || h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID") != "" || !strings.Contains(r.stdout, "no owner was written") {
+		t.Errorf("flush failure: %d, owner %q\n%s", r.code, h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID"), r.stdout)
+	}
+}
+
+// Review S-2: Discord names lose control and format characters (terminal escapes, bidi
+// overrides, zero-width characters) before they are printed or written, and the ID comes
+// first, on its own line.
+func TestConnectStripsControlAndFormatCharactersFromNames(t *testing.T) {
+	h := connected(t)
+	h.f.GlobalName = "\x1b[2JClub‮ nimdA​"
+	h.f.Username = "ad⁦min\x07​"
+	h.approve()
+	r := h.run("connect", "--deploy-dir", h.dir)
+	if r.code != 0 {
+		t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	env := h.read("dashboard.env")
+	for _, bad := range []string{"\x1b", "‮", "⁦", "​", "\x07"} {
+		if strings.Contains(r.stdout, bad) || strings.Contains(r.stderr, bad) {
+			t.Errorf("%q printed", bad)
+		}
+		if strings.Contains(env, bad) {
+			t.Errorf("%q written to dashboard.env", bad)
+		}
+	}
+	if got := h.env("dashboard.env", "BOOTSTRAP_OWNER_NAME"); got != "[2JClub nimdA" {
+		t.Errorf("BOOTSTRAP_OWNER_NAME = %q", got)
+	}
+	i := strings.Index(r.stdout, "  ID:       "+h.f.UserID+"\n")
+	j := strings.Index(r.stdout, "  Name:     [2JClub nimdA\n  Username: @admin\n")
+	if i < 0 || j < 0 || i > j {
+		t.Errorf("the ID is not on its own line before the names:\n%s", r.stdout)
+	}
+}
+
+// Fix round 2: the dashboard shows each link's code once, so a failed paste gets a new
+// link; a code from an earlier link that is still fresh is taken too.
+func TestConnectPrintsANewLinkAfterAFailedPaste(t *testing.T) {
+	h := connected(t)
+	var first string
+	h.answers = append(h.answers, func(printed string) string {
+		first = lastLink(t, printed)
+		return "garbage"
+	})
+	h.answers = append(h.answers, func(string) string {
+		code, state, err := h.f.Approve(first) // the earlier link, still fresh
+		if err != nil {
+			t.Fatal(err)
+		}
+		return state + ":" + code
+	})
+	r := h.run("connect", "--deploy-dir", h.dir)
+	if r.code != 0 {
+		t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	links := linkRE.FindAllString(r.stdout, -1)
+	if len(links) != 2 || links[0] == links[1] || !strings.Contains(r.stdout, "Here is a new link (the dashboard shows each setup code once)") {
+		t.Fatalf("links %d\n%s", len(links), r.stdout)
+	}
+	if h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID") != h.f.UserID {
+		t.Error("the code from the earlier link was not taken")
+	}
+}
+
+// Review S-4: with the app webhook present and the backup's kept elsewhere, nothing is
+// copied for the backup service.
+func TestConnectCopiesNoBackupWebhookKeptElsewhere(t *testing.T) {
+	h := connected(t)
+	h.tty = false
+	if r := hostCmd(t, h.owner, "", "--deploy-dir", h.dir, "--yes", "--owner-discord-id", "123456789012345699"); r.code != 0 {
+		t.Fatal(r.stderr)
+	}
+	value := "https://discord.com/api/webhooks/200000000000000077/" + strings.Repeat("Wh", 20)
+	if r := hostCmd(t, h.owner, `{"discord-webhook-url":"`+value+`"}`, "--deploy-dir", h.dir, "--yes", "--secrets-stdin"); r.code != 0 {
+		t.Fatal(r.stderr)
+	}
+	h.pasted = append(h.pasted, value)
+	raw := h.read("backup.env") + "DISCORD_WEBHOOK_URL_FILE=/run/secrets/backup/my-own-hook\n"
+	if err := os.WriteFile(filepath.Join(h.dir, "backup.env"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := h.snapshot()
+	r := h.run("connect", "--deploy-dir", h.dir)
+	if r.code != 0 || !strings.Contains(r.stdout, "nothing to do") || strings.Contains(r.stdout, "copying") {
+		t.Errorf("%d\n%s", r.code, r.stdout)
+	}
+	if h.snapshot() != before {
+		t.Error("files changed")
+	}
+	if _, err := os.Lstat(filepath.Join(h.dir, "secrets/backup/discord-webhook-url")); !errors.Is(err, fs.ErrNotExist) {
+		t.Error("a backup webhook file was written")
+	}
 }

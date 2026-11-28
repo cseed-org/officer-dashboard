@@ -82,6 +82,9 @@ type Deps struct {
 	// Used by `setup discord` (nil: the real Discord API).
 	Discord *discord.Client
 	Now     func() time.Time // the clock for setup link expiry (nil: time.Now)
+	// FlushInput discards input waiting on the terminal before the owner question (nil:
+	// tcflush on Linux).
+	FlushInput func(fd int) error
 }
 
 // Main runs the command with the real process environment and terminal.
