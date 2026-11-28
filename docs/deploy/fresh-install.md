@@ -46,6 +46,12 @@ The dashboard hostname, for example `officers.example.org`, must match
 `APP_URL=https://officers.example.org`. The backup service uses a separate
 hostname, such as `backups.example.org`, configured in step 4.
 
+**Or let `scripts/setup` create most of it.** Do step 0 of Cloudflare setup by
+hand (the domain and the Zero Trust team), then come back after step 5's host
+files: [Cloudflare with `scripts/setup`](#cloudflare-with-scriptssetup) creates
+steps 1–8 for you, except the few it prints as manual. The manual steps stay
+the reference for what it does.
+
 ## 3. Create the Discord app
 
 Officers sign in using Discord. In the
@@ -163,6 +169,9 @@ Run as root, from any directory. Read the plan first, then write it:
   --secret backup-access-client-secret=/root/setup/backup-access-client-secret
 ```
 
+Leave out `--secret tunnel-token=…` if `scripts/setup apply` (below) will create
+the tunnel: it writes the token itself.
+
 `--image` names the image to use, and setup pins its approved `:prod` digest
 in `prod-image.env` once the files are written. A maintainer must approve the image first; see the
 [approval workflow](#github-approval-gate-repository-settings-requires-approval).
@@ -189,9 +198,50 @@ never changes either value on an existing install.
 The `check` step stops on rootless Docker, `userns-remap` and SELinux
 enforcing; each message says what to change.
 
-Delete the files in your private directory afterwards. Then continue at step 6.
-For every option, see
-[Host files](../configuration.md#host-files-scriptssetup).
+Delete the files in your private directory afterwards. If you did Cloudflare
+setup by hand, continue at step 6; otherwise continue below. For every option,
+see [Host files](../configuration.md#host-files-scriptssetup).
+
+### Cloudflare with `scripts/setup`
+
+This replaces [Cloudflare setup](cloudflare.md) steps 1–8, which stay the manual
+way to do the same. It needs step 0 done by hand, and the host files above
+written: it puts the tunnel token and the services token into `secrets/`.
+
+Create an API token under **Manage account** → **Account API tokens**, limited
+to the dashboard's account and its one zone, with a short expiry and these
+permissions:
+
+- Account: Cloudflare Tunnel Edit, Access: Apps Edit, Access: Policies Edit,
+  Access: Groups Edit, Access: Identity Providers Edit, Access: Service Tokens
+  Edit, Access: Organizations Read, D1 Read, Workers Scripts Read.
+- Zone: Zone Read, DNS Edit, Zone WAF Edit, Cache Rules Edit, Config Rules Edit,
+  Bot Management Read.
+
+Save it in a file in your private directory. **Run the preview (`dashboard setup --dry-run`)
+first**: it only reads, and shows what the apply would create.
+
+```sh
+<install-dir>/scripts/setup preview --token-file /root/setup/cloudflare-token
+<install-dir>/scripts/setup apply --token-file /root/setup/cloudflare-token \
+  --officers-email <your email> --officers-email <another officer's email> \
+  --launchpad-email <a mentor's email>
+```
+
+`apply` prints the plan again and asks you to type the dashboard hostname before
+it changes anything (`--yes` skips the question). It creates the Access
+applications before the tunnel route and the DNS record, writes each secret to
+its file before its next request, and never deletes or changes what exists. When
+it finishes it lists what it created, where it put each secret, and what is left
+for you, with the dashboard step for each. Two things it cannot read back, so
+check them in the Cloudflare dashboard: the cache rule must say **Bypass cache**,
+and Bot Fight Mode must be **Off** (cloudflare.md steps 6.1 and 7).
+
+Do not start the stack until `apply` exits 0 and says every step read back
+`ok`. If it stops, fix what it names and run it again: it continues where it
+stopped, without making a second copy. Then delete the token in Cloudflare and
+its file, and continue at step 6. Details:
+[Setup apply](../configuration.md#setup-apply-scriptssetup-apply).
 
 ### By hand
 
