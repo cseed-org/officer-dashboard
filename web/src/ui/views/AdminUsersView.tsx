@@ -4,6 +4,7 @@ import { AdminUserCreateRequest, type AdminUser } from '../../lib/contracts';
 import type { Role } from '../../lib/domain';
 import { api, fieldErrors } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
+import { ACCESS_EMAIL_HINT, ACCESS_EMAIL_LABEL, normalizeAccessEmail } from '../../lib/accessEmail';
 import { ROLE_HUE } from '../../lib/colors';
 import { fmtDateTime, relative } from '../../lib/format';
 import { Drawer } from '../components/Drawer';
@@ -264,7 +265,7 @@ function UserList({
 }
 
 function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolean; onAdded: (u: AdminUser) => void; onCancel: () => void }) {
-  const empty = { discordId: '', name: '', subteamId: '', role: 'officer' as Role, title: '', email: '' };
+  const empty = { discordId: '', name: '', subteamId: '', role: 'officer' as Role, title: '', email: '', accessEmail: '' };
   const lookups = useApi('lookups');
   const subteams = lookups.status === 'ready' ? lookups.data.subteams : [];
   const [f, setF] = useState(empty);
@@ -289,13 +290,14 @@ function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolea
           role: f.role,
           title: f.title.trim() || null,
           email: f.email.trim() || null,
+          accessEmail: normalizeAccessEmail(f.accessEmail),
         });
         if (!parsed.success) {
           const fe = flattenError(parsed.error).fieldErrors as Record<string, string[] | undefined>;
-          const next = Object.fromEntries(Object.entries(fe).map(([k, v]) => [k, k === 'name' ? 'Enter their name.' : k === 'email' ? 'That is not an email address.' : k === 'subteamId' ? 'Choose their subteam.' : v![0]!]));
+          const next = Object.fromEntries(Object.entries(fe).map(([k, v]) => [k, k === 'name' ? 'Enter their name.' : k === 'email' || k === 'accessEmail' ? 'That is not an email address.' : k === 'subteamId' ? 'Choose their subteam.' : v![0]!]));
           setErrors(next);
-          const first = ['discordId', 'name', 'subteamId', 'title', 'email'].find((k) => next[k]);
-          if (first) document.getElementById(`au-${first === 'discordId' ? 'discord' : first === 'subteamId' ? 'subteam' : first}`)?.focus();
+          const first = ['discordId', 'name', 'subteamId', 'title', 'email', 'accessEmail'].find((k) => next[k]);
+          if (first) document.getElementById(`au-${first === 'discordId' ? 'discord' : first === 'subteamId' ? 'subteam' : first === 'accessEmail' ? 'access' : first}`)?.focus();
           return;
         }
         setErrors({});
@@ -334,6 +336,16 @@ function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolea
       <Field id="au-email" label="email" optional error={errors.email}>
         <input class="input" type="email" autoComplete="off" {...describe('au-email', errors.email)} value={f.email} onInput={(e) => set('email', e.currentTarget.value)} />
       </Field>
+      <Field id="au-access" label={ACCESS_EMAIL_LABEL} optional error={errors.accessEmail} hint={ACCESS_EMAIL_HINT}>
+        <input class="input" type="email" autoComplete="off" {...describe('au-access', errors.accessEmail, true)} value={f.accessEmail} onInput={(e) => set('accessEmail', e.currentTarget.value)} data-access-email />
+      </Field>
+      {f.email.trim() !== '' && f.accessEmail.trim().toLowerCase() !== f.email.trim().toLowerCase() && (
+        <div class="action-row">
+          <button type="button" class="btn btn--small" onClick={() => set('accessEmail', f.email.trim())} data-access-email-copy>
+            Use the email above for the Cloudflare sign-in
+          </button>
+        </div>
+      )}
       <fieldset class="fieldset">
         <legend class="field-label">role</legend>
         <div class="choice-row choice-row--compact">
