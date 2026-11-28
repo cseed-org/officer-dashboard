@@ -839,7 +839,8 @@ class DiscordTests(LauncherCase):
 
     def test_a_value_typed_after_a_flag_is_never_repeated(self):
         value = 'SENTINEL-' + 'typed-' + 'Wq2' * 5
-        for argv in (['discord', '--client-secret', value], ['discord', value], ['discord', 'connect', '--bot-token', value]):
+        for argv in (['discord', '--client-secret', value], ['discord', value], ['discord', 'connect', '--bot-token', value],
+                     ['discord', 'connect', value], ['discord', '--yes', value], ['discord', 'connect', '--x=' + value]):
             self.docker.containers.clear()
             self.assertEqual(self.launch(*argv), 1, argv)
             self.assertNotIn(value, self.out + self.err, argv)

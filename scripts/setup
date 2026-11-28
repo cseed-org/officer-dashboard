@@ -491,7 +491,9 @@ def cmd_discord(deploy, opts, rest):
         raise SetupError('discord takes one step name, connect, and no other argument. Discord values are read from '
                          'files (--client-id-file, --client-secret-file, --bot-token-file) or typed hidden.')
     if rest:
-        raise SetupError(f'discord does not take {rest[0].split("=", 1)[0]}: Discord values are read from files '
+        # Name a flag (without any =value); never repeat a bare argument, which may be a value.
+        what = rest[0].split('=', 1)[0] if rest[0].startswith('-') else 'an extra argument'
+        raise SetupError(f'discord does not take {what}: Discord values are read from files '
                          '(--client-id-file, --client-secret-file, --bot-token-file) or typed hidden, never given '
                          'as arguments. See `scripts/setup discord -h`.')
     if not (deploy / 'prod-image.env').exists():
