@@ -77,10 +77,16 @@ func (c *Ctx) adminUserCreate() error {
 		if err == nil && (pending.ExpiresAt == nil || *pending.ExpiresAt > c.S.nowMs()) {
 			return conflict("That Discord account has a pending invite. Revoke it on the Officers page first, or let them accept it.")
 		}
+		access, accessFrom := accessEmailPtr(accessEmail), any(nil)
 		if err == nil {
 			// Expired: clear it (as revoking would) so this account's own invite row can take its place.
 			if err := w.DeletePendingInvite(ctx, pending.ID); err != nil {
 				return err
+			}
+			// A director typed that email for this same Discord account: keep it, unless this
+			// request sets its own (a value, or null for none).
+			if !accessEmail.Set && pending.AccessEmail != nil {
+				access, accessFrom = pending.AccessEmail, "expired invite"
 			}
 		}
 		if _, err := w.UserByDiscordID(ctx, discordID); err == nil {
@@ -88,7 +94,7 @@ func (c *Ctx) adminUserCreate() error {
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		if err := checkAccessEmailFree(ctx, w, accessEmailPtr(accessEmail), discordID); err != nil {
+		if err := checkAccessEmailFree(ctx, w, access, discordID); err != nil {
 			return err
 		}
 		now := store.Ms(c.S.nowMs())
@@ -98,14 +104,14 @@ func (c *Ctx) adminUserCreate() error {
 		if err := w.InsertInvite(ctx, inv, int64(now)); err != nil {
 			return err
 		}
-		u := store.User{ID: id, DiscordID: discordID, Name: name, Role: role, Active: true, Title: ptrIf(title), Email: ptrIf(email), AccessEmail: accessEmailPtr(accessEmail), CreatedAt: now, UpdatedAt: now}
+		u := store.User{ID: id, DiscordID: discordID, Name: name, Role: role, Active: true, Title: ptrIf(title), Email: ptrIf(email), AccessEmail: access, CreatedAt: now, UpdatedAt: now}
 		if err := w.InsertUser(ctx, u); err != nil {
 			return err
 		}
 		if err := w.AcceptInvite(ctx, inv.ID, id, int64(now)); err != nil {
 			return err
 		}
-		if err := c.audit(ctx, w, "user.created", "user", id, nil, map[string]any{"discordId": discordID, "name": name, "role": role, "title": u.Title, "email": u.Email, "accessEmail": u.AccessEmail, "subteamId": subteamID, "inviteId": inv.ID}); err != nil {
+		if err := c.audit(ctx, w, "user.created", "user", id, nil, map[string]any{"discordId": discordID, "name": name, "role": role, "title": u.Title, "email": u.Email, "accessEmail": u.AccessEmail, "accessEmailFrom": accessFrom, "subteamId": subteamID, "inviteId": inv.ID}); err != nil {
 			return err
 		}
 		got, err := w.UserByID(ctx, id)
