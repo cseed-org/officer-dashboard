@@ -3,7 +3,25 @@ package api
 import (
 	"strings"
 	"testing"
+
+	"officerdashboard/internal/store"
 )
+
+// refused asserts a 403 from the named guard, so an unrelated refusal (for example an
+// account that hasn't finished onboarding) can't pass for the rule under test.
+func refused(t *testing.T, label string, r reply, message string) {
+	t.Helper()
+	expectStatus(t, label, r, 403)
+	if got := r.str("error", "message"); r.str("error", "code") != "forbidden" || !strings.Contains(got, message) {
+		t.Errorf("%s: refused with %q (code %q), want a forbidden %q", label, got, r.str("error", "code"), message)
+	}
+}
+
+// onboard finishes setup for an account the test created, as the onboarding flow would.
+func onboard(e *testEnv, userID string) {
+	e.exec(`UPDATE users SET onboarding_version=? WHERE id=?`, store.OnboardingVersion, userID)
+	e.exec(`UPDATE invites SET onboarded_at=accepted_at WHERE user_id=? AND onboarded_at IS NULL`, userID)
+}
 
 // The access email is the address Cloudflare Access will send a person's sign-in PIN to
 // (PR 2 syncs it). Directors type it; officers never set or see it, their own included.
@@ -43,7 +61,7 @@ func TestAccessEmailOnAddAccountAndEdit(t *testing.T) {
 	}
 
 	expectStatus(t, "not an email", e.do("PATCH", "/api/admin/users/user-priya", map[string]any{"accessEmail": "priya"}, e.director()), 400)
-	expectStatus(t, "officer edits own", e.do("PATCH", "/api/admin/users/user-priya", map[string]any{"accessEmail": "x@example.org"}, e.officer()), 403)
+	refused(t, "officer edits own", e.do("PATCH", "/api/admin/users/user-priya", map[string]any{"accessEmail": "x@example.org"}, e.officer()), "director role")
 	expectStatus(t, "officer adds account", e.post("/api/admin/users", map[string]any{
 		"discordId": "100000000000000902", "name": "X", "subteamId": "team-events", "accessEmail": "x@example.org",
 	}, e.officer()), 403)
@@ -66,7 +84,7 @@ func TestAccessEmailClashNamesTheOtherPerson(t *testing.T) {
 	e.mustOK(e.do("PATCH", "/api/admin/users/user-priya", map[string]any{"accessEmail": "priya@example.org"}, e.director()))
 	// An officer probing for the clash learns nothing: refused before the lookup.
 	r = e.do("PATCH", "/api/admin/users/user-marcus", map[string]any{"accessEmail": "priya@example.org"}, e.officer())
-	expectStatus(t, "officer probe", r, 403)
+	refused(t, "officer probe", r, "director role")
 	if strings.Contains(string(r.Raw), "Priya") {
 		t.Errorf("an officer learned who holds the email: %s", r.Raw)
 	}
@@ -76,16 +94,20 @@ func TestAccessEmailOfDirectorsLeadershipAndOwners(t *testing.T) {
 	e := newEnv(t)
 	body := map[string]any{"accessEmail": "jordan@example.org"}
 	// A director can't change a director's (their own included) or leadership's.
-	expectStatus(t, "director edits own", e.do("PATCH", "/api/admin/users/user-director", body, e.director()), 403)
-	expectStatus(t, "director edits leadership", e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"accessEmail": "sam@example.org"}, e.director()), 403)
+	refused(t, "director edits own", e.do("PATCH", "/api/admin/users/user-director", body, e.director()), "Requires leadership role")
+	refused(t, "director edits leadership", e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"accessEmail": "sam@example.org"}, e.director()), "Requires leadership role")
 	e.mustOK(e.do("PATCH", "/api/admin/users/user-director", body, e.as("user-leadership")))
 	// Only an owner changes an owner's. user-leadership is the seeded owner.
 	lead := e.mustOK(e.post("/api/admin/users", map[string]any{"discordId": "100000000000000904", "name": "Lee Kim", "subteamId": "team-events", "role": "leadership"}, e.as("user-leadership")))
+	onboard(e, lead.str("user", "id"))
 	other := e.as(lead.str("user", "id"))
-	expectStatus(t, "leadership edits owner", e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"accessEmail": "sam@example.org"}, other), 403)
+	// Non-owner leadership may set leadership's (their own included) but not an owner's.
+	e.mustOK(e.do("PATCH", "/api/admin/users/"+lead.str("user", "id"), map[string]any{"accessEmail": "lee@example.org"}, other))
+	e.mustOK(e.do("PATCH", "/api/admin/users/user-director", map[string]any{"accessEmail": "jordan.lee@example.org"}, other))
+	refused(t, "leadership edits owner", e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"accessEmail": "sam@example.org"}, other), "Requires dashboard owner")
 	e.mustOK(e.do("PATCH", "/api/admin/users/user-leadership", map[string]any{"accessEmail": "sam@example.org"}, e.as("user-leadership")))
 	// Adding a director with an access email needs leadership, like adding a director at all.
-	expectStatus(t, "director adds a director", e.post("/api/admin/users", map[string]any{"discordId": "100000000000000905", "name": "D", "subteamId": "team-events", "role": "director", "accessEmail": "d@example.org"}, e.director()), 403)
+	refused(t, "director adds a director", e.post("/api/admin/users", map[string]any{"discordId": "100000000000000905", "name": "D", "subteamId": "team-events", "role": "director", "accessEmail": "d@example.org"}, e.director()), "Requires leadership role")
 }
 
 func inviteWithEmail(method, email string) map[string]any {
@@ -121,6 +143,12 @@ func TestAccessEmailOnInvitesCarriesOverAtSignIn(t *testing.T) {
 	re := e.mustOK(e.post("/api/invites", inviteBody("link"), e.director()))
 	if re.str("invite", "accessEmail") != "alex.chen@example.org" {
 		t.Fatalf("re-invite dropped the email: %s", re.Raw)
+	}
+	// An explicit null is a deliberate clear (the UI sends it only from "Edit invite details").
+	cleared := inviteBody("link")
+	cleared["accessEmail"] = nil
+	if re = e.mustOK(e.post("/api/invites", cleared, e.director())); re.at("invite", "accessEmail") != nil {
+		t.Fatalf("re-invite with null kept the email: %s", re.Raw)
 	}
 	re = e.mustOK(e.post("/api/invites", inviteWithEmail("link", "alex@example.org"), e.director()))
 	if re.str("invite", "accessEmail") != "alex@example.org" {
@@ -162,7 +190,20 @@ func TestAccessEmailInviteClashes(t *testing.T) {
 	if !strings.Contains(string(r.Raw), "Alex Chen") {
 		t.Errorf("409 should name the invite: %s", r.Raw)
 	}
-	expectStatus(t, "officer invites", e.post("/api/invites", other, e.officer()), 403)
+	// Editing a pending invite onto someone else's email names them too.
+	bo := map[string]any{"name": "Bo Diaz", "discordId": "100000000000000778", "subteamId": "team-events", "method": "link", "accessEmail": "bo@example.org"}
+	boID := e.mustOK(e.post("/api/invites", bo, e.director())).str("invite", "id")
+	for email, holder := range map[string]string{"priya@example.org": "Priya Shah", "ALEX@example.org": "Alex Chen"} {
+		r = e.do("PATCH", "/api/invites/"+boID, map[string]any{"accessEmail": email}, e.director())
+		expectStatus(t, "invite edit onto "+holder+"'s email", r, 409)
+		if !strings.Contains(string(r.Raw), holder) {
+			t.Errorf("409 should name %s: %s", holder, r.Raw)
+		}
+	}
+	if got := e.scalar(`SELECT access_email FROM invites WHERE id=?`, boID); got != "bo@example.org" {
+		t.Errorf("a refused edit changed the invite's email to %v", got)
+	}
+	refused(t, "officer invites", e.post("/api/invites", other, e.officer()), "director role")
 	expectStatus(t, "not an email", e.post("/api/invites", inviteWithEmail("link", "alex"), e.director()), 400)
 }
 
@@ -198,7 +239,7 @@ func TestAccessEmailNeverReachesOfficersOrAgents(t *testing.T) {
 	}
 	for _, path := range []string{"/api/admin/users", "/api/invites", "/api/admin/audit"} {
 		r := e.get(path, off)
-		expectStatus(t, "officer GET "+path, r, 403)
+		refused(t, "officer GET "+path, r, "director role")
 		leaks("officer GET "+path, r.Raw)
 	}
 	// The officer's own profile save and an officer-reachable write echo nothing either.
@@ -234,5 +275,43 @@ func TestAccessEmailNeverReachesOfficersOrAgents(t *testing.T) {
 	}
 	if tools := toolNames(mcpRPC(e, token, "tools/list", nil)); tools["update_user"] || tools["create_invite"] || tools["list_invites"] {
 		t.Errorf("agents gained an access-managing tool: %v", tools)
+	}
+}
+
+// Adding an account for a Discord ID whose invite expired keeps the email a director typed
+// on that invite, unless the request sets one itself (a value, or null for none).
+func TestAccessEmailAddAccountOverExpiredInvite(t *testing.T) {
+	e := newEnv(t)
+	expire := func(discordID, email string) {
+		t.Helper()
+		e.mustOK(e.post("/api/invites", map[string]any{"name": "Old Invite", "discordId": discordID, "subteamId": "team-events", "method": "link", "accessEmail": email}, e.director()))
+		e.exec(`UPDATE invites SET expires_at=1 WHERE discord_id=?`, discordID)
+	}
+	add := func(discordID string, extra map[string]any) reply {
+		t.Helper()
+		body := map[string]any{"discordId": discordID, "name": "Kim Lee", "subteamId": "team-events"}
+		for k, v := range extra {
+			body[k] = v
+		}
+		return e.mustOK(e.post("/api/admin/users", body, e.director()))
+	}
+
+	expire("100000000000000911", "kim@example.org")
+	carried := add("100000000000000911", nil)
+	if carried.str("user", "accessEmail") != "kim@example.org" {
+		t.Fatalf("the expired invite's email wasn't carried over: %s", carried.Raw)
+	}
+	if a := e.scalar(`SELECT after_json FROM audit_log WHERE action='user.created' AND entity_id=?`, carried.str("user", "id")).(string); !strings.Contains(a, `"accessEmailFrom":"expired invite"`) {
+		t.Errorf("user.created doesn't say where the email came from: %s", a)
+	}
+
+	expire("100000000000000912", "lee@example.org")
+	if got := add("100000000000000912", map[string]any{"accessEmail": "lee.k@example.org"}).str("user", "accessEmail"); got != "lee.k@example.org" {
+		t.Errorf("the request's own email lost to the invite's: %q", got)
+	}
+
+	expire("100000000000000913", "mo@example.org")
+	if got := add("100000000000000913", map[string]any{"accessEmail": nil}).at("user", "accessEmail"); got != nil {
+		t.Errorf("an explicit null still carried the invite's email: %v", got)
 	}
 }

@@ -126,6 +126,7 @@ func TestAccessEmailRulesInTheSchema(t *testing.T) {
 		t.Error("mixed-case invite email: accepted")
 	}
 	refused("user takes a pending invite's email", `UPDATE users SET access_email='alex@example.org' WHERE id='u-dir'`)
+	refused("new account with another Discord ID's pending invite email", `INSERT INTO users(id,discord_id,name,role,active,access_email) VALUES('u-other','100000000000000799','Other','officer',1,'alex@example.org')`)
 	// Accepting: the invitee's own new account takes the email while the invite is still pending.
 	must(`INSERT INTO users(id,discord_id,name,role,active,access_email) VALUES('u-alex','100000000000000777','Alex Chen','officer',1,'alex@example.org')`)
 	must(`UPDATE invites SET accepted_at=5,user_id='u-alex' WHERE id='i1'`)
