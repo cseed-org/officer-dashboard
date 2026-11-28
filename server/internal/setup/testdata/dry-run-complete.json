@@ -94,7 +94,7 @@
       "name": "officer-dashboard services",
       "existing_id": "st-services",
       "detail": [
-        "Cloudflare never returns the client secret, and it has no host file; setup will offer --rotate if the bots lost it"
+        "Cloudflare never returns the client secret, and the preview cannot see the host's secret files: an apply reports whether secrets/admin/services-access-client-secret holds it. If it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → officer-dashboard services → Rotate"
       ]
     },
     {
@@ -114,7 +114,7 @@
       "name": "dashboard-backups-host",
       "existing_id": "st-backups",
       "detail": [
-        "Cloudflare never returns the client secret; setup will trust secrets/backup/access-client-secret if present, else offer --rotate"
+        "Cloudflare never returns the client secret, and the preview cannot see the host's secret files: an apply reports whether secrets/backup/access-client-secret holds it. If it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → dashboard-backups-host → Rotate"
       ]
     },
     {
@@ -204,7 +204,7 @@
       "resource": "Worker secret",
       "name": "BACKUP_BEARER_SECRET",
       "detail": [
-        "set, but Cloudflare never returns its value; setup will trust secrets/backup/bearer if present, else offer --rotate"
+        "set, but Cloudflare never returns its value, and the preview cannot see the host's secret files: if the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer (docs/deploy/fresh-install.md step 4.5)"
       ]
     },
     {

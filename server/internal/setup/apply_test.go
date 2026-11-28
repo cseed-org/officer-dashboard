@@ -785,3 +785,70 @@ func TestTunnelIDThatDisagreesWithTheHostTokenStops(t *testing.T) {
 		t.Fatalf("the same ID: exit %d\n%s", res.code, res.stderr)
 	}
 }
+
+// Review S-1 of #127: a client secret left over from an earlier install, with no ID file,
+// on an account that has no services token. The run creates the token, sets the new
+// secret aside and writes the new client ID in place. The report must not then call the
+// ID file missing, nor call the old secret "already on the host, left as it was" next to
+// the set-aside line.
+func TestLeftoverSecretWithoutIDReportsOnlyWhatIsTrue(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	main := filepath.Join(r.dir, "secrets/admin/services-access-client-secret")
+	if err := os.MkdirAll(filepath.Dir(main), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(main, []byte("old-services-secret-"+strings.Repeat("y", 12)), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	res := r.run(append([]string{"--yes"}, groupArgs...)...)
+	if res.code == 0 {
+		t.Fatalf("exit 0\n%s", res.stdout)
+	}
+	if !strings.HasSuffix(r.file("secrets/admin/services-access-client-id"), ".access") {
+		t.Fatal("the new client ID was not written in place")
+	}
+	if strings.Contains(res.stdout, "missing: secrets/admin/services-access-client-id") {
+		t.Errorf("the report calls the client ID file missing right after writing it:\n%s", res.stdout)
+	}
+	if strings.Contains(res.stdout, "services token client secret: secrets/admin/services-access-client-secret (already on the host, left as it was)") {
+		t.Errorf("the report calls the set-aside secret kept:\n%s", res.stdout)
+	}
+	if !strings.Contains(res.stdout, "set aside") {
+		t.Errorf("the report does not say the new secret was set aside:\n%s", res.stdout)
+	}
+}
+
+// Review S-2 of #127: a set-aside note is printed only when it is one line of the shape
+// setup writes ("tunnel <id>" or "service token <id> (<name>)"); anything else reads as
+// "(not recorded)".
+func TestAsideNoteIsPrintedOnlyInItsOwnShape(t *testing.T) {
+	for _, tc := range []struct {
+		note, want string
+		bad        []string
+	}{
+		{"service token st-5 (officer-dashboard services)", "service token st-5 (officer-dashboard services)", nil},
+		{"tunnel SOMEONE-ELSES\nrm -rf /", "(not recorded)", []string{"rm -rf", "SOMEONE-ELSES"}},
+		{"service token st-5 (x)\x1b[2J", "(not recorded)", []string{"\x1b"}},
+		{"anything else", "(not recorded)", []string{"anything else"}},
+	} {
+		r := newApplyRig(t, cffake.Fresh())
+		aside := "secrets/admin/services-access-client-secret.20260101T000000.000000000Z"
+		if err := os.MkdirAll(filepath.Join(r.dir, "secrets/admin"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range map[string]string{aside: "set-aside-secret-" + strings.Repeat("z", 12), aside + ".about": tc.note} {
+			if err := os.WriteFile(filepath.Join(r.dir, name), []byte(body), 0o400); err != nil {
+				t.Fatal(err)
+			}
+		}
+		res := r.run(append([]string{"--yes"}, groupArgs...)...)
+		if res.code == 0 || r.writes() != 0 || !strings.Contains(res.stderr, tc.want) {
+			t.Fatalf("note %q: exit %d, %d writes, want %q in:\n%s", tc.note, res.code, r.writes(), tc.want, res.stderr)
+		}
+		for _, b := range tc.bad {
+			if strings.Contains(res.stderr, b) {
+				t.Errorf("note %q: stderr prints %q:\n%s", tc.note, b, res.stderr)
+			}
+		}
+	}
+}

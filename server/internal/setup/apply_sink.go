@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 
 	"officerdashboard/internal/setup/cfprovision"
@@ -79,6 +81,18 @@ func (s *hostSecretSink) resource(sec cfprovision.Secret) string {
 	return fmt.Sprintf("service token %s (%s)", sec.ResourceID, s.servicesName)
 }
 
+// noteShape is the only note text a later run prints: what resource() writes. A note is a
+// root-only file, but it is printed into a message beside a command to run, so anything
+// else (a second line, control characters) reads as not recorded.
+var noteShape = regexp.MustCompile(`^(tunnel [A-Za-z0-9-]+|service token [A-Za-z0-9-]+ \([^\x00-\x1f\x7f()]*\))$`)
+
+func recordedNote(note string) string {
+	if !noteShape.MatchString(note) {
+		return ""
+	}
+	return note
+}
+
 // putInPlace is the command, run in the deploy directory, that moves a set-aside file
 // over the main one with the main file's owner, and removes its note.
 func putInPlace(aside, main string) string {
@@ -131,6 +145,8 @@ func (s *hostSecretSink) Store(_ context.Context, sec cfprovision.Secret) error 
 			got := s.rel(sa.Path)
 			_ = s.host.NoteAside(sa.Path, s.resource(sec)) // informational: the value itself is kept
 			aside = append(aside, asideGuidance(f.label, s.resource(sec), got, rel))
+			// The file Has found is not "left as it was" any more: it is the older one.
+			s.unnote(fmt.Sprintf("%s: %s (already on the host, left as it was)", f.label, rel))
 			s.note(fmt.Sprintf("%s: %s (set aside: %s is older and still the one in use)", f.label, got, rel))
 		case err != nil && i == 0:
 			return err // nothing kept: the engine reports the secret as lost
@@ -151,6 +167,7 @@ func (s *hostSecretSink) Store(_ context.Context, sec cfprovision.Secret) error 
 			}
 			return &cfprovision.IncompleteSecretError{Detail: detail}
 		default:
+			s.unmiss(rel) // Has may have found it missing before this run wrote it
 			s.note(fmt.Sprintf("%s: %s (owner %d:%d, mode 0400)", f.label, rel, owner.UID, owner.GID))
 		}
 	}
@@ -175,7 +192,7 @@ func (s *hostSecretSink) Has(_ context.Context, name cfprovision.SecretName) (bo
 			rel, _ := hostfiles.SecretPath(f.name)
 			var why []string
 			for _, a := range found {
-				why = append(why, asideGuidance(f.label, hostfiles.AsideNote(s.host.Root, a), a, rel))
+				why = append(why, asideGuidance(f.label, recordedNote(hostfiles.AsideNote(s.host.Root, a)), a, rel))
 			}
 			return false, errors.New(strings.Join(why, ". "))
 		}
@@ -227,6 +244,15 @@ func (s *hostSecretSink) miss(rel string) {
 		}
 	}
 	s.missing = append(s.missing, line)
+}
+
+// unmiss drops the missing line for rel, once Store has written that file.
+func (s *hostSecretSink) unmiss(rel string) {
+	s.missing = slices.DeleteFunc(s.missing, func(l string) bool { return strings.HasPrefix(l, rel+". ") })
+}
+
+func (s *hostSecretSink) unnote(line string) {
+	s.kept = slices.DeleteFunc(s.kept, func(l string) bool { return l == line })
 }
 
 func (s *hostSecretSink) note(line string) {

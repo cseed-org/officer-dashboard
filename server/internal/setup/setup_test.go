@@ -278,3 +278,22 @@ func TestAmbiguityIsAnError(t *testing.T) {
 		t.Fatalf("exit %d\n%s\n%s", r.code, r.stdout, r.stderr)
 	}
 }
+
+// Review Q-1/N-6 of #127: the preview never advertises a --rotate flag (there is none),
+// and never claims a host secret file is missing: it cannot see the secret files.
+func TestDryRunSecretLinesClaimOnlyWhatThePreviewCanSee(t *testing.T) {
+	for name, routes := range map[string]map[string]cffake.Response{"live": cffake.Live(), "complete": cffake.Complete()} {
+		r := runSetup(t, routes, nil, "--dry-run")
+		if r.code != 0 {
+			t.Fatalf("%s: exit %d: %s", name, r.code, r.stderr)
+		}
+		for _, bad := range []string{"--rotate", "has no host file", "if present"} {
+			if strings.Contains(r.stdout, bad) {
+				t.Errorf("%s: the preview says %q:\n%s", name, bad, r.stdout)
+			}
+		}
+		if !strings.Contains(r.stdout, "the preview cannot see the host's secret files") {
+			t.Errorf("%s: the secret lines do not say what the preview cannot see:\n%s", name, r.stdout)
+		}
+	}
+}

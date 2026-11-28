@@ -378,11 +378,10 @@ func Diff(d Desired, o Observed) []Action {
 		add(c)
 		if found {
 			s := &check{a: Action{ID: "access.service_token." + t.Key + ".secret", Resource: "Service token secret", Name: t.Name, ExistingID: ot.ID}}
-			if t.SecretFile != "" {
-				s.unknownf("Cloudflare never returns the client secret; setup will trust %s if present, else offer --rotate", t.SecretFile)
-			} else {
-				s.unknownf("Cloudflare never returns the client secret, and it has no host file; setup will offer --rotate if the bots lost it")
-			}
+			// A preview mounts no secret directory, so it cannot tell whether the file is
+			// there; an apply, which has them, reports it.
+			s.unknownf("Cloudflare never returns the client secret, and the preview cannot see the host's secret files: "+
+				"an apply reports whether %s holds it. If it is lost, rotate it: Zero Trust → Access controls → Service credentials → Service Tokens → %s → Rotate", t.SecretFile, t.Name)
 			add(s)
 		}
 	}
@@ -461,7 +460,8 @@ func Diff(d Desired, o Observed) []Action {
 	case o.Worker.SecretsUnknown != "":
 		sec.unknownf("%s", o.Worker.SecretsUnknown)
 	case slices.Contains(o.Worker.Secrets, d.Worker.Secret):
-		sec.unknownf("set, but Cloudflare never returns its value; setup will trust secrets/backup/bearer if present, else offer --rotate")
+		sec.unknownf("set, but Cloudflare never returns its value, and the preview cannot see the host's secret files: " +
+			"if the backup service is refused (401), the Worker's value is not the one in secrets/backup/bearer (docs/deploy/fresh-install.md step 4.5)")
 	default:
 		sec.create = true
 	}

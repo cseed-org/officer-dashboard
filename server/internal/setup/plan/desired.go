@@ -45,7 +45,7 @@ type GroupSpec struct{ Key, Name string }
 
 type ServiceTokenSpec struct {
 	Key, Name string
-	// SecretFile is the host file that holds the client secret, when there is one.
+	// SecretFile is the host file an apply keeps the client secret in.
 	SecretFile string
 }
 
@@ -175,8 +175,9 @@ func NewDesired(in Inputs) (Desired, error) {
 	}
 
 	d.ServiceTokens = []ServiceTokenSpec{
-		// cloudflare.md §5.1: "Name it `officer-dashboard services`." It has no host file.
-		{Key: TokenServices, Name: n("officer-dashboard services")},
+		// cloudflare.md §5.1: "Name it `officer-dashboard services`." No container reads it:
+		// an apply keeps it in secrets/admin/ for the admin to hand on to the bots.
+		{Key: TokenServices, Name: n("officer-dashboard services"), SecretFile: "secrets/admin/services-access-client-secret"},
 		// fresh-install.md §4.3: "Create a Cloudflare Access service token named `dashboard-backups-host`."
 		{Key: TokenBackups, Name: n("dashboard-backups-host"), SecretFile: "secrets/backup/access-client-secret"},
 	}

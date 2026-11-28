@@ -733,6 +733,14 @@ class ApplyTests(LauncherCase):
         mounts = [mount_fields(args[i + 1]) for i, a in enumerate(args) if a == '--mount']
         self.assertEqual(mounts[1]['source'], str(self.token))
 
+    def test_preview_relative_token_file_is_relative_to_the_current_directory(self):
+        # Review S-3 of #127: the shared token_file() rule also holds for preview, which
+        # reads the file itself and hands the token to the container on stdin.
+        with contextlib.chdir(self.token.parent):
+            self.assertEqual(self.launch('preview', '--token-file', self.token.name), 0, self.err)
+        _, stdin = self.container()
+        self.assertEqual(stdin.strip(), self.token_value)
+
     def test_token_file_from_env_is_relative_to_the_deploy_directory(self):
         (self.deploy / 'cf-token').write_text(self.token_value + '\n')
         with open(self.deploy / '.env', 'a') as env:

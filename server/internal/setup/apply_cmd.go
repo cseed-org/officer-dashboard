@@ -317,8 +317,8 @@ func writeApplyReport(w io.Writer, out cfprovision.Outputs, reviewed cfprovision
 		if a.Kind != plan.Drift && a.Kind != plan.Unknowable {
 			continue
 		}
-		// The plan cannot see host files: its line says the services secret has none.
-		// When the sink holds it, the secrets list above already says where it is.
+		// The plan cannot see host files: its line says an apply reports the services
+		// secret. When the sink holds it, the secrets list above already says where it is.
 		if a.ID == "access.service_token."+plan.TokenServices+".secret" && sink.holds[cfprovision.SecretServicesToken] {
 			continue
 		}
