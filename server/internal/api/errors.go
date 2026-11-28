@@ -115,6 +115,10 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 	if strings.Contains(msg, "invites.discord_id") {
 		return conflict("An invite for this Discord ID is already pending")
 	}
+	// The handlers name the holder first (checkAccessEmailFree); this is the schema's backstop.
+	if strings.Contains(msg, "access_email") || strings.Contains(msg, "access email belongs") {
+		return conflict("That access email is already in use by another person or pending invite.")
+	}
 	if strings.Contains(msg, "at most 5 calendar emails") {
 		return conflict("You can save at most 5 calendar emails")
 	}

@@ -47,6 +47,7 @@ func TestToAPIErrorMatchesConstraintCodeNotText(t *testing.T) {
 		{"closed period trigger", raised(t, "closed period cannot reopen or change dates"), 409, "Conflicting state, closed period, or duplicate record"},
 		{"last director", raised(t, "cannot remove last active director"), 409, "Cannot remove the last active director"},
 		{"last owner", raised(t, "cannot remove last owner"), 409, "Cannot remove the last owner"},
+		{"access email trigger", raised(t, "access email belongs to a pending invite"), 409, "That access email is already in use by another person or pending invite."},
 		{"engine open period", errors.New("entry requires an open period"), 409, "Conflicting state, closed period, or duplicate record"},
 	}
 	for _, c := range cases {

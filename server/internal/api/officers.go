@@ -37,9 +37,12 @@ type OfficerDTO struct {
 	ProfileComplete bool        `json:"profileComplete"`
 	Onboarding      string      `json:"onboarding"` // none | pending | done
 	LastLoginAt     *string     `json:"lastLoginAt,omitempty"`
+	// AccessEmail is present only for a director+ in the browser (never an agent, never an
+	// officer, their own included), and only when one is set.
+	AccessEmail *string `json:"accessEmail,omitempty"`
 }
 
-func officerDTO(u *store.User, p *store.Profile, people *peopleIndex, inv *store.Invite, privileged bool) OfficerDTO {
+func officerDTO(u *store.User, p *store.Profile, people *peopleIndex, inv *store.Invite, privileged, showAccess bool) OfficerDTO {
 	o := OfficerDTO{UserSummary: userSummary(u), DiscordID: u.DiscordID, Role: u.Role, IsOwner: u.IsOwner, Active: u.Active, Title: u.Title, Onboarding: "none"}
 	if inv != nil {
 		o.Onboarding = "pending"
@@ -63,6 +66,9 @@ func officerDTO(u *store.User, p *store.Profile, people *peopleIndex, inv *store
 	}
 	if privileged {
 		o.LastLoginAt = isoPtr(u.LastLoginAt)
+	}
+	if privileged && showAccess {
+		o.AccessEmail = u.AccessEmail
 	}
 	return o
 }
@@ -118,7 +124,7 @@ func (c *Ctx) officersList() error {
 		if v, ok := profiles[u.ID]; ok {
 			p = &v
 		}
-		out = append(out, officerDTO(u, p, people, invites[u.ID], privileged))
+		out = append(out, officerDTO(u, p, people, invites[u.ID], privileged, c.Agent == ""))
 	}
 	teams, err := q.Subteams(ctx)
 	if err != nil {
@@ -148,7 +154,7 @@ func (c *Ctx) loadOfficer(ctx context.Context, q *store.Queries, id string, priv
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	o := officerDTO(u, p, people, inv, privileged)
+	o := officerDTO(u, p, people, inv, privileged, c.Agent == "")
 	return &o, nil
 }
 
