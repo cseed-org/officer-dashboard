@@ -75,7 +75,9 @@ class FakeDocker:
         return self.exit
 
 
-class SetupTests(unittest.TestCase):
+class LauncherCase(unittest.TestCase):
+    """A deploy directory and every Docker and systemd command intercepted."""
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=os.environ.get('PANE_SCRATCH_DIR'))
         self.addCleanup(self.temp.cleanup)
@@ -114,6 +116,8 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(len(self.docker.containers), 1, self.err)
         return self.docker.containers[0]
 
+
+class SetupTests(LauncherCase):
     # ── prerequisites ──────────────────────────────────────────────────────────────
 
     def assert_stops(self, *fragments):
@@ -577,6 +581,125 @@ class SetupTests(unittest.TestCase):
                             if 'officer-dashboard-update' in line and 'Failed to' not in line]
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(problems, [], result.stderr)
+
+
+class ApplyTests(LauncherCase):
+    """scripts/setup apply: the Cloudflare apply, the only phase that writes to Cloudflare."""
+
+    def setUp(self):
+        super().setUp()
+        # Built at run time: the scanner checks test files too.
+        self.token_value = 'SENTINEL-' + 'cf-apply-' + 'Zq9' * 6
+        self.token = self.deploy.parent / 'cf apply token'
+        self.token.write_text(self.token_value + '\n')
+        self.pin()
+        (self.deploy / '.env').write_text('APP_URL=https://dash.club.example\nTUNNEL_TOKEN_FILE=./secrets/tunnel-token\n')
+        (self.deploy / 'backup.env').write_text('BACKUP_SINK_URL=https://backups.club.example\n')
+
+    def assert_token_never_leaves_the_file(self):
+        for call in self.docker.calls:
+            self.assertFalse(any(self.token_value in a for a in call), 'token on a command line: %r' % call)
+        for _, stdin in self.docker.containers:
+            self.assertFalse(stdin and self.token_value in stdin, 'token on stdin of a writing container')
+        self.assertNotIn(self.token_value, self.out + self.err)
+
+    def test_apply_runs_as_root_with_the_deploy_directory_writable_and_the_token_mounted(self):
+        environ = dict(os.environ)
+        before = (self.deploy / 'prod-image.env').read_text()
+        self.assertEqual(self.launch('apply', '--yes', '--token-file', str(self.token), '--officers-email', 'p@club.example'), 0, self.err)
+        args, stdin = self.container()
+        self.assertIsNone(stdin)
+        self.assert_token_never_leaves_the_file()
+        self.assertEqual(dict(os.environ), environ, 'token placed in the environment')
+        self.assertFalse(any(self.token_value in a for a in args[args.index('-e'):] if a != '-e'), 'token in -e')
+        self.assertEqual(args[args.index('--user') + 1], '0:0')
+        self.assertEqual(sorted(args[i + 1] for i, a in enumerate(args) if a == '--cap-add'), ['CHOWN', 'DAC_OVERRIDE', 'FOWNER'])
+        self.assertEqual(args[args.index('--cap-drop') + 1], 'ALL')
+        self.assertIn('--read-only', args)
+        self.assertNotEqual(args[args.index('--network') + 1], 'none', 'the apply talks to Cloudflare')
+        mounts = [mount_fields(args[i + 1]) for i, a in enumerate(args) if a == '--mount']
+        self.assertEqual(mounts, [
+            {'type': 'bind', 'source': str(self.deploy), 'target': '/deploy'},
+            {'type': 'bind', 'source': str(self.token), 'target': '/run/setup/cloudflare-token', 'readonly': True},
+        ])
+        self.assertIn('CLOUDFLARE_SETUP_TOKEN_FILE=/run/setup/cloudflare-token', args)
+        self.assertIn('APP_URL=https://dash.club.example', args)
+        self.assertIn('BACKUP_SINK_URL=https://backups.club.example', args)
+        tail = args[args.index(PIN) + 1:]
+        self.assertEqual(tail[:4], ['setup', '--deploy-dir', '/deploy', '--yes'])
+        self.assertNotIn('--dry-run', tail)
+        self.assertEqual(tail[tail.index('--officers-email') + 1], 'p@club.example')
+        self.assertEqual((self.deploy / 'prod-image.env').read_text(), before, 'the pin is never touched by apply')
+
+    def test_apply_without_yes_gets_a_terminal_to_confirm_on(self):
+        self.assertEqual(self.launch('apply', '--token-file', str(self.token), tty=True), 0, self.err)
+        args, stdin = self.container()
+        self.assertIn('-t', args)
+        self.assertIn('-i', args)
+        self.assertIsNone(stdin, 'the terminal stays free for the confirmation')
+        self.assertNotIn('--yes', args[args.index(PIN) + 1:])
+        self.assert_token_never_leaves_the_file()
+
+    def test_apply_without_yes_or_terminal_still_runs_and_go_refuses_to_write(self):
+        # Go prints the plan and exits 1 without a confirmation; the launcher passes that on.
+        self.docker.exit = 1
+        self.assertEqual(self.launch('apply', '--token-file', str(self.token)), 1)
+        args, _ = self.container()
+        self.assertNotIn('-t', args)
+        self.assertNotIn('--yes', args)
+
+    def test_apply_without_token_file_or_terminal_stops(self):
+        self.assertEqual(self.launch('apply', '--yes'), 1)
+        self.assertIn('--token-file', self.err)
+        self.assertEqual(self.docker.containers, [])
+
+    def test_apply_types_the_token_in_the_container_when_there_is_no_file(self):
+        self.assertEqual(self.launch('apply', tty=True), 0, self.err)
+        args, stdin = self.container()
+        self.assertIsNone(stdin)
+        self.assertIn('-t', args)
+        self.assertFalse(any('CLOUDFLARE_SETUP_TOKEN_FILE' in a for a in args))
+        self.assertEqual(len([a for a in args if a == '--mount']), 1, 'only the deploy directory')
+
+    def test_apply_needs_the_host_phase_first(self):
+        (self.deploy / 'prod-image.env').unlink()
+        self.assertEqual(self.launch('apply', '--yes', '--token-file', str(self.token)), 1)
+        self.assertIn('scripts/setup host --yes', self.err)
+        self.assertEqual(self.docker.containers, [])
+        self.assertFalse((self.deploy / 'prod-image.env').exists(), 'apply never writes a pin')
+
+    def test_apply_refuses_flags_that_would_change_what_it_is(self):
+        for flag in ['--dry-run', '--deploy-dir=/elsewhere', '--tunnel-token-file', '--image', '--json']:
+            self.docker.containers.clear()
+            self.assertEqual(self.launch('apply', '--yes', '--token-file', str(self.token), flag), 1, flag)
+            self.assertIn(flag.split('=')[0], self.err)
+            self.assertEqual(self.docker.containers, [], flag)
+
+    def test_apply_keeps_every_host_refusal(self):
+        for name, breaks in [('rootless', lambda: self.docker.security.append('name=rootless')),
+                             ('userns-remap', lambda: self.docker.security.append('name=userns')),
+                             ('SELinux', lambda: self.selinux.write_text('1\n'))]:
+            self.docker = FakeDocker()
+            self.selinux.unlink(missing_ok=True)
+            breaks()
+            self.assertEqual(self.launch('apply', '--yes', '--token-file', str(self.token)), 1, name)
+            self.assertIn(name, self.err)
+            self.assertEqual(self.docker.containers, [], name)
+
+    def test_unreadable_token_file_names_the_path_only(self):
+        self.assertEqual(self.launch('apply', '--yes', '--token-file', str(self.deploy.parent / 'missing')), 1)
+        self.assertIn('missing', self.err)
+        self.assertEqual(self.docker.containers, [])
+
+    def test_preview_is_unchanged_by_apply(self):
+        # The dry run stays unprivileged and read-only: cloudflared's UID, no capabilities,
+        # no deploy directory, token on stdin.
+        self.assertEqual(self.launch('preview', '--token-file', str(self.token)), 0, self.err)
+        args, stdin = self.container()
+        self.assertEqual(args[args.index('--user') + 1], '65532:65532')
+        self.assertNotIn('--cap-add', args)
+        self.assertFalse(any(mount_fields(args[i + 1])['target'] == '/deploy' for i, a in enumerate(args) if a == '--mount'))
+        self.assertEqual(args[args.index(PIN) + 1:][:2], ['setup', '--dry-run'])
 
 
 class BytecodeTests(unittest.TestCase):
