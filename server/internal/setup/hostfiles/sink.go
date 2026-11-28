@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -15,8 +16,9 @@ import (
 // (a tunnel token, a service token's client secret), before its next API call, so a
 // crash cannot lose the value (plan risk 5).
 //
-// The interface is deliberately one method; the apply engine declares the same shape
-// on its side.
+// The interface is deliberately one method. The Cloudflare apply engine declares its own
+// SecretSink (cfprovision.SecretSink: Store and Has); the setup command adapts HostSink
+// to it (server/internal/setup/apply_sink.go), so neither package imports the other.
 type SecretSink interface {
 	StoreSecret(name, value string) error
 }
@@ -61,10 +63,10 @@ func (s *HostSink) StoreSecret(name, value string) error {
 	if !secretName.MatchString(name) {
 		return fmt.Errorf("invalid secret name %q", name)
 	}
-	spec, known := LookupSecret(name)
+	rel, owner := SecretPath(name)
+	spec := SecretSpec{Name: name, Path: rel, Owner: owner}
 	dirs := append([]DirSpec(nil), Dirs...)
-	if !known {
-		spec = SecretSpec{Name: name, Path: filepath.ToSlash(filepath.Join(AdminDir.Path, name)), Owner: Root}
+	if _, known := LookupSecret(name); !known {
 		dirs = append(dirs, AdminDir)
 	}
 	if err := checkSecretValue(spec.Path, []byte(value)); err != nil {
@@ -94,6 +96,44 @@ func (s *HostSink) StoreSecret(name, value string) error {
 	return &StoredAsideError{Name: name, Existing: path, Path: aside}
 }
 
+// SecretPath is where StoreSecret keeps name, relative to the deploy directory, and who
+// owns the file: the documented file for a name in Secrets, else secrets/admin/<name>.
+func SecretPath(name string) (string, IDs) {
+	if spec, ok := LookupSecret(name); ok {
+		return spec.Path, spec.Owner
+	}
+	return filepath.ToSlash(filepath.Join(AdminDir.Path, name)), Root
+}
+
+// asideTime is the UTC time in a set-aside file's name.
+const asideTime = "20060102T150405.000000000Z"
+
+var asideSuffix = regexp.MustCompile(`^\.[0-9]{8}T[0-9]{6}\.[0-9]{9}Z(-[0-9]+)?$`)
+
+// AsideFiles lists the files StoreSecret set aside for name under root (paths relative
+// to root, oldest first): each holds a value that was not put in place because the
+// secret's file already existed. A missing secrets/admin means none.
+func AsideFiles(root, name string) ([]string, error) {
+	dir := filepath.Join(root, AdminDir.Path)
+	if info, err := os.Lstat(dir); err == nil && info.Mode()&fs.ModeSymlink != 0 {
+		return nil, symlinkError(dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", AdminDir.Path, pathless(err))
+	}
+	var out []string
+	for _, e := range entries {
+		if rest, ok := strings.CutPrefix(e.Name(), name); ok && asideSuffix.MatchString(rest) {
+			out = append(out, filepath.ToSlash(filepath.Join(AdminDir.Path, e.Name())))
+		}
+	}
+	return out, nil
+}
+
 // storeAside writes value to a new file secrets/admin/<name>.<UTC time>[-n], created
 // exclusively (an existing file is never replaced), and returns its path only once the
 // file is read back holding exactly value.
@@ -105,7 +145,7 @@ func (s *HostSink) storeAside(name, value string) (string, error) {
 	if s.Now != nil {
 		now = s.Now
 	}
-	base := filepath.Join(s.Root, AdminDir.Path, name+"."+now().UTC().Format("20060102T150405.000000000Z"))
+	base := filepath.Join(s.Root, AdminDir.Path, name+"."+now().UTC().Format(asideTime))
 	p := &Plan{owner: s.Owner}
 	for n := 0; n < 1000; n++ {
 		path := base

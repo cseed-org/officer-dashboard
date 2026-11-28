@@ -204,9 +204,11 @@ func listTree(t *testing.T, root string) string {
 	return b.String()
 }
 
-func TestApplyIsNotBuilt(t *testing.T) {
-	r := runSetup(t, cffake.Complete(), nil)
-	if r.code != 2 || !strings.Contains(r.stderr, "apply is not built yet") || len(r.srv.Requests()) != 0 {
+// Without --dry-run the command applies, which needs the host phase in --deploy-dir
+// first; here (no .env) it stops before reading the token or calling Cloudflare.
+func TestApplyWithoutTheHostPhaseCallsNothing(t *testing.T) {
+	r := runSetup(t, cffake.Complete(), nil, "--deploy-dir", t.TempDir())
+	if r.code != 1 || !strings.Contains(r.stderr, "scripts/setup host --yes") || len(r.srv.Requests()) != 0 {
 		t.Fatalf("exit %d, %d requests: %s", r.code, len(r.srv.Requests()), r.stderr)
 	}
 }
