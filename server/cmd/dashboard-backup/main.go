@@ -67,6 +67,10 @@ func newSink() (*sink, error) {
 	return &sink{origin, &http.Client{Timeout: 120 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 func (s *sink) request(path, method string, body any, result any) error {
+	return s.requestContext(operationContext, path, method, body, result)
+}
+
+func (s *sink) requestContext(ctx context.Context, path, method string, body any, result any) error {
 	var data []byte
 	if b, ok := body.([]byte); ok {
 		data = b
@@ -77,7 +81,7 @@ func (s *sink) request(path, method string, body any, result any) error {
 			return err
 		}
 	}
-	req, err := http.NewRequestWithContext(operationContext, method, s.origin+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, method, s.origin+path, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
@@ -697,7 +701,7 @@ func scheduled() error {
 		return errors.New("no recovery snapshot available")
 	}
 	if s, err := newSink(); err == nil {
-		checkSinkRevision(s, time.Now()) // alerts only; never stops the backup
+		checkSinkRevision(s) // alerts only; never stops the backup
 	}
 	m, err := backupWithPublish(driveOutboxPublisher())
 	if err != nil {

@@ -100,11 +100,12 @@ local data volume stores the database. Set all backup credentials before enablin
 | `DB_PATH` | `/data/dashboard.db` | database read by the backup helper; Compose gives app and backup the same path and volume |
 | `DISCORD_WEBHOOK_URL` | empty | backup failure alerts; configure separately in `backup.env` (normally via `_FILE`) |
 
-Each hourly run also asks the Worker its revision (`GET /version`). When the Worker
-is older than the revision the image was built with, the backup service alerts
-through `DISCORD_WEBHOOK_URL` once a day (it records the day in
-`.sink-revision-alert` beside the database); backups still run, since an older
-Worker takes the same uploads.
+Each hourly run also asks the Worker its revision (`GET /version`, given at most 10
+seconds). When the Worker reports a revision below the one the backup service needs,
+it alerts through `DISCORD_WEBHOOK_URL`, once for each pair of revisions (recorded in
+`.sink-revision-alert` beside the database). Every Worker deployed so far is new
+enough, so nothing alerts today; a Worker from before the endpoint (which answers
+404) is never alerted on. The check never stops a backup.
 
 The same ciphertext also goes to Google Drive: once per UTC day the sidecar publishes
 `dashboard-<date>.db.gz.age` plus a sha256 manifest to `drive-outbox/` beside the database,

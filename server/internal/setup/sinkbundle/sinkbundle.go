@@ -35,6 +35,12 @@ const Revision = 2
 // SourceDigest is Digest over the Worker's source files (SourceFiles) at Revision.
 const SourceDigest = "sha256:2b804614d90a3c57d9571fa8a037c47f4ed71b2c83ff9e9b984298c1636c4636"
 
+// MinRevision is the oldest Worker revision the backup service can work with. The upload
+// protocol has not changed since revision 1 (revision 2 only added GET /version), so it is
+// 1, and no deployed Worker is too old. Raise it only together with a way to upgrade an
+// existing Worker: the backup service alerts every install whose Worker reports less.
+const MinRevision = 1
+
 // From server/deploy/backup-sink/wrangler.toml (TestWranglerSettingsMatch checks them).
 const (
 	ScriptName        = "dashboard-backup-sink" // name

@@ -54,46 +54,73 @@ func revisionAnswer(n int) func(http.ResponseWriter) {
 	return func(w http.ResponseWriter) { fmt.Fprintf(w, `{"revision":%d}`, n) }
 }
 
-// Plan risk 6: the backup service alerts through the failure webhook when the Worker is
-// older than the revision it was built with; a Worker from before GET /version (404) is
-// revision 1. It alerts at most once a day, and never fails the backup for it.
-func TestOlderWorkerIsAlertedOnceADay(t *testing.T) {
+// withMinimum runs the test as if the service needed revision n.
+func withMinimum(t *testing.T, n int) {
+	t.Helper()
+	old := minSinkRevision
+	minSinkRevision = n
+	t.Cleanup(func() { minSinkRevision = old })
+}
+
+// Review F-1 of #129: the service alerts only when the Worker reports a revision below the
+// one it actually needs, and once per (reported, required) pair, not every day.
+func TestWorkerBelowTheNeededRevisionIsAlertedOncePerPair(t *testing.T) {
+	withMinimum(t, 3)
+	reported := 2
+	s, alerts := versionRig(t, func(w http.ResponseWriter) { revisionAnswer(reported)(w) })
+	checkSinkRevision(s)
+	checkSinkRevision(s)
+	if len(*alerts) != 1 || !strings.Contains((*alerts)[0], "revision 2") || !strings.Contains((*alerts)[0], "needs revision 3") {
+		t.Fatalf("alerts %q", *alerts)
+	}
+	reported = 1 // another pair: one more alert
+	checkSinkRevision(s)
+	checkSinkRevision(s)
+	if len(*alerts) != 2 {
+		t.Fatalf("alerts %q", *alerts)
+	}
+}
+
+// Today the service needs nothing a deployed Worker lacks (sinkbundle.MinRevision is 1),
+// so no existing install alerts: not for a Worker from before GET /version (404), nor
+// for one older than the image.
+func TestNoAlertForAWorkerTheServiceCanUse(t *testing.T) {
+	if sinkbundle.MinRevision != 1 {
+		t.Fatalf("MinRevision is %d; raise it only with the Worker upgrade path", sinkbundle.MinRevision)
+	}
 	for name, answer := range map[string]func(http.ResponseWriter){
-		"before the endpoint": func(w http.ResponseWriter) {
+		"before the endpoint (404)": func(w http.ResponseWriter) {
 			w.WriteHeader(http.StatusNotFound)
 			fmt.Fprint(w, `{"error":"not found"}`)
 		},
-		"older revision": revisionAnswer(sinkbundle.Revision - 1),
+		"older than the image": revisionAnswer(sinkbundle.Revision - 1),
+		"same":                 revisionAnswer(sinkbundle.Revision),
+		"newer":                revisionAnswer(sinkbundle.Revision + 1),
+		"unavailable":          func(w http.ResponseWriter) { w.WriteHeader(http.StatusServiceUnavailable) },
+		"not a number":         func(w http.ResponseWriter) { fmt.Fprint(w, `{"revision":"x"}`) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, alerts := versionRig(t, answer)
-			now := time.Date(2026, 11, 28, 10, 0, 0, 0, time.UTC)
-			checkSinkRevision(s, now)
-			checkSinkRevision(s, now.Add(time.Hour))
-			if len(*alerts) != 1 || !strings.Contains((*alerts)[0], fmt.Sprintf("older than revision %d", sinkbundle.Revision)) {
+			checkSinkRevision(s)
+			if len(*alerts) != 0 {
 				t.Fatalf("alerts %q", *alerts)
-			}
-			checkSinkRevision(s, now.Add(24*time.Hour))
-			if len(*alerts) != 2 {
-				t.Fatalf("no alert the next day: %q", *alerts)
 			}
 		})
 	}
 }
 
-func TestSameOrNewerWorkerOrNoAnswerIsNotAlerted(t *testing.T) {
-	for name, answer := range map[string]func(http.ResponseWriter){
-		"same":         revisionAnswer(sinkbundle.Revision),
-		"newer":        revisionAnswer(sinkbundle.Revision + 1),
-		"unavailable":  func(w http.ResponseWriter) { w.WriteHeader(http.StatusServiceUnavailable) },
-		"not a number": func(w http.ResponseWriter) { fmt.Fprint(w, `{"revision":"x"}`) },
-	} {
-		t.Run(name, func(t *testing.T) {
-			s, alerts := versionRig(t, answer)
-			checkSinkRevision(s, time.Now())
-			if len(*alerts) != 0 {
-				t.Fatalf("alerts %q", *alerts)
-			}
-		})
+// Review F-10: the check has its own short timeout, so a hung Worker delays the backup
+// by at most that, never by the sink client's two minutes.
+func TestVersionCheckGivesUpQuickly(t *testing.T) {
+	old := versionTimeout
+	versionTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { versionTimeout = old })
+	release := make(chan struct{})
+	s, alerts := versionRig(t, func(w http.ResponseWriter) { <-release })
+	t.Cleanup(func() { close(release) })
+	start := time.Now()
+	checkSinkRevision(s)
+	if took := time.Since(start); took > 2*time.Second || len(*alerts) != 0 {
+		t.Fatalf("took %v, alerts %q", took, *alerts)
 	}
 }
