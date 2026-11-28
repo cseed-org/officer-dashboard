@@ -128,13 +128,13 @@ for (const theme of THEMES) {
     await page.locator('[data-open-invite]').click();
     await expect(openDialog(page).locator('[data-invite-access-email]')).toBeVisible();
     expect(await overflow(page)).toEqual([]);
-    if (process.env.SHOTS) await page.screenshot({ path: `design/shots/access-email/invite-${info.project.name}-${theme}.png`, fullPage: true });
+    if (process.env.SHOTS) await page.screenshot({ path: `test-results/shots/access-email/invite-${info.project.name}-${theme}.png`, fullPage: true });
     await openDialog(page).getByRole('button', { name: 'Cancel' }).click();
     await openPerson(page, 'user-priya');
     await openDialog(page).getByRole('tab', { name: 'Manage', exact: true }).click();
     await expect(openDialog(page).locator('[data-access-email]')).toBeVisible();
     expect(await overflow(page)).toEqual([]);
-    if (process.env.SHOTS) await page.screenshot({ path: `design/shots/access-email/drawer-${info.project.name}-${theme}.png`, fullPage: true });
+    if (process.env.SHOTS) await page.screenshot({ path: `test-results/shots/access-email/drawer-${info.project.name}-${theme}.png`, fullPage: true });
   });
 }
 
@@ -145,7 +145,7 @@ test('add account: the calendar email is copied to the sign-in email only on req
   await page.locator('[data-admin-create]').click();
   const d = openDialog(page);
   const email = `new.${stamp()}@example.org`;
-  await d.getByLabel('email', { exact: true }).fill(email);
+  await d.locator('#au-email').fill(email);
   const access = d.locator('[data-access-email]');
   await expect(access).toHaveValue('');
   await expect(d.locator('#au-access-hint')).toContainText(NOT_YET);
