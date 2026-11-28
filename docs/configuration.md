@@ -406,6 +406,7 @@ host, pins the image, and runs `dashboard setup` from that image with
 | `scripts/setup host --yes [--secret NAME=FILE]…` | writes `prod-image.env` when it is missing, then the env files and secret files listed below. Only this phase can write: it runs as root in the container with just `CHOWN`, `DAC_OVERRIDE` and `FOWNER`, and no network |
 | `scripts/setup preview [--token-file FILE]` | the read-only [Cloudflare preview](#setup-preview-dashboard-setup---dry-run). It runs as cloudflared's UID 65532 with no capabilities, and sees only `APP_URL`, `BACKUP_SINK_URL` and the tunnel token file (read-only, for the tunnel ID); neither the deploy directory nor `secrets/` is mounted. The API token goes to it on standard input. Without a token file, setup asks for the token in a terminal |
 | `scripts/setup apply [--yes] [--token-file FILE]` | the [Cloudflare apply](#setup-apply-scriptssetup-apply): prints the plan, then creates the missing Cloudflare pieces once you confirm. Runs as root with the `host --yes` capabilities and network, the deploy directory mounted read-write, and the token file read-only. Needs `host --yes` first |
+| `scripts/setup discord [--dry-run \| --yes]`, `scripts/setup discord connect` | the [Discord setup](#discord-setup-scriptssetup-discord): checks the client ID, secret and bot token with Discord and stores them, then sets the first owner and the notification webhook from one Discord consent. Runs as root with network; the deploy directory is writable only with `--yes` and for `connect`. Needs `host --yes` first |
 | `scripts/setup install-units [--enable-updates]` | installs the updater service, rendered for this checkout's path, and its timer. It does not turn on automatic updates unless you pass `--enable-updates` or answer yes |
 
 `host` takes the values for the env files as flags: `--app-url`,
@@ -437,13 +438,15 @@ input.
 | `discord-webhook-url` (optional) | `secrets/app/discord-webhook-url` | 10001 |
 | `discord-bot-token` (optional) | `secrets/app/discord-bot-token` | 10001 |
 | `tunnel-token` | `secrets/tunnel-token` | 65532 |
+| `backup-discord-webhook-url` (optional) | `secrets/backup/discord-webhook-url` | 10001 |
 | `backup-bearer` | `secrets/backup/bearer` (generated: 32 random bytes, hex) | 10001 |
 | `backup-access-client-id` | `secrets/backup/access-client-id` | 10001 |
 | `backup-access-client-secret` | `secrets/backup/access-client-secret` | 10001 |
 
 Secret files get mode 0400. `secrets/` gets 0711 and is owned by root.
 `secrets/app` and `secrets/backup` get 0700 and are owned by 10001. An optional
-secret also enables its `*_FILE` line in `dashboard.env`. A secret that no
+secret also enables its `*_FILE` line in its env file (`dashboard.env`, or
+`backup.env` for the backup copy of the webhook). A secret that no
 container reads goes to `secrets/admin/` (root only), for you to pass on. The
 token that bots and agents use is an example.
 
@@ -454,6 +457,65 @@ a complete install, `host` prints `nothing to do` and changes no file. Pass
 `--rotate NAME` to replace one secret on purpose. It does not create the backup
 age key: pass the public recipient from `age-keygen` on the recovery workstation
 as `--age-recipient`.
+
+## Discord setup (`scripts/setup discord`)
+
+Two Discord steps stay manual, because Discord has no API for them: creating the
+application, and registering its redirect `<APP_URL>/auth/callback` under
+**OAuth2** → **Redirects**. `scripts/setup discord` prints that exact redirect.
+
+| Command | What it does |
+| --- | --- |
+| `scripts/setup discord --dry-run` | checks the values with Discord and prints the plan. The deploy directory is mounted read-only |
+| `scripts/setup discord [--yes]` | the same checks, then, with `--yes`, writes `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET_FILE` and `DISCORD_BOT_TOKEN_FILE` (only with a bot token) to `dashboard.env`, and the two secret files. Without `--yes` it writes nothing |
+| `scripts/setup discord connect [--dry-run]` | once the dashboard runs: prints one Discord link and reads back the setup code the dashboard shows. Then writes `BOOTSTRAP_OWNER_DISCORD_ID`, `BOOTSTRAP_OWNER_NAME` (when unset) and the webhook. `--dry-run` only says what it would ask for |
+
+**Values.** The client ID, client secret and bot token come from
+`--client-id-file`, `--client-secret-file` and `--bot-token-file`, which are files on
+the host, mounted read-only into the container. A value without a file is typed at
+the terminal, hidden. Values are never flags, and the launcher refuses any flag it
+does not know. A value already in the host files counts as given. Run against a
+complete install, `discord` checks the stored values again and changes no file.
+
+**Checks, before anything is written.** The client ID and secret must pass a
+client credentials grant at Discord's token endpoint. The bot token must open
+`GET /applications/@me`, and that application must have the client ID. A refusal
+stops the run with nothing written. With a bot token, setup also reads the app's
+`redirect_uris` and says whether the redirect is registered. The bot invite link
+asks for no permissions (`permissions=0`). The bot only opens direct messages,
+which needs a shared server but no server permission.
+
+**Adopt.** An existing client ID, secret file or bot token file with another value
+is reported as `conflict` and left alone. To replace a secret on purpose, use
+`scripts/setup host --yes --rotate discord-client-secret --secret discord-client-secret=FILE`.
+
+**Connect.** The link asks for `identify` (your Discord user ID, for
+`BOOTSTRAP_OWNER_DISCORD_ID`) and `webhook.incoming` (a webhook in a channel you
+pick). It asks only for what is still missing, and does nothing when both are set.
+Its state starts with `setup.`, and it uses PKCE. When Discord sends the browser
+back to `/auth/callback` with such a state, the dashboard only shows the code: it
+signs nobody in, sets and clears no cookie, writes nothing, and does not call
+Discord. The page is `no-store`, `no-referrer`, allows no script, and cannot be
+framed. The code is useless without the client secret and the PKCE verifier,
+which only the terminal has. The page stays behind Cloudflare Access like the rest
+of `/auth/`.
+
+Paste the line the page shows, or the page's whole address. A code from another
+link, a code already tried and a code Discord refuses are each turned down, and
+setup asks again, up to three times. What one consent gives is written before setup
+asks for more. If Discord leaves the webhook out of the answer to the combined
+consent, setup prints a second link for `webhook.incoming` alone. Each approved
+webhook link makes a new webhook in Discord. The webhook URL goes to
+`secrets/app/discord-webhook-url` and `secrets/backup/discord-webhook-url`, with
+`DISCORD_WEBHOOK_URL_FILE` in `dashboard.env` and `backup.env`. A
+`DISCORD_WEBHOOK_URL_FILE` that already points at another file is left alone.
+
+`connect` writes without `--yes`, since a code works only once, and it restarts
+nothing. It prints the command that recreates the services whose files changed
+(`docker compose … up -d --force-recreate dashboard backup`). At start, the
+dashboard makes that Discord account the owner while it has no owner
+(`BOOTSTRAP_OWNER_DISCORD_ID`; see
+[ownership and recovery](roles-and-permissions.md#dashboard-ownership-and-recovery)).
 
 ## Owner integration setup
 
