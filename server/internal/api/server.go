@@ -86,6 +86,8 @@ type Server struct {
 	host   string // APP_URL host, for the Origin check
 	// hostWarned is set once a proxied request named another host (withForwardedHostCheck).
 	hostWarned atomic.Bool
+	// relaySeen holds the setup states whose code page was shown (setuprelay.go).
+	relaySeen relaySeen
 
 	// inner is the routed handler behind withAuth; MCP tool calls run through it in-process.
 	inner http.Handler

@@ -501,3 +501,69 @@ func TestSetupRelayIsBehindCloudflareAccess(t *testing.T) {
 		t.Errorf("with Access → %d", r.Status)
 	}
 }
+
+// Fix round 2: the page shows a signed state's code once. A second request with the same
+// state, even with another code, takes the normal error path, with the normal session
+// handling.
+func TestSetupRelayShowsEachStateOnce(t *testing.T) {
+	e, _ := relayEnv(t)
+	state := mintState(t, e, relaySecret)
+	if r := e.get(relayURL(state, relayCode), anon); !showsRelay(r) {
+		t.Fatalf("first request → %d", r.Status)
+	}
+	normal := e.get("/auth/callback?code=x&state=tampered", anon)
+	for _, code := range []string{relayCode, "Another0code0from0Discord0123"} {
+		r := e.get(relayURL(state, code), anon)
+		if showsRelay(r) || r.Header.Get("Location") != "/login?error=state" {
+			t.Errorf("again with %s → %d %q", code[:7], r.Status, r.Header.Get("Location"))
+		}
+		if got, want := strings.Join(r.Header.Values("Set-Cookie"), "\n"), strings.Join(normal.Header.Values("Set-Cookie"), "\n"); got != want {
+			t.Errorf("cookies differ from the normal path:\n%s\nwant\n%s", got, want)
+		}
+	}
+	if r := e.get(relayURL(state, relayCode), actor{cookie: renewalDueSession(t, e)}); showsRelay(r) || !renewed(e, r) {
+		t.Errorf("a shown state still skips the session handling (renewed %v)", renewed(e, r))
+	}
+	// Another state from the same terminal is shown.
+	if r := e.get(relayURL(mintState(t, e, relaySecret), relayCode), anon); !showsRelay(r) {
+		t.Error("a fresh state was refused")
+	}
+}
+
+func TestRelaySeenIsBoundedExpiresAndClaimsOnce(t *testing.T) {
+	var seen relaySeen
+	now := testNow
+	exp := now.Add(auth.SetupStateTTL)
+	// Many requests at once for one state: exactly one shows it.
+	var wg sync.WaitGroup
+	var won atomic.Int64
+	for range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if seen.claim("setup.one", exp, now) {
+				won.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if won.Load() != 1 || !seen.has("setup.one", now) {
+		t.Errorf("%d claims won", won.Load())
+	}
+	// Full: further states are refused (fail closed) until entries expire.
+	for i := 1; i < relaySeenMax; i++ {
+		if !seen.claim(fmt.Sprint("setup.", i), exp, now) {
+			t.Fatalf("claim %d refused before the cap", i)
+		}
+	}
+	if seen.claim("setup.over", exp, now) {
+		t.Error("claimed past the cap")
+	}
+	later := exp
+	if !seen.claim("setup.over", later.Add(auth.SetupStateTTL), later) || seen.has("setup.one", later) {
+		t.Error("expired entries were not dropped")
+	}
+	if n := seen.size(); n != 1 {
+		t.Errorf("%d entries after expiry, want 1", n)
+	}
+}

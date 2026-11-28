@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"html/template"
 	"net/http"
+	"sync"
+	"time"
 
 	"officerdashboard/internal/auth"
 )
@@ -20,6 +22,10 @@ import (
 // (auth.VerifySetupState): a state anyone could choose would let an attacker swap the
 // state of their own sign-in link, lure an officer to approve it, and get the officer's
 // sign-in code shown (review of #128, F-1). No client secret configured, no relay.
+//
+// The page is shown once per state (relaySeen): a second request with the same state takes
+// the normal path, so a state seen by someone else is useless once the admin's browser has
+// used it.
 //
 // The page does nothing else: no session, no cookie, no token exchange, no database write
 // and no redirect. withAuth skips its session lookup for it (so no renewal cookie or
@@ -42,10 +48,67 @@ func (s *Server) setupRelay(r *http.Request) (state, code string, ok bool) {
 		return "", "", false
 	}
 	state, code = q.Get("state"), q.Get("code")
-	if !auth.ValidSetupCode(code) || !auth.VerifySetupState(d.ClientSecret, state, s.now()) {
+	if !auth.ValidSetupCode(code) || !auth.VerifySetupState(d.ClientSecret, state, s.now()) || s.relaySeen.has(state, s.now()) {
 		return "", "", false
 	}
 	return state, code, true
+}
+
+// relaySeenMax bounds how many shown states are remembered. Only `connect` can make a
+// state that gets this far (it needs the client secret), and each lives 10 minutes, so a
+// full set means something is wrong: further states are refused until entries expire.
+const relaySeenMax = 1024
+
+// relaySeen is the set of setup states whose page was shown, kept in memory until they
+// expire, so that each state shows its code once. A restart forgets it: a state shown
+// before a restart can be shown once more while it is fresh.
+type relaySeen struct {
+	mu sync.Mutex
+	m  map[string]time.Time // state → expiry
+}
+
+func (r *relaySeen) pruneLocked(now time.Time) {
+	for k, exp := range r.m {
+		if !now.Before(exp) {
+			delete(r.m, k)
+		}
+	}
+}
+
+func (r *relaySeen) has(state string, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	exp, ok := r.m[state]
+	return ok && now.Before(exp)
+}
+
+// claim records state as shown and reports whether this call was the first, and the set
+// had room.
+func (r *relaySeen) claim(state string, expiry, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.m == nil {
+		r.m = map[string]time.Time{}
+	}
+	r.pruneLocked(now)
+	if _, ok := r.m[state]; ok || len(r.m) >= relaySeenMax {
+		return false
+	}
+	r.m[state] = expiry
+	return true
+}
+
+func (r *relaySeen) size() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.m)
+}
+
+// claimSetupRelay marks a verified state as shown. False when another request showed it
+// first: the caller then takes the normal path.
+func (s *Server) claimSetupRelay(state string) bool {
+	exp, ok := auth.SetupStateExpiry(state)
+	return ok && s.relaySeen.claim(state, exp, s.now())
 }
 
 const setupRelayStyle = `body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;color:#1d1d1f;background:#fff}` +
