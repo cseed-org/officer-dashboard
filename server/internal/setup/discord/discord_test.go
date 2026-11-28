@@ -98,8 +98,21 @@ func TestRateLimitIsWaitedOutOrReported(t *testing.T) {
 	}
 }
 
+var now = time.Date(2026, 11, 28, 12, 0, 0, 0, time.UTC)
+
+const linkSecret = "client-secret-for-signing"
+
+func consent(t *testing.T, clientID, secret string, scopes ...string) *discord.Consent {
+	t.Helper()
+	c, err := discord.NewConsent(nil, now, clientID, discord.Secret(secret), redirect, scopes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
 func TestConsentLinkStateAndPKCE(t *testing.T) {
-	cons, err := discord.NewConsent(nil, "123456789012345678", redirect, []string{"identify", "webhook.incoming"})
+	cons, err := discord.NewConsent(nil, now, "123456789012345678", discord.Secret(linkSecret), redirect, []string{"identify", "webhook.incoming"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +130,15 @@ func TestConsentLinkStateAndPKCE(t *testing.T) {
 	if q.Get("response_type") != "code" || q.Get("client_id") != "123456789012345678" || q.Get("redirect_uri") != redirect {
 		t.Errorf("query %v", q)
 	}
-	if !strings.HasPrefix(cons.State, "setup.") || q.Get("state") != cons.State || !auth.ValidSetupRelay(cons.State, "abcdefghij0123456789") {
+	// The dashboard verifies the state with the same client secret, for ten minutes.
+	if q.Get("state") != cons.State || !auth.VerifySetupState(linkSecret, cons.State, now) || auth.VerifySetupState("other", cons.State, now) {
 		t.Errorf("state %q", cons.State)
+	}
+	if !cons.Expiry.Equal(now.Add(auth.SetupStateTTL)) {
+		t.Errorf("expiry %v", cons.Expiry)
+	}
+	if strings.Contains(cons.URL, linkSecret) {
+		t.Error("the secret is in the link")
 	}
 	sum := sha256.Sum256([]byte(cons.Verifier().Reveal()))
 	if q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") != base64.RawURLEncoding.EncodeToString(sum[:]) {
@@ -127,18 +147,21 @@ func TestConsentLinkStateAndPKCE(t *testing.T) {
 	if v := cons.Verifier().Reveal(); len(v) < 43 || len(v) > 128 || strings.Contains(cons.URL, v) {
 		t.Errorf("verifier length %d, or it is in the link", len(v))
 	}
-	other, _ := discord.NewConsent(nil, "123456789012345678", redirect, []string{"identify"})
+	other := consent(t, "123456789012345678", linkSecret, "identify")
 	if other.State == cons.State || other.Verifier().Reveal() == cons.Verifier().Reveal() {
 		t.Error("two consents share a state or verifier")
 	}
 	// A failing random source fails the consent instead of making a guessable state.
-	if _, err := discord.NewConsent(bytes.NewReader(nil), "1", redirect, []string{"identify"}); err == nil {
+	if _, err := discord.NewConsent(bytes.NewReader(nil), now, "1", discord.Secret(linkSecret), redirect, []string{"identify"}); err == nil {
 		t.Error("no randomness, no consent")
+	}
+	if _, err := discord.NewConsent(nil, now, "1", "", redirect, []string{"identify"}); err == nil {
+		t.Error("no secret, no consent")
 	}
 }
 
 func TestParsePaste(t *testing.T) {
-	state := "setup." + strings.Repeat("Q", 43)
+	state := consent(t, "1", linkSecret, "identify").State
 	for in, want := range map[string]string{
 		state + ":abcdefghij0123456789":                        "abcdefghij0123456789",
 		"  " + state + ":abcdefghij0123456789\n":               "abcdefghij0123456789",
@@ -149,7 +172,8 @@ func TestParsePaste(t *testing.T) {
 			t.Errorf("%q → %q %q %v", in, s, code, err)
 		}
 	}
-	for _, in := range []string{"", "abcdefghij0123456789", state, state + ":", state + ":a<b>cdefghij", "nostate:abcdefghij0123456789", redirect + "?code=x"} {
+	for _, in := range []string{"", "abcdefghij0123456789", state, state + ":", state + ":a<b>cdefghij", "nostate:abcdefghij0123456789", redirect + "?code=x",
+		"setup." + strings.Repeat("Q", 43) + ":abcdefghij0123456789"} {
 		if _, _, err := discord.ParsePaste(in); err == nil {
 			t.Errorf("%q accepted", in)
 		} else if strings.Contains(err.Error(), "abcdefghij") {
@@ -165,7 +189,7 @@ func TestExchangeBothConsentShapes(t *testing.T) {
 			f.CombinedWebhook = combined
 			c, _ := client(t, f)
 			ctx := context.Background()
-			cons, _ := discord.NewConsent(nil, f.ClientID, redirect, []string{"identify", "webhook.incoming"})
+			cons := consent(t, f.ClientID, f.ClientSecret, "identify", "webhook.incoming")
 			code, _, err := f.Approve(cons.URL)
 			if err != nil {
 				t.Fatal(err)
@@ -196,14 +220,61 @@ func TestExchangeNeedsTheVerifierAndTheSecret(t *testing.T) {
 	f := fake(t)
 	c, _ := client(t, f)
 	ctx := context.Background()
-	cons, _ := discord.NewConsent(nil, f.ClientID, redirect, []string{"identify"})
-	other, _ := discord.NewConsent(nil, f.ClientID, redirect, []string{"identify"})
+	cons := consent(t, f.ClientID, f.ClientSecret, "identify")
+	other := consent(t, f.ClientID, f.ClientSecret, "identify")
 	code, _, _ := f.Approve(cons.URL)
 	if _, err := c.ExchangeCode(ctx, f.ClientID, discord.Secret("not-the-secret"), code, cons.Verifier(), redirect); !discord.IsRejected(err) {
 		t.Errorf("without the secret: %v", err)
 	}
 	if _, err := c.ExchangeCode(ctx, f.ClientID, discord.Secret(f.ClientSecret), code, other.Verifier(), redirect); !discord.IsInvalidGrant(err) {
 		t.Errorf("without the verifier: %v", err)
+	}
+}
+
+// Review F-5: a redirect from Discord is an error, and the form (code, verifier) is never
+// sent on.
+func TestRedirectsAreNotFollowed(t *testing.T) {
+	f := fake(t)
+	f.RedirectTokenTo = "/api/elsewhere"
+	c, _ := client(t, f)
+	c.HTTP = discord.New().HTTP // the real client's settings
+	cons := consent(t, f.ClientID, f.ClientSecret, "identify")
+	code, _, _ := f.Approve(cons.URL)
+	_, err := c.ExchangeCode(context.Background(), f.ClientID, discord.Secret(f.ClientSecret), code, cons.Verifier(), redirect)
+	var e *discord.Error
+	if !errors.As(err, &e) || e.Status != 307 {
+		t.Errorf("redirect → %v", err)
+	}
+	for _, r := range f.Requests() {
+		if strings.Contains(r, "elsewhere") {
+			t.Error("the redirect was followed")
+		}
+	}
+}
+
+// Review F-7 (M10, M11): an answer Discord does not document is refused, not written.
+func TestMalformedAnswersAreRefused(t *testing.T) {
+	f := fake(t)
+	f.CombinedWebhook = true
+	c, _ := client(t, f)
+	ctx := context.Background()
+	f.UserIDOverride = "not-a-snowflake"
+	cons := consent(t, f.ClientID, f.ClientSecret, "identify")
+	code, _, _ := f.Approve(cons.URL)
+	tok, err := c.ExchangeCode(ctx, f.ClientID, discord.Secret(f.ClientSecret), code, cons.Verifier(), redirect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, err := c.CurrentUser(ctx, tok.AccessToken); err == nil {
+		t.Errorf("user %+v accepted", u)
+	}
+	f.WebhookURLOverride = "https://attacker.example/api/webhooks/1/x"
+	cons = consent(t, f.ClientID, f.ClientSecret, "webhook.incoming")
+	code, _, _ = f.Approve(cons.URL)
+	if tok, err := c.ExchangeCode(ctx, f.ClientID, discord.Secret(f.ClientSecret), code, cons.Verifier(), redirect); err == nil {
+		t.Errorf("webhook %v accepted", tok.Webhook)
+	} else if strings.Contains(err.Error(), "attacker.example") {
+		t.Error("the error shows the URL")
 	}
 }
 

@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/subtle"
@@ -12,8 +13,10 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
+	"officerdashboard/internal/auth"
 	"officerdashboard/internal/setup/discord"
 	"officerdashboard/internal/setup/hostfiles"
 	"officerdashboard/internal/setup/plan"
@@ -374,6 +377,10 @@ func runDiscordConnect(ctx context.Context, args []string, deps Deps) int {
 	if err != nil {
 		return fail("%v", err)
 	}
+	backupHook, err := storedSecret(dir, "backup-discord-webhook-url")
+	if err != nil {
+		return fail("%v", err)
+	}
 	var scopes []string
 	if ownerID == "" {
 		scopes = append(scopes, "identify")
@@ -381,111 +388,35 @@ func runDiscordConnect(ctx context.Context, args []string, deps Deps) int {
 	if !hook.here && hook.elsewhere == "" {
 		scopes = append(scopes, "webhook.incoming")
 	}
-	if len(scopes) == 0 {
-		fmt.Fprintf(deps.Stdout, "Discord: nothing to do. The first owner is set (BOOTSTRAP_OWNER_DISCORD_ID=%s) and the webhook file exists.\n", ownerID)
-		return 0
-	}
+	// An install with the app's webhook but no backup copy gets the copy from the app's
+	// file: no Discord call, nothing replaced (review of #128, F-8).
+	copyBackup := hook.here && !backupHook.here && backupHook.elsewhere == ""
 	if dryRun {
-		fmt.Fprintf(deps.Stdout, "connect would print one Discord link asking for: %s\nDry run: no link, no request, nothing written.\n", strings.Join(scopes, " "))
+		if copyBackup {
+			fmt.Fprintln(deps.Stdout, "connect would copy secrets/app/discord-webhook-url to secrets/backup/discord-webhook-url for the backup alerts.")
+		}
+		if len(scopes) > 0 {
+			fmt.Fprintf(deps.Stdout, "connect would print one Discord link asking for: %s\n", strings.Join(scopes, " "))
+		}
+		fmt.Fprintln(deps.Stdout, "Dry run: no link, no request, nothing written.")
 		return 0
-	}
-	if !deps.IsTerminal(deps.StdinFD) {
-		return fail("connect needs a terminal: you paste the setup code the dashboard shows into it")
 	}
 	owner := deps.Owner
 	if owner == nil {
 		owner = hostfiles.SystemOwner()
 	}
-	dc := discordClient(deps)
-	used := map[string]bool{}
 	restart := map[string]bool{}
-	for round := 0; len(scopes) > 0; round++ {
-		if round == 2 {
-			return fail("Discord did not give %s after two links; nothing more was asked", strings.Join(scopes, " "))
-		}
-		cons, err := discord.NewConsent(deps.Random, clientID, redirect, scopes)
-		if err != nil {
-			return fail("%v", err)
-		}
-		if round == 0 {
-			fmt.Fprintf(deps.Stdout, "Open this link in any browser where you can sign in to Discord as the club's admin, and approve it.\n")
-		} else {
-			fmt.Fprintf(deps.Stdout, "Discord did not include %s in that answer. One more link, for that alone:\n", strings.Join(scopes, " "))
-		}
-		if contains(scopes, "webhook.incoming") {
-			fmt.Fprintln(deps.Stdout, "Discord asks you to pick the channel for dashboard notifications.")
-		}
-		fmt.Fprintf(deps.Stdout, "\n  %s\n\nThe dashboard then shows a setup code (behind the usual Cloudflare sign-in). Copy it here.\n", cons.URL)
-		tok, ok := pasteAndExchange(ctx, deps, dc, cons, clientID, discord.Secret(secret.value), redirect, used)
-		if !ok {
-			return fail("no usable setup code; nothing more was written. Run `scripts/setup discord connect` again for a new link")
-		}
-		var got []string
-		pl := hostfiles.NewPlanner(dir, owner)
-		// Each env file is planned once, after the secret files its keys name, so a key never
-		// points at a file that is not there yet.
-		envKeys := map[string][]hostfiles.KV{}
-		if contains(scopes, "identify") {
-			if u, err := dc.CurrentUser(ctx, tok.AccessToken); err == nil {
-				name := strings.Map(func(r rune) rune {
-					if unicode.IsControl(r) {
-						return -1
-					}
-					return r
-				}, u.DisplayName())
-				kvs := []hostfiles.KV{{Key: "BOOTSTRAP_OWNER_DISCORD_ID", Value: u.ID}}
-				if realValue(dir, "dashboard.env", "BOOTSTRAP_OWNER_NAME") == "" && name != "" {
-					kvs = append(kvs, hostfiles.KV{Key: "BOOTSTRAP_OWNER_NAME", Value: name})
-				}
-				envKeys["dashboard.env"] = append(envKeys["dashboard.env"], kvs...)
-				got = append(got, "identify")
-				fmt.Fprintf(deps.Stdout, "Discord says you are %s (%s): the first owner.\n", name, u.ID)
-			} else if !discord.IsRejected(err) {
-				return fail("%v", err)
-			}
-		}
-		if contains(scopes, "webhook.incoming") && tok.Webhook != nil {
-			for _, d := range hostfiles.Dirs {
-				pl.Dir(d.Path, d.Mode, d.Owner)
-			}
-			value := []byte(tok.Webhook.URL.Reveal())
-			for _, name := range []string{"discord-webhook-url", "backup-discord-webhook-url"} {
-				s, err := storedSecret(dir, name)
-				if err != nil {
-					return fail("%v", err)
-				}
-				if s.elsewhere != "" {
-					continue // the admin keeps this one; leave it
-				}
-				pl.Secret(hostfiles.Secret{Path: s.spec.Path, Value: value, Owner: s.spec.Owner})
-				envKeys[s.spec.EnvFile] = append(envKeys[s.spec.EnvFile], hostfiles.KV{Key: s.spec.EnvKey, Value: s.spec.EnvValue})
-			}
-			got = append(got, "webhook.incoming")
-			where := "channel " + tok.Webhook.ChannelID
-			if tok.Webhook.GuildID != "" {
-				where += " of server " + tok.Webhook.GuildID
-			}
-			fmt.Fprintf(deps.Stdout, "Discord made a webhook in %s.\n", where)
-		}
-		if len(got) == 0 {
-			return fail("Discord's answer had neither your user nor a webhook; nothing was written")
-		}
-		for _, f := range []string{"dashboard.env", "backup.env"} {
-			if len(envKeys[f]) > 0 {
-				pl.Env(f, f+".example", envKeys[f])
-			}
-		}
-		// Write what this consent gave before asking for more, so a webhook Discord made
-		// is never lost to a later failure.
+	// apply writes one plan and notes which services read what it changed.
+	apply := func(pl *hostfiles.Planner) error {
 		p, err := pl.Plan()
 		if err != nil {
-			return fail("%v", err)
+			return err
 		}
 		if err := p.WriteText(deps.Stdout); err != nil {
-			return 1
+			return err
 		}
 		if err := p.Apply(); err != nil {
-			return fail("%v", err)
+			return err
 		}
 		for _, a := range p.Actions {
 			if a.Kind == hostfiles.Create || a.Kind == hostfiles.Update {
@@ -497,6 +428,130 @@ func runDiscordConnect(ctx context.Context, args []string, deps Deps) int {
 				}
 			}
 		}
+		return nil
+	}
+	if copyBackup {
+		fmt.Fprintln(deps.Stdout, "The backup service has no copy of the notification webhook: copying it from secrets/app/discord-webhook-url (no Discord call).")
+		pl := hostfiles.NewPlanner(dir, owner)
+		for _, d := range hostfiles.Dirs {
+			pl.Dir(d.Path, d.Mode, d.Owner)
+		}
+		pl.Secret(hostfiles.Secret{Path: backupHook.spec.Path, Value: []byte(hook.value), Owner: backupHook.spec.Owner})
+		pl.Env(backupHook.spec.EnvFile, backupHook.spec.EnvFile+".example", []hostfiles.KV{{Key: backupHook.spec.EnvKey, Value: backupHook.spec.EnvValue}})
+		if err := apply(pl); err != nil {
+			return fail("%v", err)
+		}
+	}
+	if len(scopes) == 0 {
+		if !copyBackup {
+			fmt.Fprintf(deps.Stdout, "Discord: nothing to do. The first owner is set (BOOTSTRAP_OWNER_DISCORD_ID=%s) and the webhook file exists.\n", ownerID)
+		}
+		printRestart(deps, restart, false, app)
+		return 0
+	}
+	if !deps.IsTerminal(deps.StdinFD) {
+		return fail("connect needs a terminal: you paste the setup code the dashboard shows into it")
+	}
+	now := deps.Now
+	if now == nil {
+		now = time.Now
+	}
+	dc := discordClient(deps)
+	clientSecret := discord.Secret(secret.value)
+	used := map[string]bool{}
+	ownerWritten, ownerFailed := false, false
+	for round := 0; len(scopes) > 0; round++ {
+		if round == 2 {
+			return fail("Discord did not give %s after two links; nothing more was asked", strings.Join(scopes, " "))
+		}
+		newLink := func() (*discord.Consent, error) {
+			cons, err := discord.NewConsent(deps.Random, now(), clientID, clientSecret, redirect, scopes)
+			if err != nil {
+				return nil, err
+			}
+			if contains(scopes, "webhook.incoming") {
+				fmt.Fprintln(deps.Stdout, "Discord asks you to pick the channel for dashboard notifications.")
+			}
+			fmt.Fprintf(deps.Stdout, "\n  %s\n\nThe link works for %d minutes. The dashboard then shows a setup code (behind the usual Cloudflare sign-in).\n"+
+				"Paste it here, and only here.\n", cons.URL, int(auth.SetupStateTTL/time.Minute))
+			return cons, nil
+		}
+		if round == 0 {
+			fmt.Fprintln(deps.Stdout, "Open this link in a browser where you are signed in to Discord as yourself (the club's admin), and approve it.")
+		} else {
+			fmt.Fprintf(deps.Stdout, "Discord did not include %s in that answer. One more link, for that alone:\n", strings.Join(scopes, " "))
+		}
+		cons, err := newLink()
+		if err != nil {
+			return fail("%v", err)
+		}
+		tok, ok := pasteAndExchange(ctx, deps, dc, cons, newLink, now, clientID, clientSecret, redirect, used)
+		if !ok {
+			return fail("no usable setup code; nothing more was written. Run `scripts/setup discord connect` again for a new link")
+		}
+		var got []string
+		pl := hostfiles.NewPlanner(dir, owner)
+		// Each env file is planned once, after the secret files its keys name, so a key never
+		// points at a file that is not there yet.
+		envKeys := map[string][]hostfiles.KV{}
+		// The webhook first: Discord made it already, so it is written whatever happens to
+		// the owner below.
+		if contains(scopes, "webhook.incoming") && tok.Webhook != nil {
+			for _, d := range hostfiles.Dirs {
+				pl.Dir(d.Path, d.Mode, d.Owner)
+			}
+			value := []byte(tok.Webhook.URL.Reveal())
+			for _, name := range []string{"discord-webhook-url", "backup-discord-webhook-url"} {
+				s, err := storedSecret(dir, name)
+				if err != nil {
+					return fail("%v", err)
+				}
+				if s.elsewhere != "" {
+					fmt.Fprintf(deps.Stdout, "%s keeps its own webhook file (%s=%s); left alone.\n", s.spec.EnvFile, s.spec.EnvKey, s.elsewhere)
+					continue
+				}
+				pl.Secret(hostfiles.Secret{Path: s.spec.Path, Value: value, Owner: s.spec.Owner})
+				envKeys[s.spec.EnvFile] = append(envKeys[s.spec.EnvFile], hostfiles.KV{Key: s.spec.EnvKey, Value: s.spec.EnvValue})
+			}
+			got = append(got, "webhook.incoming")
+			where := "channel " + tok.Webhook.ChannelID
+			if tok.Webhook.GuildID != "" {
+				where += " of server " + tok.Webhook.GuildID
+			}
+			name := printable(tok.Webhook.Name)
+			fmt.Fprintf(deps.Stdout, "Discord made a webhook named %q in %s.\n"+
+				"If you did not mean to make it, delete it in Discord: that channel's settings (Edit Channel) → Integrations → Webhooks → %q → Delete Webhook.\n", name, where, name)
+		}
+		if contains(scopes, "identify") {
+			// Asked once: a declined or failed owner is not asked for again in this run.
+			got = append(got, "identify")
+			u, err := dc.CurrentUser(ctx, tok.AccessToken)
+			switch {
+			case err != nil:
+				fmt.Fprintf(deps.Stderr, "setup discord connect: %v; no owner was written\n", err)
+				ownerFailed = true
+			case confirmOwner(deps, u):
+				kvs := []hostfiles.KV{{Key: "BOOTSTRAP_OWNER_DISCORD_ID", Value: u.ID}}
+				if realValue(dir, "dashboard.env", "BOOTSTRAP_OWNER_NAME") == "" && printable(u.DisplayName()) != "" {
+					kvs = append(kvs, hostfiles.KV{Key: "BOOTSTRAP_OWNER_NAME", Value: printable(u.DisplayName())})
+				}
+				envKeys["dashboard.env"] = append(envKeys["dashboard.env"], kvs...)
+				ownerWritten = true
+			default:
+				fmt.Fprintln(deps.Stdout, "No owner was written. To choose another account, run `scripts/setup discord connect` again from a browser signed in to that Discord account,\n"+
+					"or set it with `scripts/setup host --yes --owner-discord-id <ID>`.")
+			}
+		}
+		for _, f := range []string{"dashboard.env", "backup.env"} {
+			if len(envKeys[f]) > 0 {
+				pl.Env(f, f+".example", envKeys[f])
+			}
+		}
+		// Write what this consent gave before asking for more, so a webhook Discord made
+		// is never lost to a later failure.
+		if err := apply(pl); err != nil {
+			return fail("%v", err)
+		}
 		var left []string
 		for _, s := range scopes {
 			if !contains(got, s) {
@@ -505,6 +560,14 @@ func runDiscordConnect(ctx context.Context, args []string, deps Deps) int {
 		}
 		scopes = left
 	}
+	printRestart(deps, restart, ownerWritten, app)
+	if ownerFailed {
+		return 1
+	}
+	return 0
+}
+
+func printRestart(deps Deps, restart map[string]bool, ownerWritten bool, app string) {
 	var services []string
 	for _, s := range []string{"dashboard", "backup"} {
 		if restart[s] {
@@ -515,17 +578,53 @@ func runDiscordConnect(ctx context.Context, args []string, deps Deps) int {
 		fmt.Fprintf(deps.Stdout, "\nSetup restarts nothing. To load the new settings, run in the deploy directory (server/deploy):\n"+
 			"  docker compose --env-file .env --env-file prod-image.env -f compose.cloudflare.yml up -d --force-recreate %s\n", strings.Join(services, " "))
 	}
-	if restart["dashboard"] && ownerID == "" {
+	if ownerWritten {
 		fmt.Fprintf(deps.Stdout, "When it starts with no owner yet, the dashboard makes that Discord account the owner. Then sign in at %s.\n", app)
 	}
-	return 0
+}
+
+// printable drops control characters from text Discord chose (names) before it is shown
+// or written.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// confirmOwner shows the Discord account that approved the link and asks for a typed
+// "yes" before it becomes the first owner (review of #128, F-2): the browser may have been
+// signed in to another account, and ownership cannot be taken back by configuration once
+// the dashboard has made it. No terminal, or anything but "yes", is a no.
+func confirmOwner(deps Deps, u *discord.User) bool {
+	fmt.Fprintf(deps.Stdout, "Discord says this link was approved by %s (@%s, ID %s).\n", printable(u.DisplayName()), printable(u.Username), u.ID)
+	if !deps.IsTerminal(deps.StdinFD) || deps.Stdin == nil {
+		fmt.Fprintln(deps.Stdout, "No terminal to confirm on, so no owner was written.")
+		return false
+	}
+	fmt.Fprint(deps.Stderr, "Make this account the dashboard's first owner? Type yes: ")
+	line, _ := bufio.NewReader(deps.Stdin).ReadString('\n')
+	return strings.TrimSpace(line) == "yes"
 }
 
 // pasteAndExchange asks for the setup code up to pasteAttempts times and trades the first
 // good one. A paste from another link (other state) or a code already tried is refused
-// without asking Discord.
-func pasteAndExchange(ctx context.Context, deps Deps, dc *discord.Client, cons *discord.Consent, clientID string, secret discord.Secret, redirect string, used map[string]bool) (*discord.Token, bool) {
+// without asking Discord. When the link has expired (the dashboard no longer shows its
+// code), it makes a new one with newLink and says so.
+func pasteAndExchange(ctx context.Context, deps Deps, dc *discord.Client, cons *discord.Consent, newLink func() (*discord.Consent, error),
+	now func() time.Time, clientID string, secret discord.Secret, redirect string, used map[string]bool) (*discord.Token, bool) {
 	for attempt := 0; attempt < pasteAttempts; attempt++ {
+		if !now().Before(cons.Expiry) {
+			fmt.Fprintf(deps.Stdout, "That link has expired (links work for %d minutes). Here is a new one:\n", int(auth.SetupStateTTL/time.Minute))
+			next, err := newLink()
+			if err != nil {
+				fmt.Fprintln(deps.Stderr, "setup discord connect:", err)
+				return nil, false
+			}
+			cons = next
+		}
 		fmt.Fprint(deps.Stderr, "Setup code from the dashboard page (input hidden): ")
 		raw, err := deps.ReadPassword(deps.StdinFD)
 		fmt.Fprintln(deps.Stderr)
@@ -541,6 +640,10 @@ func pasteAndExchange(ctx context.Context, deps Deps, dc *discord.Client, cons *
 		if subtle.ConstantTimeCompare([]byte(state), []byte(cons.State)) != 1 {
 			fmt.Fprintln(deps.Stderr, "setup discord connect: that setup code is not from the link above (another state). Open the link above and paste what it shows.")
 			continue
+		}
+		if !now().Before(cons.Expiry) {
+			fmt.Fprintln(deps.Stderr, "setup discord connect: that code came after its link expired.")
+			continue // the top of the loop makes a new link
 		}
 		if used[code] {
 			fmt.Fprintln(deps.Stderr, "setup discord connect: that code was already used. Open the link above again for a new one.")

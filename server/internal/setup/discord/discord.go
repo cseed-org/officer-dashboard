@@ -70,7 +70,12 @@ type Client struct {
 func New() *Client {
 	return &Client{
 		BaseURL: APIBase,
-		HTTP:    &http.Client{Timeout: 15 * time.Second},
+		// No redirects: a 307 or 308 from the token endpoint would make Go send the form
+		// (code, code_verifier) to wherever it points. Discord does not redirect these
+		// calls, so a 3xx is an error (review of #128, F-5).
+		HTTP: &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
 		// docs.discord.com/developers/reference, "User Agent": "DiscordBot ($url,
 		// $versionNumber)"; requests without one "may be blocked".
 		UserAgent: "DiscordBot (https://github.com/cseed-org/officer-dashboard, setup)",
@@ -394,35 +399,32 @@ type Consent struct {
 	State    string
 	Scopes   []string
 	URL      string
+	Expiry   time.Time // the dashboard shows the code only before this
 	verifier Secret
 }
 
 // Verifier is the PKCE code_verifier, which only this process knows.
 func (c *Consent) Verifier() Secret { return c.verifier }
 
-// NewConsent builds a link asking for scopes, back to redirectURI, with a fresh state
-// (auth.SetupStatePrefix and 32 random bytes) and PKCE S256 verifier (32 random bytes:
-// 43 characters, RFC 7636 §4.1). random is nil for crypto/rand.
-func NewConsent(random io.Reader, clientID, redirectURI string, scopes []string) (*Consent, error) {
+// NewConsent builds a link asking for scopes, back to redirectURI, with a state minted by
+// auth.MintSetupState under the client secret (the dashboard shows the code only for a
+// state it verifies with the same secret, for auth.SetupStateTTL) and a fresh PKCE S256
+// verifier (32 random bytes: 43 characters, RFC 7636 §4.1). random is nil for
+// crypto/rand.
+func NewConsent(random io.Reader, now time.Time, clientID string, secret Secret, redirectURI string, scopes []string) (*Consent, error) {
 	if random == nil {
 		random = rand.Reader
 	}
-	draw := func() (string, error) {
-		b := make([]byte, 32)
-		if _, err := io.ReadFull(random, b); err != nil {
-			return "", errors.New("no random numbers for the setup link")
-		}
-		return base64.RawURLEncoding.EncodeToString(b), nil
-	}
-	s, err := draw()
+	state, err := auth.MintSetupState(secret.Reveal(), now, random)
 	if err != nil {
 		return nil, err
 	}
-	v, err := draw()
-	if err != nil {
-		return nil, err
+	expiry, _ := auth.SetupStateExpiry(state)
+	b := make([]byte, 32)
+	if _, err := io.ReadFull(random, b); err != nil {
+		return nil, errors.New("no random numbers for the setup link")
 	}
-	state := auth.SetupStatePrefix + s
+	v := base64.RawURLEncoding.EncodeToString(b)
 	sum := sha256.Sum256([]byte(v))
 	q := url.Values{
 		"response_type":         {"code"},
@@ -437,7 +439,7 @@ func NewConsent(random io.Reader, clientID, redirectURI string, scopes []string)
 	// (docs.discord.com/developers/topics/oauth2). Encode writes a space as '+' and a
 	// literal '+' as %2B, so swapping '+' for %20 changes only the spaces.
 	link := AuthorizeURL + "?" + strings.ReplaceAll(q.Encode(), "+", "%20")
-	return &Consent{State: state, Scopes: append([]string(nil), scopes...), URL: link, verifier: Secret(v)}, nil
+	return &Consent{State: state, Scopes: append([]string(nil), scopes...), URL: link, Expiry: expiry, verifier: Secret(v)}, nil
 }
 
 // ParsePaste reads what the admin pasted: the relay page's "state:code", or the whole
@@ -458,7 +460,7 @@ func ParsePaste(in string) (state, code string, err error) {
 		}
 		state, code = in[:i], in[i+1:]
 	}
-	if !auth.ValidSetupRelay(state, code) {
+	if _, ok := auth.SetupStateExpiry(state); !ok || !auth.ValidSetupCode(code) {
 		return "", "", errors.New("that is not a setup code: copy the full line the page shows")
 	}
 	return state, code, nil

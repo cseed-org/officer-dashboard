@@ -35,6 +35,11 @@ type Server struct {
 	// the webhook. When false, it returns only identify (the undocumented case setup must
 	// cope with). webhook.incoming alone always returns one.
 	CombinedWebhook bool
+	// UserIDOverride replaces the user ID /users/@me returns; WebhookURLOverride the
+	// webhook URL in a token answer (both for malformed-answer tests).
+	UserIDOverride, WebhookURLOverride string
+	// RedirectTokenTo makes the token endpoint answer 307 to this path.
+	RedirectTokenTo string
 	// RateLimit answers this many next requests with 429 and RetryAfter seconds.
 	RateLimit  int
 	RetryAfter float64
@@ -179,6 +184,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method + " " + r.URL.Path {
 	case "POST /api/oauth2/token":
+		if s.RedirectTokenTo != "" {
+			http.Redirect(w, r, s.RedirectTokenTo, http.StatusTemporaryRedirect)
+			return
+		}
 		s.token(w, r)
 	case "GET /api/v10/users/@me":
 		s.me(w, r)
@@ -253,6 +262,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		if has(scopes, "webhook.incoming") {
 			hook := Webhook{ID: "200000000000000077", Token: random(30), ChannelID: "300000000000000011", GuildID: "400000000000000022"}
 			hook.URL = "https://discord.com/api/webhooks/" + hook.ID + "/" + hook.Token
+			if s.WebhookURLOverride != "" {
+				hook.URL = s.WebhookURLOverride
+			}
 			s.webhooks = append(s.webhooks, hook)
 			body["webhook"] = map[string]any{"application_id": s.ClientID, "name": "dashboard", "url": hook.URL, "channel_id": hook.ChannelID,
 				"token": hook.Token, "type": 1, "avatar": nil, "guild_id": hook.GuildID, "id": hook.ID}
@@ -284,7 +296,11 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"message": "401: Unauthorized", "code": 0}`)
 		return
 	}
-	json.NewEncoder(w).Encode(map[string]any{"id": s.UserID, "username": s.Username, "global_name": s.GlobalName, "avatar": nil})
+	id := s.UserID
+	if s.UserIDOverride != "" {
+		id = s.UserIDOverride
+	}
+	json.NewEncoder(w).Encode(map[string]any{"id": id, "username": s.Username, "global_name": s.GlobalName, "avatar": nil})
 }
 
 // application is GET /applications/@me (docs.discord.com/developers/resources/application,

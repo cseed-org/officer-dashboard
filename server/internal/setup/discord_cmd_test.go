@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"officerdashboard/internal/auth"
 	"officerdashboard/internal/setup/discord"
 	"officerdashboard/internal/setup/discord/discordfake"
 	"officerdashboard/internal/setup/hostfiles"
@@ -33,6 +34,9 @@ type discordHarness struct {
 	private string // the admin's private directory for value files
 	owner   *memOwner
 	tty     bool
+	ttyFor  int    // when > 0, the terminal goes away after this many IsTerminal calls
+	stdin   string // typed at visible prompts (the owner question); default "yes"
+	now     time.Time
 	answers []func(printed string) string
 	prompts []string
 	waits   []time.Duration
@@ -44,7 +48,8 @@ func newDiscordHarness(t *testing.T) *discordHarness {
 	t.Cleanup(f.Close)
 	f.RedirectURIs = []string{appURL + "/auth/callback"}
 	f.CombinedWebhook = true
-	h := &discordHarness{t: t, f: f, dir: deployDir(t), private: t.TempDir(), owner: &memOwner{}}
+	h := &discordHarness{t: t, f: f, dir: deployDir(t), private: t.TempDir(), owner: &memOwner{}, stdin: "yes\n",
+		now: time.Date(2026, 11, 28, 12, 0, 0, 0, time.UTC)}
 	// What `setup host --yes --app-url` leaves: .env and dashboard.env with APP_URL.
 	if r := hostCmd(t, h.owner, "", "--deploy-dir", h.dir, "--yes", "--app-url", appURL); r.code != 0 {
 		t.Fatalf("host: %d %s", r.code, r.stderr)
@@ -96,12 +101,16 @@ func (h *discordHarness) run(args ...string) hostResult {
 	c := discord.New()
 	c.BaseURL = h.f.URL + "/api"
 	c.Sleep = func(_ context.Context, d time.Duration) error { h.waits = append(h.waits, d); return nil }
+	calls := 0
 	code := Run(context.Background(), append([]string{"discord"}, args...), Deps{
-		Getenv:     func(string) string { return "" },
-		Stdout:     &out,
-		Stderr:     &errb,
-		ReadFile:   os.ReadFile,
-		IsTerminal: func(int) bool { return h.tty },
+		Getenv:   func(string) string { return "" },
+		Stdout:   &out,
+		Stderr:   &errb,
+		ReadFile: os.ReadFile,
+		IsTerminal: func(int) bool {
+			calls++
+			return h.tty && (h.ttyFor == 0 || calls <= h.ttyFor)
+		},
 		ReadPassword: func(int) ([]byte, error) {
 			h.prompts = append(h.prompts, lastLine(errb.String()))
 			if len(h.answers) == 0 {
@@ -113,9 +122,10 @@ func (h *discordHarness) run(args ...string) hostResult {
 			h.pasted = append(h.pasted, v)
 			return []byte(v), nil
 		},
-		Stdin:   strings.NewReader(""),
+		Stdin:   strings.NewReader(h.stdin),
 		Owner:   h.owner,
 		Discord: c,
+		Now:     func() time.Time { return h.now },
 	})
 	r := hostResult{code, out.String(), errb.String()}
 	h.noSecretPrinted(r)
@@ -450,7 +460,8 @@ func TestConnectOneConsentGivesOwnerAndWebhook(t *testing.T) {
 		h.env("backup.env", "DISCORD_WEBHOOK_URL_FILE") != "/run/secrets/backup/discord-webhook-url" {
 		t.Error("webhook file keys not set")
 	}
-	for _, want := range []string{"up -d --force-recreate dashboard backup", "Club Admin (" + h.f.UserID + ")", "channel " + hooks[0].ChannelID} {
+	for _, want := range []string{"up -d --force-recreate dashboard backup", "approved by Club Admin (@admin, ID " + h.f.UserID + ")", "channel " + hooks[0].ChannelID,
+		`webhook named "dashboard"`, "Integrations → Webhooks", "Delete Webhook", "works for 10 minutes"} {
 		if !strings.Contains(r.stdout, want) {
 			t.Errorf("output lacks %q:\n%s", want, r.stdout)
 		}
@@ -516,7 +527,13 @@ func TestConnectRefusesAnotherStateAndAReusedCode(t *testing.T) {
 	h.f.CombinedWebhook = false
 	var first string
 	// Round one: a paste from another link (wrong state) is refused, then the right one.
-	h.answers = append(h.answers, func(string) string { return "setup." + strings.Repeat("Z", 43) + ":abcdefghij0123456789" })
+	h.answers = append(h.answers, func(string) string {
+		other, err := auth.MintSetupState(h.f.ClientSecret, h.now, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return other + ":abcdefghij0123456789"
+	})
 	h.answers = append(h.answers, func(printed string) string {
 		code, state, err := h.f.Approve(lastLink(t, printed))
 		if err != nil {
@@ -598,4 +615,143 @@ func TestConnectDryRunReadsOnly(t *testing.T) {
 	if h.snapshot() != before || len(h.f.Requests()) != requests || len(h.prompts) != 0 {
 		t.Error("the dry run wrote, called Discord or asked")
 	}
+}
+
+// Review F-2: the account that approved the link becomes owner only after a typed "yes".
+func TestConnectAsksBeforeMakingTheOwner(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stdin  string
+		ttyFor int
+	}{
+		"answered no":           {"no\n", 0},
+		"answered y":            {"y\n", 0},
+		"nothing typed":         {"", 0},
+		"no terminal to ask on": {"yes\n", 1}, // the terminal is gone by the question
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := connected(t)
+			h.stdin, h.ttyFor = tc.stdin, tc.ttyFor
+			h.approve()
+			r := h.run("connect", "--deploy-dir", h.dir)
+			if r.code != 0 {
+				t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
+			}
+			if got := h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID"); got != "" {
+				t.Errorf("owner written: %q", got)
+			}
+			if !strings.Contains(r.stdout, "approved by Club Admin (@admin, ID "+h.f.UserID+")") || !strings.Contains(strings.ToLower(r.stdout), "no owner was written") {
+				t.Errorf("output:\n%s", r.stdout)
+			}
+			// The webhook Discord made is written anyway.
+			checkSecretFile(t, h, "secrets/app/discord-webhook-url", h.f.Webhooks()[0].URL)
+		})
+	}
+}
+
+// Review F-1: the link expires with its state; a slow admin gets a new one.
+func TestConnectMakesANewLinkWhenTheFirstExpires(t *testing.T) {
+	h := connected(t)
+	h.answers = append(h.answers, func(printed string) string {
+		code, state, err := h.f.Approve(lastLink(t, printed))
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.now = h.now.Add(auth.SetupStateTTL) // the admin took ten minutes
+		return state + ":" + code
+	})
+	h.approve()
+	r := h.run("connect", "--deploy-dir", h.dir)
+	if r.code != 0 {
+		t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	links := linkRE.FindAllString(r.stdout, -1)
+	if len(links) != 2 || !strings.Contains(r.stdout, "That link has expired") || !strings.Contains(r.stderr, "after its link expired") {
+		t.Fatalf("links %d\n%s\n%s", len(links), r.stdout, r.stderr)
+	}
+	// Each link's state is one the dashboard verifies with the client secret, at the time
+	// it was printed.
+	u0, _ := url.Parse(links[0])
+	u1, _ := url.Parse(links[1])
+	if !auth.VerifySetupState(h.f.ClientSecret, u1.Query().Get("state"), h.now) || auth.VerifySetupState(h.f.ClientSecret, u0.Query().Get("state"), h.now) {
+		t.Error("the new link's state does not verify now, or the old one still does")
+	}
+	if h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID") != h.f.UserID {
+		t.Error("owner not written")
+	}
+}
+
+// Review F-8: an install with the app webhook but no backup copy gets the copy, from the
+// app's file, without Discord.
+func TestConnectCopiesTheWebhookForTheBackupService(t *testing.T) {
+	h := connected(t)
+	h.tty = false // no terminal needed: nothing is asked
+	if r := hostCmd(t, h.owner, "", "--deploy-dir", h.dir, "--yes", "--owner-discord-id", "123456789012345699"); r.code != 0 {
+		t.Fatal(r.stderr)
+	}
+	value := "https://discord.com/api/webhooks/200000000000000077/" + strings.Repeat("Wh", 20)
+	if r := hostCmd(t, h.owner, `{"discord-webhook-url":"`+value+`"}`, "--deploy-dir", h.dir, "--yes", "--secrets-stdin"); r.code != 0 {
+		t.Fatal(r.stderr)
+	}
+	h.pasted = append(h.pasted, value)
+	requests := len(h.f.Requests())
+	r := h.run("connect", "--deploy-dir", h.dir)
+	if r.code != 0 || !strings.Contains(r.stdout, "copying it from secrets/app/discord-webhook-url") || !strings.Contains(r.stdout, "up -d --force-recreate backup") {
+		t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	checkSecretFile(t, h, "secrets/backup/discord-webhook-url", value)
+	if h.env("backup.env", "DISCORD_WEBHOOK_URL_FILE") != "/run/secrets/backup/discord-webhook-url" {
+		t.Error("backup.env key not set")
+	}
+	if len(h.f.Requests()) != requests {
+		t.Error("Discord was called")
+	}
+	before := h.snapshot()
+	if r := h.run("connect", "--deploy-dir", h.dir); r.code != 0 || !strings.Contains(r.stdout, "nothing to do") || h.snapshot() != before {
+		t.Errorf("second run: %d\n%s", r.code, r.stdout)
+	}
+}
+
+// Review F-7 (M9): a webhook file the admin keeps elsewhere is left alone.
+func TestConnectLeavesAWebhookKeptElsewhere(t *testing.T) {
+	h := connected(t)
+	raw := h.read("backup.env") + "DISCORD_WEBHOOK_URL_FILE=/run/secrets/backup/my-own-hook\n"
+	if err := os.WriteFile(filepath.Join(h.dir, "backup.env"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.approve()
+	r := h.run("connect", "--deploy-dir", h.dir)
+	if r.code != 0 {
+		t.Fatalf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	if _, err := os.Lstat(filepath.Join(h.dir, "secrets/backup/discord-webhook-url")); !errors.Is(err, fs.ErrNotExist) {
+		t.Error("wrote a backup webhook file the admin keeps elsewhere")
+	}
+	if h.read("backup.env") != raw || !strings.Contains(r.stdout, "keeps its own webhook file") {
+		t.Errorf("backup.env changed or not reported:\n%s", r.stdout)
+	}
+	checkSecretFile(t, h, "secrets/app/discord-webhook-url", h.f.Webhooks()[0].URL)
+}
+
+// Review F-7 (M10, M11): a malformed answer from Discord writes nothing of it.
+func TestConnectRefusesMalformedAnswers(t *testing.T) {
+	t.Run("user ID", func(t *testing.T) {
+		h := connected(t)
+		h.f.UserIDOverride = "12345"
+		h.approve()
+		r := h.run("connect", "--deploy-dir", h.dir)
+		if r.code != 1 || h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID") != "" {
+			t.Errorf("%d, owner %q\n%s", r.code, h.env("dashboard.env", "BOOTSTRAP_OWNER_DISCORD_ID"), r.stderr)
+		}
+		checkSecretFile(t, h, "secrets/app/discord-webhook-url", h.f.Webhooks()[0].URL) // kept: Discord made it
+	})
+	t.Run("webhook URL", func(t *testing.T) {
+		h := connected(t)
+		h.f.WebhookURLOverride = "https://attacker.example/api/webhooks/200000000000000077/" + strings.Repeat("x", 30)
+		before := h.snapshot()
+		h.approve()
+		r := h.run("connect", "--deploy-dir", h.dir)
+		if r.code != 1 || h.snapshot() != before || strings.Contains(r.stdout+r.stderr, "attacker.example") {
+			t.Errorf("%d\n%s\n%s", r.code, r.stdout, r.stderr)
+		}
+	})
 }

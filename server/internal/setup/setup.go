@@ -81,6 +81,7 @@ type Deps struct {
 	Random io.Reader       // nil: crypto/rand
 	// Used by `setup discord` (nil: the real Discord API).
 	Discord *discord.Client
+	Now     func() time.Time // the clock for setup link expiry (nil: time.Now)
 }
 
 // Main runs the command with the real process environment and terminal.
