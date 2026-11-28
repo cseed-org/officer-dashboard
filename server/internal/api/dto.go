@@ -175,7 +175,9 @@ type FulfillmentJob struct {
 
 type AdminUser struct {
 	CurrentUser
-	Email       *string `json:"email"`
+	Email *string `json:"email"`
+	// AccessEmail is director-only: this DTO is served only on /api/admin/users.
+	AccessEmail *string `json:"accessEmail"`
 	Active      bool    `json:"active"`
 	LastLoginAt *string `json:"lastLoginAt"`
 	CreatedAt   string  `json:"createdAt"`
@@ -222,7 +224,7 @@ func currentUser(u *store.User) CurrentUser {
 }
 
 func adminUser(u *store.User) AdminUser {
-	return AdminUser{CurrentUser: currentUser(u), Email: u.Email, Active: u.Active, LastLoginAt: isoPtr(u.LastLoginAt), CreatedAt: isoMs(int64(u.CreatedAt))}
+	return AdminUser{CurrentUser: currentUser(u), Email: u.Email, AccessEmail: u.AccessEmail, Active: u.Active, LastLoginAt: isoPtr(u.LastLoginAt), CreatedAt: isoMs(int64(u.CreatedAt))}
 }
 
 func accountOption(a accounting.Account) AccountOption {

@@ -34,7 +34,7 @@ func (c *Ctx) adminUserCreate() error {
 		return err
 	}
 	var discordID, name, role, subteamID string
-	var title, email validate.Field[string]
+	var title, email, accessEmail validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		discordID = r.Str("discordId", validate.S{Req: true, Format: "discord"}).V
 		name = r.Str("name", validate.S{Req: true, Trim: true, Min: 1, Max: 100}).V
@@ -42,6 +42,7 @@ func (c *Ctx) adminUserCreate() error {
 		role = r.Str("role", validate.S{Enum: []string{"leadership", "director", "officer"}, HasDef: true, Default: "officer"}).V
 		title = r.Str("title", validate.S{Null: true, Trim: true, Max: 100})
 		email = r.Str("email", validate.S{Null: true, Format: "email"})
+		accessEmail = accessEmailField(r)
 	}); err != nil {
 		return err
 	}
@@ -76,15 +77,24 @@ func (c *Ctx) adminUserCreate() error {
 		if err == nil && (pending.ExpiresAt == nil || *pending.ExpiresAt > c.S.nowMs()) {
 			return conflict("That Discord account has a pending invite. Revoke it on the Officers page first, or let them accept it.")
 		}
+		access, accessFrom := accessEmailPtr(accessEmail), any(nil)
 		if err == nil {
 			// Expired: clear it (as revoking would) so this account's own invite row can take its place.
 			if err := w.DeletePendingInvite(ctx, pending.ID); err != nil {
 				return err
 			}
+			// A director typed that email for this same Discord account: keep it, unless this
+			// request sets its own (a value, or null for none).
+			if !accessEmail.Set && pending.AccessEmail != nil {
+				access, accessFrom = pending.AccessEmail, "expired invite"
+			}
 		}
 		if _, err := w.UserByDiscordID(ctx, discordID); err == nil {
 			return conflict("That Discord account already has a dashboard account.")
 		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		if err := checkAccessEmailFree(ctx, w, access, discordID); err != nil {
 			return err
 		}
 		now := store.Ms(c.S.nowMs())
@@ -94,14 +104,14 @@ func (c *Ctx) adminUserCreate() error {
 		if err := w.InsertInvite(ctx, inv, int64(now)); err != nil {
 			return err
 		}
-		u := store.User{ID: id, DiscordID: discordID, Name: name, Role: role, Active: true, Title: ptrIf(title), Email: ptrIf(email), CreatedAt: now, UpdatedAt: now}
+		u := store.User{ID: id, DiscordID: discordID, Name: name, Role: role, Active: true, Title: ptrIf(title), Email: ptrIf(email), AccessEmail: access, CreatedAt: now, UpdatedAt: now}
 		if err := w.InsertUser(ctx, u); err != nil {
 			return err
 		}
 		if err := w.AcceptInvite(ctx, inv.ID, id, int64(now)); err != nil {
 			return err
 		}
-		if err := c.audit(ctx, w, "user.created", "user", id, nil, map[string]any{"discordId": discordID, "name": name, "role": role, "title": u.Title, "email": u.Email, "subteamId": subteamID, "inviteId": inv.ID}); err != nil {
+		if err := c.audit(ctx, w, "user.created", "user", id, nil, map[string]any{"discordId": discordID, "name": name, "role": role, "title": u.Title, "email": u.Email, "accessEmail": u.AccessEmail, "accessEmailFrom": accessFrom, "subteamId": subteamID, "inviteId": inv.ID}); err != nil {
 			return err
 		}
 		got, err := w.UserByID(ctx, id)
@@ -125,13 +135,14 @@ func (c *Ctx) adminUserUpdate() error {
 	directorWriteHook()
 	var name, role validate.Field[string]
 	var active validate.Field[bool]
-	var title, email validate.Field[string]
+	var title, email, accessEmail validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		name = r.Str("name", validate.S{Trim: true, Min: 1, Max: 100})
 		role = r.Str("role", validate.S{Enum: []string{"leadership", "director", "officer"}})
 		active = r.BoolField("active")
 		title = r.Str("title", validate.S{Null: true, Trim: true, Max: 100})
 		email = r.Str("email", validate.S{Null: true, Format: "email"})
+		accessEmail = accessEmailField(r)
 	}); err != nil {
 		return err
 	}
@@ -164,6 +175,15 @@ func (c *Ctx) adminUserUpdate() error {
 			}
 		}
 		patch := store.UserPatch{Name: optOf(name), Role: optOf(role), Active: optOf(active), Title: optOf(title), Email: optOf(email)}
+		if accessEmail.Set && !sameEmail(accessEmailPtr(accessEmail), before.AccessEmail) {
+			if err := c.canSetAccessEmail(w, before); err != nil {
+				return err
+			}
+			if err := checkAccessEmailFree(ctx, w, accessEmailPtr(accessEmail), before.DiscordID); err != nil {
+				return err
+			}
+			patch.AccessEmail = optOf(accessEmail)
+		}
 		// The users_last_director trigger refuses to demote or deactivate the last director.
 		if err := w.UpdateUser(ctx, before.ID, patch, c.S.nowMs()); err != nil {
 			return err

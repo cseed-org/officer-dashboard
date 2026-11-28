@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api, ApiCallError, fieldErrors } from '../../lib/api/client';
 import { useApi } from '../../lib/api/useApi';
 import type { Contact, CurrentUser, DMResult, Invite, InviteResponse, Officer, OfficerActivityResponse, ProfileResponse, Subteam } from '../../lib/contracts';
+import { ACCESS_EMAIL_HINT, ACCESS_EMAIL_LABEL, canSetAccessEmail, normalizeAccessEmail } from '../../lib/accessEmail';
 import { ROLE_HUE, type Hue } from '../../lib/colors';
 import { setParams } from '../../lib/nav';
 import { ActivityList, PersonDrawer, PersonFacts, PersonSection, useCopied, usePersonParam, type PersonTab } from '../components/PersonDrawer';
@@ -19,6 +20,7 @@ const birthday = (md: string | null) => {
   return `${MONTHS[+m! - 1]} ${+d!}`;
 };
 const cap = (s: string) => s[0]!.toUpperCase() + s.slice(1);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const errText = (e: unknown, fallback: string) => (e instanceof ApiCallError || e instanceof Error ? e.message : fallback);
 
 const ROLE_LABEL = { leadership: 'Leadership', director: 'Director', officer: 'Officer' } as const;
@@ -184,12 +186,13 @@ function InviteDialog({
   onClose: () => void;
   subteams: Subteam[];
   dmConfigured: boolean | null;
-  prefill: { name: string; discordId: string; subteamId: string } | null;
+  prefill: { name: string; discordId: string; subteamId: string; accessEmail: string | null } | null;
   onSent: () => void;
 }) {
   const [name, setName] = useState('');
   const [discordId, setDiscordId] = useState('');
   const [subteamId, setSubteamId] = useState('');
+  const [accessEmail, setAccessEmail] = useState('');
   const [dm, setDm] = useState(!!dmConfigured);
   const [link, setLink] = useState(true);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -202,6 +205,7 @@ function InviteDialog({
     setName(prefill?.name ?? '');
     setDiscordId(prefill?.discordId ?? '');
     setSubteamId(prefill?.subteamId ?? subteams[0]?.id ?? '');
+    setAccessEmail(prefill?.accessEmail ?? '');
     setDm(!!dmConfigured);
     setLink(true);
     setErrors({});
@@ -218,13 +222,17 @@ function InviteDialog({
     if (!name.trim()) errs.name = 'Enter their name';
     if (!/^\d{17,20}$/.test(discordId.trim())) errs.discordId = 'Discord IDs are 17–20 digits';
     if (!subteamId) errs.subteamId = 'Choose a subteam';
+    if (accessEmail.trim() && !EMAIL_RE.test(accessEmail.trim())) errs.accessEmail = 'That isn’t an email address';
     if (!dm && !link) errs.method = 'Choose one or both';
     setErrors(errs);
     setError(null);
     if (Object.keys(errs).length) return;
     setBusy(true);
     try {
-      const r = await api('inviteCreate', { body: { name: name.trim(), discordId: discordId.trim(), subteamId, method } });
+      // An empty field is left out, so re-inviting someone never clears the email their
+      // pending invite already has. Removing it is done in Edit invite details.
+      const email = normalizeAccessEmail(accessEmail);
+      const r = await api('inviteCreate', { body: { name: name.trim(), discordId: discordId.trim(), subteamId, method, ...(email ? { accessEmail: email } : {}) } });
       setResult(r);
       onSent();
     } catch (err) {
@@ -290,6 +298,27 @@ function InviteDialog({
           </p>
           {fe('discordId')}
         </div>
+        <div class="field">
+          <label class="field-label" for="inv-access">
+            {ACCESS_EMAIL_LABEL} <span class="muted">(optional)</span>
+          </label>
+          <input
+            class="input"
+            id="inv-access"
+            type="email"
+            autocomplete="off"
+            value={accessEmail}
+            disabled={!!result}
+            onInput={(e) => setAccessEmail((e.target as HTMLInputElement).value)}
+            aria-invalid={errors.accessEmail ? true : undefined}
+            aria-describedby={`inv-access-hint${errors.accessEmail ? ' inv-accessEmail-error' : ''}`}
+            data-invite-access-email
+          />
+          <p class="field-hint" id="inv-access-hint">
+            {ACCESS_EMAIL_HINT}
+          </p>
+          {fe('accessEmail')}
+        </div>
         <fieldset class="fieldset" disabled={!!result}>
           <legend>Send invitation by</legend>
           <div class="invite-delivery">
@@ -322,6 +351,11 @@ function InviteDialog({
         {result && (
           <>
             {result.reinvited && <p class="notice">They already had a pending invite. It now has these details and a new link; the old link stopped working.</p>}
+            {result.reinvited && !accessEmail.trim() && result.invite.accessEmail && (
+              <p class="small muted" data-invite-access-kept>
+                Their {ACCESS_EMAIL_LABEL.toLowerCase()} stays {result.invite.accessEmail}. To remove it, use Edit details on the invite.
+              </p>
+            )}
             <DMStatus dm={result.dm} />
             {showLink && <InviteLink link={result.link} />}
             <p class="small muted">The link expires {fmtDate(result.invite.expiresAt)}. Only the Discord account {result.invite.discordId} can accept it.</p>
@@ -354,13 +388,17 @@ function InviteDialog({
 function InviteEditDialog({ invite, subteams, onClose, onSaved }: { invite: Invite | null; subteams: Subteam[]; onClose: () => void; onSaved: (i: Invite) => void }) {
   const [name, setName] = useState('');
   const [subteamId, setSubteamId] = useState('');
+  const [accessEmail, setAccessEmail] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Once accepted, the account holds the access email: change it on the person instead.
+  const emailLocked = invite?.status !== 'pending' && invite?.status !== 'expired';
   useEffect(() => {
     if (!invite) return;
     setName(invite.name);
     setSubteamId(invite.subteam?.id ?? subteams[0]?.id ?? '');
+    setAccessEmail(invite.accessEmail ?? '');
     setErrors({});
     setError(null);
   }, [invite?.id]);
@@ -372,11 +410,16 @@ function InviteEditDialog({ invite, subteams, onClose, onSaved }: { invite: Invi
       document.getElementById('inv-edit-name')?.focus();
       return;
     }
+    if (!emailLocked && accessEmail.trim() && !EMAIL_RE.test(accessEmail.trim())) {
+      setErrors({ accessEmail: 'That isn’t an email address' });
+      document.getElementById('inv-edit-access')?.focus();
+      return;
+    }
     setErrors({});
     setError(null);
     setBusy(true);
     try {
-      const r = await api('inviteUpdate', { params: { id: invite.id }, body: { name: name.trim(), subteamId } });
+      const r = await api('inviteUpdate', { params: { id: invite.id }, body: { name: name.trim(), subteamId, ...(emailLocked ? {} : { accessEmail: normalizeAccessEmail(accessEmail) }) } });
       onSaved(r.invite);
     } catch (err) {
       const fe = fieldErrors(err);
@@ -422,6 +465,27 @@ function InviteEditDialog({ invite, subteams, onClose, onSaved }: { invite: Invi
             </select>
             {fe('subteamId')}
           </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="inv-edit-access">
+            {ACCESS_EMAIL_LABEL} <span class="muted">(optional)</span>
+          </label>
+          <input
+            class="input"
+            id="inv-edit-access"
+            type="email"
+            autocomplete="off"
+            value={accessEmail}
+            disabled={emailLocked}
+            onInput={(e) => setAccessEmail((e.target as HTMLInputElement).value)}
+            aria-invalid={errors.accessEmail ? true : undefined}
+            aria-describedby={`inv-edit-access-hint${errors.accessEmail ? ' inv-edit-accessEmail-error' : ''}`}
+            data-invite-edit-access-email
+          />
+          <p class="field-hint" id="inv-edit-access-hint">
+            {emailLocked ? 'They’ve accepted, so this is on their account now. Change it from their page in the directory.' : `${ACCESS_EMAIL_HINT} Clear the field and save to remove it.`}
+          </p>
+          {fe('accessEmail')}
         </div>
         {error && (
           <p class="notice notice--negative" role="alert">
@@ -546,6 +610,11 @@ function InvitesSection({
                       <span class="cell-sub">
                         {i.subteam?.name ?? '—'} · <span class="mono">{i.discordId}</span>
                       </span>
+                      {i.accessEmail && (
+                        <span class="cell-sub" data-invite-access-email>
+                          {ACCESS_EMAIL_LABEL}: {i.accessEmail}
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td data-label="Sent">
@@ -666,6 +735,8 @@ function OfficerDrawer({
   const [team, setTeam] = useState('');
   const [title, setTitle] = useState('');
   const [term, setTerm] = useState('');
+  const [accessEmail, setAccessEmail] = useState('');
+  const [accessNote, setAccessNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState<OfficerActivityResponse | null>(null);
@@ -676,9 +747,13 @@ function OfficerDrawer({
     setTeam(officer?.subteam?.id ?? '');
     setTitle(officer?.title ?? '');
     setTerm(officer?.startTerm ?? '');
-  }, [officer?.id, officer?.role, officer?.subteam?.id, officer?.title, officer?.startTerm]);
+    setAccessEmail(officer?.accessEmail ?? '');
+  }, [officer?.id, officer?.role, officer?.subteam?.id, officer?.title, officer?.startTerm, officer?.accessEmail]);
   // "Saved ✓" survives the list refresh that the save triggers; a different person clears it.
-  useEffect(() => setNote(null), [officer?.id]);
+  useEffect(() => {
+    setNote(null);
+    setAccessNote(null);
+  }, [officer?.id]);
   useEffect(() => {
     setActivity(null);
     setActivityError(null);
@@ -697,7 +772,28 @@ function OfficerDrawer({
   const canEditTeam = canManage && !!o && (o.role !== 'leadership' || canChangeRoles);
   // Directors deactivate officers; only leadership deactivates directors or leadership.
   const canDeactivate = !!o && (canChangeRoles || (canManage && o.role === 'officer'));
-  const hasManage = !!o && ((canEditTeam && o.profileComplete) || (canDeactivate && !self) || (me.isOwner && !self && o.active));
+  const canEditAccess = canManage && !!o && canSetAccessEmail(me, o);
+  const hasManage = !!o && ((canEditTeam && o.profileComplete) || (canDeactivate && !self) || (me.isOwner && !self && o.active) || canEditAccess);
+
+  const saveAccess = async () => {
+    if (!o) return;
+    const next = normalizeAccessEmail(accessEmail);
+    if (next && !EMAIL_RE.test(next)) {
+      setAccessNote({ ok: false, text: 'That isn’t an email address.' });
+      return;
+    }
+    setBusy(true);
+    setAccessNote(null);
+    try {
+      await api('adminUserUpdate', { params: { id: o.id }, body: { accessEmail: next } });
+      setAccessNote({ ok: true, text: next ? 'Saved ✓ Nothing changed in Cloudflare.' : 'Removed ✓ Nothing changed in Cloudflare.' });
+      onChanged();
+    } catch (e) {
+      setAccessNote({ ok: false, text: errText(e, 'Could not save.') });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const saveTeam = async () => {
     if (!o) return;
@@ -809,6 +905,40 @@ function OfficerDrawer({
                   Save changes
                 </button>
               </div>
+            </section>
+          )}
+
+          {canEditAccess && (
+            <section class="stack" data-access-email>
+              <h3>{ACCESS_EMAIL_LABEL}</h3>
+              <div class="field">
+                <label class="field-label" for="pd-access">
+                  Email
+                </label>
+                <input
+                  class="input"
+                  id="pd-access"
+                  type="email"
+                  autocomplete="off"
+                  value={accessEmail}
+                  maxLength={254}
+                  aria-describedby="pd-access-hint"
+                  onInput={(e) => setAccessEmail((e.target as HTMLInputElement).value)}
+                />
+                <p class="field-hint" id="pd-access-hint">
+                  {ACCESS_EMAIL_HINT}
+                </p>
+              </div>
+              <div class="action-row">
+                <button class="btn" onClick={saveAccess} disabled={busy || normalizeAccessEmail(accessEmail) === (o.accessEmail ?? null)} data-access-email-save>
+                  Save email
+                </button>
+              </div>
+              {accessNote && (
+                <p class={`notice${accessNote.ok ? ' notice--positive' : ' notice--negative'}`} role={accessNote.ok ? 'status' : 'alert'}>
+                  {accessNote.text}
+                </p>
+              )}
             </section>
           )}
 
@@ -1066,7 +1196,7 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
   const [sort, setSort] = useState<Sort<OfficerSort> | null>(null);
   const person = usePersonParam();
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [prefill, setPrefill] = useState<{ name: string; discordId: string; subteamId: string } | null>(null);
+  const [prefill, setPrefill] = useState<{ name: string; discordId: string; subteamId: string; accessEmail: string | null } | null>(null);
   const [mine, setMine] = useState(() => typeof location !== 'undefined' && new URLSearchParams(location.search).get('profile') === 'me');
   const [confirm, setConfirm] = useState<Confirm | null>(null);
 
@@ -1214,7 +1344,7 @@ export default function OfficersView({ me, section = 'directory' }: { me: Curren
           confirm={setConfirm}
           subteams={subteams}
           onResend={(i) => {
-            setPrefill({ name: i.name, discordId: i.discordId, subteamId: i.subteam?.id ?? '' });
+            setPrefill({ name: i.name, discordId: i.discordId, subteamId: i.subteam?.id ?? '', accessEmail: i.accessEmail });
             setInviteOpen(true);
           }}
         />

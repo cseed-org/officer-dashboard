@@ -29,6 +29,23 @@ func raised(t *testing.T, msg string) error {
 	return fmt.Errorf("wrapped: %w", err)
 }
 
+// constraintErr returns the real driver error the statement raises after setup.
+func constraintErr(t *testing.T, setup, stmt string) error {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(setup); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(stmt); err == nil {
+		t.Fatal("statement did not fail")
+	}
+	return fmt.Errorf("wrapped: %w", err)
+}
+
 // M-109: only SQLite constraint failures (and the engine's own open-period refusal) are 409s;
 // an error that merely mentions "closed" or "constraint" is a server fault.
 func TestToAPIErrorMatchesConstraintCodeNotText(t *testing.T) {
@@ -47,6 +64,9 @@ func TestToAPIErrorMatchesConstraintCodeNotText(t *testing.T) {
 		{"closed period trigger", raised(t, "closed period cannot reopen or change dates"), 409, "Conflicting state, closed period, or duplicate record"},
 		{"last director", raised(t, "cannot remove last active director"), 409, "Cannot remove the last active director"},
 		{"last owner", raised(t, "cannot remove last owner"), 409, "Cannot remove the last owner"},
+		{"access email trigger", raised(t, "access email belongs to a pending invite"), 409, "That access email is already in use by another person or pending invite."},
+		{"access email unique index", constraintErr(t, `CREATE TABLE users (access_email TEXT); CREATE UNIQUE INDEX u ON users(access_email); INSERT INTO users VALUES ('a@b.org')`, `INSERT INTO users VALUES ('a@b.org')`), 409, "That access email is already in use by another person or pending invite."},
+		{"access email check", constraintErr(t, `CREATE TABLE users (access_email TEXT CHECK(access_email = lower(access_email)))`, `INSERT INTO users VALUES ('A@b.org')`), 400, "That access email isn't valid: use a lower-case address with an @."},
 		{"engine open period", errors.New("entry requires an open period"), 409, "Conflicting state, closed period, or duplicate record"},
 	}
 	for _, c := range cases {

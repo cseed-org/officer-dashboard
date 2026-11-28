@@ -31,6 +31,8 @@ type InviteDTO struct {
 	AcceptedAt  *string      `json:"acceptedAt"`
 	OnboardedAt *string      `json:"onboardedAt"`
 	UserID      *string      `json:"userId"`
+	// AccessEmail is where the invitee's Cloudflare sign-in PIN will go. Invites are director-only.
+	AccessEmail *string `json:"accessEmail"`
 }
 
 type SubteamDTO struct {
@@ -91,7 +93,7 @@ func (p *peopleIndex) subteam(id string) *SubteamDTO {
 func (p *peopleIndex) invite(i *store.Invite, now int64) InviteDTO {
 	d := InviteDTO{ID: i.ID, Name: i.Name, DiscordID: i.DiscordID, Subteam: p.subteam(i.SubteamID), Method: i.Method,
 		Status: inviteStatus(i, now), DMSentAt: isoPtr(i.DMSentAt), DMError: i.DMError, CreatedAt: isoMs(i.CreatedAt),
-		ExpiresAt: isoPtr(i.ExpiresAt), AcceptedAt: isoPtr(i.AcceptedAt), OnboardedAt: isoPtr(i.OnboardedAt), UserID: i.UserID}
+		ExpiresAt: isoPtr(i.ExpiresAt), AcceptedAt: isoPtr(i.AcceptedAt), OnboardedAt: isoPtr(i.OnboardedAt), UserID: i.UserID, AccessEmail: i.AccessEmail}
 	if u, ok := p.users[i.InvitedBy]; ok {
 		s := userSummary(u)
 		d.InvitedBy = &s
@@ -130,11 +132,13 @@ func (c *Ctx) inviteCreate() error {
 		return err
 	}
 	i := store.Invite{InvitedBy: u.ID}
+	var accessEmail validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		i.Name = r.Str("name", validate.S{Req: true, Trim: true, Min: 1, Max: 100}).V
 		i.DiscordID = r.Str("discordId", validate.S{Req: true, Trim: true, Format: "discord"}).V
 		i.SubteamID = r.Str("subteamId", validate.S{Req: true, Min: 1, Max: 64}).V
 		i.Method = r.Str("method", validate.S{Enum: []string{"dm", "link", "both"}, HasDef: true, Default: "link"}).V
+		accessEmail = accessEmailField(r)
 	}); err != nil {
 		return err
 	}
@@ -169,6 +173,16 @@ func (c *Ctx) inviteCreate() error {
 			return err
 		}
 		prior, err := q.PendingInviteByDiscordID(ctx, i.DiscordID)
+		// A re-invite that leaves the field out keeps the email the invite already has.
+		i.AccessEmail = accessEmailPtr(accessEmail)
+		if err == nil && !accessEmail.Set {
+			i.AccessEmail = prior.AccessEmail
+		}
+		if err == nil || errors.Is(err, store.ErrNotFound) {
+			if err := checkAccessEmailFree(ctx, q, i.AccessEmail, i.DiscordID); err != nil {
+				return err
+			}
+		}
 		switch {
 		case err == nil:
 			reinvited = true
@@ -264,10 +278,11 @@ func (c *Ctx) inviteUpdate() error {
 	if err != nil {
 		return err
 	}
-	var name, subteam validate.Field[string]
+	var name, subteam, accessEmail validate.Field[string]
 	if err := c.jsonBody(func(r *validate.Reader) {
 		name = r.Str("name", validate.S{Trim: true, Min: 1, Max: 100})
 		subteam = r.Str("subteamId", validate.S{Min: 1, Max: 64})
+		accessEmail = accessEmailField(r)
 	}); err != nil {
 		return err
 	}
@@ -316,6 +331,19 @@ func (c *Ctx) inviteUpdate() error {
 		if err := q.UpdateInviteDetails(ctx, before.ID, after.Name, after.SubteamID); err != nil {
 			return err
 		}
+		if accessEmail.Set && !sameEmail(accessEmailPtr(accessEmail), before.AccessEmail) {
+			// Once accepted, the account holds the email (copied at sign-in).
+			if before.AcceptedAt != nil {
+				return conflict("They've accepted this invite, so their access email is on their account now. Change it on the Officers page.")
+			}
+			after.AccessEmail = accessEmailPtr(accessEmail)
+			if err := checkAccessEmailFree(ctx, q, after.AccessEmail, before.DiscordID); err != nil {
+				return err
+			}
+			if err := q.SetInviteAccessEmail(ctx, before.ID, after.AccessEmail); err != nil {
+				return err
+			}
+		}
 		if before.UserID != nil {
 			if name.Set {
 				if err := q.UpdateUser(ctx, *before.UserID, store.UserPatch{Name: optOf(name)}, c.S.nowMs()); err != nil {
@@ -328,7 +356,9 @@ func (c *Ctx) inviteUpdate() error {
 				}
 			}
 		}
-		snap := func(i *store.Invite) map[string]any { return map[string]any{"name": i.Name, "subteamId": i.SubteamID} }
+		snap := func(i *store.Invite) map[string]any {
+			return map[string]any{"name": i.Name, "subteamId": i.SubteamID, "accessEmail": i.AccessEmail}
+		}
 		if err := c.audit(ctx, q, "invite.updated", "invite", before.ID, snap(before), snap(&after)); err != nil {
 			return err
 		}
@@ -400,7 +430,7 @@ func (s *Server) acceptInvite(ctx context.Context, q *store.Queries, discordID s
 		return "", "invite_unavailable", nil
 	}
 	id := auth.UUID()
-	u := store.User{ID: id, DiscordID: discordID, Name: inv.Name, AvatarURL: avatar, Role: auth.RoleOfficer, Active: true, CreatedAt: store.Ms(now), UpdatedAt: store.Ms(now)}
+	u := store.User{ID: id, DiscordID: discordID, Name: inv.Name, AvatarURL: avatar, Role: auth.RoleOfficer, Active: true, AccessEmail: inv.AccessEmail, CreatedAt: store.Ms(now), UpdatedAt: store.Ms(now)}
 	if err := q.InsertUser(ctx, u); err != nil {
 		return "", "", err
 	}
@@ -411,7 +441,7 @@ func (s *Server) acceptInvite(ctx context.Context, q *store.Queries, discordID s
 		return q.InsertAudit(ctx, store.AuditEntry{ID: auth.UUID(), Action: action, EntityType: typ, EntityID: &eid, ActorUserID: &id,
 			BeforeJSON: snapshot(before), AfterJSON: snapshot(after), CreatedAt: store.Ms(now)})
 	}
-	if err := entry("user.created", "user", id, nil, map[string]any{"discordId": discordID, "name": inv.Name, "role": auth.RoleOfficer, "via": "invite"}); err != nil {
+	if err := entry("user.created", "user", id, nil, map[string]any{"discordId": discordID, "name": inv.Name, "role": auth.RoleOfficer, "accessEmail": inv.AccessEmail, "via": "invite"}); err != nil {
 		return "", "", err
 	}
 	return id, "", entry("invite.accepted", "invite", inv.ID, nil, map[string]any{"userId": id})

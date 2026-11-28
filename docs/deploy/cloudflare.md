@@ -103,6 +103,11 @@ Removing an email stops new sign-ins, but a browser already signed in stays in u
 ends (up to a month). So also turn the person off in the dashboard (**Officers**, or the Launchpad
 **Invites** tab): the dashboard checks its own accounts on every request.
 
+The officer invite and the person's **Manage** tab have a **Cloudflare sign-in email** field.
+Fill it in with the email you add here. For now the dashboard only stores it: it does not
+change the group, so keep adding and removing people by hand as described above. A later
+release can keep the group up to date from that field, once you turn that on.
+
 ## 3. Protect the whole site with an Access application
 
 ([docs](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/))

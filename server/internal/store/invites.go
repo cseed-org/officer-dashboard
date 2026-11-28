@@ -19,17 +19,19 @@ type Invite struct {
 	AcceptedAt  *int64  `json:"acceptedAt,omitempty"`
 	OnboardedAt *int64  `json:"onboardedAt,omitempty"`
 	UserID      *string `json:"userId,omitempty"`
+	// AccessEmail moves to the account when the invite is accepted.
+	AccessEmail *string `json:"accessEmail"`
 	Step        int     `json:"step"`
 	CreatedAt   int64   `json:"createdAt"`
 }
 
-const inviteCols = `id,name,discord_id,subteam_id,invited_by,method,token_hash,dm_sent_at,dm_error,expires_at,accepted_at,onboarded_at,user_id,onboarding_step,created_at`
+const inviteCols = `id,name,discord_id,subteam_id,invited_by,method,token_hash,dm_sent_at,dm_error,expires_at,accepted_at,onboarded_at,user_id,onboarding_step,access_email,created_at`
 
 func scanInvite(s interface{ Scan(...any) error }) (*Invite, error) {
 	var i Invite
 	var dm, exp, acc, onb *Ms
 	var created Ms
-	if err := s.Scan(&i.ID, &i.Name, &i.DiscordID, &i.SubteamID, &i.InvitedBy, &i.Method, &i.TokenHash, &dm, &i.DMError, &exp, &acc, &onb, &i.UserID, &i.Step, &created); err != nil {
+	if err := s.Scan(&i.ID, &i.Name, &i.DiscordID, &i.SubteamID, &i.InvitedBy, &i.Method, &i.TokenHash, &dm, &i.DMError, &exp, &acc, &onb, &i.UserID, &i.Step, &i.AccessEmail, &created); err != nil {
 		return nil, err
 	}
 	i.DMSentAt, i.ExpiresAt, i.AcceptedAt, i.OnboardedAt = msPtr(dm), msPtr(exp), msPtr(acc), msPtr(onb)
@@ -46,14 +48,14 @@ func msPtr(m *Ms) *int64 {
 }
 
 func (q *Queries) InsertInvite(ctx context.Context, i Invite, now int64) error {
-	return q.Exec(ctx, `INSERT INTO invites(id,name,discord_id,subteam_id,invited_by,method,token_hash,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, i.ID, i.Name, i.DiscordID, i.SubteamID, i.InvitedBy, i.Method, i.TokenHash, i.ExpiresAt, now)
+	return q.Exec(ctx, `INSERT INTO invites(id,name,discord_id,subteam_id,invited_by,method,token_hash,expires_at,access_email,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, i.ID, i.Name, i.DiscordID, i.SubteamID, i.InvitedBy, i.Method, i.TokenHash, i.ExpiresAt, i.AccessEmail, now)
 }
 
 // ReissueInvite replaces a pending invite's details and token (a re-invite). The old
 // link stops working and any earlier DM status is cleared.
 func (q *Queries) ReissueInvite(ctx context.Context, i Invite, now int64) error {
-	return q.Exec(ctx, `UPDATE invites SET name=?,subteam_id=?,invited_by=?,method=?,token_hash=?,expires_at=?,dm_sent_at=NULL,dm_error=NULL,created_at=? WHERE id=? AND accepted_at IS NULL`,
-		i.Name, i.SubteamID, i.InvitedBy, i.Method, i.TokenHash, i.ExpiresAt, now, i.ID)
+	return q.Exec(ctx, `UPDATE invites SET name=?,subteam_id=?,invited_by=?,method=?,token_hash=?,expires_at=?,access_email=?,dm_sent_at=NULL,dm_error=NULL,created_at=? WHERE id=? AND accepted_at IS NULL`,
+		i.Name, i.SubteamID, i.InvitedBy, i.Method, i.TokenHash, i.ExpiresAt, i.AccessEmail, now, i.ID)
 }
 
 // PendingInviteByDiscordID returns the not-yet-accepted invite for a Discord account.
@@ -131,4 +133,19 @@ func (q *Queries) SubteamExists(ctx context.Context, id string) (bool, error) {
 func (q *Queries) UpdateInviteDetails(ctx context.Context, id, name, subteamID string) error {
 	res, err := q.q.ExecContext(ctx, `UPDATE invites SET name=?,subteam_id=? WHERE id=? AND onboarded_at IS NULL`, name, subteamID, id)
 	return oneRow(res, err)
+}
+
+// SetInviteAccessEmail changes the access email of an invite nobody has accepted yet.
+func (q *Queries) SetInviteAccessEmail(ctx context.Context, id string, email *string) error {
+	res, err := q.q.ExecContext(ctx, `UPDATE invites SET access_email=? WHERE id=? AND accepted_at IS NULL`, email, id)
+	return oneRow(res, err)
+}
+
+// AccessEmailHolder names who already uses an access email, other than the Discord account
+// discordID: an account (kind "user") or a pending invite (kind "invite"). ErrNotFound when
+// nobody does.
+func (q *Queries) AccessEmailHolder(ctx context.Context, email, discordID string) (kind, name string, err error) {
+	err = q.q.QueryRowContext(ctx, `SELECT 'user', name FROM users WHERE access_email=? AND discord_id<>?
+ UNION ALL SELECT 'invite', name FROM invites WHERE accepted_at IS NULL AND access_email=? AND discord_id<>? LIMIT 1`, email, discordID, email, discordID).Scan(&kind, &name)
+	return kind, name, notFound(err)
 }
