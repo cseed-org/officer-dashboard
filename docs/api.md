@@ -479,15 +479,22 @@ added to the `Officers` group by hand ([Cloudflare setup](deploy/cloudflare.md#a
 
 - Set on POST `/api/admin/users`, PATCH `/api/admin/users/:id`, POST `/api/invites` and
   PATCH `/api/invites/:id` (`null` clears it). Stored trimmed and lower-case. A re-invite
-  that leaves the field out keeps the invite's email. An invite's email can change only
-  before it is accepted (409 after); accepting copies it to the new account in the same
-  sign-in transaction.
+  that leaves the field out keeps the invite's email; the Invite dialog leaves it out when
+  the field is empty, so only clearing it in "Edit invite details" removes it. An invite's
+  email can change only before it is accepted (409 after); accepting copies it to the new
+  account in the same sign-in transaction.
+- Adding an account (POST `/api/admin/users`) for a Discord ID whose invite has expired
+  removes that invite, as before, and keeps its email for the new account unless the
+  request sets `accessEmail` itself (a value, or `null` for none). The `user.created` entry
+  records `accessEmailFrom: "expired invite"`, and the "add officer" notice says so.
 - Who may change it: directors for officers, leadership for directors and leadership (a
   director's own included), and only an owner for an owner. Invites follow the invite rules.
 - One person per email: another account or a pending invite (expired ones included until
   revoked) using it gets 409 naming that person or invite. Only directors and above reach
   these routes, and they can already see every account and invite. Unique indexes and
-  triggers in the schema back this up.
+  triggers in the schema back this up. Aliases count as different addresses
+  (`name+club@example.org` and `name@example.org` are two), because Cloudflare treats them
+  as different people. A value the schema's CHECK refuses answers 400, not "already in use".
 - Never filled in automatically: not from the calendar `email`, the profile's personal or
   school email, or Discord. The Access tab's "add officer" form offers a button that copies
   the calendar email on request.
@@ -496,7 +503,10 @@ added to the `Officers` group by hand ([Cloudflare setup](deploy/cloudflare.md#a
   `GET /api/officers/:id`). Officers never receive it, their own included, and MCP agents
   never do, even a director's (`list_officers`, `get_officer`, `update_officer`). Search
   doesn't match it. Changes are audited in `user.created`, `user.updated`,
-  `invite.created`, `invite.reissued` and `invite.updated`.
+  `invite.created`, `invite.reissued` and `invite.updated`. The owner entries
+  (`owner.added`, `owner.removed`, `owner.transferred`) carry it too, in their account
+  snapshots. Like all audit entries, they are readable only on the director+
+  `/api/admin/audit`.
 
 **Accepting.** Signing in with Discord as an account that has no user row but a pending,
 unexpired invite creates an active officer named as invited, marks the invite accepted,
