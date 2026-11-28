@@ -107,7 +107,7 @@ func (s *Server) withAuth(next http.Handler) http.Handler {
 		}
 		// The setup relay page shows a code and nothing else: no session lookup, so no
 		// renewal write and no Set-Cookie (setuprelay.go).
-		if _, _, ok := setupRelay(r); ok {
+		if _, _, ok := s.setupRelay(r); ok {
 			next.ServeHTTP(w, r)
 			return
 		}
