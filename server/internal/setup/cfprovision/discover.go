@@ -798,8 +798,9 @@ func (x *discovery) d1(ctx context.Context) (plan.Seen, error) {
 //     https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/list/
 func (x *discovery) worker(ctx context.Context) (plan.Worker, error) {
 	var out plan.Worker
-	// The list items carry compatibility_date, compatibility_flags and has_modules (keys a
-	// live list showed).
+	// The list items carry compatibility_date, compatibility_flags and has_modules (the
+	// item keys the live list showed in spike stage 2). The main module's name is not among
+	// them, so has_modules (an ES module Worker) stands in for it.
 	type script struct {
 		ID                 string   `json:"id"`
 		CompatibilityDate  string   `json:"compatibility_date"`
