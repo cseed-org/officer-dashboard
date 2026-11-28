@@ -429,3 +429,54 @@ func TestUnknownQueryShapeIsNotAnEmptyDatabase(t *testing.T) {
 		}
 	}
 }
+
+// The upload is read back with everything it creates: switches that are still on after
+// the switch-off make the step fail (mutant B13).
+func TestUploadReadBackNeedsTheSwitchesOff(t *testing.T) {
+	r := newRig(t, cffake.Fresh())
+	r.acct.Inject(cffake.Injection{Method: http.MethodPost, Path: scriptP + "/subdomain", After: func() {
+		r.acct.Set(scriptP+"/subdomain", cffake.Response{Result: map[string]any{"enabled": true, "previews_enabled": false}})
+	}})
+	_, err := r.apply(context.Background())
+	var ve *VerifyError
+	if !errors.As(err, &ve) || !strings.Contains(err.Error(), "workers.dev and preview URLs") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// The migration is read back with Wrangler's record of it (mutant B14).
+func TestMigrationReadBackNeedsWranglersRecord(t *testing.T) {
+	r := newRig(t, cffake.Live())
+	r.acct.OnWrite(func(req cffake.Request) {
+		if strings.HasSuffix(req.Path, "/query") && strings.Contains(req.Body, "CREATE TABLE IF NOT EXISTS") {
+			// The tables are made, but the record is not (as a partly applied batch would).
+			r.acct.Set("fake:d1/d1-backups/migrations", cffake.Response{Result: []any{}})
+		}
+	})
+	_, err := r.apply(context.Background())
+	var ve *VerifyError
+	if !errors.As(err, &ve) || !strings.Contains(err.Error(), "d1_migrations row 0001.sql") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// The backup application waits for its service token (mutant B16).
+func TestBackupAppNeedsItsToken(t *testing.T) {
+	routes := cffake.Fresh()
+	routes[acctP+"/access/service_tokens"] = cffake.Response{Status: 403, Code: 10000, Message: "forbidden"}
+	r := newRig(t, routes)
+	_, err := r.apply(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "create Access application Dashboard backups (service token) with policy Backup host token needs Service token") || len(r.acct.Writes()) != 0 {
+		t.Fatalf("err = %v, %d writes", err, len(r.acct.Writes()))
+	}
+}
+
+// The query helper sends only the two read-only listings: anything else is refused
+// before any request (mutant B25).
+func TestQuerySendsOnlyTheReadOnlyListings(t *testing.T) {
+	r := newRig(t, cffake.Live())
+	e := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry())
+	if _, err := e.query(context.Background(), "d1-backups", "DROP TABLE snapshots"); err == nil || len(r.acct.Requests()) != 0 {
+		t.Fatalf("err = %v, %d requests", err, len(r.acct.Requests()))
+	}
+}

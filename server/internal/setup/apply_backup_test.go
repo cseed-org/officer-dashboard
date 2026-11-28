@@ -93,6 +93,10 @@ func TestLiveAccountKeepsItsWorkerAndMigratesItsEmptyDatabase(t *testing.T) {
 			t.Errorf("touched the live backup pieces: %s %s", w.Method, w.Path)
 		}
 	}
+	// The Worker was not uploaded by this run, so its secret stays unknowable (mutant B18).
+	if !strings.Contains(res.stdout, "unknowable: Worker secret BACKUP_BEARER_SECRET") {
+		t.Errorf("the Wrangler-made Worker's secret line is hidden:\n%s", res.stdout)
+	}
 	if !strings.Contains(res.stdout, "unknowable: Worker version revision 2") {
 		t.Errorf("the Wrangler-made Worker's revision is not reported unknowable:\n%s", res.stdout)
 	}
@@ -245,5 +249,18 @@ func TestMissingBackupClientIDIsReported(t *testing.T) {
 	if res.code != 1 || !strings.Contains(res.stdout, "missing: secrets/backup/access-client-id. The backup token's client secret is kept") ||
 		!strings.Contains(res.stdout, "chown 10001:10001 secrets/backup/access-client-id") {
 		t.Fatalf("exit %d\n%s", res.code, res.stdout)
+	}
+}
+
+// The template's example value counts as unset under the adopt rule, so it is replaced
+// (mutant B22: planning without the template would keep it as a conflict).
+func TestBackupEnvReplacesTheTemplateExample(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	res := r.run(append([]string{"--yes", "--backup-hostname", "vault.example.org"}, groupArgs...)...)
+	if res.code != 0 {
+		t.Fatalf("exit %d\n%s\n%s", res.code, res.stdout, res.stderr)
+	}
+	if v, _ := env(t, filepath.Join(r.dir, "backup.env")).Get("BACKUP_SINK_URL"); v != "https://vault.example.org" {
+		t.Fatalf("BACKUP_SINK_URL = %q\n%s", v, res.stdout)
 	}
 }
