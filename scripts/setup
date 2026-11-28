@@ -5,12 +5,15 @@
   scripts/setup host [--dry-run | --yes] [--image IMAGE] [--secret NAME=FILE | NAME=-]... [flags]
   scripts/setup preview [--image IMAGE] [--token-file FILE] [flags]
   scripts/setup apply [--yes] [--token-file FILE] [flags]
+  scripts/setup discord [--dry-run | --yes] [--client-id-file F] [--client-secret-file F] [--bot-token-file F]
+  scripts/setup discord connect [--dry-run]
   scripts/setup install-units [--enable-updates | --no-enable-updates]
 
-`host`, `preview` and `apply` run `dashboard setup` from the pinned image; flags this
-launcher does not know are passed on to it (listed in `scripts/setup host -h`,
+`host`, `preview`, `apply` and `discord` run `dashboard setup` from the pinned image; for
+the first three, flags this launcher does not know are passed on to it (listed in `scripts/setup host -h`,
 `scripts/setup apply -h` and docs/configuration.md, "Host files"). The order is host
---yes, preview, apply; this launcher never starts or restarts a service. Run as root.
+--yes, preview, apply, discord, then (with the stack up) discord connect; this launcher
+never starts or restarts a service. Run as root.
 Works from any directory: the deploy directory defaults to the one beside this script
 (--deploy-dir to choose another).
 """
@@ -21,6 +24,7 @@ import io
 import ipaddress
 import json
 import os
+import re
 from pathlib import Path
 from shutil import which
 import subprocess
@@ -457,6 +461,75 @@ def cmd_apply(deploy, opts, rest):
     return container(image, go, user='0:0', caps=WRITE_CAPS, network=True, mounts=mounts, env=env, tty=stdin_is_tty())
 
 
+# `discord` passes nothing on unparsed: a Discord value must never be an argument (it would
+# show in the process list), so every flag it takes is declared below and the rest refused.
+DISCORD_FILES = ['client-id', 'client-secret', 'bot-token']
+# A flag name as people type them: dashes, then lower-case words joined by '-'.
+FLAG_NAME = re.compile(r'--?[a-z][a-z0-9]*(-[a-z0-9]+)*')
+
+
+def value_file(flag, value):
+    """A Discord value file on this host: relative to the current directory, not a symbolic
+    link (Docker would mount whatever it points at); one other users can read gets a warning."""
+    path = Path(value).absolute()
+    if path.is_symlink():
+        raise SetupError(f'{flag} {path} is a symbolic link; give the file itself')
+    if not path.is_file():
+        raise SetupError(f'{flag}: cannot read {path}: it is not a file')
+    mode = path.stat().st_mode & 0o777
+    if mode & 0o077:
+        print(f'setup: warning: {path} can be read by other users (mode {mode:04o}); chmod 600 it, and delete it '
+              f'when setup is done', file=sys.stderr)
+    return path
+
+
+def cmd_discord(deploy, opts, rest):
+    """The Discord phase. Both steps talk to Discord, so they have network; they run as root
+    with the file capabilities of `host --yes` only when Go may write (--yes, or connect,
+    whose codes work once), else read-only with DAC_READ_SEARCH to read the stored secrets.
+    Values reach the container only as read-only file mounts or typed at its terminal:
+    never in argv, the environment or stdin."""
+    check(deploy)
+    if opts.step not in (None, 'connect'):
+        raise SetupError('discord takes one step name, connect, and no other argument. Discord values are read from '
+                         'files (--client-id-file, --client-secret-file, --bot-token-file) or typed hidden.')
+    if rest:
+        # Name it only when it looks like a flag name, and only up to '='. Anything else may
+        # be a value (a base64url secret can start with '-'), so it is never repeated.
+        name = rest[0].split('=', 1)[0]
+        # The length cap keeps out a 32-character client secret that happens to be lower case.
+        what = name if len(name) <= 30 and FLAG_NAME.fullmatch(name) else 'an extra argument'
+        raise SetupError(f'discord does not take {what}: Discord values are read from files '
+                         '(--client-id-file, --client-secret-file, --bot-token-file) or typed hidden, never given '
+                         'as arguments. See `scripts/setup discord -h`.')
+    if not (deploy / 'prod-image.env').exists():
+        raise SetupError('No image pin yet (prod-image.env). Run `scripts/setup host --yes` first: it pins the image and '
+                         'writes the env files Discord setup adds to (docs/deploy/fresh-install.md).')
+    image, _ = image_pin(deploy, None)
+    connect = opts.step == 'connect'
+    files = {name: getattr(opts, name.replace('-', '_') + '_file') for name in DISCORD_FILES}
+    if connect and any(files.values()):
+        raise SetupError('discord connect takes no value files: it uses the stored client ID and secret')
+    if connect and opts.yes:
+        raise SetupError('discord connect takes no --yes: it writes what Discord gives, since each code works once')
+    if connect and not opts.dry_run and not stdin_is_tty():
+        raise SetupError('discord connect needs a terminal: you paste the setup code the dashboard shows into it')
+    writes = (opts.yes or connect) and not opts.dry_run
+    mounts = [(deploy, CONTAINER_DEPLOY, not writes)]
+    go = ['discord'] + (['connect'] if connect else []) + ['--deploy-dir', CONTAINER_DEPLOY]
+    go += ['--dry-run'] if opts.dry_run else []
+    go += ['--yes'] if opts.yes else []
+    for name, value in files.items():
+        if value:
+            target = '/run/setup/discord-' + name
+            mounts.append((value_file('--' + name + '-file', value), target, True))
+            go += ['--' + name + '-file', target]
+    go += ['--app-url', opts.app_url] if opts.app_url else []
+    go += ['--no-bot-token'] if opts.no_bot_token and not connect else []
+    return container(image, go, user='0:0', caps=WRITE_CAPS if writes else READ_CAPS,
+                     network=not (connect and opts.dry_run), mounts=mounts, tty=stdin_is_tty())
+
+
 def check_unit_path(install):
     if not install.startswith('/'):
         raise SetupError(f'the install directory must be an absolute path, not {install!r}')
@@ -539,7 +612,7 @@ def parser():
                        epilog='Passed on to `dashboard setup host`: --app-url URL, --backup-hostname HOST, '
                               '--discord-client-id ID, --owner-discord-id ID, --owner-name NAME, '
                               '--age-recipient age1..., --rotate NAME. Secret names for --secret: '
-                              'discord-client-secret, discord-webhook-url, discord-bot-token, tunnel-token, '
+                              'discord-client-secret, discord-webhook-url, discord-bot-token, backup-discord-webhook-url, tunnel-token, '
                               'backup-bearer, backup-access-client-id, backup-access-client-secret.')
     mode = h.add_mutually_exclusive_group()
     mode.add_argument('--dry-run', action='store_true', help='print the plan; read-only mount')
@@ -563,6 +636,23 @@ def parser():
     a.add_argument('--yes', action='store_true', help='apply without asking (the plan is still printed first)')
     a.add_argument('--token-file', help='file holding an edit-capable Cloudflare API token, relative to the current directory (default: CLOUDFLARE_SETUP_TOKEN_FILE '
                                         'from .env, relative to the deploy directory; else it is asked for in the terminal)')
+    d = sub.add_parser('discord', allow_abbrev=False, help='check and store the Discord values; then `discord connect`',
+                       epilog='Create the Discord application and register the redirect it prints by hand first (Discord '
+                              'has no API for either). `discord` checks the client ID, client secret and optional bot token '
+                              'with Discord and, with --yes, stores them. Once the dashboard runs, `discord connect` prints one '
+                              'link; approve it, paste back the code the dashboard shows, and it writes your Discord ID as '
+                              'the first owner and a notification webhook.')
+    # No `choices`: argparse would quote a wrong value back, and a value typed after an unknown
+    # flag (`--client-secret VALUE`) lands here. cmd_discord checks it without quoting it.
+    d.add_argument('step', nargs='?', metavar='connect', help='connect: the owner and webhook, once the dashboard runs')
+    dmode = d.add_mutually_exclusive_group()
+    dmode.add_argument('--dry-run', action='store_true', help='check with Discord and print the plan; read-only mount')
+    dmode.add_argument('--yes', action='store_true', help='write the planned files')
+    d.add_argument('--app-url', help='dashboard origin (default: APP_URL from dashboard.env or .env)')
+    d.add_argument('--no-bot-token', action='store_true', help='do not ask for a bot token')
+    for name in DISCORD_FILES:
+        d.add_argument('--' + name + '-file', metavar='FILE', help=f'read the {name.replace("-", " ")} from this file on the host '
+                                                                   '(default: stored, else typed hidden)')
     u = sub.add_parser('install-units', allow_abbrev=False, help='install the systemd updater units')
     u.add_argument('--unit-dir', default='/etc/systemd/system')
     u.add_argument('--install-dir', help='the checkout the units run from (default: two levels above --deploy-dir)')
@@ -575,7 +665,7 @@ def parser():
 def main(argv=None):
     p = parser()
     opts, rest = p.parse_known_args(argv)
-    if rest and opts.command not in ('host', 'preview', 'apply'):
+    if rest and opts.command not in ('host', 'preview', 'apply', 'discord'):
         p.error('unrecognized arguments: ' + ' '.join(rest))
     deploy = Path(opts.deploy_dir).resolve()
     os.umask(0o077)
@@ -591,6 +681,8 @@ def main(argv=None):
             return cmd_preview(deploy, opts, rest)
         if opts.command == 'apply':
             return cmd_apply(deploy, opts, rest)
+        if opts.command == 'discord':
+            return cmd_discord(deploy, opts, rest)
         return cmd_install_units(deploy, opts)
     except SetupError as error:
         print('setup: ' + str(error), file=sys.stderr)

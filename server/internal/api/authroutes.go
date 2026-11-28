@@ -83,8 +83,12 @@ func (c *Ctx) loginRedirect(reason string) error {
 }
 
 // authCallback completes the sign-in: only allowlisted users (or the bootstrap director)
-// get a session.
+// get a session. A setup callback (state with the `setup.` prefix) only shows its code
+// (setuprelay.go).
 func (c *Ctx) authCallback() error {
+	if p, ok := claimedRelayPage(c.R); ok {
+		return c.setupRelayPage(p.state, p.code)
+	}
 	q := c.R.URL.Query()
 	code, state := q.Get("code"), q.Get("state")
 	storedState, verifier := c.cookie(c.S.hostPrefixed(oauthStateName)), c.cookie(c.S.hostPrefixed(oauthVerifier))
