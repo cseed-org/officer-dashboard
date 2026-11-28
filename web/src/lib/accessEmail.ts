@@ -6,7 +6,7 @@
 export const ACCESS_EMAIL_LABEL = 'Cloudflare sign-in email';
 
 export const ACCESS_EMAIL_HINT =
-  'Where Cloudflare will send their sign-in code once the dashboard manages Cloudflare access. That isn’t switched on yet, so saving this changes nothing in Cloudflare: still add them to the Officers group there by hand. Only directors and leadership see it.';
+  'Where Cloudflare will send their sign-in code once the dashboard manages Cloudflare access. That isn’t switched on yet, so saving this changes nothing in Cloudflare: still add them to the Officers group there by hand. Only directors and leadership see it. Aliases count as different addresses (name+club@ and name@ are two), as they do in Cloudflare.';
 
 /** Trimmed and lower-cased, as the server stores it; empty means none. */
 export const normalizeAccessEmail = (s: string): string | null => s.trim().toLowerCase() || null;

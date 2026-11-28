@@ -153,3 +153,65 @@ test('add account: the calendar email is copied to the sign-in email only on req
   await expect(access).toHaveValue(email);
   await expect(d.locator('[data-access-email-copy]')).toHaveCount(0);
 });
+
+test('re-inviting with the field empty keeps the stored email; clearing is done in Edit invite details', async ({ page }) => {
+  const id = inviteeId();
+  const email = `kept.${stamp()}@example.org`;
+  await devLogin(page, 'director');
+  await page.goto('/officers');
+  await settle(page);
+  const send = async (accessEmail: string) => {
+    await page.locator('[data-open-invite]').click();
+    const d = openDialog(page);
+    await d.getByLabel('Name').fill('Kept Email');
+    await d.getByLabel('Discord ID').fill(id);
+    await d.locator('[data-invite-access-email]').fill(accessEmail);
+    const req = page.waitForRequest((r) => r.url().endsWith('/api/invites') && r.method() === 'POST');
+    await d.locator('[data-send-invite]').click();
+    const body = (await req).postDataJSON() as Record<string, unknown>;
+    await expect(d.locator('[data-invite-link] code')).toContainText('/login?invite=');
+    return { d, body };
+  };
+  await send(email).then(({ d }) => d.getByRole('button', { name: 'Done' }).click());
+  // The normal Invite button again, same Discord ID, field left empty: nothing is cleared.
+  const { d, body } = await send('');
+  expect('accessEmail' in body).toBe(false);
+  await expect(d.locator('[data-invite-access-kept]')).toContainText(email);
+  await d.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('tab', { name: 'Invites', exact: true }).click();
+  const row = page.locator(`[data-invite="${id}"]`);
+  await expect(row.locator('[data-invite-access-email]')).toContainText(email);
+  // Removing it is deliberate: clear the prefilled field in Edit invite details and save.
+  await row.locator('[data-invite-edit]').click();
+  const edit = openDialog(page);
+  await expect(edit.locator('#inv-edit-access-hint')).toContainText('Clear the field and save to remove it');
+  await edit.locator('[data-invite-edit-access-email]').fill('');
+  const req = page.waitForRequest((r) => r.url().includes('/api/invites/') && r.method() === 'PATCH');
+  await edit.locator('[data-invite-edit-save]').click();
+  expect((await req).postDataJSON()).toMatchObject({ accessEmail: null });
+  await expect(openDialog(page)).toHaveCount(0);
+  await expect(row.locator('[data-invite-access-email]')).toHaveCount(0);
+});
+
+test('add account over an expired invite says where the carried-over email came from', async ({ page }) => {
+  // The server carries an expired invite's email over (Go test TestAccessEmailAddAccountOverExpiredInvite);
+  // here the response is shaped that way to check what the director is told.
+  await page.route('**/api/admin/users', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    const res = await route.fetch();
+    const json = await res.json();
+    json.user.accessEmail = 'carried@example.org';
+    await route.fulfill({ response: res, json });
+  });
+  await devLogin(page, 'director');
+  await page.goto('/officers?tab=access');
+  await settle(page);
+  await page.locator('[data-admin-create]').click();
+  const d = openDialog(page);
+  await d.getByLabel('Discord user id').fill(`9${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`);
+  await d.getByLabel('name', { exact: true }).fill(`Carried ${stamp()}`);
+  await d.getByLabel('subteam').selectOption({ label: 'Events' });
+  await d.getByRole('button', { name: 'add officer' }).click();
+  await expect(page.locator('[data-access-email-carried]')).toContainText('carried@example.org');
+  await expect(page.locator('[data-access-email-carried]')).toContainText('expired invite');
+});

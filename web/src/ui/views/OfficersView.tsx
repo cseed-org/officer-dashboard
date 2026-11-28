@@ -229,7 +229,10 @@ function InviteDialog({
     if (Object.keys(errs).length) return;
     setBusy(true);
     try {
-      const r = await api('inviteCreate', { body: { name: name.trim(), discordId: discordId.trim(), subteamId, method, accessEmail: normalizeAccessEmail(accessEmail) } });
+      // An empty field is left out, so re-inviting someone never clears the email their
+      // pending invite already has. Removing it is done in Edit invite details.
+      const email = normalizeAccessEmail(accessEmail);
+      const r = await api('inviteCreate', { body: { name: name.trim(), discordId: discordId.trim(), subteamId, method, ...(email ? { accessEmail: email } : {}) } });
       setResult(r);
       onSent();
     } catch (err) {
@@ -348,6 +351,11 @@ function InviteDialog({
         {result && (
           <>
             {result.reinvited && <p class="notice">They already had a pending invite. It now has these details and a new link; the old link stopped working.</p>}
+            {result.reinvited && !accessEmail.trim() && result.invite.accessEmail && (
+              <p class="small muted" data-invite-access-kept>
+                Their {ACCESS_EMAIL_LABEL.toLowerCase()} stays {result.invite.accessEmail}. To remove it, use Edit details on the invite.
+              </p>
+            )}
             <DMStatus dm={result.dm} />
             {showLink && <InviteLink link={result.link} />}
             <p class="small muted">The link expires {fmtDate(result.invite.expiresAt)}. Only the Discord account {result.invite.discordId} can accept it.</p>
@@ -475,7 +483,7 @@ function InviteEditDialog({ invite, subteams, onClose, onSaved }: { invite: Invi
             data-invite-edit-access-email
           />
           <p class="field-hint" id="inv-edit-access-hint">
-            {emailLocked ? 'They’ve accepted, so this is on their account now. Change it from their page in the directory.' : ACCESS_EMAIL_HINT}
+            {emailLocked ? 'They’ve accepted, so this is on their account now. Change it from their page in the directory.' : `${ACCESS_EMAIL_HINT} Clear the field and save to remove it.`}
           </p>
           {fe('accessEmail')}
         </div>

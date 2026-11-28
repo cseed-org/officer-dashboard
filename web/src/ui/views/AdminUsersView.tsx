@@ -25,7 +25,7 @@ const ROLE_OPTIONS = [
  */
 export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, onCloseAdd }: { isOwner: boolean; meId: string; canChangeRoles: boolean; adding: boolean; onCloseAdd: () => void }) {
   const state = useApi('adminUsers');
-  const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string; n: number } | null>(null);
+  const [notice, setNotice] = useState<{ tone: 'positive' | 'negative'; text: string; n: number; carried?: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const [showInactive, setShowInactive] = useState(false);
@@ -65,6 +65,11 @@ export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, 
       {notice && (
         <Notice tone={notice.tone} key={notice.n}>
           {notice.text}
+          {notice.carried && (
+            <span data-access-email-carried>
+              {' '}Their {ACCESS_EMAIL_LABEL.toLowerCase()}, {notice.carried}, came from their expired invite. Change it from their page in the directory if it’s wrong.
+            </span>
+          )}
         </Notice>
       )}
       <Async state={state} loading={<Loading rows={5} label="Loading officers" />}>
@@ -91,9 +96,11 @@ export default function AdminUsersView({ meId, isOwner, canChangeRoles, adding, 
         <AddUser
           canChangeRoles={canChangeRoles}
           onCancel={onCloseAdd}
-          onAdded={(u) => {
+          onAdded={(u, typedAccess) => {
             if (state.status === 'ready') state.set({ users: [...state.data.users, u] });
-            setNotice({ tone: 'positive', text: `${u.name} can now sign in with Discord. They’ll set up their profile first.`, n: Date.now() });
+            // The server keeps an expired invite's email when the form left the field empty.
+            const carried = !typedAccess && u.accessEmail ? u.accessEmail : undefined;
+            setNotice({ tone: 'positive', text: `${u.name} can now sign in with Discord. They’ll set up their profile first.`, n: Date.now(), carried });
             onCloseAdd();
           }}
         />
@@ -264,7 +271,7 @@ function UserList({
   );
 }
 
-function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolean; onAdded: (u: AdminUser) => void; onCancel: () => void }) {
+function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolean; onAdded: (u: AdminUser, typedAccess: boolean) => void; onCancel: () => void }) {
   const empty = { discordId: '', name: '', subteamId: '', role: 'officer' as Role, title: '', email: '', accessEmail: '' };
   const lookups = useApi('lookups');
   const subteams = lookups.status === 'ready' ? lookups.data.subteams : [];
@@ -290,7 +297,8 @@ function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolea
           role: f.role,
           title: f.title.trim() || null,
           email: f.email.trim() || null,
-          accessEmail: normalizeAccessEmail(f.accessEmail),
+          // Left out when empty, so an expired invite's email for this Discord ID carries over.
+          ...(normalizeAccessEmail(f.accessEmail) ? { accessEmail: normalizeAccessEmail(f.accessEmail) } : {}),
         });
         if (!parsed.success) {
           const fe = flattenError(parsed.error).fieldErrors as Record<string, string[] | undefined>;
@@ -304,7 +312,7 @@ function AddUser({ onAdded, onCancel, canChangeRoles }: { canChangeRoles: boolea
         setBusy(true);
         try {
           const { user } = await api('adminUserCreate', { body: parsed.data });
-          onAdded(user);
+          onAdded(user, !!normalizeAccessEmail(f.accessEmail));
           setF(empty);
         } catch (err) {
           setErrors(fieldErrors(err));
