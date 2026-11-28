@@ -63,6 +63,9 @@ func relayEnv(t *testing.T, mutate ...func(*Config)) (*testEnv, *atomic.Int64) {
 		cl.TokenURL, cl.ProfileURL = d.URL+"/token", d.URL+"/me"
 		c.Discord = cl
 	}}, mutate...)...)
+	// The server refuses states minted in or before the second it started; setup runs
+	// after the dashboard is up.
+	e.clock = e.clock.Add(time.Second)
 	return e, &calls
 }
 
@@ -176,7 +179,8 @@ func TestSetupRelayPageWarnsNeverToSendTheCode(t *testing.T) {
 	e, _ := relayEnv(t)
 	r := e.get(relayURL(mintState(t, e, relaySecret), relayCode), anon)
 	page := string(r.Raw)
-	for _, want := range []string{"only into the terminal where", "you yourself", "Never send it to anyone", "sign in as you", "tell the dashboard owner"} {
+	for _, want := range []string{"only into the terminal where", "you yourself", "Never send it to anyone", "sign in as you", "tell the dashboard owner",
+		"This page shows once. Do not reload it."} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page lacks %q", want)
 		}
@@ -351,6 +355,7 @@ func TestSignInStatesNeverReachTheSetupRelay(t *testing.T) {
 	}
 	// A real setup state with sign-in cookies is still only the relay page: the cookies are
 	// neither used nor cleared.
+	e.clock = e.clock.Add(time.Second) // after the server's start second
 	cs, _ = startLogin(t, e, "/")
 	r := e.get(relayURL(mintState(t, e, "secret"), "good-code-1234"), actor{cookies: cs})
 	if r.Status != 200 || len(r.Header.Values("Set-Cookie")) != 0 {
@@ -565,5 +570,76 @@ func TestRelaySeenIsBoundedExpiresAndClaimsOnce(t *testing.T) {
 	}
 	if n := seen.size(); n != 1 {
 		t.Errorf("%d entries after expiry, want 1", n)
+	}
+}
+
+// Fix round 3, T-1: states minted before the server started are refused, so the restart
+// connect asks for ends every link from that run, shown or not. A state minted in the
+// start's own second is refused too: states carry whole seconds, so it cannot be told
+// apart from one minted just before the start, and refusing it fails closed (connect
+// prints a new link).
+func TestSetupRelayRefusesStatesMintedBeforeTheServerStarted(t *testing.T) {
+	a, _ := relayEnv(t)
+	shown := mintState(t, a, relaySecret)
+	if r := a.get(relayURL(shown, relayCode), anon); !showsRelay(r) {
+		t.Fatalf("first server → %d", r.Status)
+	}
+	unshown, _ := auth.MintSetupState(relaySecret, testNow.Add(30*time.Second), nil)
+	start := testNow.Add(time.Minute) // the restart
+	sameSecond, _ := auth.MintSetupState(relaySecret, start.Add(500*time.Millisecond), nil)
+	clock := start
+	b, _ := relayEnv(t, func(c *Config) { c.Now = func() time.Time { return clock } })
+	clock = start.Add(90 * time.Second) // all four states are still fresh
+	after, _ := auth.MintSetupState(relaySecret, start.Add(time.Second), nil)
+	for name, state := range map[string]string{"shown before the restart": shown, "minted before the restart": unshown, "minted in the start second": sameSecond} {
+		if r := b.get(relayURL(state, relayCode), anon); showsRelay(r) || r.Header.Get("Location") != "/login?error=state" {
+			t.Errorf("%s → %d %q", name, r.Status, r.Header.Get("Location"))
+		}
+	}
+	if r := b.get(relayURL(after, relayCode), anon); !showsRelay(r) {
+		t.Errorf("minted after the start → %d", r.Status)
+	}
+}
+
+// Fix round 3, T-2: the state is claimed once, in withAuth, before the session handling is
+// skipped. Of many simultaneous first requests exactly one shows the page; every other one
+// gets the whole normal path, session renewal included.
+func TestSetupRelaySimultaneousFirstRequestsShowOnePage(t *testing.T) {
+	e, _ := relayEnv(t)
+	// Ten rounds of 30 simultaneous first requests, each round with a fresh state: a race
+	// between checking and claiming shows up as a loser without its session renewal.
+	const rounds, n = 10, 30
+	for round := range rounds {
+		state := mintState(t, e, relaySecret)
+		cookies := make([]*http.Cookie, n)
+		for i := range cookies {
+			cookies[i] = renewalDueSession(t, e)
+		}
+		results := make([]reply, n)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i := range n {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				results[i] = e.get(relayURL(state, relayCode), actor{cookie: cookies[i], remote: fmt.Sprintf("198.51.%d.%d:1234", round, 10+i)})
+			}()
+		}
+		close(start)
+		wg.Wait()
+		pages := 0
+		for i, r := range results {
+			if showsRelay(r) {
+				pages++
+				continue
+			}
+			if r.Header.Get("Location") != "/login?error=state" || !renewed(e, r) {
+				t.Errorf("round %d, request %d → %d %q, renewed %v", round, i, r.Status, r.Header.Get("Location"), renewed(e, r))
+			}
+		}
+		if pages != 1 {
+			t.Errorf("round %d: %d pages, want 1", round, pages)
+		}
 	}
 }

@@ -86,8 +86,10 @@ type Server struct {
 	host   string // APP_URL host, for the Origin check
 	// hostWarned is set once a proxied request named another host (withForwardedHostCheck).
 	hostWarned atomic.Bool
-	// relaySeen holds the setup states whose code page was shown (setuprelay.go).
+	// relaySeen holds the setup states whose code page was shown, and startedAt is when this
+	// server was built: setup states minted before it are refused (setuprelay.go).
 	relaySeen relaySeen
+	startedAt time.Time
 
 	// inner is the routed handler behind withAuth; MCP tool calls run through it in-process.
 	inner http.Handler
@@ -157,6 +159,7 @@ func New(cfg Config) *Server {
 		cfg.Version = "0.1.0"
 	}
 	s := &Server{cfg: cfg, db: cfg.DB, log: cfg.Log, mcpInFlight: make(chan struct{}, mcpGlobalInFlight), mcpGrantInFlight: map[string]int{}}
+	s.startedAt = cfg.Now()
 	s.trustedProxies = cfg.TrustedProxies
 	if s.trustedProxies == nil {
 		s.trustedProxies = DefaultTrustedProxies()

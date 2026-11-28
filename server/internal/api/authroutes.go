@@ -86,8 +86,8 @@ func (c *Ctx) loginRedirect(reason string) error {
 // get a session. A setup callback (state with the `setup.` prefix) only shows its code
 // (setuprelay.go).
 func (c *Ctx) authCallback() error {
-	if state, code, ok := c.S.setupRelay(c.R); ok && c.S.claimSetupRelay(state) {
-		return c.setupRelayPage(state, code)
+	if p, ok := claimedRelayPage(c.R); ok {
+		return c.setupRelayPage(p.state, p.code)
 	}
 	q := c.R.URL.Query()
 	code, state := q.Get("code"), q.Get("state")

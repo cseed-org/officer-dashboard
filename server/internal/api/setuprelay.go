@@ -23,9 +23,11 @@ import (
 // state of their own sign-in link, lure an officer to approve it, and get the officer's
 // sign-in code shown (review of #128, F-1). No client secret configured, no relay.
 //
-// The page is shown once per state (relaySeen): a second request with the same state takes
-// the normal path, so a state seen by someone else is useless once the admin's browser has
-// used it.
+// The page is shown once per state (relaySeen), and never for a state minted before the
+// server started: a second request with the same state, or any request after a restart,
+// takes the normal path, so a state seen by someone else is useless once the admin's
+// browser has used it. withAuth claims the state, in one place, before it skips the session
+// handling, and hands the claim to authCallback in the request context.
 //
 // The page does nothing else: no session, no cookie, no token exchange, no database write
 // and no redirect. withAuth skips its session lookup for it (so no renewal cookie or
@@ -51,7 +53,27 @@ func (s *Server) setupRelay(r *http.Request) (state, code string, ok bool) {
 	if !auth.ValidSetupCode(code) || !auth.VerifySetupState(d.ClientSecret, state, s.now()) || s.relaySeen.has(state, s.now()) {
 		return "", "", false
 	}
+	// Refuse a state minted before this server started: the shown-states set is in memory,
+	// and the restart that `connect` asks for would otherwise let every link from that run
+	// show its code once more. States carry whole seconds (mint time = expiry - TTL), so a
+	// state minted in the start's own second cannot be told apart from one minted just
+	// before it; it is refused too (fail closed: connect prints a new link).
+	if exp, ok := auth.SetupStateExpiry(state); !ok || exp.Add(-auth.SetupStateTTL).Unix() <= s.startedAt.Unix() {
+		return "", "", false
+	}
 	return state, code, true
+}
+
+// relayPage is a setup callback whose state withAuth has claimed: the request shows the
+// code page. Only withAuth sets it, in the request context, so no client can.
+type relayPage struct{ state, code string }
+
+type relayPageKey struct{}
+
+// claimedRelayPage is the claimed setup callback withAuth passed on, if any.
+func claimedRelayPage(r *http.Request) (relayPage, bool) {
+	p, ok := r.Context().Value(relayPageKey{}).(relayPage)
+	return p, ok
 }
 
 // relaySeenMax bounds how many shown states are remembered. Only `connect` can make a
@@ -60,8 +82,8 @@ func (s *Server) setupRelay(r *http.Request) (state, code string, ok bool) {
 const relaySeenMax = 1024
 
 // relaySeen is the set of setup states whose page was shown, kept in memory until they
-// expire, so that each state shows its code once. A restart forgets it: a state shown
-// before a restart can be shown once more while it is fresh.
+// expire, so that each state shows its code once. A restart forgets it, which is why
+// setupRelay also refuses every state minted before the server started.
 type relaySeen struct {
 	mu sync.Mutex
 	m  map[string]time.Time // state → expiry
@@ -104,8 +126,9 @@ func (r *relaySeen) size() int {
 	return len(r.m)
 }
 
-// claimSetupRelay marks a verified state as shown. False when another request showed it
-// first: the caller then takes the normal path.
+// claimSetupRelay marks a verified state as shown. withAuth calls it once, before it
+// decides to skip the session handling; false when another request claimed it first, and
+// this request then takes the whole normal path.
 func (s *Server) claimSetupRelay(state string) bool {
 	exp, ok := auth.SetupStateExpiry(state)
 	return ok && s.relaySeen.claim(state, exp, s.now())
@@ -133,6 +156,7 @@ Ctrl+A (⌘A on a Mac) in the box selects all of it.</p>
 <p><textarea readonly autofocus rows="3" aria-label="setup code">{{.}}</textarea></p>
 <p><strong>Never send it to anyone</strong>: not to another officer, not to "support", not in chat or email. Someone who has it
 may be able to sign in as you.</p>
+<p>This page shows once. Do not reload it.</p>
 <p><small>If you did not just start dashboard setup yourself, close this tab and tell the dashboard owner.</small></p>
 </main></body></html>
 `))
