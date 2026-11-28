@@ -43,10 +43,13 @@ func (o Opt[T]) val() any {
 
 // User is a users row.
 type User struct {
-	ID          string
-	DiscordID   string
-	Name        string
-	Email       *string
+	ID        string
+	DiscordID string
+	Name      string
+	Email     *string
+	// AccessEmail is where Cloudflare Access sends this person's sign-in PIN. Director-set;
+	// never shown to officers.
+	AccessEmail *string
 	AvatarURL   *string
 	IsOwner     bool
 	Role        string
@@ -57,12 +60,12 @@ type User struct {
 	UpdatedAt   Ms
 }
 
-const userCols = `id, discord_id, name, email, avatar_url, role, is_owner, active, title, last_login_at, created_at, updated_at`
+const userCols = `id, discord_id, name, email, access_email, avatar_url, role, is_owner, active, title, last_login_at, created_at, updated_at`
 
 func scanUser(s interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var last *Ms
-	if err := s.Scan(&u.ID, &u.DiscordID, &u.Name, &u.Email, &u.AvatarURL, &u.Role, &u.IsOwner, &u.Active, &u.Title, &last, &u.CreatedAt, &u.UpdatedAt); err != nil {
+	if err := s.Scan(&u.ID, &u.DiscordID, &u.Name, &u.Email, &u.AccessEmail, &u.AvatarURL, &u.Role, &u.IsOwner, &u.Active, &u.Title, &last, &u.CreatedAt, &u.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if last != nil {
@@ -111,8 +114,8 @@ func (q *Queries) FirstActiveUserWithRole(ctx context.Context, role string) (*Us
 
 // InsertUser adds a user.
 func (q *Queries) InsertUser(ctx context.Context, u User) error {
-	_, err := q.q.ExecContext(ctx, `INSERT INTO users (id, discord_id, name, email, avatar_url, role, is_owner, active, title, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		u.ID, u.DiscordID, u.Name, u.Email, u.AvatarURL, u.Role, u.IsOwner, u.Active, u.Title, int64(u.CreatedAt), int64(u.UpdatedAt))
+	_, err := q.q.ExecContext(ctx, `INSERT INTO users (id, discord_id, name, email, access_email, avatar_url, role, is_owner, active, title, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		u.ID, u.DiscordID, u.Name, u.Email, u.AccessEmail, u.AvatarURL, u.Role, u.IsOwner, u.Active, u.Title, int64(u.CreatedAt), int64(u.UpdatedAt))
 	return err
 }
 
@@ -123,6 +126,8 @@ type UserPatch struct {
 	Active Opt[bool]
 	Title  Opt[string]
 	Email  Opt[string]
+	// AccessEmail must already be trimmed and lower-case (the schema refuses anything else).
+	AccessEmail Opt[string]
 }
 
 // UpdateUser applies a patch and stamps updated_at.
@@ -139,6 +144,7 @@ func (q *Queries) UpdateUser(ctx context.Context, id string, p UserPatch, now in
 	add("active", p.Active.Set, p.Active.val())
 	add("title", p.Title.Set, p.Title.val())
 	add("email", p.Email.Set, p.Email.val())
+	add("access_email", p.AccessEmail.Set, p.AccessEmail.val())
 	sets = append(sets, "updated_at = ?")
 	args = append(args, now, id)
 	_, err := q.q.ExecContext(ctx, `UPDATE users SET `+strings.Join(sets, ", ")+` WHERE id = ?`, args...)
