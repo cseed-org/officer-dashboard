@@ -99,6 +99,12 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 		log.Warn("database conflict mapped to 409", "error", msg)
 		return conflict("Conflicting state, closed period, or duplicate record")
 	}
+	// A CHECK failure is a server fault everywhere else; for the access email it means input
+	// the handler's validation let through, so say what's wrong with it.
+	if store.IsCheckViolation(err) && strings.Contains(msg, "access_email") {
+		log.Warn("access email refused by the schema", "error", msg)
+		return badRequest("That access email isn't valid: use a lower-case address with an @.")
+	}
 	if !store.IsConflict(err) {
 		log.Error("API operation failed", "error", msg)
 		return fail(500, "internal", "Operation failed")
@@ -115,8 +121,9 @@ func toAPIError(err error, log *slog.Logger) *APIError {
 	if strings.Contains(msg, "invites.discord_id") {
 		return conflict("An invite for this Discord ID is already pending")
 	}
-	// The handlers name the holder first (checkAccessEmailFree); this is the schema's backstop.
-	if strings.Contains(msg, "access_email") || strings.Contains(msg, "access email belongs") {
+	// The handlers name the holder first (checkAccessEmailFree); this is the schema's backstop:
+	// the unique indexes and the clash triggers only.
+	if (strings.Contains(msg, "UNIQUE constraint failed") && strings.Contains(msg, "access_email")) || strings.Contains(msg, "access email belongs") {
 		return conflict("That access email is already in use by another person or pending invite.")
 	}
 	if strings.Contains(msg, "at most 5 calendar emails") {
