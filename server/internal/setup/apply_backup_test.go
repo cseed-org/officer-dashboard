@@ -134,6 +134,9 @@ func TestBackupApplyInterruptedAfterEachWriteThenRerun(t *testing.T) {
 			}
 			r.acct.OnWrite(nil)
 			r.ctx = context.Background()
+			// The cancel races with the fake's answer: the crashed run may still have got the
+			// backup token's secret, and then it must have kept it.
+			_, keptErr := os.Lstat(filepath.Join(r.dir, "secrets/backup/access-client-secret"))
 			res := r.run(append([]string{"--yes"}, groupArgs...)...)
 			if res.code != 0 {
 				t.Fatalf("re-run after %s %s: exit %d\n%s\n%s", crashed.Method, crashed.Path, res.code, res.stdout, res.stderr)
@@ -159,7 +162,7 @@ func TestBackupApplyInterruptedAfterEachWriteThenRerun(t *testing.T) {
 					t.Errorf("sent %s %s", q.Method, q.Path)
 				}
 			}
-			lostBackupSecret := strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, "dashboard-backups-host")
+			lostBackupSecret := strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, "dashboard-backups-host") && keptErr != nil
 			_, err := os.Lstat(filepath.Join(r.dir, "secrets/backup/access-client-secret"))
 			switch {
 			case lostBackupSecret && (err == nil || !strings.Contains(res.stdout, "Service Tokens → dashboard-backups-host → Rotate")):

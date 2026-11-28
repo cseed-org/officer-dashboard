@@ -476,6 +476,9 @@ func TestInterruptedAfterACreateThenRerunMakesNoDuplicate(t *testing.T) {
 			}
 			r.acct.OnWrite(nil)
 			r.ctx = context.Background()
+			// The cancel races with the fake's answer: the crashed run may still have got
+			// the client secret, and then it kept it, so there is nothing to rotate.
+			_, keptErr := os.Lstat(filepath.Join(r.dir, "secrets/admin/services-access-client-secret"))
 			res := r.run(append([]string{"--yes"}, groupArgs...)...)
 			if res.code != 0 {
 				t.Fatalf("re-run: exit %d\n%s\n%s", res.code, res.stdout, res.stderr)
@@ -483,8 +486,12 @@ func TestInterruptedAfterACreateThenRerunMakesNoDuplicate(t *testing.T) {
 			if n := r.createsNamed(suffix, map[string]string{"/access/service_tokens": "officer-dashboard services", "/cfd_tunnel": "officer-dashboard"}[suffix]); n != 1 {
 				t.Fatalf("%d creates of %s", n, suffix)
 			}
-			if suffix == "/access/service_tokens" && !strings.Contains(res.stdout, "Rotate") {
+			switch {
+			case suffix != "/access/service_tokens":
+			case keptErr != nil && !strings.Contains(res.stdout, "Rotate"):
 				t.Errorf("the lost client secret is not reported as a manual rotation:\n%s", res.stdout)
+			case keptErr == nil && !r.isSecretFromCloudflare(r.file("secrets/admin/services-access-client-secret")):
+				t.Error("the client secret the crashed run kept is gone")
 			}
 			if suffix == "/cfd_tunnel" {
 				r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)

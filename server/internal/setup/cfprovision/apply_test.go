@@ -318,6 +318,12 @@ func TestApplyInterruptedAfterAnyWriteIsSafeToRerun(t *testing.T) {
 				t.Fatalf("run 1 survived the crash after %s %s", crashed.Method, crashed.Path)
 			}
 			r.acct.OnWrite(nil)
+			// The cancel races with the fake's answer: sometimes the crashed run still got a
+			// token's client secret, and then it must have kept it.
+			keptBefore := map[SecretName]bool{}
+			for _, sec := range []SecretName{SecretServicesToken, SecretBackupsToken} {
+				_, keptBefore[sec] = r.sink.Get(sec)
+			}
 			if _, err := r.apply(context.Background()); err != nil {
 				t.Fatalf("re-run after a crash at %s %s: %v\n%s", crashed.Method, crashed.Path, err, r.out.String())
 			}
@@ -339,7 +345,7 @@ func TestApplyInterruptedAfterAnyWriteIsSafeToRerun(t *testing.T) {
 				secret SecretName
 			}{{"officer-dashboard services", SecretServicesToken}, {"dashboard-backups-host", SecretBackupsToken}} {
 				_, kept := r.sink.Get(tok.secret)
-				if strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, tok.name) {
+				if strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, tok.name) && !keptBefore[tok.secret] {
 					// The client secret existed only in the crashed process: say to rotate it.
 					if kept || !strings.Contains(r.out.String(), "rotate it") || !strings.Contains(r.out.String(), tok.name) {
 						t.Errorf("lost client secret of %s not reported:\n%s", tok.name, r.out.String())
