@@ -249,10 +249,11 @@ func (e *Engine) uploadWorker(ctx context.Context, s Step) (string, error) {
 
 func (e *Engine) scriptExists(ctx context.Context) (bool, error) {
 	path := e.accountPath("/workers/scripts")
-	var scripts []struct {
+	type script struct {
 		ID string `json:"id"`
 	}
-	if err := e.read.Get(ctx, path, nil, &scripts); err != nil {
+	scripts, err := cfapi.ListAll[script](ctx, e.read, path, nil)
+	if err != nil {
 		return false, e.readErr("Workers Scripts Read", "GET", path, err)
 	}
 	for _, sc := range scripts {
@@ -329,11 +330,12 @@ func (e *Engine) backupCounts(ctx context.Context, f *Facts, actions []plan.Acti
 		f.D1Count = len(all)
 	}
 	if by["worker"] == plan.Create {
-		var scripts []struct{ ID string }
-		if err := e.read.Get(ctx, e.accountPath("/workers/scripts"), nil, &scripts); err != nil {
+		type script struct{ ID string }
+		all, err := cfapi.ListAll[script](ctx, e.read, e.accountPath("/workers/scripts"), nil)
+		if err != nil {
 			f.ScriptCountUnknown = err.Error()
 		}
-		f.ScriptCount = len(scripts)
+		f.ScriptCount = len(all)
 	}
 }
 

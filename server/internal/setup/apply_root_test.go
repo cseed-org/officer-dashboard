@@ -36,6 +36,8 @@ func TestApplyRealOwnershipAsRoot(t *testing.T) {
 		"secrets/admin":        {0o700, 0, 0},
 		"secrets/admin/services-access-client-id":     {0o400, 0, 0},
 		"secrets/admin/services-access-client-secret": {0o400, 0, 0},
+		"secrets/backup/access-client-id":             {0o400, 10001, 10001},
+		"secrets/backup/access-client-secret":         {0o400, 10001, 10001},
 	} {
 		info, err := os.Lstat(filepath.Join(r.dir, rel))
 		if err != nil {
