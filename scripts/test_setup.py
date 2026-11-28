@@ -753,6 +753,162 @@ class ApplyTests(LauncherCase):
         self.assertEqual(args[args.index(PIN) + 1:][:2], ['setup', '--dry-run'])
 
 
+class DiscordTests(LauncherCase):
+    """scripts/setup discord [connect]: values reach Go only as read-only file mounts or typed
+    in the container's terminal; the deploy directory is writable only when Go may write."""
+
+    def setUp(self):
+        super().setUp()
+        self.pin()
+        # Built at run time: the scanner checks test files too.
+        self.values = {'client-id': '123456789012345678', 'client-secret': 'SENTINEL-' + 'dc-secret-' + 'Qx7' * 6,
+                       'bot-token': 'SENTINEL-' + 'dc-bot-' + 'Lm4' * 8}
+        self.files = {}
+        for name, value in self.values.items():
+            path = self.deploy.parent / ('my ' + name)
+            path.write_text(value + '\n')
+            path.chmod(0o600)
+            self.files[name] = path
+
+    def file_args(self):
+        return [a for name, path in self.files.items() for a in ('--' + name + '-file', str(path))]
+
+    def assert_values_never_leave_their_files(self):
+        secrets = [self.values['client-secret'], self.values['bot-token']]
+        for call in self.docker.calls:
+            for secret in secrets:
+                self.assertFalse(any(secret in a for a in call), 'a value on a command line: %r' % call)
+        for _, stdin in self.docker.containers:
+            self.assertIsNone(stdin, 'a value on stdin')
+        for secret in secrets:
+            self.assertNotIn(secret, self.out + self.err)
+
+    def mounts(self, args):
+        return [mount_fields(args[i + 1]) for i, a in enumerate(args) if a == '--mount']
+
+    def caps(self, args):
+        return sorted(args[i + 1] for i, a in enumerate(args) if a == '--cap-add')
+
+    def test_yes_mounts_the_value_files_read_only_and_the_deploy_directory_writable(self):
+        environ = dict(os.environ)
+        self.assertEqual(self.launch('discord', '--yes', *self.file_args()), 0, self.err)
+        args, stdin = self.container()
+        self.assertIsNone(stdin)
+        self.assert_values_never_leave_their_files()
+        self.assertEqual(dict(os.environ), environ, 'a value placed in the environment')
+        self.assertNotIn('-e', args, 'nothing passes through the environment')
+        self.assertEqual(args[args.index('--user') + 1], '0:0')
+        self.assertEqual(self.caps(args), ['CHOWN', 'DAC_OVERRIDE', 'FOWNER'])
+        self.assertEqual(args[args.index('--cap-drop') + 1], 'ALL')
+        self.assertIn('--read-only', args)
+        self.assertEqual(args[args.index('--network') + 1], 'bridge', 'it checks the values with Discord')
+        self.assertEqual(self.mounts(args), [
+            {'type': 'bind', 'source': str(self.deploy), 'target': '/deploy'},
+            {'type': 'bind', 'source': str(self.files['client-id']), 'target': '/run/setup/discord-client-id', 'readonly': True},
+            {'type': 'bind', 'source': str(self.files['client-secret']), 'target': '/run/setup/discord-client-secret', 'readonly': True},
+            {'type': 'bind', 'source': str(self.files['bot-token']), 'target': '/run/setup/discord-bot-token', 'readonly': True},
+        ])
+        tail = args[args.index(PIN) + 1:]
+        self.assertEqual(tail[:5], ['setup', 'discord', '--deploy-dir', '/deploy', '--yes'])
+        self.assertEqual(tail[tail.index('--client-secret-file') + 1], '/run/setup/discord-client-secret')
+
+    def test_without_yes_nothing_is_writable(self):
+        for mode in ([], ['--dry-run']):
+            self.docker.containers.clear()
+            self.assertEqual(self.launch('discord', *mode, *self.file_args()), 0, self.err)
+            args, _ = self.container()
+            self.assertEqual(self.mounts(args)[0], {'type': 'bind', 'source': str(self.deploy), 'target': '/deploy', 'readonly': True}, mode)
+            self.assertEqual(self.caps(args), ['DAC_READ_SEARCH'], mode)
+            self.assertNotIn('--yes', args, mode)
+            self.assert_values_never_leave_their_files()
+
+    def test_values_are_typed_in_the_container_terminal_when_there_is_no_file(self):
+        self.assertEqual(self.launch('discord', '--yes', tty=True), 0, self.err)
+        args, stdin = self.container()
+        self.assertIsNone(stdin)
+        self.assertIn('-t', args)
+        self.assertEqual(len(self.mounts(args)), 1, 'only the deploy directory')
+
+    def test_values_are_never_flags(self):
+        for flag in ['--client-secret=x', '--bot-token', '--client-id=1', '--deploy-dir=/elsewhere', '--image=x', '-yes=false', '--unknown']:
+            self.docker.containers.clear()
+            self.assertEqual(self.launch('discord', flag), 1, flag)
+            self.assertIn('discord does not take', self.err, flag)
+            self.assertNotIn('=x', self.err, 'the refusal repeats a value')
+            self.assertEqual(self.docker.containers, [], flag)
+
+    def test_a_value_typed_after_a_flag_is_never_repeated(self):
+        value = 'SENTINEL-' + 'typed-' + 'Wq2' * 5
+        for argv in (['discord', '--client-secret', value], ['discord', value], ['discord', 'connect', '--bot-token', value]):
+            self.docker.containers.clear()
+            self.assertEqual(self.launch(*argv), 1, argv)
+            self.assertNotIn(value, self.out + self.err, argv)
+            self.assertEqual(self.docker.containers, [], argv)
+
+    def test_passes_on_the_flags_go_knows(self):
+        self.assertEqual(self.launch('discord', '--dry-run', '--app-url', 'https://dash.club.example', '--no-bot-token', *self.file_args()), 0, self.err)
+        tail = self.container()[0]
+        tail = tail[tail.index(PIN) + 1:]
+        self.assertEqual(tail[tail.index('--app-url') + 1], 'https://dash.club.example')
+        self.assertIn('--no-bot-token', tail)
+
+    def test_value_file_symlink_is_refused_and_a_shared_one_warns(self):
+        link = self.deploy.parent / 'secret link'
+        link.symlink_to(self.files['client-secret'])
+        self.assertEqual(self.launch('discord', '--yes', '--client-secret-file', str(link)), 1)
+        self.assertIn('symbolic link', self.err)
+        self.assertEqual(self.docker.containers, [])
+        self.files['client-secret'].chmod(0o644)
+        self.assertEqual(self.launch('discord', '--yes', *self.file_args()), 0, self.err)
+        self.assertIn('warning', self.err)
+        self.assert_values_never_leave_their_files()
+
+    def test_missing_value_file_names_the_path_only(self):
+        self.assertEqual(self.launch('discord', '--yes', '--client-secret-file', str(self.deploy.parent / 'missing')), 1)
+        self.assertIn('missing', self.err)
+        self.assertEqual(self.docker.containers, [])
+
+    def test_needs_the_host_phase_first(self):
+        (self.deploy / 'prod-image.env').unlink()
+        for step in (['discord', '--yes'], ['discord', 'connect']):
+            self.assertEqual(self.launch(*step, tty=True), 1, step)
+            self.assertIn('scripts/setup host --yes', self.err)
+        self.assertEqual(self.docker.containers, [])
+
+    def test_connect_writes_with_a_terminal_and_network(self):
+        self.assertEqual(self.launch('discord', 'connect', tty=True), 0, self.err)
+        args, stdin = self.container()
+        self.assertIsNone(stdin)
+        self.assertIn('-t', args)
+        self.assertEqual(self.caps(args), ['CHOWN', 'DAC_OVERRIDE', 'FOWNER'])
+        self.assertEqual(args[args.index('--network') + 1], 'bridge')
+        self.assertEqual(self.mounts(args), [{'type': 'bind', 'source': str(self.deploy), 'target': '/deploy'}])
+        self.assertEqual(args[args.index(PIN) + 1:], ['setup', 'discord', 'connect', '--deploy-dir', '/deploy'])
+
+    def test_connect_needs_a_terminal(self):
+        self.assertEqual(self.launch('discord', 'connect'), 1)
+        self.assertIn('terminal', self.err)
+        self.assertEqual(self.docker.containers, [])
+
+    def test_connect_dry_run_reads_only_and_has_no_network(self):
+        self.assertEqual(self.launch('discord', 'connect', '--dry-run'), 0, self.err)
+        args, _ = self.container()
+        self.assertEqual(args[args.index('--network') + 1], 'none')
+        self.assertEqual(self.caps(args), ['DAC_READ_SEARCH'])
+        self.assertEqual(self.mounts(args), [{'type': 'bind', 'source': str(self.deploy), 'target': '/deploy', 'readonly': True}])
+
+    def test_connect_takes_no_value_files(self):
+        self.assertEqual(self.launch('discord', 'connect', '--client-secret-file', str(self.files['client-secret']), tty=True), 1)
+        self.assertIn('connect', self.err)
+        self.assertEqual(self.docker.containers, [])
+
+    def test_keeps_every_host_refusal(self):
+        self.docker.security.append('name=rootless')
+        self.assertEqual(self.launch('discord', '--yes', *self.file_args()), 1)
+        self.assertIn('rootless', self.err)
+        self.assertEqual(self.docker.containers, [])
+
+
 class BytecodeTests(unittest.TestCase):
     def test_update_and_setup_write_no_bytecode_beside_themselves(self):
         # Review N-3: the updater runs as root from the production checkout every five
