@@ -502,8 +502,11 @@ sets and clears no cookie, writes nothing, and does not call Discord. The page i
 `no-store`, `no-referrer`, allows no script, and cannot be framed. Any other
 `setup.` state, whether made up, expired or signed with another secret, gets the
 normal sign-in error, and so does every callback when no client secret is
-configured. The page shows each link's code once; a second visit gets the sign-in
-error, and `connect` prints a new link when needed. The page stays behind
+configured. The page shows each link's code once, and says not to reload it; a
+second visit gets the sign-in error, and `connect` prints a new link when needed. A
+restart of the dashboard ends every setup link made before it, including the
+restart `connect` asks for at the end. If you see the sign-in error before you used
+the link yourself, someone else may have opened it: tell the dashboard owner. The page stays behind
 Cloudflare Access like the rest of `/auth/`. Two installs that share one Discord
 application also share the client secret, so a setup link from one works on the
 other for its 10 minutes: use one Discord application per install, staging
