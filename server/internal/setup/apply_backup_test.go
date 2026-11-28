@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"officerdashboard/internal/setup/cffake"
+	"officerdashboard/internal/setup/cfprovision"
 	"officerdashboard/internal/setup/hostfiles"
 )
 
@@ -128,64 +129,57 @@ func TestBackupApplyInterruptedAfterEachWriteThenRerun(t *testing.T) {
 	if res := full.run(append([]string{"--yes"}, groupArgs...)...); res.code != 0 {
 		t.Fatalf("full run: exit %d\n%s", res.code, res.stderr)
 	}
-	total := len(full.acct.Writes())
-	for k := 1; k <= total; k++ {
-		t.Run(fmt.Sprintf("after write %d", k), func(t *testing.T) {
-			r := newApplyRig(t, cffake.Fresh())
-			bearer := r.bearer()
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			r.ctx = ctx
-			n := 0
-			var crashed cffake.Request
-			r.acct.OnWrite(func(req cffake.Request) {
-				if n++; n == k {
-					crashed = req
-					cancel()
+	writes := full.acct.Writes()
+	// Review F-12 of #129: two crash modes, so neither outcome depends on a race.
+	for _, mode := range []struct {
+		name string
+		mode cffake.CrashMode
+	}{{"answer lost", cffake.AnswerLost}, {"after the answer", cffake.AfterAnswer}} {
+		for k := 1; k <= len(writes); k++ {
+			crashed := writes[k-1]
+			t.Run(fmt.Sprintf("%s, write %d", mode.name, k), func(t *testing.T) {
+				r := newApplyRig(t, cffake.Fresh())
+				bearer := r.bearer()
+				r.acct.CrashAfterWrite(k, mode.mode)
+				if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code == 0 {
+					t.Fatalf("the run survived a crash at %s %s", crashed.Method, crashed.Path)
+				}
+				r.acct.CrashAfterWrite(0, 0)
+				res := r.run(append([]string{"--yes"}, groupArgs...)...)
+				if res.code != 0 {
+					t.Fatalf("re-run after %s %s: exit %d\n%s\n%s", crashed.Method, crashed.Path, res.code, res.stdout, res.stderr)
+				}
+				r.requireBearerNeverPrinted(res)
+				if r.bearer() != bearer {
+					t.Fatal("the bearer file changed")
+				}
+				for _, c := range []struct{ suffix, name string }{
+					{"/d1/database", "dashboard-backups"}, {"/access/service_tokens", "dashboard-backups-host"},
+					{"/access/service_tokens", "officer-dashboard services"}, {"/access/apps", "Dashboard backups (service token)"},
+					{"/access/policies", "Backup host token"},
+				} {
+					if got := r.createsNamed(c.suffix, c.name); got != 1 {
+						t.Errorf("%s %q created %d times", c.suffix, c.name, got)
+					}
+				}
+				if ups := len(r.acct.Uploads()); ups != 1 {
+					t.Errorf("%d Worker uploads", ups)
+				}
+				for _, q := range r.acct.Requests() {
+					if q.Method != http.MethodGet && q.Method != http.MethodPost && q.Method != http.MethodPut {
+						t.Errorf("sent %s %s", q.Method, q.Path)
+					}
+				}
+				lost := mode.mode == cffake.AnswerLost && strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, "dashboard-backups-host")
+				_, err := os.Lstat(filepath.Join(r.dir, "secrets/backup/access-client-secret"))
+				switch {
+				case lost && (err == nil || !strings.Contains(res.stdout, "Service Tokens → dashboard-backups-host → Rotate")):
+					t.Errorf("the lost backup token secret is not reported for rotation:\n%s", res.stdout)
+				case !lost && (err != nil || !r.isSecretFromCloudflare(r.file("secrets/backup/access-client-secret"))):
+					t.Errorf("the backup token's secret was lost after %s %s", crashed.Method, crashed.Path)
 				}
 			})
-			if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code == 0 {
-				t.Fatalf("the run survived a crash after %s %s", crashed.Method, crashed.Path)
-			}
-			r.acct.OnWrite(nil)
-			r.ctx = context.Background()
-			// The cancel races with the fake's answer: the crashed run may still have got the
-			// backup token's secret, and then it must have kept it.
-			_, keptErr := os.Lstat(filepath.Join(r.dir, "secrets/backup/access-client-secret"))
-			res := r.run(append([]string{"--yes"}, groupArgs...)...)
-			if res.code != 0 {
-				t.Fatalf("re-run after %s %s: exit %d\n%s\n%s", crashed.Method, crashed.Path, res.code, res.stdout, res.stderr)
-			}
-			r.requireBearerNeverPrinted(res)
-			if r.bearer() != bearer {
-				t.Fatal("the bearer file changed")
-			}
-			for _, c := range []struct{ suffix, name string }{
-				{"/d1/database", "dashboard-backups"}, {"/access/service_tokens", "dashboard-backups-host"},
-				{"/access/service_tokens", "officer-dashboard services"}, {"/access/apps", "Dashboard backups (service token)"},
-				{"/access/policies", "Backup host token"},
-			} {
-				if got := r.createsNamed(c.suffix, c.name); got != 1 {
-					t.Errorf("%s %q created %d times", c.suffix, c.name, got)
-				}
-			}
-			if ups := len(r.acct.Uploads()); ups != 1 {
-				t.Errorf("%d Worker uploads", ups)
-			}
-			for _, q := range r.acct.Requests() {
-				if q.Method != http.MethodGet && q.Method != http.MethodPost && q.Method != http.MethodPut {
-					t.Errorf("sent %s %s", q.Method, q.Path)
-				}
-			}
-			lostBackupSecret := strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, "dashboard-backups-host") && keptErr != nil
-			_, err := os.Lstat(filepath.Join(r.dir, "secrets/backup/access-client-secret"))
-			switch {
-			case lostBackupSecret && (err == nil || !strings.Contains(res.stdout, "Service Tokens → dashboard-backups-host → Rotate")):
-				t.Errorf("the lost backup token secret is not reported for rotation:\n%s", res.stdout)
-			case !lostBackupSecret && (err != nil || !r.isSecretFromCloudflare(r.file("secrets/backup/access-client-secret"))):
-				t.Errorf("the backup token's secret was lost after %s %s", crashed.Method, crashed.Path)
-			}
-		})
+		}
 	}
 }
 
@@ -300,5 +294,23 @@ func TestBackupHostOutsideTheZoneBlocksWithTheFlag(t *testing.T) {
 		if !strings.Contains(res.stdout, want) {
 			t.Errorf("output lacks %q:\n%s", want, res.stdout)
 		}
+	}
+}
+
+// Review F-9/M11 of #129: the host sink loads only the backup bearer, never another secret,
+// even when its file is there.
+func TestHostSinkLoadsOnlyTheBearer(t *testing.T) {
+	r := newApplyRig(t, cffake.Fresh())
+	if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code != 0 {
+		t.Fatalf("exit %d", res.code)
+	}
+	sink := newHostSecretSink(r.dir, r.owner, nil)
+	for _, name := range []cfprovision.SecretName{cfprovision.SecretServicesToken, cfprovision.SecretBackupsToken, cfprovision.SecretTunnelToken} {
+		if v, err := sink.Load(context.Background(), name); err == nil || v != "" {
+			t.Errorf("Load(%s) = %d bytes, %v", name, len(v), err)
+		}
+	}
+	if v, err := sink.Load(context.Background(), cfprovision.SecretBackupBearer); err != nil || v != r.bearer() {
+		t.Fatalf("the bearer did not load: %v", err)
 	}
 }

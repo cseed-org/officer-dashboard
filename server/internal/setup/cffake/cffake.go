@@ -83,6 +83,10 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	raw, _ := io.ReadAll(io.LimitReader(r.Body, 4<<20))
 	req := Request{Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Body: string(raw), ContentType: r.Header.Get("Content-Type"),
 		APIDate: r.Header.Get("Cloudflare-Workers-Script-Api-Date")}
+	if s.acct != nil && s.acct.refuses(req) {
+		hangUp(w) // the process died before this request reached Cloudflare
+		return
+	}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
 	s.mu.Unlock()

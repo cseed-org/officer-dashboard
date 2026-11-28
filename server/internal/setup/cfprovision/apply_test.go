@@ -301,60 +301,55 @@ func TestApplyInterruptedAfterAnyWriteIsSafeToRerun(t *testing.T) {
 	if total < 15 {
 		t.Fatalf("only %d writes in a full run", total)
 	}
-	for k := 1; k <= total; k++ {
-		t.Run(fmt.Sprintf("crash after write %d", k), func(t *testing.T) {
-			r := newRig(t, cffake.Fresh())
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			n := 0
-			var crashed cffake.Request
-			r.acct.OnWrite(func(req cffake.Request) {
-				if n++; n == k {
-					crashed = req
-					cancel() // the process dies with this write stored by Cloudflare
+	// Review F-12 of #129: two crash modes, so neither outcome depends on a race. When the
+	// answer is lost, a secret in it is lost and must be reported for rotation; when the
+	// crash comes after the answer, every secret received must have been kept.
+	writes := full.acct.Writes()
+	for _, mode := range []struct {
+		name string
+		mode cffake.CrashMode
+	}{{"answer lost", cffake.AnswerLost}, {"after the answer", cffake.AfterAnswer}} {
+		for k := 1; k <= total; k++ {
+			crashed := writes[k-1]
+			t.Run(fmt.Sprintf("%s, write %d", mode.name, k), func(t *testing.T) {
+				r := newRig(t, cffake.Fresh())
+				r.acct.CrashAfterWrite(k, mode.mode)
+				if _, err := r.apply(context.Background()); err == nil {
+					t.Fatalf("run 1 survived the crash at %s %s", crashed.Method, crashed.Path)
+				}
+				r.acct.CrashAfterWrite(0, 0)
+				if _, err := r.apply(context.Background()); err != nil {
+					t.Fatalf("re-run after a crash at %s %s: %v\n%s", crashed.Method, crashed.Path, err, r.out.String())
+				}
+				requireAllOK(t, r.preview())
+				requireNoDuplicates(t, r.acct, r.d)
+				if _, ok := r.sink.Get(SecretTunnelToken); !ok {
+					t.Error("the re-run did not recover the tunnel token")
+				}
+				// The backup Worker is uploaded once, whatever the crash; the host's bearer
+				// is never rewritten.
+				if n := len(r.acct.Uploads()); n != 1 {
+					t.Errorf("%d Worker uploads", n)
+				}
+				if b, _ := r.sink.Load(context.Background(), SecretBackupBearer); b != testBearer {
+					t.Error("the host's bearer changed")
+				}
+				for _, tok := range []struct {
+					name   string
+					secret SecretName
+				}{{"officer-dashboard services", SecretServicesToken}, {"dashboard-backups-host", SecretBackupsToken}} {
+					_, kept := r.sink.Get(tok.secret)
+					lost := mode.mode == cffake.AnswerLost && strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, tok.name)
+					switch {
+					case lost && (kept || !strings.Contains(r.out.String(), "rotate it") || !strings.Contains(r.out.String(), tok.name)):
+						// The client secret existed only in the lost answer: say to rotate it.
+						t.Errorf("lost client secret of %s not reported:\n%s", tok.name, r.out.String())
+					case !lost && !kept:
+						t.Errorf("the client secret of %s was lost", tok.name)
+					}
 				}
 			})
-			if _, err := r.apply(ctx); err == nil {
-				t.Fatalf("run 1 survived the crash after %s %s", crashed.Method, crashed.Path)
-			}
-			r.acct.OnWrite(nil)
-			// The cancel races with the fake's answer: sometimes the crashed run still got a
-			// token's client secret, and then it must have kept it.
-			keptBefore := map[SecretName]bool{}
-			for _, sec := range []SecretName{SecretServicesToken, SecretBackupsToken} {
-				_, keptBefore[sec] = r.sink.Get(sec)
-			}
-			if _, err := r.apply(context.Background()); err != nil {
-				t.Fatalf("re-run after a crash at %s %s: %v\n%s", crashed.Method, crashed.Path, err, r.out.String())
-			}
-			requireAllOK(t, r.preview())
-			requireNoDuplicates(t, r.acct, r.d)
-			if _, ok := r.sink.Get(SecretTunnelToken); !ok {
-				t.Error("the re-run did not recover the tunnel token")
-			}
-			// The backup Worker is uploaded once, whatever the crash; the host's bearer is
-			// never rewritten.
-			if n := len(r.acct.Uploads()); n != 1 {
-				t.Errorf("%d Worker uploads", n)
-			}
-			if b, _ := r.sink.Load(context.Background(), SecretBackupBearer); b != testBearer {
-				t.Error("the host's bearer changed")
-			}
-			for _, tok := range []struct {
-				name   string
-				secret SecretName
-			}{{"officer-dashboard services", SecretServicesToken}, {"dashboard-backups-host", SecretBackupsToken}} {
-				_, kept := r.sink.Get(tok.secret)
-				if strings.HasSuffix(crashed.Path, "/access/service_tokens") && strings.Contains(crashed.Body, tok.name) && !keptBefore[tok.secret] {
-					// The client secret existed only in the crashed process: say to rotate it.
-					if kept || !strings.Contains(r.out.String(), "rotate it") || !strings.Contains(r.out.String(), tok.name) {
-						t.Errorf("lost client secret of %s not reported:\n%s", tok.name, r.out.String())
-					}
-				} else if !kept {
-					t.Errorf("the client secret of %s was lost", tok.name)
-				}
-			}
-		})
+		}
 	}
 }
 

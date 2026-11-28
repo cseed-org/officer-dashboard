@@ -461,42 +461,41 @@ func TestExistingSecretFileIsKeptAndTheRunStops(t *testing.T) {
 // A run interrupted right after a create (the response never arrives) is re-run through
 // the command: it matches what the first run made and creates no second copy.
 func TestInterruptedAfterACreateThenRerunMakesNoDuplicate(t *testing.T) {
-	for _, suffix := range []string{"/access/service_tokens", "/cfd_tunnel"} {
-		t.Run(strings.TrimPrefix(suffix, "/"), func(t *testing.T) {
-			r := newApplyRig(t, cffake.Fresh())
-			ctx, cancel := context.WithCancel(context.Background())
-			r.ctx = ctx
-			r.acct.OnWrite(func(req cffake.Request) {
-				if req.Method == http.MethodPost && strings.HasSuffix(req.Path, suffix) {
-					cancel()
+	// Review F-12 of #129: the crash comes either before the create's answer (a secret in
+	// it is lost for certain) or right after it (kept for certain), never by a race.
+	for _, mode := range []struct {
+		name string
+		mode cffake.CrashMode
+	}{{"answer lost", cffake.AnswerLost}, {"after the answer", cffake.AfterAnswer}} {
+		for _, suffix := range []string{"/access/service_tokens", "/cfd_tunnel"} {
+			t.Run(mode.name+strings.ReplaceAll(suffix, "/", " "), func(t *testing.T) {
+				r := newApplyRig(t, cffake.Fresh())
+				r.acct.CrashAt(func(req cffake.Request) bool {
+					return req.Method == http.MethodPost && strings.HasSuffix(req.Path, suffix)
+				}, mode.mode)
+				if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code == 0 {
+					t.Fatal("the interrupted run exited 0")
+				}
+				r.acct.CrashAt(nil, 0)
+				res := r.run(append([]string{"--yes"}, groupArgs...)...)
+				if res.code != 0 {
+					t.Fatalf("re-run: exit %d\n%s\n%s", res.code, res.stdout, res.stderr)
+				}
+				if n := r.createsNamed(suffix, map[string]string{"/access/service_tokens": "officer-dashboard services", "/cfd_tunnel": "officer-dashboard"}[suffix]); n != 1 {
+					t.Fatalf("%d creates of %s", n, suffix)
+				}
+				switch {
+				case suffix != "/access/service_tokens":
+				case mode.mode == cffake.AnswerLost && !strings.Contains(res.stdout, "Rotate"):
+					t.Errorf("the lost client secret is not reported as a manual rotation:\n%s", res.stdout)
+				case mode.mode == cffake.AfterAnswer && !r.isSecretFromCloudflare(r.file("secrets/admin/services-access-client-secret")):
+					t.Error("the client secret the crashed run received is gone")
+				}
+				if suffix == "/cfd_tunnel" {
+					r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)
 				}
 			})
-			if res := r.run(append([]string{"--yes"}, groupArgs...)...); res.code == 0 {
-				t.Fatal("the interrupted run exited 0")
-			}
-			r.acct.OnWrite(nil)
-			r.ctx = context.Background()
-			// The cancel races with the fake's answer: the crashed run may still have got
-			// the client secret, and then it kept it, so there is nothing to rotate.
-			_, keptErr := os.Lstat(filepath.Join(r.dir, "secrets/admin/services-access-client-secret"))
-			res := r.run(append([]string{"--yes"}, groupArgs...)...)
-			if res.code != 0 {
-				t.Fatalf("re-run: exit %d\n%s\n%s", res.code, res.stdout, res.stderr)
-			}
-			if n := r.createsNamed(suffix, map[string]string{"/access/service_tokens": "officer-dashboard services", "/cfd_tunnel": "officer-dashboard"}[suffix]); n != 1 {
-				t.Fatalf("%d creates of %s", n, suffix)
-			}
-			switch {
-			case suffix != "/access/service_tokens":
-			case keptErr != nil && !strings.Contains(res.stdout, "Rotate"):
-				t.Errorf("the lost client secret is not reported as a manual rotation:\n%s", res.stdout)
-			case keptErr == nil && !r.isSecretFromCloudflare(r.file("secrets/admin/services-access-client-secret")):
-				t.Error("the client secret the crashed run kept is gone")
-			}
-			if suffix == "/cfd_tunnel" {
-				r.requireSecretFile("secrets/tunnel-token", hostfiles.TunnelIDs)
-			}
-		})
+		}
 	}
 }
 

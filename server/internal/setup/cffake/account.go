@@ -51,6 +51,8 @@ type accountState struct {
 	next       int
 	injections []*Injection
 	onWrite    func(Request)
+	// dropAnswer and refuse are the two crash modes (CrashAfterWrite).
+	dropAnswer, refuse func(Request) bool
 	// TunnelTokenInCreate makes a tunnel create answer include "token", as the
 	// guide's example shows; the reference schema lists no token.
 	tokenInCreate bool
@@ -91,6 +93,77 @@ func (a *Account) OnWrite(f func(Request)) {
 	a.acct.mu.Lock()
 	defer a.acct.mu.Unlock()
 	a.acct.onWrite = f
+}
+
+// CrashMode says where a simulated crash falls around one write.
+type CrashMode int
+
+const (
+	// AnswerLost: Cloudflare stores the write, but the connection drops before its answer,
+	// so a secret in that answer is lost for certain.
+	AnswerLost CrashMode = iota
+	// AfterAnswer: the write is answered in full, and the process dies before its next
+	// request reaches Cloudflare, so a secret in that answer was kept for certain.
+	AfterAnswer
+)
+
+// CrashAfterWrite simulates a crash around the n-th write (counted from 1, as Writes lists
+// them), in the given mode, with no race between the crash and the answer. Pass n = 0 to
+// stop crashing.
+func (a *Account) CrashAfterWrite(n int, mode CrashMode) {
+	if n == 0 {
+		a.CrashAt(nil, mode)
+		return
+	}
+	count := 0
+	a.CrashAt(func(Request) bool { count++; return count == n }, mode)
+}
+
+// CrashAt simulates a crash around the first write that at matches (the read-only D1
+// listings are not writes), in the given mode. A nil at stops crashing.
+func (a *Account) CrashAt(at func(Request) bool, mode CrashMode) {
+	a.acct.mu.Lock()
+	defer a.acct.mu.Unlock()
+	a.acct.dropAnswer, a.acct.refuse = nil, nil
+	if at == nil {
+		return
+	}
+	done, crashed := false, false
+	hit := func(r Request) bool {
+		if done || a.readOnlyQuery(r) || !at(r) {
+			return false
+		}
+		done = true
+		return true
+	}
+	switch mode {
+	case AnswerLost:
+		a.acct.dropAnswer = hit
+	case AfterAnswer:
+		a.acct.dropAnswer = func(r Request) bool {
+			crashed = crashed || hit(r)
+			return false
+		}
+		a.acct.refuse = func(Request) bool { return crashed }
+	}
+}
+
+func (st *accountState) refuses(req Request) bool {
+	st.mu.Lock()
+	f := st.refuse
+	st.mu.Unlock()
+	return f != nil && f(req)
+}
+
+// hangUp closes the connection without an answer.
+func hangUp(w http.ResponseWriter) {
+	if hj, ok := w.(http.Hijacker); ok {
+		if conn, _, err := hj.Hijack(); err == nil {
+			_ = conn.Close()
+			return
+		}
+	}
+	panic(http.ErrAbortHandler)
 }
 
 // TunnelTokenInCreate makes tunnel creates return the token in the create response.
@@ -252,6 +325,13 @@ func (st *accountState) intercept(s *Server, req Request, w http.ResponseWriter,
 		}
 		if in != nil && in.After != nil {
 			in.After()
+		}
+		st.mu.Lock()
+		drop := st.dropAnswer
+		st.mu.Unlock()
+		if drop != nil && drop(req) {
+			hangUp(w) // Cloudflare made the change, but its answer never arrives
+			return true
 		}
 	}
 	if in != nil {

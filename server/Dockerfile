@@ -66,6 +66,10 @@ RUN case "$TARGETARCH" in \
  && CGO_ENABLED=1 GOOS=linux GOARCH=$TARGETARCH \
     go build -trimpath -tags release,osusergo,netgo,sqlite_omit_load_extension \
     -ldflags "-s -w -extldflags '-static'" -o /out/dashboard-backup ./cmd/dashboard-backup
+# The dashboard must carry the backup Worker bundle: fail the image if its build dropped
+# the embedsink tag (the test above sets the tag itself, so it cannot tell).
+RUN go version -m /out/dashboard | grep -q -- '-tags=.*embedsink' \
+ || { echo "the dashboard binary was built without -tags embedsink" >&2; exit 1; }
 
 # Test binary belongs only to the isolated rehearsal target, never the release image.
 FROM build AS backup-test

@@ -583,3 +583,37 @@ func TestUploadNeedsWorkerNotFoundFromItsSettings(t *testing.T) {
 		})
 	}
 }
+
+// Review F-9/M8 of #129: the custom-domain step checks for the backup application itself,
+// not only through the plan's needs.
+func TestDomainStepRefusesWithoutTheBackupApp(t *testing.T) {
+	routes := cffake.Complete()
+	routes[acctP+"/workers/domains"] = cffake.Response{Result: []any{}}
+	r := newRig(t, routes)
+	e := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry())
+	if err := e.discover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	delete(e.o.Apps, plan.AppBackups)
+	_, err := e.workerDomain(context.Background(), Step{Kind: StepWorkerDomain, ActionID: "worker.domain", Title: "attach"})
+	var rej *RejectedError
+	if !errors.As(err, &rej) || len(r.acct.Writes()) != 0 {
+		t.Fatalf("err = %v, %d writes", err, len(r.acct.Writes()))
+	}
+}
+
+// Review F-9/M13 of #129: the Worker is not uploaded while its database's schema is drift.
+func TestNoUploadWhileTheMigrationIsDrift(t *testing.T) {
+	routes := cffake.Fresh()
+	routes[acctP+"/d1/database"] = cffake.Response{Result: []any{
+		map[string]any{"uuid": "d1-members", "name": "membership", "version": "production", "num_tables": 3},
+		map[string]any{"uuid": "d1-backups", "name": "dashboard-backups", "version": "production", "num_tables": 1},
+	}}
+	routes[cffake.D1TablesKey("d1-backups")] = cffake.Response{Result: []any{"_cf_KV", "members"}}
+	r := newRig(t, routes)
+	_, err := r.apply(context.Background())
+	var blocked *BlockedError
+	if !errors.As(err, &blocked) || !strings.Contains(err.Error(), "needs D1 migrations") || len(r.acct.Uploads()) != 0 || len(r.acct.Writes()) != 0 {
+		t.Fatalf("err = %v, %d uploads, %d writes", err, len(r.acct.Uploads()), len(r.acct.Writes()))
+	}
+}
