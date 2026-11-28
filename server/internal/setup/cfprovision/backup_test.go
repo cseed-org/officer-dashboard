@@ -409,3 +409,23 @@ func TestRecordOnTheBackupHostnameBlocks(t *testing.T) {
 		t.Fatalf("err = %v, %d writes", err, len(r.acct.Writes()))
 	}
 }
+
+// A table listing in a shape setup does not know is unreadable, never "no tables": only a
+// listing that really came back empty lets the migration run.
+func TestUnknownQueryShapeIsNotAnEmptyDatabase(t *testing.T) {
+	for name, result := range map[string]any{
+		"no results key": []any{map[string]any{"success": true, "meta": map[string]any{}}},
+		"empty array":    []any{},
+		"not a list":     map[string]any{"rows": []any{}},
+	} {
+		r := newRig(t, cffake.Live())
+		r.acct.Inject(cffake.Injection{Method: http.MethodPost, Path: acctP + "/d1/database/d1-backups/query", Result: result, Times: 100})
+		rev, err := NewEngine("test-token", r.d, r.sink, &r.out, r.opt, WithAPIBase(r.acct.URL), WithReadRetry()).Preview(context.Background())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if a := byID(rev.Actions)["d1.migrations"]; a.Kind != plan.Unknowable {
+			t.Errorf("%s: d1.migrations %s %v", name, a.Kind, a.Detail)
+		}
+	}
+}

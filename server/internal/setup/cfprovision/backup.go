@@ -69,10 +69,18 @@ func (e *Engine) query(ctx context.Context, dbID, sql string) ([]string, error) 
 	if err := e.write.Post(ctx, e.accountPath("/d1/database/"+url.PathEscape(dbID)+"/query"), map[string]any{"sql": sql}, &res); err != nil {
 		return nil, err
 	}
+	// An answer in a shape setup does not know must never read as "no tables": that would
+	// let the migration run on a database that has them.
+	if len(res) == 0 {
+		return nil, errors.New("Cloudflare answered the D1 query with no result")
+	}
 	var names []string
 	for _, r := range res {
 		if r.Success != nil && !*r.Success {
 			return nil, errors.New("Cloudflare answered the D1 query with success false")
+		}
+		if r.Results == nil {
+			return nil, errors.New("Cloudflare's D1 query answer has no results list")
 		}
 		for _, row := range r.Results {
 			if n, ok := row["name"].(string); ok {
